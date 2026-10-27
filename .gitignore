@@ -12,3 +12,4 @@ results/gate_*.log
 results/fp*.txt
 results/pairs_*.log
 micro/direct/*.wasm
+ssr/rows/out/
