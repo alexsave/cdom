@@ -1,0 +1,19 @@
+// Samples the JS/wasm profiler over repeated clicks; prints self time by function.
+import { launch, sleep } from './cdp.mjs';
+const [name, setup, sel, reps] = [process.argv[2], process.argv[3], process.argv[4], +(process.argv[5] || 10)];
+const b = await launch();
+try {
+  await b.send('Page.navigate', { url: `http://localhost:8093/frameworks/keyed/${name}/index.html` });
+  for (let i = 0; i < 50 && !(await b.evaluate('!!document.getElementById("run")')); i++) await sleep(100);
+  const loop = `(() => { const c = s => document.querySelector(s).click(); for (let i = 0; i < ${reps}; i++) { ${setup ? `c('${setup}');` : ''} c('${sel}'); } })()`;
+  await b.evaluate(loop); // warm up
+  await b.send('Profiler.enable'); await b.send('Profiler.setSamplingInterval', { interval: 50 });
+  await b.send('Profiler.start');
+  await b.evaluate(loop);
+  const { result: { profile } } = await b.send('Profiler.stop');
+  const self = new Map(), dt = new Map();
+  profile.timeDeltas.forEach((d, i) => dt.set(profile.samples[i], (dt.get(profile.samples[i]) || 0) + d));
+  let total = 0;
+  for (const n of profile.nodes) { const t = dt.get(n.id) || 0; const k = `${n.callFrame.functionName || '(anon)'} ${n.callFrame.url.split('/').pop()}:${n.callFrame.lineNumber}`; self.set(k, (self.get(k) || 0) + t); total += t; }
+  [...self].sort((a, b) => b[1] - a[1]).slice(0, 18).forEach(([k, t]) => console.log((t / 1000).toFixed(1).padStart(8), 'ms', (100 * t / total).toFixed(1).padStart(5), '%', k));
+} finally { await b.close(); }

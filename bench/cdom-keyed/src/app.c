@@ -54,7 +54,7 @@ static void build(uint32_t count) {
 }
 
 /* ---- view ---- */
-typedef struct { cd_id text; cd_str label; uint8_t sel; } RowView;
+typedef struct { cd_str label; uint8_t sel; } RowView;
 static RowView *views;
 static uint32_t nviews, views_cap, *free_views, nfree_views;
 static cd_list list;
@@ -79,7 +79,6 @@ static cd_id row_create(void *ctx, uint32_t i, uint32_t *data) {
   uint32_t vi = view_new();
   RowView *v = &views[vi];
   cd_id tr = cd_id_new();
-  v->text = cd_id_new();
   v->label = r->label;
   v->sel = r->id == selected;
   cd_tag_set(tr, K_ROW | r->id); /* a click reports which cell: 1 label, 2 remove */
@@ -89,14 +88,14 @@ static cd_id row_create(void *ctx, uint32_t i, uint32_t *data) {
   if (v->sel) cd_class(S_DANGER);
   cd_down(); cd_down(); cd_value_num(r->id); cd_up();     /* td.col-md-1 > id */
   cd_next(); cd_down(); cd_down();                        /* td.col-md-4 > a > text */
-  cd_value(r->label); cd_name(v->text);
+  cd_value(r->label);
   cd_close();
 #else
   cd_open(S_TR); cd_listen(tr, CD_EV_CLICK);
   if (v->sel) cd_class(S_DANGER);
   cd_open(S_TD); cd_class(S_COL1); cd_text_num(r->id); cd_close();
   cd_open(S_TD); cd_class(S_COL4);
-  cd_open(S_A); cd_text(r->label); cd_name(v->text); cd_close();
+  cd_open(S_A); cd_text(r->label); cd_close();
   cd_close();
   cd_open(S_TD); cd_class(S_COL1);
   cd_open(S_A);
@@ -116,7 +115,9 @@ static void row_patch(void *ctx, uint32_t i, cd_item *it) {
   RowView *v = &views[it->data];
   if (v->label != r->label) {
     v->label = r->label;
-    cd_set_text(v->text, r->label);
+    cd_sel(it->node); /* tr > td[1] > a > text */
+    cd_down(); cd_next(); cd_down(); cd_down();
+    cd_value(r->label);
   }
   uint8_t sel = r->id == selected;
   if (v->sel != sel) {
@@ -127,8 +128,6 @@ static void row_patch(void *ctx, uint32_t i, cd_item *it) {
 
 static void row_destroy(void *ctx, cd_item *it) {
   (void)ctx;
-  RowView *v = &views[it->data];
-  cd_id_free(v->text);
   free_views[nfree_views++] = it->data;
 }
 

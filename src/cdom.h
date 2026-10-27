@@ -54,6 +54,7 @@ void cd_clone(uint32_t t);           /* open a deep clone of template t */
 void cd_down(void);                  /* last = last.firstChild */
 void cd_next(void);                  /* last = last.nextSibling */
 void cd_up(void);                    /* last = last.parentNode */
+void cd_sel(cd_id id);               /* last = the node named id; then walk with down/next/up */
 
 /* updating */
 void cd_set_text(cd_id id, cd_str s); /* id is a text node */

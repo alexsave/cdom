@@ -60,7 +60,7 @@ enum {
   OP_AT = 1, OP_OPEN, OP_CLOSE, OP_TEXT, OP_TEXT_NUM, OP_ATTR, OP_CLASS, OP_NAME, OP_LISTEN,
   OP_VALUE, OP_VALUE_NUM, OP_TPL_SAVE, OP_CLONE, OP_DOWN, OP_NEXT, OP_UP, OP_SET_TEXT,
   OP_SET_TEXT_NUM, OP_SET_ATTR, OP_SET_CLASS, OP_REMOVE, OP_FREE, OP_MOVE, OP_CLEAR, OP_DETACH,
-  OP_ATTACH
+  OP_ATTACH, OP_SEL
 };
 
 #define OPS_CAP (1u << 16)
@@ -217,6 +217,7 @@ void cd_clone(uint32_t t) { reserve(1, 1, 0, 0); O(OP_CLONE); A(t); }
 void cd_down(void) { reserve(1, 0, 0, 0); O(OP_DOWN); }
 void cd_next(void) { reserve(1, 0, 0, 0); O(OP_NEXT); }
 void cd_up(void) { reserve(1, 0, 0, 0); O(OP_UP); }
+void cd_sel(cd_id id) { reserve(1, 1, 0, 0); O(OP_SEL); A(id); }
 void cd_set_text(cd_id id, cd_str s) { reserve(1, 2, slen(s), 1); O(OP_SET_TEXT); A(id); A(ref_text(s)); }
 void cd_set_text_num(cd_id id, uint32_t n) { reserve(1, 2, 0, 0); O(OP_SET_TEXT_NUM); A(id); A(n); }
 void cd_set_attr(cd_id id, cd_str name, cd_str v) {

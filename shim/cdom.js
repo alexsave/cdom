@@ -6,6 +6,7 @@ var cdom = (() => {
   const TRANSIENT = 0x40000000, DETACHED = 0xffffffff, SMALL = 64;
   const doc = document, td = new TextDecoder(), te = new TextEncoder();
   const nodes = [], strs = [], tmp = [], tpl = [], stack = [], on = [];
+  let lmask = new Uint16Array(1024); // listened event types per node id
   let x, mem, buf, u8, u32, i32, OPS, ARGS, SB, SM, INBOX;
   let sp = 0, last = null, root = null, base = DETACHED, ref = 0;
 
@@ -44,7 +45,7 @@ var cdom = (() => {
     top.addEventListener(EVENTS[type], (e) => {
       let path = 0, depth = 0;
       for (let n = e.target; n && n !== top; n = n.parentNode) {
-        if (n.$l & bit) {
+        if (n.$i !== undefined && lmask[n.$i] & bit) {
           if (buf !== mem.buffer) views();
           const k = INBOX >> 2;
           i32[k] = type; i32[k + 1] = n.$i; i32[k + 2] = e.clientX | 0; i32[k + 3] = e.clientY | 0;
@@ -75,7 +76,10 @@ var cdom = (() => {
         case 6: last.setAttribute(S(u32[q++]), S(u32[q++])); break; // ATTR
         case 7: last.className = S(u32[q++]); break; // CLASS
         case 8: nodes[u32[q++]] = last; break; // NAME
-        case 9: n = u32[q++]; nodes[n] = last; last.$i = n; n = u32[q++]; last.$l |= 1 << n; if (!on[n]) listen(n); break; // LISTEN
+        case 9: // LISTEN
+          n = u32[q++]; nodes[n] = last; last.$i = n;
+          if (n >= lmask.length) { const g = new Uint16Array(n * 2); g.set(lmask); lmask = g; }
+          lmask[n] |= 1 << u32[q]; if (!on[u32[q]]) listen(u32[q]); q++; break;
         case 10: last.nodeValue = S(u32[q++]); break; // VALUE
         case 11: last.nodeValue = u32[q++]; break; // VALUE_NUM
         case 12: tpl[u32[q++]] = root; root.remove(); break; // TPL_SAVE
@@ -87,12 +91,13 @@ var cdom = (() => {
         case 18: nodes[u32[q++]].nodeValue = u32[q++]; break; // SET_TEXT_NUM
         case 19: nodes[u32[q++]].setAttribute(S(u32[q++]), S(u32[q++])); break; // SET_ATTR
         case 20: nodes[u32[q++]].className = S(u32[q++]); break; // SET_CLASS
-        case 21: n = u32[q++]; nodes[n].remove(); nodes[n] = undefined; break; // REMOVE
-        case 22: nodes[u32[q++]] = undefined; break; // FREE
+        case 21: n = u32[q++]; nodes[n].remove(); nodes[n] = undefined; lmask[n] = 0; break; // REMOVE
+        case 22: n = u32[q++]; nodes[n] = undefined; lmask[n] = 0; break; // FREE
         case 23: el = nodes[u32[q++]]; n = u32[q++]; el.parentNode.insertBefore(el, n ? nodes[n] : null); break; // MOVE
         case 24: nodes[u32[q++]].textContent = ""; break; // CLEAR
         case 25: el = nodes[u32[q++]]; el.$p = el.parentNode; el.$s = el.nextSibling; el.remove(); break; // DETACH
         case 26: el = nodes[u32[q++]]; el.$p.insertBefore(el, el.$s); el.$p = el.$s = null; break; // ATTACH
+        case 27: last = nodes[u32[q++]]; break; // SEL
         default: throw new Error("cdom: bad op " + u8[p] + " at " + (p - OPS));
       }
     }
