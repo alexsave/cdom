@@ -1,0 +1,49 @@
+/* cdom_html: the native sink. A C implementation of shim/cdom.js for the native
+ * build of cdom.c: it defines the two imports (js_apply, js_value), interprets
+ * the same op stream into an in-memory node tree, and writes that tree as HTML.
+ * It is the server renderer and the C conformance implementation of the ops.
+ *
+ * Usage (one render):
+ *   cd_html_reset();            fresh tree and id table, node 0 is the mount
+ *   ... app code: cd_main(); cd_flush();
+ *   n = cd_html_write(buf, cap); the mount's children as HTML
+ *
+ * Semantics follow the DOM calls the shim makes, including where the shim would
+ * throw (a missing node, a child under a text node, ATTACH into a parent that
+ * lost the remembered sibling): the sink then prints the op and aborts.
+ * Node memory lives until the next cd_html_reset (the DOM keeps a node alive
+ * while anything names it; an arena per render is the exact and simple match).
+ *
+ * HTML rules:
+ *  - no whitespace between nodes; attributes in the order they were first set;
+ *    class is an attribute like any other, written where the first CLASS set it;
+ *  - text and attribute values escape & < > "; tag and attribute names are
+ *    written in ASCII lower case, as the HTML DOM stores them;
+ *  - void elements (br hr img input meta link area base col embed source track
+ *    wbr) have no close tag; children under one cannot be expressed in HTML and
+ *    abort the write;
+ *  - two adjacent text nodes are separated by <!----> so the parser keeps them
+ *    as two nodes. An empty text node is written as nothing: it is the one node
+ *    hydration must create. Because a separator is written before every text
+ *    node that follows a text node (empty or not), the hydrator knows exactly
+ *    which comment to drop and where an empty node goes;
+ *  - script and style hold raw text (no escaping; "</" inside aborts the write);
+ *    a pre, textarea or listing whose first text starts with a newline gets one
+ *    extra newline, since the parser drops the first;
+ *  - the output is a pure function of the op stream: no addresses, no clocks.
+ *  Content the HTML parser rearranges (text directly in a table, a p inside a p)
+ *  is not detected here; hydration's verify mode catches it in the browser. */
+#ifndef CDOM_HTML_H
+#define CDOM_HTML_H
+#include <stdint.h>
+
+/* Fresh tree and id table; node 0 is the (unwritten) mount. Interned strings
+ * the core already sent stay known, as they do in the shim. */
+void cd_html_reset(void);
+
+/* Writes the mount's children as HTML into dst. Returns the length; when that
+ * is more than cap, nothing past cap is written and the return value is the
+ * length needed. */
+uint32_t cd_html_write(char *dst, uint32_t cap);
+
+#endif

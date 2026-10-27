@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><title>conform</title></head><body><div id="m"></div>
+<script type="application/octet-stream" id="st"></script>
+<script src="cdom.js"></script><script>
+// Driven by tests/conform.mjs. canon(): one token per node; strict keeps empty text and comments.
+window.canon = (strict, root) => { const out = [];
+  const w = (n) => { for (let c = n.firstChild; c; c = c.nextSibling) {
+    if (c.nodeType === 8) { if (strict) out.push('<!---->'); continue; }
+    if (c.nodeType === 3) { if (strict || c.nodeValue !== '') out.push('"' + c.nodeValue + '"'); continue; }
+    out.push('<' + c.localName + [...c.attributes].map(a => ' ' + a.name + '=' + a.value).join('') + '>'); w(c); out.push('</>'); } };
+  w(root || document.getElementById('m')); return out.join('\n'); };
+window.parsed = (html) => { const d = document.createElement('div'); d.innerHTML = html; return canon(false, d); };
+window.go = async (ssr) => {
+  const m = document.getElementById('m');
+  if (ssr !== undefined) m.innerHTML = ssr;
+  window.x = await cdom.start('conform.wasm', m, null, ssr !== undefined ? { hydrate: 'st', verify: true } : undefined);
+  return true;
+};
+</script></body></html>
