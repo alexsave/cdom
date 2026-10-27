@@ -370,6 +370,26 @@ EXPORT("cd_start") void cd_start(uint32_t seed) {
   cd_flush();
 }
 
+__attribute__((weak)) uint32_t cd_state_save(uint8_t *dst, uint32_t cap) { (void)dst; (void)cap; return 0; }
+__attribute__((weak)) int cd_state_load(const uint8_t *src, uint32_t len) { (void)src; return len != 0; }
+
+/* Hydration: the shim copies the page's state blob into cd_state_buf, then
+ * cd_start_state loads it and renders the first frame over the server's DOM. */
+static uint8_t *state_buf;
+EXPORT("cd_state_buf") uint8_t *cd_state_buf(uint32_t len) {
+  cd_free(state_buf);
+  return state_buf = cd_alloc(len);
+}
+EXPORT("cd_start_state") int cd_start_state(uint32_t len) {
+  int bad = cd_state_load(state_buf, len);
+  cd_free(state_buf);
+  state_buf = 0;
+  if (bad) return bad;
+  cd_main();
+  cd_flush();
+  return 0;
+}
+
 EXPORT("cd_event") void cd_event(void) {
   cd_on_event(&inbox);
   cd_flush();

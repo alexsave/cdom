@@ -86,6 +86,14 @@ void cd_on_event(const cd_event_rec *e);
 void cd_main(void);                  /* the app's entry, called once at start */
 uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap); /* copy an input's value on demand */
 
+/* state: the app's model as a fixed binary blob, written by the server build and
+ * read by the browser build of the same C, so a server-rendered page hydrates.
+ * Layouts hold only fixed-width little-endian integers and byte arrays (no
+ * pointers, no size_t). JS never interprets them. The weak defaults mean "no
+ * state": save writes 0 bytes, load accepts only an empty blob. */
+uint32_t cd_state_save(uint8_t *dst, uint32_t cap); /* bytes written, or needed if > cap */
+int cd_state_load(const uint8_t *src, uint32_t len); /* 0 on success */
+
 /* keyed list */
 typedef struct { uint32_t key; cd_id node; uint32_t data; } cd_item;
 /* owns_parent: the list is the parent's only content, so a full clear is one op
