@@ -3,12 +3,13 @@
 <head>
   <meta charset="utf-8"/>
   <title>cdom-"keyed"</title>
+  <script>
+/*CDOM_SHIM*/
+cdom.start('app.wasm', 'main');
+  </script>
   <link href="/css/currentStyle.css" rel="stylesheet"/>
-  <link rel="preload" href="app.wasm" as="fetch" type="application/wasm" crossorigin/>
 </head>
 <body>
 <div id='main'></div>
-<script src='cdom.js'></script>
-<script>cdom.start('app.wasm', document.getElementById('main'));</script>
 </body>
 </html>

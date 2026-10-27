@@ -9,13 +9,15 @@ export async function launch() {
   const dbg = 9300 + Math.floor(Math.random() * 500);
   const proc = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     ['--headless=new', `--remote-debugging-port=${dbg}`, `--user-data-dir=${dir}`, '--no-first-run',
-     '--no-default-browser-check', '--disable-extensions', '--window-size=1280,800', 'about:blank'], { stdio: 'ignore' });
+     '--no-default-browser-check', '--disable-extensions', '--window-size=1280,800', ...(process.env.CHROME_ARGS ? process.env.CHROME_ARGS.split(' ') : []), 'about:blank'],
+    { stdio: process.env.CHROME_LOG ? ['ignore', fs.openSync(process.env.CHROME_LOG, 'w'), fs.openSync(process.env.CHROME_LOG + '.err', 'w')] : 'ignore' });
   let ver;
   for (let i = 0; i < 50 && !ver; i++) { try { ver = await (await fetch(`http://127.0.0.1:${dbg}/json/version`)).json(); } catch { await sleep(200); } }
   const ws = new WebSocket(ver.webSocketDebuggerUrl);
   await new Promise(r => ws.onopen = r);
   let id = 0; const pend = new Map();
-  ws.onmessage = m => { const d = JSON.parse(m.data); if (d.id && pend.has(d.id)) { pend.get(d.id)(d); pend.delete(d.id); } };
+  const api = {};
+  ws.onmessage = m => { const d = JSON.parse(m.data); if (d.id && pend.has(d.id)) { pend.get(d.id)(d); pend.delete(d.id); } else if (d.method && api.onEvent) api.onEvent(d); };
   const send = (method, params = {}, sessionId) => new Promise(r => { const i = ++id; pend.set(i, r); ws.send(JSON.stringify({ id: i, method, params, sessionId })); });
   const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank', newWindow: true });
   const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true });
@@ -32,5 +34,5 @@ export async function launch() {
     await sleep(300);
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   };
-  return { version: ver.Browser, send: s, evaluate, close };
+  return Object.assign(api, { version: ver.Browser, send: s, sendBrowser: send, evaluate, close });
 }

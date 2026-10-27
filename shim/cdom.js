@@ -109,13 +109,19 @@ var cdom = (() => {
     return r.written;
   }
 
+  // mount is an element, or the id of one that may not be parsed yet: then the wasm loads
+  // while the parser and the stylesheets run, and the app starts once the DOM is ready.
   async function start(url, mount, env) {
-    nodes[0] = mount;
     const imports = { cdom: { apply, value }, env: env || {} };
     const res = fetch(url);
     const { instance } = WebAssembly.instantiateStreaming
       ? await WebAssembly.instantiateStreaming(res, imports)
       : await WebAssembly.instantiate(await (await res).arrayBuffer(), imports);
+    if (typeof mount === "string") {
+      if (doc.readyState === "loading") await new Promise((r) => doc.addEventListener("DOMContentLoaded", r, { once: true }));
+      mount = doc.getElementById(mount);
+    }
+    nodes[0] = mount;
     x = instance.exports; mem = x.memory; views();
     const L = x.cd_layout() >> 2;
     [OPS, ARGS, SB, SM, INBOX] = [u32[L], u32[L + 1], u32[L + 2], u32[L + 3], u32[L + 4]];

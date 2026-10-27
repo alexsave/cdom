@@ -15,14 +15,15 @@ build() { # name, version note, extra flags...
   "$CC" --target=wasm32 $OPT -nostdlib -mbulk-memory -Wall -Wextra -Werror \
     -Wl,--no-entry -Wl,--strip-all "$@" -o "$out/app.wasm" \
     "$here/cdom-keyed/src/app.c" "$top/src/cdom.c" "$top/src/mini.c"
-  cp "$top/shim/cdom.js" "$out/cdom.js"
-  sed "s/cdom-\"keyed\"/$name-\"keyed\"/" "$here/cdom-keyed/index.html" > "$out/index.html"
+  # The shim is inlined into the page: one request fewer, and it starts the wasm before the stylesheets.
+  rm -f "$out/cdom.js"
+  sed -e "s/cdom-\"keyed\"/$name-\"keyed\"/" -e "/\/\*CDOM_SHIM\*\//{r $top/shim/cdom.js" -e "d;}" "$here/cdom-keyed/index.html" > "$out/index.html"
   cat > "$out/package.json" <<JSON
 {
   "name": "js-framework-benchmark-$name",
   "version": "0.1.0",
   "description": "cdom: C owns the tree and the diff; a fixed JS shim applies a batched op stream ($note)",
-  "js-framework-benchmark": { "frameworkVersion": "0.1.0", "language": "C", "issues": [] },
+  "js-framework-benchmark": { "frameworkVersion": "0.1.0", "language": "C", "issues": [1139] },
   "scripts": { "build-prod": "../../../../bench/build.sh" }
 }
 JSON

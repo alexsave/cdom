@@ -8,7 +8,7 @@ const fws = ['vanillajs', ...(process.argv[3] || 'cdomp').split(',')];
 const cpu = ['01_run1k', '02_replace1k', '03_update10th1k_x16', '04_select1k', '05_swap1k', '06_remove-one-1k', '07_create10k', '08_create1k-after1k_x2', '09_clear1k_x8'];
 const W = [0.64280248137063, 0.5607178150466176, 0.5643800750716564, 0.1925635870170522, 0.13200612879341714, 0.5277091212292658, 0.5644449600965534, 0.5508359820582848, 0.4225836631419211];
 const files = fs.readdirSync(`${dir}/results`);
-const read = (f, b) => { const n = files.find(x => x.startsWith(`${f}-v`) && x.endsWith(`_${b}.json`)); return n ? JSON.parse(fs.readFileSync(`${dir}/results/${n}`, 'utf8')) : null; };
+const read = (f, b) => { const n = files.find(x => (x.startsWith(`${f}-v`) || x.startsWith(`${f}-keyed`)) && x.endsWith(`_${b}.json`)); return n ? JSON.parse(fs.readFileSync(`${dir}/results/${n}`, 'utf8')) : null; };
 const loads = new Map();
 try { for (const l of fs.readFileSync(`${dir}/loads.tsv`, 'utf8').trim().split('\n').slice(1)) { const [b, f, before] = l.split('\t'); loads.set(`${b}|${f}`, before); } } catch {}
 const med = (f, b, k) => read(f, b)?.values?.[k]?.median;

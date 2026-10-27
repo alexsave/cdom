@@ -11,6 +11,7 @@ fws=(${FWS:-vanillajs cdomp})
 benches=("$@")
 load1() { sysctl -n vm.loadavg | awk '{print $2}'; }
 [ -f "$log" ] || printf 'benchmark\tframework\tload_before\tload_after\twaited_s\tgate\n' > "$log"
+ln -sfn "$top/jfb/webdriver-ts/dist" "$out/dist"
 cd "$out"
 for b in "${benches[@]}"; do
   for f in "${fws[@]}"; do
