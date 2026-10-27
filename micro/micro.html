@@ -1,0 +1,51 @@
+<!doctype html><html><head><meta charset="utf-8"><title>cdom micro</title></head>
+<body><div id="t">x</div><script>
+(async () => {
+  const el = document.getElementById('t');
+  const nodes = [null, el];
+  const vals = ['alpha','bravo','charlie','delta','echo','foxtrot','golf','hotel'];
+  const td = new TextDecoder();
+  let mem, u8, u32, opsPtr;
+  const env = {
+    nop() {},
+    set_attr(n, v) { nodes[n].setAttribute('data-x', vals[v]); },
+    set_attr_utf8(n, p, len) { nodes[n].setAttribute('data-x', td.decode(u8.subarray(p, p + len))); },
+    set_attr_ascii(n, p, len) {
+      let s = ''; for (let i = 0; i < len; i++) s += String.fromCharCode(u8[p + i]);
+      nodes[n].setAttribute('data-x', s);
+    },
+    set_text(n, v) { nodes[n].textContent = vals[v]; },
+    apply(n) {
+      let q = opsPtr >> 2;
+      for (let i = 0; i < n; i++, q += 2) nodes[u32[q]].setAttribute('data-x', vals[u32[q + 1]]);
+    },
+  };
+  const { instance } = await WebAssembly.instantiateStreaming(fetch('micro.wasm'), { env });
+  const x = instance.exports;
+  mem = x.memory; u8 = new Uint8Array(mem.buffer); u32 = new Uint32Array(mem.buffer); opsPtr = x.ops_ptr();
+  function jsnop() {}
+  const tests = {
+    'empty import (wasm->JS)': n => x.loop_nop(n),
+    'empty JS call (JS->JS)': n => { for (let i = 0; i < n; i++) jsnop(); },
+    'setAttribute via import, string by index': n => x.loop_attr(n),
+    'setAttribute via import, TextDecoder per call': n => x.loop_attr_utf8(n),
+    'setAttribute via import, fromCharCode per call': n => x.loop_attr_ascii(n),
+    'setAttribute batched, one call per batch': n => x.batch_attr(n),
+    'batch write only (C side, apply(0))': n => x.batch_empty(n),
+    'setAttribute from JS': n => { for (let i = 0; i < n; i++) el.setAttribute('data-x', vals[i & 7]); },
+    'textContent via import': n => x.loop_text(n),
+    'textContent from JS': n => { for (let i = 0; i < n; i++) el.textContent = vals[i & 7]; },
+  };
+  const SAMPLES = 31, out = {};
+  for (const [name, f] of Object.entries(tests)) {
+    const N = name.startsWith('empty') || name.startsWith('batch write') ? 2000000 : 100000;
+    for (let w = 0; w < 5; w++) f(N);
+    const s = [];
+    for (let k = 0; k < SAMPLES; k++) { const t0 = performance.now(); f(N); s.push((performance.now() - t0) * 1e6 / N); }
+    s.sort((a, b) => a - b);
+    out[name] = { median: s[SAMPLES >> 1], p10: s[3], p90: s[27] };
+  }
+  window.RESULT = out;
+  document.title = 'done';
+})().catch(e => { window.RESULT = { error: String(e) }; document.title = 'done'; });
+</script></body></html>

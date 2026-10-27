@@ -1,0 +1,43 @@
+// Clicks every button and row action and checks the DOM against what the app should show.
+import { launch, sleep } from './cdp.mjs';
+const name = process.argv[2] || 'cdom';
+const b = await launch();
+let fails = 0;
+const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console.log('ok  ', m); };
+try {
+  await b.send('Page.navigate', { url: `http://localhost:8093/frameworks/keyed/${name}/index.html` });
+  for (let i = 0; i < 50 && !(await b.evaluate('!!document.getElementById("run")')); i++) await sleep(100);
+  const E = b.evaluate;
+  const click = sel => E(`document.querySelector(${JSON.stringify(sel)}).click()`);
+  const rows = () => E('document.querySelectorAll("tbody tr").length');
+  await click('#run'); ok(await rows() === 1000, 'run -> 1000 rows');
+  ok(await E('document.querySelector("tbody tr td").textContent') === '1', 'first id is 1');
+  ok(await E('/^\\w+ \\w+ \\w+$/.test(document.querySelector("tbody tr td:nth-child(2) a").textContent)'), 'label shape');
+  ok(await E('document.querySelector("tbody tr").outerHTML'), 'row html: ' + await E('document.querySelector("tbody tr").outerHTML'));
+  await click('#add'); ok(await rows() === 2000, 'add -> 2000');
+  ok(await E('document.querySelector("tbody tr:nth-child(1001) td").textContent') === '1001', 'appended ids continue');
+  await click('#update');
+  ok(await E('[...document.querySelectorAll("tbody tr")].filter((r,i)=>r.children[1].textContent.endsWith(" !!!") === (i%10===0)).length') === 2000, 'every 10th updated');
+  await E('window.__r1 = document.querySelectorAll("tbody tr")[1]; window.__r998 = document.querySelectorAll("tbody tr")[998]');
+  await click('#swaprows');
+  ok(await E('document.querySelectorAll("tbody tr")[1] === window.__r998 && document.querySelectorAll("tbody tr")[998] === window.__r1'), 'swap moved the same nodes');
+  await click('tbody tr:nth-child(5) td:nth-child(2) a');
+  ok(await E('document.querySelectorAll("tbody tr.danger").length === 1 && document.querySelectorAll("tbody tr")[4].className === "danger"'), 'select row 5');
+  await click('tbody tr:nth-child(7) td:nth-child(2) a');
+  ok(await E('document.querySelectorAll("tbody tr.danger").length === 1 && document.querySelectorAll("tbody tr")[6].className === "danger"'), 'select row 7 unselects 5');
+  await E('window.__r3 = document.querySelectorAll("tbody tr")[3]; window.__id2 = document.querySelectorAll("tbody tr")[2].children[0].textContent');
+  await click('tbody tr:nth-child(3) td:nth-child(3) a span');
+  ok(await rows() === 1999, 'remove -> 1999');
+  ok(await E('document.querySelectorAll("tbody tr")[2] === window.__r3'), 'remove kept the next node');
+  ok(await E('[...document.querySelectorAll("tbody tr td:first-child")].every(t => t.textContent !== window.__id2)'), 'removed id gone');
+  await click('#runlots'); ok(await rows() === 10000, 'runlots -> 10000');
+  ok(await E('document.querySelectorAll("tbody tr.danger").length') === 0, 'runlots clears selection');
+  await click('#clear'); ok(await rows() === 0, 'clear -> 0');
+  await click('#run'); ok(await rows() === 1000, 'run after clear');
+  await click('#run'); ok(await rows() === 1000, 'run replaces');
+  ok(await E('document.querySelector("tbody tr td").textContent') === '13001', 'run replace ids: ' + await E('document.querySelector("tbody tr td").textContent'));
+  for (let i = 0; i < 5; i++) await click('#update');
+  ok(await E('document.querySelector("tbody tr td:nth-child(2) a").textContent.endsWith(" !!! !!! !!! !!! !!!")'), 'repeated update');
+} finally { await b.close(); }
+console.log(fails ? `${fails} FAILED` : 'all ok');
+process.exit(fails ? 1 : 0);

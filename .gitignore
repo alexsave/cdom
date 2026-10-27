@@ -1,0 +1,5 @@
+jfb/
+.server.log
+.server.pid
+results/raw/
+*.tmp
