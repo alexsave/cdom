@@ -1,0 +1,1 @@
+{"framework":"cdom-v0.1.0-keyed","keyed":true,"benchmark":"41_size-uncompressed","type":"size","values":{"DEFAULT":{"min":26.4,"max":26.4,"median":26.4,"mean":26.4,"stddev":null,"values":[26.4]}}}

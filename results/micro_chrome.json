@@ -1,0 +1,55 @@
+{
+ "browser": "Chrome/156.0.8078.47",
+ "result": {
+  "empty import (wasm->JS)": {
+   "median": 4.650000035762787,
+   "p10": 4.550000011920929,
+   "p90": 4.850000023841858
+  },
+  "empty JS call (JS->JS)": {
+   "median": 0.44999998807907104,
+   "p10": 0.44999998807907104,
+   "p90": 0.5
+  },
+  "setAttribute via import, string by index": {
+   "median": 78.99999976158142,
+   "p10": 76.99999928474426,
+   "p90": 80
+  },
+  "setAttribute via import, TextDecoder per call": {
+   "median": 205,
+   "p10": 203.99999976158142,
+   "p90": 211.99999928474426
+  },
+  "setAttribute via import, fromCharCode per call": {
+   "median": 118.00000071525574,
+   "p10": 115.99999904632568,
+   "p90": 125
+  },
+  "setAttribute batched, one call per batch": {
+   "median": 80,
+   "p10": 77.00000047683716,
+   "p90": 81.00000023841858
+  },
+  "batch write only (C side, apply(0))": {
+   "median": 0.30000001192092896,
+   "p10": 0.30000001192092896,
+   "p90": 0.3500000238418579
+  },
+  "setAttribute from JS": {
+   "median": 73.00000071525574,
+   "p10": 71.99999928474426,
+   "p90": 76.00000023841858
+  },
+  "textContent via import": {
+   "median": 146.00000023841858,
+   "p10": 140,
+   "p90": 171.99999928474426
+  },
+  "textContent from JS": {
+   "median": 135,
+   "p10": 128.00000071525574,
+   "p90": 143.00000071525574
+  }
+ }
+}

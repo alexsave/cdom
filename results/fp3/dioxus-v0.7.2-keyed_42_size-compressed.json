@@ -1,0 +1,1 @@
+{"framework":"dioxus-v0.7.2-keyed","keyed":true,"benchmark":"42_size-compressed","type":"size","values":{"DEFAULT":{"min":114.9,"max":114.9,"median":114.9,"mean":114.9,"stddev":null,"values":[114.9]}}}

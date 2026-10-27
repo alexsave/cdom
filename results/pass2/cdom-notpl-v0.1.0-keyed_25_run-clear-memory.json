@@ -1,0 +1,1 @@
+{"framework":"cdom-notpl-v0.1.0-keyed","keyed":true,"benchmark":"25_run-clear-memory","type":"memory","values":{"DEFAULT":{"min":0.7977027893066406,"max":0.7977027893066406,"median":0.7977027893066406,"mean":0.7977027893066406,"stddev":null,"values":[0.7977027893066406]}}}

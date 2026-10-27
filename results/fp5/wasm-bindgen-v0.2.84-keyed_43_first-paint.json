@@ -1,0 +1,1 @@
+{"framework":"wasm-bindgen-v0.2.84-keyed","keyed":true,"benchmark":"43_first-paint","type":"size","values":{"DEFAULT":{"min":113.6,"max":113.6,"median":113.6,"mean":113.6,"stddev":null,"values":[113.6]}}}

@@ -1,0 +1,1 @@
+{"framework":"cdom-v0.1.0-keyed","keyed":true,"benchmark":"25_run-clear-memory","type":"memory","values":{"DEFAULT":{"min":0.8098907470703125,"max":0.8098907470703125,"median":0.8098907470703125,"mean":0.8098907470703125,"stddev":null,"values":[0.8098907470703125]}}}

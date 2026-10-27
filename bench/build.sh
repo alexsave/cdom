@@ -9,6 +9,7 @@ jfb="$top/jfb/frameworks/keyed"
 
 build() { # name, version note, extra flags...
   local name="$1" note="$2"; shift 2
+  local OPT="$OPT"; case "$name" in *-oz) OPT=-Oz;; esac
   local out="$jfb/$name"
   mkdir -p "$out"
   "$CC" --target=wasm32 $OPT -nostdlib -mbulk-memory -Wall -Wextra -Werror \
@@ -32,3 +33,4 @@ JSON
 build cdom "interned strings, templates"
 build cdom-pertext "per-op strings, templates" -DCDOM_INTERN_TEXT=0
 build cdom-notpl "interned strings, no templates" -DCDOM_TEMPLATES=0
+build cdom-oz "interned strings, templates, -Oz"

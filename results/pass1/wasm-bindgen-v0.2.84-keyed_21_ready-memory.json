@@ -1,0 +1,1 @@
+{"framework":"wasm-bindgen-v0.2.84-keyed","keyed":true,"benchmark":"21_ready-memory","type":"memory","values":{"DEFAULT":{"min":0.597996711730957,"max":0.597996711730957,"median":0.597996711730957,"mean":0.597996711730957,"stddev":null,"values":[0.597996711730957]}}}

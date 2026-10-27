@@ -1,0 +1,211 @@
+benchmark	framework	load_before	load_after	waited_s	gate
+01_	vanillajs	3.69	2.96	0	ok
+01_	react-hooks	2.96	2.21	0	ok
+01_	cdom	2.21	1.99	0	ok
+01_	cdom-pertext	1.99	2.58	0	ok
+01_	cdom-notpl	2.58	2.03	0	ok
+01_	wasm-bindgen	2.03	2.64	0	ok
+01_	dioxus	2.64	2.77	0	ok
+02_	vanillajs	2.77	2.67	0	ok
+02_	react-hooks	2.67	3.09	0	ok
+02_	cdom	3.09	2.46	0	ok
+02_	cdom-pertext	2.46	2.29	0	ok
+02_	cdom-notpl	2.29	2.38	0	ok
+02_	wasm-bindgen	2.38	3.42	0	ok
+02_	dioxus	3.42	3.20	0	ok
+03_	vanillajs	3.20	3.06	0	ok
+03_	react-hooks	3.06	3.07	0	ok
+03_	cdom	3.07	5.02	0	ok
+03_	cdom-pertext	3.96	3.20	30	ok
+03_	cdom-notpl	3.20	2.60	0	ok
+03_	wasm-bindgen	2.60	2.22	0	ok
+03_	dioxus	2.22	2.74	0	ok
+04_	vanillajs	2.74	3.93	0	ok
+04_	react-hooks	3.93	3.45	0	ok
+04_	cdom	3.45	5.96	0	ok
+04_	cdom-pertext	3.59	2.62	50	ok
+04_	cdom-notpl	2.62	2.51	0	ok
+04_	wasm-bindgen	2.51	2.35	0	ok
+04_	dioxus	2.35	2.27	0	ok
+05_	vanillajs	2.27	2.50	0	ok
+05_	react-hooks	2.50	2.51	0	ok
+05_	cdom	2.51	2.56	0	ok
+05_	cdom-pertext	2.56	2.71	0	ok
+05_	cdom-notpl	2.71	2.61	0	ok
+05_	wasm-bindgen	2.61	2.37	0	ok
+05_	dioxus	2.37	4.35	0	ok
+06_	vanillajs	3.65	3.09	20	ok
+06_	react-hooks	3.09	2.43	0	ok
+06_	cdom	2.43	2.05	0	ok
+06_	cdom-pertext	2.05	1.95	0	ok
+06_	cdom-notpl	1.95	1.79	0	ok
+06_	wasm-bindgen	1.79	3.16	0	ok
+06_	dioxus	3.16	2.42	0	ok
+07_	vanillajs	2.42	2.91	0	ok
+07_	react-hooks	2.91	2.40	0	ok
+07_	cdom	2.40	2.38	0	ok
+07_	cdom-pertext	2.38	3.15	0	ok
+07_	cdom-notpl	3.15	3.24	0	ok
+07_	wasm-bindgen	3.24	3.48	0	ok
+07_	dioxus	3.48	3.24	0	ok
+08_	vanillajs	3.24	2.56	0	ok
+08_	react-hooks	2.56	2.65	0	ok
+08_	cdom	2.65	4.20	0	ok
+08_	cdom-pertext	3.79	3.80	10	ok
+08_	cdom-notpl	3.80	3.45	0	ok
+08_	wasm-bindgen	3.45	4.00	0	ok
+08_	dioxus	3.69	3.31	10	ok
+09_	vanillajs	3.31	2.92	0	ok
+09_	react-hooks	2.92	3.17	0	ok
+09_	cdom	3.17	3.11	0	ok
+09_	cdom-pertext	3.11	4.85	0	ok
+09_	cdom-notpl	3.56	3.47	50	ok
+09_	wasm-bindgen	3.47	3.44	0	ok
+09_	dioxus	3.44	5.46	0	ok
+21_	vanillajs	3.82	3.46	30	ok
+21_	react-hooks	3.46	3.05	0	ok
+21_	cdom	3.05	3.05	0	ok
+21_	cdom-pertext	3.05	2.59	0	ok
+21_	cdom-notpl	2.59	2.56	0	ok
+21_	wasm-bindgen	2.56	2.45	0	ok
+21_	dioxus	2.45	1.97	0	ok
+22_	vanillajs	1.97	1.76	0	ok
+22_	react-hooks	1.76	1.93	0	ok
+22_	cdom	1.93	1.82	0	ok
+22_	cdom-pertext	1.82	1.79	0	ok
+22_	cdom-notpl	1.79	2.20	0	ok
+22_	wasm-bindgen	2.20	1.93	0	ok
+22_	dioxus	1.93	2.01	0	ok
+25_	vanillajs	2.01	1.98	0	ok
+25_	react-hooks	1.98	2.11	0	ok
+25_	cdom	2.11	2.06	0	ok
+25_	cdom-pertext	2.06	1.97	0	ok
+25_	cdom-notpl	1.97	2.59	0	ok
+25_	wasm-bindgen	2.59	2.20	0	ok
+25_	dioxus	2.20	1.94	0	ok
+40_	vanillajs	1.94	1.94	0	ok
+40_	react-hooks	1.94	2.19	0	ok
+40_	cdom	2.19	2.19	0	ok
+40_	cdom-pertext	2.19	2.19	0	ok
+40_	cdom-notpl	2.19	2.73	0	ok
+40_	wasm-bindgen	2.73	2.73	0	ok
+40_	dioxus	2.73	2.68	0	ok
+01_	vanillajs	2.25	2.13	0	ok	p2
+01_	react-hooks	2.13	2.02	0	ok	p2
+01_	cdom	2.02	2.49	0	ok	p2
+01_	cdom-pertext	2.49	2.85	0	ok	p2
+01_	cdom-notpl	2.85	5.02	0	ok	p2
+01_	wasm-bindgen	3.95	3.40	20	ok	p2
+01_	dioxus	3.40	4.06	0	ok	p2
+02_	vanillajs	3.82	3.50	10	ok	p2
+02_	react-hooks	3.50	3.51	0	ok	p2
+02_	cdom	3.51	3.79	0	ok	p2
+02_	cdom-pertext	3.79	4.12	0	ok	p2
+02_	cdom-notpl	3.72	3.16	10	ok	p2
+02_	wasm-bindgen	3.16	2.91	0	ok	p2
+02_	dioxus	2.91	2.70	0	ok	p2
+03_	vanillajs	2.70	3.96	0	ok	p2
+03_	react-hooks	3.96	3.10	0	ok	p2
+03_	cdom	3.10	2.86	0	ok	p2
+03_	cdom-pertext	2.86	3.68	0	ok	p2
+03_	cdom-notpl	3.68	3.25	0	ok	p2
+03_	wasm-bindgen	3.25	3.31	0	ok	p2
+03_	dioxus	3.31	3.06	0	ok	p2
+04_	vanillajs	3.06	4.42	0	ok	p2
+04_	react-hooks	3.63	2.90	20	ok	p2
+04_	cdom	2.90	3.40	0	ok	p2
+04_	cdom-pertext	3.40	2.70	0	ok	p2
+04_	cdom-notpl	2.70	1.95	0	ok	p2
+04_	wasm-bindgen	1.95	2.40	0	ok	p2
+04_	dioxus	2.40	2.41	0	ok	p2
+05_	vanillajs	2.41	3.29	0	ok	p2
+05_	react-hooks	3.29	2.96	0	ok	p2
+05_	cdom	2.96	2.99	0	ok	p2
+05_	cdom-pertext	2.99	2.86	0	ok	p2
+05_	cdom-notpl	2.86	3.22	0	ok	p2
+05_	wasm-bindgen	3.22	2.77	0	ok	p2
+05_	dioxus	2.95	2.38	0	ok	p2
+06_	vanillajs	2.38	2.15	0	ok	p2
+06_	react-hooks	2.15	2.92	0	ok	p2
+06_	cdom	2.92	2.61	0	ok	p2
+06_	cdom-pertext	2.61	2.44	0	ok	p2
+06_	cdom-notpl	2.44	2.63	0	ok	p2
+06_	wasm-bindgen	2.63	2.28	0	ok	p2
+06_	dioxus	2.28	2.26	0	ok	p2
+07_	vanillajs	2.26	2.31	0	ok	p2
+07_	react-hooks	2.31	2.33	0	ok	p2
+07_	cdom	2.33	3.00	0	ok	p2
+07_	cdom-pertext	3.00	4.22	0	ok	p2
+07_	cdom-notpl	3.81	3.25	10	ok	p2
+07_	wasm-bindgen	3.25	2.69	0	ok	p2
+07_	dioxus	2.69	2.85	0	ok	p2
+08_	vanillajs	2.85	2.99	0	ok	p2
+08_	react-hooks	2.99	2.95	0	ok	p2
+08_	cdom	2.95	2.69	0	ok	p2
+08_	cdom-pertext	2.69	2.87	0	ok	p2
+08_	cdom-notpl	2.87	2.37	0	ok	p2
+08_	wasm-bindgen	2.37	2.67	0	ok	p2
+08_	dioxus	2.67	2.67	0	ok	p2
+09_	vanillajs	2.67	2.38	0	ok	p2
+09_	react-hooks	2.38	3.57	0	ok	p2
+09_	cdom	3.57	2.94	0	ok	p2
+09_	cdom-pertext	2.94	2.98	0	ok	p2
+09_	cdom-notpl	2.98	3.13	0	ok	p2
+09_	wasm-bindgen	3.13	3.70	0	ok	p2
+09_	dioxus	3.70	3.21	0	ok	p2
+21_	vanillajs	3.21	2.36	0	ok	mem
+21_	react-hooks	2.36	2.47	0	ok	mem
+21_	cdom	2.47	2.78	0	ok	mem
+21_	cdom-pertext	2.78	2.68	0	ok	mem
+21_	cdom-notpl	2.68	3.23	0	ok	mem
+21_	wasm-bindgen	3.23	2.57	0	ok	mem
+21_	dioxus	2.57	7.02	0	ok	mem
+22_	vanillajs	3.92	4.34	110	ok	mem
+22_	react-hooks	3.94	3.74	60	ok	mem
+22_	cdom	3.74	2.45	0	ok	mem
+22_	cdom-pertext	2.45	2.95	0	ok	mem
+22_	cdom-notpl	2.95	2.91	0	ok	mem
+22_	wasm-bindgen	2.91	2.27	0	ok	mem
+22_	dioxus	2.27	4.07	0	ok	mem
+25_	vanillajs	3.61	2.73	50	ok	mem
+25_	react-hooks	2.73	2.47	0	ok	mem
+25_	cdom	2.47	2.35	0	ok	mem
+25_	cdom-pertext	2.35	2.94	0	ok	mem
+25_	cdom-notpl	2.94	2.61	0	ok	mem
+25_	wasm-bindgen	2.61	3.52	0	ok	mem
+25_	dioxus	3.52	3.19	0	ok	mem
+40_	vanillajs	3.19	3.89	0	ok	fp1
+40_	react-hooks	3.89	3.89	0	ok	fp1
+40_	cdom	3.89	3.90	0	ok	fp1
+40_	cdom-pertext	3.90	3.90	0	ok	fp1
+40_	cdom-notpl	3.90	3.67	0	ok	fp1
+40_	wasm-bindgen	3.67	3.67	0	ok	fp1
+40_	dioxus	3.67	3.61	0	ok	fp1
+40_	vanillajs	3.61	3.61	0	ok	fp2
+40_	react-hooks	3.61	3.61	0	ok	fp2
+40_	cdom	3.61	3.48	0	ok	fp2
+40_	cdom-pertext	3.48	3.48	0	ok	fp2
+40_	cdom-notpl	3.48	3.36	0	ok	fp2
+40_	wasm-bindgen	3.36	3.36	0	ok	fp2
+40_	dioxus	3.36	3.26	0	ok	fp2
+40_	vanillajs	3.26	3.26	0	ok	fp3
+40_	react-hooks	3.26	3.40	0	ok	fp3
+40_	cdom	3.40	3.40	0	ok	fp3
+40_	cdom-pertext	3.40	3.40	0	ok	fp3
+40_	cdom-notpl	3.40	3.52	0	ok	fp3
+40_	wasm-bindgen	3.52	3.52	0	ok	fp3
+40_	dioxus	3.52	3.48	0	ok	fp3
+40_	vanillajs	3.48	3.48	0	ok	fp4
+40_	react-hooks	3.48	4.64	0	ok	fp4
+40_	cdom	3.90	3.90	30	ok	fp4
+40_	cdom-pertext	3.90	3.75	0	ok	fp4
+40_	cdom-notpl	3.75	3.75	0	ok	fp4
+40_	wasm-bindgen	3.75	3.77	0	ok	fp4
+40_	dioxus	3.77	3.77	0	ok	fp4
+40_	vanillajs	3.77	3.71	0	ok	fp5
+40_	react-hooks	3.71	3.71	0	ok	fp5
+40_	cdom	3.71	3.71	0	ok	fp5
+40_	cdom-pertext	3.71	3.65	0	ok	fp5
+40_	cdom-notpl	3.65	3.65	0	ok	fp5
+40_	wasm-bindgen	3.65	4.32	0	ok	fp5
+40_	dioxus	3.89	3.89	10	ok	fp5

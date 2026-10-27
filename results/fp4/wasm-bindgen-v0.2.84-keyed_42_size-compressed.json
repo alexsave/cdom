@@ -1,0 +1,1 @@
+{"framework":"wasm-bindgen-v0.2.84-keyed","keyed":true,"benchmark":"42_size-compressed","type":"size","values":{"DEFAULT":{"min":14.5,"max":14.5,"median":14.5,"mean":14.5,"stddev":null,"values":[14.5]}}}

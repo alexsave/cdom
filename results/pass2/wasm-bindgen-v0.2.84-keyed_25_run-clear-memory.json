@@ -1,0 +1,1 @@
+{"framework":"wasm-bindgen-v0.2.84-keyed","keyed":true,"benchmark":"25_run-clear-memory","type":"memory","values":{"DEFAULT":{"min":0.690068244934082,"max":0.690068244934082,"median":0.690068244934082,"mean":0.690068244934082,"stddev":null,"values":[0.690068244934082]}}}

@@ -1,0 +1,1 @@
+{"framework":"cdom-v0.1.0-keyed","keyed":true,"benchmark":"22_run-memory","type":"memory","values":{"DEFAULT":{"min":1.8434991836547852,"max":1.8434991836547852,"median":1.8434991836547852,"mean":1.8434991836547852,"stddev":null,"values":[1.8434991836547852]}}}
