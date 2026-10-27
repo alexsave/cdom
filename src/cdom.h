@@ -63,16 +63,23 @@ void cd_set_class(cd_id id, cd_str value);
 void cd_remove(cd_id id);            /* detach and free the id */
 void cd_move(cd_id id, cd_id before);
 void cd_clear(cd_id id);             /* drop all children; caller frees their ids */
+void cd_detach(cd_id id);            /* take a node out of the document, remembering its place */
+void cd_attach(cd_id id);            /* put it back where it was */
 void cd_flush(void);
 
 /* events: the app implements this; the shim fills the record */
-typedef struct { int32_t type, id, x, y, button, key, mods, pad; } cd_event_rec;
+/* id is the nearest listening ancestor-or-self of the target. path holds the
+ * element-child indices from that node down toward the target, one byte per
+ * level (byte 0 = which child of the listener), for depth levels (max 4). */
+typedef struct { int32_t type, id, x, y, button, key, mods, path, depth; } cd_event_rec;
 void cd_on_event(const cd_event_rec *e);
 void cd_main(void);                  /* the app's entry, called once at start */
 uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap); /* copy an input's value on demand */
 
 /* keyed list */
 typedef struct { uint32_t key; cd_id node; uint32_t data; } cd_item;
+/* owns_parent: the list is the parent's only content, so a full clear is one op
+ * and a large first fill builds off-document. */
 typedef struct { cd_item *items; uint32_t n, cap; cd_id parent; int owns_parent; } cd_list;
 typedef struct {
   void *ctx;

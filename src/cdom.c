@@ -59,7 +59,8 @@ void *cd_realloc(void *p, uint32_t n) {
 enum {
   OP_AT = 1, OP_OPEN, OP_CLOSE, OP_TEXT, OP_TEXT_NUM, OP_ATTR, OP_CLASS, OP_NAME, OP_LISTEN,
   OP_VALUE, OP_VALUE_NUM, OP_TPL_SAVE, OP_CLONE, OP_DOWN, OP_NEXT, OP_UP, OP_SET_TEXT,
-  OP_SET_TEXT_NUM, OP_SET_ATTR, OP_SET_CLASS, OP_REMOVE, OP_FREE, OP_MOVE, OP_CLEAR
+  OP_SET_TEXT_NUM, OP_SET_ATTR, OP_SET_CLASS, OP_REMOVE, OP_FREE, OP_MOVE, OP_CLEAR, OP_DETACH,
+  OP_ATTACH
 };
 
 #define OPS_CAP (1u << 16)
@@ -225,6 +226,8 @@ void cd_set_attr(cd_id id, cd_str name, cd_str v) {
 void cd_set_class(cd_id id, cd_str v) { reserve(1, 2, slen(v), 1); O(OP_SET_CLASS); A(id); A(ref_text(v)); }
 void cd_move(cd_id id, cd_id before) { reserve(1, 2, 0, 0); O(OP_MOVE); A(id); A(before); }
 void cd_clear(cd_id id) { reserve(1, 1, 0, 0); O(OP_CLEAR); A(id); }
+void cd_detach(cd_id id) { reserve(1, 1, 0, 0); O(OP_DETACH); A(id); }
+void cd_attach(cd_id id) { reserve(1, 1, 0, 0); O(OP_ATTACH); A(id); }
 
 /* ---- node ids ---- */
 static cd_id next_id = 1;
@@ -286,6 +289,11 @@ EXPORT("cd_event") void cd_event(void) {
   cd_on_event(&inbox);
   cd_flush();
 }
+
+/* A first fill this large builds off-document and attaches once. */
+#ifndef CD_DETACH_MIN
+#define CD_DETACH_MIN 64
+#endif
 
 /* ---- keyed list diff: common prefix and suffix, then a key map and an
  * LIS so only nodes off the longest increasing run move ---- */
@@ -362,70 +370,107 @@ void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_
   cd_item *old = L->items;
   uint32_t on = L->n;
   cd_item *nw = cd_alloc((n ? n : 1) * sizeof(cd_item));
-  uint32_t s = 0, oe = on, ne = n;
+  uint32_t os = 0, oe = on, ns = 0, ne = n;
 
-  while (s < on && s < n && old[s].key == keys[s]) {
-    nw[s] = old[s];
-    f->patch(f->ctx, s, &nw[s]);
-    s++;
-  }
-  while (oe > s && ne > s && old[oe - 1].key == keys[ne - 1]) {
-    nw[ne - 1] = old[oe - 1];
-    f->patch(f->ctx, ne - 1, &nw[ne - 1]);
-    oe--;
-    ne--;
+  /* Trim matching heads and tails. A head that became the tail (or the
+   * reverse) moves in one op, but only when another survivor sits next to it
+   * in both lists: then it is out of order with every other survivor, so no
+   * longest in-order run can keep it and the move is one the LIS would make. */
+  for (;;) {
+    while (os < oe && ns < ne && old[os].key == keys[ns]) {
+      nw[ns] = old[os++];
+      f->patch(f->ctx, ns, &nw[ns]);
+      ns++;
+    }
+    while (os < oe && ns < ne && old[oe - 1].key == keys[ne - 1]) {
+      nw[--ne] = old[--oe];
+      f->patch(f->ctx, ne, &nw[ne]);
+    }
+    if (oe - os < 2 || ne - ns < 2) break;
+    int head_to_tail = old[os].key == keys[ne - 1];
+    int tail_to_head = old[oe - 1].key == keys[ns];
+    if (head_to_tail && tail_to_head && oe - os > 2 && ne - ns > 2 && old[os + 1].key == keys[ns + 1]) {
+      cd_move(old[os].node, ne < n ? nw[ne].node : 0); /* a swap of the two ends */
+      cd_move(old[oe - 1].node, old[os + 1].node);
+      nw[--ne] = old[os++];
+      f->patch(f->ctx, ne, &nw[ne]);
+      nw[ns] = old[--oe];
+      f->patch(f->ctx, ns, &nw[ns]);
+      ns++;
+      continue;
+    }
+    if (head_to_tail && old[os + 1].key == keys[ns]) {
+      cd_move(old[os].node, ne < n ? nw[ne].node : 0);
+      nw[--ne] = old[os++];
+      f->patch(f->ctx, ne, &nw[ne]);
+      continue;
+    }
+    if (tail_to_head && old[oe - 2].key == keys[ne - 1]) {
+      cd_move(old[oe - 1].node, old[os].node);
+      nw[ns] = old[--oe];
+      f->patch(f->ctx, ns, &nw[ns]);
+      ns++;
+      continue;
+    }
+    break;
   }
 
-  if (s == oe) { /* only inserts */
+  if (os == oe) { /* only inserts */
     cd_id before = ne < n ? nw[ne].node : 0;
-    for (uint32_t i = s; i < ne; i++) {
+    int off = L->owns_parent && on == 0 && n >= CD_DETACH_MIN;
+    if (off) cd_detach(L->parent);
+    for (uint32_t i = ns; i < ne; i++) {
       cd_at(L->parent, before);
       nw[i].key = keys[i];
       nw[i].node = f->create(f->ctx, i, &nw[i].data);
     }
-  } else if (s == ne) { /* only removes */
+    if (off) cd_attach(L->parent);
+  } else if (ns == ne) { /* only removes */
     if (L->owns_parent && n == 0) {
       cd_clear(L->parent);
-      for (uint32_t i = s; i < oe; i++) drop(L, &old[i], f, 0);
+      for (uint32_t i = os; i < oe; i++) drop(L, &old[i], f, 0);
     } else {
-      for (uint32_t i = s; i < oe; i++) drop(L, &old[i], f, 1);
+      for (uint32_t i = os; i < oe; i++) drop(L, &old[i], f, 1);
     }
   } else {
-    uint32_t m = ne - s;
+    uint32_t m = ne - ns;
     scratch(m);
     for (uint32_t i = 0; i < m; i++) {
-      map_put(keys[s + i], s + i);
+      map_put(keys[ns + i], ns + i);
       scr_src[i] = -1;
     }
     /* Replacing the whole list with all new keys: one clear beats n removes. */
-    int whole = L->owns_parent && s == 0 && oe == on && ne == n;
+    int whole = L->owns_parent && os == 0 && oe == on && ns == 0 && ne == n;
     if (whole)
       for (uint32_t i = 0; i < on && whole; i++) whole = map_get(old[i].key) == 0xffffffffu;
     if (whole) {
       cd_clear(L->parent);
       for (uint32_t i = 0; i < on; i++) drop(L, &old[i], f, 0);
+      int off = n >= CD_DETACH_MIN;
+      if (off) cd_detach(L->parent);
       for (uint32_t i = 0; i < n; i++) {
         cd_at(L->parent, 0);
         nw[i].key = keys[i];
         nw[i].node = f->create(f->ctx, i, &nw[i].data);
       }
+      if (off) cd_attach(L->parent);
     } else {
       int moved = 0;
       uint32_t last = 0;
-      for (uint32_t i = s; i < oe; i++) {
+      for (uint32_t i = os; i < oe; i++) {
         uint32_t j = map_get(old[i].key);
         if (j == 0xffffffffu) {
           drop(L, &old[i], f, 1);
           continue;
         }
-        scr_src[j - s] = (int32_t)i;
+        scr_src[j - ns] = (int32_t)i;
         nw[j] = old[i];
         f->patch(f->ctx, j, &nw[j]);
         if (j < last) moved = 1; else last = j;
       }
       if (moved) lis_mark(scr_src, m, scr_tails, scr_pred);
       for (uint32_t k = m; k-- > 0;) {
-        uint32_t pos = s + k;
+        uint32_t pos = ns + k;
         cd_id before = pos + 1 < n ? nw[pos + 1].node : 0;
         if (scr_src[k] < 0) {
           cd_at(L->parent, before);

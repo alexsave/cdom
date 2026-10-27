@@ -1,0 +1,36 @@
+<!doctype html><html><head><meta charset="utf-8"><title>listfuzz</title></head><body><div id="m"></div>
+<script src="cdom.js"></script><script>
+let prev = new Map(), errors = [], rounds = 0, moves = 0, prevKeys = [];
+// Count moves: an insertBefore of a node that is already a child of the list.
+const ib = Node.prototype.insertBefore;
+Node.prototype.insertBefore = function (n, r) { if (n.parentNode === this && this.tagName === 'UL') moves++; return ib.call(this, n, r); };
+function lisLen(a) { const t = []; for (const v of a) { let lo = 0, hi = t.length; while (lo < hi) { const m = (lo + hi) >> 1; if (t[m] < v) lo = m + 1; else hi = m; } t[lo] = v; } return t.length; }
+const env = { check(p, n, round) {
+  rounds++;
+  const keys = new Uint32Array(window.__x.memory.buffer, p, n);
+  const lis = document.querySelectorAll('#m ul > li');
+  const now = new Map();
+  if (lis.length !== n) errors.push(`round ${round}: ${lis.length} nodes, want ${n}`);
+  for (let i = 0; i < Math.min(n, lis.length); i++) {
+    if (lis[i].textContent !== String(keys[i])) { errors.push(`round ${round}: [${i}] = ${lis[i].textContent}, want ${keys[i]}`); break; }
+    now.set(keys[i], lis[i]);
+    if (prev.has(keys[i]) && prev.get(keys[i]) !== lis[i]) { errors.push(`round ${round}: key ${keys[i]} lost its node`); break; }
+  }
+  // Moves must not exceed survivors minus the longest run already in order.
+  const oldPos = new Map(prevKeys.map((k, i) => [k, i]));
+  const surv = [...keys].filter(k => oldPos.has(k)).map(k => oldPos.get(k));
+  if (moves > surv.length - lisLen(surv)) errors.push(`round ${round}: ${moves} moves, bound ${surv.length - lisLen(surv)}`);
+  moves = 0; prevKeys = [...keys];
+  prev = now;
+  if (errors.length > 5) throw new Error(errors.join('\n'));
+} };
+cdom.start('listfuzz.wasm', document.getElementById('m'), env).then(x => { window.__x = x; x.run_fuzz(+(new URLSearchParams(location.search).get('seed') || 1), 20000);
+    const want = ['plain', 'h\u00e9llo', '\u65e5\u672c', '\u{1F600}x', ''];
+    for (const big of [0, 1]) {
+      x.run_strings(big);
+      const got = [...document.querySelectorAll('#m > p:last-child > b')].map(b => b.textContent);
+      const exp = []; for (let r = 0; r < (big ? 20 : 1); r++) for (const w of want) exp.push(w + String.fromCharCode(97 + r % 26));
+      if (got.join('|') !== exp.join('|')) errors.push(`strings big=${big}: ${got.slice(0, 6).join('|')}`);
+    } })
+  .catch(e => errors.push(String(e))).finally(() => { window.RESULT = { rounds, errors }; });
+</script></body></html>

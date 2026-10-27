@@ -42,15 +42,21 @@ var cdom = (() => {
     on[type] = 1;
     const bit = 1 << type, top = nodes[0];
     top.addEventListener(EVENTS[type], (e) => {
+      let path = 0, depth = 0;
       for (let n = e.target; n && n !== top; n = n.parentNode) {
-        if (!(n.$l & bit)) continue;
-        if (buf !== mem.buffer) views();
-        const k = INBOX >> 2;
-        i32[k] = type; i32[k + 1] = n.$i; i32[k + 2] = e.clientX | 0; i32[k + 3] = e.clientY | 0;
-        i32[k + 4] = e.button | 0; i32[k + 5] = e.keyCode | 0;
-        i32[k + 6] = e.shiftKey | (e.ctrlKey << 1) | (e.altKey << 2) | (e.metaKey << 3);
-        x.cd_event();
-        return;
+        if (n.$l & bit) {
+          if (buf !== mem.buffer) views();
+          const k = INBOX >> 2;
+          i32[k] = type; i32[k + 1] = n.$i; i32[k + 2] = e.clientX | 0; i32[k + 3] = e.clientY | 0;
+          i32[k + 4] = e.button | 0; i32[k + 5] = e.keyCode | 0;
+          i32[k + 6] = e.shiftKey | (e.ctrlKey << 1) | (e.altKey << 2) | (e.metaKey << 3);
+          i32[k + 7] = path; i32[k + 8] = depth;
+          x.cd_event();
+          return;
+        }
+        let i = 0;
+        for (let s = n.previousElementSibling; s; s = s.previousElementSibling) i++;
+        path = (path << 8) | (i & 255); depth++;
       }
     });
   }
@@ -85,6 +91,8 @@ var cdom = (() => {
         case 22: nodes[u32[q++]] = undefined; break; // FREE
         case 23: el = nodes[u32[q++]]; n = u32[q++]; el.parentNode.insertBefore(el, n ? nodes[n] : null); break; // MOVE
         case 24: nodes[u32[q++]].textContent = ""; break; // CLEAR
+        case 25: el = nodes[u32[q++]]; el.$p = el.parentNode; el.$s = el.nextSibling; el.remove(); break; // DETACH
+        case 26: el = nodes[u32[q++]]; el.$p.insertBefore(el, el.$s); el.$p = el.$s = null; break; // ATTACH
         default: throw new Error("cdom: bad op " + u8[p] + " at " + (p - OPS));
       }
     }
@@ -96,9 +104,9 @@ var cdom = (() => {
     return r.written;
   }
 
-  async function start(url, mount) {
+  async function start(url, mount, env) {
     nodes[0] = mount;
-    const imports = { cdom: { apply, value } };
+    const imports = { cdom: { apply, value }, env: env || {} };
     const res = fetch(url);
     const { instance } = WebAssembly.instantiateStreaming
       ? await WebAssembly.instantiateStreaming(res, imports)

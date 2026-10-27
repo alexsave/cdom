@@ -3,3 +3,4 @@ jfb/
 .server.pid
 results/raw/
 *.tmp
+tests/out/

@@ -54,7 +54,7 @@ static void build(uint32_t count) {
 }
 
 /* ---- view ---- */
-typedef struct { cd_id text; cd_id a1, a2; cd_str label; uint8_t sel; } RowView;
+typedef struct { cd_id text; cd_str label; uint8_t sel; } RowView;
 static RowView *views;
 static uint32_t nviews, views_cap, *free_views, nfree_views;
 static cd_list list;
@@ -80,30 +80,26 @@ static cd_id row_create(void *ctx, uint32_t i, uint32_t *data) {
   RowView *v = &views[vi];
   cd_id tr = cd_id_new();
   v->text = cd_id_new();
-  v->a1 = cd_id_new();
-  v->a2 = cd_id_new();
   v->label = r->label;
   v->sel = r->id == selected;
-  cd_tag_set(v->a1, K_ROW | (r->id << 1));
-  cd_tag_set(v->a2, K_ROW | (r->id << 1) | 1);
+  cd_tag_set(tr, K_ROW | r->id); /* a click reports which cell: 1 label, 2 remove */
 #if CDOM_TEMPLATES
   cd_clone(T_ROW);
-  cd_name(tr);
+  cd_listen(tr, CD_EV_CLICK);
   if (v->sel) cd_class(S_DANGER);
   cd_down(); cd_down(); cd_value_num(r->id); cd_up();     /* td.col-md-1 > id */
-  cd_next(); cd_down(); cd_listen(v->a1, CD_EV_CLICK);    /* td.col-md-4 > a */
-  cd_down(); cd_value(r->label); cd_name(v->text); cd_up(); cd_up();
-  cd_next(); cd_down(); cd_listen(v->a2, CD_EV_CLICK);    /* td.col-md-1 > a */
+  cd_next(); cd_down(); cd_down();                        /* td.col-md-4 > a > text */
+  cd_value(r->label); cd_name(v->text);
   cd_close();
 #else
-  cd_open(S_TR); cd_name(tr);
+  cd_open(S_TR); cd_listen(tr, CD_EV_CLICK);
   if (v->sel) cd_class(S_DANGER);
   cd_open(S_TD); cd_class(S_COL1); cd_text_num(r->id); cd_close();
   cd_open(S_TD); cd_class(S_COL4);
-  cd_open(S_A); cd_listen(v->a1, CD_EV_CLICK); cd_text(r->label); cd_name(v->text); cd_close();
+  cd_open(S_A); cd_text(r->label); cd_name(v->text); cd_close();
   cd_close();
   cd_open(S_TD); cd_class(S_COL1);
-  cd_open(S_A); cd_listen(v->a2, CD_EV_CLICK);
+  cd_open(S_A);
   cd_open(S_SPAN); cd_class(S_REMOVE); cd_attr(S_ARIA, S_TRUE); cd_close();
   cd_close();
   cd_close();
@@ -133,8 +129,6 @@ static void row_destroy(void *ctx, cd_item *it) {
   (void)ctx;
   RowView *v = &views[it->data];
   cd_id_free(v->text);
-  cd_id_free(v->a1);
-  cd_id_free(v->a2);
   free_views[nfree_views++] = it->data;
 }
 
@@ -146,7 +140,7 @@ static void render(void) {
 }
 
 /* ---- actions ---- */
-static void act(uint32_t k) {
+static void act(uint32_t k, uint32_t cell) {
   switch (k) {
   case K_RUN: nrows = 0; build(1000); selected = 0; break;
   case K_RUNLOTS: nrows = 0; build(10000); selected = 0; break;
@@ -168,15 +162,15 @@ static void act(uint32_t k) {
     break;
   default:
     if (k & K_ROW) {
-      uint32_t id = (k & ~K_ROW) >> 1;
-      if (k & 1) {
+      uint32_t id = k & ~K_ROW;
+      if (cell == 2) {
         for (uint32_t i = 0; i < nrows; i++)
           if (rows[i].id == id) {
             for (uint32_t j = i + 1; j < nrows; j++) rows[j - 1] = rows[j];
             nrows--;
             break;
           }
-      } else {
+      } else if (cell == 1) {
         selected = id;
       }
     }
@@ -185,7 +179,7 @@ static void act(uint32_t k) {
 }
 
 void cd_on_event(const cd_event_rec *e) {
-  if (e->type == CD_EV_CLICK) act(cd_tag((cd_id)e->id));
+  if (e->type == CD_EV_CLICK) act(cd_tag((cd_id)e->id), e->depth ? (uint32_t)e->path & 255 : 0xff);
 }
 
 /* ---- the page ---- */
