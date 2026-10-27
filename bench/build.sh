@@ -30,6 +30,8 @@ JSON
   printf '%s %s: %s bytes, %s gz\n' "$name" "$OPT" "$(wc -c < "$out/app.wasm" | tr -d ' ')" "$(gzip -9c "$out/app.wasm" | wc -c | tr -d ' ')"
 }
 
+# NAME=x builds only the default entry, as jfb/frameworks/keyed/x (for side-by-side work).
+if [ -n "${NAME:-}" ]; then build "$NAME" "interned strings, templates"; exit 0; fi
 build cdom "interned strings, templates"
 build cdom-pertext "per-op strings, templates" -DCDOM_INTERN_TEXT=0
 build cdom-notpl "interned strings, no templates" -DCDOM_TEMPLATES=0

@@ -3,7 +3,7 @@ import { launch, sleep } from './cdp.mjs';
 const [name, setup, sel, reps] = [process.argv[2], process.argv[3], process.argv[4], +(process.argv[5] || 10)];
 const b = await launch();
 try {
-  await b.send('Page.navigate', { url: `http://localhost:8093/frameworks/keyed/${name}/index.html` });
+  await b.send('Page.navigate', { url: `http://localhost:${process.env.PORT || 8093}/frameworks/keyed/${name}/index.html` });
   for (let i = 0; i < 50 && !(await b.evaluate('!!document.getElementById("run")')); i++) await sleep(100);
   const loop = `(() => { const c = s => document.querySelector(s).click(); for (let i = 0; i < ${reps}; i++) { ${setup ? `c('${setup}');` : ''} c('${sel}'); } })()`;
   await b.evaluate(loop); // warm up

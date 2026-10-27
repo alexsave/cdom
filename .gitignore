@@ -5,3 +5,4 @@ results/raw/
 *.tmp
 tests/out/
 results/raw_*.log
+results/pairs/
