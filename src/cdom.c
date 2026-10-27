@@ -1,13 +1,32 @@
 /* cdom core: allocator, string intern, op stream, node ids, events, keyed diff. */
 #include "cdom.h"
 
+#ifdef __wasm__
 #define IMPORT(n) __attribute__((import_module("cdom"), import_name(n)))
+#define IMPORTS(n) IMPORT(n)
 #define EXPORT(n) __attribute__((export_name(n)))
+extern unsigned char __heap_base;
+static uintptr_t heap_start(void) { return (uintptr_t)&__heap_base; }
+static uintptr_t heap_limit(void) { return (uintptr_t)__builtin_wasm_memory_size(0) << 16; }
+static int grow(uint32_t pages) { return __builtin_wasm_memory_grow(0, pages) < 0; }
+#else /* native (SSR): imports are plain externs; one lazily committed 4 GiB reservation is the linear memory */
+#include <sys/mman.h>
+#define IMPORT(n)
+#define IMPORTS(n)
+#define EXPORT(n)
+static uintptr_t native_heap, native_used;
+static uintptr_t heap_start(void) {
+  void *p = mmap(0, (size_t)1 << 32, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+  if (p == MAP_FAILED) __builtin_trap();
+  return native_heap = (uintptr_t)p;
+}
+static uintptr_t heap_limit(void) { return native_heap + native_used; }
+static int grow(uint32_t pages) { native_used += (uintptr_t)pages << 16; return native_used > (uintptr_t)1 << 32; }
+#endif
 
 IMPORT("input") uint32_t js_input(cd_id id, char *dst, uint32_t cap);
 
 /* ---- memory: power-of-two size classes over memory.grow ---- */
-extern unsigned char __heap_base;
 static uintptr_t heap_ptr, heap_end;
 static void *free_lists[32];
 
@@ -20,13 +39,13 @@ void *cd_alloc(uint32_t n) {
     return p;
   }
   if (!heap_ptr) {
-    heap_ptr = ((uintptr_t)&__heap_base + 15) & ~(uintptr_t)15;
-    heap_end = (uintptr_t)__builtin_wasm_memory_size(0) << 16;
+    heap_ptr = (heap_start() + 15) & ~(uintptr_t)15;
+    heap_end = heap_limit();
   }
   uintptr_t need = heap_ptr + (1u << c);
   if (need > heap_end) {
     uint32_t pages = (uint32_t)((need - heap_end + 65535) >> 16);
-    if (__builtin_wasm_memory_grow(0, pages) < 0) __builtin_trap();
+    if (grow(pages)) __builtin_trap();
     heap_end += (uintptr_t)pages << 16;
   }
   uint32_t *h = (uint32_t *)heap_ptr;
@@ -60,7 +79,6 @@ void *cd_realloc(void *p, uint32_t n) {
  * right before the call that first needs them. Paired harness runs measured this against a
  * batched op list that the shim interpreted: the calls won on creates and clears
  * (PERF_LOG.md, the direct-call experiment), except for walks, which travel as one call. */
-#define IMPORTS(n) __attribute__((import_module("cdom"), import_name(n)))
 IMPORTS("strings") void j_strings(uint32_t n, uint32_t nbytes);
 IMPORTS("at") void j_at(cd_id parent, cd_id before);
 IMPORTS("open") void j_open(uint32_t tag);
@@ -100,7 +118,7 @@ static uint8_t sbytes[SB_CAP];
 static uint32_t smeta[SM_CAP * 3];
 static uint32_t nsb, nstrs, ntmp;
 static cd_event_rec inbox;
-static uint32_t layout[3];
+static uintptr_t layout[3]; /* uintptr_t is u32 in wasm; natively the sink reads real pointers */
 
 /* Decodes the pending strings in JS. */
 static void send_strings(void) {
@@ -338,10 +356,10 @@ uint32_t cd_tag(cd_id id) { return id < tags_cap ? tags[id] : 0; }
 uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap) { ready(); return js_input(id, dst, cap); }
 
 /* ---- entry points ---- */
-EXPORT("cd_layout") uint32_t *cd_layout(void) {
-  layout[0] = (uint32_t)(uintptr_t)sbytes;
-  layout[1] = (uint32_t)(uintptr_t)smeta;
-  layout[2] = (uint32_t)(uintptr_t)&inbox;
+EXPORT("cd_layout") uintptr_t *cd_layout(void) {
+  layout[0] = (uintptr_t)sbytes;
+  layout[1] = (uintptr_t)smeta;
+  layout[2] = (uintptr_t)&inbox;
   return layout;
 }
 
