@@ -51,3 +51,19 @@ Read it before touching anything.
 ## Milestone log
 
 (Entries are added by the orchestrator as each milestone lands.)
+
+### Milestone 1: server rendering from the same C, plus hydration (2026-10-27)
+
+Commits ba8ccde..e07cecd. Rebased onto perf 1a78a92.
+
+- `src/cdom.c` compiles natively (+28/-11: a 4 GiB lazily committed mmap stands in for linear memory; IMPORT/EXPORT expand to nothing). `app.wasm` is byte-identical before and after.
+- State API in cdom.h: `cd_state_save`/`cd_state_load` (weak defaults = no state), exports `cd_state_buf(len)` and `cd_start_state(len)` (returns 0 on success; the shim throws otherwise).
+- `src/cdom_html.{c,h}`: the native sink. All 27 ops into an arena tree, HTML out. `<!---->` before every text node that follows a text node; empty text nodes are the one creation hydration makes.
+- `src/httpd.{c,h}`: poll() HTTP/1.1 on 127.0.0.1, static files, GET/POST routes, keep-alive, 16 KiB head, 64 MiB body, traversal refused. 32 raw-socket checks, 11 mutants killed.
+- `ssr/rows/`: the rows app rendered by its own C. `GET /?n=` and `--render n`; each request renders in a forked child because the core keeps globals with no reset.
+- Shim: `start(url, mount, env, {hydrate: '<state element id>', verify})`. 126 -> 183 lines (6175 -> 9849 bytes, 2333 -> 3606 gz).
+- Tests (all mutation-checked, 30 SSR mutants + 11 httpd mutants killed): `--render` twice is byte-identical for n = 0/1000/10000; the client-rendered DOM seeded alike is byte-identical to the server HTML (215988 chars at n=1000); hydration creates 0 document nodes and adopts all 29/39/10029/100029 server nodes; `#main.outerHTML` unchanged; the page is live after; tests/conform.{c,mjs} runs the same ops through the shim and the sink over 308 steps and compares the DOM after each.
+- First paint (localhost, load ~3.9, medians of 5): n=1000 SSR JS-off 68-76 ms, SSR hydrated FCP 64-84 ms and interactive +24-39 ms (the hydrate call itself 3.1 ms); CSR rows painted 49-58 ms. n=10000: SSR 280-420 ms, hydrate call 18.7 ms, CSR rows 321-335 ms. On localhost SSR does not beat CSR to painted rows: the parser is slower than template cloning and there is no network to hide. A throttled-network run is what would show SSR's gain.
+- Bytes: page n=1000 248 KB (17.8 KB gz) of which the blob is 32 KB base64 (8.7 KB gz) duplicating the 8.2 KB gz of HTML; wasm 21528 (7003 gz).
+
+Open from M1, carried forward: a core reset/context so a server renders in-process; the op enum exists in three copies (cdom.c, shim, sink; perf's call); the blob duplicates DOM text; no OPEN_NS (SVG) and no property-set op yet; CLONE only places at depth 0.
