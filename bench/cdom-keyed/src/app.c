@@ -180,6 +180,65 @@ void cd_on_event(const cd_event_rec *e) {
   if (e->type == CD_EV_CLICK) act(cd_tag((cd_id)e->id), e->depth ? (uint32_t)e->path & 255 : 0xff);
 }
 
+/* ---- state: the model as one fixed little-endian blob. The server build saves
+ * it into the page; the browser build of this same C loads it and hydrates.
+ *   RowsHead, 16 bytes: rng, next_id, selected, nrows (u32 each)
+ *   then per row: id (u32), label length (u16), label bytes ---- */
+typedef struct { uint32_t rng, next_id, selected, nrows; } RowsHead;
+_Static_assert(sizeof(RowsHead) == 16, "RowsHead is four u32");
+static int loaded; /* the model came from a blob (or the server's fill): keep its rng */
+
+static void put16(uint8_t *d, uint32_t v) { d[0] = (uint8_t)v; d[1] = (uint8_t)(v >> 8); }
+static void put32(uint8_t *d, uint32_t v) { put16(d, v); put16(d + 2, v >> 16); }
+static uint32_t get16(const uint8_t *s) { return s[0] | (uint32_t)s[1] << 8; }
+static uint32_t get32(const uint8_t *s) { return get16(s) | get16(s + 2) << 16; }
+
+uint32_t cd_state_save(uint8_t *dst, uint32_t cap) {
+  uint32_t need = sizeof(RowsHead), len;
+  for (uint32_t i = 0; i < nrows; i++) { cd_bytes(rows[i].label, &len); need += 6 + len; }
+  if (need > cap) return need;
+  RowsHead h = {rng, next_id, selected, nrows};
+  put32(dst, h.rng); put32(dst + 4, h.next_id); put32(dst + 8, h.selected); put32(dst + 12, h.nrows);
+  uint8_t *d = dst + sizeof(RowsHead);
+  for (uint32_t i = 0; i < nrows; i++) {
+    const char *b = cd_bytes(rows[i].label, &len);
+    put32(d, rows[i].id); put16(d + 4, len);
+    for (uint32_t j = 0; j < len; j++) d[6 + j] = (uint8_t)b[j];
+    d += 6 + len;
+  }
+  return need;
+}
+
+int cd_state_load(const uint8_t *src, uint32_t len) {
+  if (len < sizeof(RowsHead)) return -1;
+  RowsHead h = {get32(src), get32(src + 4), get32(src + 8), get32(src + 12)};
+  if (!h.rng || h.nrows > (len - sizeof(RowsHead)) / 6) return -1;
+  reserve_rows(h.nrows);
+  uint32_t o = sizeof(RowsHead);
+  for (uint32_t i = 0; i < h.nrows; i++) {
+    if (len - o < 6) return -1;
+    uint32_t n = get16(src + o + 4);
+    if (len - o - 6 < n) return -1;
+    rows[i] = (Row){get32(src + o), cd_intern((const char *)src + o + 6, n)};
+    o += 6 + n;
+  }
+  if (o != len) return -1;
+  rng = h.rng; next_id = h.next_id; selected = h.selected; nrows = h.nrows;
+  loaded = 1;
+  return 0;
+}
+
+#ifndef __wasm__
+/* The server's model for a request: what "Create n rows" would make from cd_seed. */
+void app_ssr_fill(uint32_t n) {
+  rng = cd_seed | 1;
+  loaded = 1;
+  nrows = 0;
+  selected = 0;
+  build(n);
+}
+#endif
+
 /* ---- the page ---- */
 static cd_str z(const char *s) { return cd_internz(s); }
 
@@ -198,7 +257,7 @@ static void button(const char *id, const char *label, uint32_t k) {
 }
 
 void cd_main(void) {
-  rng = cd_seed | 1;
+  if (!loaded) rng = cd_seed | 1;
   S_TR = z("tr"); S_TD = z("td"); S_A = z("a"); S_SPAN = z("span");
   S_DANGER = z("danger"); S_EMPTY = z(""); S_SPACE = z(" ");
   S_COL1 = z("col-md-1"); S_COL4 = z("col-md-4"); S_COL6 = z("col-md-6");
@@ -243,4 +302,5 @@ void cd_main(void) {
   cd_open(S_SPAN); cd_class(z("preloadicon glyphicon glyphicon-remove")); cd_attr(S_ARIA, S_TRUE);
   cd_close();
   cd_close();
+  if (nrows) render(); /* a loaded model shows its rows: the server writes them, hydration walks them */
 }
