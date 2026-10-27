@@ -11,6 +11,10 @@ var cdom = (() => {
   let lmask = new Uint16Array(1024); // listened event types per node id
   let x, mem, buf, u8, u32, i32, SB, SM, INBOX;
   let sp = 0, last = null, root = null, base = DETACHED, ref = 0;
+  // Hydration (start's opts.hydrate): an op that would create a node under a parent in the
+  // document adopts the server's node there instead. hy: parent -> {n: next child, text}.
+  let hy = null, verify = false;
+  const stats = { created: 0, adopted: 0, templateNodes: 0 }, tsize = [];
 
   function views() {
     buf = mem.buffer;
@@ -41,6 +45,54 @@ var cdom = (() => {
     else if (base !== DETACHED) nodes[base].insertBefore(n, ref ? nodes[ref] : null);
   }
 
+  // ---- hydration: the first render adopts the server's DOM (each op below that creates,
+  // places or writes starts with `if (hy)` and comes here) ----
+  function bad(n, want) { throw new Error("cdom: hydration mismatch at " + (n ? n.nodeName : "the end") + ", want " + want); }
+  function into() { const p = sp ? stack[sp - 1] : base === DETACHED ? null : nodes[base]; return p && p.isConnected ? p : null; }
+  function cursor(p) { let c = hy.get(p); if (!c) hy.set(p, c = { n: p.firstChild, text: false }); return c; }
+  function adopt(p, tag) {
+    const c = cursor(p), n = c.n;
+    if (!n || n.nodeType !== 1 || (verify && n.localName !== tag.toLowerCase())) bad(n, tag);
+    c.n = n.nextSibling; c.text = false; stats.adopted++; return n;
+  }
+  function adoptText(p, s) {
+    const c = cursor(p);
+    if (c.text) { const m = c.n; if (!m || m.nodeType !== 8) bad(m, "<!---->"); c.n = m.nextSibling; m.remove(); }
+    c.text = true;
+    const n = c.n;
+    if (n && n.nodeType === 3) { if (verify && n.nodeValue !== String(s)) bad(n, s); c.n = n.nextSibling; stats.adopted++; return n; }
+    if (verify && String(s) !== "") bad(n, s); // an empty text node writes as nothing: create it
+    stats.created++; return p.insertBefore(doc.createTextNode(s), n);
+  }
+  function size(n) { let k = 1; for (let c = n.firstChild; c; c = c.nextSibling) k += size(c); return k; }
+  function same(a, b) {
+    if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName || a.childNodes.length !== b.childNodes.length) bad(a, b.nodeName);
+    for (let i = 0; i < a.childNodes.length; i++) same(a.childNodes[i], b.childNodes[i]);
+  }
+  function check(ok, n, want) { if (verify && !ok) bad(n, want); }
+  function hOpen(s) {
+    let el, h;
+    if ((h = into())) el = adopt(h, s);
+    else { el = doc.createElement(s); stats.templateNodes++; if (sp) stack[sp - 1].appendChild(el); }
+    stack[sp++] = el; last = el;
+  }
+  function hClose() { const el = stack[--sp]; if (!sp) { root = el; if (!el.isConnected) place(el); } }
+  function hText(s) {
+    const h = into();
+    if (h) last = adoptText(h, s);
+    else { last = doc.createTextNode(s); stats.templateNodes++; place(last); }
+  }
+  // ATTR, CLASS and VALUE on an adopted node: the server wrote them already.
+  function hAttr(a, v) { if (last.isConnected) check(last.getAttribute(a) === v, last, a + "=" + v); else last.setAttribute(a, v); }
+  function hClass(v) { if (last.isConnected) check(last.className === v, last, v); else last.className = v; }
+  function hValue(s) { if (last.isConnected) check(last.nodeType !== 3 || last.nodeValue === String(s), last, s); else last.nodeValue = s; }
+  function hClone(t) {
+    let el, h;
+    if (!sp && (h = into())) { el = adopt(h, tpl[t].localName); stats.adopted += tsize[t] - 1; if (verify) same(el, tpl[t]); }
+    else { el = tpl[t].cloneNode(true); stats.templateNodes += tsize[t]; }
+    stack[sp++] = el; last = el;
+  }
+
   function delegate(type) {
     on[type] = 1;
     const bit = 1 << type, top = nodes[0];
@@ -68,23 +120,23 @@ var cdom = (() => {
     if (buf !== mem.buffer) views();
     decode(n, nbytes);
   }
-  function at(p, b) { base = p >>> 0; ref = b; }
-  function open(t) { const el = doc.createElement(S(t)); if (sp) stack[sp - 1].appendChild(el); stack[sp++] = el; last = el; }
-  function close() { const el = stack[--sp]; if (!sp) { root = el; place(el); } }
-  function text(s) { last = doc.createTextNode(S(s)); place(last); }
-  function text_num(n) { last = doc.createTextNode(n >>> 0); place(last); }
-  function attr(a, v) { last.setAttribute(S(a), S(v)); }
-  function cls(v) { last.className = S(v); }
+  function at(p, b) { base = p >>> 0; ref = b; if (hy && ref && into()) bad(null, "an append"); }
+  function open(t) { if (hy) return hOpen(S(t)); const el = doc.createElement(S(t)); if (sp) stack[sp - 1].appendChild(el); stack[sp++] = el; last = el; }
+  function close() { if (hy) return hClose(); const el = stack[--sp]; if (!sp) { root = el; place(el); } }
+  function text(s) { if (hy) return hText(S(s)); last = doc.createTextNode(S(s)); place(last); }
+  function text_num(n) { if (hy) return hText(n >>> 0); last = doc.createTextNode(n >>> 0); place(last); }
+  function attr(a, v) { if (hy) return hAttr(S(a), S(v)); last.setAttribute(S(a), S(v)); }
+  function cls(v) { if (hy) return hClass(S(v)); last.className = S(v); }
   function name(n) { nodes[n] = last; }
   function listen(n, ev) {
     nodes[n] = last; last.$i = n;
     if (n >= lmask.length) { const g = new Uint16Array(n * 2); g.set(lmask); lmask = g; }
     lmask[n] |= 1 << ev; if (!on[ev]) delegate(ev);
   }
-  function value(s) { last.nodeValue = S(s); }
-  function value_num(n) { last.nodeValue = n >>> 0; }
-  function tpl_save(t) { tpl[t] = root; tslot[t] = slots; slots = []; root.remove(); }
-  function clone(t) { const el = tpl[t].cloneNode(true); stack[sp++] = el; last = el; }
+  function value(s) { if (hy) return hValue(S(s)); last.nodeValue = S(s); }
+  function value_num(n) { if (hy) return hValue(n >>> 0); last.nodeValue = n >>> 0; }
+  function tpl_save(t) { tpl[t] = root; if (hy) tsize[t] = size(root); tslot[t] = slots; slots = []; root.remove(); }
+  function clone(t) { if (hy) return hClone(t); const el = tpl[t].cloneNode(true); stack[sp++] = el; last = el; }
   function slot(k) { slots[k] = last; }
   function tpl_text(t, k, s) { tslot[t][k].nodeValue = S(s); }
   function tpl_text_num(t, k, n) { tslot[t][k].nodeValue = n >>> 0; }
@@ -95,8 +147,8 @@ var cdom = (() => {
     for (; n; n--, steps >>>= 2) el = (steps & 3) === 1 ? el.firstChild : (steps & 3) === 2 ? el.nextSibling : el.parentNode;
     last = el;
   }
-  function walk_value(from, steps, n, s) { walk(from, steps, n); last.nodeValue = S(s); }
-  function walk_value_num(from, steps, n, v) { walk(from, steps, n); last.nodeValue = v >>> 0; }
+  function walk_value(from, steps, n, s) { walk(from, steps, n); if (hy) return hValue(S(s)); last.nodeValue = S(s); }
+  function walk_value_num(from, steps, n, v) { walk(from, steps, n); if (hy) return hValue(v >>> 0); last.nodeValue = v >>> 0; }
   function set_text(id, s) { nodes[id].nodeValue = S(s); }
   function set_text_num(id, n) { nodes[id].nodeValue = n >>> 0; }
   function set_attr(id, a, v) { nodes[id].setAttribute(S(a), S(v)); }
@@ -105,8 +157,8 @@ var cdom = (() => {
   function free(id) { nodes[id] = undefined; lmask[id] = 0; }
   function move(id, b) { const el = nodes[id]; el.parentNode.insertBefore(el, b ? nodes[b] : null); }
   function clear(id) { nodes[id].textContent = ""; }
-  function detach(id) { const el = nodes[id]; el.$p = el.parentNode; el.$s = el.nextSibling; el.remove(); }
-  function attach(id) { const el = nodes[id]; el.$p.insertBefore(el, el.$s); el.$p = el.$s = null; }
+  function detach(id) { if (hy) return; const el = nodes[id]; el.$p = el.parentNode; el.$s = el.nextSibling; el.remove(); }
+  function attach(id) { if (hy) return; const el = nodes[id]; el.$p.insertBefore(el, el.$s); el.$p = el.$s = null; }
 
   function input(id, dst, cap) {
     const r = te.encodeInto(String(nodes[id].value ?? ""), new Uint8Array(mem.buffer, dst, cap));
@@ -115,7 +167,9 @@ var cdom = (() => {
 
   // mount is an element, or the id of one that may not be parsed yet: then the wasm loads
   // while the parser and the stylesheets run, and the app starts once the DOM is ready.
-  async function start(url, mount, env) {
+  // opts.hydrate: the id of the page's base64 state script; the first render then adopts the
+  // server's DOM under mount. opts.verify: also compare every tag, attribute and text.
+  async function start(url, mount, env, opts) {
     const imports = { cdom: { strings, at, open, close, text, text_num, attr, class: cls, name, listen, value,
       value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num, set_text,
       set_text_num, set_attr, set_class, remove, free, move, clear, detach, attach, input }, env: env || {} };
@@ -131,8 +185,19 @@ var cdom = (() => {
     x = instance.exports; mem = x.memory; views();
     const L = x.cd_layout() >> 2;
     [SB, SM, INBOX] = [u32[L], u32[L + 1], u32[L + 2]];
-    x.cd_start((Math.random() * 4294967296) >>> 0);
+    if (!opts || !opts.hydrate) { x.cd_start((Math.random() * 4294967296) >>> 0); api.stats = stats; return x; }
+    const b64 = doc.getElementById(opts.hydrate).textContent;
+    const blob = Uint8Array.fromBase64 ? Uint8Array.fromBase64(b64) : Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const dst = x.cd_state_buf(blob.length);
+    views(); u8.set(blob, dst);
+    hy = new Map(); verify = !!opts.verify;
+    try {
+      if (x.cd_start_state(blob.length)) throw new Error("cdom: the state blob did not load");
+      if (verify && size(mount) - 1 !== stats.adopted + stats.created) bad(mount, "every server node adopted");
+    } finally { hy = null; }
+    api.stats = stats; // set once started: {created, adopted, templateNodes} of the hydration
     return x;
   }
-  return { start };
+  const api = { start, stats: null };
+  return api;
 })();
