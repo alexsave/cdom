@@ -19,4 +19,6 @@ m src/cdom_html.c 's/\Qif (js) { put(w, s.p, s.len); break; }\E/if (1) { put(w, 
 m src/cdom_html.c 's/\Qif (t == V_OBJECT) {\E/if (0) {/' 'cdom_html: value is not exactly the words passed (host)'
 # per-op strings take ids above the interned ones, one each per batch
 m src/cdom.c 's/\Qreturn push_str(s, nstr_ids + ntmp++);\E/return push_str(s, nstr_ids + ntmp);/' 'FAIL case'
+# a template is built off the document
+m src/cdom.c 's/\Qif (at_parent != CD_DETACHED && at_parent != CD_DETACHED - 1) __builtin_trap();\E//' 'FAIL a template saved while cd_at points into the document traps'
 exit $bad

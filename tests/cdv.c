@@ -180,6 +180,9 @@ static void t_too_big(void) {
 }
 static void t_left_open(void) { cd_host(NODE, CD_HOST_SET, z("a")); cd_v_null(); cd_host(NODE, CD_HOST_SET, z("b")); }
 static void t_no_host(void) { cd_v_null(); }
+static void t_tpl_in_doc(void) { /* a template's root closed under the mount, then saved */
+  cd_at(CD_MOUNT, 0); cd_open(z("i")); cd_close(); cd_tpl_save(1);
+}
 static void t_good(void) { cd_host(NODE, CD_HOST_SET, z("a")); cd_v_arr(1); cd_v_obj(1); cd_v_key(z("k")); cd_v_null(); cd_host_end(); }
 
 static void prop_page(void) {
@@ -267,6 +270,7 @@ int main(int argc, char **argv) {
   ok(traps(t_left_open), "a host op begun while another is open traps");
   ok(traps(t_no_host), "a value outside a host op traps");
   ok(!traps(t_good), "a well-formed value does not trap");
+  ok(traps(t_tpl_in_doc), "a template saved while cd_at points into the document traps");
 
   cd_html_reset();
   prop_page();
