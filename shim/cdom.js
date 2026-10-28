@@ -2,9 +2,9 @@
 // cdom shim: C calls one of these functions per DOM operation, and the shim posts events back.
 // Fixed per app. Wasm passes i32, so ids and numbers that may pass 2^31 are made unsigned (>>> 0).
 var cdom = (() => {
-  const TRANSIENT = 0x40000000, DETACHED = 0xffffffff, SMALL = 64;
+  const DETACHED = 0xffffffff, SMALL = 64;
   const doc = document, td = new TextDecoder(), te = new TextEncoder();
-  const nodes = [], strs = [], tmp = [], tpl = [], stack = [];
+  const nodes = [], strs = [], tpl = [], stack = [];
   let x, mem, buf, u8, u32, i32, SB, SM, INBOX;
   let sp = 0, last = null, root = null, base = DETACHED, ref = 0;
   // Hydration (start's opts.hydrate): an op that would create a node under a parent in the
@@ -16,15 +16,14 @@ var cdom = (() => {
     buf = mem.buffer;
     u8 = new Uint8Array(buf); u32 = new Uint32Array(buf); i32 = new Int32Array(buf);
   }
-  const S = (a) => (a < TRANSIENT ? strs[a] : tmp[a - TRANSIENT]);
-  function put(dst, s) { if (dst < TRANSIENT) strs[dst] = s; else tmp[dst - TRANSIENT] = s; }
+  const S = (a) => strs[a];
 
   // Strings arrive together: one TextDecoder call per batch, and a char loop for tiny batches.
   function decode(n, nbytes) {
     let m = SM >> 2, o = 0;
     if (nbytes > SMALL) {
       const all = td.decode(u8.subarray(SB, SB + nbytes));
-      for (let i = 0; i < n; i++, m += 3) { const len = u32[m + 2]; put(u32[m], all.substring(o, o + len)); o += len; }
+      for (let i = 0; i < n; i++, m += 3) { const len = u32[m + 2]; strs[u32[m]] = all.substring(o, o + len); o += len; }
       return;
     }
     for (let i = 0, p = SB; i < n; i++, m += 3) {
@@ -32,7 +31,7 @@ var cdom = (() => {
       let s;
       if (nb === u32[m + 2]) { s = ""; for (let k = 0; k < nb; k++) s += String.fromCharCode(u8[p + k]); }
       else s = td.decode(u8.subarray(p, p + nb));
-      put(u32[m], s); p += nb;
+      strs[u32[m]] = s; p += nb;
     }
   }
 
