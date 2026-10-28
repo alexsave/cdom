@@ -138,3 +138,12 @@ Wanted:
 Test: the digits-but-not-3 field: type, paste "1234", drop, IME composition, an undo stack that still works (Ctrl+Z after a rejected key), mobile inputmode. Chrome and Firefox (Firefox 159 is installed, driven over BiDi). Mutation-checked.
 
 Also for the signals step: the select case (1000 compares of one list-wide binding per selection change) can be O(1) with a keyed selection: remember the previous selected key and patch only the old and the new item.
+
+Decision (Alex, 2026-10-28): templates accept INLINE C handler bodies, not only named functions.
+`<input on:beforeinput={ for (u32 i = 0; i < ev->len; i++) { char c = ev->data[i]; if (c < '0' || c > '9' || c == '3') return CD_PREVENT; } return CD_ALLOW; }>`
+- cdtc lifts each body into a static function with fixed parameters: the event, the state, and the each-item and key when inside an each. The handler signature is the API; document it in the generated header and at the top of cdtc.c.
+- Brace matching skips string and char literals and comments.
+- `#line` directives so clang errors and warnings point at the .cdt line; test it.
+- The return value is the cancel flags (CD_ALLOW, CD_PREVENT, stop-propagation bit). Named handlers (`on:click={row_click}`) keep working. The declarative `accept=` sugar becomes optional and compiles to the same kind of function plus inputmode and pattern.
+- Server side: the same lifted function links into the SSR build, so a no-JS form POST is re-validated on the server by the very same C; the gov-form step tests that.
+- The shim never sees handler bodies, only the flags.
