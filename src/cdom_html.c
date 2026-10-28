@@ -65,7 +65,6 @@ static uint32_t ids_cap, tpl_cap, stack_cap, sp;
 static hnode *last, *root;
 static uint32_t base = DETACHED, ref;
 static uint64_t applied; /* DOM calls since the last reset */
-static hnode *slots[CD_SLOTS], *tslot[CD_TPLS][CD_SLOTS]; /* the template being built's slots; each saved one's */
 
 static void *grow_array(void *a, uint32_t *cap, uint32_t need, size_t el) {
   if (need < *cap) return a;
@@ -233,8 +232,6 @@ void cd_html_reset(void) {
   base = DETACHED;
   ref = 0;
   applied = 0;
-  memset(slots, 0, sizeof slots);
-  memset(tslot, 0, sizeof tslot);
   host_reset();
   name(0, new_elem((hstr){"div", 3}));
 }
@@ -300,11 +297,8 @@ void j_value_num(uint32_t n) { op(); set_value(last, num, utoa(num, n), "value_n
 void j_tpl_save(uint32_t t) {
   op();
   if (!root) fail("template save with no closed root", "tpl_save");
-  if (t >= CD_TPLS) fail("template number out of range", "tpl_save");
   tpl = grow_array(tpl, &tpl_cap, t, sizeof(hnode *));
   tpl[t] = root;
-  memcpy(tslot[t], slots, sizeof slots);
-  memset(slots, 0, sizeof slots);
   unlink_node(root);
 }
 void j_clone(uint32_t t) { /* at depth 0 its close places it; inside an open element it is appended, like open */
@@ -315,13 +309,6 @@ void j_clone(uint32_t t) { /* at depth 0 its close places it; inside an open ele
   push(el);
   last = el;
 }
-void j_slot(uint32_t k) { op(); if (k >= CD_SLOTS || !last) fail("slot with no node", "slot"); slots[k] = last; }
-static hnode *slot_node(uint32_t t, uint32_t k, const char *call) {
-  if (t >= CD_TPLS || k >= CD_SLOTS || !tslot[t][k]) fail("no such template slot", call);
-  return tslot[t][k];
-}
-void j_tpl_text(uint32_t t, uint32_t k, uint32_t s) { op(); hstr v = S(s); set_value(slot_node(t, k, "tpl_text"), v.p, v.len, "tpl_text"); }
-void j_tpl_text_num(uint32_t t, uint32_t k, uint32_t n) { op(); set_value(slot_node(t, k, "tpl_text_num"), num, utoa(num, n), "tpl_text_num"); }
 /* n steps of 2 bits (1 firstChild, 2 nextSibling, 3 parentNode) from the node named from, or
  * from the last node when from is 0xffffffff */
 static void walk(cd_id from, uint32_t steps, uint32_t n, const char *call) {
