@@ -108,7 +108,6 @@ IMPORTS("clear") void j_clear(cd_id id);
 IMPORTS("detach") void j_detach(cd_id id);
 IMPORTS("attach") void j_attach(cd_id id);
 IMPORTS("host") void j_host(cd_id id, uint32_t kind, uint32_t name, const uint32_t *v, uint32_t nwords);
-IMPORTS("resolve") void j_resolve(const uint32_t *entries, uint32_t n);
 
 #define SB_CAP (1u << 18)
 #define SM_CAP (1u << 12)
@@ -595,34 +594,34 @@ uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap) {
 /* ---- resuming a server-rendered page (cdom.h) ----
  * cd_start_state runs the first render VIRTUAL: the server's HTML already holds every node it
  * makes in the document, so those ops call no import and build a virtual tree here instead
- * (vt: one vnode per node, a clone's inside copied from its template only when a walk or an
+ * (vt: one vnode per node; a clone's inside is copied from its template only when a walk or an
  * append goes in). Templates are built off the document and are real: their ops reach JS as
- * always, and their vnodes are marked VREAL. At the end of the render the vnodes that carry an
- * id, and their ancestors, become the path tree (pnodes in document order: a subtree is a
- * range), every other vnode is dropped, and each id is pending: JS has no node for it yet.
- * The first op that takes a pending id resolves it: one `resolve` import with its path (child
- * indices from the mount, counted as the shim counts them, the comment rule in cdom.h). An op
- * that changes a parent's children (an insert, a move, a remove, a clear, a detach) first
- * resolves every pending id below that parent in one call, because their indices hold only
- * against the server's DOM. An event whose target has no listening node with a JS id on its
- * path is posted in the resume form, with every level's index up to the mount, and r_event
- * finds the deepest pending listener on it. */
+ * always, and their vnodes are marked VREAL. After the render the tree stays as it is, the map
+ * from each named id to its server node's path, and each such id is pending: JS has no node for
+ * it yet. The first op that takes a pending id resolves it: a walk along its path (child indices
+ * from the mount, counted as the shim counts them: the comment rule in cdom.h) and a name, with
+ * the imports every page has. An op that changes a node's children (an insert, a move, a
+ * remove, a clear, a detach) first resolves every pending id below that parent, in document
+ * order, because their indices hold only against the server's DOM. While listeners are
+ * pending, the shim writes an event's path up to the mount, and r_event finds the deepest
+ * pending listener on it. */
 #define VNONE 0xffffffffu
-#define VREAL 0x80000000u
+#define VREAL 0x80000000u /* vnode.nid: a template's node, real in JS */
+#define VDONE 0x40000000u /* vnode.nid: everything below it is resolved */
+#define VMORE 0x20000000u /* vnode.nid: more ids than vnode.id name it (in vmore) */
+#define VCOUNT 0x0fffffffu
 #define PATH_MAX 512   /* levels below the mount a named node may sit at */
 #define TRAIL_MAX 512  /* levels of an event path the shim writes */
 enum { VS_LIVE, VS_PEND, VS_PENDL, VS_RESV, VS_WALKED, VS_GONE }; /* per id; PENDL: pending and listening */
-typedef struct { uint32_t parent, first, last, next, idx, src, nid; } vnode; /* src: template vnode + 1 not copied
-                                                                                   in yet; nid: ids naming it | VREAL */
+typedef struct { uint32_t parent, first, last, next, idx, src, nid; cd_id id; } vnode; /* src: template vnode + 1, its
+                                                                                         children not copied in yet */
 static vnode *vt;
 static uint32_t nvt, vtcap, *vstk, vsp, vstkcap, vlast = VNONE, vroot = VNONE, *tvroot, ntv;
-static uint8_t *vst;  /* per id: VS_* */
-static uint32_t *vref; /* per id: its vnode (first render), then its pnode */
+static uint8_t *vst;   /* per id: VS_* */
+static uint32_t *vref; /* per id: its vnode */
 static uint32_t vcap, npend, npl, wsrv; /* npl: pending listeners; wsrv: JS's last may be a server node */
-static uint32_t *pidx, *ppar, *pend_, *pid, np; /* pnodes: child index, parent, end of subtree, an id */
-static uint8_t *pflag;                          /* 1: subtree resolved; 2: more ids in pext */
-static uint32_t *pext, npext;                   /* (pnode, id) for a node with more than one id */
-static uint32_t *rbuf, rcap, *hdef, nhdef, hdcap;
+static uint32_t *vmore, nvmore, vmorecap; /* (vnode, id) for a node named by more than one id */
+static uint32_t *hdef, nhdef, hdcap;
 static uint16_t slot_lazy[CD_TPLS];
 static uint32_t trail[2 * TRAIL_MAX]; /* per level from the target up: node index, element index */
 
@@ -645,14 +644,14 @@ static void vgrow(cd_id id) {
 }
 static uint32_t v_new(uint32_t real) {
   vt = vec(vt, &vtcap, nvt + 1, sizeof(vnode));
-  vt[nvt] = (vnode){VNONE, VNONE, VNONE, VNONE, 0, 0, real};
+  vt[nvt] = (vnode){VNONE, VNONE, VNONE, VNONE, 0, 0, real, VNONE};
   return nvt++;
 }
 static void touch(cd_id id, int under);
 static int v_real(uint32_t v) { return v == VNONE ? (__builtin_trap(), 0) : (int)(vt[v].nid >> 31); }
 static void v_expand(uint32_t v);
 /* n becomes a child of p, before b (VNONE: last) */
-static void v_link(uint32_t p, uint32_t n, uint32_t b) {
+static __attribute__((noinline)) void v_link(uint32_t p, uint32_t n, uint32_t b) {
   v_expand(p);
   vt[n].parent = p;
   vt[n].next = b;
@@ -742,8 +741,12 @@ static int rs_last(void) { return vmode && !v_real(vlast); }
 static void rs_drop(cd_id id) { /* id no longer names what it named */
   if (id >= vcap) return;
   uint8_t s = vst[id];
-  if (vmode && s == VS_PEND) vt[vref[id]].nid--;
-  if (!vmode && (s == VS_PEND || s == VS_PENDL)) { npend--; npl -= s == VS_PENDL; }
+  if (s == VS_PEND || s == VS_PENDL) {
+    uint32_t v = vref[id];
+    if (vt[v].id == id) vt[v].id = VNONE;
+    if (vmode) vt[v].nid--;
+    else { npend--; npl -= s == VS_PENDL; }
+  }
   vst[id] = VS_LIVE;
   vref[id] = VNONE;
 }
@@ -755,10 +758,17 @@ static int rs_name(cd_id id) {
   }
   vgrow(id);
   rs_drop(id);
-  vref[id] = vlast;
-  if (v_real(vlast)) return 0;
+  uint32_t v = vref[id] = vlast;
+  if (v_real(v)) return 0;
   vst[id] = VS_PEND;
-  vt[vlast].nid++;
+  vt[v].nid++;
+  if (vt[v].id == VNONE) vt[v].id = id;
+  else {
+    vmore = vec(vmore, &vmorecap, 2 * nvmore + 2, 4);
+    vmore[2 * nvmore] = v;
+    vmore[2 * nvmore++ + 1] = id;
+    vt[v].nid |= VMORE;
+  }
   return 1;
 }
 static void ensure(cd_id id);
@@ -777,56 +787,110 @@ static int rs_sel(cd_id id) {
 }
 
 /* ---- after the first render: resolving ---- */
-static uint32_t path_of(uint32_t p, uint32_t *path) { /* the pnode's child indices from the mount */
+/* the k-th id that names vnode v (k = 0 its first), VNONE past the last; k + 1 is the next */
+static cd_id v_id(uint32_t v, uint32_t *k) {
+  if (!*k) { ++*k; if (vt[v].id != VNONE) return vt[v].id; }
+  if (vt[v].nid & VMORE)
+    for (; *k <= nvmore; ++*k)
+      if (vmore[2 * *k - 2] == v) return vmore[2 * (*k)++ - 1];
+  return VNONE;
+}
+static int pending(cd_id id, uint32_t v) { return id < vcap && vref[id] == v && (vst[id] == VS_PEND || vst[id] == VS_PENDL); }
+static uint32_t path_of(uint32_t v, uint32_t *path) { /* the vnode's child indices from the mount */
   uint32_t d = 0;
-  for (uint32_t q = p; q; q = ppar[q]) d++;
-  for (uint32_t q = p, l = d; q; q = ppar[q]) path[--l] = pidx[q];
+  for (uint32_t u = v; u; u = vt[u].parent) d++;
+  if (d > PATH_MAX) __builtin_trap(); /* a named node deeper than PATH_MAX */
+  for (uint32_t u = v, l = d; u; u = vt[u].parent) path[--l] = vt[u].idx;
   return d;
 }
-static int pending(cd_id id, uint32_t p) { return id < vcap && vref[id] == p && (vst[id] == VS_PEND || vst[id] == VS_PENDL); }
-/* Resolves the pending ids of pnodes lo..hi-1 in one call: entries in document order, each
- * written as the levels below what it shares with the previous one (the shim's resolve). */
-static void r_range(uint32_t lo, uint32_t hi, int subtree) {
-  static uint32_t cur[PATH_MAX], prev[PATH_MAX];
-  uint32_t n = 0, w = 0, nprev = 0;
-  for (uint32_t q = lo; q < hi; q++) {
-    if (subtree) pflag[q] |= 1;
-    uint32_t d = 0;
-    for (uint32_t e = 0; e <= ((pflag[q] & 2) ? npext : 0); e++) {
-      cd_id id = e ? (pext[2 * e - 2] == q ? pext[2 * e - 1] : VNONE) : pid[q];
-      if (!pending(id, q)) continue;
-      if (!d) d = path_of(q, cur);
-      uint32_t keep = 0;
-      while (keep < d && keep < nprev && cur[keep] == prev[keep]) keep++;
-      rbuf = vec(rbuf, &rcap, w + 2 + d - keep, 4);
-      rbuf[w++] = id;
-      rbuf[w++] = keep | d << 12 | (uint32_t)(vst[id] == VS_PENDL) << 24;
-      for (uint32_t l = keep; l < d; l++) rbuf[w++] = cur[l];
-      __builtin_memcpy(prev, cur, d * 4);
-      nprev = d;
-      npend--;
-      npl -= vst[id] == VS_PENDL;
-      vst[id] = VS_RESV;
-      n++;
+static cd_id v_resolved(uint32_t v) { /* an id that names vnode v in JS, or VNONE */
+  if (!v) return 0;
+  cd_id id;
+  for (uint32_t k = 0; (id = v_id(v, &k)) != VNONE;)
+    if (id < vcap && vref[id] == v && vst[id] == VS_RESV) return id;
+  return VNONE;
+}
+/* An id naming JS's last node while a resolution walks, so the op that follows finds it. */
+static cd_id rs_tmp;
+static uint32_t rs_ids, rs_runs, r_n, r_d, r_pos[PATH_MAX]; /* ids resolved, resolutions; the current one */
+/* Resolves the pending ids of vnode v: a walk to it, then name (or listen, so the node carries
+ * its id for events). A walk's next step lands on the next child as a path counts it (the shim
+ * reads the server's comments the same way: cdom.h), so a path is a walk: down, then as many
+ * nexts as the index. The first walk of a resolution starts from the nearest node on the path
+ * that JS already knows; the others go on from the one before, in document order. */
+static void r_node(uint32_t v) {
+  static uint32_t cur[PATH_MAX];
+  cd_id id;
+  for (uint32_t k = 0; (id = v_id(v, &k)) != VNONE;) {
+    if (!pending(id, v)) continue;
+    uint32_t d = path_of(v, cur), keep = 0;
+    if (!r_n++) {
+      walk_done();
+      j_name(rs_tmp);
+      uint32_t a = v;
+      cd_id from;
+      while ((from = v_resolved(a)) == VNONE) a = vt[a].parent;
+      r_d = path_of(a, r_pos);
+      walking = 1; walk_from = from; walk_steps = walk_n = 0;
     }
+    while (keep < d && keep < r_d && cur[keep] == r_pos[keep]) keep++;
+    for (uint32_t l = r_d; l > keep + (keep < d); l--) walk_step(3);
+    if (keep < d && keep < r_d) {
+      if (cur[keep] < r_pos[keep]) __builtin_trap(); /* not in document order */
+      for (uint32_t i = r_pos[keep]; i < cur[keep]; i++) walk_step(2);
+      keep++;
+    }
+    for (uint32_t l = keep; l < d; l++) {
+      walk_step(1);
+      for (uint32_t i = 0; i < cur[l]; i++) walk_step(2);
+    }
+    walk_done(); /* no step: JS's last is already the node (another id of the one before) */
+    if (vst[id] == VS_PENDL) j_listen(id); else j_name(id);
+    __builtin_memcpy(r_pos, cur, d * 4);
+    r_d = d;
+    npend--;
+    npl -= vst[id] == VS_PENDL;
+    vst[id] = VS_RESV;
   }
-  if (n) j_resolve(rbuf, n);
+}
+static void r_end(void) {
+  if (r_n) { /* JS's last as it was */
+    walking = 1; walk_from = rs_tmp; walk_steps = walk_n = 0;
+    walk_done();
+    j_free(rs_tmp);
+    rs_ids += r_n;
+    rs_runs++;
+    r_n = 0;
+  }
   if (!npend) { /* nothing is pending: back to the plain path */
     rs = 0;
     if (at_stale) { at_stale = 0; ready(); j_at(at_parent, at_before); }
   }
 }
-static void r_tree(uint32_t p) { if (!(pflag[p] & 1)) r_range(p, pend_[p], 1); }
+EXPORT("cd_resume_stats") uint32_t cd_resume_stats(uint32_t k) { return k ? rs_runs : rs_ids; }
+/* every pending id in v's subtree (v included), in document order */
+static void r_tree(uint32_t v) {
+  if (vt[v].nid & VDONE) return;
+  for (uint32_t u = v;;) {
+    vt[u].nid |= VDONE;
+    r_node(u);
+    if (vt[u].first != VNONE) { u = vt[u].first; continue; }
+    while (u != v && vt[u].next == VNONE) u = vt[u].parent;
+    if (u == v) break;
+    u = vt[u].next;
+  }
+  r_end();
+}
 static void ensure(cd_id id) {
   if (id >= vcap) return;
   if (vst[id] == VS_GONE) __builtin_trap(); /* its node left the document during the first render */
-  if (vst[id] == VS_PEND || vst[id] == VS_PENDL) r_range(vref[id], vref[id] + 1, 0);
+  if (vst[id] == VS_PEND || vst[id] == VS_PENDL) { r_node(vref[id]); r_end(); }
 }
 /* a change to the children of the node named id (under = 1) or of its parent (under = 0) */
 static void touch(cd_id id, int under) {
   uint8_t s = id < vcap ? vst[id] : VS_LIVE;
   if (s == VS_WALKED) r_tree(0); /* a server node named in JS: where it sits is not known here */
-  else if (s != VS_LIVE && s != VS_GONE) { uint32_t p = vref[id]; r_tree(under || !p ? p : ppar[p]); }
+  else if (s != VS_LIVE && s != VS_GONE) { uint32_t v = vref[id]; r_tree(under || !v ? v : vt[v].parent); }
 }
 static int rs_at(cd_id parent) {
   if (vmode) return !at_none() && v_virt(parent);
@@ -878,70 +942,35 @@ static int rs_host(void) {
 
 static void vr_begin(void) {
   vmode = rs = 1;
-  nvt = vsp = 0;
+  nvt = vsp = nvmore = 0;
   vlast = vroot = VNONE;
   v_new(0); /* vnode 0: the mount */
   vgrow(0);
   __builtin_memset(vst, 0, vcap); /* an earlier resume's states */
 }
-/* The end of the first render: the path tree, each id pending, the deferred calls. */
+/* The end of the first render: each named server node's id pending, the deferred calls. */
 static void v_finish(void) {
   walk_done();
   vmode = 0;
   if (vsp) __builtin_trap(); /* an element left open */
-  uint8_t *keep = cd_alloc(nvt);
-  uint32_t *v2p = cd_alloc(nvt * 4), v = 0, n = 1, d = 0;
-  __builtin_memset(keep, 0, nvt);
-  for (;;) { /* post-order over the links: keep a vnode with an id or with a kept child */
-    if (vt[v].first != VNONE) { v = vt[v].first; continue; }
-    for (;;) {
-      if (keep[v] || (vt[v].nid & ~VREAL)) { keep[v] = 1; if (v) keep[vt[v].parent] = 1; }
-      if (!v) goto counted;
-      if (vt[v].next != VNONE) { v = vt[v].next; break; }
-      v = vt[v].parent;
-    }
-  }
-counted:
-  for (uint32_t i = 1; i < nvt; i++) n += keep[i];
-  cd_free(pidx); cd_free(ppar); cd_free(pend_); cd_free(pid); cd_free(pflag); cd_free(pext);
-  pidx = cd_alloc(n * 4); ppar = cd_alloc(n * 4); pend_ = cd_alloc(n * 4); pid = cd_alloc(n * 4); pflag = cd_alloc(n);
-  pext = 0;
-  np = npext = 0;
-  for (v = 0;;) { /* pre-order over the kept vnodes: pnodes in document order */
-    int k = !v || keep[v];
-    if (k) {
-      if (d > PATH_MAX) __builtin_trap(); /* a named node deeper than PATH_MAX */
-      v2p[v] = np;
-      pidx[np] = vt[v].idx;
-      ppar[np] = v ? v2p[vt[v].parent] : VNONE;
-      pid[np] = VNONE;
-      pflag[np++] = 0;
-    }
-    if (k && vt[v].first != VNONE) { v = vt[v].first; d++; continue; }
-    for (;;) {
-      if (!v || keep[v]) pend_[v2p[v]] = np;
-      if (!v) goto built;
-      if (vt[v].next != VNONE) { v = vt[v].next; break; }
-      v = vt[v].parent;
-      d--;
-    }
-  }
-built:
   npend = npl = 0;
   for (cd_id id = 1; id < vcap; id++) {
     if (vst[id] != VS_PEND) { vref[id] = VNONE; continue; }
-    v = vref[id];
-    if (!keep[v]) { vst[id] = VS_GONE; vref[id] = VNONE; continue; } /* removed or cleared in the render */
-    uint32_t p = vref[id] = v2p[v];
-    if (pid[p] == VNONE) pid[p] = id;
-    else { pext = cd_realloc(pext, (npext + 1) * 8); pext[2 * npext++] = p; pext[2 * npext - 1] = id; pflag[p] |= 2; }
+    uint32_t v = vref[id];
+    while (v && v != VNONE) v = vt[v].parent;
+    if (v) { /* removed or cleared during the render */
+      if (vt[vref[id]].id == id) vt[vref[id]].id = VNONE;
+      vst[id] = VS_GONE;
+      continue;
+    }
     npend++;
     if (id < tags_cap && lmask[id]) { vst[id] = VS_PENDL; npl++; }
   }
   vst[0] = VS_RESV;
   vref[0] = 0;
-  cd_free(keep); cd_free(v2p); cd_free(vt); cd_free(vstk); cd_free(tvroot);
-  vt = 0; vstk = tvroot = 0; vtcap = vstkcap = ntv = nvt = 0;
+  if (!rs_tmp) rs_tmp = cd_id_new();
+  cd_free(vstk); cd_free(tvroot);
+  vstk = tvroot = 0; vstkcap = ntv = 0;
   vlast = vroot = VNONE;
   rs = npend != 0;
   if (at_stale && !rs) { at_stale = 0; ready(); j_at(at_parent, at_before); }
@@ -955,27 +984,28 @@ built:
   nhdef = 0;
 }
 
-/* The resume form of an event (cdom.h): inbox.id is the nearest node with a JS id that takes
- * the event (-1: none), path is how many levels below it the target is, and -1 - depth is the
- * number of levels in trail. The deepest pending listener on the path wins over that node when
- * it is nearer the target; it is resolved (the shim's fast path finds it next time), and the
- * record becomes the plain one. Returns 0 when no node takes the event. */
+/* The shim posts every event in the trail form (cdom.h): inbox.id is the nearest node with a JS
+ * id that takes the event (-1: none), path is how many levels below it the target is, and depth
+ * is the number of levels the shim wrote to trail (up to that node, or up to the mount while
+ * listeners are pending). The deepest pending listener on the path wins over that node when it
+ * is nearer the target; it is resolved, so the shim finds it next time. The record becomes the
+ * one the app sees: the listener's id, and the element indices below it. Returns 0 when no node
+ * takes the event. */
 static int r_event(void) {
-  uint32_t L = (uint32_t)(-1 - inbox.depth), hd = (uint32_t)inbox.path, best = VNONE, bl = 0;
+  uint32_t L = (uint32_t)inbox.depth, hd = (uint32_t)inbox.path, best = VNONE, bl = 0;
   if (npl && L <= TRAIL_MAX) {
-    for (uint32_t p = 0, j = 0; j < L; j++) { /* down the path tree along the target's indices */
-      uint32_t want = trail[2 * (L - 1 - j)], c = p + 1;
-      while (c < pend_[p] && pidx[c] < want) c = pend_[c];
-      if (c >= pend_[p] || pidx[c] != want) break;
-      p = c;
-      for (uint32_t e = 0; e <= ((pflag[p] & 2) ? npext : 0); e++) {
-        cd_id id = e ? (pext[2 * e - 2] == p ? pext[2 * e - 1] : VNONE) : pid[p];
-        if (pending(id, p) && vst[id] == VS_PENDL && cd_wants(id, (uint32_t)inbox.type, (cd_str)inbox.key)) {
+    for (uint32_t v = 0, j = 0; j < L; j++) { /* down the virtual tree along the target's indices */
+      uint32_t want = trail[2 * (L - 1 - j)], c = vt[v].first;
+      while (c != VNONE && vt[c].idx < want) c = vt[c].next;
+      if (c == VNONE || vt[c].idx != want) break;
+      v = c;
+      cd_id id;
+      for (uint32_t k = 0; (id = v_id(v, &k)) != VNONE;)
+        if (pending(id, v) && vst[id] == VS_PENDL && cd_wants(id, (uint32_t)inbox.type, (cd_str)inbox.key)) {
           best = id;
           bl = L - 1 - j;
           break;
         }
-      }
     }
   }
   if (best != VNONE && (inbox.id < 0 || bl < hd)) { ensure(best); inbox.id = (int32_t)best; hd = bl; }
@@ -1052,7 +1082,7 @@ EXPORT("cd_start_state") int cd_start_state(uint32_t len) {
 }
 
 EXPORT("cd_event") void cd_event(void) {
-  if (inbox.depth >= 0 || r_event()) cd_on_event(&inbox);
+  if (r_event()) cd_on_event(&inbox);
   cd_flush();
 }
 

@@ -169,12 +169,14 @@ int cd_state_load(const uint8_t *src, uint32_t len); /* 0 on success */
  * Counting children for a path, the shim reads two comments the sink writes: <!--e--> is an
  * empty text node (HTML cannot carry one; it becomes one when first reached) and counts as one
  * child, <!----> (between two texts, so the parser keeps them apart) does not count.
- * An event whose path has no node with a JS id that takes it, while listening ids are still
- * unresolved, is posted in the resume form: cd_event_rec.depth is -1 - L, path is how many levels
- * below the nearest JS-known listener (id, or -1 for none) the target is, and the shim has written
- * L pairs (node index as above, element index) from the target up to the mount at the address
- * cd_layout()[4]. The core finds the deepest unresolved listener on that path, resolves it, and
- * calls cd_on_event with the plain record below; an app only ever sees the plain record. */
+ * Events cross in one form, resumed or not: walking up from the target the shim writes, per level,
+ * the node's index among its siblings (counted as above) and its element index, as two u32 at
+ * cd_layout()[4], up to the nearest node with a JS id that takes the event, or up to the mount
+ * while listening ids are unresolved (the u32 at cd_layout()[3] counts them). It posts that node
+ * as the record's id (-1 for none), path = how many levels below it the target is, and depth =
+ * the levels written. The core finds the deepest unresolved listener on the path, resolves it
+ * when it is nearer the target, and calls cd_on_event with the record below: an app only ever
+ * sees that one. */
 
 /* keyed list */
 typedef struct { uint32_t key; cd_id node; uint32_t data; } cd_item;
