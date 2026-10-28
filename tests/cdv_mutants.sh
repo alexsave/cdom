@@ -17,4 +17,6 @@ m src/cdom_html.c 's/\Q} else if (-6 < n && n <= 0) {\E/} else if (-7 < n \&\& n
 m src/cdom_html.c 's/\Qcase V_NULL: case V_FALSE: return 0;\E/case V_NULL: case V_FALSE: return 1;/' 'FAIL PROP writes value'
 m src/cdom_html.c 's/\Qif (js) { put(w, s.p, s.len); break; }\E/if (1) { put(w, s.p, s.len); break; }/' 'FAIL case 7 decodes'
 m src/cdom_html.c 's/\Qif (t == V_OBJECT) {\E/if (0) {/' 'cdom_html: value is not exactly the words passed (host)'
+# per-op strings take ids above the interned ones, one each per batch
+m src/cdom.c 's/\Qreturn push_str(s, nstr_ids + ntmp++);\E/return push_str(s, nstr_ids + ntmp);/' 'FAIL case'
 exit $bad
