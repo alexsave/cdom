@@ -140,3 +140,12 @@ What resuming keeps from hydration:
 - ids bound to the server's own nodes, never copies: the rows test checks the clicked row is the server's node and that no node in `#main` is new.
 
 What it dropped: `<!--i-->` (C's virtual tree renumbers the children an insert shifts) and verify (a dev-build mismatch report is program item 5).
+
+## Eager: a widget page that loads the module at once (0 lines)
+
+On a resumed page a widget does not exist until the first interaction: its MOUNT is one of the first render's host calls, and that render runs when the wasm loads (cdom.h, HOST).
+A page that wants the widget at once (apps/chart with `?eager=1`) writes `cdom.boot();` right after its `cdom.resume(...)` call; src/ssr_page.c does it when the shell's `eager` is set.
+That is the cheapest honest version: `boot` was already exported for tests (line 209 above), and calling it at once is exactly the first event's path without the event, so the shim gains no line and no byte (213 lines, 5213 bytes minified, 2400 gzip -9 before and after).
+The page gains 12 bytes, written by C.
+An `{eager: true}` option on `resume` was not added: it would be a branch in the shim doing what one call on the page already does.
+Proved by tests/host.mjs (the eager page draws the chart with no interaction from one app.wasm request) and its mutant in tests/host_mutants.sh (ssr_page ignoring `eager` fails it).
