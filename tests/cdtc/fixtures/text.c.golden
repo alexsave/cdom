@@ -5,10 +5,50 @@
 static const char *const cdt_lit[5] = {"div", "h1", "p", "static", ""};
 static cd_str cdt_s[5];
 static cd_str cdt_str(cd_str s) { return s ? s : cdt_s[4]; }
+#if CDOM_DEV
+#define CDT_CMP (page_dev_compares++)
+#define CDT_VISIT (page_dev_visits++)
+#else
+#define CDT_CMP ((void)0)
+#define CDT_VISIT ((void)0)
+#endif
 
+static int cdt_full = 1; /* the next render redoes everything: the first, after a load or mark_all */
+#if CDOM_DEV
+static const char *cdt_dev_owner; /* the component whose handler is running */
+static void cdt_dev_say(const char *a, const char *b) {
+  char m[256];
+  uint32_t n = 0;
+  for (; *a && n < 128; a++) m[n++] = *a;
+  for (; *b && n < 255; b++) m[n++] = *b;
+  m[n] = 0;
+  cd_dev_warn(m);
+}
+#define CDT_OWN(f) do { if (cdt_dev_owner) cdt_dev_say(cdt_dev_owner, " writes " f ", which it does not own"); } while (0)
+#endif
 static uint64_t cdt_need_St(const St *r);
 static uint8_t *cdt_put_St(uint8_t *d, const St *r);
 static int cdt_walk_St(St *r, const uint8_t *b, uint32_t len, uint32_t *o);
+
+void St_mark_all(St *s) { (void)s; cdt_full = 1; }
+
+void St_set_title(St *s, cd_str v) {
+  if (s->title == v) return;
+  s->title = v;
+  s->cdt_d[0] |= 0x1u;
+#if CDOM_DEV
+  s->cdt_sh_title = s->title;
+  CDT_OWN("St.title");
+#endif
+}
+
+void St_mark_title(St *s) {
+  s->cdt_d[0] |= 0x1u;
+#if CDOM_DEV
+  s->cdt_sh_title = s->title;
+  CDT_OWN("St.title");
+#endif
+}
 
 static uint8_t *cdt_put16(uint8_t *d, uint32_t v) { d[0] = (uint8_t)v; d[1] = (uint8_t)(v >> 8); return d + 2; }
 static uint32_t cdt_get16(const uint8_t *s) { return s[0] | (uint32_t)s[1] << 8; }
@@ -62,11 +102,25 @@ int St_load(St *s, const uint8_t *src, uint32_t len) { /* one pass to check, one
   uint32_t o = 0;
   if (cdt_walk_St(0, src, len, &o) || o != len) return -1;
   o = 0;
-  return cdt_walk_St(s, src, len, &o);
+  if (cdt_walk_St(s, src, len, &o)) return -1;
+  cdt_full = 1; /* everything changed */
+  return 0;
 }
 
 /* ---- the page: page ---- */
 page_view page_v;
+
+#if CDOM_DEV
+uint32_t page_dev_compares, page_dev_visits;
+static void cdt_dev_pre(St *S, int all) {
+  (void)S; (void)all;
+  if (!all && S->title != S->cdt_sh_title) cd_dev_warn("state written without a setter: St.title");
+  S->cdt_sh_title = S->title;
+}
+static void cdt_dev_post(St *S, int all) {
+  (void)S; (void)all;
+}
+#endif
 
 void page_init(void) {
   for (uint32_t i = 0; i < 5; i++) cdt_s[i] = cd_internz(cdt_lit[i]);
@@ -75,6 +129,7 @@ void page_init(void) {
 void page_create(St *S) {
   page_view *cdt_v = &page_v;
   (void)S;
+  cdt_full = 1; /* the first render takes the lists' keys and checks everything */
   cd_at(CD_MOUNT, 0);
   cdt_v->root = cd_id_new();
   cd_open(cdt_s[0]);
@@ -91,13 +146,28 @@ void page_create(St *S) {
 void page_render(St *S) {
   page_view *cdt_v = &page_v;
   (void)S; (void)cdt_v;
-  {
+  int cdt_all = cdt_full;
+  cdt_full = 0;
+#if CDOM_DEV
+  cdt_dev_pre(S, cdt_all);
+#endif
+  if (cdt_all) {
+    S->cdt_d[0] = 0xffffffffu;
+  }
+  uint32_t cdt_m[1];
+  cdt_m[0] = S->cdt_d[0];
+  S->cdt_d[0] = 0;
+  if (cdt_m[0] & 0x1u) {
     cd_str cdt_t = (S->title);
+    CDT_CMP;
     if (cdt_t != cdt_v->t2) {
       cdt_v->t2 = cdt_t;
       cd_sel(cdt_v->root); cd_down(); cd_down(); cd_value(cdt_str(cdt_t));
     }
   }
+#if CDOM_DEV
+  cdt_dev_post(S, cdt_all);
+#endif
 }
 
 void page_dispatch(const cd_event_rec *e) {

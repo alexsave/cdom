@@ -4,15 +4,83 @@
 /* ---- strings, interned once by page_init ---- */
 static const char *const cdt_lit[21] = {"sl-change", "li", "b", " ", "i", "my-el", "data-x", "1", "main", "div", "box", "canvas", "width", "400", "height", "200", "x-dial", "value-change", "ready", "pings ", "ul"};
 static cd_str cdt_s[21];
+#if CDOM_DEV
+#define CDT_CMP (page_dev_compares++)
+#define CDT_VISIT (page_dev_visits++)
+#else
+#define CDT_CMP ((void)0)
+#define CDT_VISIT ((void)0)
+#endif
 
 W G = W_INIT;
 
+static int cdt_full = 1; /* the next render redoes everything: the first, after a load or mark_all */
+#if CDOM_DEV
+static const char *cdt_dev_owner; /* the component whose handler is running */
+static void cdt_dev_say(const char *a, const char *b) {
+  char m[256];
+  uint32_t n = 0;
+  for (; *a && n < 128; a++) m[n++] = *a;
+  for (; *b && n < 255; b++) m[n++] = *b;
+  m[n] = 0;
+  cd_dev_warn(m);
+}
+#define CDT_OWN(f) do { if (cdt_dev_owner) cdt_dev_say(cdt_dev_owner, " writes " f ", which it does not own"); } while (0)
+#endif
+#define CDT_QCAP 128
+static uint32_t cdt_epoch = 1; /* the render to come: a record is queued once per render */
+static Pt *cdt_q_Pt[CDT_QCAP];
+static uint32_t cdt_qn_Pt, cdt_kd_Pt; /* queued (CDT_QCAP + 1: too many, scan), a key changed */
+static void cdt_queue_Pt(Pt *r) {
+  if (r->cdt_q == cdt_epoch) return;
+  r->cdt_q = cdt_epoch;
+  if (cdt_qn_Pt < CDT_QCAP) cdt_q_Pt[cdt_qn_Pt++] = r;
+  else cdt_qn_Pt = CDT_QCAP + 1;
+}
 static uint64_t cdt_need_W(const W *r);
 static uint8_t *cdt_put_W(uint8_t *d, const W *r);
 static int cdt_walk_W(W *r, const uint8_t *b, uint32_t len, uint32_t *o);
 static uint64_t cdt_need_Pt(const Pt *r);
 static uint8_t *cdt_put_Pt(uint8_t *d, const Pt *r);
 static int cdt_walk_Pt(Pt *r, const uint8_t *b, uint32_t len, uint32_t *o);
+
+void W_mark_all(W *s) { (void)s; cdt_full = 1; }
+
+void W_set_pings(W *s, uint32_t v) {
+  if (s->pings == v) return;
+  s->pings = v;
+  s->cdt_d[0] |= 0x1u;
+#if CDOM_DEV
+  s->cdt_sh_pings = s->pings;
+  CDT_OWN("W.pings");
+#endif
+}
+
+void W_mark_pings(W *s) {
+  s->cdt_d[0] |= 0x1u;
+#if CDOM_DEV
+  s->cdt_sh_pings = s->pings;
+  CDT_OWN("W.pings");
+#endif
+}
+
+void W_set_on(W *s, uint32_t v) {
+  if (s->on == v) return;
+  s->on = v;
+  s->cdt_d[0] |= 0x2u;
+#if CDOM_DEV
+  s->cdt_sh_on = s->on;
+  CDT_OWN("W.on");
+#endif
+}
+
+void W_mark_on(W *s) {
+  s->cdt_d[0] |= 0x2u;
+#if CDOM_DEV
+  s->cdt_sh_on = s->on;
+  CDT_OWN("W.on");
+#endif
+}
 
 void W_pts_reserve(W *s, uint32_t n) {
   if (n <= s->pts_cap) return;
@@ -22,10 +90,18 @@ void W_pts_reserve(W *s, uint32_t n) {
   s->pts_cap = c;
 }
 
+void W_pts_mark(W *s) {
+  s->cdt_d[0] |= 0x4u;
+#if CDOM_DEV
+  CDT_OWN("W.pts");
+#endif
+}
+
 Pt *W_pts_push(W *s) {
   if (s->pts_n == s->pts_cap) W_pts_reserve(s, s->pts_n + 1);
   Pt *r = &s->pts[s->pts_n++];
   *r = (Pt){0};
+  W_pts_mark(s);
   return r;
 }
 
@@ -33,6 +109,63 @@ void W_pts_remove(W *s, uint32_t i) {
   if (i >= s->pts_n) return;
   for (uint32_t j = i + 1; j < s->pts_n; j++) s->pts[j - 1] = s->pts[j];
   s->pts_n--;
+  W_pts_mark(s);
+}
+
+void W_pts_clear(W *s) {
+  if (!s->pts_n) return;
+  s->pts_n = 0;
+  W_pts_mark(s);
+}
+
+void W_pts_swap(W *s, uint32_t i, uint32_t j) {
+  if (i >= s->pts_n || j >= s->pts_n || i == j) return;
+  Pt t = s->pts[i];
+  s->pts[i] = s->pts[j];
+  s->pts[j] = t;
+  W_pts_mark(s);
+}
+
+void Pt_set_id(Pt *s, uint32_t v) {
+  if (s->id == v) return;
+  s->id = v;
+  s->cdt_d[0] |= 0x2u;
+  cdt_queue_Pt(s);
+  cdt_kd_Pt = 1;
+#if CDOM_DEV
+  s->cdt_sh_id = s->id;
+  CDT_OWN("Pt.id");
+#endif
+}
+
+void Pt_mark_id(Pt *s) {
+  s->cdt_d[0] |= 0x2u;
+  cdt_queue_Pt(s);
+  cdt_kd_Pt = 1;
+#if CDOM_DEV
+  s->cdt_sh_id = s->id;
+  CDT_OWN("Pt.id");
+#endif
+}
+
+void Pt_set_v(Pt *s, uint32_t v) {
+  if (s->v == v) return;
+  s->v = v;
+  s->cdt_d[0] |= 0x1u;
+  cdt_queue_Pt(s);
+#if CDOM_DEV
+  s->cdt_sh_v = s->v;
+  CDT_OWN("Pt.v");
+#endif
+}
+
+void Pt_mark_v(Pt *s) {
+  s->cdt_d[0] |= 0x1u;
+  cdt_queue_Pt(s);
+#if CDOM_DEV
+  s->cdt_sh_v = s->v;
+  CDT_OWN("Pt.v");
+#endif
 }
 
 static uint8_t *cdt_put16(uint8_t *d, uint32_t v) { d[0] = (uint8_t)v; d[1] = (uint8_t)(v >> 8); return d + 2; }
@@ -76,6 +209,7 @@ static int cdt_walk_W(W *r, const uint8_t *b, uint32_t len, uint32_t *o) {
   if (r) {
     W_pts_reserve(r, k);
     r->pts_n = k;
+    for (uint32_t i = 0; i < k; i++) r->pts[i] = (Pt){0};
   }
   for (uint32_t i = 0; i < k; i++)
     if (cdt_walk_Pt(r ? &r->pts[i] : 0, b, len, o)) return -1;
@@ -119,12 +253,15 @@ int W_load(W *s, const uint8_t *src, uint32_t len) { /* one pass to check, one t
   uint32_t o = 0;
   if (cdt_walk_W(0, src, len, &o) || o != len) return -1;
   o = 0;
-  return cdt_walk_W(s, src, len, &o);
+  if (cdt_walk_W(s, src, len, &o)) return -1;
+  cdt_full = 1; /* everything changed */
+  return 0;
 }
 
 uint32_t cd_state_save(uint8_t *dst, uint32_t cap) { return W_save(&G, dst, cap); }
 int cd_state_load(const uint8_t *src, uint32_t len) { return W_load(&G, src, len); }
 
+static uint32_t cdt_lw_pt[1]; /* this render: pt's bindings to redo for every item */
 static Pt *page_find0(W *S, uint32_t cdt_i);
 /* ---- template pt: <li> per Pt ---- */
 static pt_view *pt_views;
@@ -145,6 +282,11 @@ static void pt_f0_free(pt_view *cdt_v) {
 
 cd_id pt_create(W *S, Pt *p, pt_view *cdt_v) {
   (void)S; (void)p; (void)cdt_v;
+  p->cdt_d[0] = 0;
+#if CDOM_DEV
+  p->cdt_sh_id = p->id;
+  p->cdt_sh_v = p->v;
+#endif
   cd_id cdt_root = cdt_v->root = cd_id_new();
   cdt_v->me = cdt_root;
   cd_tpl_text_num(1, 0, cdt_v->t2 = (uint32_t)(p->v));
@@ -159,17 +301,20 @@ cd_id pt_create(W *S, Pt *p, pt_view *cdt_v) {
   return cdt_root;
 }
 
-void pt_patch(W *S, Pt *p, pt_view *cdt_v) {
+void pt_patch(W *S, Pt *p, pt_view *cdt_v, const uint32_t *cdt_m) {
   (void)S; (void)p; (void)cdt_v;
-  {
+  (void)cdt_m;
+  if (cdt_m[0] & 0x1u) {
     uint32_t cdt_t = (uint32_t)(p->v);
+    CDT_CMP;
     if (cdt_t != cdt_v->t2) {
       cdt_v->t2 = cdt_t;
       cd_sel(cdt_v->root); cd_down(); cd_down(); cd_value_num(cdt_t);
     }
   }
-  {
+  if (cdt_m[0] & 0x2u) {
     uint32_t cdt_t = (uint32_t)(p->id);
+    CDT_CMP;
     if (cdt_t != cdt_v->t4) {
       cdt_v->t4 = cdt_t;
       cd_sel(cdt_v->root); cd_down(); cd_next(); cd_down(); cd_value_num(cdt_t);
@@ -205,7 +350,12 @@ static void page_ep0(void *cdt_ctx, uint32_t cdt_i, cd_item *cdt_it) {
   W *S = cdt_ctx;
   pt_view *cdt_v = &pt_views[cdt_it->data];
   cdt_v->idx = cdt_i;
-  pt_patch(S, &S->pts[cdt_i], cdt_v);
+  Pt *cdt_r = &S->pts[cdt_i];
+  uint32_t cdt_m[1];
+  CDT_VISIT;
+  cdt_m[0] = cdt_r->cdt_d[0] | cdt_lw_pt[0];
+  cdt_r->cdt_d[0] = 0;
+  if (cdt_m[0]) pt_patch(S, cdt_r, cdt_v, cdt_m);
 }
 static void page_ed0(void *cdt_ctx, cd_item *cdt_it) { (void)cdt_ctx; pt_release(cdt_it->data); }
 static cd_list_fns page_fns0 = {0, page_ec0, page_ep0, page_ed0};
@@ -227,6 +377,34 @@ static cd_id page_f7_create(W *S, page_view *cdt_v) {
   cd_close();
   return cdt_root;
 }
+
+#if CDOM_DEV
+uint32_t page_dev_compares, page_dev_visits;
+static void cdt_dev_Pt(Pt *r, int all);
+static void cdt_dev_Pt(Pt *r, int all) {
+  (void)r; (void)all;
+  if (!all && r->id != r->cdt_sh_id) cd_dev_warn("state written without a setter: Pt.id");
+  r->cdt_sh_id = r->id;
+  if (!all && r->v != r->cdt_sh_v) cd_dev_warn("state written without a setter: Pt.v");
+  r->cdt_sh_v = r->v;
+}
+static void cdt_dev_pre(W *S, int all) {
+  (void)S; (void)all;
+  if (!all && S->pings != S->cdt_sh_pings) cd_dev_warn("state written without a setter: W.pings");
+  S->cdt_sh_pings = S->pings;
+  if (!all && S->on != S->cdt_sh_on) cd_dev_warn("state written without a setter: W.on");
+  S->cdt_sh_on = S->on;
+  if (!all && !(S->cdt_d[0] & 0x4u) && !cdt_kd_Pt) {
+    int bad = S->pts_n != page_list0.n;
+    for (uint32_t i = 0; i < S->pts_n && !bad; i++) bad = page_key0(S, &S->pts[i]) != page_list0.items[i].key;
+    if (bad) cd_dev_warn("list changed without a setter: W.pts");
+  }
+}
+static void cdt_dev_post(W *S, int all) {
+  (void)S; (void)all;
+  for (uint32_t i = 0; i < S->pts_n; i++) cdt_dev_Pt(&S->pts[i], all);
+}
+#endif
 
 void page_init(void) {
   for (uint32_t i = 0; i < 21; i++) cdt_s[i] = cd_internz(cdt_lit[i]);
@@ -250,6 +428,7 @@ void page_create(W *S) {
   page_view *cdt_v = &page_v;
   page_S = S;
   (void)S;
+  cdt_full = 1; /* the first render takes the lists' keys and checks everything */
   cd_at(CD_MOUNT, 0);
   cdt_v->root = cd_id_new();
   cdt_v->top = cdt_v->root;
@@ -298,15 +477,28 @@ void page_create(W *S) {
 void page_render(W *S) {
   page_view *cdt_v = &page_v;
   (void)S; (void)cdt_v;
-  {
+  int cdt_all = cdt_full;
+  cdt_full = 0;
+#if CDOM_DEV
+  cdt_dev_pre(S, cdt_all);
+#endif
+  if (cdt_all) {
+    S->cdt_d[0] = 0xffffffffu;
+  }
+  uint32_t cdt_m[1];
+  cdt_m[0] = S->cdt_d[0];
+  S->cdt_d[0] = 0;
+  if (cdt_m[0] & 0x1u) {
     uint32_t cdt_t = (uint32_t)(S->pings);
+    CDT_CMP;
     if (cdt_t != cdt_v->t5) {
       cdt_v->t5 = cdt_t;
       cd_sel(cdt_v->root); cd_down(); cd_next(); cd_down(); cd_next(); cd_value_num(cdt_t);
     }
   }
-  {
+  if (cdt_m[0] & 0x2u) {
     uint32_t cdt_b = ((S->on) ? 1u : 0u);
+    CDT_CMP;
     if (cdt_b != cdt_v->if6_b) {
       if (cdt_v->if6_b) {
         cd_remove(cdt_v->if6_root);
@@ -316,7 +508,9 @@ void page_render(W *S) {
       if (cdt_b == 1) { cd_at(cdt_v->root, cdt_v->id8); page_f7_create(S, cdt_v); }
     }
   }
-  {
+  cdt_lw_pt[0] = cdt_all ? 0xffffffffu : 0u;
+  /* {#each S->pts} */
+  if ((cdt_m[0] & 0x4u) || cdt_kd_Pt) {
     uint32_t cdt_n = S->pts_n;
     if (cdt_n > page_kcap0) {
       page_kcap0 = cdt_n * 2;
@@ -325,7 +519,20 @@ void page_render(W *S) {
     for (uint32_t cdt_i = 0; cdt_i < cdt_n; cdt_i++) page_keys0[cdt_i] = page_key0(S, &S->pts[cdt_i]);
     page_fns0.ctx = S;
     cd_list_update(&page_list0, page_keys0, cdt_n, &page_fns0);
+  } else if (cdt_qn_Pt > CDT_QCAP || cdt_lw_pt[0]) {
+    for (uint32_t cdt_i = 0; cdt_i < page_list0.n; cdt_i++) page_ep0(S, cdt_i, &page_list0.items[cdt_i]);
+  } else {
+    for (uint32_t cdt_k = 0; cdt_k < cdt_qn_Pt; cdt_k++) { /* the queued items of this list */
+      uintptr_t cdt_o = (uintptr_t)cdt_q_Pt[cdt_k] - (uintptr_t)S->pts;
+      uint32_t cdt_i = (uint32_t)(cdt_o / sizeof(Pt));
+      if (cdt_o < (uintptr_t)S->pts_n * sizeof(Pt) && cdt_i < page_list0.n) page_ep0(S, cdt_i, &page_list0.items[cdt_i]);
+    }
   }
+  cdt_qn_Pt = cdt_kd_Pt = 0;
+  cdt_epoch++;
+#if CDOM_DEV
+  cdt_dev_post(S, cdt_all);
+#endif
 }
 
 void page_dispatch(const cd_event_rec *e) {
@@ -338,7 +545,7 @@ void page_dispatch(const cd_event_rec *e) {
     if (!p) return;
     switch (e->type) {
     case CD_EV_CUSTOM:
-      if ((cd_str)e->key == cdt_s[0]) pt_change(S, p, e); /* sl-change */
+      if ((cd_str)e->key == cdt_s[0]) { /* sl-change */ pt_change(S, p, e); }
       break;
     default: break;
     }
@@ -348,8 +555,8 @@ void page_dispatch(const cd_event_rec *e) {
     switch (e->type) {
     case CD_EV_CLICK: dial_click(S, e); break;
     case CD_EV_CUSTOM:
-      if ((cd_str)e->key == cdt_s[17]) dial(S, e); /* value-change */
-      if ((cd_str)e->key == cdt_s[18]) dial_ready(S, e); /* ready */
+      if ((cd_str)e->key == cdt_s[17]) { /* value-change */ dial(S, e); }
+      if ((cd_str)e->key == cdt_s[18]) { /* ready */ dial_ready(S, e); }
       break;
     default: break;
     }

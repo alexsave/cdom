@@ -4,24 +4,62 @@
 #include "cdom.h"
 
 /* ---- state ---- */
-typedef struct Item { uint32_t id; cd_str name; } Item;
-typedef struct Tag { uint32_t k; cd_str label; } Tag;
+typedef struct Item { uint32_t id; cd_str name;
+  uint32_t cdt_d[1], cdt_q; /* cdtc's: dirty bits, and the render it is queued for */
+#if CDOM_DEV /* what the last setter wrote */
+  cd_str cdt_sh_name;
+#endif
+ } Item;
+typedef struct Tag { uint32_t k; cd_str label;
+  uint32_t cdt_d[1], cdt_q; /* cdtc's: dirty bits, and the render it is queued for */
+#if CDOM_DEV /* what the last setter wrote */
+  cd_str cdt_sh_label;
+#endif
+ } Tag;
 typedef struct St {
   Item *items;
   uint32_t items_n, items_cap;
   Tag *tags;
   uint32_t tags_n, tags_cap;
+  uint32_t cdt_d[1]; /* cdtc's dirty bits: the bindings the next render redoes */
 } St;
 /* initial values; a str holds 0 until set, and 0 renders as "" */
 #define St_INIT {0}
+
+/* ---- signals: a render redoes only what was marked ----
+ * Write a field through its setter, <Agg>_set_<field>(p, v): it stores v and, when v differs, marks
+ * the bindings that read the field (a record also goes on its type's queue, so the render patches
+ * only the records marked). After writing a field directly call <Agg>_mark_<field>(p); after
+ * writing anything directly, St_mark_all(s) makes the next render redo everything once. A list
+ * changes through _push, _remove, _clear and _swap, which mark it; after editing its array or count
+ * by hand call <Owner>_<list>_mark. A record fresh from _push may be filled directly before the
+ * next render, which creates it whole. A derived field is recomputed by the render when an input
+ * was marked; it has no setter. A dev build (-DCDOM_DEV=1) reports, through cd_dev_warn, a field
+ * the render finds changed without a setter, a list changed without a mark, and a component's
+ * handler writing state it does not own. */
+void St_mark_all(St *s);
 void St_items_reserve(St *s, uint32_t n);
-Item *St_items_push(St *s); /* a zeroed record at the end */
+Item *St_items_push(St *s); /* a zeroed record at the end: fill it directly before the next render */
 void St_items_remove(St *s, uint32_t i);
+void St_items_clear(St *s);
+void St_items_swap(St *s, uint32_t i, uint32_t j);
+void St_items_mark(St *s); /* after writing the array or its count directly */
 void St_tags_reserve(St *s, uint32_t n);
-Tag *St_tags_push(St *s); /* a zeroed record at the end */
+Tag *St_tags_push(St *s); /* a zeroed record at the end: fill it directly before the next render */
 void St_tags_remove(St *s, uint32_t i);
-/* the state as a fixed little-endian blob: fields in declaration order, a u32 as 4 bytes,
- * a str as a u16 length then its bytes, a list as a u32 count then its records */
+void St_tags_clear(St *s);
+void St_tags_swap(St *s, uint32_t i, uint32_t j);
+void St_tags_mark(St *s); /* after writing the array or its count directly */
+void Item_set_id(Item *s, uint32_t v);
+void Item_mark_id(Item *s);
+void Item_set_name(Item *s, cd_str v);
+void Item_mark_name(Item *s);
+void Tag_set_k(Tag *s, uint32_t v);
+void Tag_mark_k(Tag *s);
+void Tag_set_label(Tag *s, cd_str v);
+void Tag_mark_label(Tag *s);
+/* the state as a fixed little-endian blob: fields in declaration order (derived ones left out), a
+ * u32 as 4 bytes, a str as a u16 length then its bytes, a list as a u32 count then its records */
 uint32_t St_save(const St *s, uint8_t *dst, uint32_t cap); /* bytes, or the need when > cap */
 int St_load(St *s, const uint8_t *src, uint32_t len); /* 0 on success; s untouched on failure */
 
@@ -35,18 +73,21 @@ typedef struct item_view {
   cd_str t1;
 } item_view;
 cd_id item_create(St *S, Item *it, item_view *cdt_v);
-void item_patch(St *S, Item *it, item_view *cdt_v);
+void item_patch(St *S, Item *it, item_view *cdt_v, const uint32_t *cdt_m); /* redoes the bindings whose bits are set in cdt_m */
 typedef struct tag_view {
   cd_id root;
   uint32_t key, idx; /* the item's key and its index at the last render */
   cd_str t1;
 } tag_view;
 cd_id tag_create(St *S, Tag *t, tag_view *cdt_v);
-void tag_patch(St *S, Tag *t, tag_view *cdt_v);
+void tag_patch(St *S, Tag *t, tag_view *cdt_v, const uint32_t *cdt_m); /* redoes the bindings whose bits are set in cdt_m */
 void page_init(void);              /* interns strings, builds every template */
 void page_create(St *S);  /* builds the page under the mount; call once */
-void page_render(St *S);  /* patches the page and its lists to the state */
+void page_render(St *S);  /* patches what setters marked since the last render */
 void page_dispatch(const cd_event_rec *e); /* calls the handler an event names */
+#if CDOM_DEV /* for tests: the bindings renders compared, the list items they looked at */
+extern uint32_t page_dev_compares, page_dev_visits;
+#endif
 typedef struct page_view {
   cd_id root;
   cd_id id1;

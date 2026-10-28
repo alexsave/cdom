@@ -6,9 +6,55 @@ static const char *const cdt_lit[17] = {"span", "tag", " ", "li", "em", "section
 static cd_str cdt_s[17];
 static cd_str cdt_cls(cd_str *c, const char *const *s, uint32_t b) { return c[b] ? c[b] : (c[b] = cd_internz(s[b])); }
 static cd_str cdt_str(cd_str s) { return s ? s : cdt_s[16]; }
+#if CDOM_DEV
+#define CDT_CMP (page_dev_compares++)
+#define CDT_VISIT (page_dev_visits++)
+#else
+#define CDT_CMP ((void)0)
+#define CDT_VISIT ((void)0)
+#endif
 
 Board B = Board_INIT;
 
+static int cdt_full = 1; /* the next render redoes everything: the first, after a load or mark_all */
+#if CDOM_DEV
+static const char *cdt_dev_owner; /* the component whose handler is running */
+static void cdt_dev_say(const char *a, const char *b) {
+  char m[256];
+  uint32_t n = 0;
+  for (; *a && n < 128; a++) m[n++] = *a;
+  for (; *b && n < 255; b++) m[n++] = *b;
+  m[n] = 0;
+  cd_dev_warn(m);
+}
+#define CDT_OWN(f) do { if (cdt_dev_owner) cdt_dev_say(cdt_dev_owner, " writes " f ", which it does not own"); } while (0)
+#endif
+#define CDT_QCAP 128
+static uint32_t cdt_epoch = 1; /* the render to come: a record is queued once per render */
+static Col *cdt_q_Col[CDT_QCAP];
+static uint32_t cdt_qn_Col, cdt_kd_Col; /* queued (CDT_QCAP + 1: too many, scan), a key changed */
+static void cdt_queue_Col(Col *r) {
+  if (r->cdt_q == cdt_epoch) return;
+  r->cdt_q = cdt_epoch;
+  if (cdt_qn_Col < CDT_QCAP) cdt_q_Col[cdt_qn_Col++] = r;
+  else cdt_qn_Col = CDT_QCAP + 1;
+}
+static Card *cdt_q_Card[CDT_QCAP];
+static uint32_t cdt_qn_Card, cdt_kd_Card; /* queued (CDT_QCAP + 1: too many, scan), a key changed */
+static void cdt_queue_Card(Card *r) {
+  if (r->cdt_q == cdt_epoch) return;
+  r->cdt_q = cdt_epoch;
+  if (cdt_qn_Card < CDT_QCAP) cdt_q_Card[cdt_qn_Card++] = r;
+  else cdt_qn_Card = CDT_QCAP + 1;
+}
+static Tag *cdt_q_Tag[CDT_QCAP];
+static uint32_t cdt_qn_Tag, cdt_kd_Tag; /* queued (CDT_QCAP + 1: too many, scan), a key changed */
+static void cdt_queue_Tag(Tag *r) {
+  if (r->cdt_q == cdt_epoch) return;
+  r->cdt_q = cdt_epoch;
+  if (cdt_qn_Tag < CDT_QCAP) cdt_q_Tag[cdt_qn_Tag++] = r;
+  else cdt_qn_Tag = CDT_QCAP + 1;
+}
 static uint64_t cdt_need_Board(const Board *r);
 static uint8_t *cdt_put_Board(uint8_t *d, const Board *r);
 static int cdt_walk_Board(Board *r, const uint8_t *b, uint32_t len, uint32_t *o);
@@ -24,6 +70,26 @@ static uint64_t cdt_need_Tag(const Tag *r);
 static uint8_t *cdt_put_Tag(uint8_t *d, const Tag *r);
 static int cdt_walk_Tag(Tag *r, const uint8_t *b, uint32_t len, uint32_t *o);
 
+void Board_mark_all(Board *s) { (void)s; cdt_full = 1; }
+
+void Board_set_sel(Board *s, uint32_t v) {
+  if (s->sel == v) return;
+  s->sel = v;
+  s->cdt_d[0] |= 0x3u;
+#if CDOM_DEV
+  s->cdt_sh_sel = s->sel;
+  CDT_OWN("Board.sel");
+#endif
+}
+
+void Board_mark_sel(Board *s) {
+  s->cdt_d[0] |= 0x3u;
+#if CDOM_DEV
+  s->cdt_sh_sel = s->sel;
+  CDT_OWN("Board.sel");
+#endif
+}
+
 void Board_cols_reserve(Board *s, uint32_t n) {
   if (n <= s->cols_cap) return;
   uint32_t c = s->cols_cap ? s->cols_cap : 16;
@@ -32,10 +98,18 @@ void Board_cols_reserve(Board *s, uint32_t n) {
   s->cols_cap = c;
 }
 
+void Board_cols_mark(Board *s) {
+  s->cdt_d[0] |= 0x4u;
+#if CDOM_DEV
+  CDT_OWN("Board.cols");
+#endif
+}
+
 Col *Board_cols_push(Board *s) {
   if (s->cols_n == s->cols_cap) Board_cols_reserve(s, s->cols_n + 1);
   Col *r = &s->cols[s->cols_n++];
   *r = (Col){0};
+  Board_cols_mark(s);
   return r;
 }
 
@@ -44,6 +118,59 @@ void Board_cols_remove(Board *s, uint32_t i) {
   cdt_drop_Col(&s->cols[i]);
   for (uint32_t j = i + 1; j < s->cols_n; j++) s->cols[j - 1] = s->cols[j];
   s->cols_n--;
+  Board_cols_mark(s);
+}
+
+void Board_cols_clear(Board *s) {
+  for (uint32_t i = 0; i < s->cols_n; i++) cdt_drop_Col(&s->cols[i]);
+  if (!s->cols_n) return;
+  s->cols_n = 0;
+  Board_cols_mark(s);
+}
+
+void Board_cols_swap(Board *s, uint32_t i, uint32_t j) {
+  if (i >= s->cols_n || j >= s->cols_n || i == j) return;
+  Col t = s->cols[i];
+  s->cols[i] = s->cols[j];
+  s->cols[j] = t;
+  Board_cols_mark(s);
+}
+
+void Col_set_id(Col *s, uint32_t v) {
+  if (s->id == v) return;
+  s->id = v;
+  cdt_kd_Col = 1;
+#if CDOM_DEV
+  CDT_OWN("Col.id");
+#endif
+}
+
+void Col_mark_id(Col *s) {
+  cdt_kd_Col = 1;
+  (void)s;
+#if CDOM_DEV
+  CDT_OWN("Col.id");
+#endif
+}
+
+void Col_set_title(Col *s, cd_str v) {
+  if (s->title == v) return;
+  s->title = v;
+  s->cdt_d[0] |= 0x1u;
+  cdt_queue_Col(s);
+#if CDOM_DEV
+  s->cdt_sh_title = s->title;
+  CDT_OWN("Col.title");
+#endif
+}
+
+void Col_mark_title(Col *s) {
+  s->cdt_d[0] |= 0x1u;
+  cdt_queue_Col(s);
+#if CDOM_DEV
+  s->cdt_sh_title = s->title;
+  CDT_OWN("Col.title");
+#endif
 }
 
 void Col_cards_reserve(Col *s, uint32_t n) {
@@ -54,10 +181,19 @@ void Col_cards_reserve(Col *s, uint32_t n) {
   s->cards_cap = c;
 }
 
+void Col_cards_mark(Col *s) {
+  s->cdt_d[0] |= 0x6u;
+  cdt_queue_Col(s);
+#if CDOM_DEV
+  CDT_OWN("Col.cards");
+#endif
+}
+
 Card *Col_cards_push(Col *s) {
   if (s->cards_n == s->cards_cap) Col_cards_reserve(s, s->cards_n + 1);
   Card *r = &s->cards[s->cards_n++];
   *r = (Card){0};
+  Col_cards_mark(s);
   return r;
 }
 
@@ -66,6 +202,84 @@ void Col_cards_remove(Col *s, uint32_t i) {
   cdt_drop_Card(&s->cards[i]);
   for (uint32_t j = i + 1; j < s->cards_n; j++) s->cards[j - 1] = s->cards[j];
   s->cards_n--;
+  Col_cards_mark(s);
+}
+
+void Col_cards_clear(Col *s) {
+  for (uint32_t i = 0; i < s->cards_n; i++) cdt_drop_Card(&s->cards[i]);
+  if (!s->cards_n) return;
+  s->cards_n = 0;
+  Col_cards_mark(s);
+}
+
+void Col_cards_swap(Col *s, uint32_t i, uint32_t j) {
+  if (i >= s->cards_n || j >= s->cards_n || i == j) return;
+  Card t = s->cards[i];
+  s->cards[i] = s->cards[j];
+  s->cards[j] = t;
+  Col_cards_mark(s);
+}
+
+void Card_set_id(Card *s, uint32_t v) {
+  if (s->id == v) return;
+  s->id = v;
+  s->cdt_d[0] |= 0x1u;
+  cdt_queue_Card(s);
+  cdt_kd_Card = 1;
+#if CDOM_DEV
+  s->cdt_sh_id = s->id;
+  CDT_OWN("Card.id");
+#endif
+}
+
+void Card_mark_id(Card *s) {
+  s->cdt_d[0] |= 0x1u;
+  cdt_queue_Card(s);
+  cdt_kd_Card = 1;
+#if CDOM_DEV
+  s->cdt_sh_id = s->id;
+  CDT_OWN("Card.id");
+#endif
+}
+
+void Card_set_text(Card *s, cd_str v) {
+  if (s->text == v) return;
+  s->text = v;
+  s->cdt_d[0] |= 0x2u;
+  cdt_queue_Card(s);
+#if CDOM_DEV
+  s->cdt_sh_text = s->text;
+  CDT_OWN("Card.text");
+#endif
+}
+
+void Card_mark_text(Card *s) {
+  s->cdt_d[0] |= 0x2u;
+  cdt_queue_Card(s);
+#if CDOM_DEV
+  s->cdt_sh_text = s->text;
+  CDT_OWN("Card.text");
+#endif
+}
+
+void Card_set_done(Card *s, uint32_t v) {
+  if (s->done == v) return;
+  s->done = v;
+  s->cdt_d[0] |= 0x5u;
+  cdt_queue_Card(s);
+#if CDOM_DEV
+  s->cdt_sh_done = s->done;
+  CDT_OWN("Card.done");
+#endif
+}
+
+void Card_mark_done(Card *s) {
+  s->cdt_d[0] |= 0x5u;
+  cdt_queue_Card(s);
+#if CDOM_DEV
+  s->cdt_sh_done = s->done;
+  CDT_OWN("Card.done");
+#endif
 }
 
 void Card_tags_reserve(Card *s, uint32_t n) {
@@ -76,10 +290,19 @@ void Card_tags_reserve(Card *s, uint32_t n) {
   s->tags_cap = c;
 }
 
+void Card_tags_mark(Card *s) {
+  s->cdt_d[0] |= 0x8u;
+  cdt_queue_Card(s);
+#if CDOM_DEV
+  CDT_OWN("Card.tags");
+#endif
+}
+
 Tag *Card_tags_push(Card *s) {
   if (s->tags_n == s->tags_cap) Card_tags_reserve(s, s->tags_n + 1);
   Tag *r = &s->tags[s->tags_n++];
   *r = (Tag){0};
+  Card_tags_mark(s);
   return r;
 }
 
@@ -87,6 +310,58 @@ void Card_tags_remove(Card *s, uint32_t i) {
   if (i >= s->tags_n) return;
   for (uint32_t j = i + 1; j < s->tags_n; j++) s->tags[j - 1] = s->tags[j];
   s->tags_n--;
+  Card_tags_mark(s);
+}
+
+void Card_tags_clear(Card *s) {
+  if (!s->tags_n) return;
+  s->tags_n = 0;
+  Card_tags_mark(s);
+}
+
+void Card_tags_swap(Card *s, uint32_t i, uint32_t j) {
+  if (i >= s->tags_n || j >= s->tags_n || i == j) return;
+  Tag t = s->tags[i];
+  s->tags[i] = s->tags[j];
+  s->tags[j] = t;
+  Card_tags_mark(s);
+}
+
+void Tag_set_id(Tag *s, uint32_t v) {
+  if (s->id == v) return;
+  s->id = v;
+  cdt_kd_Tag = 1;
+#if CDOM_DEV
+  CDT_OWN("Tag.id");
+#endif
+}
+
+void Tag_mark_id(Tag *s) {
+  cdt_kd_Tag = 1;
+  (void)s;
+#if CDOM_DEV
+  CDT_OWN("Tag.id");
+#endif
+}
+
+void Tag_set_name(Tag *s, cd_str v) {
+  if (s->name == v) return;
+  s->name = v;
+  s->cdt_d[0] |= 0x1u;
+  cdt_queue_Tag(s);
+#if CDOM_DEV
+  s->cdt_sh_name = s->name;
+  CDT_OWN("Tag.name");
+#endif
+}
+
+void Tag_mark_name(Tag *s) {
+  s->cdt_d[0] |= 0x1u;
+  cdt_queue_Tag(s);
+#if CDOM_DEV
+  s->cdt_sh_name = s->name;
+  CDT_OWN("Tag.name");
+#endif
 }
 
 static uint8_t *cdt_put16(uint8_t *d, uint32_t v) { d[0] = (uint8_t)v; d[1] = (uint8_t)(v >> 8); return d + 2; }
@@ -249,6 +524,7 @@ static int cdt_walk_Card(Card *r, const uint8_t *b, uint32_t len, uint32_t *o) {
   if (r) {
     Card_tags_reserve(r, k);
     r->tags_n = k;
+    for (uint32_t i = 0; i < k; i++) r->tags[i] = (Tag){0};
   }
   for (uint32_t i = 0; i < k; i++)
     if (cdt_walk_Tag(r ? &r->tags[i] : 0, b, len, o)) return -1;
@@ -306,12 +582,18 @@ int Board_load(Board *s, const uint8_t *src, uint32_t len) { /* one pass to chec
   uint32_t o = 0;
   if (cdt_walk_Board(0, src, len, &o) || o != len) return -1;
   o = 0;
-  return cdt_walk_Board(s, src, len, &o);
+  if (cdt_walk_Board(s, src, len, &o)) return -1;
+  cdt_full = 1; /* everything changed */
+  return 0;
 }
 
 uint32_t cd_state_save(uint8_t *dst, uint32_t cap) { return Board_save(&B, dst, cap); }
 int cd_state_load(const uint8_t *src, uint32_t len) { return Board_load(&B, src, len); }
 
+static const uint32_t cdt_ones[8] = {0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu}; /* a create fills its item's lists whole */
+static uint32_t cdt_lw_tag[1]; /* this render: tag's bindings to redo for every item */
+static uint32_t cdt_lw_card[1]; /* this render: card's bindings to redo for every item */
+static uint32_t cdt_lw_col[1]; /* this render: col's bindings to redo for every item */
 static Tag *card_find0(Board *S, uint32_t cdt_i);
 static Card *col_find0(Board *S, uint32_t cdt_i);
 static Col *page_find0(Board *S, uint32_t cdt_i);
@@ -330,6 +612,10 @@ static uint32_t tag_view_new(void) {
 
 cd_id tag_create(Board *S, Tag *g, tag_view *cdt_v) {
   (void)S; (void)g; (void)cdt_v;
+  g->cdt_d[0] = 0;
+#if CDOM_DEV
+  g->cdt_sh_name = g->name;
+#endif
   cd_id cdt_root = cdt_v->root = cd_id_new();
   cd_tpl_text(1, 0, cdt_str(cdt_v->t1 = (g->name)));
   cd_clone(1);
@@ -339,10 +625,12 @@ cd_id tag_create(Board *S, Tag *g, tag_view *cdt_v) {
   return cdt_root;
 }
 
-void tag_patch(Board *S, Tag *g, tag_view *cdt_v) {
+void tag_patch(Board *S, Tag *g, tag_view *cdt_v, const uint32_t *cdt_m) {
   (void)S; (void)g; (void)cdt_v;
-  {
+  (void)cdt_m;
+  if (cdt_m[0] & 0x1u) {
     cd_str cdt_t = (g->name);
+    CDT_CMP;
     if (cdt_t != cdt_v->t1) {
       cdt_v->t1 = cdt_t;
       cd_sel(cdt_v->root); cd_down(); cd_value(cdt_str(cdt_t));
@@ -390,7 +678,12 @@ static void card_ep0(void *cdt_ctx, uint32_t cdt_i, cd_item *cdt_it) {
   (void)cdt_ctx;
   tag_view *cdt_v = &tag_views[cdt_it->data];
   cdt_v->idx = cdt_i;
-  tag_patch(card_ctx0.S, &card_ctx0.r->tags[cdt_i], cdt_v);
+  Tag *cdt_r = &card_ctx0.r->tags[cdt_i];
+  uint32_t cdt_m[1];
+  CDT_VISIT;
+  cdt_m[0] = cdt_r->cdt_d[0] | cdt_lw_tag[0];
+  cdt_r->cdt_d[0] = 0;
+  if (cdt_m[0]) tag_patch(card_ctx0.S, cdt_r, cdt_v, cdt_m);
 }
 static void card_ed0(void *cdt_ctx, cd_item *cdt_it) { (void)cdt_ctx; tag_release(cdt_it->data); }
 static cd_list_fns card_fns0 = {0, card_ec0, card_ep0, card_ed0};
@@ -404,9 +697,9 @@ static Tag *card_find0(Board *S, uint32_t cdt_i) { /* the item a view shows */
     if (card_key0(S, &cdt_p->tags[k]) == cdt_v->key) return &cdt_p->tags[k];
   return 0;
 }
-static void card_lists(Board *S, Card *k, card_view *cdt_v) {
+static void card_lists(Board *S, Card *k, card_view *cdt_v, const uint32_t *cdt_m) {
   (void)S;
-  {
+  if (cdt_m[0] & 0x8u) { /* {#each k->tags}: a key, an item or the list changed */
     uint32_t cdt_n = k->tags_n;
     if (cdt_n > card_kcap0) {
       card_kcap0 = cdt_n * 2;
@@ -436,6 +729,12 @@ static void card_f0_free(card_view *cdt_v) {
 
 cd_id card_create(Board *S, Card *k, card_view *cdt_v) {
   (void)S; (void)k; (void)cdt_v;
+  k->cdt_d[0] = 0;
+#if CDOM_DEV
+  k->cdt_sh_id = k->id;
+  k->cdt_sh_text = k->text;
+  k->cdt_sh_done = k->done;
+#endif
   cd_id cdt_root = cdt_v->root = cd_id_new();
   cdt_v->if2_root = 0;
   cd_tpl_text(2, 0, cdt_str(cdt_v->t1 = (k->text)));
@@ -456,28 +755,32 @@ cd_id card_create(Board *S, Card *k, card_view *cdt_v) {
   cdt_v->list0 = (cd_list){0};
   cdt_v->list0.parent = cdt_v->id5;
   cdt_v->list0.owns_parent = 1;
-  card_lists(S, k, cdt_v);
+  card_lists(S, k, cdt_v, cdt_ones);
   return cdt_root;
 }
 
-void card_patch(Board *S, Card *k, card_view *cdt_v) {
+void card_patch(Board *S, Card *k, card_view *cdt_v, const uint32_t *cdt_m) {
   (void)S; (void)k; (void)cdt_v;
-  {
+  (void)cdt_m;
+  if (cdt_m[0] & 0x1u) {
     uint32_t cdt_c = (((k->done) ? 1u : 0u) | ((k->id == S->sel) ? 2u : 0u));
+    CDT_CMP;
     if (cdt_c != cdt_v->c0) {
       cdt_v->c0 = cdt_c;
       cd_set_class(cdt_v->root, cdt_cls(card_k0_c, card_k0_s, cdt_c));
     }
   }
-  {
+  if (cdt_m[0] & 0x2u) {
     cd_str cdt_t = (k->text);
+    CDT_CMP;
     if (cdt_t != cdt_v->t1) {
       cdt_v->t1 = cdt_t;
       cd_sel(cdt_v->root); cd_down(); cd_value(cdt_str(cdt_t));
     }
   }
-  {
+  if (cdt_m[0] & 0x4u) {
     uint32_t cdt_b = ((k->done) ? 1u : 0u);
+    CDT_CMP;
     if (cdt_b != cdt_v->if2_b) {
       if (cdt_v->if2_b) {
         cd_remove(cdt_v->if2_root);
@@ -487,7 +790,7 @@ void card_patch(Board *S, Card *k, card_view *cdt_v) {
       if (cdt_b == 1) { cd_at(cdt_v->root, cdt_v->id5); card_f3_create(S, k, cdt_v); }
     }
   }
-  card_lists(S, k, cdt_v);
+  card_lists(S, k, cdt_v, cdt_m);
 }
 
 static void card_release(uint32_t cdt_vi) {
@@ -535,7 +838,12 @@ static void col_ep0(void *cdt_ctx, uint32_t cdt_i, cd_item *cdt_it) {
   (void)cdt_ctx;
   card_view *cdt_v = &card_views[cdt_it->data];
   cdt_v->idx = cdt_i;
-  card_patch(col_ctx0.S, &col_ctx0.r->cards[cdt_i], cdt_v);
+  Card *cdt_r = &col_ctx0.r->cards[cdt_i];
+  uint32_t cdt_m[1];
+  CDT_VISIT;
+  cdt_m[0] = cdt_r->cdt_d[0] | cdt_lw_card[0];
+  cdt_r->cdt_d[0] = 0;
+  if (cdt_m[0]) card_patch(col_ctx0.S, cdt_r, cdt_v, cdt_m);
 }
 static void col_ed0(void *cdt_ctx, cd_item *cdt_it) { (void)cdt_ctx; card_release(cdt_it->data); }
 static cd_list_fns col_fns0 = {0, col_ec0, col_ep0, col_ed0};
@@ -549,9 +857,9 @@ static Card *col_find0(Board *S, uint32_t cdt_i) { /* the item a view shows */
     if (col_key0(S, &cdt_p->cards[k]) == cdt_v->key) return &cdt_p->cards[k];
   return 0;
 }
-static void col_lists(Board *S, Col *c, col_view *cdt_v) {
+static void col_lists(Board *S, Col *c, col_view *cdt_v, const uint32_t *cdt_m) {
   (void)S;
-  {
+  if (cdt_m[0] & 0x4u) { /* {#each c->cards}: a key, an item or the list changed */
     uint32_t cdt_n = c->cards_n;
     if (cdt_n > col_kcap0) {
       col_kcap0 = cdt_n * 2;
@@ -572,6 +880,10 @@ static void col_f0_free(col_view *cdt_v) {
 
 cd_id col_create(Board *S, Col *c, col_view *cdt_v) {
   (void)S; (void)c; (void)cdt_v;
+  c->cdt_d[0] = 0;
+#if CDOM_DEV
+  c->cdt_sh_title = c->title;
+#endif
   cd_id cdt_root = cdt_v->root = cd_id_new();
   cd_tpl_text(3, 0, cdt_str(cdt_v->t2 = (c->title)));
   cd_tpl_text_num(3, 1, cdt_v->t4 = (uint32_t)(c->cards_n));
@@ -588,27 +900,30 @@ cd_id col_create(Board *S, Col *c, col_view *cdt_v) {
   cdt_v->list0 = (cd_list){0};
   cdt_v->list0.parent = cdt_v->id6;
   cdt_v->list0.owns_parent = 1;
-  col_lists(S, c, cdt_v);
+  col_lists(S, c, cdt_v, cdt_ones);
   return cdt_root;
 }
 
-void col_patch(Board *S, Col *c, col_view *cdt_v) {
+void col_patch(Board *S, Col *c, col_view *cdt_v, const uint32_t *cdt_m) {
   (void)S; (void)c; (void)cdt_v;
-  {
+  (void)cdt_m;
+  if (cdt_m[0] & 0x1u) {
     cd_str cdt_t = (c->title);
+    CDT_CMP;
     if (cdt_t != cdt_v->t2) {
       cdt_v->t2 = cdt_t;
       cd_sel(cdt_v->root); cd_down(); cd_down(); cd_value(cdt_str(cdt_t));
     }
   }
-  {
+  if (cdt_m[0] & 0x2u) {
     uint32_t cdt_t = (uint32_t)(c->cards_n);
+    CDT_CMP;
     if (cdt_t != cdt_v->t4) {
       cdt_v->t4 = cdt_t;
       cd_sel(cdt_v->root); cd_down(); cd_down(); cd_next(); cd_next(); cd_value_num(cdt_t);
     }
   }
-  col_lists(S, c, cdt_v);
+  col_lists(S, c, cdt_v, cdt_m);
 }
 
 static void col_release(uint32_t cdt_vi) {
@@ -645,7 +960,12 @@ static void page_ep0(void *cdt_ctx, uint32_t cdt_i, cd_item *cdt_it) {
   Board *S = cdt_ctx;
   col_view *cdt_v = &col_views[cdt_it->data];
   cdt_v->idx = cdt_i;
-  col_patch(S, &S->cols[cdt_i], cdt_v);
+  Col *cdt_r = &S->cols[cdt_i];
+  uint32_t cdt_m[1];
+  CDT_VISIT;
+  cdt_m[0] = cdt_r->cdt_d[0] | cdt_lw_col[0];
+  cdt_r->cdt_d[0] = 0;
+  if (cdt_m[0]) col_patch(S, cdt_r, cdt_v, cdt_m);
 }
 static void page_ed0(void *cdt_ctx, cd_item *cdt_it) { (void)cdt_ctx; col_release(cdt_it->data); }
 static cd_list_fns page_fns0 = {0, page_ec0, page_ep0, page_ed0};
@@ -657,6 +977,48 @@ static Col *page_find0(Board *S, uint32_t cdt_i) { /* the item a view shows */
     if (page_key0(S, &S->cols[k]) == cdt_v->key) return &S->cols[k];
   return 0;
 }
+
+#if CDOM_DEV
+uint32_t page_dev_compares, page_dev_visits;
+static void cdt_dev_Col(Col *r, int all);
+static void cdt_dev_Card(Card *r, int all);
+static void cdt_dev_Tag(Tag *r, int all);
+static void cdt_dev_Col(Col *r, int all) {
+  (void)r; (void)all;
+  if (!all && r->title != r->cdt_sh_title) cd_dev_warn("state written without a setter: Col.title");
+  r->cdt_sh_title = r->title;
+  for (uint32_t i = 0; i < r->cards_n; i++) cdt_dev_Card(&r->cards[i], all);
+}
+static void cdt_dev_Card(Card *r, int all) {
+  (void)r; (void)all;
+  if (!all && r->id != r->cdt_sh_id) cd_dev_warn("state written without a setter: Card.id");
+  r->cdt_sh_id = r->id;
+  if (!all && r->text != r->cdt_sh_text) cd_dev_warn("state written without a setter: Card.text");
+  r->cdt_sh_text = r->text;
+  if (!all && r->done != r->cdt_sh_done) cd_dev_warn("state written without a setter: Card.done");
+  r->cdt_sh_done = r->done;
+  for (uint32_t i = 0; i < r->tags_n; i++) cdt_dev_Tag(&r->tags[i], all);
+}
+static void cdt_dev_Tag(Tag *r, int all) {
+  (void)r; (void)all;
+  if (!all && r->name != r->cdt_sh_name) cd_dev_warn("state written without a setter: Tag.name");
+  r->cdt_sh_name = r->name;
+}
+static void cdt_dev_pre(Board *S, int all) {
+  (void)S; (void)all;
+  if (!all && S->sel != S->cdt_sh_sel) cd_dev_warn("state written without a setter: Board.sel");
+  S->cdt_sh_sel = S->sel;
+  if (!all && !(S->cdt_d[0] & 0x4u) && !cdt_kd_Col) {
+    int bad = S->cols_n != page_list0.n;
+    for (uint32_t i = 0; i < S->cols_n && !bad; i++) bad = page_key0(S, &S->cols[i]) != page_list0.items[i].key;
+    if (bad) cd_dev_warn("list changed without a setter: Board.cols");
+  }
+}
+static void cdt_dev_post(Board *S, int all) {
+  (void)S; (void)all;
+  for (uint32_t i = 0; i < S->cols_n; i++) cdt_dev_Col(&S->cols[i], all);
+}
+#endif
 
 void page_init(void) {
   for (uint32_t i = 0; i < 17; i++) cdt_s[i] = cd_internz(cdt_lit[i]);
@@ -695,6 +1057,7 @@ void page_create(Board *S) {
   page_view *cdt_v = &page_v;
   page_S = S;
   (void)S;
+  cdt_full = 1; /* the first render takes the lists' keys and checks everything */
   cd_at(CD_MOUNT, 0);
   cdt_v->root = cd_id_new();
   cd_open(cdt_s[12]);
@@ -715,14 +1078,32 @@ void page_create(Board *S) {
 void page_render(Board *S) {
   page_view *cdt_v = &page_v;
   (void)S; (void)cdt_v;
-  {
+  int cdt_all = cdt_full;
+  cdt_full = 0;
+#if CDOM_DEV
+  cdt_dev_pre(S, cdt_all);
+#endif
+  if (cdt_all) {
+    S->cdt_d[0] = 0xffffffffu;
+  }
+  uint32_t cdt_m[1];
+  cdt_m[0] = S->cdt_d[0];
+  S->cdt_d[0] = 0;
+  if (cdt_m[0] & 0x2u) {
     uint32_t cdt_t = (uint32_t)(S->sel);
+    CDT_CMP;
     if (cdt_t != cdt_v->t3) {
       cdt_v->t3 = cdt_t;
       cd_sel(cdt_v->root); cd_down(); cd_down(); cd_next(); cd_value_num(cdt_t);
     }
   }
-  {
+  cdt_lw_tag[0] = cdt_all ? 0xffffffffu : 0u;
+  cdt_lw_card[0] = cdt_all ? 0xffffffffu : ((cdt_m[0] & 0x1u ? 0x1u : 0u));
+  cdt_lw_col[0] = cdt_all ? 0xffffffffu : 0u;
+  if (cdt_qn_Tag || cdt_kd_Tag || cdt_lw_tag[0]) cdt_lw_card[0] |= 0x8u; /* {#each k->tags} */
+  if (cdt_qn_Card || cdt_kd_Card || cdt_lw_card[0]) cdt_lw_col[0] |= 0x4u; /* {#each c->cards} */
+  /* {#each S->cols} */
+  if ((cdt_m[0] & 0x4u) || cdt_kd_Col) {
     uint32_t cdt_n = S->cols_n;
     if (cdt_n > page_kcap0) {
       page_kcap0 = cdt_n * 2;
@@ -731,7 +1112,22 @@ void page_render(Board *S) {
     for (uint32_t cdt_i = 0; cdt_i < cdt_n; cdt_i++) page_keys0[cdt_i] = page_key0(S, &S->cols[cdt_i]);
     page_fns0.ctx = S;
     cd_list_update(&page_list0, page_keys0, cdt_n, &page_fns0);
+  } else if (cdt_qn_Col > CDT_QCAP || cdt_lw_col[0]) {
+    for (uint32_t cdt_i = 0; cdt_i < page_list0.n; cdt_i++) page_ep0(S, cdt_i, &page_list0.items[cdt_i]);
+  } else {
+    for (uint32_t cdt_k = 0; cdt_k < cdt_qn_Col; cdt_k++) { /* the queued items of this list */
+      uintptr_t cdt_o = (uintptr_t)cdt_q_Col[cdt_k] - (uintptr_t)S->cols;
+      uint32_t cdt_i = (uint32_t)(cdt_o / sizeof(Col));
+      if (cdt_o < (uintptr_t)S->cols_n * sizeof(Col) && cdt_i < page_list0.n) page_ep0(S, cdt_i, &page_list0.items[cdt_i]);
+    }
   }
+  cdt_qn_Col = cdt_kd_Col = 0;
+  cdt_qn_Card = cdt_kd_Card = 0;
+  cdt_qn_Tag = cdt_kd_Tag = 0;
+  cdt_epoch++;
+#if CDOM_DEV
+  cdt_dev_post(S, cdt_all);
+#endif
 }
 
 void page_dispatch(const cd_event_rec *e) {

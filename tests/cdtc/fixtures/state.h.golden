@@ -14,26 +14,66 @@ typedef struct Model {
   uint32_t people_n, people_cap;
   Id *ids;
   uint32_t ids_n, ids_cap;
+  uint32_t cdt_d[1]; /* cdtc's dirty bits: the bindings the next render redoes */
+#if CDOM_DEV /* what the last setter wrote */
+  cd_str cdt_sh_name;
+#endif
 } Model;
 /* initial values; a str holds 0 until set, and 0 renders as "" */
 #define Model_INIT {.version = 2, .flags = 4294967295}
 extern Model model;
+
+/* ---- signals: a render redoes only what was marked ----
+ * Write a field through its setter, <Agg>_set_<field>(p, v): it stores v and, when v differs, marks
+ * the bindings that read the field (a record also goes on its type's queue, so the render patches
+ * only the records marked). After writing a field directly call <Agg>_mark_<field>(p); after
+ * writing anything directly, Model_mark_all(s) makes the next render redo everything once. A list
+ * changes through _push, _remove, _clear and _swap, which mark it; after editing its array or count
+ * by hand call <Owner>_<list>_mark. A record fresh from _push may be filled directly before the
+ * next render, which creates it whole. A derived field is recomputed by the render when an input
+ * was marked; it has no setter. A dev build (-DCDOM_DEV=1) reports, through cd_dev_warn, a field
+ * the render finds changed without a setter, a list changed without a mark, and a component's
+ * handler writing state it does not own. */
+void Model_mark_all(Model *s);
+void Model_set_version(Model *s, uint32_t v);
+void Model_mark_version(Model *s);
+void Model_set_name(Model *s, cd_str v);
+void Model_mark_name(Model *s);
+void Model_set_flags(Model *s, uint32_t v);
+void Model_mark_flags(Model *s);
 void Model_people_reserve(Model *s, uint32_t n);
-Person *Model_people_push(Model *s); /* a zeroed record at the end */
+Person *Model_people_push(Model *s); /* a zeroed record at the end: fill it directly before the next render */
 void Model_people_remove(Model *s, uint32_t i);
+void Model_people_clear(Model *s);
+void Model_people_swap(Model *s, uint32_t i, uint32_t j);
+void Model_people_mark(Model *s); /* after writing the array or its count directly */
 void Model_ids_reserve(Model *s, uint32_t n);
-Id *Model_ids_push(Model *s); /* a zeroed record at the end */
+Id *Model_ids_push(Model *s); /* a zeroed record at the end: fill it directly before the next render */
 void Model_ids_remove(Model *s, uint32_t i);
-/* the state as a fixed little-endian blob: fields in declaration order, a u32 as 4 bytes,
- * a str as a u16 length then its bytes, a list as a u32 count then its records */
+void Model_ids_clear(Model *s);
+void Model_ids_swap(Model *s, uint32_t i, uint32_t j);
+void Model_ids_mark(Model *s); /* after writing the array or its count directly */
+void Person_set_age(Person *s, uint32_t v);
+void Person_mark_age(Person *s);
+void Person_set_first(Person *s, cd_str v);
+void Person_mark_first(Person *s);
+void Person_set_last(Person *s, cd_str v);
+void Person_mark_last(Person *s);
+void Id_set_v(Id *s, uint32_t v);
+void Id_mark_v(Id *s);
+/* the state as a fixed little-endian blob: fields in declaration order (derived ones left out), a
+ * u32 as 4 bytes, a str as a u16 length then its bytes, a list as a u32 count then its records */
 uint32_t Model_save(const Model *s, uint8_t *dst, uint32_t cap); /* bytes, or the need when > cap */
 int Model_load(Model *s, const uint8_t *src, uint32_t len); /* 0 on success; s untouched on failure */
 
 /* ---- templates ---- */
 void page_init(void);              /* interns strings, builds every template */
 void page_create(Model *M);  /* builds the page under the mount; call once */
-void page_render(Model *M);  /* patches the page and its lists to the state */
+void page_render(Model *M);  /* patches what setters marked since the last render */
 void page_dispatch(const cd_event_rec *e); /* calls the handler an event names */
+#if CDOM_DEV /* for tests: the bindings renders compared, the list items they looked at */
+extern uint32_t page_dev_compares, page_dev_visits;
+#endif
 typedef struct page_view {
   cd_id root;
   cd_str t1;

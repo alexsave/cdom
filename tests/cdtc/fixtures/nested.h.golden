@@ -4,28 +4,85 @@
 #include "cdom.h"
 
 /* ---- state ---- */
-typedef struct Col { uint32_t id; cd_str title; struct Card *cards; uint32_t cards_n, cards_cap; } Col;
-typedef struct Card { uint32_t id; cd_str text; uint32_t done; struct Tag *tags; uint32_t tags_n, tags_cap; } Card;
-typedef struct Tag { uint32_t id; cd_str name; } Tag;
+typedef struct Col { uint32_t id; cd_str title; struct Card *cards; uint32_t cards_n, cards_cap;
+  uint32_t cdt_d[1], cdt_q; /* cdtc's: dirty bits, and the render it is queued for */
+#if CDOM_DEV /* what the last setter wrote */
+  cd_str cdt_sh_title;
+#endif
+ } Col;
+typedef struct Card { uint32_t id; cd_str text; uint32_t done; struct Tag *tags; uint32_t tags_n, tags_cap;
+  uint32_t cdt_d[1], cdt_q; /* cdtc's: dirty bits, and the render it is queued for */
+#if CDOM_DEV /* what the last setter wrote */
+  uint32_t cdt_sh_id; cd_str cdt_sh_text; uint32_t cdt_sh_done;
+#endif
+ } Card;
+typedef struct Tag { uint32_t id; cd_str name;
+  uint32_t cdt_d[1], cdt_q; /* cdtc's: dirty bits, and the render it is queued for */
+#if CDOM_DEV /* what the last setter wrote */
+  cd_str cdt_sh_name;
+#endif
+ } Tag;
 typedef struct Board {
   uint32_t sel;
   Col *cols;
   uint32_t cols_n, cols_cap;
+  uint32_t cdt_d[1]; /* cdtc's dirty bits: the bindings the next render redoes */
+#if CDOM_DEV /* what the last setter wrote */
+  uint32_t cdt_sh_sel;
+#endif
 } Board;
 /* initial values; a str holds 0 until set, and 0 renders as "" */
 #define Board_INIT {0}
 extern Board B;
+
+/* ---- signals: a render redoes only what was marked ----
+ * Write a field through its setter, <Agg>_set_<field>(p, v): it stores v and, when v differs, marks
+ * the bindings that read the field (a record also goes on its type's queue, so the render patches
+ * only the records marked). After writing a field directly call <Agg>_mark_<field>(p); after
+ * writing anything directly, Board_mark_all(s) makes the next render redo everything once. A list
+ * changes through _push, _remove, _clear and _swap, which mark it; after editing its array or count
+ * by hand call <Owner>_<list>_mark. A record fresh from _push may be filled directly before the
+ * next render, which creates it whole. A derived field is recomputed by the render when an input
+ * was marked; it has no setter. A dev build (-DCDOM_DEV=1) reports, through cd_dev_warn, a field
+ * the render finds changed without a setter, a list changed without a mark, and a component's
+ * handler writing state it does not own. */
+void Board_mark_all(Board *s);
+void Board_set_sel(Board *s, uint32_t v);
+void Board_mark_sel(Board *s);
 void Board_cols_reserve(Board *s, uint32_t n);
-Col *Board_cols_push(Board *s); /* a zeroed record at the end */
+Col *Board_cols_push(Board *s); /* a zeroed record at the end: fill it directly before the next render */
 void Board_cols_remove(Board *s, uint32_t i); /* frees the record's lists */
+void Board_cols_clear(Board *s);
+void Board_cols_swap(Board *s, uint32_t i, uint32_t j);
+void Board_cols_mark(Board *s); /* after writing the array or its count directly */
+void Col_set_id(Col *s, uint32_t v);
+void Col_mark_id(Col *s);
+void Col_set_title(Col *s, cd_str v);
+void Col_mark_title(Col *s);
 void Col_cards_reserve(Col *s, uint32_t n);
-Card *Col_cards_push(Col *s); /* a zeroed record at the end */
+Card *Col_cards_push(Col *s); /* a zeroed record at the end: fill it directly before the next render */
 void Col_cards_remove(Col *s, uint32_t i); /* frees the record's lists */
+void Col_cards_clear(Col *s);
+void Col_cards_swap(Col *s, uint32_t i, uint32_t j);
+void Col_cards_mark(Col *s); /* after writing the array or its count directly */
+void Card_set_id(Card *s, uint32_t v);
+void Card_mark_id(Card *s);
+void Card_set_text(Card *s, cd_str v);
+void Card_mark_text(Card *s);
+void Card_set_done(Card *s, uint32_t v);
+void Card_mark_done(Card *s);
 void Card_tags_reserve(Card *s, uint32_t n);
-Tag *Card_tags_push(Card *s); /* a zeroed record at the end */
+Tag *Card_tags_push(Card *s); /* a zeroed record at the end: fill it directly before the next render */
 void Card_tags_remove(Card *s, uint32_t i);
-/* the state as a fixed little-endian blob: fields in declaration order, a u32 as 4 bytes,
- * a str as a u16 length then its bytes, a list as a u32 count then its records */
+void Card_tags_clear(Card *s);
+void Card_tags_swap(Card *s, uint32_t i, uint32_t j);
+void Card_tags_mark(Card *s); /* after writing the array or its count directly */
+void Tag_set_id(Tag *s, uint32_t v);
+void Tag_mark_id(Tag *s);
+void Tag_set_name(Tag *s, cd_str v);
+void Tag_mark_name(Tag *s);
+/* the state as a fixed little-endian blob: fields in declaration order (derived ones left out), a
+ * u32 as 4 bytes, a str as a u16 length then its bytes, a list as a u32 count then its records */
 uint32_t Board_save(const Board *s, uint8_t *dst, uint32_t cap); /* bytes, or the need when > cap */
 int Board_load(Board *s, const uint8_t *src, uint32_t len); /* 0 on success; s untouched on failure */
 
@@ -42,7 +99,7 @@ typedef struct tag_view {
   cd_str t1;
 } tag_view;
 cd_id tag_create(Board *S, Tag *g, tag_view *cdt_v);
-void tag_patch(Board *S, Tag *g, tag_view *cdt_v);
+void tag_patch(Board *S, Tag *g, tag_view *cdt_v, const uint32_t *cdt_m); /* redoes the bindings whose bits are set in cdt_m */
 typedef struct card_view {
   cd_id root;
   uint32_t key, idx; /* the item's key and its index at the last render */
@@ -55,7 +112,7 @@ typedef struct card_view {
   cd_id id5;
 } card_view;
 cd_id card_create(Board *S, Card *k, card_view *cdt_v);
-void card_patch(Board *S, Card *k, card_view *cdt_v);
+void card_patch(Board *S, Card *k, card_view *cdt_v, const uint32_t *cdt_m); /* redoes the bindings whose bits are set in cdt_m */
 typedef struct col_view {
   cd_id root;
   uint32_t key, idx; /* the item's key and its index at the last render */
@@ -66,11 +123,14 @@ typedef struct col_view {
   cd_id id6;
 } col_view;
 cd_id col_create(Board *S, Col *c, col_view *cdt_v);
-void col_patch(Board *S, Col *c, col_view *cdt_v);
+void col_patch(Board *S, Col *c, col_view *cdt_v, const uint32_t *cdt_m); /* redoes the bindings whose bits are set in cdt_m */
 void page_init(void);              /* interns strings, builds every template */
 void page_create(Board *S);  /* builds the page under the mount; call once */
-void page_render(Board *S);  /* patches the page and its lists to the state */
+void page_render(Board *S);  /* patches what setters marked since the last render */
 void page_dispatch(const cd_event_rec *e); /* calls the handler an event names */
+#if CDOM_DEV /* for tests: the bindings renders compared, the list items they looked at */
+extern uint32_t page_dev_compares, page_dev_visits;
+#endif
 typedef struct page_view {
   cd_id root;
   uint32_t t3;

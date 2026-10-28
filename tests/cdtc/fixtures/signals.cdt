@@ -1,0 +1,61 @@
+<!-- signals: more than 32 bindings on the page (two dirty words), derived values in a chain and
+     from a list's length, and an item template whose binding reads the state (list-wide) with its
+     state bit in the second word. tests/cdtc/signals.c drives it. -->
+<state name="Sig" global="G">
+  u32 a0;
+  u32 a1;
+  u32 a2;
+  u32 a3;
+  u32 a4;
+  u32 a5;
+  u32 a6;
+  u32 a7;
+  u32 a8;
+  u32 a9;
+  u32 a10;
+  u32 a11;
+  u32 a12;
+  u32 a13;
+  u32 a14;
+  u32 a15;
+  u32 a16;
+  u32 a17;
+  u32 a18;
+  u32 a19;
+  u32 a20;
+  u32 a21;
+  u32 a22;
+  u32 a23;
+  u32 a24;
+  u32 a25;
+  u32 a26;
+  u32 a27;
+  u32 a28;
+  u32 a29;
+  u32 a30;
+  u32 a31;
+  u32 a32;
+  u32 a33;
+  u32 a34;
+  u32 a35;
+  u32 a36;
+  u32 a37;
+  u32 a38;
+  u32 a39;
+  u32 x;
+  str note;
+  derived u32 total = S->a0 + S->a39;
+  derived u32 twice = S->total * 2;
+  derived u32 count = S->items_n;
+  derived str shown = S->x ? S->note : 0;
+  list items: It;
+  record It { u32 id; u32 v; }
+</state>
+
+<template name="page" state="Sig *S">
+  <div><p><i>{S->a0}</i><i>{S->a1}</i><i>{S->a2}</i><i>{S->a3}</i><i>{S->a4}</i><i>{S->a5}</i><i>{S->a6}</i><i>{S->a7}</i><i>{S->a8}</i><i>{S->a9}</i><i>{S->a10}</i><i>{S->a11}</i><i>{S->a12}</i><i>{S->a13}</i><i>{S->a14}</i><i>{S->a15}</i><i>{S->a16}</i><i>{S->a17}</i><i>{S->a18}</i><i>{S->a19}</i><i>{S->a20}</i><i>{S->a21}</i><i>{S->a22}</i><i>{S->a23}</i><i>{S->a24}</i><i>{S->a25}</i><i>{S->a26}</i><i>{S->a27}</i><i>{S->a28}</i><i>{S->a29}</i><i>{S->a30}</i><i>{S->a31}</i><i>{S->a32}</i><i>{S->a33}</i><i>{S->a34}</i><i>{S->a35}</i><i>{S->a36}</i><i>{S->a37}</i><i>{S->a38}</i><i>{S->a39}</i></p><b>{S->total} {S->twice} {S->count} [{S->shown}]</b><ul>{#each S->items as r (r->id)}<it/>{/each}</ul></div>
+</template>
+
+<template name="it" item="It *r" state="Sig *S" root="li">
+  <li class:hot={r->v == S->x}>{n:r->id}:{n:r->v}</li>
+</template>

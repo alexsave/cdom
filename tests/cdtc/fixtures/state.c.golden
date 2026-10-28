@@ -5,9 +5,29 @@
 static const char *const cdt_lit[2] = {"main", ""};
 static cd_str cdt_s[2];
 static cd_str cdt_str(cd_str s) { return s ? s : cdt_s[1]; }
+#if CDOM_DEV
+#define CDT_CMP (page_dev_compares++)
+#define CDT_VISIT (page_dev_visits++)
+#else
+#define CDT_CMP ((void)0)
+#define CDT_VISIT ((void)0)
+#endif
 
 Model model = Model_INIT;
 
+static int cdt_full = 1; /* the next render redoes everything: the first, after a load or mark_all */
+#if CDOM_DEV
+static const char *cdt_dev_owner; /* the component whose handler is running */
+static void cdt_dev_say(const char *a, const char *b) {
+  char m[256];
+  uint32_t n = 0;
+  for (; *a && n < 128; a++) m[n++] = *a;
+  for (; *b && n < 255; b++) m[n++] = *b;
+  m[n] = 0;
+  cd_dev_warn(m);
+}
+#define CDT_OWN(f) do { if (cdt_dev_owner) cdt_dev_say(cdt_dev_owner, " writes " f ", which it does not own"); } while (0)
+#endif
 static uint64_t cdt_need_Model(const Model *r);
 static uint8_t *cdt_put_Model(uint8_t *d, const Model *r);
 static int cdt_walk_Model(Model *r, const uint8_t *b, uint32_t len, uint32_t *o);
@@ -18,6 +38,56 @@ static uint64_t cdt_need_Id(const Id *r);
 static uint8_t *cdt_put_Id(uint8_t *d, const Id *r);
 static int cdt_walk_Id(Id *r, const uint8_t *b, uint32_t len, uint32_t *o);
 
+void Model_mark_all(Model *s) { (void)s; cdt_full = 1; }
+
+void Model_set_version(Model *s, uint32_t v) {
+  if (s->version == v) return;
+  s->version = v;
+#if CDOM_DEV
+  CDT_OWN("Model.version");
+#endif
+}
+
+void Model_mark_version(Model *s) {
+  (void)s;
+#if CDOM_DEV
+  CDT_OWN("Model.version");
+#endif
+}
+
+void Model_set_name(Model *s, cd_str v) {
+  if (s->name == v) return;
+  s->name = v;
+  s->cdt_d[0] |= 0x1u;
+#if CDOM_DEV
+  s->cdt_sh_name = s->name;
+  CDT_OWN("Model.name");
+#endif
+}
+
+void Model_mark_name(Model *s) {
+  s->cdt_d[0] |= 0x1u;
+#if CDOM_DEV
+  s->cdt_sh_name = s->name;
+  CDT_OWN("Model.name");
+#endif
+}
+
+void Model_set_flags(Model *s, uint32_t v) {
+  if (s->flags == v) return;
+  s->flags = v;
+#if CDOM_DEV
+  CDT_OWN("Model.flags");
+#endif
+}
+
+void Model_mark_flags(Model *s) {
+  (void)s;
+#if CDOM_DEV
+  CDT_OWN("Model.flags");
+#endif
+}
+
 void Model_people_reserve(Model *s, uint32_t n) {
   if (n <= s->people_cap) return;
   uint32_t c = s->people_cap ? s->people_cap : 16;
@@ -26,10 +96,18 @@ void Model_people_reserve(Model *s, uint32_t n) {
   s->people_cap = c;
 }
 
+void Model_people_mark(Model *s) {
+  (void)s;
+#if CDOM_DEV
+  CDT_OWN("Model.people");
+#endif
+}
+
 Person *Model_people_push(Model *s) {
   if (s->people_n == s->people_cap) Model_people_reserve(s, s->people_n + 1);
   Person *r = &s->people[s->people_n++];
   *r = (Person){0};
+  Model_people_mark(s);
   return r;
 }
 
@@ -37,6 +115,21 @@ void Model_people_remove(Model *s, uint32_t i) {
   if (i >= s->people_n) return;
   for (uint32_t j = i + 1; j < s->people_n; j++) s->people[j - 1] = s->people[j];
   s->people_n--;
+  Model_people_mark(s);
+}
+
+void Model_people_clear(Model *s) {
+  if (!s->people_n) return;
+  s->people_n = 0;
+  Model_people_mark(s);
+}
+
+void Model_people_swap(Model *s, uint32_t i, uint32_t j) {
+  if (i >= s->people_n || j >= s->people_n || i == j) return;
+  Person t = s->people[i];
+  s->people[i] = s->people[j];
+  s->people[j] = t;
+  Model_people_mark(s);
 }
 
 void Model_ids_reserve(Model *s, uint32_t n) {
@@ -47,10 +140,18 @@ void Model_ids_reserve(Model *s, uint32_t n) {
   s->ids_cap = c;
 }
 
+void Model_ids_mark(Model *s) {
+  (void)s;
+#if CDOM_DEV
+  CDT_OWN("Model.ids");
+#endif
+}
+
 Id *Model_ids_push(Model *s) {
   if (s->ids_n == s->ids_cap) Model_ids_reserve(s, s->ids_n + 1);
   Id *r = &s->ids[s->ids_n++];
   *r = (Id){0};
+  Model_ids_mark(s);
   return r;
 }
 
@@ -58,6 +159,81 @@ void Model_ids_remove(Model *s, uint32_t i) {
   if (i >= s->ids_n) return;
   for (uint32_t j = i + 1; j < s->ids_n; j++) s->ids[j - 1] = s->ids[j];
   s->ids_n--;
+  Model_ids_mark(s);
+}
+
+void Model_ids_clear(Model *s) {
+  if (!s->ids_n) return;
+  s->ids_n = 0;
+  Model_ids_mark(s);
+}
+
+void Model_ids_swap(Model *s, uint32_t i, uint32_t j) {
+  if (i >= s->ids_n || j >= s->ids_n || i == j) return;
+  Id t = s->ids[i];
+  s->ids[i] = s->ids[j];
+  s->ids[j] = t;
+  Model_ids_mark(s);
+}
+
+void Person_set_age(Person *s, uint32_t v) {
+  if (s->age == v) return;
+  s->age = v;
+#if CDOM_DEV
+  CDT_OWN("Person.age");
+#endif
+}
+
+void Person_mark_age(Person *s) {
+  (void)s;
+#if CDOM_DEV
+  CDT_OWN("Person.age");
+#endif
+}
+
+void Person_set_first(Person *s, cd_str v) {
+  if (s->first == v) return;
+  s->first = v;
+#if CDOM_DEV
+  CDT_OWN("Person.first");
+#endif
+}
+
+void Person_mark_first(Person *s) {
+  (void)s;
+#if CDOM_DEV
+  CDT_OWN("Person.first");
+#endif
+}
+
+void Person_set_last(Person *s, cd_str v) {
+  if (s->last == v) return;
+  s->last = v;
+#if CDOM_DEV
+  CDT_OWN("Person.last");
+#endif
+}
+
+void Person_mark_last(Person *s) {
+  (void)s;
+#if CDOM_DEV
+  CDT_OWN("Person.last");
+#endif
+}
+
+void Id_set_v(Id *s, uint32_t v) {
+  if (s->v == v) return;
+  s->v = v;
+#if CDOM_DEV
+  CDT_OWN("Id.v");
+#endif
+}
+
+void Id_mark_v(Id *s) {
+  (void)s;
+#if CDOM_DEV
+  CDT_OWN("Id.v");
+#endif
 }
 
 static uint8_t *cdt_put16(uint8_t *d, uint32_t v) { d[0] = (uint8_t)v; d[1] = (uint8_t)(v >> 8); return d + 2; }
@@ -222,7 +398,9 @@ int Model_load(Model *s, const uint8_t *src, uint32_t len) { /* one pass to chec
   uint32_t o = 0;
   if (cdt_walk_Model(0, src, len, &o) || o != len) return -1;
   o = 0;
-  return cdt_walk_Model(s, src, len, &o);
+  if (cdt_walk_Model(s, src, len, &o)) return -1;
+  cdt_full = 1; /* everything changed */
+  return 0;
 }
 
 uint32_t cd_state_save(uint8_t *dst, uint32_t cap) { return Model_save(&model, dst, cap); }
@@ -231,6 +409,18 @@ int cd_state_load(const uint8_t *src, uint32_t len) { return Model_load(&model, 
 /* ---- the page: page ---- */
 page_view page_v;
 
+#if CDOM_DEV
+uint32_t page_dev_compares, page_dev_visits;
+static void cdt_dev_pre(Model *S, int all) {
+  (void)S; (void)all;
+  if (!all && S->name != S->cdt_sh_name) cd_dev_warn("state written without a setter: Model.name");
+  S->cdt_sh_name = S->name;
+}
+static void cdt_dev_post(Model *S, int all) {
+  (void)S; (void)all;
+}
+#endif
+
 void page_init(void) {
   for (uint32_t i = 0; i < 2; i++) cdt_s[i] = cd_internz(cdt_lit[i]);
 }
@@ -238,6 +428,7 @@ void page_init(void) {
 void page_create(Model *M) {
   page_view *cdt_v = &page_v;
   (void)M;
+  cdt_full = 1; /* the first render takes the lists' keys and checks everything */
   cd_at(CD_MOUNT, 0);
   cdt_v->root = cd_id_new();
   cd_open(cdt_s[0]);
@@ -249,13 +440,28 @@ void page_create(Model *M) {
 void page_render(Model *M) {
   page_view *cdt_v = &page_v;
   (void)M; (void)cdt_v;
-  {
+  int cdt_all = cdt_full;
+  cdt_full = 0;
+#if CDOM_DEV
+  cdt_dev_pre(M, cdt_all);
+#endif
+  if (cdt_all) {
+    M->cdt_d[0] = 0xffffffffu;
+  }
+  uint32_t cdt_m[1];
+  cdt_m[0] = M->cdt_d[0];
+  M->cdt_d[0] = 0;
+  if (cdt_m[0] & 0x1u) {
     cd_str cdt_t = (M->name);
+    CDT_CMP;
     if (cdt_t != cdt_v->t1) {
       cdt_v->t1 = cdt_t;
       cd_sel(cdt_v->root); cd_down(); cd_value(cdt_str(cdt_t));
     }
   }
+#if CDOM_DEV
+  cdt_dev_post(M, cdt_all);
+#endif
 }
 
 void page_dispatch(const cd_event_rec *e) {
