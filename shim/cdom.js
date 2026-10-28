@@ -6,7 +6,7 @@ var cdom = (() => {
     "focusout", "submit", "pointerdown", "pointerup", "pointermove"];
   const TRANSIENT = 0x40000000, DETACHED = 0xffffffff, SMALL = 64;
   const doc = document, td = new TextDecoder(), te = new TextEncoder();
-  const nodes = [], strs = [], tmp = [], tpl = [], stack = [], on = [], tslot = [];
+  const nodes = [], strs = [], tmp = [], tpl = [], stack = [], on = [], tslot = [], named = new Set();
   let slots = []; // slot text nodes of the template being built
   let lmask = new Uint16Array(1024); // listened event types per node id
   let x, mem, buf, u8, u32, i32, SB, SM, INBOX;
@@ -99,21 +99,36 @@ var cdom = (() => {
     top.addEventListener(EVENTS[type], (e) => {
       let path = 0, depth = 0;
       for (let n = e.target; n && n !== top; n = n.parentNode) {
-        if (n.$i !== undefined && lmask[n.$i] & bit) {
-          if (buf !== mem.buffer) views();
-          const k = INBOX >> 2;
-          i32[k] = type; i32[k + 1] = n.$i; i32[k + 2] = e.clientX | 0; i32[k + 3] = e.clientY | 0;
-          i32[k + 4] = e.button | 0; i32[k + 5] = e.keyCode | 0;
-          i32[k + 6] = e.shiftKey | (e.ctrlKey << 1) | (e.altKey << 2) | (e.metaKey << 3);
-          i32[k + 7] = path; i32[k + 8] = depth;
-          x.cd_event();
-          return;
-        }
+        if (n.$i !== undefined && lmask[n.$i] & bit) return post(type, n.$i, e, e.keyCode | 0, path, depth);
         let i = 0;
         for (let s = n.previousElementSibling; s; s = s.previousElementSibling) i++;
         path = (path << 8) | (i & 255); depth++;
       }
     });
+  }
+  // listen_named: events by name (a web component's), captured at the mount so ones that do
+  // not bubble arrive too; delivered as CD_EV_CUSTOM (12) with key = the name's string id.
+  function delegateNamed(h) {
+    named.add(h);
+    const top = nodes[0];
+    top.addEventListener(S(h), (e) => {
+      let path = 0, depth = 0;
+      for (let n = e.target; n && n !== top; n = n.parentNode) {
+        if (n.$n && n.$n.has(h) && nodes[n.$i] === n) return post(12, n.$i, e, h, path, depth);
+        let i = 0;
+        for (let s = n.previousElementSibling; s; s = s.previousElementSibling) i++;
+        path = (path << 8) | (i & 255); depth++;
+      }
+    }, true);
+  }
+  function post(type, id, e, key, path, depth) {
+    if (buf !== mem.buffer) views();
+    const k = INBOX >> 2;
+    i32[k] = type; i32[k + 1] = id; i32[k + 2] = e.clientX | 0; i32[k + 3] = e.clientY | 0;
+    i32[k + 4] = e.button | 0; i32[k + 5] = key;
+    i32[k + 6] = e.shiftKey | (e.ctrlKey << 1) | (e.altKey << 2) | (e.metaKey << 3);
+    i32[k + 7] = path; i32[k + 8] = depth;
+    x.cd_event();
   }
 
   // cdv (cdom.h): one value from linear memory at word vq.
@@ -173,6 +188,10 @@ var cdom = (() => {
     if (n >= lmask.length) { const g = new Uint16Array(n * 2); g.set(lmask); lmask = g; }
     lmask[n] |= 1 << ev; if (!on[ev]) delegate(ev);
   }
+  function listen_named(n, h) {
+    nodes[n] = last; last.$i = n;
+    (last.$n || (last.$n = new Set())).add(h); if (!named.has(h)) delegateNamed(h);
+  }
   function value(s) { if (hy) return hValue(S(s)); last.nodeValue = S(s); }
   function value_num(n) { if (hy) return hValue(n >>> 0); last.nodeValue = n >>> 0; }
   function tpl_save(t) { tpl[t] = root; if (hy) tsize[t] = size(root); tslot[t] = slots; slots = []; root.remove(); }
@@ -212,7 +231,7 @@ var cdom = (() => {
   async function start(url, mount, env, opts) {
     const imports = { cdom: { strings, at, open, close, text, text_num, attr, class: cls, name, listen, value,
       value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num, set_text,
-      set_text_num, set_attr, set_class, remove, free, move, clear, detach, attach, input, host }, env: env || {} };
+      set_text_num, set_attr, set_class, remove, free, move, clear, detach, attach, input, host, listen_named }, env: env || {} };
     const res = fetch(url);
     const { instance } = WebAssembly.instantiateStreaming
       ? await WebAssembly.instantiateStreaming(res, imports)
