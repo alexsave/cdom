@@ -92,9 +92,7 @@ cdom.start('unit.wasm', 'm').then(async (x) => {
   tracing = false;
   check('a timer and a frame answer through their hooks', () => fired || $('#time').textContent);
   check('the timer and frame exports flush what their hooks left pending', () =>
-    (trace.includes('strings') && trace.filter((k) => k === 'walk').length === 2) || JSON.stringify(trace));
-  trace.length = 0;
-  tracing = true; // left on: tools/unit.mjs counts the walks the resize and the network hooks leave
+    (trace.includes('strings') && trace.includes('walk') && x.t_stale() === 0) || JSON.stringify(trace) + ' stale ' + x.t_stale());
   x.t_window();
   check('the viewport, read from C', () => (x.t_viewport(0) === innerWidth && x.t_viewport(1) === innerHeight && x.t_viewport(2) === +document.hidden) || 'wrong');
   document.dispatchEvent(new Event('visibilitychange'));

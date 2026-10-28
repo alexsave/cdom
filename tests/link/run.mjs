@@ -14,7 +14,7 @@ ok(r === 0, `the app's heap: the same, with cdom allocating from the app's mallo
 ok(x.app_mallocs() - before > 3000, `cdom's cd_alloc went through the app's malloc (${x.app_mallocs() - before} calls)`);
 x = await load(`${dir}/alloc_half.wasm`);
 let trapped = false;
-try { x.run(); } catch (e) { trapped = e instanceof WebAssembly.RuntimeError; }
+try { x.free_one(); } catch (e) { trapped = e instanceof WebAssembly.RuntimeError; }
 ok(trapped, 'an app that replaces malloc alone traps at the first free, not silently');
 x = await load(`${dir}/own_libc.wasm`);
 ok(x.own_libc() === 1, "an app's own memcmp and strlen link next to mini.c");

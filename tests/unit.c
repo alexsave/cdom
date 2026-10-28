@@ -49,8 +49,12 @@ EXPORT("t_svg") void t_svg(void) {
   cd_close();
 }
 
-/* Leaves a walk pending and calls no cd_flush: the entry's export must send it (the page counts walks). */
+/* Leaves a walk pending and calls no cd_flush: the entry's export must send it. Every hook starts
+ * with enter(), which counts an entry that found something still pending from the one before. */
 static void hold(cd_id id) { cd_sel(id); cd_up(); }
+static uint32_t stale;
+static void enter(void) { stale += cd_pending() != 0; }
+EXPORT("t_stale") uint32_t t_stale(void) { enter(); return stale; }
 
 /* 3. Timers and frames come back through the app's hooks, and the export flushes after them:
  * the hook interns a string the DOM never uses and holds a walk, and the page sees both cross. */
@@ -65,11 +69,13 @@ EXPORT("t_time") void t_time(void) {
   cd_flush();
 }
 void cd_on_timer(uint32_t token) {
+  enter();
   cd_set_text_num(timer_txt, token);
   cd_intern("timer-flushed", 13);
   hold(timer_txt);
 }
 void cd_on_raf(uint32_t token, double t) {
+  enter();
   cd_set_text_num(raf_txt, t > 0 ? token : 0);
   hold(raf_txt);
 }
@@ -91,6 +97,7 @@ EXPORT("t_viewport") int32_t t_viewport(int32_t which) {
   return which == 0 ? v.w : which == 1 ? v.h : which == 2 ? v.hidden : which == 3 ? resized_w : which == 4 ? resized_h : hidden;
 }
 void cd_on_event(const cd_event_rec *e) {
+  enter();
   if (e->type == CD_EV_RESIZE && e->id == CD_MOUNT) {
     resized_w = e->x; resized_h = e->y;
     cd_set_text_num(vw_txt, (uint32_t)e->x); /* no cd_flush: the event export does it */
@@ -171,9 +178,10 @@ EXPORT("t_leak") void t_leak(uint32_t rounds) {
         cd_open(L("ol")); cd_name_open(inner[k].parent = cd_id_new()); cd_close();
         cd_close();
         if (!k) { cd_open(L("hr")); cd_name_open(cd_id_new()); cd_close(); } /* parent mode: a second root */
-        cd_region_end(o);
-        for (uint32_t i = 0; i < 3; i++) leak_keys[i] = 100 + 10 * (uint32_t)k + i; /* filled outside the build: the list's own ids */
+        /* the inner list, filled while the region records: its ids stay the list's own */
+        for (uint32_t i = 0; i < 3; i++) leak_keys[i] = 100 + 10 * (uint32_t)k + i;
         cd_list_update(&inner[k], leak_keys, 3, &LEAK);
+        cd_region_end(o);
       }
     }
   }
@@ -258,8 +266,9 @@ EXPORT("t_net") void t_net(uint32_t port) {
   cd_ws_open(url, n);
   cd_flush();
 }
-void cd_on_ws_open(uint32_t id) { cd_ws_send(id, MSG, sizeof MSG); }
+void cd_on_ws_open(uint32_t id) { enter(); cd_ws_send(id, MSG, sizeof MSG); hold(net_txt); }
 void cd_on_ws_msg(uint32_t id, const uint8_t *p, uint32_t len) {
+  enter();
   ws_ok = len == sizeof MSG;
   for (uint32_t i = 0; ws_ok && i < len; i++) ws_ok = p[i] == MSG[i];
   say(ws_ok ? "ws ok" : "ws wrong bytes");
@@ -268,6 +277,7 @@ void cd_on_ws_msg(uint32_t id, const uint8_t *p, uint32_t len) {
   hold(net_txt);
 }
 void cd_on_http(uint32_t token, uint32_t status, const uint8_t *p, uint32_t len) {
+  enter();
   int ok = token == 7 && status == 200 && len == sizeof MSG;
   for (uint32_t i = 0; ok && i < len; i++) ok = p[i] == MSG[len - 1 - i];
   say(!ws_ok ? "ws failed" : ok ? "ws ok, http ok" : "http wrong");

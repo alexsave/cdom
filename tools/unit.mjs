@@ -52,14 +52,14 @@ try {
   await b.send('Emulation.setDeviceMetricsOverride', { width: 640, height: 480, deviceScaleFactor: 1, mobile: false });
   let ok = false;
   for (let i = 0; i < 100 && !ok; i++) { await sleep(20); ok = await b.evaluate(`__x.t_viewport(3) === 640 && __x.t_viewport(4) === 480 && document.querySelector('#window i').textContent === '640'`); }
-  const walks = () => b.evaluate(`trace.filter((k) => k === 'walk').length`);
-  ok = ok && await walks() === 1;
+  const stale = () => b.evaluate('__x.t_stale()');
+  ok = ok && await stale() === 0;
   if (ok) passed.push('a resize arrives through the event path, with the viewport size, and the export flushes'); else errors.push('resize: ' + await b.evaluate(`__x.t_viewport(3) + 'x' + __x.t_viewport(4) + ' ' + document.querySelector('#window i').textContent`));
   await b.evaluate(`__x.t_net(${PORT})`);
   let v = '';
   for (let i = 0; i < 200; i++) { await sleep(20); v = await b.evaluate(`document.querySelector('#net i').textContent`); if (v !== 'waiting' && v !== 'ws ok') break; }
-  if (v === 'ws ok, http ok' && await walks() === 3) passed.push('WebSocket echo and POST, bytes into C memory, answered without a cd_flush'); else errors.push('net: ' + v + ', walks flushed ' + await walks());
-} finally { await b.close(); srv.close(); }
+  if (v === 'ws ok, http ok' && await stale() === 0) passed.push('WebSocket echo and POST, bytes into C memory, answered without a cd_flush'); else errors.push('net: ' + v + ', entries that found work pending ' + await stale());
+} catch (e) { errors.push('threw: ' + String(e.message || e).slice(0, 300)); } finally { await b.close(); srv.close(); }
 for (const p of passed) console.log('ok  ', p);
 for (const e of errors) console.log('FAIL', e);
 console.log(`${passed.length} passed, ${errors.length} failed`);

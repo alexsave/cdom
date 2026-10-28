@@ -339,6 +339,7 @@ static void walk_step(uint32_t s) {
 static inline void ready(void) { walk_done(); send_strings(); }
 
 void cd_flush(void) { ready(); }
+uint32_t cd_pending(void) { return walking | nstrs; }
 
 static cd_id at_parent = CD_DETACHED - 1, at_before = CD_DETACHED - 1;
 

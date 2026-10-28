@@ -117,6 +117,7 @@ void cd_attach(cd_id id);            /* put it back where it was */
 /* Sends pending strings and any held walk. Every entry from JS (start, events, timers, frames,
  * the network) flushes on its way out, so an app calls this only from an export of its own. */
 void cd_flush(void);
+uint32_t cd_pending(void);           /* nonzero while strings or a walk wait to cross (for tests) */
 
 /* ---- events: the app implements cd_on_event; the shim fills the record ----
  * id is the nearest listening ancestor-or-self of the target. path holds the

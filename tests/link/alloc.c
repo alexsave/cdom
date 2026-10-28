@@ -15,6 +15,13 @@ void cd_main(void) {}
 static uint8_t *blk[N];
 static uint32_t len[N];
 
+/* One block from cd_alloc, given back: with an app's malloc and cdom's free this must trap. */
+__attribute__((export_name("free_one"))) int free_one(void) {
+  void *p = cd_alloc(24);
+  cd_free(p);
+  return 0;
+}
+
 __attribute__((export_name("run"))) int run(void) {
   uint32_t rng = 99;
   for (int round = 0; round < 3; round++) {
