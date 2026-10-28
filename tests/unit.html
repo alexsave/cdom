@@ -96,6 +96,8 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
   const fired = await until(() => $('#time i').textContent === '41' && $('#time i + i').textContent === '42');
   tracing = false;
   check('a timer and a frame answer through their hooks', () => fired || $('#time').textContent);
+  check('cd_epoch_ms is Date.now', () => { const a = Date.now(), c = x.t_epoch(), b = Date.now();
+    return (a <= c && c <= b) || `${a} ${c} ${b}`; });
   check('cd_now is performance.now', () => { const a = performance.now(), c = x.t_now(), b = performance.now();
     return (a <= c && c <= b && x.t_raf_t() > 0 && x.t_raf_t() <= a) || `${a} ${c} ${b} raf ${x.t_raf_t()}`; });
   check('the timer and frame exports flush what their hooks left pending', () =>
@@ -153,6 +155,24 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
   IDBObjectStore.prototype.get = realGet;
   check('cd_store: a get that fails answers -1', () => x.t_store(4, 0) === -1 || x.t_store(4, 0));
   check('cd_store: a put answers 1 when kept and 0 when it failed', () => (x.t_put_ok(1) === 1 && x.t_put_ok(2) === 0) || `kept ${x.t_put_ok(1)}, failed ${x.t_put_ok(2)}`);
+  // The key is read during the call: C writes over its buffer as the put returns.
+  x.t_store_put_tmp();
+  await until(() => x.t_put_ok(3) !== -1);
+  x.t_store_get(5, 3, 1500);
+  await until(() => x.t_store(5, 0) !== -2);
+  check('cd_store: the key is read during the call', () => (x.t_put_ok(3) === 1 && x.t_store(5, 0) === 2) || `put ${x.t_put_ok(3)}, get ${x.t_store(5, 0)}`);
+  // A delete answers 1 and the key misses after it; a delete that fails (made to throw) answers 0.
+  x.t_store_del(1);
+  await until(() => x.t_del_ok(1) !== -1);
+  x.t_store_get(6, 3, 1500);
+  await until(() => x.t_store(6, 0) !== -2);
+  const realDelete = IDBObjectStore.prototype.delete;
+  IDBObjectStore.prototype.delete = function (key) { if (key === 'unit-dfail') throw new DOMException('refused', 'UnknownError'); return realDelete.call(this, key); };
+  x.t_store_del(2);
+  await until(() => x.t_del_ok(2) !== -1);
+  IDBObjectStore.prototype.delete = realDelete;
+  check('cd_store_del: the key misses after a delete', () => (x.t_del_ok(1) === 1 && x.t_store(6, 0) === -1) || `deleted ${x.t_del_ok(1)}, then get ${x.t_store(6, 0)}`);
+  check('cd_store_del: a delete that fails answers 0', () => x.t_del_ok(2) === 0 || `answered ${x.t_del_ok(2)}`);
   const d = await new Promise((r, j) => { const q = indexedDB.open('cdom', 1); q.onsuccess = () => r(q.result); q.onerror = j; });
   const tx = d.transaction('kv', 'readwrite'), os = tx.objectStore('kv'), t0 = performance.now();
   const busy = () => { if (performance.now() - t0 < 400) os.put(new Uint8Array(1), 'unit-busy').onsuccess = busy; };
