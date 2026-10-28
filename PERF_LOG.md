@@ -6,6 +6,7 @@
   With an id, the wasm is fetched, compiled and instantiated at once, and the app starts when the DOM is ready.
   Passing an element works as before.
 - The repo root now has a package.json with one devDependency (terser 5.44.0); run `npm install` once at the root before bench/build.sh, which minifies the shim before inlining it.
+  terser is a build-time minifier only: nothing from node_modules is shipped or loaded at run time, the shipped page carries only the minified output of shim/cdom.js, and shim/cdom.js stays the readable source.
 - bench/build.sh builds -Oz by default; the cdom-oz variant became cdom-o2.
 - The benchmark page inlines the shim (bench/build.sh replaces `/*CDOM_SHIM*/` in index.html); there is no separate cdom.js in the entry any more.
 

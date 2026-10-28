@@ -16,7 +16,7 @@ cd "$out"
 for b in "${benches[@]}"; do
   for f in "${fws[@]}"; do
     w=0; gate=ok
-    until awk -v l="$(load1)" 'BEGIN{exit !(l < 4)}'; do
+    until awk -v l="$(load1)" 'BEGIN{exit !(l < '"${LOADMAX:-4}"')}'; do
       if [ $w -ge 1200 ]; then gate=TIMEOUT; break; fi
       sleep 10; w=$((w+10))
     done
