@@ -56,6 +56,12 @@ uint32_t cd_html_node(uint32_t id, char *dst, uint32_t cap);
  * of any length is one call. */
 uint64_t cd_html_ops(void);
 
+/* A dev build's warnings (cdom.h, CDOM_DEV): each is printed to stderr as "cdom dev: <msg>" and
+ * counted since the last cd_html_reset; the last one's text stays readable (NUL-terminated, "" for
+ * none, cut at 255 bytes). */
+uint64_t cd_html_dev_count(void);
+const char *cd_html_dev_last(void);
+
 /* The event types the render listened to, as the last two arguments of the page's
  * cdom.resume call (shim/cdom.js): the built-in types, then the custom names (caught in the
  * capture phase), e.g. "['click'],['cdping']". Names are checked against [A-Za-z0-9_.:-] when

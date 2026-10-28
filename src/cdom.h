@@ -195,6 +195,18 @@ int cd_state_load(const uint8_t *src, uint32_t len); /* 0 on success */
  * when it is nearer the target, and calls cd_on_event with the record below: an app only ever
  * sees that one. */
 
+/* Dev builds: -DCDOM_DEV=1, never a release. Code that cdtc generates then checks at run time what
+ * the compiler cannot see (a state field written without its setter, a list changed without a mark,
+ * a component's handler writing state it does not own) and reports each through cd_dev_warn, which
+ * the shim prints with console.warn and the C sink (cdom_html.h) to stderr. With 0 (the default)
+ * neither the function nor its import exists: a release module imports nothing for it. */
+#ifndef CDOM_DEV
+#define CDOM_DEV 0
+#endif
+#if CDOM_DEV
+void cd_dev_warn(const char *msg); /* msg: NUL-terminated UTF-8 */
+#endif
+
 /* keyed list */
 typedef struct { uint32_t key; cd_id node; uint32_t data; } cd_item;
 /* owns_parent: the list is the parent's only content, so a full clear is one op

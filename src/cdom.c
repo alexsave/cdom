@@ -609,6 +609,15 @@ void cd_remove(cd_id id) {
 void cd_tag_set(cd_id id, uint32_t tag) { tags[id] = tag; }
 uint32_t cd_tag(cd_id id) { return id < tags_cap ? tags[id] : 0; }
 
+#if CDOM_DEV
+IMPORT("dev_warn") void j_dev_warn(const char *msg, uint32_t len);
+void cd_dev_warn(const char *msg) {
+  uint32_t n = 0;
+  while (msg[n]) n++;
+  j_dev_warn(msg, n);
+}
+#endif
+
 uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap) {
   if (rs && rs_id(id)) __builtin_trap(); /* a server node's value cannot be read during the first render */
   ready(); return js_input(id, dst, cap);

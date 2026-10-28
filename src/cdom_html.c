@@ -202,6 +202,8 @@ static void name(uint32_t i, hnode *n) {
 
 static void host_op(uint32_t i, uint32_t kind, uint32_t nm, const uint32_t *a, uint32_t nargs);
 static void host_reset(void);
+static uint64_t dev_count;
+static char dev_last[256];
 
 void cd_html_reset(void) {
   while (arena) {
@@ -216,11 +218,23 @@ void cd_html_reset(void) {
   base = DETACHED;
   ref = 0;
   applied = 0;
+  dev_count = 0;
+  dev_last[0] = 0;
   host_reset();
   name(0, new_elem((hstr){"div", 3}));
 }
 
 uint64_t cd_html_ops(void) { return applied; }
+uint64_t cd_html_dev_count(void) { return dev_count; }
+const char *cd_html_dev_last(void) { return dev_last; }
+void j_dev_warn(const char *msg, uint32_t len); /* cdom.c's import in a CDOM_DEV build */
+void j_dev_warn(const char *msg, uint32_t len) {
+  fprintf(stderr, "cdom dev: %.*s\n", (int)len, msg);
+  uint32_t n = len < sizeof dev_last - 1 ? len : (uint32_t)sizeof dev_last - 1;
+  memcpy(dev_last, msg, n);
+  dev_last[n] = 0;
+  dev_count++;
+}
 
 /* ---- the imports: cdom.c calls each one as it emits the op (see the IMPORTS list there) ---- */
 

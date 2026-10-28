@@ -162,6 +162,8 @@ var cdom = (() => {
   function detach(id) { const el = nodes[id]; el.$p = el.parentNode; el.$s = el.nextSibling; el.remove(); }
   function attach(id) { const el = nodes[id]; el.$p.insertBefore(el, el.$s); el.$p = el.$s = null; }
 
+  // CDOM_DEV builds only (cdom.h): a misuse the generated code found at run time; a release module never imports it.
+  function dev_warn(p, n) { if (buf !== mem.buffer) views(); console.warn("cdom: " + td.decode(u8.subarray(p, p + n))); }
   function input(id, dst, cap) {
     const r = te.encodeInto(String(nodes[id].value ?? ""), new Uint8Array(mem.buffer, dst, cap));
     return r.written;
@@ -170,7 +172,7 @@ var cdom = (() => {
   function load(url, env) {
     return WebAssembly.instantiateStreaming(fetch(url), { cdom: { strings, at, open, close, text, text_num, attr, class: cls,
       name, listen, value, value_num, tpl_save, clone, walk, walk_value, walk_value_num, set_text, set_text_num, set_attr,
-      set_class, remove, free, move, clear, detach, attach, input, host, delegate }, env: env || {} });
+      set_class, remove, free, move, clear, detach, attach, input, host, delegate, dev_warn }, env: env || {} });
   }
   function init(instance) {
     x = instance.exports; mem = x.memory; views();
