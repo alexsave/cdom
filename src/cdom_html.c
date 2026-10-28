@@ -69,6 +69,7 @@ static hnode **ids, **tpl, **stack;
 static uint32_t ids_cap, tpl_cap, stack_cap, sp;
 static hnode *last, *root;
 static uint32_t base = DETACHED, ref;
+static uint64_t applied; /* ops applied since the last reset */
 
 static void *grow_array(void *a, uint32_t *cap, uint32_t need, size_t el) {
   if (need < *cap) return a;
@@ -221,14 +222,18 @@ void cd_html_reset(void) {
   last = root = 0;
   base = DETACHED;
   ref = 0;
+  applied = 0;
   name(0, new_elem((hstr){"div", 3}));
 }
+
+uint64_t cd_html_ops(void) { return applied; }
 
 void js_apply(uint32_t nops, uint32_t nargs, uint32_t nstrs, uint32_t nbytes) {
   uintptr_t *L = cd_layout();
   const uint8_t *ops = (const uint8_t *)L[0], *sb = (const uint8_t *)L[2];
   const uint32_t *a = (const uint32_t *)L[1], *sm = (const uint32_t *)L[3];
   if (!arena) cd_html_reset();
+  applied += nops;
   /* strings: persistent ones are copied, transients point into this batch */
   for (uint32_t i = 0, off = 0; i < nstrs; i++) {
     uint32_t dest = sm[i * 3], len = sm[i * 3 + 1];

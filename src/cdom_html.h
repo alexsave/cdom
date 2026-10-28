@@ -46,4 +46,8 @@ void cd_html_reset(void);
  * length needed. */
 uint32_t cd_html_write(char *dst, uint32_t cap);
 
+/* The number of ops applied since the last cd_html_reset: what a change costs on the
+ * wire, counted where the shim would count it. */
+uint64_t cd_html_ops(void);
+
 #endif
