@@ -293,8 +293,8 @@ void j_text_num(uint32_t n) { op(); last = new_text(num, utoa(num, n)); place(la
 void j_attr(uint32_t a, uint32_t v) { op(); hstr nm = S(a); set_attr(last, nm.p, nm.len, S(v), "attr"); }
 void j_class(uint32_t v) { op(); set_attr(last, "class", 5, S(v), "class"); }
 void j_name(cd_id i) { op(); name(i, last); }
-void j_listen(cd_id i, uint32_t ev) { op(); (void)ev; name(i, last); }
-void j_listen_named(cd_id i, uint32_t ev) { op(); name(i, last); S(ev); }
+void j_listen(cd_id i) { op(); name(i, last); }
+void j_delegate(uint32_t kind, uint32_t ev, uint32_t capture) { op(); (void)kind; (void)capture; S(ev); } /* the mount's listener */
 void j_value(uint32_t s) { op(); hstr v = S(s); set_value(last, v.p, v.len, "value"); }
 void j_value_num(uint32_t n) { op(); set_value(last, num, utoa(num, n), "value_num"); }
 void j_tpl_save(uint32_t t) {

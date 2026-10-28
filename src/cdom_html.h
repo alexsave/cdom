@@ -1,6 +1,6 @@
 /* cdom_html: the native sink. A C implementation of shim/cdom.js for the native
  * build of cdom.c: it defines every import cdom.c calls (j_strings, j_open, ...
- * j_host, js_input; natively they are plain functions), builds an in-memory node tree
+ * j_host, j_delegate, js_input; natively they are plain functions), builds an in-memory node tree
  * from those calls, and writes that tree as HTML.
  * It is the server renderer and the C conformance implementation of the ops.
  *
