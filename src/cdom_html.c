@@ -12,7 +12,7 @@ enum {
   OP_AT = 1, OP_OPEN, OP_CLOSE, OP_TEXT, OP_TEXT_NUM, OP_ATTR, OP_CLASS, OP_NAME, OP_LISTEN,
   OP_VALUE, OP_VALUE_NUM, OP_TPL_SAVE, OP_CLONE, OP_DOWN, OP_NEXT, OP_UP, OP_SET_TEXT,
   OP_SET_TEXT_NUM, OP_SET_ATTR, OP_SET_CLASS, OP_REMOVE, OP_FREE, OP_MOVE, OP_CLEAR, OP_DETACH,
-  OP_ATTACH, OP_SEL
+  OP_ATTACH, OP_SEL, OP_HOST, OP_LISTEN_NAMED
 };
 #define TRANSIENT 0x40000000u
 #define DETACHED 0xffffffffu
@@ -120,6 +120,8 @@ static uint32_t utoa(char *d, uint32_t v) {
   return k;
 }
 
+static void remove_attr(hnode *n, const char *name, uint32_t nlen);
+
 static void unlink_node(hnode *n) {
   hnode *p = n->parent;
   if (!p) return;
@@ -210,6 +212,9 @@ static void name(uint32_t i, hnode *n) {
   ids[i] = n;
 }
 
+static void host_op(const uint32_t *a, uint32_t *q, uint32_t nargs);
+static void host_reset(void);
+
 void cd_html_reset(void) {
   while (arena) {
     chunk *c = arena->next;
@@ -223,6 +228,7 @@ void cd_html_reset(void) {
   base = DETACHED;
   ref = 0;
   applied = 0;
+  host_reset();
   name(0, new_elem((hstr){"div", 3}));
 }
 
@@ -323,6 +329,8 @@ void js_apply(uint32_t nops, uint32_t nargs, uint32_t nstrs, uint32_t nbytes) {
       el->dparent = el->dnext = 0;
       break;
     case OP_SEL: last = id(a[q++], op); break;
+    case OP_HOST: host_op(a, &q, nargs); break;
+    case OP_LISTEN_NAMED: name(a[q++], last); S(a[q++]); break;
     default: fail("bad op", op);
     }
   }
@@ -434,4 +442,207 @@ uint32_t cd_html_write(char *dst, uint32_t cap) {
   wbuf w = {dst, cap, 0};
   write_children(&w, ids[0]);
   return w.n;
+}
+
+/* ---- HOST: the cdv decoder and printer (format in cdom.h) ---- */
+enum { V_NULL, V_FALSE, V_TRUE, V_U32, V_I32, V_F64, V_STR, V_F64S, V_ARRAY, V_OBJECT };
+
+static void remove_attr(hnode *n, const char *name, uint32_t nlen) {
+  for (uint32_t i = 0; i < n->nattr; i++)
+    if (name_eq(n->attrs[i].n, n->attrs[i].nlen, name, nlen)) {
+      memmove(n->attrs + i, n->attrs + i + 1, (n->nattr - i - 1) * sizeof(hattr));
+      n->nattr--;
+      return;
+    }
+}
+
+/* A double as JavaScript's String(v) writes it: the shortest digits that read back as v,
+ * placed by the ECMAScript Number::toString rules. */
+static void put_f64(wbuf *w, double v) {
+  if (v != v) { put(w, "NaN", 3); return; }
+  if (v == 0) { put(w, "0", 1); return; }
+  if (v < 0) { put(w, "-", 1); v = -v; }
+  if (v > 1.7976931348623157e308) { put(w, "Infinity", 8); return; }
+  char e[40], d[20];
+  int k = 0, x = 0;
+  for (int p = 1; p <= 17; p++) {
+    snprintf(e, sizeof e, "%.*e", p - 1, v);
+    if (strtod(e, 0) == v || p == 17) break;
+  }
+  for (const char *c = e; *c && *c != 'e'; c++)
+    if (*c >= '0' && *c <= '9') d[k++] = *c;
+  x = atoi(strchr(e, 'e') + 1);
+  while (k > 1 && d[k - 1] == '0') k--;
+  int n = x + 1; /* the decimal point sits after n digits */
+  if (k <= n && n <= 21) {
+    put(w, d, (uint32_t)k);
+    for (int i = k; i < n; i++) put(w, "0", 1);
+  } else if (0 < n && n <= 21) {
+    put(w, d, (uint32_t)n); put(w, ".", 1); put(w, d + n, (uint32_t)(k - n));
+  } else if (-6 < n && n <= 0) {
+    put(w, "0.", 2);
+    for (int i = n; i < 0; i++) put(w, "0", 1);
+    put(w, d, (uint32_t)k);
+  } else {
+    put(w, d, 1);
+    if (k > 1) { put(w, ".", 1); put(w, d + 1, (uint32_t)(k - 1)); }
+    char t[8];
+    int m = snprintf(t, sizeof t, "e%c%d", n - 1 < 0 ? '-' : '+', n - 1 < 0 ? 1 - n : n - 1);
+    put(w, t, (uint32_t)m);
+  }
+}
+
+static double word_f64(const uint32_t *a) {
+  uint64_t b = (uint64_t)a[0] | (uint64_t)a[1] << 32;
+  double v;
+  memcpy(&v, &b, 8);
+  return v;
+}
+
+static uint32_t need(const uint32_t *a, uint32_t *q, uint32_t nargs) { /* the next word, bounds-checked */
+  (void)a;
+  if (*q >= nargs) fail("value runs past the op's arguments", OP_HOST);
+  return (*q)++;
+}
+
+/* Decodes one value at a[*q], advancing *q. With w, prints it: null, true, false, numbers as
+ * String(number) would, "string" (with \ and " escaped), f64[...], [...], {key:value,...};
+ * with js set, a string prints bare and a container prints nothing (String() of a scalar). */
+static void cdv(const uint32_t *a, uint32_t *q, uint32_t nargs, wbuf *w, int js, int depth) {
+  if (depth > 64) fail("value nests deeper than 64", OP_HOST);
+  uint32_t t = a[need(a, q, nargs)], n;
+  char num[16];
+  switch (t) {
+  case V_NULL: if (w) put(w, "null", 4); break;
+  case V_FALSE: if (w) put(w, "false", 5); break;
+  case V_TRUE: if (w) put(w, "true", 4); break;
+  case V_U32: n = a[need(a, q, nargs)]; if (w) put(w, num, (uint32_t)snprintf(num, sizeof num, "%u", n)); break;
+  case V_I32: n = a[need(a, q, nargs)]; if (w) put(w, num, (uint32_t)snprintf(num, sizeof num, "%d", (int32_t)n)); break;
+  case V_F64: need(a, q, nargs); need(a, q, nargs); if (w) put_f64(w, word_f64(a + *q - 2)); break;
+  case V_STR: {
+    hstr s = S(a[need(a, q, nargs)]);
+    if (!w) break;
+    if (js) { put(w, s.p, s.len); break; }
+    put(w, "\"", 1);
+    for (uint32_t i = 0; i < s.len; i++) {
+      if (s.p[i] == '"' || s.p[i] == '\\') put(w, "\\", 1);
+      put(w, s.p + i, 1);
+    }
+    put(w, "\"", 1);
+    break;
+  }
+  case V_F64S:
+    n = a[need(a, q, nargs)];
+    if (n > (nargs - *q) / 2) fail("value runs past the op's arguments", OP_HOST);
+    if (w && !js) put(w, "f64[", 4);
+    for (uint32_t i = 0; i < n; i++) {
+      if (w && !js) { if (i) put(w, ",", 1); put_f64(w, word_f64(a + *q)); }
+      *q += 2;
+    }
+    if (w && !js) put(w, "]", 1);
+    break;
+  case V_ARRAY: case V_OBJECT:
+    n = a[need(a, q, nargs)];
+    if (w && !js) put(w, t == V_ARRAY ? "[" : "{", 1);
+    for (uint32_t i = 0; i < n; i++) {
+      if (w && !js && i) put(w, ",", 1);
+      if (t == V_OBJECT) {
+        hstr k = S(a[need(a, q, nargs)]);
+        if (w && !js) { put(w, k.p, k.len); put(w, ":", 1); }
+      }
+      cdv(a, q, nargs, js ? 0 : w, js, depth + 1);
+    }
+    if (w && !js) put(w, t == V_ARRAY ? "]" : "}", 1);
+    break;
+  default: fail("bad value tag", OP_HOST);
+  }
+}
+
+static uint64_t host_count[5];
+static wbuf host_last;
+
+static void host_reset(void) { memset(host_count, 0, sizeof host_count); host_last.n = 0; }
+
+uint64_t cd_html_host_ops(uint32_t kind) { return kind < 5 ? host_count[kind] : 0; }
+
+uint32_t cd_html_host_last(char *dst, uint32_t cap) {
+  uint32_t n = host_last.n < host_last.cap ? host_last.n : host_last.cap;
+  if (cap) memcpy(dst, host_last.d, n < cap ? n : cap);
+  return host_last.n;
+}
+
+static int truthy(const uint32_t *a, uint32_t at) { /* JS truthiness of a scalar value */
+  switch (a[at]) {
+  case V_NULL: case V_FALSE: return 0;
+  case V_U32: case V_I32: return a[at + 1] != 0;
+  case V_F64: { double v = word_f64(a + at + 1); return v == v && v != 0; }
+  case V_STR: return S(a[at + 1]).len != 0;
+  default: return 1;
+  }
+}
+
+/* select.value = v: the options (also inside optgroups) whose value is v get selected */
+static void select_options(hnode *p, hstr v) {
+  for (hnode *o = p->first; o; o = o->next) {
+    if (!o->tag) continue;
+    if (is(o, "optgroup")) { select_options(o, v); continue; }
+    if (!is(o, "option")) continue;
+    hstr ov = {"", 0};
+    int has = 0;
+    for (uint32_t k = 0; k < o->nattr; k++)
+      if (name_eq(o->attrs[k].n, o->attrs[k].nlen, "value", 5)) { ov = (hstr){o->attrs[k].v, o->attrs[k].vlen}; has = 1; }
+    if (!has && o->first && !o->first->tag) ov = (hstr){o->first->text, o->first->len};
+    if (ov.len == v.len && !memcmp(ov.p, v.p, v.len)) set_attr(o, "selected", 8, (hstr){"", 0}, OP_HOST);
+    else remove_attr(o, "selected", 8);
+  }
+}
+
+/* PROP on the server: the state a no-JS page should show, as markup. */
+static void prop(hnode *n, hstr name, const uint32_t *a, uint32_t at, uint32_t end) {
+  if (!n->tag) return;
+  static const char *const BOOLS[] = {"checked", "selected", "disabled"};
+  for (uint32_t i = 0; i < 3; i++)
+    if (name_eq(name.p, name.len, BOOLS[i], (uint32_t)strlen(BOOLS[i]))) {
+      if (truthy(a, at)) set_attr(n, BOOLS[i], (uint32_t)strlen(BOOLS[i]), (hstr){"", 0}, OP_HOST);
+      else remove_attr(n, BOOLS[i], (uint32_t)strlen(BOOLS[i]));
+      return;
+    }
+  if (!name_eq(name.p, name.len, "value", 5)) return;
+  char tb[512];
+  wbuf tw = {tb, sizeof tb, 0};
+  uint32_t q = at;
+  cdv(a, &q, end, &tw, 1, 0);
+  if (tw.n > sizeof tb) fail("value property longer than 512 bytes", OP_HOST);
+  hstr v = {ar_copy(tb, tw.n), tw.n};
+  if (is(n, "textarea")) {
+    while (n->first) unlink_node(n->first);
+    if (v.len) insert(n, new_text(v.p, v.len), 0, OP_HOST);
+  } else if (is(n, "select")) {
+    select_options(n, v);
+  } else {
+    set_attr(n, "value", 5, v, OP_HOST);
+  }
+}
+
+static void host_op(const uint32_t *a, uint32_t *q, uint32_t nargs) {
+  if (*q + 3 > nargs) fail("host op without its arguments", OP_HOST);
+  hnode *n = id(a[*q], OP_HOST);
+  uint32_t node_id = a[*q], kind = a[*q + 1];
+  hstr name = S(a[*q + 2]);
+  *q += 3;
+  if (kind > 4) fail("bad host kind", OP_HOST);
+  host_count[kind]++;
+  uint32_t at = *q;
+  if (!host_last.cap) {
+    host_last.cap = 1 << 16;
+    host_last.d = malloc(host_last.cap);
+    if (!host_last.d) fail("out of memory", OP_HOST);
+  }
+  host_last.n = 0;
+  char head[32];
+  put(&host_last, head, (uint32_t)snprintf(head, sizeof head, "%u %u ", kind, node_id));
+  put(&host_last, name.p, name.len);
+  put(&host_last, " ", 1);
+  cdv(a, q, nargs, &host_last, 0, 0);
+  if (kind == 3) prop(n, name, a, at, nargs);
 }

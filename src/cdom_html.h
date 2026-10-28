@@ -50,4 +50,16 @@ uint32_t cd_html_write(char *dst, uint32_t cap);
  * wire, counted where the shim would count it. */
 uint64_t cd_html_ops(void);
 
+/* HOST ops (cdom.h) applied since the last cd_html_reset, by kind (CD_HOST_MOUNT..UNMOUNT).
+ * On the server a widget does not run: HOST ops are counted and their values decoded (so
+ * every later op stays aligned), and only PROP leaves a trace: value, checked, selected and
+ * disabled become the attribute (the text of a textarea, the selected option of a select)
+ * a no-JS page shows. Every other PROP, MOUNT, CALL, SET and UNMOUNT writes nothing. */
+uint64_t cd_html_host_ops(uint32_t kind);
+
+/* The last HOST op as text, "<kind> <id> <name> <value>", the value printed by the sink's
+ * cdv decoder: null, true, false, numbers as JavaScript's String(number), "string" with
+ * \ and " escaped, f64[a,b] for F64S, [a,b], {key:value}. Same return rule as cd_html_write. */
+uint32_t cd_html_host_last(char *dst, uint32_t cap);
+
 #endif
