@@ -4,6 +4,8 @@
 #     generated C compiles with -Wall -Wextra -Werror natively and for wasm32;
 #  2. errors: every errors/*.cdt fails with exit 1 and exactly the line in errors/<name>.err;
 #  3. round trip: feat.cdt linked with cdom.c and the C sink renders the HTML roundtrip.c expects;
+#  5. nested lists: a click on every listener of fixtures/nested.cdt reaches the record it shows,
+#     and the page shows every level in the state's order, after a reorder and a removal too;
 #  4. op counts: the templated rows app costs the hand-written app's ops for every action,
 #     11 a row on create and 6 for a label patch.
 # Usage: tests/cdtc/run.sh        UPDATE=1 rewrites the goldens (read the diff before committing)
@@ -58,6 +60,15 @@ done
 if [ -x "$out/roundtrip" ]; then
   if "$out/roundtrip" > "$out/roundtrip.log" 2>&1; then ok "round trip: $(grep -c '^ok' "$out/roundtrip.log") checks"; else bad "round trip"; fi
   sed 's/^/     /' "$out/roundtrip.log"
+fi
+
+# 5. nested lists: every listener on every level finds its own record
+"$out/cdtc" "$here/fixtures/nested.cdt" -o "$out/nested" &&
+  nice -n 10 cc "${CFLAGS[@]}" -I "$top/src" -I "$out" -o "$out/nested_find" "$here/nested_find.c" "$out/nested.c" \
+    "$top/src/cdom.c" "$top/src/cdom_html.c" || bad "nested find does not build"
+if [ -x "$out/nested_find" ]; then
+  if "$out/nested_find" > "$out/nested_find.log" 2>&1; then ok "nested lists: $(grep -c "^ok" "$out/nested_find.log") checks"; else bad "nested lists"; fi
+  sed 's/^/     /' "$out/nested_find.log"
 fi
 
 # 4. op counts against the hand-written app

@@ -31,6 +31,10 @@ m 's/\Qstrcat(b, idx(c));\E/strcat(b, "0");/' 'FAIL flag and mode 1'
 m 's/\Qif (cdt_t != cdt_v->t%d) {\E/if (0 \&\& cdt_t != cdt_v->t%d) {/' 'FAIL title and n change'
 m 's/\Qcdt_v->key = %s_keys%d[cdt_i];\E/cdt_v->key = 0 * %s_keys%d[cdt_i];/' 'FAIL item clicks'
 m 's/\Q|| o != len) return -1;\E/) return -1;/' 'FAIL a blob with a trailing byte is refused'
+# nested lists (tests/cdtc/nested_find.c)
+m 's/\Q%s *cdt_p = %s_find%d(%s, cdt_v->pvi);\E/%s *cdt_p = %s_find%d(%s, 0);/' 'FAIL first render'
+m 's/\Qcd_id_free(cdt_v->list%d.items[i].node);\E/(void)cdt_v->list%d.items[i].node;/' 'FAIL a column removed'
+m 's/\Qif (f == F[f].tpl && !t->page && t_lists_of(f)) out(\E/if (0) out(/' 'FAIL every list reversed: the page shows'
 # op counts against the hand-written app
 m 's/\Q1 + walk_cost(0, 0,\E/0 * walk_cost(0, 0,/' 'FAIL op counts: a templated row creates in 11 ops'
 m 's/\Qif (cdt_t != cdt_v->t%d) {\E/if (1 || cdt_t != cdt_v->t%d) {/' 'FAIL op counts: a label patch is 6 ops'
