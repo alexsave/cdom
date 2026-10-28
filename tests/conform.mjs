@@ -79,6 +79,7 @@ try {
     'an extra node': f0 + '<b>extra</b>',
     'a missing node': f0.replace('<span></span><pre>', '<pre>'),
     'a merged text': f0.replace('one<!---->two', 'onetwo'),
+    'a slot text': f0.replace('<p><b>a</b>0<i>', '<p><b>A</b>0<i>'),
   };
   for (const [what, html] of Object.entries(tamper)) {
     if (html === f0) { ok(false, `tamper ${what} did not apply`); continue; }
