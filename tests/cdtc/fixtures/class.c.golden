@@ -43,12 +43,7 @@ int St_load(St *s, const uint8_t *src, uint32_t len) {
 }
 
 /* ---- the page: page ---- */
-typedef struct page_view {
-  cd_id root;
-  uint32_t c1;
-  uint32_t c3;
-} page_view;
-static page_view page_v;
+page_view page_v;
 static const char *const page_k1_s[4] = {"btn", "btn on", "btn big", "btn on big"};
 static cd_str page_k1_c[4];
 static const char *const page_k3_s[2] = {"", "only"};

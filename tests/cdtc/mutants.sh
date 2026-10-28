@@ -16,7 +16,13 @@ m 's/\Qif (in_list(tag, VOIDS) || N[me].self_close) return;\E/if (N[me].self_clo
 m 's/\Qif (t == END_TAG && !strcmp(term_name, tag)) {\E/if (t == END_TAG) {/' 'FAIL error unclosed: exit'
 m 's/\Qif (top.n != 1 ||\E/if (top.n < 1 ||/' 'FAIL error two_roots'
 m 's/\Q|| !r->self_close \E//' 'FAIL error each_body'
-m 's/\Qif (!EVENTS[e]) fail(\E/if (0) fail(/' 'FAIL error unknown_event'
+m 's/\Qif (!okname)\E/if (0)/' 'FAIL error bad_event'
+m 's/\Qif (N[me].host && ck.n)\E/if (0)/' 'FAIL error host_children'
+m 's/\Qif (x->host && !x->ref) fail(\E/if (0) fail(/' 'FAIL error host_noref'
+m 's/\Q{"id", "c",\E/{"xx", "c",/' 'FAIL error ref_reserved'
+m 's/\Qif (N[m].kind == N_ELEM && N[m].ref && !strcmp(N[m].ref, x->ref))\E/if (0)/' 'FAIL error ref_twice'
+m 's/\Qcdt_v->%s = cdt_root;\E/cdt_v->%s = 0;/' 'FAIL golden widget: generated code differs'
+m 's/\Qout(c, "      if ((cd_str)e->key == cdt_s[%d]) ", lit(a->name + 3));\E/out(c, "      if (1) ");/' 'FAIL golden widget: generated code differs'
 m 's/\Qelse fail(x->at, "cannot infer\E/else if (0) fail(x->at, "cannot infer/' 'FAIL error untyped'
 # the round trip
 m 's/\Qfor (int i = 0; i < fl - c - 1; i++) out(b, " cd_up();");\E/for (int i = 0; i < fl - c; i++) out(b, " cd_up();");/' 'cdom_html: down from nothing' # the sink refuses the walk

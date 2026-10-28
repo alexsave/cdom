@@ -20,5 +20,15 @@ void page_init(void);              /* interns strings, builds every template */
 void page_create(St *S);  /* builds the page under the mount; call once */
 void page_render(St *S);  /* patches the page and its lists to the state */
 void page_dispatch(const cd_event_rec *e); /* calls the handler an event names */
+typedef struct page_view {
+  cd_id root;
+  uint32_t if3_b;
+  cd_id if3_root;
+  uint32_t t5;
+  cd_id id8;
+  cd_id id9;
+  uint32_t t9;
+} page_view;
+extern page_view page_v; /* the page's ids: ref="name" fields reach named nodes */
 
 #endif

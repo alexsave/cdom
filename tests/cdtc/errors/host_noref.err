@@ -1,0 +1,1 @@
+host_noref.cdt:3:8: a host element needs ref="name" so the app can reach its widget

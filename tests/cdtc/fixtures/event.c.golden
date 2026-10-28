@@ -37,11 +37,7 @@ int St_load(St *s, const uint8_t *src, uint32_t len) {
 }
 
 /* ---- the page: page ---- */
-typedef struct page_view {
-  cd_id root;
-  cd_id id1;
-} page_view;
-static page_view page_v;
+page_view page_v;
 static St *page_S;
 
 void page_init(void) {

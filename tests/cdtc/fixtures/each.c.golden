@@ -212,12 +212,7 @@ void tag_patch(St *S, Tag *t, tag_view *cdt_v) {
 }
 
 /* ---- the page: page ---- */
-typedef struct page_view {
-  cd_id root;
-  cd_id id1;
-  cd_id id3;
-} page_view;
-static page_view page_v;
+page_view page_v;
 static St *page_S;
 
 /* {#each S->items as x (x->id)} <item/> */

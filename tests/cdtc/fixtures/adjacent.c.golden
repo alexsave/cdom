@@ -55,13 +55,7 @@ int St_load(St *s, const uint8_t *src, uint32_t len) {
 }
 
 /* ---- the page: page ---- */
-typedef struct page_view {
-  cd_id root;
-  cd_str t2;
-  uint32_t t4;
-  uint32_t t6;
-} page_view;
-static page_view page_v;
+page_view page_v;
 
 void page_init(void) {
   for (uint32_t i = 0; i < 6; i++) cdt_s[i] = cd_internz(cdt_lit[i]);

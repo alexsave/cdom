@@ -1,0 +1,4 @@
+<state name="St"> u32 x; </state>
+<template name="page" state="St *S">
+  <div><b ref="a">x</b><i ref="a">y</i></div>
+</template>

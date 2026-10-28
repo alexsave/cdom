@@ -42,16 +42,7 @@ int St_load(St *s, const uint8_t *src, uint32_t len) {
 }
 
 /* ---- the page: page ---- */
-typedef struct page_view {
-  cd_id root;
-  uint32_t if3_b;
-  cd_id if3_root;
-  uint32_t t5;
-  cd_id id8;
-  cd_id id9;
-  uint32_t t9;
-} page_view;
-static page_view page_v;
+page_view page_v;
 
 static cd_id page_f6_create(St *S, page_view *cdt_v) {
   (void)S; (void)cdt_v;

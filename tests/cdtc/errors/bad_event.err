@@ -1,0 +1,1 @@
+bad_event.cdt:3:11: bad event name "-hover": a custom event's name is a letter, then letters, digits, -, _, . or :

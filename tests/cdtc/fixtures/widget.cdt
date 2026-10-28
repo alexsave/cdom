@@ -1,0 +1,20 @@
+<!-- ref, host and custom events: a widget's node, web components, refs on roots and branches -->
+<state name="W" global="G">
+  u32 pings;
+  u32 on;
+  list pts: Pt;
+  record Pt { u32 id; u32 v; }
+</state>
+
+<template name="pt" item="Pt *p" state="W *S" root="li">
+  <li ref="me" on:sl-change={pt_change}><b ref="val">{p->v}</b><i>{p->id}</i></li>
+</template>
+
+<template name="page" state="W *S">
+  <main ref="top">
+    <div class="box"><canvas ref="chart" host width="400" height="200"></canvas></div>
+    <x-dial ref="dial" on:value-change={dial} on:click={dial_click} on:ready={dial_ready}>pings {S->pings}</x-dial>
+    {#if S->on}<my-el ref="maybe" host data-x="1"></my-el>{/if}
+    <ul>{#each S->pts as p (p->id)}<pt/>{/each}</ul>
+  </main>
+</template>
