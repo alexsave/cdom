@@ -6,6 +6,7 @@ set -u
 top="$(cd "$(dirname "$0")/.." && pwd)"
 out="$top/results/pairs/${TAG:?TAG}"
 mkdir -p "$out"
+ln -sfn "$top/jfb/webdriver-ts/dist" "$out/dist" # the runner forks dist/... relative to the cwd
 log="$out/loads.tsv"
 fws=(${FWS:-vanillajs cdomp})
 benches=("$@")
