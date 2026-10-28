@@ -122,7 +122,7 @@ Every item has a test in tests/unit.c (the unit page, tools/unit.mjs), tests/lis
 
 40,000 opens (20,000 rows of div > span > text, built and cleared), median of 21 fresh loads: namespace in C (an id compare, `open_svg` import) 11.7 ms; the port's JS check per open (tag compare and the parent's `namespaceURI`) 12.0 ms. About 7 ns per open; C kept.
 
-### SHIM_LINES (shim/cdom.js 138 -> 184 -> 206 lines)
+### SHIM_LINES (shim/cdom.js 138 -> 184 -> 207 lines)
 
 Each line added or changed, and why:
 - `EVENTS` gains "resize", "visibilitychange", "load": the window events and the image's load use the event record.
