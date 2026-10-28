@@ -7,7 +7,10 @@
 #  5. nested lists: a click on every listener of fixtures/nested.cdt reaches the record it shows,
 #     and the page shows every level in the state's order, after a reorder and a removal too;
 #  4. op counts: the templated rows app makes the hand-written app's DOM calls for every action,
-#     5 a row on create (two slot texts, clone, listen, close) and one for a label patch.
+#     5 a row on create (two slot texts, clone, listen, close) and one for a label patch;
+#  6. signals (dev builds of tests/cdtc/signals.c): a setter patches exactly the bindings that read
+#     its field, counted in DOM calls and binding compares, on the rows app and on fixtures/signals.cdt
+#     (two dirty words, derived values, a list-wide binding), and the dev build names direct writes.
 # Usage: tests/cdtc/run.sh        UPDATE=1 rewrites the goldens (read the diff before committing)
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -54,6 +57,7 @@ for f in "$here"/errors/*.cdt; do
 done
 
 # 3. round trip
+rm -f "$out/roundtrip" "$out/nested_find" "$out/opcount_tpl" "$out/opcount_hand" # never run a stale build
 (cd "$here" && "$out/cdtc" feat.cdt -o "$out/feat") &&
   nice -n 10 cc "${CFLAGS[@]}" -I "$top/src" -I "$out" -o "$out/roundtrip" "$here/roundtrip.c" "$out/feat.c" \
     "$top/src/cdom.c" "$top/src/cdom_html.c" || { bad "round trip does not build"; }
@@ -87,6 +91,19 @@ upd=$(awk '$1 == "update10th" {print $2}' "$out/ops_tpl.txt")
 # did not change since the last clone is not sent again (the seed gives one repeated label)
 if [ "$run" -ge 5000 ] && [ "$run" -le 5003 ]; then ok "op counts: a templated row creates in 5 calls (run 1000 = $run)"; else bad "op counts: a templated row creates in 5 calls: run 1000 = $run, want 5000-5003 (5 a row + 3, less unchanged slots)"; fi
 if [ "$upd" = 100 ]; then ok "op counts: a label patch is one call (update every 10th of 1000 = $upd)"; else bad "op counts: a label patch is one call: update every 10th of 1000 = $upd, want 100"; fi
+
+# 6. signals
+rm -f "$out/signals_fix" "$out/signals_rows" # a failed build must not leave the last one to run
+"$out/cdtc" "$here/fixtures/signals.cdt" -o "$out/signals" &&
+  nice -n 10 cc "${CFLAGS[@]}" -DCDOM_DEV=1 -I "$top/src" -I "$out" -o "$out/signals_fix" "$here/signals.c" "$out/signals.c" \
+    "$top/src/cdom.c" "$top/src/cdom_html.c" &&
+  nice -n 10 cc "${CFLAGS[@]}" -DCDOM_DEV=1 -DROWS -I "$top/src" -I "$out" -o "$out/signals_rows" "$here/signals.c" \
+    "$top/bench/cdom-tpl/app.c" "$out/rows.c" "$top/src/cdom.c" "$top/src/cdom_html.c" || bad "signals tests do not build"
+for s in rows fix; do
+  [ -x "$out/signals_$s" ] || continue
+  if "$out/signals_$s" > "$out/signals_$s.log" 2> /dev/null; then ok "signals ($s): $(grep -c '^ok' "$out/signals_$s.log") checks"; else bad "signals ($s)"; fi
+  sed 's/^/     /' "$out/signals_$s.log"
+done
 
 echo
 if [ $fails -eq 0 ]; then echo "cdtc tests: all ok"; else echo "cdtc tests: $fails FAILED"; fi

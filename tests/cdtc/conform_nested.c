@@ -20,9 +20,9 @@ static const char *WORDS[] = {"a", "b&c", "<d>", "", "\xc3\xa9t\xc3\xa9", "f g",
 static cd_str word(void) { return cd_internz(WORDS[rnd(sizeof WORDS / sizeof *WORDS)]); }
 static uint32_t next_id = 1;
 
-void tag_click(Board *S, Tag *g, const cd_event_rec *e) { (void)S; (void)e; g->name = cd_internz("clicked"); }
-void card_click(Board *S, Card *k, const cd_event_rec *e) { (void)e; S->sel = k->id; k->done = !k->done; }
-void col_click(Board *S, Col *c, const cd_event_rec *e) { (void)S; (void)e; c->title = cd_internz("picked"); }
+void tag_click(Board *S, Tag *g, const cd_event_rec *e) { (void)S; (void)e; Tag_set_name(g, cd_internz("clicked")); }
+void card_click(Board *S, Card *k, const cd_event_rec *e) { (void)e; Board_set_sel(S, k->id); Card_set_done(k, !k->done); }
+void col_click(Board *S, Col *c, const cd_event_rec *e) { (void)S; (void)e; Col_set_title(c, cd_internz("picked")); }
 
 void cd_on_event(const cd_event_rec *e) {
   page_dispatch(e);
@@ -99,28 +99,29 @@ EXPORT("step") void step(uint32_t k) {
   case 0: if (B.cols_n < 6) { c = Board_cols_push(&B); c->id = next_id++; c->title = word(); fill_cards(c, rnd(3)); } break;
   case 1: if (B.cols_n) Board_cols_remove(&B, rnd(B.cols_n)); break;
   case 2: /* reverse the columns: moves whose subtrees carry their lists */
-    for (uint32_t i = 0; i < B.cols_n / 2; i++) { Col t = B.cols[i]; B.cols[i] = B.cols[B.cols_n - 1 - i]; B.cols[B.cols_n - 1 - i] = t; }
+    for (uint32_t i = 0; i < B.cols_n / 2; i++) Board_cols_swap(&B, i, B.cols_n - 1 - i);
     break;
   case 3: if ((c = any_col())) fill_cards(c, 1 + rnd(2)); break;
   case 4: if ((c = any_col()) && c->cards_n) Col_cards_remove(c, rnd(c->cards_n)); break;
   case 5: /* shuffle one column's cards */
     if ((c = any_col()))
-      for (uint32_t i = c->cards_n; i > 1; i--) { uint32_t j = rnd(i); Card t = c->cards[i - 1]; c->cards[i - 1] = c->cards[j]; c->cards[j] = t; }
+      for (uint32_t i = c->cards_n; i > 1; i--) Col_cards_swap(c, i - 1, rnd(i));
     break;
   case 6: if ((d = any_card())) fill_tags(d, 1 + rnd(2)); break;
   case 7: if ((d = any_card()) && d->tags_n) Card_tags_remove(d, rnd(d->tags_n)); break;
-  case 8: if ((d = any_card())) { d->done = !d->done; d->text = word(); } break;
-  case 9: if ((d = any_card()) && d->tags_n) d->tags[rnd(d->tags_n)].name = word(); break;
-  case 10: if ((c = any_col())) c->title = word(); break;
+  case 8: if ((d = any_card())) { Card_set_done(d, !d->done); Card_set_text(d, word()); } break;
+  case 9: if ((d = any_card()) && d->tags_n) Tag_set_name(&d->tags[rnd(d->tags_n)], word()); break;
+  case 10: if ((c = any_col())) Col_set_title(c, word()); break;
   case 11: click(1 + rnd(3)); break;
-  case 12: if ((d = any_card())) B.sel = d->id; break;
+  case 12: if ((d = any_card())) Board_set_sel(&B, d->id); break;
   default: /* move a card to another column */
     if ((c = any_col()) && c->cards_n) {
       Col *to = any_col();
       uint32_t i = rnd(c->cards_n);
       Card moved = c->cards[i];
       for (uint32_t j = i + 1; j < c->cards_n; j++) c->cards[j - 1] = c->cards[j];
-      c->cards_n--;
+      c->cards_n--; /* by hand, so the list is marked; the moved record keeps its own tag list */
+      Col_cards_mark(c);
       *Col_cards_push(to) = moved;
     }
     break;
@@ -135,6 +136,19 @@ EXPORT("steps") uint32_t steps(void) { return STEPS; }
 #include "cdom_html.h"
 #include <stdio.h>
 #include <stdlib.h>
+/* after each step, a render that redoes everything must find nothing the setters' marks missed,
+ * and a dev build (conform.sh builds one) must have warned of nothing */
+static void full_check(uint32_t k) {
+  uint64_t before = cd_html_ops();
+  Board_mark_all(&B);
+  page_render(&B);
+  cd_flush();
+  if (cd_html_ops() != before || cd_html_dev_count()) {
+    fprintf(stderr, "FAIL step %u: a full render made %llu calls the marked render missed; %llu dev warnings (%s)\n", k,
+            (unsigned long long)(cd_html_ops() - before), (unsigned long long)cd_html_dev_count(), cd_html_dev_last());
+    exit(1);
+  }
+}
 static void dump(void) { /* <length>\n<html> */
   uint32_t n = cd_html_write(0, 0);
   char *b = malloc(n + 1);
@@ -168,7 +182,7 @@ int main(void) {
   cd_flush();
   blob();
   dump();
-  for (uint32_t k = 1; k <= steps(); k++) { step(k); dump(); }
+  for (uint32_t k = 1; k <= steps(); k++) { step(k); full_check(k); dump(); }
   return 0;
 }
 #endif

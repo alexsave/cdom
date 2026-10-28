@@ -15,11 +15,11 @@
 
 #define STEPS 300
 
-void item_click(Feat *F, Item *it, const cd_event_rec *e) { (void)e; F->n = it->id; it->hot = !it->hot; }
-void note_click(Feat *F, Note *o, const cd_event_rec *e) { (void)F; (void)e; o->open = !o->open; }
-void toggle(Feat *F, const cd_event_rec *e) { (void)e; F->flag = 0; }
-void bump(Feat *F, const cd_event_rec *e) { (void)e; F->n++; }
-void reset(Feat *F, const cd_event_rec *e) { (void)e; F->n = 0; }
+void item_click(Feat *F, Item *it, const cd_event_rec *e) { (void)e; Feat_set_n(F, it->id); Item_set_hot(it, !it->hot); }
+void note_click(Feat *F, Note *o, const cd_event_rec *e) { (void)F; (void)e; Note_set_open(o, !o->open); }
+void toggle(Feat *F, const cd_event_rec *e) { (void)e; Feat_set_flag(F, 0); }
+void bump(Feat *F, const cd_event_rec *e) { (void)e; Feat_set_n(F, F->n + 1); }
+void reset(Feat *F, const cd_event_rec *e) { (void)e; Feat_set_n(F, 0); }
 
 void cd_on_event(const cd_event_rec *e) {
   page_dispatch(e);
@@ -78,11 +78,11 @@ static void click(uint32_t s, int type) {
 EXPORT("step") void step(uint32_t k) {
   (void)k;
   switch (rnd(16)) {
-  case 0: G.flag = !G.flag; break;
-  case 1: G.mode = rnd(4); break;
-  case 2: G.title = rnd(4) ? word() : 0; break;
-  case 3: G.link = word(); break;
-  case 4: G.n = rnd(30); break;
+  case 0: Feat_set_flag(&G, !G.flag); break;
+  case 1: Feat_set_mode(&G, rnd(4)); break;
+  case 2: Feat_set_title(&G, rnd(4) ? word() : 0); break;
+  case 3: Feat_set_link(&G, word()); break;
+  case 4: Feat_set_n(&G, rnd(30)); break;
   case 5: { /* add items */
     for (uint32_t j = rnd(4); j; j--) {
       uint32_t id = 1 + rnd(30);
@@ -94,9 +94,9 @@ EXPORT("step") void step(uint32_t k) {
   }
   case 6: if (G.items_n) Feat_items_remove(&G, rnd(G.items_n)); break;
   case 7: /* shuffle items */
-    for (uint32_t i = G.items_n; i > 1; i--) { uint32_t j = rnd(i); Item t = G.items[i - 1]; G.items[i - 1] = G.items[j]; G.items[j] = t; }
+    for (uint32_t i = G.items_n; i > 1; i--) Feat_items_swap(&G, i - 1, rnd(i));
     break;
-  case 8: if (G.items_n) { Item *it = &G.items[rnd(G.items_n)]; it->hot = !it->hot; it->name = word(); } break;
+  case 8: if (G.items_n) { Item *it = &G.items[rnd(G.items_n)]; Item_set_hot(it, !it->hot); Item_set_name(it, word()); } break;
   case 9: { /* add notes */
     for (uint32_t j = 1 + rnd(3); j; j--) {
       uint32_t id = 1 + rnd(20);
@@ -107,13 +107,16 @@ EXPORT("step") void step(uint32_t k) {
     break;
   }
   case 10: if (G.notes_n) Feat_notes_remove(&G, rnd(G.notes_n)); break;
-  case 11: if (G.notes_n) { Note *o = &G.notes[rnd(G.notes_n)]; o->open = !o->open; if (rnd(2)) o->text = word(); } break;
+  case 11: if (G.notes_n) { Note *o = &G.notes[rnd(G.notes_n)]; Note_set_open(o, !o->open); if (rnd(2)) Note_set_text(o, word()); } break;
   case 12: /* reverse the notes: moves, with their branches inside */
-    for (uint32_t i = 0; i < G.notes_n / 2; i++) { Note t = G.notes[i]; G.notes[i] = G.notes[G.notes_n - 1 - i]; G.notes[G.notes_n - 1 - i] = t; }
+    for (uint32_t i = 0; i < G.notes_n / 2; i++) Feat_notes_swap(&G, i, G.notes_n - 1 - i);
     break;
   case 13: click(1 + rnd(4), CD_EV_CLICK); break;
   case 14: click(4, CD_EV_DBLCLICK); break;
-  default: G.items_n = rnd(2) ? G.items_n : 0; G.notes_n = rnd(3) ? G.notes_n : 0; break;
+  default:
+    if (!rnd(2)) Feat_items_clear(&G);
+    if (!rnd(3)) Feat_notes_clear(&G);
+    break;
   }
   page_render(&G);
   cd_flush();
@@ -125,6 +128,19 @@ EXPORT("steps") uint32_t steps(void) { return STEPS; }
 #include "cdom_html.h"
 #include <stdio.h>
 #include <stdlib.h>
+/* after each step, a render that redoes everything must find nothing the setters' marks missed,
+ * and a dev build (conform.sh builds one) must have warned of nothing */
+static void full_check(uint32_t k) {
+  uint64_t before = cd_html_ops();
+  Feat_mark_all(&G);
+  page_render(&G);
+  cd_flush();
+  if (cd_html_ops() != before || cd_html_dev_count()) {
+    fprintf(stderr, "FAIL step %u: a full render made %llu calls the marked render missed; %llu dev warnings (%s)\n", k,
+            (unsigned long long)(cd_html_ops() - before), (unsigned long long)cd_html_dev_count(), cd_html_dev_last());
+    exit(1);
+  }
+}
 static void dump(void) { /* <length>\n<html> */
   uint32_t n = cd_html_write(0, 0);
   char *b = malloc(n + 1);
@@ -158,7 +174,7 @@ int main(void) {
   cd_flush();
   blob();
   dump();
-  for (uint32_t k = 1; k <= steps(); k++) { step(k); dump(); }
+  for (uint32_t k = 1; k <= steps(); k++) { step(k); full_check(k); dump(); }
   return 0;
 }
 #endif

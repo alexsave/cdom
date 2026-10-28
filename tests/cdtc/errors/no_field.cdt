@@ -1,0 +1,3 @@
+<!-- a binding naming a field the state does not have -->
+<state name="St"> u32 a; </state>
+<template name="page" state="St *S"><p>{n:S->nope + S->a}</p></template>

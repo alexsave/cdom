@@ -50,16 +50,17 @@ EXPORT("step") void step(uint32_t k) {
       uint32_t at = rnd(S.rows_n);
       Row t = *r; for (uint32_t i = S.rows_n - 1; i > at; i--) S.rows[i] = S.rows[i - 1]; S.rows[at] = t;
     }
+    Rows_rows_mark(&S); /* the array by hand */
     page_render(&S);
     break;
   case 8: /* reverse a stretch: moves off the longest run */
     if (S.rows_n > 10) {
       uint32_t a = rnd(S.rows_n - 10), b = a + 2 + rnd(9);
-      for (; a < b; a++, b--) { Row t = S.rows[a]; S.rows[a] = S.rows[b]; S.rows[b] = t; }
+      for (; a < b; a++, b--) Rows_rows_swap(&S, a, b);
     }
     page_render(&S);
     break;
-  default: S.selected = 0; page_render(&S); break;
+  default: Rows_set_selected(&S, 0); page_render(&S); break;
   }
   cd_flush();
 }
@@ -70,6 +71,19 @@ EXPORT("steps") uint32_t steps(void) { return STEPS; }
 #include "cdom_html.h"
 #include <stdio.h>
 #include <stdlib.h>
+/* after each step, a render that redoes everything must find nothing the setters' marks missed,
+ * and a dev build (conform.sh builds one) must have warned of nothing */
+static void full_check(uint32_t k) {
+  uint64_t before = cd_html_ops();
+  Rows_mark_all(&S);
+  page_render(&S);
+  cd_flush();
+  if (cd_html_ops() != before || cd_html_dev_count()) {
+    fprintf(stderr, "FAIL step %u: a full render made %llu calls the marked render missed; %llu dev warnings (%s)\n", k,
+            (unsigned long long)(cd_html_ops() - before), (unsigned long long)cd_html_dev_count(), cd_html_dev_last());
+    exit(1);
+  }
+}
 static void dump(void) {
   uint32_t n = cd_html_write(0, 0);
   char *b = malloc(n + 1);
@@ -102,7 +116,7 @@ int main(void) {
   cd_flush();
   blob();
   dump();
-  for (uint32_t k = 1; k <= steps(); k++) { step(k); dump(); }
+  for (uint32_t k = 1; k <= steps(); k++) { step(k); full_check(k); dump(); }
   return 0;
 }
 #endif

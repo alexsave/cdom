@@ -11,10 +11,10 @@
 
 static uint32_t seen[64], nseen; /* item ids the item handler was called with */
 void item_click(Feat *F, Item *it, const cd_event_rec *e) { (void)F; (void)e; seen[nseen++] = it->id; }
-void note_click(Feat *F, Note *o, const cd_event_rec *e) { (void)F; (void)e; o->open = !o->open; }
-void toggle(Feat *F, const cd_event_rec *e) { (void)e; F->flag = 0; }
-void bump(Feat *F, const cd_event_rec *e) { (void)e; F->n++; }
-void reset(Feat *F, const cd_event_rec *e) { (void)e; F->n = 0; }
+void note_click(Feat *F, Note *o, const cd_event_rec *e) { (void)F; (void)e; Note_set_open(o, !o->open); }
+void toggle(Feat *F, const cd_event_rec *e) { (void)e; Feat_set_flag(F, 0); }
+void bump(Feat *F, const cd_event_rec *e) { (void)e; Feat_set_n(F, F->n + 1); }
+void reset(Feat *F, const cd_event_rec *e) { (void)e; Feat_set_n(F, 0); }
 
 void cd_on_event(const cd_event_rec *e) {
   page_dispatch(e);
@@ -36,6 +36,8 @@ static char *html(void) {
   return b;
 }
 
+/* The page must show want; then a render that redoes everything must find nothing left to do:
+ * any call it makes is a change the setters' marks did not reach. */
 static void expect(const char *what, const char *want) {
   cd_flush();
   const char *got = html();
@@ -44,6 +46,15 @@ static void expect(const char *what, const char *want) {
     printf("FAIL %s\n  want %s\n  got  %s\n", what, want, got);
   } else {
     printf("ok   %s\n", what);
+  }
+  uint64_t before = cd_html_ops();
+  Feat_mark_all(&G);
+  page_render(&G);
+  cd_flush();
+  if (cd_html_ops() != before) {
+    fails++;
+    printf("FAIL %s: a full render after it made %llu calls the marked render missed\n", what,
+           (unsigned long long)(cd_html_ops() - before));
   }
 }
 
@@ -91,8 +102,8 @@ int main(void) {
          "<table><tbody><tr><td>#<!---->3<!---->: <!---->x<!---->!</td><td><span class=\"open\">x</span><u>7</u></td></tr></tbody></table>"
          "<button>bump</button></div>");
 
-  G.title = cd_internz("U");
-  G.n = 8;
+  Feat_set_title(&G, cd_internz("U"));
+  Feat_set_n(&G, 8);
   page_render(&G);
   expect("title and n change: attribute, text, the item's class, text after an if (by id)",
          "<div id=\"feat\" class=\"page\" title=\"U\"><h1>U</h1><p>count: <!---->8<!----> of <!---->2</p><b>off</b>"
@@ -101,9 +112,9 @@ int main(void) {
          "<table><tbody><tr><td>#<!---->3<!---->: <!---->x<!---->!</td><td><span class=\"open\">x</span><u>8</u></td></tr></tbody></table>"
          "<button>bump</button></div>");
 
-  G.flag = 1;
-  G.link = cd_internz("/y");
-  G.mode = 1;
+  Feat_set_flag(&G, 1);
+  Feat_set_link(&G, cd_internz("/y"));
+  Feat_set_mode(&G, 1);
   page_render(&G);
   expect("flag and mode 1: the root's toggle, else -> then before its anchor, an if with no else appears",
          "<div id=\"feat\" class=\"page flag\" title=\"U\"><h1>U</h1><p>count: <!---->8<!----> of <!---->2</p><a href=\"/y\">on</a>"
@@ -112,8 +123,8 @@ int main(void) {
          "<table><tbody><tr><td>#<!---->3<!---->: <!---->x<!---->!</td><td><span class=\"open\">x</span><u>8</u></td></tr></tbody></table>"
          "<button>bump</button></div>");
 
-  G.link = cd_internz("/z");
-  G.mode = 2;
+  Feat_set_link(&G, cd_internz("/z"));
+  Feat_set_mode(&G, 2);
   page_render(&G);
   expect("mode 2: the first if goes, the second turns to then; a branch's own binding patches",
          "<div id=\"feat\" class=\"page flag\" title=\"U\"><h1>U</h1><p>count: <!---->8<!----> of <!---->2</p><a href=\"/z\">on</a>"
@@ -122,7 +133,7 @@ int main(void) {
          "<table><tbody><tr><td>#<!---->3<!---->: <!---->x<!---->!</td><td><span class=\"open\">x</span><u>8</u></td></tr></tbody></table>"
          "<button>bump</button></div>");
 
-  G.mode = 1;
+  Feat_set_mode(&G, 1);
   page_render(&G);
   expect("mode 1 again: an if inserts before a later if's present branch",
          "<div id=\"feat\" class=\"page flag\" title=\"U\"><h1>U</h1><p>count: <!---->8<!----> of <!---->2</p><a href=\"/z\">on</a>"
@@ -132,10 +143,11 @@ int main(void) {
          "<button>bump</button></div>");
 
   /* reorder, add, remove: [1, 7] -> [7, 9] */
-  G.items[0] = G.items[1];
-  G.items[1] = (Item){9, cd_internz("c"), 0};
-  G.notes[0].open = 0;
-  G.notes[0].text = cd_internz("y");
+  G.items[0] = G.items[1]; /* the array by hand, then its mark */
+  G.items[1] = (Item){.id = 9, .name = cd_internz("c")};
+  Feat_items_mark(&G);
+  Note_set_open(&G.notes[0], 0);
+  Note_set_text(&G.notes[0], cd_internz("y"));
   page_render(&G);
   expect("items [1,7] -> [7,9]; the note closes: the item's if swaps branches before its anchor",
          "<div id=\"feat\" class=\"page flag\" title=\"U\"><h1>U</h1><p>count: <!---->8<!----> of <!---->2</p><a href=\"/z\">on</a>"
@@ -166,9 +178,9 @@ int main(void) {
          "<table><tbody><tr><td>#<!---->3<!---->: <!---->y<!---->!</td><td><span class=\"open\">y</span><u>9</u></td></tr></tbody></table>"
          "<button>bump</button></div>");
   click_all(4, CD_EV_DBLCLICK); /* reset: n -> 0 */
-  G.items_n = 0;
-  G.notes_n = 0;
-  G.title = 0; /* an unset str renders as "" */
+  Feat_items_clear(&G);
+  Feat_notes_clear(&G);
+  Feat_set_title(&G, 0); /* an unset str renders as "" */
   page_render(&G);
   expect("dblclick on the same button reaches its second handler; both lists empty; a zero str is \"\"",
          "<div id=\"feat\" class=\"page\" title=\"\"><h1><!--e--></h1><p>count: <!---->0<!----> of <!---->0</p><b>off</b>"
@@ -202,6 +214,17 @@ int main(void) {
   uint32_t need = Feat_save(&G, a, 3);
   printf("%s save with no room returns the need (%u)\n", need == na ? "ok  " : "FAIL", need);
   fails += need != na;
+  /* a load into the live state marks everything: the next render shows all of it */
+  Feat_set_title(&G, cd_internz("before"));
+  Feat_items_clear(&G);
+  page_render(&G);
+  printf("%s the blob loads into the live state\n", Feat_load(&G, a, na) ? "FAIL" : "ok  ");
+  page_render(&G);
+  expect("a state loaded into the live page: the render shows it whole",
+         "<div id=\"feat\" class=\"page\" title=\"t\303\251\"><h1>t\303\251</h1><p>count: <!---->0<!----> of <!---->1</p><b>off</b>"
+         "<section><span>one <!---->1</span><i>not two</i><kbd>0</kbd></section>"
+         "<ul><li class=\"item hot\" data-name=\"five\"><b>5</b><i>five</i></li></ul><table><tbody></tbody></table>"
+         "<button>bump</button></div>");
   printf(fails ? "%d FAILED\n" : "all ok\n", fails);
   return fails != 0;
 }

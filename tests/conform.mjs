@@ -8,7 +8,7 @@
 //     that node (canon in conform.html).
 // Usage: node tests/conform.mjs
 // Another C program can be driven the same way: CONFORM_SRCS (space separated sources with cd_main,
-// step(k) and steps()), CONFORM_INC (include dirs), CONFORM_NAME (output name). Its native output may
+// step(k) and steps()), CONFORM_INC (include dirs), CONFORM_NAME (output name), CONFORM_CFLAGS (more flags for both builds). Its native output may
 // start with a line "S<base64>" holding the state blob that part 2 resumes with, and a line
 // "E<types>, <names>" (cd_html_resume_events) with the event types the page listens to at once. The event checks
 // use conform.c's own ids, so they run only for the default program.
@@ -23,6 +23,7 @@ fs.mkdirSync(out, { recursive: true });
 const custom = !!process.env.CONFORM_SRCS, name = process.env.CONFORM_NAME || 'conform';
 const srcs = custom ? process.env.CONFORM_SRCS.split(' ').filter(Boolean) : [path.join(here, 'conform.c')];
 const inc = (process.env.CONFORM_INC || '').split(' ').filter(Boolean).flatMap(d => ['-I', d]);
+inc.push(...(process.env.CONFORM_CFLAGS || '').split(' ').filter(Boolean)); // e.g. -DCDOM_DEV=1, for both builds
 execFileSync('nice', ['-n', '10', 'cc', '-O2', '-Wall', '-Wextra', '-Werror', ...inc, '-o', path.join(out, name + '_native'),
   ...srcs, path.join(here, '../src/cdom.c'), path.join(here, '../src/cdom_html.c')], { stdio: 'inherit' });
 execFileSync('nice', ['-n', '10', CC, '--target=wasm32', '-O2', '-nostdlib', '-mbulk-memory', '-Wall', '-Wextra', '-Werror', ...inc,

@@ -98,6 +98,13 @@ static void order(const char *when) {
   fails += !good;
   printf("%s %s: the page shows columns, cards and tags in the state's order\n", good ? "ok  " : "FAIL", when);
   free(h);
+  uint64_t before = cd_html_ops(); /* a render that redoes everything finds nothing the marks missed */
+  Board_mark_all(&B);
+  page_render(&B);
+  cd_flush();
+  uint64_t more = cd_html_ops() - before;
+  fails += more != 0;
+  printf("%s %s: a full render after it makes %llu calls\n", more ? "FAIL" : "ok  ", when, (unsigned long long)more);
 }
 
 int main(void) {
@@ -109,13 +116,13 @@ int main(void) {
   if (n != 3 + 12 + (0 + 1 + 2) + (0 + 1 + 2 + 3) + (0 + 1 + 2 + 3 + 4)) { printf("FAIL listener count %u\n", n); fails++; }
   for (uint32_t i = 0; i < B.cols_n; i++) { /* reverse every list on every level */
     Col *c = &B.cols[i];
-    for (uint32_t j = 0; j < c->cards_n / 2; j++) { Card t = c->cards[j]; c->cards[j] = c->cards[c->cards_n - 1 - j]; c->cards[c->cards_n - 1 - j] = t; }
+    for (uint32_t j = 0; j < c->cards_n / 2; j++) Col_cards_swap(c, j, c->cards_n - 1 - j);
     for (uint32_t j = 0; j < c->cards_n; j++) {
       Card *k = &c->cards[j];
-      for (uint32_t t = 0; t < k->tags_n / 2; t++) { Tag x = k->tags[t]; k->tags[t] = k->tags[k->tags_n - 1 - t]; k->tags[k->tags_n - 1 - t] = x; }
+      for (uint32_t t = 0; t < k->tags_n / 2; t++) Card_tags_swap(k, t, k->tags_n - 1 - t);
     }
   }
-  Col t = B.cols[0]; B.cols[0] = B.cols[2]; B.cols[2] = t;
+  Board_cols_swap(&B, 0, 2);
   page_render(&B);
   cd_flush();
   clicks("every list reversed");
@@ -125,5 +132,13 @@ int main(void) {
   cd_flush();
   clicks("a column removed");
   order("a column removed");
+  Tag *deep = 0; /* a tag three levels down, renamed alone: the mark climbs to its column */
+  for (uint32_t i = 0; i < B.cols_n && !deep; i++)
+    for (uint32_t j = 0; j < B.cols[i].cards_n && !deep; j++)
+      if (B.cols[i].cards[j].tags_n) deep = &B.cols[i].cards[j].tags[B.cols[i].cards[j].tags_n - 1];
+  Tag_set_name(deep, cd_internz("renamed"));
+  page_render(&B);
+  cd_flush();
+  order("a tag renamed");
   return fails != 0;
 }

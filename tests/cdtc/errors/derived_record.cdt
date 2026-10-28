@@ -1,0 +1,6 @@
+<!-- derived is a state field only -->
+<state name="St">
+  list rows: R;
+  record R { u32 id; derived u32 twice = 2; }
+</state>
+<template name="page" state="St *S"><p></p></template>

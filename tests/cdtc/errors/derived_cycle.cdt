@@ -1,0 +1,6 @@
+<!-- derived values that read each other in a circle -->
+<state name="St">
+  derived u32 a = S->b + 1;
+  derived u32 b = S->a * 2;
+</state>
+<template name="page" state="St *S"><p>{n:S->a}</p></template>

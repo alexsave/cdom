@@ -1,0 +1,6 @@
+<!-- a binding that reads one item of a list by index: no setter of the item could say which -->
+<state name="St">
+  list rows: R;
+  record R { u32 id; }
+</state>
+<template name="page" state="St *S"><p>{n:S->rows[0].id}</p></template>

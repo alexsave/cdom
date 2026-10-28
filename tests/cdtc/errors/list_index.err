@@ -1,0 +1,1 @@
+list_index.cdt:6:40: S->rows reads an item of the list rows by index: the compiler cannot tell which item a write changes (show the items with {#each}, or derive a value)

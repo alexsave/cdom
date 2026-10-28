@@ -14,6 +14,9 @@ nice -n 10 cc -O2 -Wall -Wextra -Werror -o "$gen/cdtc" "$top/tools/cdtc.c" || ex
 "$gen/cdtc" "$top/bench/cdom-tpl/rows.cdt" -o "$gen/rows" || exit 1
 "$gen/cdtc" "$here/fixtures/nested.cdt" -o "$gen/nested" || exit 1
 bad=0
+# dev builds: the generated code's run-time checks (a field written without its setter, a list changed
+# without a mark) run too, on both sides; the native side also fails a step a full render would change
+export CONFORM_CFLAGS="-DCDOM_DEV=1"
 for what in ${@:-feat rows nested}; do
   echo "== $what"
   case "$what" in
