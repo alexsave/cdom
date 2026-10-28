@@ -11,8 +11,8 @@ hydrate() { SSR_APP=tpl tools/mutate.sh "$1" "$2" "$3" node tests/hydrate.mjs 0 
 conform() { tools/mutate.sh "$1" "$2" "$3" tests/cdtc/conform.sh "$4" || bad=1; }
 A=bench/cdom-tpl/app.c C=tools/cdtc.c H=src/cdom_html.c
 hydrate $A 's/\Q  page_render(&S); \/* a loaded state\E/  \/* a loaded state/' 'FAIL n=1 1 rows'
-hydrate $C 's/\Qif (s) s->%s = cdt_get32(b + o);\E/if (0) s->%s = cdt_get32(b + o);/' 'FAIL n=1 appended ids continue'
-hydrate $C 's/\Qif (s) s->%s[i].%s = cd_intern((const char *)b + o, k);\E/if (s) s->%s[i].%s = cd_intern((const char *)b + o, k - (k > 0));/' 'FAIL n=1 no error or verify mismatch'
+hydrate $C 's/\Qif (r) r->%s = cdt_get32(b + *o);\E/if (0) r->%s = cdt_get32(b + *o);/' 'FAIL n=1 no error or verify mismatch' # no u32 field loads: the row ids differ
+hydrate $C 's/\Qif (r) r->%s = cd_intern((const char *)b + *o, k);\E/if (r) r->%s = cd_intern((const char *)b + *o, k - (k > 0));/' 'FAIL n=1 no error or verify mismatch'
 conform $H 's/\Qif (n->tag) return; \/* nodeValue on an element does nothing *\/\E/if (!n->tag) return;/' 'FAIL client DOM equals the parsed sink HTML' rows
 conform $H 's/\Qinsert(id(base, op), n, ref ? id(ref, op) : 0, op);\E/insert(id(base, op), n, 0, op);/' 'FAIL client DOM equals the parsed sink HTML' feat
 conform $H 's/\Qset_attr(id(i, "set_class"), "class", 5, S(v), "set_class");\E/id(i, "set_class"); S(v);/' 'FAIL client DOM equals the parsed sink HTML' rows
