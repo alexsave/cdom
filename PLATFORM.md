@@ -157,3 +157,11 @@ Decisions (Alex, 2026-10-28), for the component step:
    - Resumability: external registrations made at startup live in C and resolve lazily like inline ones. No DOM walk at load. Tested.
    - Logic-layer services as plain C APIs: fetch and WebSocket imports, timers, storage. Context: a provide/use pair keyed by type, so components get shared state without prop drilling. State blocks may live in `.c/.h` modules, not only inside templates.
    - Tests: the digits-but-not-3 field both ways (inline and from a .c module) with identical behaviour; an inline plus external handler on one input showing order and the ORed prevent; a renamed ref failing the build; a resumed page whose first interaction hits an external handler. All mutation-checked.
+
+CML syntax decision (Alex, 2026-10-28): keep Svelte's guard rails, drop Svelte's syntax. CML looks like HTML.
+1. Events: `on:click={...}` becomes `onclick={...}`, the real lowercase HTML attribute names (onclick, oninput, onbeforeinput, onsubmit, onkeydown, ...). The value is a C handler name or an inline C body. Braces mean C, not a JS string.
+2. Refs: no `ref:` directive. Any element with `id="x"` gets a typed accessor (`form_x()`). An id inside an each block, or in a component instantiated more than once, is a compile ERROR. Repeated elements use `name=` (a per-form or per-instance accessor), which the no-JS POST also uses.
+3. `class:danger={expr}` is gone. Dynamic attributes read like JSX: `class={cond ? "danger" : ""}` or any C expression yielding a str. Static plus dynamic must read naturally; pick a syntax that avoids quote clashes (e.g. `class="col-md-1"` plus a separate dynamic part) and document the choice.
+   Performance rule: when the expression is a ternary of string literals (or literal plus empty), the compiler emits a class toggle on one class (classList.toggle or an equivalent op), not a rebuilt class string per row. That is the suspected cause of the template build's 0.4-0.5 ms swap; prove it on the paired run.
+4. Audit the rest for Svelte-isms (`bind:`, `use:`, `transition:`, `{#each}`/`{#if}` blocks): report keep or change with an HTML-looking alternative for each. The block syntax may stay if nothing cleaner exists, but list it for Alex.
+Update the corpus, the fixtures, chart.cml, rows.cml and PLATFORM.md; all tests pass and are mutation-checked.
