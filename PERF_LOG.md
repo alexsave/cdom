@@ -122,27 +122,28 @@ Every item has a test in tests/unit.c (the unit page, tools/unit.mjs), tests/lis
 
 40,000 opens (20,000 rows of div > span > text, built and cleared), median of 21 fresh loads: namespace in C (an id compare, `open_svg` import) 11.7 ms; the port's JS check per open (tag compare and the parent's `namespaceURI`) 12.0 ms. About 7 ns per open; C kept.
 
-### SHIM_LINES (shim/cdom.js 138 -> 184 -> 207 lines)
+### SHIM_LINES: the shim's size, and what each import is for
 
-Each line added or changed, and why:
-- `EVENTS` gains "resize", "visibilitychange", "load": the window events and the image's load use the event record.
-- `SVG` constant: the namespace for `open_svg`.
-- `post(...)`, 10 lines with its comment and blank: the event record writer, moved out of the delegate (net 0 for the delegate) so window and image events share it.
-- `push(el)`: open, open_svg and clone append to the open parent the same way; the missing append in clone was the bug.
-- `open`, `open_svg`, `clone`: one line each over push.
-- `name_open`: names the open element.
-- `style`, `style_num`: one setProperty each.
-- `encode`, 7 lines with the comment: canvas of W x H, the pixels from C memory (RGB widened to RGBA in one loop, so an opaque picture takes a quarter less room in C) put at (X, Y), toBlob, the bytes delivered (replaces `image`, 5 lines). The placement is for a picture of which only a part is ever made but whose full size the page lays out by: the foolish port's wool is woven only where it shows and placed in the app's 3840 x 2160, so the browser sizes, snaps and resamples it as it does the app's (a crop given its own size landed 0.67 px off after snapping, and every pixel differed).
-- `image_bytes`, 4 lines: a Blob of the bytes, the url set.
-- `EVENTS` loses "load" (no image event any more).
-- `deliver`, moved out of the network block (net 0) with its comment changed, now over `cd_bytes_buf`; the network block keeps its comment line and `sockets`.
-- The store, 11 lines with comments: `kv` (the database opened once, created on first use, one request per transaction, 4 lines), `store_put` (a copy of the bytes, put, errors dropped), `store_get` (one answer: the deadline's miss, the value delivered, or a miss).
-- The import list: 2 names in place of `image`, 2 more for the store.
-- `vp`, `win`, `viewport` and a comment: window events and the viewport read.
-- `viewport` (changed, not grown): also writes `devicePixelRatio` times 100, so an app can size a picture it makes for the screen's device pixels (the foolish port's fern texture); unit case "the device pixel ratio, read from C", mutant viewport-dpr.
-- `timer`, `raf`, `now`: one line each.
-- The network, 19 lines with comments: `utf8`, `deliver` (into C memory), `ws_open` (4 handlers), `ws_send`, `ws_close`, `http`.
-- The import list: 3 lines rewrapped for the 16 new names.
+The shim is written to be read (real names, one statement per line, a comment per function) and the page ships it minified (terser, `-c passes=2 -m`), so its size is measured minified, not in source lines.
+| shim/cdom.js | minified | brotli (q11) | gzip (-9) |
+| --- | ---: | ---: | ---: |
+| golfed, before the rewrite (207 source lines) | 6,553 | 2,615 | 2,951 |
+| readable (497 source lines) | 6,678 | 2,632 | 2,966 |
+The rewrite costs 125 bytes minified and 17 brotli: separate `const` and `let` declarations, the `if`/`else` blocks terser keeps as statements, and small named functions (`now`, `utf8`, `viewportRecord`) where arrows were inlined.
+
+The imports the port-fixes branch added or changed, and what each is for:
+- `open_svg`: an element in the SVG namespace (C keeps the depth, measured against a check per open in micro/svg).
+- `clone` (changed): appends to the open element as `open` does (through `push`); the missing append was the bug.
+- `name_open`: names the open element rather than the last node.
+- `style`, `style_num`: one style property (`setProperty`), a string or a number with a unit.
+- `encode`: pixels in C memory (RGBA, or RGB widened to RGBA so an opaque picture takes a quarter less room in C), placed at (x, y) in an image of a given size, encoded off the call (toBlob), the file's bytes delivered back into C. The placement is for a picture of which only a part is ever made but whose full size the page lays out by: the foolish port's wool is woven only where it shows and placed in the app's 3840 x 2160, so the browser sizes, snaps and resamples it as it does the app's (a crop given its own size landed 0.67 px off after snapping, and every pixel differed).
+- `image_bytes`: an image file's bytes from C memory as a `url(blob:)` on a style property, now.
+- `win`, `viewport`: window events (resize, visibilitychange) through the event record, and the viewport read now: width, height, hidden and `devicePixelRatio` times 100 (so an app can size a picture for the screen's device pixels; the port's fern).
+- `timer`, `raf`, `now`: setTimeout, requestAnimationFrame and performance.now for C's hooks.
+- `ws_open`, `ws_send`, `ws_close`, `http`: the network (src/cdom_net.c), bytes in and out of C memory.
+- `store_put`, `store_get`: the key/value store over IndexedDB (src/cdom_store.c): put a copy of the bytes, errors dropped; get answers once, with the bytes or a miss (-1), and the deadline's timer answers a miss.
+- Not imports, shared by them: `post` (the event record writer, used by delegated, window and the old image events), `push` (open, open_svg and clone), `deliver` (bytes into C memory through `cd_bytes_buf`: the encoded image, a network message, a stored value), `utf8`.
+- `EVENTS` gained "resize" and "visibilitychange" (a "load" for images came and went with the first image import).
 
 ### Gates and the paired runs
 
