@@ -145,12 +145,36 @@ void cd_v_key(cd_str k);
 void cd_host_end(void);
 
 /* state: the app's model as a fixed binary blob, written by the server build and
- * read by the browser build of the same C, so a server-rendered page hydrates.
+ * read by the browser build of the same C, so a server-rendered page resumes (below).
  * Layouts hold only fixed-width little-endian integers and byte arrays (no
  * pointers, no size_t). JS never interprets them. The weak defaults mean "no
  * state": save writes 0 bytes, load accepts only an empty blob. */
 uint32_t cd_state_save(uint8_t *dst, uint32_t cap); /* bytes written, or needed if > cap */
 int cd_state_load(const uint8_t *src, uint32_t len); /* 0 on success */
+
+/* Resuming a server-rendered page. The server runs the same C natively into the C sink
+ * (cdom_html.h), writes the HTML, the state blob as base64 in a non-script <script> element and
+ * cdom.resume(url, mountId, stateId, types, names) with the event types its render listened to.
+ * The page then runs no app code and does not fetch the wasm: the shim puts one listener per
+ * type on the mount. The first event (queued, with any that follow, until the module is up)
+ * loads the wasm; cd_start_state loads the blob and runs cd_main as a virtual render: every op
+ * that would build or write a node the server already wrote calls nothing (templates, built off
+ * the document, are real), and each id the render names keeps its path, the child indices from
+ * the mount. An app writes nothing special for this; what it must not do in cd_main is read an
+ * input's value (cd_input_value traps there), and host calls on server nodes run right after
+ * cd_main. The first op that takes an id resolves its node by that path in one call, and an op
+ * that changes a node's children (an insert or append under it, a move, remove, clear, detach)
+ * first resolves every unresolved id below its parent in one call, since the paths hold only
+ * against the untouched DOM. A page that is never clicked never loads the module.
+ * Counting children for a path, the shim reads two comments the sink writes: <!--e--> is an
+ * empty text node (HTML cannot carry one; it becomes one when first reached) and counts as one
+ * child, <!----> (between two texts, so the parser keeps them apart) does not count.
+ * An event whose path has no node with a JS id that takes it, while listening ids are still
+ * unresolved, is posted in the resume form: cd_event_rec.depth is -1 - L, path is how many levels
+ * below the nearest JS-known listener (id, or -1 for none) the target is, and the shim has written
+ * L pairs (node index as above, element index) from the target up to the mount at the address
+ * cd_layout()[4]. The core finds the deepest unresolved listener on that path, resolves it, and
+ * calls cd_on_event with the plain record below; an app only ever sees the plain record. */
 
 /* keyed list */
 typedef struct { uint32_t key; cd_id node; uint32_t data; } cd_item;

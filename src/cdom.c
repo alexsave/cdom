@@ -108,6 +108,7 @@ IMPORTS("clear") void j_clear(cd_id id);
 IMPORTS("detach") void j_detach(cd_id id);
 IMPORTS("attach") void j_attach(cd_id id);
 IMPORTS("host") void j_host(cd_id id, uint32_t kind, uint32_t name, const uint32_t *v, uint32_t nwords);
+IMPORTS("resolve") void j_resolve(const uint32_t *entries, uint32_t n);
 
 #define SB_CAP (1u << 18)
 #define SM_CAP (1u << 12)
@@ -116,7 +117,7 @@ static uint8_t sbytes[SB_CAP];
 static uint32_t smeta[SM_CAP * 3];
 static uint32_t nsb, nstrs, ntmp;
 static cd_event_rec inbox;
-static uintptr_t layout[3]; /* uintptr_t is u32 in wasm; natively the sink reads real pointers */
+static uintptr_t layout[5]; /* uintptr_t is u32 in wasm; natively the sink reads real pointers */
 
 /* Decodes the pending strings in JS. */
 static void send_strings(void) {
@@ -253,21 +254,43 @@ static inline void ready(void) { walk_done(); send_strings(); }
 
 void cd_flush(void) { ready(); }
 
+/* Resuming a server-rendered page (cdom.h): rs is set from cd_start_state until every node the
+ * first render named has been resolved, so a page that was never server-rendered pays one test
+ * of rs per op. The rs_* functions return 1 when the op is done (virtual: nothing to call). */
+static uint32_t rs, vmode;
+static int rs_make(int open, uint32_t tpl);
+static int rs_close(void);
+static int rs_last(void);
+static int rs_name(cd_id id);
+static int rs_step(uint32_t s);
+static int rs_sel(cd_id id);
+static int rs_at(cd_id parent);
+static int rs_id(cd_id id);
+static int rs_move(cd_id id, cd_id before);
+static int rs_clear(cd_id id);
+static int rs_place(cd_id id);
+static int rs_remove(cd_id id);
+static void rs_slots(uint32_t t, uint32_t k);
+static void rs_tpl(uint32_t t);
+
 static cd_id at_parent = CD_DETACHED - 1, at_before = CD_DETACHED - 1;
+static uint32_t at_stale; /* resumed: JS's AT is not C's (the first render's AT was virtual) */
 
 void cd_at(cd_id parent, cd_id before) {
-  if (parent == at_parent && before == at_before) return;
-  ready(); j_at(parent, before);
+  if (parent == at_parent && before == at_before && !at_stale) return;
   at_parent = parent;
   at_before = before;
+  if (rs && rs_at(parent)) { at_stale = 1; return; }
+  at_stale = 0;
+  ready(); j_at(parent, before);
 }
-void cd_open(cd_str tag) { uint32_t t = ref_name(tag); ready(); j_open(t); }
-void cd_close(void) { ready(); j_close(); }
-void cd_text(cd_str s) { uint32_t v = ref_text(s); ready(); j_text(v); }
-void cd_text_num(uint32_t n) { ready(); j_text_num(n); }
-void cd_attr(cd_str name, cd_str v) { uint32_t a = ref_name(name), b = ref_text(v); ready(); j_attr(a, b); }
-void cd_class(cd_str v) { uint32_t a = ref_text(v); ready(); j_class(a); }
-void cd_name(cd_id id) { ready(); j_name(id); }
+void cd_open(cd_str tag) { uint32_t t = ref_name(tag); if (rs && rs_make(1, 0)) return; ready(); j_open(t); }
+void cd_close(void) { if (rs && rs_close()) return; ready(); j_close(); }
+void cd_text(cd_str s) { uint32_t v = ref_text(s); if (rs && rs_make(0, 0)) return; ready(); j_text(v); }
+void cd_text_num(uint32_t n) { if (rs && rs_make(0, 0)) return; ready(); j_text_num(n); }
+void cd_attr(cd_str name, cd_str v) { uint32_t a = ref_name(name), b = ref_text(v); if (rs && rs_last()) return; ready(); j_attr(a, b); }
+void cd_class(cd_str v) { uint32_t a = ref_text(v); if (rs && rs_last()) return; ready(); j_class(a); }
+void cd_name(cd_id id) { if (rs && rs_name(id)) return; ready(); j_name(id); }
 /* Events: which ids listen to what is kept here, not in JS. The shim has one delegated
  * listener per event type or name at the mount, installed by the first listen of it; walking
  * up from the target it asks cd_wants of each node with an id, and posts the first that does. */
@@ -279,10 +302,12 @@ void cd_listen(cd_id id, uint32_t ev) {
 void cd_listen_named(cd_id id, cd_str ev) { listen_kind(id, CD_EV_CUSTOM, ev); }
 void cd_value(cd_str s) {
   uint32_t v = ref_text(s);
+  if (rs && rs_last()) return;
   send_strings();
   if (walking) { walking = 0; j_walk_value(walk_from, walk_steps, walk_n, v); } else j_value(v);
 }
 void cd_value_num(uint32_t n) {
+  if (rs && rs_last()) return;
   send_strings();
   if (walking) { walking = 0; j_walk_value_num(walk_from, walk_steps, walk_n, n); } else j_value_num(n);
 }
@@ -308,12 +333,14 @@ void cd_tpl_save(uint32_t t) {
   /* a template is built off the document (cd_at(CD_DETACHED, 0) before its root), so its root
    * was never placed and the shim has nothing to take out */
   if (at_parent != CD_DETACHED && at_parent != CD_DETACHED - 1) __builtin_trap();
+  if (rs) rs_tpl(t);
   ready(); j_tpl_save(t);
 }
-void cd_clone(uint32_t t) { ready(); j_clone(t); }
+void cd_clone(uint32_t t) { if (rs && rs_make(1, t + 1)) return; ready(); j_clone(t); }
 void cd_slot(uint32_t k) {
   if (k >= CD_SLOTS) __builtin_trap();
   if (!slot_new[k]) slot_new[k] = cd_id_new();
+  if (rs && rs_name(slot_new[k])) __builtin_trap(); /* a slot is a template's node */
   ready(); j_name(slot_new[k]);
 }
 static cd_id slot_same(uint32_t t, uint32_t k, uint8_t kind, uint32_t v) {
@@ -323,26 +350,37 @@ static cd_id slot_same(uint32_t t, uint32_t k, uint8_t kind, uint32_t v) {
   slot_val[t][k] = v;
   return slot_id[t][k];
 }
+/* Sends slot k of template t as it is now (only virtual clones read it during a resumed first
+ * render, so there it is sent once afterwards: rs_slots). */
+static void slot_send(uint32_t t, uint32_t k) {
+  cd_id id = slot_id[t][k];
+  if (slot_kind[t][k] == 1) { uint32_t v = ref_text(slot_val[t][k]); ready(); j_set_text(id, v); }
+  else { ready(); j_set_text_num(id, slot_val[t][k]); }
+}
 void cd_tpl_text(uint32_t t, uint32_t k, cd_str s) {
-  cd_id id = slot_same(t, k, 1, s);
-  if (id) { uint32_t v = ref_text(s); ready(); j_set_text(id, v); }
+  if (!slot_same(t, k, 1, s)) return;
+  if (vmode) rs_slots(t, k); else slot_send(t, k);
 }
 void cd_tpl_text_num(uint32_t t, uint32_t k, uint32_t n) {
-  cd_id id = slot_same(t, k, 2, n);
-  if (id) { ready(); j_set_text_num(id, n); }
+  if (!slot_same(t, k, 2, n)) return;
+  if (vmode) rs_slots(t, k); else slot_send(t, k);
 }
-void cd_down(void) { walk_step(1); }
-void cd_next(void) { walk_step(2); }
-void cd_up(void) { walk_step(3); }
-void cd_sel(cd_id id) { walk_done(); walking = 1; walk_from = id; walk_steps = walk_n = 0; }
-void cd_set_text(cd_id id, cd_str s) { uint32_t v = ref_text(s); ready(); j_set_text(id, v); }
-void cd_set_text_num(cd_id id, uint32_t n) { ready(); j_set_text_num(id, n); }
-void cd_set_attr(cd_id id, cd_str name, cd_str v) { uint32_t a = ref_name(name), b = ref_text(v); ready(); j_set_attr(id, a, b); }
-void cd_set_class(cd_id id, cd_str v) { uint32_t a = ref_text(v); ready(); j_set_class(id, a); }
-void cd_move(cd_id id, cd_id before) { ready(); j_move(id, before); }
-void cd_clear(cd_id id) { ready(); j_clear(id); }
-void cd_detach(cd_id id) { ready(); j_detach(id); }
-void cd_attach(cd_id id) { ready(); j_attach(id); }
+void cd_down(void) { if (rs && rs_step(1)) return; walk_step(1); }
+void cd_next(void) { if (rs && rs_step(2)) return; walk_step(2); }
+void cd_up(void) { if (rs && rs_step(3)) return; walk_step(3); }
+void cd_sel(cd_id id) {
+  walk_done();
+  if (rs && rs_sel(id)) return;
+  walking = 1; walk_from = id; walk_steps = walk_n = 0;
+}
+void cd_set_text(cd_id id, cd_str s) { uint32_t v = ref_text(s); if (rs && rs_id(id)) return; ready(); j_set_text(id, v); }
+void cd_set_text_num(cd_id id, uint32_t n) { if (rs && rs_id(id)) return; ready(); j_set_text_num(id, n); }
+void cd_set_attr(cd_id id, cd_str name, cd_str v) { uint32_t a = ref_name(name), b = ref_text(v); if (rs && rs_id(id)) return; ready(); j_set_attr(id, a, b); }
+void cd_set_class(cd_id id, cd_str v) { uint32_t a = ref_text(v); if (rs && rs_id(id)) return; ready(); j_set_class(id, a); }
+void cd_move(cd_id id, cd_id before) { if (rs && rs_move(id, before)) return; ready(); j_move(id, before); }
+void cd_clear(cd_id id) { if (rs && rs_clear(id)) return; ready(); j_clear(id); }
+void cd_detach(cd_id id) { if (rs && rs_place(id)) return; ready(); j_detach(id); }
+void cd_attach(cd_id id) { if (rs && rs_place(id)) return; ready(); j_attach(id); }
 
 /* ---- host: a widget op with a cdv value (format in cdom.h). The value is built in hv with
  * raw string ids; the builders check its shape as it grows (a stack of the values still owed
@@ -423,9 +461,15 @@ void cd_v_key(cd_str k) {
   hv_str(k);
 }
 
+static int rs_host(void);
+static void host_send(void);
 void cd_host_end(void) {
   if (!hv_open || depth || owed[0]) __builtin_trap(); /* not exactly one complete value */
   hv_open = 0;
+  if (rs && rs_host()) return;
+  host_send();
+}
+static void host_send(void) {
   /* The value's strings must cross in one batch: a per-op (transient) id is reused after the
    * batch it came in. The queue is empty here when strings are per-op (every op sends its own
    * before its call), and holds only interned strings, which outlive any batch, otherwise. */
@@ -481,7 +525,9 @@ cd_id cd_id_new(void) {
   return id;
 }
 
+static void rs_drop(cd_id id);
 static void release(cd_id id) {
+  if (rs) rs_drop(id);
   tags[id] = 0;
   if (lmask[id] >> CD_EV_CUSTOM & 1)
     for (uint32_t i = nnamed; i-- > 0;)
@@ -515,6 +561,7 @@ static void listen_kind(cd_id id, uint32_t kind, cd_str name) {
   lmask[id] |= (uint16_t)(1u << kind);
   /* named events are caught in the capture phase, so ones that do not bubble arrive too */
   if (first) { uint32_t n = ref_name(name); ready(); j_delegate(kind, n, kind == CD_EV_CUSTOM); }
+  if (rs && rs_name(id)) return;
   ready(); j_listen(id);
 }
 
@@ -528,25 +575,425 @@ EXPORT("cd_wants") int cd_wants(cd_id id, uint32_t kind, cd_str name) {
 }
 
 void cd_id_free(cd_id id) {
-  ready(); j_free(id);
+  if (!vmode || !rs_id(id)) { ready(); j_free(id); }
   release(id);
 }
 
 void cd_remove(cd_id id) {
-  ready(); j_remove(id);
+  if (!rs || !rs_remove(id)) { ready(); j_remove(id); }
   release(id);
 }
 
 void cd_tag_set(cd_id id, uint32_t tag) { tags[id] = tag; }
 uint32_t cd_tag(cd_id id) { return id < tags_cap ? tags[id] : 0; }
 
-uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap) { ready(); return js_input(id, dst, cap); }
+uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap) {
+  if (rs && rs_id(id)) __builtin_trap(); /* a server node's value cannot be read during the first render */
+  ready(); return js_input(id, dst, cap);
+}
+
+/* ---- resuming a server-rendered page (cdom.h) ----
+ * cd_start_state runs the first render VIRTUAL: the server's HTML already holds every node it
+ * makes in the document, so those ops call no import and build a virtual tree here instead
+ * (vt: one vnode per node, a clone's inside copied from its template only when a walk or an
+ * append goes in). Templates are built off the document and are real: their ops reach JS as
+ * always, and their vnodes are marked VREAL. At the end of the render the vnodes that carry an
+ * id, and their ancestors, become the path tree (pnodes in document order: a subtree is a
+ * range), every other vnode is dropped, and each id is pending: JS has no node for it yet.
+ * The first op that takes a pending id resolves it: one `resolve` import with its path (child
+ * indices from the mount, counted as the shim counts them, the comment rule in cdom.h). An op
+ * that changes a parent's children (an insert, a move, a remove, a clear, a detach) first
+ * resolves every pending id below that parent in one call, because their indices hold only
+ * against the server's DOM. An event whose target has no listening node with a JS id on its
+ * path is posted in the resume form, with every level's index up to the mount, and r_event
+ * finds the deepest pending listener on it. */
+#define VNONE 0xffffffffu
+#define VREAL 0x80000000u
+#define PATH_MAX 512   /* levels below the mount a named node may sit at */
+#define TRAIL_MAX 512  /* levels of an event path the shim writes */
+enum { VS_LIVE, VS_PEND, VS_PENDL, VS_RESV, VS_WALKED, VS_GONE }; /* per id; PENDL: pending and listening */
+typedef struct { uint32_t parent, first, last, next, idx, src, nid; } vnode; /* src: template vnode + 1 not copied
+                                                                                   in yet; nid: ids naming it | VREAL */
+static vnode *vt;
+static uint32_t nvt, vtcap, *vstk, vsp, vstkcap, vlast = VNONE, vroot = VNONE, *tvroot, ntv;
+static uint8_t *vst;  /* per id: VS_* */
+static uint32_t *vref; /* per id: its vnode (first render), then its pnode */
+static uint32_t vcap, npend, npl, wsrv; /* npl: pending listeners; wsrv: JS's last may be a server node */
+static uint32_t *pidx, *ppar, *pend_, *pid, np; /* pnodes: child index, parent, end of subtree, an id */
+static uint8_t *pflag;                          /* 1: subtree resolved; 2: more ids in pext */
+static uint32_t *pext, npext;                   /* (pnode, id) for a node with more than one id */
+static uint32_t *rbuf, rcap, *hdef, nhdef, hdcap;
+static uint16_t slot_lazy[CD_TPLS];
+static uint32_t trail[2 * TRAIL_MAX]; /* per level from the target up: node index, element index */
+
+static void *vec(void *p, uint32_t *cap, uint32_t need, uint32_t el) {
+  if (need <= *cap) return p;
+  uint32_t n = *cap ? *cap : 64;
+  while (n < need) n *= 2;
+  *cap = n;
+  return cd_realloc(p, n * el);
+}
+static void vgrow(cd_id id) {
+  if (id < vcap) return;
+  uint32_t n = vcap ? vcap : 1024;
+  while (n <= id) n *= 2;
+  vst = cd_realloc(vst, n);
+  vref = cd_realloc(vref, n * 4);
+  __builtin_memset(vst + vcap, 0, n - vcap);
+  __builtin_memset(vref + vcap, 0xff, (n - vcap) * 4);
+  vcap = n;
+}
+static uint32_t v_new(uint32_t real) {
+  vt = vec(vt, &vtcap, nvt + 1, sizeof(vnode));
+  vt[nvt] = (vnode){VNONE, VNONE, VNONE, VNONE, 0, 0, real};
+  return nvt++;
+}
+static void touch(cd_id id, int under);
+static int v_real(uint32_t v) { return v == VNONE ? (__builtin_trap(), 0) : (int)(vt[v].nid >> 31); }
+static void v_expand(uint32_t v);
+/* n becomes a child of p, before b (VNONE: last) */
+static void v_link(uint32_t p, uint32_t n, uint32_t b) {
+  v_expand(p);
+  vt[n].parent = p;
+  vt[n].next = b;
+  if (b == VNONE) {
+    uint32_t l = vt[p].last;
+    vt[n].idx = l == VNONE ? 0 : vt[l].idx + 1;
+    if (l == VNONE) vt[p].first = n; else vt[l].next = n;
+    vt[p].last = n;
+    return;
+  }
+  if (vt[b].parent != p) __builtin_trap(); /* before a node that is not a child */
+  vt[n].idx = vt[b].idx;
+  if (vt[p].first == b) vt[p].first = n;
+  else { uint32_t c = vt[p].first; while (vt[c].next != b) c = vt[c].next; vt[c].next = n; }
+  for (uint32_t c = b; c != VNONE; c = vt[c].next) vt[c].idx++;
+}
+static void v_unlink(uint32_t n) {
+  uint32_t p = vt[n].parent, prev = VNONE;
+  if (p == VNONE) return;
+  for (uint32_t c = vt[p].first; c != n; c = vt[c].next) prev = c;
+  if (prev == VNONE) vt[p].first = vt[n].next; else vt[prev].next = vt[n].next;
+  if (vt[p].last == n) vt[p].last = prev;
+  for (uint32_t c = vt[n].next; c != VNONE; c = vt[c].next) vt[c].idx--;
+  vt[n].parent = vt[n].next = VNONE;
+}
+/* a clone's children, copied from its template's (each child copies its own when needed) */
+static void v_expand(uint32_t v) {
+  uint32_t s = vt[v].src;
+  if (!s) return;
+  vt[v].src = 0;
+  v_expand(--s);
+  for (uint32_t c = vt[s].first; c != VNONE; c = vt[c].next) {
+    uint32_t n = v_new(vt[v].nid & VREAL);
+    vt[n].src = vt[c].first != VNONE || vt[c].src ? c + 1 : 0;
+    v_link(v, n, VNONE);
+  }
+}
+static int v_virt(cd_id id) { return !id || (id < vcap && vst[id] == VS_PEND); }
+static uint32_t v_of(cd_id id) { /* the vnode named id */
+  uint32_t v = !id ? 0 : id < vcap ? vref[id] : VNONE;
+  if (v == VNONE) __builtin_trap(); /* not named during the first render */
+  return v;
+}
+static int at_none(void) { return at_parent >= CD_DETACHED - 1; }
+static void v_place(uint32_t n) { /* a root closes (or a text is made) at depth 0 */
+  if (!at_none()) v_link(v_of(at_parent), n, at_before ? v_of(at_before) : VNONE);
+}
+static void v_slots(uint32_t t) { /* the slots of t set during the first render, sent now */
+  for (uint32_t k = 0; t < CD_TPLS && slot_lazy[t]; k++)
+    if (slot_lazy[t] >> k & 1) { slot_lazy[t] &= (uint16_t)~(1u << k); slot_send(t, k); }
+}
+static void rs_slots(uint32_t t, uint32_t k) { slot_lazy[t] |= (uint16_t)(1u << k); }
+static void rs_tpl(uint32_t t) {
+  if (t < CD_TPLS) slot_lazy[t] = 0;
+  if (!vmode) return;
+  tvroot = vec(tvroot, &ntv, t + 1, 4);
+  tvroot[t] = vroot;
+}
+
+static int rs_make(int open, uint32_t tpl) {
+  if (!vmode) { /* an app that relies on the first render's AT gets it now */
+    wsrv = 0;
+    if (at_stale) { at_stale = 0; touch(at_parent, 1); ready(); j_at(at_parent, at_before); }
+    return 0;
+  }
+  int real = vsp ? v_real(vstk[vsp - 1]) : at_none() || !v_virt(at_parent);
+  uint32_t n = v_new(real ? VREAL : 0);
+  if (tpl) {
+    if (tpl > ntv || tvroot[tpl - 1] == VNONE) __builtin_trap(); /* no such template */
+    vt[n].src = tvroot[tpl - 1] + 1;
+    if (real) v_slots(tpl - 1);
+  }
+  if (vsp) v_link(vstk[vsp - 1], n, VNONE);
+  else if (!open) v_place(n);
+  if (open) { vstk = vec(vstk, &vstkcap, vsp + 1, 4); vstk[vsp++] = n; }
+  vlast = n;
+  return !real;
+}
+static int rs_close(void) {
+  if (!vmode) return 0;
+  if (!vsp) __builtin_trap(); /* close without open */
+  uint32_t n = vstk[--vsp];
+  if (!vsp) { vroot = n; v_place(n); }
+  return !v_real(n);
+}
+static int rs_last(void) { return vmode && !v_real(vlast); }
+static void rs_drop(cd_id id) { /* id no longer names what it named */
+  if (id >= vcap) return;
+  uint8_t s = vst[id];
+  if (vmode && s == VS_PEND) vt[vref[id]].nid--;
+  if (!vmode && (s == VS_PEND || s == VS_PENDL)) { npend--; npl -= s == VS_PENDL; }
+  vst[id] = VS_LIVE;
+  vref[id] = VNONE;
+}
+static int rs_name(cd_id id) {
+  if (!vmode) { /* a name in JS now: from a walk that may have reached a server node, mark it */
+    rs_drop(id);
+    if (wsrv) { vgrow(id); vst[id] = VS_WALKED; }
+    return 0;
+  }
+  vgrow(id);
+  rs_drop(id);
+  vref[id] = vlast;
+  if (v_real(vlast)) return 0;
+  vst[id] = VS_PEND;
+  vt[vlast].nid++;
+  return 1;
+}
+static void ensure(cd_id id);
+static int rs_step(uint32_t s) {
+  if (!vmode) { if (s == 3) wsrv = 1; return 0; }
+  uint32_t v = vlast;
+  int real = v_real(v);
+  if (s == 1) { v_expand(v); vlast = vt[v].first; }
+  else vlast = s == 2 ? vt[v].next : vt[v].parent;
+  return !real;
+}
+static int rs_sel(cd_id id) {
+  if (!vmode) { ensure(id); wsrv = !id || (id < vcap && vst[id] != VS_LIVE && vst[id] != VS_GONE); return 0; }
+  vlast = v_of(id);
+  return !v_real(vlast);
+}
+
+/* ---- after the first render: resolving ---- */
+static uint32_t path_of(uint32_t p, uint32_t *path) { /* the pnode's child indices from the mount */
+  uint32_t d = 0;
+  for (uint32_t q = p; q; q = ppar[q]) d++;
+  for (uint32_t q = p, l = d; q; q = ppar[q]) path[--l] = pidx[q];
+  return d;
+}
+static int pending(cd_id id, uint32_t p) { return id < vcap && vref[id] == p && (vst[id] == VS_PEND || vst[id] == VS_PENDL); }
+/* Resolves the pending ids of pnodes lo..hi-1 in one call: entries in document order, each
+ * written as the levels below what it shares with the previous one (the shim's resolve). */
+static void r_range(uint32_t lo, uint32_t hi, int subtree) {
+  static uint32_t cur[PATH_MAX], prev[PATH_MAX];
+  uint32_t n = 0, w = 0, nprev = 0;
+  for (uint32_t q = lo; q < hi; q++) {
+    if (subtree) pflag[q] |= 1;
+    uint32_t d = 0;
+    for (uint32_t e = 0; e <= ((pflag[q] & 2) ? npext : 0); e++) {
+      cd_id id = e ? (pext[2 * e - 2] == q ? pext[2 * e - 1] : VNONE) : pid[q];
+      if (!pending(id, q)) continue;
+      if (!d) d = path_of(q, cur);
+      uint32_t keep = 0;
+      while (keep < d && keep < nprev && cur[keep] == prev[keep]) keep++;
+      rbuf = vec(rbuf, &rcap, w + 2 + d - keep, 4);
+      rbuf[w++] = id;
+      rbuf[w++] = keep | d << 12 | (uint32_t)(vst[id] == VS_PENDL) << 24;
+      for (uint32_t l = keep; l < d; l++) rbuf[w++] = cur[l];
+      __builtin_memcpy(prev, cur, d * 4);
+      nprev = d;
+      npend--;
+      npl -= vst[id] == VS_PENDL;
+      vst[id] = VS_RESV;
+      n++;
+    }
+  }
+  if (n) j_resolve(rbuf, n);
+  if (!npend) { /* nothing is pending: back to the plain path */
+    rs = 0;
+    if (at_stale) { at_stale = 0; ready(); j_at(at_parent, at_before); }
+  }
+}
+static void r_tree(uint32_t p) { if (!(pflag[p] & 1)) r_range(p, pend_[p], 1); }
+static void ensure(cd_id id) {
+  if (id >= vcap) return;
+  if (vst[id] == VS_GONE) __builtin_trap(); /* its node left the document during the first render */
+  if (vst[id] == VS_PEND || vst[id] == VS_PENDL) r_range(vref[id], vref[id] + 1, 0);
+}
+/* a change to the children of the node named id (under = 1) or of its parent (under = 0) */
+static void touch(cd_id id, int under) {
+  uint8_t s = id < vcap ? vst[id] : VS_LIVE;
+  if (s == VS_WALKED) r_tree(0); /* a server node named in JS: where it sits is not known here */
+  else if (s != VS_LIVE && s != VS_GONE) { uint32_t p = vref[id]; r_tree(under || !p ? p : ppar[p]); }
+}
+static int rs_at(cd_id parent) {
+  if (vmode) return !at_none() && v_virt(parent);
+  if (parent != CD_DETACHED) touch(parent, 1);
+  return 0;
+}
+static int rs_id(cd_id id) {
+  if (vmode) return v_virt(id);
+  ensure(id);
+  return 0;
+}
+static int rs_move(cd_id id, cd_id before) {
+  if (!vmode) { touch(id, 0); ensure(before); return 0; }
+  if (!v_virt(id)) return 0;
+  uint32_t n = v_of(id), p = vt[n].parent;
+  if (p == VNONE) __builtin_trap(); /* move of a node with no parent */
+  v_unlink(n);
+  v_link(p, n, before ? v_of(before) : VNONE);
+  return 1;
+}
+static int rs_clear(cd_id id) {
+  if (!vmode) { touch(id, 1); return 0; }
+  if (!v_virt(id)) return 0;
+  uint32_t n = v_of(id);
+  while (vt[n].first != VNONE) v_unlink(vt[n].first);
+  vt[n].src = 0;
+  return 1;
+}
+static int rs_place(cd_id id) { /* detach, attach: the server's DOM is already in place */
+  if (!vmode) { touch(id, 0); return 0; }
+  return v_virt(id);
+}
+static int rs_remove(cd_id id) {
+  if (!vmode) { touch(id, 0); return 0; }
+  if (!v_virt(id)) return 0;
+  v_unlink(v_of(id));
+  return 1;
+}
+/* A host op on a server node during the first render waits for its end, then runs. */
+static int rs_host(void) {
+  if (!vmode) { ensure(hv[0]); return 0; }
+  if (!v_virt(hv[0])) return 0;
+  hdef = vec(hdef, &hdcap, nhdef + 1 + nhv, 4);
+  hdef[nhdef++] = nhv;
+  __builtin_memcpy(hdef + nhdef, hv, nhv * 4);
+  nhdef += nhv;
+  return 1;
+}
+
+static void vr_begin(void) {
+  vmode = rs = 1;
+  nvt = vsp = 0;
+  vlast = vroot = VNONE;
+  v_new(0); /* vnode 0: the mount */
+  vgrow(0);
+  __builtin_memset(vst, 0, vcap); /* an earlier resume's states */
+}
+/* The end of the first render: the path tree, each id pending, the deferred calls. */
+static void v_finish(void) {
+  walk_done();
+  vmode = 0;
+  if (vsp) __builtin_trap(); /* an element left open */
+  uint8_t *keep = cd_alloc(nvt);
+  uint32_t *v2p = cd_alloc(nvt * 4), v = 0, n = 1, d = 0;
+  __builtin_memset(keep, 0, nvt);
+  for (;;) { /* post-order over the links: keep a vnode with an id or with a kept child */
+    if (vt[v].first != VNONE) { v = vt[v].first; continue; }
+    for (;;) {
+      if (keep[v] || (vt[v].nid & ~VREAL)) { keep[v] = 1; if (v) keep[vt[v].parent] = 1; }
+      if (!v) goto counted;
+      if (vt[v].next != VNONE) { v = vt[v].next; break; }
+      v = vt[v].parent;
+    }
+  }
+counted:
+  for (uint32_t i = 1; i < nvt; i++) n += keep[i];
+  cd_free(pidx); cd_free(ppar); cd_free(pend_); cd_free(pid); cd_free(pflag); cd_free(pext);
+  pidx = cd_alloc(n * 4); ppar = cd_alloc(n * 4); pend_ = cd_alloc(n * 4); pid = cd_alloc(n * 4); pflag = cd_alloc(n);
+  pext = 0;
+  np = npext = 0;
+  for (v = 0;;) { /* pre-order over the kept vnodes: pnodes in document order */
+    int k = !v || keep[v];
+    if (k) {
+      if (d > PATH_MAX) __builtin_trap(); /* a named node deeper than PATH_MAX */
+      v2p[v] = np;
+      pidx[np] = vt[v].idx;
+      ppar[np] = v ? v2p[vt[v].parent] : VNONE;
+      pid[np] = VNONE;
+      pflag[np++] = 0;
+    }
+    if (k && vt[v].first != VNONE) { v = vt[v].first; d++; continue; }
+    for (;;) {
+      if (!v || keep[v]) pend_[v2p[v]] = np;
+      if (!v) goto built;
+      if (vt[v].next != VNONE) { v = vt[v].next; break; }
+      v = vt[v].parent;
+      d--;
+    }
+  }
+built:
+  npend = npl = 0;
+  for (cd_id id = 1; id < vcap; id++) {
+    if (vst[id] != VS_PEND) { vref[id] = VNONE; continue; }
+    v = vref[id];
+    if (!keep[v]) { vst[id] = VS_GONE; vref[id] = VNONE; continue; } /* removed or cleared in the render */
+    uint32_t p = vref[id] = v2p[v];
+    if (pid[p] == VNONE) pid[p] = id;
+    else { pext = cd_realloc(pext, (npext + 1) * 8); pext[2 * npext++] = p; pext[2 * npext - 1] = id; pflag[p] |= 2; }
+    npend++;
+    if (id < tags_cap && lmask[id]) { vst[id] = VS_PENDL; npl++; }
+  }
+  vst[0] = VS_RESV;
+  vref[0] = 0;
+  cd_free(keep); cd_free(v2p); cd_free(vt); cd_free(vstk); cd_free(tvroot);
+  vt = 0; vstk = tvroot = 0; vtcap = vstkcap = ntv = nvt = 0;
+  vlast = vroot = VNONE;
+  rs = npend != 0;
+  if (at_stale && !rs) { at_stale = 0; ready(); j_at(at_parent, at_before); }
+  for (uint32_t t = 0; t < CD_TPLS; t++) v_slots(t);
+  for (uint32_t o = 0; o < nhdef; o += 1 + hdef[o]) { /* the host ops, now on resolved nodes */
+    nhv = hdef[o];
+    __builtin_memcpy(hv, hdef + o + 1, nhv * 4);
+    if (rs) ensure(hv[0]);
+    host_send();
+  }
+  nhdef = 0;
+}
+
+/* The resume form of an event (cdom.h): inbox.id is the nearest node with a JS id that takes
+ * the event (-1: none), path is how many levels below it the target is, and -1 - depth is the
+ * number of levels in trail. The deepest pending listener on the path wins over that node when
+ * it is nearer the target; it is resolved (the shim's fast path finds it next time), and the
+ * record becomes the plain one. Returns 0 when no node takes the event. */
+static int r_event(void) {
+  uint32_t L = (uint32_t)(-1 - inbox.depth), hd = (uint32_t)inbox.path, best = VNONE, bl = 0;
+  if (npl && L <= TRAIL_MAX) {
+    for (uint32_t p = 0, j = 0; j < L; j++) { /* down the path tree along the target's indices */
+      uint32_t want = trail[2 * (L - 1 - j)], c = p + 1;
+      while (c < pend_[p] && pidx[c] < want) c = pend_[c];
+      if (c >= pend_[p] || pidx[c] != want) break;
+      p = c;
+      for (uint32_t e = 0; e <= ((pflag[p] & 2) ? npext : 0); e++) {
+        cd_id id = e ? (pext[2 * e - 2] == p ? pext[2 * e - 1] : VNONE) : pid[p];
+        if (pending(id, p) && vst[id] == VS_PENDL && cd_wants(id, (uint32_t)inbox.type, (cd_str)inbox.key)) {
+          best = id;
+          bl = L - 1 - j;
+          break;
+        }
+      }
+    }
+  }
+  if (best != VNONE && (inbox.id < 0 || bl < hd)) { ensure(best); inbox.id = (int32_t)best; hd = bl; }
+  else if (inbox.id < 0) return 0;
+  uint32_t path = 0;
+  for (uint32_t l = 0; l < hd && l < TRAIL_MAX; l++) path = path << 8 | (trail[2 * l + 1] & 255);
+  inbox.path = (int32_t)path;
+  inbox.depth = (int32_t)hd;
+  return 1;
+}
 
 /* ---- entry points ---- */
 EXPORT("cd_layout") uintptr_t *cd_layout(void) {
   layout[0] = (uintptr_t)sbytes;
   layout[1] = (uintptr_t)smeta;
   layout[2] = (uintptr_t)&inbox;
+  layout[3] = (uintptr_t)&npl;
+  layout[4] = (uintptr_t)trail;
   return layout;
 }
 
@@ -560,9 +1007,9 @@ EXPORT("cd_start") void cd_start(uint32_t seed) {
 __attribute__((weak)) uint32_t cd_state_save(uint8_t *dst, uint32_t cap) { (void)dst; (void)cap; return 0; }
 __attribute__((weak)) int cd_state_load(const uint8_t *src, uint32_t len) { (void)src; return len != 0; }
 
-/* Hydration: the shim copies the page's state blob, as the base64 text the page holds, into
- * cd_state_buf; cd_start_state decodes it in place, loads it and renders the first frame over
- * the server's DOM. */
+/* Resuming: the shim copies the page's state blob, as the base64 text the page holds, into
+ * cd_state_buf; cd_start_state decodes it in place, loads it and runs the first render
+ * virtually over the server's DOM (the resume section above). */
 static uint8_t *state_buf;
 EXPORT("cd_state_buf") uint8_t *cd_state_buf(uint32_t len) {
   cd_free(state_buf);
@@ -597,13 +1044,15 @@ EXPORT("cd_start_state") int cd_start_state(uint32_t len) {
   cd_free(state_buf);
   state_buf = 0;
   if (bad) return bad;
+  vr_begin();
   cd_main();
+  v_finish();
   cd_flush();
   return 0;
 }
 
 EXPORT("cd_event") void cd_event(void) {
-  cd_on_event(&inbox);
+  if (inbox.depth >= 0 || r_event()) cd_on_event(&inbox);
   cd_flush();
 }
 
