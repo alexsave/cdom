@@ -98,7 +98,7 @@ EXPORT("t_window") void t_window(void) {
 EXPORT("t_viewport") int32_t t_viewport(int32_t which) {
   cd_viewport_rec v;
   cd_viewport(&v);
-  return which == 0 ? v.w : which == 1 ? v.h : which == 2 ? v.hidden : which == 3 ? resized_w : which == 4 ? resized_h : hidden;
+  return which == 0 ? v.w : which == 1 ? v.h : which == 2 ? v.hidden : which == 6 ? v.dpr100 : which == 3 ? resized_w : which == 4 ? resized_h : hidden;
 }
 static int32_t loaded_id = -1, loaded_key = -1;
 void cd_on_event(const cd_event_rec *e) {

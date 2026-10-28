@@ -55,6 +55,11 @@ try {
   const stale = () => b.evaluate('__x.t_stale()');
   ok = ok && await stale() === 0;
   if (ok) passed.push('a resize arrives through the event path, with the viewport size, and the export flushes'); else errors.push('resize: ' + await b.evaluate(`__x.t_viewport(3) + 'x' + __x.t_viewport(4) + ' ' + document.querySelector('#window i').textContent`));
+  // The device pixel ratio, read from C: 2 on a 2x screen.
+  await b.send('Emulation.setDeviceMetricsOverride', { width: 640, height: 480, deviceScaleFactor: 2, mobile: false });
+  let dpr = 0;
+  for (let i = 0; i < 100 && dpr !== 200; i++) { await sleep(20); dpr = await b.evaluate('__x.t_viewport(6)'); }
+  if (dpr === 200) passed.push('the device pixel ratio, read from C'); else errors.push('the device pixel ratio: ' + dpr);
   await b.evaluate(`__x.t_net(${PORT})`);
   let v = '';
   for (let i = 0; i < 200; i++) { await sleep(20); v = await b.evaluate(`document.querySelector('#net i').textContent`); if (v !== 'waiting' && v !== 'ws ok') break; }

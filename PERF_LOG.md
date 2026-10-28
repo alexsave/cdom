@@ -132,6 +132,7 @@ Each line added or changed, and why:
 - `style`, `style_num`: one setProperty each.
 - `image`, 5 lines: canvas, putImageData from C memory, toBlob, the url set, CD_EV_LOAD.
 - `vp`, `win`, `viewport` and a comment: window events and the viewport read.
+- `viewport` (changed, not grown): also writes `devicePixelRatio` times 100, so an app can size a picture it makes for the screen's device pixels (the foolish port's fern texture); unit case "the device pixel ratio, read from C", mutant viewport-dpr.
 - `timer`, `raf`, `now`: one line each.
 - The network, 19 lines with comments: `utf8`, `deliver` (into C memory), `ws_open` (4 handlers), `ws_send`, `ws_close`, `http`.
 - The import list: 3 lines rewrapped for the 16 new names.

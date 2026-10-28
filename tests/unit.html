@@ -96,7 +96,7 @@ cdom.start('unit.wasm', 'm').then(async (x) => {
   check('the timer and frame exports flush what their hooks left pending', () =>
     (trace.includes('strings') && trace.includes('walk') && x.t_stale() === 0) || JSON.stringify(trace) + ' stale ' + x.t_stale());
   x.t_window();
-  check('the viewport, read from C', () => (x.t_viewport(0) === innerWidth && x.t_viewport(1) === innerHeight && x.t_viewport(2) === +document.hidden) || 'wrong');
+  check('the viewport, read from C', () => (x.t_viewport(0) === innerWidth && x.t_viewport(1) === innerHeight && x.t_viewport(2) === +document.hidden && x.t_viewport(6) === Math.round(devicePixelRatio * 100)) || 'wrong');
   document.dispatchEvent(new Event('visibilitychange'));
   check('visibilitychange arrives through the event path', () => x.t_viewport(5) === +document.hidden || x.t_viewport(5));
   // An image: the pixels C wrote come back from the url the shim set, and CD_EV_LOAD says so.
