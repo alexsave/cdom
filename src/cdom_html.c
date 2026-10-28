@@ -290,10 +290,11 @@ void js_apply(uint32_t nops, uint32_t nargs, uint32_t nstrs, uint32_t nbytes) {
       tpl[a[q++]] = root;
       unlink_node(root);
       break;
-    case OP_CLONE: /* opened, never inserted until its CLOSE at depth 0 places it */
+    case OP_CLONE: /* at depth 0 its CLOSE places it; inside an open element it is appended, like OPEN */
       n = a[q++];
       if (n >= tpl_cap || !tpl[n]) fail("clone of a missing template", op);
       el = clone(tpl[n]);
+      if (sp) insert(stack[sp - 1], el, 0, op);
       push(el);
       last = el;
       break;
