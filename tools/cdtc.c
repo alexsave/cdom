@@ -167,6 +167,7 @@ typedef struct {
   int efield, eref_t, ei, eowner; /* eowner: the record holding the list, -1 for the state */
   /* analysis */
   int ln, frag, depth, path[MAXD], unstable, named, slot, ntog, nattrb, owns;
+  int ts; /* BIND: 1 + its template slot (cd_slot), 0 when the clone walks to it */
 } Node;
 static Node *N;
 static int nn, cn;
@@ -180,6 +181,8 @@ static Tpl *T;
 static int nt, ct;
 
 typedef struct { int tpl, root, ifn, br, tid, has_free, has_patch; } Frag;
+#define CDT_TPLS 64  /* cdom.h CD_TPLS: templates with slots are numbered under it */
+#define CDT_SLOTS 16 /* cdom.h CD_SLOTS: slots per template */
 static Frag *F;
 static int nf, cfr;
 
@@ -1260,7 +1263,12 @@ static void insert_branches(Buf *b, int ifn, const char *ind) {
 static void shape(Buf *b, int n) {
   Node *x = &N[n];
   if (x->kind == N_TEXT) { out(b, "  cd_text(cdt_s[%d]);\n", lit(x->text)); return; }
-  if (x->kind == N_BIND) { out(b, "  cd_text(cdt_s[%d]);\n", lit(" ")); return; }
+  if (x->kind == N_BIND) {
+    out(b, "  cd_text(cdt_s[%d]);", lit(" "));
+    if (x->ts) out(b, " cd_slot(%d);", x->ts - 1);
+    out(b, "\n");
+    return;
+  }
   out(b, "  cd_open(cdt_s[%d]);", lit(x->tag));
   for (int i = 0; i < x->na; i++) {
     Attr *a = &x->a[i];
@@ -1448,6 +1456,16 @@ static void clone_create(Buf *b, int f) {
   if (N[root].ref) out(b, "  cdt_v->%s = cdt_root;\n", N[root].ref);
   for (int i = 0; i < v.n; i++)
     if (N[v.v[i]].kind == N_IF) out(b, "  cdt_v->if%d_root = 0;\n", N[v.v[i]].ln);
+  for (int i = 0; i < v.n; i++) { /* slotted text goes into the template, then one clone copies it */
+    Node *x = &N[v.v[i]];
+    if (x->kind != N_BIND || !x->ts) continue;
+    if (x->bt == 's') {
+      out(b, "  cd_tpl_text(%d, %d, cdt_str(cdt_v->t%d = (%s)));\n", F[f].tid, x->ts - 1, x->ln, x->expr);
+      use_str = 1;
+    } else {
+      out(b, "  cd_tpl_text_num(%d, %d, cdt_v->t%d = (uint32_t)(%s));\n", F[f].tid, x->ts - 1, x->ln, x->expr);
+    }
+  }
   out(b, "  cd_clone(%d);\n", F[f].tid);
   if (N[root].slot > 0) listen(b, root, "cdt_root", "  ");
   else out(b, "  cd_name(cdt_root);\n");
@@ -1455,7 +1473,7 @@ static void clone_create(Buf *b, int f) {
   int pos[MAXD], pl = 0;
   for (int i = 1; i < v.n; i++) {
     int n = v.v[i];
-    if (N[n].kind == N_IF || N[n].kind == N_EACH || !create_action(n)) continue;
+    if (N[n].kind == N_IF || N[n].kind == N_EACH || N[n].ts || !create_action(n)) continue;
     out(b, " ");
     if (pl && 1 + walk_cost(0, 0, N[n].path, N[n].depth) < walk_cost(pos, pl, N[n].path, N[n].depth)) {
       out(b, " cd_sel(cdt_root);"); /* back to the root is shorter than climbing */
@@ -2083,6 +2101,17 @@ static void generate(const char *base) {
   for (int f = nf; f-- > 0;) {
     F[f].has_free = frag_has_free(f);
     F[f].has_patch = f < nt || frag_has_patch(f); /* a template's patch is public: always there */
+  }
+  /* Template slots (cdom.h): a cloned fragment's unnamed text bindings, at most CD_SLOTS of
+   * them in templates numbered under CD_TPLS, are set in the template before each clone, so
+   * the clone needs no walk to them. A named one (an {#if} anchor, after an {#if}) is walked. */
+  for (int f = 0; f < nf; f++) {
+    if (!F[f].tid || F[f].tid >= CDT_TPLS) continue;
+    IntVec v = {0, 0, 0};
+    frag_nodes(F[f].root, &v);
+    for (int i = 0, k = 0; i < v.n && k < CDT_SLOTS; i++)
+      if (N[v.v[i]].kind == N_BIND && !N[v.v[i]].named) N[v.v[i]].ts = ++k;
+    free(v.v);
   }
   for (int ti = 0; ti < nt; ti++) { /* each template numbers its own lists */
     int ne = 0;
