@@ -99,21 +99,39 @@ cdom.start('unit.wasm', 'm').then(async (x) => {
   check('the viewport, read from C', () => (x.t_viewport(0) === innerWidth && x.t_viewport(1) === innerHeight && x.t_viewport(2) === +document.hidden && x.t_viewport(6) === Math.round(devicePixelRatio * 100)) || 'wrong');
   document.dispatchEvent(new Event('visibilitychange'));
   check('visibilitychange arrives through the event path', () => x.t_viewport(5) === +document.hidden || x.t_viewport(5));
-  // An image: the pixels C wrote come back from the url the shim set, and CD_EV_LOAD says so.
+  // An image: the pixels C wrote, encoded, their bytes back in C, then set as a url.
   x.t_image();
   const landed = await until(() => x.t_loaded(0) === 1);
   let got = null;
   if (landed) {
     const url = $('#image > div').style.backgroundImage.slice(5, -2);
-    const img = new Image(); img.src = url; await img.decode();
-    const cv = document.createElement('canvas'); cv.width = 3; cv.height = 2;
-    const cx = cv.getContext('2d'); cx.drawImage(img, 0, 0);
-    got = [...cx.getImageData(0, 0, 3, 2).data];
+    const img = new Image(); img.src = url;
+    try { await img.decode();
+      const cv = document.createElement('canvas'); cv.width = 3; cv.height = 2;
+      const cx = cv.getContext('2d'); cx.drawImage(img, 0, 0);
+      got = [...cx.getImageData(0, 0, 3, 2).data]; } catch (e) { got = 'not decodable: ' + e.name; }
   }
-  check('cd_set_image: the pixels as a CSS url, then CD_EV_LOAD with the token', () => {
+  check('cd_encode_image and cd_set_image_bytes: the pixels as a PNG in C, then a CSS url', () => {
     const want = []; for (let i = 0; i < 6; i++) want.push(40 * i, 255 - 30 * i, 7 * i, 255);
     return (landed && x.t_loaded(1) === 77 && JSON.stringify(got) === JSON.stringify(want) && x.t_stale() === 0)
       || `landed ${landed} key ${x.t_loaded(1)} pixels ${JSON.stringify(got)}`;
   });
+  // The store: put then get round-trips the bytes; a missing key answers -1; so does a get whose
+  // deadline passes first (a readwrite transaction held open on the store keeps the read waiting).
+  x.t_store_put();
+  await new Promise((r) => setTimeout(r, 100));
+  x.t_store_get(1, 1, 1500); x.t_store_get(2, 0, 1500);
+  await until(() => x.t_store(1, 0) !== -2 && x.t_store(2, 0) !== -2);
+  const want = [9, 1, 250, 3, 7].reduce((s, b) => (Math.imul(s, 31) + b) >>> 0, 0) | 0;
+  check('cd_store: a put, then a get, gives the same bytes back', () => (x.t_store(1, 0) === 5 && x.t_store(1, 1) === want && x.t_stale() === 0) || `len ${x.t_store(1, 0)} sum ${x.t_store(1, 1)}`);
+  check('cd_store: a missing key answers -1', () => x.t_store(2, 0) === -1 || x.t_store(2, 0));
+  const d = await new Promise((r, j) => { const q = indexedDB.open('cdom', 1); q.onsuccess = () => r(q.result); q.onerror = j; });
+  const tx = d.transaction('kv', 'readwrite'), os = tx.objectStore('kv'), t0 = performance.now();
+  const busy = () => { if (performance.now() - t0 < 400) os.put(new Uint8Array(1), 'unit-busy').onsuccess = busy; };
+  busy();
+  x.t_store_get(3, 1, 50);
+  const early = await until(() => x.t_store(3, 0) !== -2, 300);
+  check('cd_store: a get not answered by its deadline answers -1', () => (early && x.t_store(3, 0) === -1 && performance.now() - t0 < 300) || `answered ${early} with ${x.t_store(3, 0)}`);
+  await new Promise((r) => { tx.oncomplete = r; });
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>

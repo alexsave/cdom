@@ -2,6 +2,7 @@
  * builds something; tests/unit.html checks the DOM and C's counters and reports by name. */
 #include "../src/cdom.h"
 #include "../src/cdom_net.h"
+#include "../src/cdom_store.h"
 
 #define EXPORT(n) __attribute__((export_name(n)))
 #define L(s) CD_LIT(s)
@@ -103,7 +104,6 @@ EXPORT("t_viewport") int32_t t_viewport(int32_t which) {
 static int32_t loaded_id = -1, loaded_key = -1;
 void cd_on_event(const cd_event_rec *e) {
   enter();
-  if (e->type == CD_EV_LOAD) { loaded_id = e->id; loaded_key = e->key; hold((cd_id)e->id); return; }
   if (e->type == CD_EV_RESIZE && e->id == CD_MOUNT) {
     resized_w = e->x; resized_h = e->y;
     cd_set_text_num(vw_txt, (uint32_t)e->x); /* no cd_flush: the event export does it */
@@ -239,7 +239,7 @@ EXPORT("t_tmp_stale") void t_tmp_stale(void) {
   cd_set_class(styled, t);       /* traps */
 }
 
-/* Pixels as a CSS image: a 3 x 2 PNG on a div's background, then CD_EV_LOAD. */
+/* Pixels as a CSS image: encoded to a 3 x 2 PNG, whose bytes come back and go on a div's background. */
 static cd_id imaged;
 static uint8_t pix[3 * 2 * 4];
 EXPORT("t_image") void t_image(void) {
@@ -247,10 +247,39 @@ EXPORT("t_image") void t_image(void) {
   cd_at(s, 0);
   cd_open(L("div")); cd_name_open(imaged = cd_id_new()); cd_close();
   for (uint32_t i = 0; i < 6; i++) { pix[i * 4] = (uint8_t)(40 * i); pix[i * 4 + 1] = (uint8_t)(255 - 30 * i); pix[i * 4 + 2] = (uint8_t)(7 * i); pix[i * 4 + 3] = 255; }
-  cd_set_image(imaged, L("background-image"), pix, 3, 2, L("image/png"), 77);
+  cd_encode_image(pix, 3, 2, L("image/png"), 77);
   __builtin_memset(pix, 0, sizeof pix); /* the shim copied them during the call */
 }
-EXPORT("t_loaded") int32_t t_loaded(int32_t which) { return which ? loaded_key : loaded_id == (int32_t)imaged; }
+void cd_on_encoded(uint32_t token, const uint8_t *p, uint32_t len) {
+  enter();
+  loaded_key = (int32_t)token;
+  loaded_id = (int32_t)len;
+  /* a PNG starts 0x89 'P' 'N' 'G' */
+  if (len > 4 && p[0] == 0x89 && p[1] == 'P') cd_set_image_bytes(imaged, L("background-image"), p, len, L("image/png"));
+  hold(imaged); /* no cd_flush: the export does it */
+}
+EXPORT("t_loaded") int32_t t_loaded(int32_t which) { return which ? loaded_key : loaded_id > 8; }
+
+/* The store: a put, then gets that hit, miss, and miss by the deadline. */
+static int32_t store_len[8] = {-2, -2, -2, -2, -2, -2, -2, -2};
+static uint32_t store_sum[8];
+EXPORT("t_store_put") void t_store_put(void) {
+  static const uint8_t v[5] = {9, 1, 250, 3, 7};
+  cd_store_put("unit-k1", 7, v, 5);
+}
+EXPORT("t_store_get") void t_store_get(uint32_t token, int32_t present, uint32_t ms) {
+  if (present) cd_store_get(token, "unit-k1", 7, ms);
+  else cd_store_get(token, "unit-none", 9, ms);
+}
+void cd_on_store(uint32_t token, const uint8_t *p, int32_t len) {
+  enter();
+  store_len[token & 7] = len;
+  uint32_t sum = 0;
+  for (int32_t i = 0; i < len; i++) sum = sum * 31 + p[i];
+  store_sum[token & 7] = sum;
+  hold(imaged); /* no cd_flush: the export does it */
+}
+EXPORT("t_store") int32_t t_store(uint32_t token, int32_t sum) { return sum ? (int32_t)store_sum[token & 7] : store_len[token & 7]; }
 
 /* 12. A literal per call site. */
 static cd_str lit_a(void) { return CD_LIT("alpha"); }

@@ -109,7 +109,9 @@ Every item has a test in tests/unit.c (the unit page, tools/unit.mjs), tests/lis
 - Freeing a free id traps (an `alive` byte per id).
 - Time: `cd_timer_start(ms, token)` -> `cd_on_timer(token)`, `cd_raf_request(token)` -> `cd_on_raf(token, t)`, `cd_now()`. Hooks have empty weak defaults.
 - Window: `cd_listen_window(CD_EV_RESIZE | CD_EV_VISIBILITY)` delivers through `cd_on_event` (x, y the viewport, key = hidden); `cd_viewport(&v)` reads it now.
-- `cd_set_image(id, prop, rgba, w, h, mime, token)`: pixels in C memory as a CSS `url()` (canvas, toBlob, object URL) on a style property, then `CD_EV_LOAD` with key = token.
+- Images, in two steps (replacing the first pass's `cd_set_image` and `CD_EV_LOAD`): `cd_encode_image(rgba, w, h, mime, token)` encodes pixels in C memory (canvas, toBlob) and hands the file's bytes back to `cd_on_encoded(token, p, len)`; `cd_set_image_bytes(id, prop, p, len, mime)` puts an image file's bytes on a style property as a `url(blob:)`, now. Two steps so an app can keep the encoded file (the store, below) and set it again on a later load without encoding or decoding in C.
+- Store: src/cdom_store.c and cdom_store.h (link it to use it): `cd_store_put(key, klen, p, len)`, fire and forget, and `cd_store_get(token, key, klen, deadline_ms)` answered by `cd_on_store(token, p, len)`, len -1 for a miss, an error, or no answer by the deadline (`CD_STORE_DEADLINE_MS` 1500: iOS Safari's indexedDB.open can hang). IndexedDB database "cdom", object store "kv", fixed in the shim; the version lives in the key the app chooses. Bytes in, bytes out, nothing parsed.
+- Bytes into C: one room for every incoming byte string, `cd_bytes_buf(n)` in cdom.c (the encoded image, the stored value, and the network's messages, whose own `cd_net_buf` is gone).
 - Network: src/cdom_net.c and cdom_net.h (link it to use it): `cd_ws_open/send/close`, `cd_http`, answered by `cd_on_ws_open/msg/close`, `cd_on_http`; bytes go straight into a buffer cdom owns.
 - Auto-flush: every export (cd_start, cd_event, cd_timer, cd_raf, the four network answers) flushes after the app's hook. Apps no longer call `cd_flush`.
 - Memory: `cd_alloc`, `cd_realloc`, `cd_free` go through `malloc`, `realloc`, `free`; cdom defines all four (and calloc) as weak symbols over its own heap. An app with its own allocator defines them, strong, and cdom allocates from it; cdom's free and realloc trap on a pointer their heap did not hand out. One heap whoever brings it.
@@ -120,7 +122,7 @@ Every item has a test in tests/unit.c (the unit page, tools/unit.mjs), tests/lis
 
 40,000 opens (20,000 rows of div > span > text, built and cleared), median of 21 fresh loads: namespace in C (an id compare, `open_svg` import) 11.7 ms; the port's JS check per open (tag compare and the parent's `namespaceURI`) 12.0 ms. About 7 ns per open; C kept.
 
-### SHIM_LINES (shim/cdom.js 138 -> 184 lines)
+### SHIM_LINES (shim/cdom.js 138 -> 184 -> 204 lines)
 
 Each line added or changed, and why:
 - `EVENTS` gains "resize", "visibilitychange", "load": the window events and the image's load use the event record.
@@ -130,7 +132,12 @@ Each line added or changed, and why:
 - `open`, `open_svg`, `clone`: one line each over push.
 - `name_open`: names the open element.
 - `style`, `style_num`: one setProperty each.
-- `image`, 5 lines: canvas, putImageData from C memory, toBlob, the url set, CD_EV_LOAD.
+- `encode`, 5 lines with the comment: canvas, putImageData from C memory, toBlob, the bytes delivered (replaces `image`, 5 lines).
+- `image_bytes`, 4 lines: a Blob of the bytes, the url set.
+- `EVENTS` loses "load" (no image event any more).
+- `deliver`, moved out of the network block (net 0) with its comment changed, now over `cd_bytes_buf`; the network block keeps its comment line and `sockets`.
+- The store, 11 lines with comments: `kv` (the database opened once, created on first use, one request per transaction, 4 lines), `store_put` (a copy of the bytes, put, errors dropped), `store_get` (one answer: the deadline's miss, the value delivered, or a miss).
+- The import list: 2 names in place of `image`, 2 more for the store.
 - `vp`, `win`, `viewport` and a comment: window events and the viewport read.
 - `viewport` (changed, not grown): also writes `devicePixelRatio` times 100, so an app can size a picture it makes for the screen's device pixels (the foolish port's fern texture); unit case "the device pixel ratio, read from C", mutant viewport-dpr.
 - `timer`, `raf`, `now`: one line each.
@@ -140,7 +147,7 @@ Each line added or changed, and why:
 ### Gates and the paired runs
 
 Every gate passes on the bench entry built from this branch (cdomf): the harness's keyed check, smoke, DOM identity against perf 0d0bdd7 (entry cdomp0), listfuzz (5 seeds, 40,000 rounds each: the owning list and the list with an end anchor), the unit page (18 cases) and the link tests.
-tools/mutate.py: 37 mutants, every one caught by the test written for it.
+tools/mutate.py: 37 mutants, every one caught by the test written for it (43 after the store, the two-step image and the device pixel ratio: all caught; the unit page 22 cases).
 
 Paired, load-gated runs (tools/pair.sh, LOADMAX=3), vanillajs, cdomp0 (perf 0d0bdd7) and cdomf, CPU benchmarks 01-09; tools/ci.mjs bootstraps a 95% interval of the weighted geomean of cdomf over cdomp0.
 | pass | cdomp0 vs vanillajs | cdomf vs vanillajs | cdomf / cdomp0 (95% interval) |
