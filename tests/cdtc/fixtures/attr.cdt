@@ -1,0 +1,5 @@
+<!-- whole-value attribute bindings (cd_str) between static attributes -->
+<state name="St"> str url; str tip; </state>
+<template name="page" state="St *S">
+  <nav><a id="home" href={S->url} title={S->tip} rel="next">go</a></nav>
+</template>

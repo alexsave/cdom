@@ -1,0 +1,40 @@
+<!-- Every feature at once, for the native round trip (tests/cdtc/roundtrip.c) and the
+     shim-vs-sink conformance run (tests/cdtc/conform_feat.c). -->
+<state name="Feat" global="G">
+  u32 n = 7;
+  u32 flag;
+  u32 mode;
+  str title;
+  str link;
+  list items: Item;
+  list notes: Note;
+  record Item { u32 id; str name; u32 hot; }
+  record Note { u32 id; str text; u32 open; }
+</state>
+
+<template name="item" item="Item *it" state="Feat *F" root="li">
+  <li class="item" class:hot={it->hot} class:sel={it->id == F->n} data-name={it->name} on:click={item_click}><b>{it->id}</b><i>{it->name}</i></li>
+</template>
+
+<template name="note" item="Note *o" state="Feat *F" root="tr">
+  <tr on:click={note_click}>
+    <td>#{o->id}: {o->text}!</td>
+    <td>{#if o->open}<span class="open">{o->text}</span>{:else}<em>closed {n:o->id}</em>{/if}<u>{n:F->n}</u></td>
+  </tr>
+</template>
+
+<template name="page" state="Feat *F">
+  <div id="feat" class="page" class:flag={F->flag} title={F->title}>
+    <h1>{F->title}</h1>
+    <p>count: {F->n} of {n:F->items_n}</p>
+    {#if F->flag}<a href={F->link} on:click={toggle}>on</a>{:else}<b>off</b>{/if}
+    <section>
+      {#if F->mode == 1}<span>one {n:F->mode}</span>{/if}
+      {#if F->mode == 2}<em>two</em>{:else}<i>not two</i>{/if}
+      <kbd>{F->n}</kbd>
+    </section>
+    <ul>{#each F->items as it (it->id)}<item/>{/each}</ul>
+    <table><tbody>{#each F->notes as o (o->id)}<note/>{/each}</tbody></table>
+    <button on:click={bump} on:dblclick={reset}>bump</button>
+  </div>
+</template>

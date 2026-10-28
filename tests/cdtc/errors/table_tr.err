@@ -1,0 +1,1 @@
+table_tr.cdt:3:10: <tr> directly inside <table>: the HTML parser wraps it in a <tbody>

@@ -170,7 +170,7 @@ typedef struct {
 static Tpl *T;
 static int nt, ct;
 
-typedef struct { int tpl, root, ifn, br, tid, has_free; } Frag;
+typedef struct { int tpl, root, ifn, br, tid, has_free, has_patch; } Frag;
 static Frag *F;
 static int nf, cfr;
 
@@ -910,7 +910,7 @@ static void assign(int n, int frag, const int *path, int depth, int unstable, in
       N[c].frag = frag;
       for (int b = 0; b < 2; b++) {
         if (N[c].br[b] < 0) continue;
-        Frag f = {N[n].tpl, N[c].br[b], c, b, 0, 0};
+        Frag f = {N[n].tpl, N[c].br[b], c, b, 0, 0, 0};
         PUSH(F, nf, cfr, f);
         assign(N[c].br[b], nf - 1, p2, 0, 0, ln);
       }
@@ -928,7 +928,7 @@ static int is_froot(int n) { return N[n].kind == N_ELEM && N[n].frag >= 0 && F[N
 
 static void analyse(void) {
   for (int ti = 0; ti < nt; ti++) { /* fragment ti is template ti's root; branches follow */
-    Frag f = {ti, T[ti].root, -1, 0, 0, 0};
+    Frag f = {ti, T[ti].root, -1, 0, 0, 0, 0};
     PUSH(F, nf, cfr, f);
   }
   for (int ti = 0; ti < nt; ti++) {
@@ -987,6 +987,17 @@ static void out_cstr(Buf *b, const char *s) {
 
 static int use_cls, use_str;
 static const Tpl *cur; /* the template being generated */
+
+/* user text inside a generated C comment: a star-slash in it would end the comment early */
+static char *cmt(const char *s) {
+  char *d = xrealloc(0, strlen(s) * 2 + 1), *o = d;
+  for (; *s; s++) {
+    *o++ = *s;
+    if (s[0] == '*' && s[1] == '/') *o++ = ' ';
+  }
+  *o = 0;
+  return d;
+}
 
 static const char *vname(const Tpl *t) { static char b[300]; snprintf(b, sizeof b, "%s_view", t->name); return b; }
 
@@ -1430,7 +1441,7 @@ static void patch_body(Buf *b, int f) {
       out(b, "    }");
       for (int br = 0; br < 2; br++) {
         int g = branch_frag(n, br);
-        if (g < 0) continue;
+        if (g < 0 || !F[g].has_patch) continue;
         out(b, " else if (cdt_b == %d) {\n      ", br + 1);
         fname(b, g, "patch");
         out(b, "(");
@@ -1453,6 +1464,18 @@ static void patch_fn(Buf *b, int f) {
   voids(b, t);
   patch_body(b, f);
   out(b, "}\n\n");
+}
+
+static int frag_has_patch(int f) {
+  IntVec v = {0, 0, 0};
+  frag_nodes(F[f].root, &v);
+  int r = 0;
+  for (int i = 0; i < v.n; i++) {
+    Node *x = &N[v.v[i]];
+    if (x->kind == N_BIND || x->kind == N_IF || (x->kind == N_ELEM && (x->ntog || x->nattrb))) r = 1;
+  }
+  free(v.v);
+  return r;
 }
 
 static int frag_has_free(int f) {
@@ -1544,17 +1567,21 @@ static void gen_state(Buf *h, Buf *c) {
   out(h, "uint32_t %s_save(const %s *s, uint8_t *dst, uint32_t cap); /* bytes, or the need when > cap */\n", st_name, st_name);
   out(h, "int %s_load(%s *s, const uint8_t *src, uint32_t len); /* 0 on success; s untouched on failure */\n", st_name, st_name);
   /* blob helpers */
-  int strs = 0, lists = 0;
+  int strs = 0, u32s = 0; /* which encoders the layout needs: a list's count is a u32 */
   for (int i = 0; i < nsf; i++) {
     strs |= sf[i].type == T_STR;
-    lists |= sf[i].type == T_LIST;
+    u32s |= sf[i].type != T_STR;
     if (sf[i].type == T_LIST)
       for (int j = 0; j < recs[sf[i].reci].n; j++) strs |= recs[sf[i].reci].f[j].type == T_STR;
   }
-  out(c, "static uint8_t *cdt_put16(uint8_t *d, uint32_t v) { d[0] = (uint8_t)v; d[1] = (uint8_t)(v >> 8); return d + 2; }\n");
-  out(c, "static uint8_t *cdt_put32(uint8_t *d, uint32_t v) { return cdt_put16(cdt_put16(d, v), v >> 16); }\n");
-  out(c, "static uint32_t cdt_get16(const uint8_t *s) { return s[0] | (uint32_t)s[1] << 8; }\n");
-  out(c, "static uint32_t cdt_get32(const uint8_t *s) { return cdt_get16(s) | cdt_get16(s + 2) << 16; }\n");
+  if (strs || u32s) {
+    out(c, "static uint8_t *cdt_put16(uint8_t *d, uint32_t v) { d[0] = (uint8_t)v; d[1] = (uint8_t)(v >> 8); return d + 2; }\n");
+    out(c, "static uint32_t cdt_get16(const uint8_t *s) { return s[0] | (uint32_t)s[1] << 8; }\n");
+  }
+  if (u32s) {
+    out(c, "static uint8_t *cdt_put32(uint8_t *d, uint32_t v) { return cdt_put16(cdt_put16(d, v), v >> 16); }\n");
+    out(c, "static uint32_t cdt_get32(const uint8_t *s) { return cdt_get16(s) | cdt_get16(s + 2) << 16; }\n");
+  }
   if (strs) {
     out(c, "static uint32_t cdt_len(cd_str s) { uint32_t n = 0; if (s) cd_bytes(s, &n); return n; }\n");
     out(c, "static uint8_t *cdt_putstr(uint8_t *d, cd_str s) {\n  uint32_t n = cdt_len(s);\n  const char *b = n ? cd_bytes(s, &n) : \"\";\n");
@@ -1562,7 +1589,7 @@ static void gen_state(Buf *h, Buf *c) {
   }
   out(c, "\n");
   /* save */
-  out(c, "uint32_t %s_save(const %s *s, uint8_t *dst, uint32_t cap) {\n  uint64_t need = 0;\n", st_name, st_name);
+  out(c, "uint32_t %s_save(const %s *s, uint8_t *dst, uint32_t cap) {\n  uint64_t need = 0;\n  (void)s;\n", st_name, st_name);
   for (int i = 0; i < nsf; i++) {
     if (sf[i].type == T_U32) out(c, "  need += 4;\n");
     else if (sf[i].type == T_STR) out(c, "  if (cdt_len(s->%s) > 0xffff) return 0xffffffffu;\n  need += 2 + cdt_len(s->%s);\n", sf[i].name, sf[i].name);
@@ -1583,7 +1610,7 @@ static void gen_state(Buf *h, Buf *c) {
       }
     }
   }
-  out(c, "  if (need > 0xfffffffeu) return 0xffffffffu;\n  if (need > cap) return (uint32_t)need;\n  uint8_t *d = dst;\n");
+  out(c, "  if (need > 0xfffffffeu) return 0xffffffffu;\n  if (need > cap) return (uint32_t)need;\n  uint8_t *d = dst;\n  (void)d;\n");
   for (int i = 0; i < nsf; i++) {
     if (sf[i].type == T_U32) out(c, "  d = cdt_put32(d, s->%s);\n", sf[i].name);
     else if (sf[i].type == T_STR) out(c, "  d = cdt_putstr(d, s->%s);\n", sf[i].name);
@@ -1597,7 +1624,7 @@ static void gen_state(Buf *h, Buf *c) {
   }
   out(c, "  return (uint32_t)need;\n}\n\n");
   /* load: one pass to check, one to fill */
-  out(c, "static int cdt_walk(%s *s, const uint8_t *b, uint32_t len) {\n  uint32_t o = 0, k;\n  (void)k;\n", st_name);
+  out(c, "static int cdt_walk(%s *s, const uint8_t *b, uint32_t len) {\n  uint32_t o = 0, k;\n  (void)s; (void)b; (void)k;\n", st_name);
   for (int i = 0; i < nsf; i++) {
     if (sf[i].type == T_U32) out(c, "  if (len - o < 4) return -1;\n  if (s) s->%s = cdt_get32(b + o);\n  o += 4;\n", sf[i].name);
     else if (sf[i].type == T_STR)
@@ -1628,7 +1655,6 @@ static void gen_state(Buf *h, Buf *c) {
     out(c, "uint32_t cd_state_save(uint8_t *dst, uint32_t cap) { return %s_save(&%s, dst, cap); }\n", st_name, st_global);
     out(c, "int cd_state_load(const uint8_t *src, uint32_t len) { return %s_load(&%s, src, len); }\n\n", st_name, st_global);
   }
-  (void)lists;
 }
 
 static void gen_item(Buf *h, Buf *c, int ti) {
@@ -1654,7 +1680,7 @@ static void gen_item(Buf *h, Buf *c, int ti) {
     if (F[f].tpl != ti) continue;
     if (F[f].has_free) free_fn(c, f);
     clone_create(c, f);
-    patch_fn(c, f);
+    if (F[f].has_patch) patch_fn(c, f);
   }
 }
 
@@ -1681,7 +1707,7 @@ static void gen_page(Buf *h, Buf *c, int ti) {
     Tpl *r = &T[x->eref_t];
     const char *L = sf[x->efield].name, *R = sf[x->efield].rec;
     int e = x->ei;
-    out(c, "\n/* {#each %s as %s (%s)} <%s/> */\n", x->expr, x->evar, x->ekey, r->name);
+    out(c, "\n/* {#each %s as %s (%s)} <%s/> */\n", cmt(x->expr), x->evar, cmt(x->ekey), r->name);
     out(c, "static cd_list %s_list%d;\nstatic uint32_t *%s_keys%d, %s_kcap%d;\n", P, e, P, e, P, e);
     out(c, "static uint32_t %s_key%d(%s *%s, %s *%s) { (void)%s; (void)%s; return (uint32_t)(%s); }\n", P, e, ST, SV, R, x->evar, SV,
         x->evar, x->ekey);
@@ -1713,13 +1739,15 @@ static void gen_page(Buf *h, Buf *c, int ti) {
     if (F[f].tpl != ti || f == ti) continue;
     if (F[f].has_free) free_fn(c, f);
     clone_create(c, f);
-    patch_fn(c, f);
+    if (F[f].has_patch) patch_fn(c, f);
   }
   /* init: strings, then every template's shape */
   Buf init = {0, 0, 0};
   for (int f = 0; f < nf; f++) {
     if (!F[f].tid) continue;
-    out(&init, "  cd_at(CD_DETACHED, 0); /* template %d: %s */\n", F[f].tid, T[F[f].tpl].name);
+    if (F[f].ifn < 0) out(&init, "  cd_at(CD_DETACHED, 0); /* template %d: %s */\n", F[f].tid, T[F[f].tpl].name);
+    else out(&init, "  cd_at(CD_DETACHED, 0); /* template %d: %s, the %s branch of {#if %s} */\n", F[f].tid, T[F[f].tpl].name,
+             F[f].br ? "else" : "then", cmt(N[F[f].ifn].expr));
     shape(&init, F[f].root);
     out(&init, "  cd_tpl_save(%d);\n", F[f].tid);
   }
@@ -1809,7 +1837,10 @@ static void generate(const char *base) {
   if (st_global) out(&body, "%s %s = %s_INIT;\n\n", st_name, st_global, st_name);
   gen_state(&h, &body);
   for (int f = 0; f < nf; f++) F[f].has_free = 0;
-  for (int f = nf; f-- > 0;) F[f].has_free = frag_has_free(f);
+  for (int f = nf; f-- > 0;) {
+    F[f].has_free = frag_has_free(f);
+    F[f].has_patch = f < nt || frag_has_patch(f); /* a template's patch is public: always there */
+  }
   if (nh) {
     out(&h, "\n/* ---- handlers: the app defines these ---- */\n");
     for (int i = 0; i < nh; i++) {

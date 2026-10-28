@@ -1,0 +1,15 @@
+<!-- the state block alone: scalars with and without initial values, two lists of records,
+     and global= so cd_state_save/cd_state_load are generated -->
+<state name="Model" global="model">
+  u32 version = 2;
+  str name;
+  u32 flags = 4294967295;
+  list people: Person;
+  list ids: Id;
+  // records may follow their use
+  record Person { u32 age; str first; str last; }
+  record Id { u32 v; }
+</state>
+<template name="page" state="Model *M">
+  <main>{M->name}</main>
+</template>

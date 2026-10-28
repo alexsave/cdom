@@ -1,0 +1,4 @@
+<state name="St"> u32 x; str s; list rows: Row; record Row { u32 id; } </state>
+<template name="page" state="St *S">
+  <div><span>text</div>
+</template>

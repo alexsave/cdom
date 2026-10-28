@@ -1,0 +1,5 @@
+<!-- two events on one element and one on another: three listener slots, two handlers -->
+<state name="St"> u32 n; </state>
+<template name="page" state="St *S">
+  <form on:submit={send}><input type="text" on:input={typed} on:keydown={typed}/><button>ok</button></form>
+</template>

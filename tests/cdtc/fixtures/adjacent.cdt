@@ -1,0 +1,5 @@
+<!-- static text and bindings in one text position become adjacent text nodes -->
+<state name="St"> str who; u32 n; </state>
+<template name="page" state="St *S">
+  <p>Hello {S->who}, you have {S->n} new {n:S->n + 1}!</p>
+</template>

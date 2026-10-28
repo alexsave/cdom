@@ -1,0 +1,5 @@
+<!-- a static class plus two toggles: four class strings, interned when first used -->
+<state name="St"> u32 on; u32 big; </state>
+<template name="page" state="St *S">
+  <div><button class="btn" class:on={S->on} class:big={S->big > 1}>x</button><span class:only={S->on}></span></div>
+</template>

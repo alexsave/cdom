@@ -1,0 +1,1 @@
+untyped.cdt:3:6: cannot infer the type of {S->x + 1}: write {n:S->x + 1} for a u32 or {s:S->x + 1} for a cd_str

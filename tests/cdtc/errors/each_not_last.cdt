@@ -1,0 +1,5 @@
+<state name="St"> u32 x; str s; list rows: Row; record Row { u32 id; } </state>
+<template name="row" item="Row *r" state="St *S"><li></li></template>
+<template name="page" state="St *S">
+  <ul>{#each S->rows as r (r->id)}<row/>{/each}<li>tail</li></ul>
+</template>

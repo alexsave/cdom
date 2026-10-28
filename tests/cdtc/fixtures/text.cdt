@@ -1,0 +1,5 @@
+<!-- a str field bound in a text position, beside static text -->
+<state name="St"> str title; </state>
+<template name="page" state="St *S">
+  <div><h1>{S->title}</h1><p>static</p></div>
+</template>

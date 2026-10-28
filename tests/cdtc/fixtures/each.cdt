@@ -1,0 +1,16 @@
+<!-- a keyed list that owns its parent, and one after a static sibling (owns_parent 0) -->
+<state name="St">
+  list items: Item;
+  list tags: Tag;
+  record Item { u32 id; str name; }
+  record Tag { u32 k; str label; }
+</state>
+<template name="item" item="Item *it" state="St *S" root="li">
+  <li on:click={pick}>{it->name}</li>
+</template>
+<template name="tag" item="Tag *t" state="St *S">
+  <span>{t->label}</span>
+</template>
+<template name="page" state="St *S">
+  <div><ul>{#each S->items as x (x->id)}<item/>{/each}</ul><p><b>tags:</b>{#each S->tags as t (t->k * 2)}<tag/>{/each}</p></div>
+</template>

@@ -1,0 +1,6 @@
+<!-- an if/else between static siblings: the parent and the next sibling get ids, and the
+     sibling after the if (unstable for walks) is patched by id -->
+<state name="St"> u32 on; u32 n; </state>
+<template name="page" state="St *S">
+  <div><h2>title</h2>{#if S->on}<b class="yes">{n:S->n}</b>{:else}<i>no</i>{/if}<p>{S->n}</p></div>
+</template>

@@ -1,0 +1,5 @@
+<!-- a u32 field is inferred as a number; {n:...} forces one for any expression -->
+<state name="St"> u32 count = 3; </state>
+<template name="page" state="St *S">
+  <p><b>{S->count}</b><i>{n:S->count * 2 + 1}</i></p>
+</template>
