@@ -51,6 +51,15 @@ void cd_value(cd_str s);             /* last.nodeValue */
 void cd_value_num(uint32_t n);
 void cd_tpl_save(uint32_t t);        /* the last closed root becomes template t */
 void cd_clone(uint32_t t);           /* open a deep clone of template t */
+/* Template slots: while a template is being built, cd_slot(k) marks the last node (a text node)
+ * as slot k (k < CD_SLOTS). cd_tpl_text sets that text in template t itself, so the following
+ * cd_clone(t) copies it in and the clone needs no walk. A slot keeps its last value: set every
+ * slot before each clone. t < CD_TPLS. */
+#define CD_TPLS 64
+#define CD_SLOTS 16
+void cd_slot(uint32_t k);
+void cd_tpl_text(uint32_t t, uint32_t k, cd_str s);
+void cd_tpl_text_num(uint32_t t, uint32_t k, uint32_t n);
 void cd_down(void);                  /* last = last.firstChild */
 void cd_next(void);                  /* last = last.nextSibling */
 void cd_up(void);                    /* last = last.parentNode */

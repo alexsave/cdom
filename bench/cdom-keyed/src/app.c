@@ -83,12 +83,11 @@ static cd_id row_create(void *ctx, uint32_t i, uint32_t *data) {
   v->sel = r->id == selected;
   cd_tag_set(tr, K_ROW | r->id); /* a click reports which cell: 1 label, 2 remove */
 #if CDOM_TEMPLATES
+  cd_tpl_text_num(T_ROW, 0, r->id);                       /* td.col-md-1 > id */
+  cd_tpl_text(T_ROW, 1, r->label);                        /* td.col-md-4 > a > label */
   cd_clone(T_ROW);
   cd_listen(tr, CD_EV_CLICK);
   if (v->sel) cd_class(S_DANGER);
-  cd_down(); cd_down(); cd_value_num(r->id); cd_up();     /* td.col-md-1 > id */
-  cd_next(); cd_down(); cd_down();                        /* td.col-md-4 > a > text */
-  cd_value(r->label);
   cd_close();
 #else
   cd_open(S_TR); cd_listen(tr, CD_EV_CLICK);
@@ -208,8 +207,8 @@ void cd_main(void) {
 #if CDOM_TEMPLATES
   cd_at(CD_DETACHED, 0);
   cd_open(S_TR);
-  cd_open(S_TD); cd_class(S_COL1); cd_text(S_SPACE); cd_close();
-  cd_open(S_TD); cd_class(S_COL4); cd_open(S_A); cd_text(S_SPACE); cd_close(); cd_close();
+  cd_open(S_TD); cd_class(S_COL1); cd_text(S_SPACE); cd_slot(0); cd_close();
+  cd_open(S_TD); cd_class(S_COL4); cd_open(S_A); cd_text(S_SPACE); cd_slot(1); cd_close(); cd_close();
   cd_open(S_TD); cd_class(S_COL1);
   cd_open(S_A); cd_open(S_SPAN); cd_class(S_REMOVE); cd_attr(S_ARIA, S_TRUE); cd_close(); cd_close();
   cd_close();

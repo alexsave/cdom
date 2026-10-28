@@ -5,7 +5,8 @@ var cdom = (() => {
     "focusout", "submit", "pointerdown", "pointerup", "pointermove"];
   const TRANSIENT = 0x40000000, DETACHED = 0xffffffff, SMALL = 64;
   const doc = document, td = new TextDecoder(), te = new TextEncoder();
-  const nodes = [], strs = [], tmp = [], tpl = [], stack = [], on = [];
+  const nodes = [], strs = [], tmp = [], tpl = [], stack = [], on = [], tslot = [];
+  let slots = []; // slot text nodes of the template being built
   let lmask = new Uint16Array(1024); // listened event types per node id
   let x, mem, buf, u8, u32, i32, OPS, ARGS, SB, SM, INBOX;
   let sp = 0, last = null, root = null, base = DETACHED, ref = 0;
@@ -82,7 +83,7 @@ var cdom = (() => {
           lmask[n] |= 1 << u32[q]; if (!on[u32[q]]) listen(u32[q]); q++; break;
         case 10: last.nodeValue = S(u32[q++]); break; // VALUE
         case 11: last.nodeValue = u32[q++]; break; // VALUE_NUM
-        case 12: tpl[u32[q++]] = root; root.remove(); break; // TPL_SAVE
+        case 12: n = u32[q++]; tpl[n] = root; tslot[n] = slots; slots = []; root.remove(); break; // TPL_SAVE
         case 13: el = tpl[u32[q++]].cloneNode(true); stack[sp++] = el; last = el; break; // CLONE
         case 14: last = last.firstChild; break; // DOWN
         case 15: last = last.nextSibling; break; // NEXT
@@ -98,6 +99,9 @@ var cdom = (() => {
         case 25: el = nodes[u32[q++]]; el.$p = el.parentNode; el.$s = el.nextSibling; el.remove(); break; // DETACH
         case 26: el = nodes[u32[q++]]; el.$p.insertBefore(el, el.$s); el.$p = el.$s = null; break; // ATTACH
         case 27: last = nodes[u32[q++]]; break; // SEL
+        case 28: slots[u32[q++]] = last; break; // SLOT
+        case 29: tslot[u32[q++]][u32[q++]].nodeValue = S(u32[q++]); break; // TPL_TEXT
+        case 30: tslot[u32[q++]][u32[q++]].nodeValue = u32[q++]; break; // TPL_TEXT_NUM
         default: throw new Error("cdom: bad op " + u8[p] + " at " + (p - OPS));
       }
     }
