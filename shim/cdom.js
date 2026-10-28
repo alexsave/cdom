@@ -216,7 +216,7 @@ var cdom = (() => {
   function listen(n) { nodes[n] = last; last.$i = n; }
   function value(s) { if (hy) return hValue(S(s)); last.nodeValue = S(s); }
   function value_num(n) { if (hy) return hValue(n >>> 0); last.nodeValue = n >>> 0; }
-  function tpl_save(t) { tpl[t] = root; if (hy) tsize[t] = size(root); root.remove(); }
+  function tpl_save(t) { tpl[t] = root; if (hy) tsize[t] = size(root); }
   function clone(t) {
     if (hy) return hClone(t);
     const el = tpl[t].cloneNode(true); if (sp) stack[sp - 1].appendChild(el); stack[sp++] = el; last = el;
