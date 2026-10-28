@@ -6,6 +6,16 @@ static const char *const cdt_lit[9] = {"li", " ", "span", "div", "ul", "p", "b",
 static cd_str cdt_s[9];
 static cd_str cdt_str(cd_str s) { return s ? s : cdt_s[8]; }
 
+static uint64_t cdt_need_St(const St *r);
+static uint8_t *cdt_put_St(uint8_t *d, const St *r);
+static int cdt_walk_St(St *r, const uint8_t *b, uint32_t len, uint32_t *o);
+static uint64_t cdt_need_Item(const Item *r);
+static uint8_t *cdt_put_Item(uint8_t *d, const Item *r);
+static int cdt_walk_Item(Item *r, const uint8_t *b, uint32_t len, uint32_t *o);
+static uint64_t cdt_need_Tag(const Tag *r);
+static uint8_t *cdt_put_Tag(uint8_t *d, const Tag *r);
+static int cdt_walk_Tag(Tag *r, const uint8_t *b, uint32_t len, uint32_t *o);
+
 void St_items_reserve(St *s, uint32_t n) {
   if (n <= s->items_cap) return;
   uint32_t c = s->items_cap ? s->items_cap : 16;
@@ -61,83 +71,136 @@ static uint8_t *cdt_putstr(uint8_t *d, cd_str s) {
   return d + n;
 }
 
+static uint64_t cdt_need_St(const St *r) {
+  uint64_t need = 8;
+  (void)r;
+  for (uint32_t i = 0; i < r->items_n; i++) {
+    uint64_t k = cdt_need_Item(&r->items[i]);
+    if (k == 0xffffffffffffffffull) return k;
+    need += k;
+  }
+  for (uint32_t i = 0; i < r->tags_n; i++) {
+    uint64_t k = cdt_need_Tag(&r->tags[i]);
+    if (k == 0xffffffffffffffffull) return k;
+    need += k;
+  }
+  return need;
+}
+
+static uint8_t *cdt_put_St(uint8_t *d, const St *r) {
+  (void)r;
+  d = cdt_put32(d, r->items_n);
+  for (uint32_t i = 0; i < r->items_n; i++) d = cdt_put_Item(d, &r->items[i]);
+  d = cdt_put32(d, r->tags_n);
+  for (uint32_t i = 0; i < r->tags_n; i++) d = cdt_put_Tag(d, &r->tags[i]);
+  return d;
+}
+
+static int cdt_walk_St(St *r, const uint8_t *b, uint32_t len, uint32_t *o) {
+  uint32_t k;
+  (void)r; (void)b; (void)k;
+  if (len - *o < 4) return -1;
+  k = cdt_get32(b + *o);
+  *o += 4;
+  if (k > (len - *o) / 6) return -1;
+  if (r) {
+    St_items_reserve(r, k);
+    r->items_n = k;
+  }
+  for (uint32_t i = 0; i < k; i++)
+    if (cdt_walk_Item(r ? &r->items[i] : 0, b, len, o)) return -1;
+  if (len - *o < 4) return -1;
+  k = cdt_get32(b + *o);
+  *o += 4;
+  if (k > (len - *o) / 6) return -1;
+  if (r) {
+    St_tags_reserve(r, k);
+    r->tags_n = k;
+  }
+  for (uint32_t i = 0; i < k; i++)
+    if (cdt_walk_Tag(r ? &r->tags[i] : 0, b, len, o)) return -1;
+  return 0;
+}
+
+static uint64_t cdt_need_Item(const Item *r) {
+  uint64_t need = 6;
+  (void)r;
+  {
+    uint32_t k = cdt_len(r->name);
+    if (k > 0xffff) return 0xffffffffffffffffull;
+    need += k;
+  }
+  return need;
+}
+
+static uint8_t *cdt_put_Item(uint8_t *d, const Item *r) {
+  (void)r;
+  d = cdt_put32(d, r->id);
+  d = cdt_putstr(d, r->name);
+  return d;
+}
+
+static int cdt_walk_Item(Item *r, const uint8_t *b, uint32_t len, uint32_t *o) {
+  uint32_t k;
+  (void)r; (void)b; (void)k;
+  if (len - *o < 4) return -1;
+  if (r) r->id = cdt_get32(b + *o);
+  *o += 4;
+  if (len - *o < 2) return -1;
+  k = cdt_get16(b + *o);
+  *o += 2;
+  if (len - *o < k) return -1;
+  if (r) r->name = cd_intern((const char *)b + *o, k);
+  *o += k;
+  return 0;
+}
+
+static uint64_t cdt_need_Tag(const Tag *r) {
+  uint64_t need = 6;
+  (void)r;
+  {
+    uint32_t k = cdt_len(r->label);
+    if (k > 0xffff) return 0xffffffffffffffffull;
+    need += k;
+  }
+  return need;
+}
+
+static uint8_t *cdt_put_Tag(uint8_t *d, const Tag *r) {
+  (void)r;
+  d = cdt_put32(d, r->k);
+  d = cdt_putstr(d, r->label);
+  return d;
+}
+
+static int cdt_walk_Tag(Tag *r, const uint8_t *b, uint32_t len, uint32_t *o) {
+  uint32_t k;
+  (void)r; (void)b; (void)k;
+  if (len - *o < 4) return -1;
+  if (r) r->k = cdt_get32(b + *o);
+  *o += 4;
+  if (len - *o < 2) return -1;
+  k = cdt_get16(b + *o);
+  *o += 2;
+  if (len - *o < k) return -1;
+  if (r) r->label = cd_intern((const char *)b + *o, k);
+  *o += k;
+  return 0;
+}
+
 uint32_t St_save(const St *s, uint8_t *dst, uint32_t cap) {
-  uint64_t need = 0;
-  (void)s;
-  need += 4 + (uint64_t)s->items_n * 6;
-  for (uint32_t i = 0; i < s->items_n; i++) {
-    uint32_t n1 = cdt_len(s->items[i].name);
-    if (n1 > 0xffff) return 0xffffffffu;
-    need += n1;
-  }
-  need += 4 + (uint64_t)s->tags_n * 6;
-  for (uint32_t i = 0; i < s->tags_n; i++) {
-    uint32_t n1 = cdt_len(s->tags[i].label);
-    if (n1 > 0xffff) return 0xffffffffu;
-    need += n1;
-  }
+  uint64_t need = cdt_need_St(s);
   if (need > 0xfffffffeu) return 0xffffffffu;
   if (need > cap) return (uint32_t)need;
-  uint8_t *d = dst;
-  (void)d;
-  d = cdt_put32(d, s->items_n);
-  for (uint32_t i = 0; i < s->items_n; i++) {
-    d = cdt_put32(d, s->items[i].id);
-    d = cdt_putstr(d, s->items[i].name);
-  }
-  d = cdt_put32(d, s->tags_n);
-  for (uint32_t i = 0; i < s->tags_n; i++) {
-    d = cdt_put32(d, s->tags[i].k);
-    d = cdt_putstr(d, s->tags[i].label);
-  }
+  cdt_put_St(dst, s);
   return (uint32_t)need;
 }
 
-static int cdt_walk(St *s, const uint8_t *b, uint32_t len) {
-  uint32_t o = 0, k;
-  (void)s; (void)b; (void)k;
-  if (len - o < 4) return -1;
-  {
-    uint32_t n = cdt_get32(b + o);
-    o += 4;
-    if (n > (len - o) / 6) return -1;
-    if (s) { St_items_reserve(s, n); s->items_n = n; }
-    for (uint32_t i = 0; i < n; i++) {
-      if (len - o < 4) return -1;
-      if (s) s->items[i].id = cdt_get32(b + o);
-      o += 4;
-      if (len - o < 2) return -1;
-      k = cdt_get16(b + o);
-      o += 2;
-      if (len - o < k) return -1;
-      if (s) s->items[i].name = cd_intern((const char *)b + o, k);
-      o += k;
-    }
-  }
-  if (len - o < 4) return -1;
-  {
-    uint32_t n = cdt_get32(b + o);
-    o += 4;
-    if (n > (len - o) / 6) return -1;
-    if (s) { St_tags_reserve(s, n); s->tags_n = n; }
-    for (uint32_t i = 0; i < n; i++) {
-      if (len - o < 4) return -1;
-      if (s) s->tags[i].k = cdt_get32(b + o);
-      o += 4;
-      if (len - o < 2) return -1;
-      k = cdt_get16(b + o);
-      o += 2;
-      if (len - o < k) return -1;
-      if (s) s->tags[i].label = cd_intern((const char *)b + o, k);
-      o += k;
-    }
-  }
-  return o == len ? 0 : -1;
-}
-
-int St_load(St *s, const uint8_t *src, uint32_t len) {
-  if (cdt_walk(0, src, len)) return -1;
-  return cdt_walk(s, src, len);
+int St_load(St *s, const uint8_t *src, uint32_t len) { /* one pass to check, one to fill */
+  uint32_t o = 0;
+  if (cdt_walk_St(0, src, len, &o) || o != len) return -1;
+  o = 0;
+  return cdt_walk_St(s, src, len, &o);
 }
 
 /* ---- template item: <li> per Item ---- */

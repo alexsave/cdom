@@ -8,6 +8,16 @@ static cd_str cdt_str(cd_str s) { return s ? s : cdt_s[1]; }
 
 Model model = Model_INIT;
 
+static uint64_t cdt_need_Model(const Model *r);
+static uint8_t *cdt_put_Model(uint8_t *d, const Model *r);
+static int cdt_walk_Model(Model *r, const uint8_t *b, uint32_t len, uint32_t *o);
+static uint64_t cdt_need_Person(const Person *r);
+static uint8_t *cdt_put_Person(uint8_t *d, const Person *r);
+static int cdt_walk_Person(Person *r, const uint8_t *b, uint32_t len, uint32_t *o);
+static uint64_t cdt_need_Id(const Id *r);
+static uint8_t *cdt_put_Id(uint8_t *d, const Id *r);
+static int cdt_walk_Id(Id *r, const uint8_t *b, uint32_t len, uint32_t *o);
+
 void Model_people_reserve(Model *s, uint32_t n) {
   if (n <= s->people_cap) return;
   uint32_t c = s->people_cap ? s->people_cap : 16;
@@ -63,100 +73,156 @@ static uint8_t *cdt_putstr(uint8_t *d, cd_str s) {
   return d + n;
 }
 
-uint32_t Model_save(const Model *s, uint8_t *dst, uint32_t cap) {
-  uint64_t need = 0;
-  (void)s;
-  need += 4;
-  if (cdt_len(s->name) > 0xffff) return 0xffffffffu;
-  need += 2 + cdt_len(s->name);
-  need += 4;
-  need += 4 + (uint64_t)s->people_n * 8;
-  for (uint32_t i = 0; i < s->people_n; i++) {
-    uint32_t n1 = cdt_len(s->people[i].first);
-    if (n1 > 0xffff) return 0xffffffffu;
-    need += n1;
-    uint32_t n2 = cdt_len(s->people[i].last);
-    if (n2 > 0xffff) return 0xffffffffu;
-    need += n2;
+static uint64_t cdt_need_Model(const Model *r) {
+  uint64_t need = 18;
+  (void)r;
+  {
+    uint32_t k = cdt_len(r->name);
+    if (k > 0xffff) return 0xffffffffffffffffull;
+    need += k;
   }
-  need += 4 + (uint64_t)s->ids_n * 4;
+  for (uint32_t i = 0; i < r->people_n; i++) {
+    uint64_t k = cdt_need_Person(&r->people[i]);
+    if (k == 0xffffffffffffffffull) return k;
+    need += k;
+  }
+  for (uint32_t i = 0; i < r->ids_n; i++) {
+    uint64_t k = cdt_need_Id(&r->ids[i]);
+    if (k == 0xffffffffffffffffull) return k;
+    need += k;
+  }
+  return need;
+}
+
+static uint8_t *cdt_put_Model(uint8_t *d, const Model *r) {
+  (void)r;
+  d = cdt_put32(d, r->version);
+  d = cdt_putstr(d, r->name);
+  d = cdt_put32(d, r->flags);
+  d = cdt_put32(d, r->people_n);
+  for (uint32_t i = 0; i < r->people_n; i++) d = cdt_put_Person(d, &r->people[i]);
+  d = cdt_put32(d, r->ids_n);
+  for (uint32_t i = 0; i < r->ids_n; i++) d = cdt_put_Id(d, &r->ids[i]);
+  return d;
+}
+
+static int cdt_walk_Model(Model *r, const uint8_t *b, uint32_t len, uint32_t *o) {
+  uint32_t k;
+  (void)r; (void)b; (void)k;
+  if (len - *o < 4) return -1;
+  if (r) r->version = cdt_get32(b + *o);
+  *o += 4;
+  if (len - *o < 2) return -1;
+  k = cdt_get16(b + *o);
+  *o += 2;
+  if (len - *o < k) return -1;
+  if (r) r->name = cd_intern((const char *)b + *o, k);
+  *o += k;
+  if (len - *o < 4) return -1;
+  if (r) r->flags = cdt_get32(b + *o);
+  *o += 4;
+  if (len - *o < 4) return -1;
+  k = cdt_get32(b + *o);
+  *o += 4;
+  if (k > (len - *o) / 8) return -1;
+  if (r) {
+    Model_people_reserve(r, k);
+    r->people_n = k;
+  }
+  for (uint32_t i = 0; i < k; i++)
+    if (cdt_walk_Person(r ? &r->people[i] : 0, b, len, o)) return -1;
+  if (len - *o < 4) return -1;
+  k = cdt_get32(b + *o);
+  *o += 4;
+  if (k > (len - *o) / 4) return -1;
+  if (r) {
+    Model_ids_reserve(r, k);
+    r->ids_n = k;
+  }
+  for (uint32_t i = 0; i < k; i++)
+    if (cdt_walk_Id(r ? &r->ids[i] : 0, b, len, o)) return -1;
+  return 0;
+}
+
+static uint64_t cdt_need_Person(const Person *r) {
+  uint64_t need = 8;
+  (void)r;
+  {
+    uint32_t k = cdt_len(r->first);
+    if (k > 0xffff) return 0xffffffffffffffffull;
+    need += k;
+  }
+  {
+    uint32_t k = cdt_len(r->last);
+    if (k > 0xffff) return 0xffffffffffffffffull;
+    need += k;
+  }
+  return need;
+}
+
+static uint8_t *cdt_put_Person(uint8_t *d, const Person *r) {
+  (void)r;
+  d = cdt_put32(d, r->age);
+  d = cdt_putstr(d, r->first);
+  d = cdt_putstr(d, r->last);
+  return d;
+}
+
+static int cdt_walk_Person(Person *r, const uint8_t *b, uint32_t len, uint32_t *o) {
+  uint32_t k;
+  (void)r; (void)b; (void)k;
+  if (len - *o < 4) return -1;
+  if (r) r->age = cdt_get32(b + *o);
+  *o += 4;
+  if (len - *o < 2) return -1;
+  k = cdt_get16(b + *o);
+  *o += 2;
+  if (len - *o < k) return -1;
+  if (r) r->first = cd_intern((const char *)b + *o, k);
+  *o += k;
+  if (len - *o < 2) return -1;
+  k = cdt_get16(b + *o);
+  *o += 2;
+  if (len - *o < k) return -1;
+  if (r) r->last = cd_intern((const char *)b + *o, k);
+  *o += k;
+  return 0;
+}
+
+static uint64_t cdt_need_Id(const Id *r) {
+  uint64_t need = 4;
+  (void)r;
+  return need;
+}
+
+static uint8_t *cdt_put_Id(uint8_t *d, const Id *r) {
+  (void)r;
+  d = cdt_put32(d, r->v);
+  return d;
+}
+
+static int cdt_walk_Id(Id *r, const uint8_t *b, uint32_t len, uint32_t *o) {
+  uint32_t k;
+  (void)r; (void)b; (void)k;
+  if (len - *o < 4) return -1;
+  if (r) r->v = cdt_get32(b + *o);
+  *o += 4;
+  return 0;
+}
+
+uint32_t Model_save(const Model *s, uint8_t *dst, uint32_t cap) {
+  uint64_t need = cdt_need_Model(s);
   if (need > 0xfffffffeu) return 0xffffffffu;
   if (need > cap) return (uint32_t)need;
-  uint8_t *d = dst;
-  (void)d;
-  d = cdt_put32(d, s->version);
-  d = cdt_putstr(d, s->name);
-  d = cdt_put32(d, s->flags);
-  d = cdt_put32(d, s->people_n);
-  for (uint32_t i = 0; i < s->people_n; i++) {
-    d = cdt_put32(d, s->people[i].age);
-    d = cdt_putstr(d, s->people[i].first);
-    d = cdt_putstr(d, s->people[i].last);
-  }
-  d = cdt_put32(d, s->ids_n);
-  for (uint32_t i = 0; i < s->ids_n; i++) {
-    d = cdt_put32(d, s->ids[i].v);
-  }
+  cdt_put_Model(dst, s);
   return (uint32_t)need;
 }
 
-static int cdt_walk(Model *s, const uint8_t *b, uint32_t len) {
-  uint32_t o = 0, k;
-  (void)s; (void)b; (void)k;
-  if (len - o < 4) return -1;
-  if (s) s->version = cdt_get32(b + o);
-  o += 4;
-  if (len - o < 2) return -1;
-  k = cdt_get16(b + o);
-  o += 2;
-  if (len - o < k) return -1;
-  if (s) s->name = cd_intern((const char *)b + o, k);
-  o += k;
-  if (len - o < 4) return -1;
-  if (s) s->flags = cdt_get32(b + o);
-  o += 4;
-  if (len - o < 4) return -1;
-  {
-    uint32_t n = cdt_get32(b + o);
-    o += 4;
-    if (n > (len - o) / 8) return -1;
-    if (s) { Model_people_reserve(s, n); s->people_n = n; }
-    for (uint32_t i = 0; i < n; i++) {
-      if (len - o < 4) return -1;
-      if (s) s->people[i].age = cdt_get32(b + o);
-      o += 4;
-      if (len - o < 2) return -1;
-      k = cdt_get16(b + o);
-      o += 2;
-      if (len - o < k) return -1;
-      if (s) s->people[i].first = cd_intern((const char *)b + o, k);
-      o += k;
-      if (len - o < 2) return -1;
-      k = cdt_get16(b + o);
-      o += 2;
-      if (len - o < k) return -1;
-      if (s) s->people[i].last = cd_intern((const char *)b + o, k);
-      o += k;
-    }
-  }
-  if (len - o < 4) return -1;
-  {
-    uint32_t n = cdt_get32(b + o);
-    o += 4;
-    if (n > (len - o) / 4) return -1;
-    if (s) { Model_ids_reserve(s, n); s->ids_n = n; }
-    for (uint32_t i = 0; i < n; i++) {
-      if (len - o < 4) return -1;
-      if (s) s->ids[i].v = cdt_get32(b + o);
-      o += 4;
-    }
-  }
-  return o == len ? 0 : -1;
-}
-
-int Model_load(Model *s, const uint8_t *src, uint32_t len) {
-  if (cdt_walk(0, src, len)) return -1;
-  return cdt_walk(s, src, len);
+int Model_load(Model *s, const uint8_t *src, uint32_t len) { /* one pass to check, one to fill */
+  uint32_t o = 0;
+  if (cdt_walk_Model(0, src, len, &o) || o != len) return -1;
+  o = 0;
+  return cdt_walk_Model(s, src, len, &o);
 }
 
 uint32_t cd_state_save(uint8_t *dst, uint32_t cap) { return Model_save(&model, dst, cap); }

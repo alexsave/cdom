@@ -6,40 +6,53 @@ static const char *const cdt_lit[4] = {"div", "button", "x", "span"};
 static cd_str cdt_s[4];
 static cd_str cdt_cls(cd_str *c, const char *const *s, uint32_t b) { return c[b] ? c[b] : (c[b] = cd_internz(s[b])); }
 
+static uint64_t cdt_need_St(const St *r);
+static uint8_t *cdt_put_St(uint8_t *d, const St *r);
+static int cdt_walk_St(St *r, const uint8_t *b, uint32_t len, uint32_t *o);
+
 static uint8_t *cdt_put16(uint8_t *d, uint32_t v) { d[0] = (uint8_t)v; d[1] = (uint8_t)(v >> 8); return d + 2; }
 static uint32_t cdt_get16(const uint8_t *s) { return s[0] | (uint32_t)s[1] << 8; }
 static uint8_t *cdt_put32(uint8_t *d, uint32_t v) { return cdt_put16(cdt_put16(d, v), v >> 16); }
 static uint32_t cdt_get32(const uint8_t *s) { return cdt_get16(s) | cdt_get16(s + 2) << 16; }
 
+static uint64_t cdt_need_St(const St *r) {
+  uint64_t need = 8;
+  (void)r;
+  return need;
+}
+
+static uint8_t *cdt_put_St(uint8_t *d, const St *r) {
+  (void)r;
+  d = cdt_put32(d, r->on);
+  d = cdt_put32(d, r->big);
+  return d;
+}
+
+static int cdt_walk_St(St *r, const uint8_t *b, uint32_t len, uint32_t *o) {
+  uint32_t k;
+  (void)r; (void)b; (void)k;
+  if (len - *o < 4) return -1;
+  if (r) r->on = cdt_get32(b + *o);
+  *o += 4;
+  if (len - *o < 4) return -1;
+  if (r) r->big = cdt_get32(b + *o);
+  *o += 4;
+  return 0;
+}
+
 uint32_t St_save(const St *s, uint8_t *dst, uint32_t cap) {
-  uint64_t need = 0;
-  (void)s;
-  need += 4;
-  need += 4;
+  uint64_t need = cdt_need_St(s);
   if (need > 0xfffffffeu) return 0xffffffffu;
   if (need > cap) return (uint32_t)need;
-  uint8_t *d = dst;
-  (void)d;
-  d = cdt_put32(d, s->on);
-  d = cdt_put32(d, s->big);
+  cdt_put_St(dst, s);
   return (uint32_t)need;
 }
 
-static int cdt_walk(St *s, const uint8_t *b, uint32_t len) {
-  uint32_t o = 0, k;
-  (void)s; (void)b; (void)k;
-  if (len - o < 4) return -1;
-  if (s) s->on = cdt_get32(b + o);
-  o += 4;
-  if (len - o < 4) return -1;
-  if (s) s->big = cdt_get32(b + o);
-  o += 4;
-  return o == len ? 0 : -1;
-}
-
-int St_load(St *s, const uint8_t *src, uint32_t len) {
-  if (cdt_walk(0, src, len)) return -1;
-  return cdt_walk(s, src, len);
+int St_load(St *s, const uint8_t *src, uint32_t len) { /* one pass to check, one to fill */
+  uint32_t o = 0;
+  if (cdt_walk_St(0, src, len, &o) || o != len) return -1;
+  o = 0;
+  return cdt_walk_St(s, src, len, &o);
 }
 
 /* ---- the page: page ---- */

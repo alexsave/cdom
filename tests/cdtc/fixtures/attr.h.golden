@@ -10,8 +10,8 @@ typedef struct St {
 } St;
 /* initial values; a str holds 0 until set, and 0 renders as "" */
 #define St_INIT {0}
-/* the state as a fixed little-endian blob: scalars in declaration order, each list
- * as a u32 count then its records, a str as a u16 length then its bytes */
+/* the state as a fixed little-endian blob: fields in declaration order, a u32 as 4 bytes,
+ * a str as a u16 length then its bytes, a list as a u32 count then its records */
 uint32_t St_save(const St *s, uint8_t *dst, uint32_t cap); /* bytes, or the need when > cap */
 int St_load(St *s, const uint8_t *src, uint32_t len); /* 0 on success; s untouched on failure */
 

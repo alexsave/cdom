@@ -30,7 +30,7 @@ m 's/\Qif (m >> t++ & 1)\E/if (0 \&\& (m >> t++ \& 1))/' 'FAIL first render'
 m 's/\Qstrcat(b, idx(c));\E/strcat(b, "0");/' 'FAIL flag and mode 1'
 m 's/\Qif (cdt_t != cdt_v->t%d) {\E/if (0 \&\& cdt_t != cdt_v->t%d) {/' 'FAIL title and n change'
 m 's/\Qcdt_v->key = %s_keys%d[cdt_i];\E/cdt_v->key = 0 * %s_keys%d[cdt_i];/' 'FAIL item clicks'
-m 's/\Qreturn o == len ? 0 : -1;\E/return 0;/' 'FAIL a blob with a trailing byte is refused'
+m 's/\Q|| o != len) return -1;\E/) return -1;/' 'FAIL a blob with a trailing byte is refused'
 # op counts against the hand-written app
 m 's/\Q1 + walk_cost(0, 0,\E/0 * walk_cost(0, 0,/' 'FAIL op counts: a templated row creates in 11 ops'
 m 's/\Qif (cdt_t != cdt_v->t%d) {\E/if (1 || cdt_t != cdt_v->t%d) {/' 'FAIL op counts: a label patch is 6 ops'

@@ -7,6 +7,13 @@ static cd_str cdt_s[21];
 
 W G = W_INIT;
 
+static uint64_t cdt_need_W(const W *r);
+static uint8_t *cdt_put_W(uint8_t *d, const W *r);
+static int cdt_walk_W(W *r, const uint8_t *b, uint32_t len, uint32_t *o);
+static uint64_t cdt_need_Pt(const Pt *r);
+static uint8_t *cdt_put_Pt(uint8_t *d, const Pt *r);
+static int cdt_walk_Pt(Pt *r, const uint8_t *b, uint32_t len, uint32_t *o);
+
 void W_pts_reserve(W *s, uint32_t n) {
   if (n <= s->pts_cap) return;
   uint32_t c = s->pts_cap ? s->pts_cap : 16;
@@ -33,56 +40,86 @@ static uint32_t cdt_get16(const uint8_t *s) { return s[0] | (uint32_t)s[1] << 8;
 static uint8_t *cdt_put32(uint8_t *d, uint32_t v) { return cdt_put16(cdt_put16(d, v), v >> 16); }
 static uint32_t cdt_get32(const uint8_t *s) { return cdt_get16(s) | cdt_get16(s + 2) << 16; }
 
+static uint64_t cdt_need_W(const W *r) {
+  uint64_t need = 12;
+  (void)r;
+  for (uint32_t i = 0; i < r->pts_n; i++) {
+    uint64_t k = cdt_need_Pt(&r->pts[i]);
+    if (k == 0xffffffffffffffffull) return k;
+    need += k;
+  }
+  return need;
+}
+
+static uint8_t *cdt_put_W(uint8_t *d, const W *r) {
+  (void)r;
+  d = cdt_put32(d, r->pings);
+  d = cdt_put32(d, r->on);
+  d = cdt_put32(d, r->pts_n);
+  for (uint32_t i = 0; i < r->pts_n; i++) d = cdt_put_Pt(d, &r->pts[i]);
+  return d;
+}
+
+static int cdt_walk_W(W *r, const uint8_t *b, uint32_t len, uint32_t *o) {
+  uint32_t k;
+  (void)r; (void)b; (void)k;
+  if (len - *o < 4) return -1;
+  if (r) r->pings = cdt_get32(b + *o);
+  *o += 4;
+  if (len - *o < 4) return -1;
+  if (r) r->on = cdt_get32(b + *o);
+  *o += 4;
+  if (len - *o < 4) return -1;
+  k = cdt_get32(b + *o);
+  *o += 4;
+  if (k > (len - *o) / 8) return -1;
+  if (r) {
+    W_pts_reserve(r, k);
+    r->pts_n = k;
+  }
+  for (uint32_t i = 0; i < k; i++)
+    if (cdt_walk_Pt(r ? &r->pts[i] : 0, b, len, o)) return -1;
+  return 0;
+}
+
+static uint64_t cdt_need_Pt(const Pt *r) {
+  uint64_t need = 8;
+  (void)r;
+  return need;
+}
+
+static uint8_t *cdt_put_Pt(uint8_t *d, const Pt *r) {
+  (void)r;
+  d = cdt_put32(d, r->id);
+  d = cdt_put32(d, r->v);
+  return d;
+}
+
+static int cdt_walk_Pt(Pt *r, const uint8_t *b, uint32_t len, uint32_t *o) {
+  uint32_t k;
+  (void)r; (void)b; (void)k;
+  if (len - *o < 4) return -1;
+  if (r) r->id = cdt_get32(b + *o);
+  *o += 4;
+  if (len - *o < 4) return -1;
+  if (r) r->v = cdt_get32(b + *o);
+  *o += 4;
+  return 0;
+}
+
 uint32_t W_save(const W *s, uint8_t *dst, uint32_t cap) {
-  uint64_t need = 0;
-  (void)s;
-  need += 4;
-  need += 4;
-  need += 4 + (uint64_t)s->pts_n * 8;
+  uint64_t need = cdt_need_W(s);
   if (need > 0xfffffffeu) return 0xffffffffu;
   if (need > cap) return (uint32_t)need;
-  uint8_t *d = dst;
-  (void)d;
-  d = cdt_put32(d, s->pings);
-  d = cdt_put32(d, s->on);
-  d = cdt_put32(d, s->pts_n);
-  for (uint32_t i = 0; i < s->pts_n; i++) {
-    d = cdt_put32(d, s->pts[i].id);
-    d = cdt_put32(d, s->pts[i].v);
-  }
+  cdt_put_W(dst, s);
   return (uint32_t)need;
 }
 
-static int cdt_walk(W *s, const uint8_t *b, uint32_t len) {
-  uint32_t o = 0, k;
-  (void)s; (void)b; (void)k;
-  if (len - o < 4) return -1;
-  if (s) s->pings = cdt_get32(b + o);
-  o += 4;
-  if (len - o < 4) return -1;
-  if (s) s->on = cdt_get32(b + o);
-  o += 4;
-  if (len - o < 4) return -1;
-  {
-    uint32_t n = cdt_get32(b + o);
-    o += 4;
-    if (n > (len - o) / 8) return -1;
-    if (s) { W_pts_reserve(s, n); s->pts_n = n; }
-    for (uint32_t i = 0; i < n; i++) {
-      if (len - o < 4) return -1;
-      if (s) s->pts[i].id = cdt_get32(b + o);
-      o += 4;
-      if (len - o < 4) return -1;
-      if (s) s->pts[i].v = cdt_get32(b + o);
-      o += 4;
-    }
-  }
-  return o == len ? 0 : -1;
-}
-
-int W_load(W *s, const uint8_t *src, uint32_t len) {
-  if (cdt_walk(0, src, len)) return -1;
-  return cdt_walk(s, src, len);
+int W_load(W *s, const uint8_t *src, uint32_t len) { /* one pass to check, one to fill */
+  uint32_t o = 0;
+  if (cdt_walk_W(0, src, len, &o) || o != len) return -1;
+  o = 0;
+  return cdt_walk_W(s, src, len, &o);
 }
 
 uint32_t cd_state_save(uint8_t *dst, uint32_t cap) { return W_save(&G, dst, cap); }

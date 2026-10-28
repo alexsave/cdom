@@ -6,6 +6,10 @@ static const char *const cdt_lit[10] = {"nav", "a", "id", "home", "href", "title
 static cd_str cdt_s[10];
 static cd_str cdt_str(cd_str s) { return s ? s : cdt_s[9]; }
 
+static uint64_t cdt_need_St(const St *r);
+static uint8_t *cdt_put_St(uint8_t *d, const St *r);
+static int cdt_walk_St(St *r, const uint8_t *b, uint32_t len, uint32_t *o);
+
 static uint8_t *cdt_put16(uint8_t *d, uint32_t v) { d[0] = (uint8_t)v; d[1] = (uint8_t)(v >> 8); return d + 2; }
 static uint32_t cdt_get16(const uint8_t *s) { return s[0] | (uint32_t)s[1] << 8; }
 static uint32_t cdt_len(cd_str s) { uint32_t n = 0; if (s) cd_bytes(s, &n); return n; }
@@ -17,43 +21,60 @@ static uint8_t *cdt_putstr(uint8_t *d, cd_str s) {
   return d + n;
 }
 
+static uint64_t cdt_need_St(const St *r) {
+  uint64_t need = 4;
+  (void)r;
+  {
+    uint32_t k = cdt_len(r->url);
+    if (k > 0xffff) return 0xffffffffffffffffull;
+    need += k;
+  }
+  {
+    uint32_t k = cdt_len(r->tip);
+    if (k > 0xffff) return 0xffffffffffffffffull;
+    need += k;
+  }
+  return need;
+}
+
+static uint8_t *cdt_put_St(uint8_t *d, const St *r) {
+  (void)r;
+  d = cdt_putstr(d, r->url);
+  d = cdt_putstr(d, r->tip);
+  return d;
+}
+
+static int cdt_walk_St(St *r, const uint8_t *b, uint32_t len, uint32_t *o) {
+  uint32_t k;
+  (void)r; (void)b; (void)k;
+  if (len - *o < 2) return -1;
+  k = cdt_get16(b + *o);
+  *o += 2;
+  if (len - *o < k) return -1;
+  if (r) r->url = cd_intern((const char *)b + *o, k);
+  *o += k;
+  if (len - *o < 2) return -1;
+  k = cdt_get16(b + *o);
+  *o += 2;
+  if (len - *o < k) return -1;
+  if (r) r->tip = cd_intern((const char *)b + *o, k);
+  *o += k;
+  return 0;
+}
+
 uint32_t St_save(const St *s, uint8_t *dst, uint32_t cap) {
-  uint64_t need = 0;
-  (void)s;
-  if (cdt_len(s->url) > 0xffff) return 0xffffffffu;
-  need += 2 + cdt_len(s->url);
-  if (cdt_len(s->tip) > 0xffff) return 0xffffffffu;
-  need += 2 + cdt_len(s->tip);
+  uint64_t need = cdt_need_St(s);
   if (need > 0xfffffffeu) return 0xffffffffu;
   if (need > cap) return (uint32_t)need;
-  uint8_t *d = dst;
-  (void)d;
-  d = cdt_putstr(d, s->url);
-  d = cdt_putstr(d, s->tip);
+  cdt_put_St(dst, s);
   return (uint32_t)need;
 }
 
-static int cdt_walk(St *s, const uint8_t *b, uint32_t len) {
-  uint32_t o = 0, k;
-  (void)s; (void)b; (void)k;
-  if (len - o < 2) return -1;
-  k = cdt_get16(b + o);
-  o += 2;
-  if (len - o < k) return -1;
-  if (s) s->url = cd_intern((const char *)b + o, k);
-  o += k;
-  if (len - o < 2) return -1;
-  k = cdt_get16(b + o);
-  o += 2;
-  if (len - o < k) return -1;
-  if (s) s->tip = cd_intern((const char *)b + o, k);
-  o += k;
-  return o == len ? 0 : -1;
-}
-
-int St_load(St *s, const uint8_t *src, uint32_t len) {
-  if (cdt_walk(0, src, len)) return -1;
-  return cdt_walk(s, src, len);
+int St_load(St *s, const uint8_t *src, uint32_t len) { /* one pass to check, one to fill */
+  uint32_t o = 0;
+  if (cdt_walk_St(0, src, len, &o) || o != len) return -1;
+  o = 0;
+  return cdt_walk_St(s, src, len, &o);
 }
 
 /* ---- the page: page ---- */
