@@ -2,7 +2,7 @@
 // cdom shim: C calls one of these functions per DOM operation, and the shim posts events back.
 // Fixed per app. Wasm passes i32, so ids and numbers that may pass 2^31 are made unsigned (>>> 0).
 var cdom = (() => {
-  const DETACHED = 0xffffffff, SMALL = 64;
+  const DETACHED = -1, SMALL = 64; // CD_DETACHED as wasm passes it
   const doc = document, td = new TextDecoder(), te = new TextEncoder();
   const nodes = [], strs = [], tpl = [], stack = [];
   let x, mem, buf, u8, u32, i32, SB, SM, INBOX;
@@ -205,7 +205,7 @@ var cdom = (() => {
     if (buf !== mem.buffer) views();
     decode(n, nbytes);
   }
-  function at(p, b) { base = p >>> 0; ref = b; }
+  function at(p, b) { base = p; ref = b; }
   function open(t) { if (hy) return hOpen(S(t)); const el = doc.createElement(S(t)); if (sp) stack[sp - 1].appendChild(el); stack[sp++] = el; last = el; }
   function close() { if (hy) return hClose(); const el = stack[--sp]; if (!sp) { root = el; place(el); } }
   function text(s) { if (hy) return hText(S(s)); last = doc.createTextNode(S(s)); place(last); }
