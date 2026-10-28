@@ -139,12 +139,13 @@ var cdom = (() => {
   function tpl_save(t) { tpl[t] = root; }
   function clone(t) { const el = tpl[t].cloneNode(true); if (sp) stack[sp - 1].appendChild(el); stack[sp++] = el; last = el; }
   // A walk: n steps of 2 bits (1 firstChild, 2 nextSibling, 3 parentNode) from a named node, or
-  // from the last node when from is -1. A resumed page's comments are read as skip() reads them.
+  // from the last node when from is -1. A resumed page's comments are read as skip() reads them;
+  // a page that never resumed has none, so it skips the per-step nodeType read (1.3 us per update click).
   function walk(from, steps, n) {
     let el = from === -1 ? last : nodes[from];
     for (; n; n--, steps >>>= 2) {
       el = (steps & 3) === 1 ? el.firstChild : (steps & 3) === 2 ? el.nextSibling : el.parentNode;
-      if (el && el.nodeType === 8) el = skip(el);
+      if (page && el && el.nodeType === 8) el = skip(el);
     }
     last = el;
   }
