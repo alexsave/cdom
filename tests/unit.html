@@ -116,6 +116,16 @@ cdom.start('unit.wasm', 'm').then(async (x) => {
     return (landed && x.t_loaded(1) === 77 && JSON.stringify(got) === JSON.stringify(want) && x.t_stale() === 0)
       || `landed ${landed} key ${x.t_loaded(1)} pixels ${JSON.stringify(got)}`;
   });
+  x.t_image_rgb();
+  const rgbDone = await until(() => x.t_rgb_len() > 0);
+  let rgbGot = null;
+  if (rgbDone) { try { const bm = await createImageBitmap(new Blob([new Uint8Array(x.memory.buffer, x.t_rgb_png(), x.t_rgb_len()).slice()]));
+    const cv = new OffscreenCanvas(5, 4), cx = cv.getContext('2d'); cx.drawImage(bm, 0, 0); rgbGot = [bm.width, bm.height, ...cx.getImageData(0, 0, 5, 4).data]; } catch (e) { rgbGot = String(e); } }
+  check('cd_encode_image_in with RGB: the same picture, opaque, at its place in a bigger one', () => {
+    const want = [5, 4]; for (let y = 0; y < 4; y++) for (let x = 0; x < 5; x++) { const i = (y - 1) * 3 + x - 1;
+      want.push(...(x >= 1 && x < 4 && y >= 1 && y < 3 ? [40 * i, 255 - 30 * i, 7 * i, 255] : [0, 0, 0, 0])); }
+    return JSON.stringify(rgbGot) === JSON.stringify(want) || `got ${JSON.stringify(rgbGot)}`;
+  });
   // The store: put then get round-trips the bytes; a missing key answers -1; so does a get whose
   // deadline passes first (a readwrite transaction held open on the store keeps the read waiting).
   x.t_store_put();

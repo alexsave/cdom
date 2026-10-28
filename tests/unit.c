@@ -247,11 +247,22 @@ EXPORT("t_image") void t_image(void) {
   cd_at(s, 0);
   cd_open(L("div")); cd_name_open(imaged = cd_id_new()); cd_close();
   for (uint32_t i = 0; i < 6; i++) { pix[i * 4] = (uint8_t)(40 * i); pix[i * 4 + 1] = (uint8_t)(255 - 30 * i); pix[i * 4 + 2] = (uint8_t)(7 * i); pix[i * 4 + 3] = 255; }
-  cd_encode_image(pix, 3, 2, L("image/png"), 77);
+  cd_encode_image(pix, 3, 2, 4, L("image/png"), 77);
   __builtin_memset(pix, 0, sizeof pix); /* the shim copied them during the call */
 }
+/* The same pixels as RGB, at (1, 1) in a 5 x 4 PNG: its bytes kept for the page to decode. */
+static uint8_t rgb_png[512];
+static uint32_t rgb_len;
+EXPORT("t_image_rgb") void t_image_rgb(void) {
+  uint8_t rgb[3 * 2 * 3];
+  for (uint32_t i = 0; i < 6; i++) { rgb[i * 3] = (uint8_t)(40 * i); rgb[i * 3 + 1] = (uint8_t)(255 - 30 * i); rgb[i * 3 + 2] = (uint8_t)(7 * i); }
+  cd_encode_image_in(rgb, 3, 2, 3, 5, 4, 1, 1, L("image/png"), 78);
+}
+EXPORT("t_rgb_png") uint8_t *t_rgb_png(void) { return rgb_png; }
+EXPORT("t_rgb_len") uint32_t t_rgb_len(void) { return rgb_len; }
 void cd_on_encoded(uint32_t token, const uint8_t *p, uint32_t len) {
   enter();
+  if (token == 78) { rgb_len = len < sizeof rgb_png ? len : 0; __builtin_memcpy(rgb_png, p, rgb_len); return; }
   loaded_key = (int32_t)token;
   loaded_id = (int32_t)len;
   /* a PNG starts 0x89 'P' 'N' 'G' */

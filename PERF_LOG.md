@@ -122,7 +122,7 @@ Every item has a test in tests/unit.c (the unit page, tools/unit.mjs), tests/lis
 
 40,000 opens (20,000 rows of div > span > text, built and cleared), median of 21 fresh loads: namespace in C (an id compare, `open_svg` import) 11.7 ms; the port's JS check per open (tag compare and the parent's `namespaceURI`) 12.0 ms. About 7 ns per open; C kept.
 
-### SHIM_LINES (shim/cdom.js 138 -> 184 -> 204 lines)
+### SHIM_LINES (shim/cdom.js 138 -> 184 -> 206 lines)
 
 Each line added or changed, and why:
 - `EVENTS` gains "resize", "visibilitychange", "load": the window events and the image's load use the event record.
@@ -132,7 +132,7 @@ Each line added or changed, and why:
 - `open`, `open_svg`, `clone`: one line each over push.
 - `name_open`: names the open element.
 - `style`, `style_num`: one setProperty each.
-- `encode`, 5 lines with the comment: canvas, putImageData from C memory, toBlob, the bytes delivered (replaces `image`, 5 lines).
+- `encode`, 7 lines with the comment: canvas of W x H, the pixels from C memory (RGB widened to RGBA in one loop, so an opaque picture takes a quarter less room in C) put at (X, Y), toBlob, the bytes delivered (replaces `image`, 5 lines). The placement is for a picture of which only a part is ever made but whose full size the page lays out by: the foolish port's wool is woven only where it shows and placed in the app's 3840 x 2160, so the browser sizes, snaps and resamples it as it does the app's (a crop given its own size landed 0.67 px off after snapping, and every pixel differed).
 - `image_bytes`, 4 lines: a Blob of the bytes, the url set.
 - `EVENTS` loses "load" (no image event any more).
 - `deliver`, moved out of the network block (net 0) with its comment changed, now over `cd_bytes_buf`; the network block keeps its comment line and `sockets`.
@@ -147,7 +147,7 @@ Each line added or changed, and why:
 ### Gates and the paired runs
 
 Every gate passes on the bench entry built from this branch (cdomf): the harness's keyed check, smoke, DOM identity against perf 0d0bdd7 (entry cdomp0), listfuzz (5 seeds, 40,000 rounds each: the owning list and the list with an end anchor), the unit page (18 cases) and the link tests.
-tools/mutate.py: 37 mutants, every one caught by the test written for it (43 after the store, the two-step image and the device pixel ratio: all caught; the unit page 22 cases).
+tools/mutate.py: 37 mutants, every one caught by the test written for it (45 after the store, the two-step image with RGB and placement, and the device pixel ratio: all caught; the unit page 23 cases).
 
 Paired, load-gated runs (tools/pair.sh, LOADMAX=3), vanillajs, cdomp0 (perf 0d0bdd7) and cdomf, CPU benchmarks 01-09; tools/ci.mjs bootstraps a 95% interval of the weighted geomean of cdomf over cdomp0.
 | pass | cdomp0 vs vanillajs | cdomf vs vanillajs | cdomf / cdomp0 (95% interval) |
