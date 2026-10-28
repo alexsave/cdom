@@ -89,7 +89,7 @@ var cdom = (() => {
   function hClone(t) {
     let el, h;
     if (!sp && (h = into())) { el = adopt(h, tpl[t].localName); stats.adopted += tsize[t] - 1; if (verify) same(el, tpl[t]); }
-    else { el = tpl[t].cloneNode(true); stats.templateNodes += tsize[t]; }
+    else { el = tpl[t].cloneNode(true); stats.templateNodes += tsize[t]; if (sp) stack[sp - 1].appendChild(el); }
     stack[sp++] = el; last = el;
   }
 
@@ -195,7 +195,10 @@ var cdom = (() => {
   function value(s) { if (hy) return hValue(S(s)); last.nodeValue = S(s); }
   function value_num(n) { if (hy) return hValue(n >>> 0); last.nodeValue = n >>> 0; }
   function tpl_save(t) { tpl[t] = root; if (hy) tsize[t] = size(root); tslot[t] = slots; slots = []; root.remove(); }
-  function clone(t) { if (hy) return hClone(t); const el = tpl[t].cloneNode(true); stack[sp++] = el; last = el; }
+  function clone(t) {
+    if (hy) return hClone(t);
+    const el = tpl[t].cloneNode(true); if (sp) stack[sp - 1].appendChild(el); stack[sp++] = el; last = el;
+  }
   function slot(k) { slots[k] = last; }
   function tpl_text(t, k, s) { tslot[t][k].nodeValue = S(s); }
   function tpl_text_num(t, k, n) { tslot[t][k].nodeValue = n >>> 0; }
