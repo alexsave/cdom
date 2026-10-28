@@ -19,7 +19,7 @@ typedef uint32_t cd_str; /* interned string id */
 
 enum { CD_EV_CLICK, CD_EV_DBLCLICK, CD_EV_INPUT, CD_EV_CHANGE, CD_EV_KEYDOWN, CD_EV_KEYUP,
        CD_EV_FOCUSIN, CD_EV_FOCUSOUT, CD_EV_SUBMIT, CD_EV_POINTERDOWN, CD_EV_POINTERUP,
-       CD_EV_POINTERMOVE };
+       CD_EV_POINTERMOVE, CD_EV_CUSTOM };
 
 /* memory */
 void *cd_alloc(uint32_t n);
@@ -47,6 +47,10 @@ void cd_attr(cd_str name, cd_str value);
 void cd_class(cd_str value);
 void cd_name(cd_id id);              /* remember the last node as id */
 void cd_listen(cd_id id, uint32_t ev); /* name the last node and deliver ev for it */
+/* name the last node and deliver DOM events of that name for it (a web component's
+ * events): they arrive as CD_EV_CUSTOM with e->key holding the name's cd_str id. The shim
+ * listens in the capture phase at the mount, so events that do not bubble arrive too. */
+void cd_listen_named(cd_id id, cd_str event);
 void cd_value(cd_str s);             /* last.nodeValue */
 void cd_value_num(uint32_t n);
 void cd_tpl_save(uint32_t t);        /* the last closed root becomes template t */
@@ -78,7 +82,8 @@ void cd_attach(cd_id id);            /* put it back where it was */
 void cd_flush(void);
 
 /* events: the app implements this; the shim fills the record */
-/* id is the nearest listening ancestor-or-self of the target. path holds the
+/* id is the nearest listening ancestor-or-self of the target. For CD_EV_CUSTOM, key is
+ * the event name's cd_str id (cd_listen_named) and x, y, button and mods are 0. path holds the
  * element-child indices from that node down toward the target, one byte per
  * level (byte 0 = which child of the listener), for depth levels (max 4). */
 typedef struct { int32_t type, id, x, y, button, key, mods, path, depth; } cd_event_rec;

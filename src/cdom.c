@@ -109,6 +109,7 @@ IMPORTS("move") void j_move(cd_id id, cd_id before);
 IMPORTS("clear") void j_clear(cd_id id);
 IMPORTS("detach") void j_detach(cd_id id);
 IMPORTS("attach") void j_attach(cd_id id);
+IMPORTS("listen_named") void j_listen_named(cd_id id, uint32_t name);
 IMPORTS("host") void j_host(cd_id id, uint32_t kind, uint32_t name, const uint32_t *v, uint32_t nwords);
 
 #define SB_CAP (1u << 18)
@@ -269,6 +270,7 @@ void cd_attr(cd_str name, cd_str v) { uint32_t a = ref_name(name), b = ref_text(
 void cd_class(cd_str v) { uint32_t a = ref_text(v); ready(); j_class(a); }
 void cd_name(cd_id id) { ready(); j_name(id); }
 void cd_listen(cd_id id, uint32_t ev) { ready(); j_listen(id, ev); }
+void cd_listen_named(cd_id id, cd_str ev) { uint32_t e = ref_name(ev); ready(); j_listen_named(id, e); }
 void cd_value(cd_str s) {
   uint32_t v = ref_text(s);
   send_strings();
