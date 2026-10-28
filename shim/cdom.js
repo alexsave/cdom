@@ -268,13 +268,11 @@ var cdom = (() => {
     const L = x.cd_layout() >> 2;
     [SB, SM, INBOX] = [u32[L], u32[L + 1], u32[L + 2]];
     if (!opts || !opts.hydrate) { x.cd_start((Math.random() * 4294967296) >>> 0); api.stats = stats; return x; }
-    const b64 = doc.getElementById(opts.hydrate).textContent;
-    const blob = Uint8Array.fromBase64 ? Uint8Array.fromBase64(b64) : Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const dst = x.cd_state_buf(blob.length);
-    views(); u8.set(blob, dst);
+    const b64 = doc.getElementById(opts.hydrate).textContent, dst = x.cd_state_buf(b64.length);
+    views(); te.encodeInto(b64, u8.subarray(dst, dst + b64.length)); // base64 is ASCII: C decodes it
     hy = new Map(); verify = !!opts.verify;
     try {
-      if (x.cd_start_state(blob.length)) throw new Error("cdom: the state blob did not load");
+      if (x.cd_start_state(b64.length)) throw new Error("cdom: the state blob did not load");
       if (verify && size(mount) - 1 !== stats.adopted + stats.created) bad(mount, "every server node adopted");
     } finally { hy = null; }
     api.stats = stats; // set once started: {created, adopted, templateNodes} of the hydration
