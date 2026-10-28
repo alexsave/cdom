@@ -25,7 +25,31 @@ static cd_id EX[3][4];
 static uint32_t rng = 0x9e3779b9u;
 static uint32_t rnd(uint32_t m) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; return rng % m; }
 
-void cd_on_event(const cd_event_rec *e) { (void)e; }
+/* the last event C received and how many: tests/conform.mjs dispatches real DOM events */
+static cd_event_rec LAST;
+static int32_t NEV;
+void cd_on_event(const cd_event_rec *e) { LAST = *e; NEV++; }
+EXPORT("ev") int32_t ev(uint32_t k) { return k < 9 ? ((const int32_t *)&LAST)[k] : NEV; }
+/* Ids freed while their nodes stay in the document, then handed out again: one to a node that
+ * listens to another type (C forgets what a freed id listened to), one to a node that listens
+ * to the same type (the shim posts only for the node an id names now). Returns the reused id
+ * of the second when both were reused, else 0. */
+EXPORT("stale") uint32_t stale(void) {
+  cd_at(CD_MOUNT, 0);
+  cd_id a = cd_id_new();
+  cd_open(z("b")); cd_listen(a, CD_EV_CLICK); cd_text(z("old a")); cd_close();
+  cd_id_free(a);
+  cd_id a2 = cd_id_new();
+  cd_open(z("u")); cd_listen(a2, CD_EV_KEYDOWN); cd_text(z("new a")); cd_close();
+  cd_id b = cd_id_new();
+  cd_open(z("b")); cd_listen(b, CD_EV_CLICK); cd_text(z("old b")); cd_close();
+  cd_id_free(b);
+  cd_id b2 = cd_id_new();
+  cd_open(z("u")); cd_listen(b2, CD_EV_CLICK); cd_text(z("new b")); cd_close();
+  cd_flush();
+  return a == a2 && b == b2 ? b : 0;
+}
+EXPORT("ids") uint32_t ids(uint32_t k) { return k == 0 ? ROOT : k == 1 ? ITEM[1] : k == 2 ? cd_internz("cdping") : UL; }
 
 static void item(uint32_t i) { /* a clone of template 1 with its parts filled */
   ITEM[i] = cd_id_new();
@@ -122,13 +146,14 @@ void cd_main(void) {
 
   cd_at(CD_MOUNT, 0);
   cd_open(z("div")); ROOT = cd_id_new(); cd_name(ROOT);
+  cd_listen_named(ROOT, z("cdping")); /* a web component's event, by name */
   cd_attr(z("id"), z("root")); cd_attr(z("data-x"), z("a&b<c>\"d' e"));
   cd_text(z("one")); cd_text(z("two")); cd_text(z("")); cd_text(z("three")); cd_text(z(""));
   cd_open(z("p")); P = cd_id_new(); cd_name(P);
   cd_text_num(42); NUMTXT = cd_id_new(); cd_name(NUMTXT);
   cd_text(z("<&>\"\xc3\xa9\xe6\x97\xa5\xe6\x9c\xac\xf0\x9f\x98\x80")); LBL = cd_id_new(); cd_name(LBL);
   cd_close();
-  cd_open(z("ul")); UL = cd_id_new(); cd_name(UL); cd_close();
+  cd_open(z("ul")); UL = cd_id_new(); cd_name(UL); cd_listen_named(UL, z("cdpang")); cd_close();
   cd_open(z("input")); cd_attr(z("value"), z("v&1")); INPUT = cd_id_new(); cd_name(INPUT); cd_close();
   cd_open(z("span")); cd_text(z("")); cd_close();
   cd_open(z("span")); cd_close();

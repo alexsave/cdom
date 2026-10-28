@@ -1,5 +1,5 @@
 #!/bin/bash
-# Mutation checks for the clone and slot rules of tests/conform.mjs: clones
+# Mutation checks for the clone, slot and event rules of tests/conform.mjs: clones
 # appended inside an open element, the hydrator matching a clone's template against the
 # server's subtree (separators, empty text, <!--i--> parked inserts, the clone's cursor),
 # and the sink's marks. Each mutant must fail the named assertion. Usage: tests/conform_mutants.sh
@@ -19,7 +19,11 @@ m $S 's/ n\.\$x = 0;//' 'FAIL hydration with verify'
 m $H 's/\Qif (before && !member(c, p)) put(w, "<!--i-->", 8);\E//' 'FAIL hydration with verify'
 m $H 's/\Q!c->len && c->next && !member(c->next, p)) put(w, "<!---->", 7);\E/!c->len \&\& c->next \&\& !member(c->next, p)) {}/' 'FAIL step 0: hydrated DOM vs client DOM'
 m $H 's/\Qif (sp) insert(stack[sp - 1], el, 0, "clone");\E//' 'FAIL step 0: client DOM vs sink HTML'
-# template slots: the shim's and the sink's slot node per template
-m $S 's/\Qfunction tpl_text(t, k, s) { tslot[t][k].nodeValue = S(s); }\E/function tpl_text(t, k, s) { }/' 'FAIL step 0: client DOM vs sink HTML'
-m $H 's/\Qmemcpy(tslot[t], slots, sizeof slots);\E//' 'cdom_html: no such template slot'
+# events: the mount's listeners (shim) and who listens to what (core)
+m $S 's/\Q}, capture);\E/});/' 'FAIL a named event that does not bubble'
+m $S 's/\Qnodes[i] === n && \E//' 'FAIL a click on a node whose id was freed'
+m src/cdom.c 's/\Q&& named[i].name == name) return 1;\E/\&\& (named[i].name == name || 1)) return 1;/' 'FAIL an event no node on the path asked for'
+m src/cdom.c 's/  lmask\[id\] = 0;\n  free_ids/  free_ids/' 'FAIL a click on a node whose id was freed'
+m src/cdom.c 's/\Qfirst = !(delegated >> kind & 1);\E/first = 1;/' "FAIL a click on a listening row's child"
+m $S 's/\Qpath = (path << 8) | (k & 255); depth++;\E/depth++;/' 'FAIL a named event that does not bubble'
 exit $bad

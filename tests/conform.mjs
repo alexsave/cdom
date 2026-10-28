@@ -1,4 +1,4 @@
-// Op-stream conformance of the C sink against the shim, and hydration over the sink's HTML.
+// Conformance of the C sink against the shim, hydration over the sink's HTML, and events.
 //  1. client: after cd_main and after every step, the shim's DOM equals the parse of the
 //     sink's HTML for that step, node by node (empty text and the <!----> separators aside);
 //  2. hydrate: the sink's first frame is parsed into the mount, the shim hydrates it with
@@ -46,6 +46,17 @@ try {
   const steps = frames.length - 1;
   // 1. client run against the sink
   await load(); await E('go()');
+  if (!custom) { // events: real DOM events reach C through the mount's delegated listeners
+    const ev = () => E('[0,1,5,7,8,9].map(k => x.ev(k)).join(" ")'), id = (k) => E(`x.ids(${k})`);
+    const [root, item1, ping] = [await id(0), await id(1), await id(2)];
+    await E('document.querySelectorAll("#m ul li")[1].firstChild.click()');
+    ok(await ev() === `0 ${item1} 0 0 1 1`, `a click on a listening row's child: click, its id, path 0 depth 1 (${await ev()})`);
+    await E('document.querySelector("#m pre").dispatchEvent(new CustomEvent("cdping", { bubbles: false }))');
+    ok(await ev() === `12 ${root} ${ping} 5 1 2`, `a named event that does not bubble, from a child: CD_EV_CUSTOM, the listener, its name, path 5 (${await ev()})`);
+    await E('document.querySelector("#m pre").dispatchEvent(new CustomEvent("cdpang", { bubbles: true }))');
+    await E('document.querySelector("#m pre").click()');
+    ok((await ev()).endsWith(' 2'), `an event no node on the path asked for reaches no one (${await ev()})`);
+  }
   const strict = [];
   let bad = 0;
   for (let k = 0; k <= steps; k++) {
@@ -55,6 +66,15 @@ try {
     if (dom !== want && bad++ < 3) ok(false, `step ${k}: client DOM vs sink HTML: ${firstDiff(want, dom)}`);
   }
   ok(!bad, `client DOM equals the parsed sink HTML after cd_main and each of ${steps} steps`);
+  if (!custom) { // after the run: freed ids handed out again
+    const n0 = await E('x.ev(9)'), b = await E('x.stale()');
+    ok(b > 0, 'both freed ids were handed out again');
+    const click = (k) => E(`document.querySelectorAll("#m > b, #m > u")[${k}].click()`); // old a, new a, old b, new b
+    await click(0); await click(1); await click(2);
+    ok(await E('x.ev(9)') === n0, `a click on a node whose id was freed, or on the id's new node that takes another type, reaches no one`);
+    await click(3);
+    ok(await E('x.ev(9)') === n0 + 1 && await E('x.ev(1)') === b, `a click on the id's new node that takes clicks reaches that id once`);
+  }
   if (!custom) ok(frames[0].includes('<!---->') && /""/.test(strict[0]), 'the first frame has separators and empty text nodes to hydrate');
   // 2. hydrate the sink's first frame, then replay
   await load();
