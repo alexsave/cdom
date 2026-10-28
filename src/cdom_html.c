@@ -289,7 +289,6 @@ void j_tpl_save(uint32_t t) {
   if (!root) fail("template save with no closed root", "tpl_save");
   tpl = grow_array(tpl, &tpl_cap, t, sizeof(hnode *));
   tpl[t] = root;
-  unlink_node(root);
 }
 void j_clone(uint32_t t) { /* at depth 0 its close places it; inside an open element it is appended, like open */
   op();
