@@ -11,6 +11,15 @@
 #define CDOM_INTERN_TEXT 1
 #endif
 
+/* Resuming a server-rendered page (below) when 1. With 0 the virtual first render, the path
+ * tree, the resolver and the event matcher are compiled out (a client-rendered page does not
+ * pay for them), and the module exports neither cd_start_state nor cd_state_buf: it starts only
+ * with cd_start, and a page that calls cdom.resume needs a build with 1. Events cross in the same
+ * form either way. */
+#ifndef CDOM_RESUME
+#define CDOM_RESUME 1
+#endif
+
 typedef uint32_t cd_id;  /* node id; 0 is the mount element */
 typedef uint32_t cd_str; /* interned string id */
 

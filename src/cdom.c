@@ -255,7 +255,10 @@ void cd_flush(void) { ready(); }
 
 /* Resuming a server-rendered page (cdom.h): rs is set from cd_start_state until every node the
  * first render named has been resolved, so a page that was never server-rendered pays one test
- * of rs per op. The rs_* functions return 1 when the op is done (virtual: nothing to call). */
+ * of rs per op. The rs_* functions return 1 when the op is done (virtual: nothing to call).
+ * With CDOM_RESUME 0, rs and vmode are the constant 0 and the rs_* are stubs: every test folds
+ * away and the resume section below is not compiled. */
+#if CDOM_RESUME
 static uint32_t rs, vmode;
 static int rs_make(int open, uint32_t tpl);
 static int rs_close(void);
@@ -271,6 +274,28 @@ static int rs_place(cd_id id);
 static int rs_remove(cd_id id);
 static void rs_slots(uint32_t t, uint32_t k);
 static void rs_tpl(uint32_t t);
+static void rs_drop(cd_id id);
+static int rs_host(void);
+#else
+#define rs 0u
+#define vmode 0u
+static inline int rs_make(int open, uint32_t tpl) { (void)open; (void)tpl; return 0; }
+static inline int rs_close(void) { return 0; }
+static inline int rs_last(void) { return 0; }
+static inline int rs_name(cd_id id) { (void)id; return 0; }
+static inline int rs_step(uint32_t s) { (void)s; return 0; }
+static inline int rs_sel(cd_id id) { (void)id; return 0; }
+static inline int rs_at(cd_id parent) { (void)parent; return 0; }
+static inline int rs_id(cd_id id) { (void)id; return 0; }
+static inline int rs_move(cd_id id, cd_id before) { (void)id; (void)before; return 0; }
+static inline int rs_clear(cd_id id) { (void)id; return 0; }
+static inline int rs_place(cd_id id) { (void)id; return 0; }
+static inline int rs_remove(cd_id id) { (void)id; return 0; }
+static inline void rs_slots(uint32_t t, uint32_t k) { (void)t; (void)k; }
+static inline void rs_tpl(uint32_t t) { (void)t; }
+static inline void rs_drop(cd_id id) { (void)id; }
+static inline int rs_host(void) { return 0; }
+#endif
 
 static cd_id at_parent = CD_DETACHED - 1, at_before = CD_DETACHED - 1;
 static uint32_t at_stale; /* resumed: JS's AT is not C's (the first render's AT was virtual) */
@@ -460,7 +485,6 @@ void cd_v_key(cd_str k) {
   hv_str(k);
 }
 
-static int rs_host(void);
 static void host_send(void);
 void cd_host_end(void) {
   if (!hv_open || depth || owed[0]) __builtin_trap(); /* not exactly one complete value */
@@ -524,7 +548,6 @@ cd_id cd_id_new(void) {
   return id;
 }
 
-static void rs_drop(cd_id id);
 static void release(cd_id id) {
   if (rs) rs_drop(id);
   tags[id] = 0;
@@ -605,13 +628,16 @@ uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap) {
  * order, because their indices hold only against the server's DOM. While listeners are
  * pending, the shim writes an event's path up to the mount, and r_event finds the deepest
  * pending listener on it. */
+#define TRAIL_MAX 512  /* levels of an event path the shim writes */
+static uint32_t trail[2 * TRAIL_MAX]; /* per level from the target up: node index, element index */
+static uint32_t npl; /* pending listeners (cd_layout()[3]; always 0 without resuming) */
+#if CDOM_RESUME
 #define VNONE 0xffffffffu
 #define VREAL 0x80000000u /* vnode.nid: a template's node, real in JS */
 #define VDONE 0x40000000u /* vnode.nid: everything below it is resolved */
 #define VMORE 0x20000000u /* vnode.nid: more ids than vnode.id name it (in vmore) */
 #define VCOUNT 0x0fffffffu
 #define PATH_MAX 512   /* levels below the mount a named node may sit at */
-#define TRAIL_MAX 512  /* levels of an event path the shim writes */
 enum { VS_LIVE, VS_PEND, VS_PENDL, VS_RESV, VS_WALKED, VS_GONE }; /* per id; PENDL: pending and listening */
 typedef struct { uint32_t parent, first, last, next, idx, src, nid; cd_id id; } vnode; /* src: template vnode + 1, its
                                                                                          children not copied in yet */
@@ -619,11 +645,10 @@ static vnode *vt;
 static uint32_t nvt, vtcap, *vstk, vsp, vstkcap, vlast = VNONE, vroot = VNONE, *tvroot, ntv;
 static uint8_t *vst;   /* per id: VS_* */
 static uint32_t *vref; /* per id: its vnode */
-static uint32_t vcap, npend, npl, wsrv; /* npl: pending listeners; wsrv: JS's last may be a server node */
+static uint32_t vcap, npend, wsrv; /* wsrv: JS's last may be a server node */
 static uint32_t *vmore, nvmore, vmorecap; /* (vnode, id) for a node named by more than one id */
 static uint32_t *hdef, nhdef, hdcap;
 static uint16_t slot_lazy[CD_TPLS];
-static uint32_t trail[2 * TRAIL_MAX]; /* per level from the target up: node index, element index */
 
 static void *vec(void *p, uint32_t *cap, uint32_t need, uint32_t el) {
   if (need <= *cap) return p;
@@ -984,6 +1009,8 @@ static void v_finish(void) {
   nhdef = 0;
 }
 
+#endif /* CDOM_RESUME */
+
 /* The shim posts every event in the trail form (cdom.h): inbox.id is the nearest node with a JS
  * id that takes the event (-1: none), path is how many levels below it the target is, and depth
  * is the number of levels the shim wrote to trail (up to that node, or up to the mount while
@@ -992,7 +1019,9 @@ static void v_finish(void) {
  * one the app sees: the listener's id, and the element indices below it. Returns 0 when no node
  * takes the event. */
 static int r_event(void) {
-  uint32_t L = (uint32_t)inbox.depth, hd = (uint32_t)inbox.path, best = VNONE, bl = 0;
+  uint32_t hd = (uint32_t)inbox.path;
+#if CDOM_RESUME
+  uint32_t L = (uint32_t)inbox.depth, best = VNONE, bl = 0;
   if (npl && L <= TRAIL_MAX) {
     for (uint32_t v = 0, j = 0; j < L; j++) { /* down the virtual tree along the target's indices */
       uint32_t want = trail[2 * (L - 1 - j)], c = vt[v].first;
@@ -1009,7 +1038,9 @@ static int r_event(void) {
     }
   }
   if (best != VNONE && (inbox.id < 0 || bl < hd)) { ensure(best); inbox.id = (int32_t)best; hd = bl; }
-  else if (inbox.id < 0) return 0;
+  else /* (as an else, the default build's code is what it was before the flag) */
+#endif
+  if (inbox.id < 0) return 0;
   uint32_t path = 0;
   for (uint32_t l = 0; l < hd && l < TRAIL_MAX; l++) path = path << 8 | (trail[2 * l + 1] & 255);
   inbox.path = (int32_t)path;
@@ -1037,6 +1068,7 @@ EXPORT("cd_start") void cd_start(uint32_t seed) {
 __attribute__((weak)) uint32_t cd_state_save(uint8_t *dst, uint32_t cap) { (void)dst; (void)cap; return 0; }
 __attribute__((weak)) int cd_state_load(const uint8_t *src, uint32_t len) { (void)src; return len != 0; }
 
+#if CDOM_RESUME
 /* Resuming: the shim copies the page's state blob, as the base64 text the page holds, into
  * cd_state_buf; cd_start_state decodes it in place, loads it and runs the first render
  * virtually over the server's DOM (the resume section above). */
@@ -1080,6 +1112,7 @@ EXPORT("cd_start_state") int cd_start_state(uint32_t len) {
   cd_flush();
   return 0;
 }
+#endif
 
 EXPORT("cd_event") void cd_event(void) {
   if (r_event()) cd_on_event(&inbox);
