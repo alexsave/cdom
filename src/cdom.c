@@ -94,9 +94,6 @@ IMPORTS("value") void j_value(uint32_t s);
 IMPORTS("value_num") void j_value_num(uint32_t n);
 IMPORTS("tpl_save") void j_tpl_save(uint32_t t);
 IMPORTS("clone") void j_clone(uint32_t t);
-IMPORTS("slot") void j_slot(uint32_t k);
-IMPORTS("tpl_text") void j_tpl_text(uint32_t t, uint32_t k, uint32_t s);
-IMPORTS("tpl_text_num") void j_tpl_text_num(uint32_t t, uint32_t k, uint32_t n);
 IMPORTS("walk") void j_walk(cd_id from, uint32_t steps, uint32_t n);
 IMPORTS("walk_value") void j_walk_value(cd_id from, uint32_t steps, uint32_t n, uint32_t s);
 IMPORTS("walk_value_num") void j_walk_value_num(cd_id from, uint32_t steps, uint32_t n, uint32_t v);
@@ -287,33 +284,47 @@ void cd_value_num(uint32_t n) {
   send_strings();
   if (walking) { walking = 0; j_walk_value_num(walk_from, walk_steps, walk_n, n); } else j_value_num(n);
 }
-/* What each template slot holds now (kind 0 unknown, 1 string id, 2 number), so an unchanged
- * value is not written again. */
+/* Template slots: a slot is a text node of the template, named by an id of its own when it is
+ * marked; cd_tpl_text sets it like any named text node. What each slot holds now (kind 0
+ * unknown, 1 string id, 2 number) is kept so an unchanged value is not written again. */
+static cd_id slot_new[CD_SLOTS], slot_id[CD_TPLS][CD_SLOTS]; /* the template being built's; each saved one's */
 static uint32_t slot_val[CD_TPLS][CD_SLOTS];
 static uint8_t slot_kind[CD_TPLS][CD_SLOTS];
 void cd_tpl_save(uint32_t t) {
-  if (t < CD_TPLS) __builtin_memset(slot_kind[t], 0, CD_SLOTS);
+  int slots = 0;
+  for (uint32_t k = 0; k < CD_SLOTS; k++) slots |= slot_new[k] != 0;
+  if (slots) { /* a template with slots must have a number under CD_TPLS */
+    if (t >= CD_TPLS) __builtin_trap();
+    for (uint32_t k = 0; k < CD_SLOTS; k++)
+      if (slot_id[t][k]) cd_id_free(slot_id[t][k]); /* t is built again: its old slots go */
+  }
+  if (t < CD_TPLS) {
+    __builtin_memcpy(slot_id[t], slot_new, sizeof slot_new);
+    __builtin_memset(slot_kind[t], 0, CD_SLOTS);
+  }
+  __builtin_memset(slot_new, 0, sizeof slot_new);
   ready(); j_tpl_save(t);
 }
 void cd_clone(uint32_t t) { ready(); j_clone(t); }
 void cd_slot(uint32_t k) {
   if (k >= CD_SLOTS) __builtin_trap();
-  ready(); j_slot(k);
+  if (!slot_new[k]) slot_new[k] = cd_id_new();
+  ready(); j_name(slot_new[k]);
 }
-static int slot_same(uint32_t t, uint32_t k, uint8_t kind, uint32_t v) {
-  if (t >= CD_TPLS || k >= CD_SLOTS) __builtin_trap();
-  if (slot_kind[t][k] == kind && slot_val[t][k] == v) return 1;
+static cd_id slot_same(uint32_t t, uint32_t k, uint8_t kind, uint32_t v) {
+  if (t >= CD_TPLS || k >= CD_SLOTS || !slot_id[t][k]) __builtin_trap(); /* not a slot of t */
+  if (slot_kind[t][k] == kind && slot_val[t][k] == v) return 0;
   slot_kind[t][k] = kind;
   slot_val[t][k] = v;
-  return 0;
+  return slot_id[t][k];
 }
 void cd_tpl_text(uint32_t t, uint32_t k, cd_str s) {
-  if (slot_same(t, k, 1, s)) return;
-  uint32_t v = ref_text(s); ready(); j_tpl_text(t, k, v);
+  cd_id id = slot_same(t, k, 1, s);
+  if (id) { uint32_t v = ref_text(s); ready(); j_set_text(id, v); }
 }
 void cd_tpl_text_num(uint32_t t, uint32_t k, uint32_t n) {
-  if (slot_same(t, k, 2, n)) return;
-  ready(); j_tpl_text_num(t, k, n);
+  cd_id id = slot_same(t, k, 2, n);
+  if (id) { ready(); j_set_text_num(id, n); }
 }
 void cd_down(void) { walk_step(1); }
 void cd_next(void) { walk_step(2); }
