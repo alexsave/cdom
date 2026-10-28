@@ -464,6 +464,13 @@ static void write_children(wbuf *w, const hnode *p) {
   }
 }
 
+uint32_t cd_html_node(cd_id i, char *dst, uint32_t cap) {
+  if (!arena || i >= ids_cap || !ids[i]) return 0;
+  wbuf w = {dst, cap, 0};
+  write_node(&w, ids[i]);
+  return w.n;
+}
+
 uint32_t cd_html_write(char *dst, uint32_t cap) {
   if (!arena) cd_html_reset();
   wbuf w = {dst, cap, 0};
