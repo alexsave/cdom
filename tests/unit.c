@@ -279,10 +279,19 @@ static int32_t store_len[8] = {-2, -2, -2, -2, -2, -2, -2, -2};
 static uint32_t store_sum[8];
 EXPORT("t_store_put") void t_store_put(void) {
   static const uint8_t v[5] = {9, 1, 250, 3, 7};
-  cd_store_put("unit-k1", 7, v, 5);
+  cd_store_put(1, "unit-k1", 7, v, 5);
 }
+/* A put whose request fails (the page makes put throw for this key): answered 0. */
+static int32_t put_ok[4] = {-1, -1, -1, -1};
+EXPORT("t_store_put_fail") void t_store_put_fail(void) {
+  static const uint8_t v[1] = {1};
+  cd_store_put(2, "unit-fail", 9, v, 1);
+}
+void cd_on_store_put(uint32_t token, uint32_t ok) { enter(); put_ok[token & 3] = (int32_t)ok; }
+EXPORT("t_put_ok") int32_t t_put_ok(uint32_t token) { return put_ok[token & 3]; }
 EXPORT("t_store_get") void t_store_get(uint32_t token, int32_t present, uint32_t ms) {
-  if (present) cd_store_get(token, "unit-k1", 7, ms);
+  if (present == 2) cd_store_get(token, "unit-err", 8, ms); /* the page makes get throw for it */
+  else if (present) cd_store_get(token, "unit-k1", 7, ms);
   else cd_store_get(token, "unit-none", 9, ms);
 }
 void cd_on_store(uint32_t token, const uint8_t *p, int32_t len) {

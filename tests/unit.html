@@ -140,6 +140,19 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
   const want = [9, 1, 250, 3, 7].reduce((s, b) => (Math.imul(s, 31) + b) >>> 0, 0) | 0;
   check('cd_store: a put, then a get, gives the same bytes back', () => (x.t_store(1, 0) === 5 && x.t_store(1, 1) === want && x.t_stale() === 0) || `len ${x.t_store(1, 0)} sum ${x.t_store(1, 1)}`);
   check('cd_store: a missing key answers -1', () => x.t_store(2, 0) === -1 || x.t_store(2, 0));
+  // A put answers: 1 when kept; 0 when its request fails (put made to throw for one key).
+  const realPut = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (value, key) { if (key === 'unit-fail') throw new DOMException('refused', 'QuotaExceededError'); return realPut.call(this, value, key); };
+  x.t_store_put_fail();
+  await until(() => x.t_put_ok(2) !== -1);
+  IDBObjectStore.prototype.put = realPut;
+  const realGet = IDBObjectStore.prototype.get;
+  IDBObjectStore.prototype.get = function (key) { if (key === 'unit-err') throw new DOMException('refused', 'UnknownError'); return realGet.call(this, key); };
+  x.t_store_get(4, 2, 1500);
+  await until(() => x.t_store(4, 0) !== -2);
+  IDBObjectStore.prototype.get = realGet;
+  check('cd_store: a get that fails answers -1', () => x.t_store(4, 0) === -1 || x.t_store(4, 0));
+  check('cd_store: a put answers 1 when kept and 0 when it failed', () => (x.t_put_ok(1) === 1 && x.t_put_ok(2) === 0) || `kept ${x.t_put_ok(1)}, failed ${x.t_put_ok(2)}`);
   const d = await new Promise((r, j) => { const q = indexedDB.open('cdom', 1); q.onsuccess = () => r(q.result); q.onerror = j; });
   const tx = d.transaction('kv', 'readwrite'), os = tx.objectStore('kv'), t0 = performance.now();
   const busy = () => { if (performance.now() - t0 < 400) os.put(new Uint8Array(1), 'unit-busy').onsuccess = busy; };
