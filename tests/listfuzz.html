@@ -25,6 +25,8 @@ const env = { check(p, n, round) {
   if (errors.length > 5) throw new Error(errors.join('\n'));
 } };
 cdom.start('listfuzz.wasm', document.getElementById('m'), env).then(x => { window.__x = x; x.run_fuzz(+(new URLSearchParams(location.search).get('seed') || 1), 20000);
+    try { x.run_freeruns(+(new URLSearchParams(location.search).get('seed') || 1), 3000); }
+    catch (e) { errors.push('freeruns: ' + e); }
     const want = ['plain', 'h\u00e9llo', '\u65e5\u672c', '\u{1F600}x', ''];
     for (const big of [0, 1]) {
       x.run_strings(big);

@@ -7,3 +7,7 @@ tests/out/
 results/raw_*.log
 results/pairs/
 node_modules/
+jfb
+results/gate_*.log
+results/fp*.txt
+results/pairs_*.log
