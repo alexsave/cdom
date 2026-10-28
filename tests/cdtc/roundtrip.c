@@ -194,6 +194,11 @@ int main(void) {
   }
   printf("%s every truncated blob is refused\n", refused ? "ok  " : "FAIL");
   fails += !refused;
+  Feat f4 = Feat_INIT;
+  a[na] = 0;
+  int extra = Feat_load(&f4, a, na + 1) == -1 && f4.items_n == 0;
+  printf("%s a blob with a trailing byte is refused\n", extra ? "ok  " : "FAIL");
+  fails += !extra;
   uint32_t need = Feat_save(&G, a, 3);
   printf("%s save with no room returns the need (%u)\n", need == na ? "ok  " : "FAIL", need);
   fails += need != na;

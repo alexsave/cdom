@@ -73,8 +73,8 @@ if cmp -s "$out/ops_hand.txt" "$out/ops_tpl.txt"; then ok "op counts: the templa
 run=$(awk '$1 == "run1000" {print $2}' "$out/ops_tpl.txt")
 upd=$(awk '$1 == "update10th" {print $2}' "$out/ops_tpl.txt")
 # 1000 creates + DETACH, one AT and ATTACH around the off-document fill
-if [ "$run" = 11003 ]; then ok "op counts: a templated row creates in 11 ops (run 1000 = $run)"; else bad "op counts: run 1000 = $run, want 11003 (11 a row + 3)"; fi
-if [ "$upd" = 600 ]; then ok "op counts: a label patch is 6 ops (update every 10th of 1000 = $upd)"; else bad "op counts: update = $upd, want 600"; fi
+if [ "$run" = 11003 ]; then ok "op counts: a templated row creates in 11 ops (run 1000 = $run)"; else bad "op counts: a templated row creates in 11 ops: run 1000 = $run, want 11003 (11 a row + 3)"; fi
+if [ "$upd" = 600 ]; then ok "op counts: a label patch is 6 ops (update every 10th of 1000 = $upd)"; else bad "op counts: a label patch is 6 ops: update every 10th of 1000 = $upd, want 600"; fi
 
 echo
 if [ $fails -eq 0 ]; then echo "cdtc tests: all ok"; else echo "cdtc tests: $fails FAILED"; fi
