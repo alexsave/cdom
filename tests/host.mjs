@@ -3,7 +3,8 @@
 // rendering. The CDN is required: if Chart.js does not load, the test fails, it does not skip.
 //  - the server's page: the <ul> lists the server's points, the checkbox carries `checked` (PROP
 //    in the C sink), the canvas is empty, the page's only inline JavaScript is the shim and the
-//    one cdom.resume call C wrote (no app code), and nothing fetches app.wasm until a click;
+//    one cdom.resume call C wrote (no app code), and app.wasm is fetched once after the load
+//    event (the shim's prefetch) but none of it runs until a click (no chart, cdom.loaded false);
 //  - Add point: the wasm loads, the deferred MOUNT makes the canvas's $h a Chart (the one
 //    Chart.getChart finds) and then the click lands: the chart's data, labels and the <ul> all
 //    hold N + 1 points, the same values;
@@ -89,14 +90,14 @@ try {
   ok(page.indexOf(`<script src="${CDN}"`) < page.indexOf('<script>"use strict";var cdom'), 'Chart.js comes before the shim');
   await open(`${BASE}/?n=5`);
   await sleep(1000);
-  ok(wasmReqs.length === 0 && await E('cdom.loaded') === false, `no app.wasm request after load and a second (${wasmReqs.length})`);
+  ok(wasmReqs.length === 1 && await E('cdom.loaded') === false, `app.wasm fetched once after load (the prefetch) and not started: cdom.loaded false (${wasmReqs.length} requests)`);
   ok(await lis() === 5 && await E(ys) === '[46,35,96,86,47]', `the <ul> shows the server's 5 points (${await E(ys)})`);
   ok(await E(`${CH} === undefined && ${C}.$h === undefined`), 'no chart before the first interaction');
   ok(await E('document.getElementById("smooth").checked === true'), 'the checkbox is checked from the server HTML');
 
   // ---- the first click loads the wasm; the deferred MOUNT runs, then the click lands ----
   await click('add');
-  ok(await holds(`cdom.loaded && document.querySelectorAll("#points li").length === 6 && !!${CH}`), 'Add point: the wasm loads and the click is delivered');
+  ok(await holds(`cdom.loaded && document.querySelectorAll("#points li").length === 6 && !!${CH}`), 'Add point: the module starts and the click is delivered');
   await noErr('Add point');
   ok(wasmReqs.length === 1, `one app.wasm request (${wasmReqs.length})`);
   ok(await E(`${C}.$h instanceof Chart && ${C}.$h === ${CH}`), "the canvas's $h is the Chart instance Chart.getChart finds");

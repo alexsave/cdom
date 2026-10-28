@@ -1,7 +1,9 @@
 // Resuming the server-rendered rows page in headless Chrome, for n = 0, 1, 1000, 10000:
-//  - after load and a second's wait no app.wasm request was made, cdom.loaded is false, #main
-//    is byte for byte the server's and no document node was created;
-//  - the first click loads the wasm and is delivered; only the nodes C touched are resolved
+//  - after load and a second's wait app.wasm was fetched once, after the load event (the shim's
+//    prefetch), and nothing of it ran: cd_start_state and cd_start were never called (so no
+//    virtual render), cdom.loaded is false, #main is byte for byte the server's and no document
+//    node was created;
+//  - the first click runs the module and is delivered; only the nodes C touched are resolved
 //    (selecting row 5 resolves that row and nothing else: not the tbody's other rows) and no
 //    node in #main is new;
 //  - then: removing row 3 and selecting row 4 (the structural rule: an index taken after a
@@ -28,6 +30,11 @@ for (const [o, k] of [[Document.prototype, 'createElement'], [Document.prototype
   const f = o[k]; o[k] = function (...a) { window.__c[k]++; return f.apply(this, a); };
 }
 window.__err = null;
+window.__starts = 0; // calls of cd_start_state and cd_start: the virtual first render runs inside the first
+for (const k of ['instantiateStreaming', 'instantiate']) { const f = WebAssembly[k];
+  WebAssembly[k] = async function (...a) { const r = await f.apply(this, a); const e = { ...r.instance.exports };
+    for (const g of ['cd_start', 'cd_start_state']) if (e[g]) { const h = e[g]; e[g] = (...c) => { window.__starts++; return h(...c); }; }
+    return { module: r.module, instance: { exports: e } }; }; }
 addEventListener('error', e => { window.__err = String(e.message); });
 addEventListener('unhandledrejection', e => { window.__err = String(e.reason && e.reason.message || e.reason); });
 Math.random = () => ${SSR_SEED} / 4294967296;
@@ -35,8 +42,9 @@ Math.random = () => ${SSR_SEED} / 4294967296;
 let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console.log('ok  ', m); };
 const b = await launch();
-const wasmReqs = [];
-b.onEvent = (d) => { if (d.method === 'Network.requestWillBeSent' && /app\.wasm/.test(d.params.request.url)) wasmReqs.push(d.params.request.url); };
+const wasmReqs = []; let loadAt = null;
+b.onEvent = (d) => { if (d.method === 'Network.requestWillBeSent' && /app\.wasm/.test(d.params.request.url)) wasmReqs.push(d.params.timestamp);
+  if (d.method === 'Page.loadEventFired') loadAt = d.params.timestamp; };
 const E = b.evaluate;
 const STATS = 'cdom.boot().then(x => x.cd_resume_stats(0) + " ids in " + x.cd_resume_stats(1) + " resolutions")';
 const until = async (expr, tries = 200) => { for (let i = 0; i < tries; i++) { if (await E(expr)) return true; await sleep(25); } return false; };
@@ -75,11 +83,12 @@ try {
   for (const n of counts) try {
     const page = await (await fetch(`${BASE}/?n=${n}`)).text();
     const server = page.slice(page.indexOf('<div id="main">') + 15, page.indexOf('</div><script type="application/octet-stream"'));
-    wasmReqs.length = 0;
+    wasmReqs.length = 0; loadAt = null;
     await b.send('Page.navigate', { url: `${BASE}/?n=${n}` });
     await until('document.readyState === "complete"');
     await sleep(1000);
-    ok(wasmReqs.length === 0 && await E('cdom.loaded') === false, `n=${n} no app.wasm request after load and a second (${wasmReqs.length}), cdom.loaded false`);
+    ok(wasmReqs.length === 1 && loadAt !== null && wasmReqs[0] >= loadAt, `n=${n} app.wasm fetched once, after the load event (${wasmReqs.length} requests, ${loadAt === null || !wasmReqs.length ? '-' : ((wasmReqs[0] - loadAt) * 1000).toFixed(1) + ' ms after it'})`);
+    ok(await E('window.__starts') === 0 && await E('cdom.loaded') === false, `n=${n} nothing of the module ran: no cd_start_state or cd_start call (${await E('window.__starts')}), cdom.loaded false`);
     ok(await E('document.getElementById("main").innerHTML') === server, `n=${n} #main is the server's bytes`);
     ok(await E('Object.values(window.__c).every(v => v === 0)'), `n=${n} no node created (${await E('JSON.stringify(window.__c)')})`);
     ok(await rows() === n, `n=${n} ${n} rows`);
@@ -88,9 +97,9 @@ try {
     const sel = Math.min(5, n);
     if (sel) { // the first click: select a row
       await E(`window.__row = document.querySelectorAll("tbody tr")[${sel - 1}]; ${label(sel)}.click()`);
-      ok(await until('cdom.loaded && document.querySelectorAll("tbody tr.danger").length > 0 || !!window.__err'), `n=${n} the first click loads the wasm`);
+      ok(await until('cdom.loaded && document.querySelectorAll("tbody tr.danger").length > 0 || !!window.__err'), `n=${n} the first click starts the module`);
       ok(!await E('window.__err'), `n=${n} no error${await E('window.__err') ? ': ' + await E('window.__err') : ''}`);
-      ok(wasmReqs.length === 1, `n=${n} one app.wasm request`);
+      ok(wasmReqs.length === 1 && await E('window.__starts') === 1, `n=${n} still one app.wasm request, and one cd_start_state call (${wasmReqs.length}, ${await E('window.__starts')})`);
       ok(await E(`window.__row.className === "danger" && document.querySelectorAll("tbody tr.danger").length === 1 && document.querySelectorAll("tbody tr")[${sel - 1}] === window.__row`),
         `n=${n} the click was delivered: row ${sel} (the server's node) is selected`);
       const st = await E(STATS);

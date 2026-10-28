@@ -5,7 +5,7 @@ var cdom = (() => {
   const DETACHED = -1, SMALL = 64; // CD_DETACHED as wasm passes it
   const doc = document, td = new TextDecoder(), te = new TextEncoder();
   const nodes = [], strs = [], tpl = [], stack = [], on = {}, queue = [];
-  let x, mem, buf, u8, u32, i32, SB, SM, INBOX, PEND, TRAIL, page, loading;
+  let x, mem, buf, u8, u32, i32, SB, SM, INBOX, PEND, TRAIL, page, loading, wasm;
   let sp = 0, last = null, root = null, base = DETACHED, ref = 0;
 
   function views() {
@@ -191,18 +191,23 @@ var cdom = (() => {
     x.cd_start((Math.random() * 4294967296) >>> 0); return x;
   }
   // A server-rendered page (cdom.h, resuming): the listeners for the event types its render
-  // listened to go on the mount now, and nothing else runs. The module loads on the first event
-  // (or boot()), C decodes the page's base64 state (the element stateId holds it) and renders
-  // the first frame virtually over the server's DOM; then the queued events are delivered.
+  // listened to go on the mount now, and nothing else runs. The module is fetched after the load
+  // event; on the first event (or boot()) C decodes the page's base64 state (the element stateId
+  // holds it) and renders the first frame virtually over the server's DOM; then the queued events
+  // are delivered.
   function resume(url, mountId, stateId, types, names) {
     page = [url, stateId]; nodes[0] = doc.getElementById(mountId);
     for (const t of types) hear(t, false);
     for (const t of names) hear(t, true);
+    addEventListener("load", prefetch);
   }
+  // After the load event the module is fetched, compiled and instantiated, and none of it runs:
+  // the first event then pays only the virtual render. An event before that starts it at once.
+  function prefetch() { return wasm || (wasm = load(page[0])); }
   function boot() {
     return loading || (loading = (async () => {
       api.loaded = true;
-      const { instance } = await load(page[0]);
+      const { instance } = await prefetch();
       init(instance);
       const b64 = doc.getElementById(page[1]).textContent, dst = x.cd_state_buf(b64.length);
       views(); te.encodeInto(b64, u8.subarray(dst, dst + b64.length)); // base64 is ASCII: C decodes it

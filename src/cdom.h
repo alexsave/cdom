@@ -123,10 +123,11 @@ uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap); /* copy an input's v
  * shim (ssr_page.h's scripts slot), so window.<name> exists when the first MOUNT runs. On a
  * server-rendered page the host ops of the first render (cd_main) on the server's nodes are
  * deferred to the end of that render (resuming, below), and the render itself runs only when
- * the wasm loads, at the first interaction; by then the library, loaded before the shim, is
- * defined. So until that interaction the widget does not exist (the server writes its node
- * empty, and only PROP leaves a trace in the HTML): a page that wants it at once calls
- * cdom.boot() right after cdom.resume (ssr_page's eager), and the wasm loads at once.
+ * at the first interaction (the module is already fetched by then, after the load event); by
+ * then the library, loaded before the shim, is defined. So until that interaction the widget
+ * does not exist (the server writes its node empty, and only PROP leaves a trace in the HTML): a
+ * page that wants it at once calls cdom.boot() right after cdom.resume (ssr_page's eager), and
+ * the wasm loads and the first render runs at once.
  *
  * The op is one import, host(id, kind, name, v, nwords): v is the address in linear memory
  * of the value's nwords u32 words. The value ("cdv") is the one fixed format the shim
@@ -172,9 +173,11 @@ int cd_state_load(const uint8_t *src, uint32_t len); /* 0 on success */
 /* Resuming a server-rendered page. The server runs the same C natively into the C sink
  * (cdom_html.h), writes the HTML, the state blob as base64 in a non-script <script> element and
  * cdom.resume(url, mountId, stateId, types, names) with the event types its render listened to.
- * The page then runs no app code and does not fetch the wasm: the shim puts one listener per
- * type on the mount. The first event (queued, with any that follow, until the module is up)
- * loads the wasm; cd_start_state loads the blob and runs cd_main as a virtual render: every op
+ * The page then runs no app code: the shim puts one listener per type on the mount, and after
+ * the load event it fetches, compiles and instantiates the wasm and runs none of it (prefetch).
+ * The first event (queued, with any that follow, until the module is up; one before the load
+ * event starts the fetch itself) calls cd_start_state, which loads the blob and runs cd_main as
+ * a virtual render: every op
  * that would build or write a node the server already wrote calls nothing (templates, built off
  * the document, are real), and each id the render names keeps its path, the child indices from
  * the mount. An app writes nothing special for this; what it must not do in cd_main is read an
@@ -182,7 +185,7 @@ int cd_state_load(const uint8_t *src, uint32_t len); /* 0 on success */
  * cd_main. The first op that takes an id resolves its node by that path in one call, and an op
  * that changes a node's children (an insert or append under it, a move, remove, clear, detach)
  * first resolves every unresolved id below its parent in one call, since the paths hold only
- * against the untouched DOM. A page that is never clicked never loads the module.
+ * against the untouched DOM. A page that is never clicked never runs the module.
  * Counting children for a path, the shim reads two comments the sink writes: <!--e--> is an
  * empty text node (HTML cannot carry one; it becomes one when first reached) and counts as one
  * child, <!----> (between two texts, so the parser keeps them apart) does not count.
