@@ -1,24 +1,17 @@
-/* cdom_html: the native sink (see cdom_html.h). Mirrors shim/cdom.js op for op. */
+/* cdom_html: the native sink (see cdom_html.h). Mirrors shim/cdom.js call for call. */
 #include "cdom_html.h"
 #include "cdom.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-uintptr_t *cd_layout(void); /* cdom.c: ops, args, string bytes, string meta, inbox */
+uintptr_t *cd_layout(void); /* cdom.c: string bytes, string meta, inbox */
 
-/* The op numbers of cdom.c (its enum is private; the shim repeats them too). */
-enum {
-  OP_AT = 1, OP_OPEN, OP_CLOSE, OP_TEXT, OP_TEXT_NUM, OP_ATTR, OP_CLASS, OP_NAME, OP_LISTEN,
-  OP_VALUE, OP_VALUE_NUM, OP_TPL_SAVE, OP_CLONE, OP_DOWN, OP_NEXT, OP_UP, OP_SET_TEXT,
-  OP_SET_TEXT_NUM, OP_SET_ATTR, OP_SET_CLASS, OP_REMOVE, OP_FREE, OP_MOVE, OP_CLEAR, OP_DETACH,
-  OP_ATTACH, OP_SEL, OP_HOST, OP_LISTEN_NAMED
-};
 #define TRANSIENT 0x40000000u
 #define DETACHED 0xffffffffu
 
-static void fail(const char *what, uint32_t op) {
-  fprintf(stderr, "cdom_html: %s (op %u)\n", what, op);
+static void fail(const char *what, const char *op) {
+  fprintf(stderr, "cdom_html: %s (%s)\n", what, op);
   abort();
 }
 
@@ -31,7 +24,7 @@ static void *ar(size_t n) {
   if (!arena || arena->used + n > arena->cap) {
     size_t cap = n > ((size_t)1 << 20) ? n : (size_t)1 << 20;
     chunk *c = malloc(sizeof(chunk) + 16 + cap);
-    if (!c) fail("out of memory", 0);
+    if (!c) fail("out of memory", "");
     c->next = arena;
     c->used = 0;
     c->cap = cap;
@@ -71,14 +64,15 @@ static hnode **ids, **tpl, **stack;
 static uint32_t ids_cap, tpl_cap, stack_cap, sp;
 static hnode *last, *root;
 static uint32_t base = DETACHED, ref;
-static uint64_t applied; /* ops applied since the last reset */
+static uint64_t applied; /* DOM calls since the last reset */
+static hnode *slots[CD_SLOTS], *tslot[CD_TPLS][CD_SLOTS]; /* the template being built's slots; each saved one's */
 
 static void *grow_array(void *a, uint32_t *cap, uint32_t need, size_t el) {
   if (need < *cap) return a;
   uint32_t n = *cap ? *cap : 64;
   while (n <= need) n *= 2;
   a = realloc(a, n * el);
-  if (!a) fail("out of memory", 0);
+  if (!a) fail("out of memory", "");
   memset((char *)a + *cap * el, 0, (n - *cap) * el);
   *cap = n;
   return a;
@@ -86,14 +80,14 @@ static void *grow_array(void *a, uint32_t *cap, uint32_t need, size_t el) {
 
 static hstr S(uint32_t s) {
   if (s >= TRANSIENT) {
-    if (s - TRANSIENT >= tmp_cap) fail("unknown transient string", OP_TEXT);
+    if (s - TRANSIENT >= tmp_cap) fail("unknown transient string", "text");
     return tmp[s - TRANSIENT];
   }
-  if (s >= strs_cap || !strs[s].p) fail("unknown string", OP_TEXT);
+  if (s >= strs_cap || !strs[s].p) fail("unknown string", "text");
   return strs[s];
 }
 
-static hnode *id(uint32_t i, uint32_t op) {
+static hnode *id(uint32_t i, const char *op) {
   if (i >= ids_cap || !ids[i]) fail("no node with that id", op);
   return ids[i];
 }
@@ -133,7 +127,7 @@ static void unlink_node(hnode *n) {
 }
 
 /* parent.insertBefore(n, before), with the DOM's checks */
-static void insert(hnode *p, hnode *n, hnode *before, uint32_t op) {
+static void insert(hnode *p, hnode *n, hnode *before, const char *op) {
   if (!p || !p->tag) fail("insert under a missing node or a text node", op);
   for (hnode *a = p; a; a = a->parent)
     if (a == n) fail("insert a node into itself", op);
@@ -158,7 +152,7 @@ static int name_eq(const char *a, uint32_t al, const char *b, uint32_t bl) {
   return 1;
 }
 
-static void set_attr(hnode *n, const char *name, uint32_t nlen, hstr v, uint32_t op) {
+static void set_attr(hnode *n, const char *name, uint32_t nlen, hstr v, const char *op) {
   if (!n || !n->tag) fail("attribute on a missing node or a text node", op);
   for (uint32_t i = 0; i < n->nattr; i++)
     if (name_eq(n->attrs[i].n, n->attrs[i].nlen, name, nlen)) {
@@ -176,7 +170,7 @@ static void set_attr(hnode *n, const char *name, uint32_t nlen, hstr v, uint32_t
   n->attrs[n->nattr++] = (hattr){name, nlen, ar_copy(v.p, v.len), v.len};
 }
 
-static void set_value(hnode *n, const char *s, uint32_t len, uint32_t op) { /* nodeValue = */
+static void set_value(hnode *n, const char *s, uint32_t len, const char *op) { /* nodeValue = */
   if (!n) fail("value of a missing node", op);
   if (n->tag) return; /* nodeValue on an element does nothing */
   n->text = ar_copy(s, len);
@@ -198,7 +192,7 @@ static hnode *clone_in(const hnode *s, uint32_t cid) {
     n->nattr = n->cattr = s->nattr;
   }
   n->cid = cid;
-  for (const hnode *c = s->first; c; c = c->next) insert(n, clone_in(c, cid), 0, OP_CLONE);
+  for (const hnode *c = s->first; c; c = c->next) insert(n, clone_in(c, cid), 0, "clone");
   return n;
 }
 
@@ -208,7 +202,7 @@ static hnode *clone(const hnode *s) {
   return n;
 }
 
-static void place(hnode *n, uint32_t op) {
+static void place(hnode *n, const char *op) {
   if (sp) insert(stack[sp - 1], n, 0, op);
   else if (base != DETACHED) insert(id(base, op), n, ref ? id(ref, op) : 0, op);
 }
@@ -223,7 +217,7 @@ static void name(uint32_t i, hnode *n) {
   ids[i] = n;
 }
 
-static void host_op(const uint32_t *a, uint32_t *q, uint32_t nargs);
+static void host_op(uint32_t i, uint32_t kind, uint32_t nm, const uint32_t *a, uint32_t nargs);
 static void host_reset(void);
 
 void cd_html_reset(void) {
@@ -239,119 +233,150 @@ void cd_html_reset(void) {
   base = DETACHED;
   ref = 0;
   applied = 0;
+  memset(slots, 0, sizeof slots);
+  memset(tslot, 0, sizeof tslot);
   host_reset();
   name(0, new_elem((hstr){"div", 3}));
 }
 
 uint64_t cd_html_ops(void) { return applied; }
 
-void js_apply(uint32_t nops, uint32_t nargs, uint32_t nstrs, uint32_t nbytes) {
-  uintptr_t *L = cd_layout();
-  const uint8_t *ops = (const uint8_t *)L[0], *sb = (const uint8_t *)L[2];
-  const uint32_t *a = (const uint32_t *)L[1], *sm = (const uint32_t *)L[3];
+/* ---- the imports: cdom.c calls each one as it emits the op (see the IMPORTS list there) ---- */
+
+/* every DOM call is counted, as the shim would make it; strings and input are transport */
+static void op(void) {
   if (!arena) cd_html_reset();
-  applied += nops;
-  /* strings: persistent ones are copied, transients point into this batch */
+  applied++;
+}
+
+void j_strings(uint32_t nstrs, uint32_t nbytes) { /* persistent ones are copied, transients point into this batch */
+  uintptr_t *L = cd_layout();
+  const uint8_t *sb = (const uint8_t *)L[0];
+  const uint32_t *sm = (const uint32_t *)L[1];
+  if (!arena) cd_html_reset();
   for (uint32_t i = 0, off = 0; i < nstrs; i++) {
     uint32_t dest = sm[i * 3], len = sm[i * 3 + 1];
     const char *p = (const char *)sb + off;
     off += len;
-    if (off > nbytes) fail("string bytes overrun", 0);
+    if (off > nbytes) fail("string bytes overrun", "strings");
     if (dest >= TRANSIENT) {
       tmp = grow_array(tmp, &tmp_cap, dest - TRANSIENT, sizeof(hstr));
       tmp[dest - TRANSIENT] = (hstr){p, len};
     } else {
       strs = grow_array(strs, &strs_cap, dest, sizeof(hstr));
       char *c = malloc(len ? len : 1);
-      if (!c) fail("out of memory", 0);
+      if (!c) fail("out of memory", "strings");
       memcpy(c, p, len);
       free((void *)strs[dest].p);
       strs[dest] = (hstr){c, len};
     }
   }
-  uint32_t q = 0, n;
-  char num[10];
-  hnode *el;
-  for (uint32_t p = 0; p < nops; p++) {
-    uint32_t op = ops[p];
-    switch (op) {
-    case OP_AT: base = a[q++]; ref = a[q++]; break;
-    case OP_OPEN:
-      el = new_elem(S(a[q++]));
-      if (sp) insert(stack[sp - 1], el, 0, op);
-      push(el);
-      last = el;
-      break;
-    case OP_CLOSE:
-      if (!sp) fail("close without open", op);
-      el = stack[--sp];
-      if (!sp) { root = el; place(el, op); }
-      break;
-    case OP_TEXT: { hstr s = S(a[q++]); last = new_text(s.p, s.len); place(last, op); break; }
-    case OP_TEXT_NUM: last = new_text(num, utoa(num, a[q++])); place(last, op); break;
-    case OP_ATTR: { hstr nm = S(a[q++]); set_attr(last, nm.p, nm.len, S(a[q++]), op); break; }
-    case OP_CLASS: set_attr(last, "class", 5, S(a[q++]), op); break;
-    case OP_NAME: name(a[q++], last); break;
-    case OP_LISTEN: name(a[q++], last); q++; break;
-    case OP_VALUE: { hstr s = S(a[q++]); set_value(last, s.p, s.len, op); break; }
-    case OP_VALUE_NUM: set_value(last, num, utoa(num, a[q++]), op); break;
-    case OP_TPL_SAVE:
-      if (!root) fail("template save with no closed root", op);
-      tpl = grow_array(tpl, &tpl_cap, a[q], sizeof(hnode *));
-      tpl[a[q++]] = root;
-      unlink_node(root);
-      break;
-    case OP_CLONE: /* at depth 0 its CLOSE places it; inside an open element it is appended, like OPEN */
-      n = a[q++];
-      if (n >= tpl_cap || !tpl[n]) fail("clone of a missing template", op);
-      el = clone(tpl[n]);
-      if (sp) insert(stack[sp - 1], el, 0, op);
-      push(el);
-      last = el;
-      break;
-    case OP_DOWN: if (!last) fail("down from nothing", op); last = last->first; break;
-    case OP_NEXT: if (!last) fail("next from nothing", op); last = last->next; break;
-    case OP_UP: if (!last) fail("up from nothing", op); last = last->parent; break;
-    case OP_SET_TEXT: { el = id(a[q++], op); hstr s = S(a[q++]); set_value(el, s.p, s.len, op); break; }
-    case OP_SET_TEXT_NUM: el = id(a[q++], op); set_value(el, num, utoa(num, a[q++]), op); break;
-    case OP_SET_ATTR: { el = id(a[q++], op); hstr nm = S(a[q++]); set_attr(el, nm.p, nm.len, S(a[q++]), op); break; }
-    case OP_SET_CLASS: el = id(a[q++], op); set_attr(el, "class", 5, S(a[q++]), op); break;
-    case OP_REMOVE: n = a[q++]; unlink_node(id(n, op)); ids[n] = 0; break;
-    case OP_FREE: n = a[q++]; if (n < ids_cap) ids[n] = 0; break;
-    case OP_MOVE:
-      el = id(a[q++], op);
-      n = a[q++];
-      if (!el->parent) fail("move of a node with no parent", op);
-      insert(el->parent, el, n ? id(n, op) : 0, op);
-      break;
-    case OP_CLEAR: /* textContent = "" */
-      el = id(a[q++], op);
-      if (!el->tag) { el->len = 0; break; }
-      while (el->first) unlink_node(el->first);
-      break;
-    case OP_DETACH:
-      el = id(a[q++], op);
-      el->dparent = el->parent;
-      el->dnext = el->next;
-      unlink_node(el);
-      break;
-    case OP_ATTACH:
-      el = id(a[q++], op);
-      insert(el->dparent, el, el->dnext, op);
-      el->dparent = el->dnext = 0;
-      break;
-    case OP_SEL: last = id(a[q++], op); break;
-    case OP_HOST: host_op(a, &q, nargs); break;
-    case OP_LISTEN_NAMED: name(a[q++], last); S(a[q++]); break;
-    default: fail("bad op", op);
-    }
-  }
-  if (q != nargs) fail("argument count mismatch", 0);
-  if (tmp_cap) memset(tmp, 0, tmp_cap * sizeof(hstr));
 }
 
-uint32_t js_value(cd_id i, char *dst, uint32_t cap) { /* the value attribute, as an unedited input's .value */
-  hnode *n = id(i, 0);
+static char num[10];
+void j_at(cd_id p, cd_id b) { op(); base = p; ref = b; }
+void j_open(uint32_t t) {
+  op();
+  hnode *el = new_elem(S(t));
+  if (sp) insert(stack[sp - 1], el, 0, "open");
+  push(el);
+  last = el;
+}
+void j_close(void) {
+  op();
+  if (!sp) fail("close without open", "close");
+  hnode *el = stack[--sp];
+  if (!sp) { root = el; place(el, "close"); }
+}
+void j_text(uint32_t s) { op(); hstr v = S(s); last = new_text(v.p, v.len); place(last, "text"); }
+void j_text_num(uint32_t n) { op(); last = new_text(num, utoa(num, n)); place(last, "text_num"); }
+void j_attr(uint32_t a, uint32_t v) { op(); hstr nm = S(a); set_attr(last, nm.p, nm.len, S(v), "attr"); }
+void j_class(uint32_t v) { op(); set_attr(last, "class", 5, S(v), "class"); }
+void j_name(cd_id i) { op(); name(i, last); }
+void j_listen(cd_id i, uint32_t ev) { op(); (void)ev; name(i, last); }
+void j_listen_named(cd_id i, uint32_t ev) { op(); name(i, last); S(ev); }
+void j_value(uint32_t s) { op(); hstr v = S(s); set_value(last, v.p, v.len, "value"); }
+void j_value_num(uint32_t n) { op(); set_value(last, num, utoa(num, n), "value_num"); }
+void j_tpl_save(uint32_t t) {
+  op();
+  if (!root) fail("template save with no closed root", "tpl_save");
+  if (t >= CD_TPLS) fail("template number out of range", "tpl_save");
+  tpl = grow_array(tpl, &tpl_cap, t, sizeof(hnode *));
+  tpl[t] = root;
+  memcpy(tslot[t], slots, sizeof slots);
+  memset(slots, 0, sizeof slots);
+  unlink_node(root);
+}
+void j_clone(uint32_t t) { /* at depth 0 its close places it; inside an open element it is appended, like open */
+  op();
+  if (t >= tpl_cap || !tpl[t]) fail("clone of a missing template", "clone");
+  hnode *el = clone(tpl[t]);
+  if (sp) insert(stack[sp - 1], el, 0, "clone");
+  push(el);
+  last = el;
+}
+void j_slot(uint32_t k) { op(); if (k >= CD_SLOTS || !last) fail("slot with no node", "slot"); slots[k] = last; }
+static hnode *slot_node(uint32_t t, uint32_t k, const char *call) {
+  if (t >= CD_TPLS || k >= CD_SLOTS || !tslot[t][k]) fail("no such template slot", call);
+  return tslot[t][k];
+}
+void j_tpl_text(uint32_t t, uint32_t k, uint32_t s) { op(); hstr v = S(s); set_value(slot_node(t, k, "tpl_text"), v.p, v.len, "tpl_text"); }
+void j_tpl_text_num(uint32_t t, uint32_t k, uint32_t n) { op(); set_value(slot_node(t, k, "tpl_text_num"), num, utoa(num, n), "tpl_text_num"); }
+/* n steps of 2 bits (1 firstChild, 2 nextSibling, 3 parentNode) from the node named from, or
+ * from the last node when from is 0xffffffff */
+static void walk(cd_id from, uint32_t steps, uint32_t n, const char *call) {
+  hnode *el = from == 0xffffffffu ? last : id(from, call);
+  for (; n; n--, steps >>= 2) {
+    if (!el) fail("walk from nothing", call);
+    uint32_t k = steps & 3;
+    el = k == 1 ? el->first : k == 2 ? el->next : el->parent;
+  }
+  last = el;
+}
+void j_walk(cd_id from, uint32_t steps, uint32_t n) { op(); walk(from, steps, n, "walk"); }
+void j_walk_value(cd_id from, uint32_t steps, uint32_t n, uint32_t s) {
+  op(); walk(from, steps, n, "walk_value");
+  hstr v = S(s); set_value(last, v.p, v.len, "walk_value");
+}
+void j_walk_value_num(cd_id from, uint32_t steps, uint32_t n, uint32_t v) {
+  op(); walk(from, steps, n, "walk_value_num");
+  set_value(last, num, utoa(num, v), "walk_value_num");
+}
+void j_set_text(cd_id i, uint32_t s) { op(); hstr v = S(s); set_value(id(i, "set_text"), v.p, v.len, "set_text"); }
+void j_set_text_num(cd_id i, uint32_t n) { op(); set_value(id(i, "set_text_num"), num, utoa(num, n), "set_text_num"); }
+void j_set_attr(cd_id i, uint32_t a, uint32_t v) { op(); hnode *el = id(i, "set_attr"); hstr nm = S(a); set_attr(el, nm.p, nm.len, S(v), "set_attr"); }
+void j_set_class(cd_id i, uint32_t v) { op(); set_attr(id(i, "set_class"), "class", 5, S(v), "set_class"); }
+void j_remove(cd_id i) { op(); unlink_node(id(i, "remove")); ids[i] = 0; }
+void j_free(cd_id i) { op(); if (i < ids_cap) ids[i] = 0; }
+void j_move(cd_id i, cd_id b) {
+  op();
+  hnode *el = id(i, "move");
+  if (!el->parent) fail("move of a node with no parent", "move");
+  insert(el->parent, el, b ? id(b, "move") : 0, "move");
+}
+void j_clear(cd_id i) { /* textContent = "" */
+  op();
+  hnode *el = id(i, "clear");
+  if (!el->tag) { el->len = 0; return; }
+  while (el->first) unlink_node(el->first);
+}
+void j_detach(cd_id i) {
+  op();
+  hnode *el = id(i, "detach");
+  el->dparent = el->parent;
+  el->dnext = el->next;
+  unlink_node(el);
+}
+void j_attach(cd_id i) {
+  op();
+  hnode *el = id(i, "attach");
+  insert(el->dparent, el, el->dnext, "attach");
+  el->dparent = el->dnext = 0;
+}
+void j_host(cd_id i, uint32_t kind, uint32_t nm, const uint32_t *v, uint32_t nwords) { op(); host_op(i, kind, nm, v, nwords); }
+
+uint32_t js_input(cd_id i, char *dst, uint32_t cap) { /* the value attribute, as an unedited input's .value */
+  hnode *n = id(i, "input");
   for (uint32_t k = 0; k < n->nattr; k++)
     if (name_eq(n->attrs[k].n, n->attrs[k].nlen, "value", 5)) {
       uint32_t m = n->attrs[k].vlen < cap ? n->attrs[k].vlen : cap;
@@ -412,7 +437,7 @@ static void write_node(wbuf *w, const hnode *n) {
     const hnode *p = n->parent;
     if (p && p->tag && (is(p, "script") || is(p, "style"))) {
       for (uint32_t i = 0; i + 1 < n->len; i++)
-        if (n->text[i] == '<' && n->text[i + 1] == '/') fail("\"</\" inside script or style text", 0);
+        if (n->text[i] == '<' && n->text[i + 1] == '/') fail("\"</\" inside script or style text", "write");
       put(w, n->text, n->len);
     } else {
       put_esc(w, n->text, n->len);
@@ -430,7 +455,7 @@ static void write_node(wbuf *w, const hnode *n) {
   }
   put(w, ">", 1);
   if (is_void(n)) {
-    if (n->first) fail("children under a void element", 0);
+    if (n->first) fail("children under a void element", "write");
     return;
   }
   if ((is(n, "pre") || is(n, "textarea") || is(n, "listing")) && n->first && !n->first->tag &&
@@ -533,9 +558,8 @@ static double word_f64(const uint32_t *a) {
   return v;
 }
 
-static uint32_t need(const uint32_t *a, uint32_t *q, uint32_t nargs) { /* the next word, bounds-checked */
-  (void)a;
-  if (*q >= nargs) fail("value runs past the op's arguments", OP_HOST);
+static uint32_t need(uint32_t *q, uint32_t nargs) { /* the next word, bounds-checked */
+  if (*q >= nargs) fail("value runs past its words", "host");
   return (*q)++;
 }
 
@@ -543,18 +567,18 @@ static uint32_t need(const uint32_t *a, uint32_t *q, uint32_t nargs) { /* the ne
  * String(number) would, "string" (with \ and " escaped), f64[...], [...], {key:value,...};
  * with js set, a string prints bare and a container prints nothing (String() of a scalar). */
 static void cdv(const uint32_t *a, uint32_t *q, uint32_t nargs, wbuf *w, int js, int depth) {
-  if (depth > 64) fail("value nests deeper than 64", OP_HOST);
-  uint32_t t = a[need(a, q, nargs)], n;
+  if (depth > 64) fail("value nests deeper than 64", "host");
+  uint32_t t = a[need(q, nargs)], n;
   char num[16];
   switch (t) {
   case V_NULL: if (w) put(w, "null", 4); break;
   case V_FALSE: if (w) put(w, "false", 5); break;
   case V_TRUE: if (w) put(w, "true", 4); break;
-  case V_U32: n = a[need(a, q, nargs)]; if (w) put(w, num, (uint32_t)snprintf(num, sizeof num, "%u", n)); break;
-  case V_I32: n = a[need(a, q, nargs)]; if (w) put(w, num, (uint32_t)snprintf(num, sizeof num, "%d", (int32_t)n)); break;
-  case V_F64: need(a, q, nargs); need(a, q, nargs); if (w) put_f64(w, word_f64(a + *q - 2)); break;
+  case V_U32: n = a[need(q, nargs)]; if (w) put(w, num, (uint32_t)snprintf(num, sizeof num, "%u", n)); break;
+  case V_I32: n = a[need(q, nargs)]; if (w) put(w, num, (uint32_t)snprintf(num, sizeof num, "%d", (int32_t)n)); break;
+  case V_F64: need(q, nargs); need(q, nargs); if (w) put_f64(w, word_f64(a + *q - 2)); break;
   case V_STR: {
-    hstr s = S(a[need(a, q, nargs)]);
+    hstr s = S(a[need(q, nargs)]);
     if (!w) break;
     if (js) { put(w, s.p, s.len); break; }
     put(w, "\"", 1);
@@ -566,8 +590,8 @@ static void cdv(const uint32_t *a, uint32_t *q, uint32_t nargs, wbuf *w, int js,
     break;
   }
   case V_F64S:
-    n = a[need(a, q, nargs)];
-    if (n > (nargs - *q) / 2) fail("value runs past the op's arguments", OP_HOST);
+    n = a[need(q, nargs)];
+    if (n > (nargs - *q) / 2) fail("value runs past its words", "host");
     if (w && !js) put(w, "f64[", 4);
     for (uint32_t i = 0; i < n; i++) {
       if (w && !js) { if (i) put(w, ",", 1); put_f64(w, word_f64(a + *q)); }
@@ -576,19 +600,19 @@ static void cdv(const uint32_t *a, uint32_t *q, uint32_t nargs, wbuf *w, int js,
     if (w && !js) put(w, "]", 1);
     break;
   case V_ARRAY: case V_OBJECT:
-    n = a[need(a, q, nargs)];
+    n = a[need(q, nargs)];
     if (w && !js) put(w, t == V_ARRAY ? "[" : "{", 1);
     for (uint32_t i = 0; i < n; i++) {
       if (w && !js && i) put(w, ",", 1);
       if (t == V_OBJECT) {
-        hstr k = S(a[need(a, q, nargs)]);
+        hstr k = S(a[need(q, nargs)]);
         if (w && !js) { put(w, k.p, k.len); put(w, ":", 1); }
       }
       cdv(a, q, nargs, js ? 0 : w, js, depth + 1);
     }
     if (w && !js) put(w, t == V_ARRAY ? "]" : "}", 1);
     break;
-  default: fail("bad value tag", OP_HOST);
+  default: fail("bad value tag", "host");
   }
 }
 
@@ -626,7 +650,7 @@ static void select_options(hnode *p, hstr v) {
     for (uint32_t k = 0; k < o->nattr; k++)
       if (name_eq(o->attrs[k].n, o->attrs[k].nlen, "value", 5)) { ov = (hstr){o->attrs[k].v, o->attrs[k].vlen}; has = 1; }
     if (!has && o->first && !o->first->tag) ov = (hstr){o->first->text, o->first->len};
-    if (ov.len == v.len && !memcmp(ov.p, v.p, v.len)) set_attr(o, "selected", 8, (hstr){"", 0}, OP_HOST);
+    if (ov.len == v.len && !memcmp(ov.p, v.p, v.len)) set_attr(o, "selected", 8, (hstr){"", 0}, "host");
     else remove_attr(o, "selected", 8);
   }
 }
@@ -637,7 +661,7 @@ static void prop(hnode *n, hstr name, const uint32_t *a, uint32_t at, uint32_t e
   static const char *const BOOLS[] = {"checked", "selected", "disabled"};
   for (uint32_t i = 0; i < 3; i++)
     if (name_eq(name.p, name.len, BOOLS[i], (uint32_t)strlen(BOOLS[i]))) {
-      if (truthy(a, at)) set_attr(n, BOOLS[i], (uint32_t)strlen(BOOLS[i]), (hstr){"", 0}, OP_HOST);
+      if (truthy(a, at)) set_attr(n, BOOLS[i], (uint32_t)strlen(BOOLS[i]), (hstr){"", 0}, "host");
       else remove_attr(n, BOOLS[i], (uint32_t)strlen(BOOLS[i]));
       return;
     }
@@ -646,44 +670,42 @@ static void prop(hnode *n, hstr name, const uint32_t *a, uint32_t at, uint32_t e
   wbuf tw = {tb, sizeof tb, 0};
   uint32_t q = at;
   cdv(a, &q, end, &tw, 1, 0);
-  if (tw.n > sizeof tb) fail("value property longer than 512 bytes", OP_HOST);
+  if (tw.n > sizeof tb) fail("value property longer than 512 bytes", "host");
   hstr v = {ar_copy(tb, tw.n), tw.n};
   if (is(n, "textarea")) {
     while (n->first) unlink_node(n->first);
-    if (v.len) insert(n, new_text(v.p, v.len), 0, OP_HOST);
+    if (v.len) insert(n, new_text(v.p, v.len), 0, "host");
   } else if (is(n, "select")) {
     select_options(n, v);
   } else {
-    set_attr(n, "value", 5, v, OP_HOST);
+    set_attr(n, "value", 5, v, "host");
   }
 }
 
-static void host_op(const uint32_t *a, uint32_t *q, uint32_t nargs) {
-  if (*q + 3 > nargs) fail("host op without its arguments", OP_HOST);
-  hnode *n = id(a[*q], OP_HOST);
-  uint32_t node_id = a[*q], kind = a[*q + 1];
-  hstr name = S(a[*q + 2]);
-  *q += 3;
-  if (kind > 4) fail("bad host kind", OP_HOST);
+static void host_op(uint32_t node_id, uint32_t kind, uint32_t nm, const uint32_t *a, uint32_t nargs) {
+  hnode *n = id(node_id, "host");
+  hstr name = S(nm);
+  if (kind > 4) fail("bad host kind", "host");
   host_count[kind]++;
-  uint32_t at = *q;
   if (!host_last.cap) {
     host_last.cap = 1 << 16;
     host_last.d = malloc(host_last.cap);
-    if (!host_last.d) fail("out of memory", OP_HOST);
+    if (!host_last.d) fail("out of memory", "host");
   }
+  uint32_t q;
   for (;;) { /* print, and print again into a larger buffer when it did not fit */
     host_last.n = 0;
-    *q = at;
+    q = 0;
     char head[32];
     put(&host_last, head, (uint32_t)snprintf(head, sizeof head, "%u %u ", kind, node_id));
     put(&host_last, name.p, name.len);
     put(&host_last, " ", 1);
-    cdv(a, q, nargs, &host_last, 0, 0);
+    cdv(a, &q, nargs, &host_last, 0, 0);
     if (host_last.n <= host_last.cap) break;
     host_last.cap = host_last.n;
     host_last.d = realloc(host_last.d, host_last.cap);
-    if (!host_last.d) fail("out of memory", OP_HOST);
+    if (!host_last.d) fail("out of memory", "host");
   }
-  if (kind == 3) prop(n, name, a, at, nargs);
+  if (q != nargs) fail("value is not exactly the words passed", "host");
+  if (kind == 3) prop(n, name, a, 0, nargs);
 }

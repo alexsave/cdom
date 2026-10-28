@@ -1,6 +1,7 @@
 /* cdom_html: the native sink. A C implementation of shim/cdom.js for the native
- * build of cdom.c: it defines the two imports (js_apply, js_value), interprets
- * the same op stream into an in-memory node tree, and writes that tree as HTML.
+ * build of cdom.c: it defines every import cdom.c calls (j_strings, j_open, ...
+ * j_host, js_input; natively they are plain functions), builds an in-memory node tree
+ * from those calls, and writes that tree as HTML.
  * It is the server renderer and the C conformance implementation of the ops.
  *
  * Usage (one render):
@@ -9,8 +10,8 @@
  *   n = cd_html_write(buf, cap); the mount's children as HTML
  *
  * Semantics follow the DOM calls the shim makes, including where the shim would
- * throw (a missing node, a child under a text node, ATTACH into a parent that
- * lost the remembered sibling): the sink then prints the op and aborts.
+ * throw (a missing node, a child under a text node, attach into a parent that
+ * lost the remembered sibling): the sink then prints the call and aborts.
  * Node memory lives until the next cd_html_reset (the DOM keeps a node alive
  * while anything names it; an arena per render is the exact and simple match).
  *
@@ -27,7 +28,7 @@
  *    hydration must create. Because a separator is written before every text
  *    node that follows a text node (empty or not), the hydrator knows exactly
  *    which comment to drop and where an empty node goes;
- *  - inside a cloned node (CLONE), a child that is not part of the template and sits before
+ *  - inside a cloned node (clone), a child that is not part of the template and sits before
  *    one that is (an {#if} branch inserted before its anchor) is written after <!--i-->,
  *    and an empty text node right before such a child writes <!---->, so hydration can
  *    match the template against the server's subtree; children after the template's last
@@ -35,7 +36,7 @@
  *  - script and style hold raw text (no escaping; "</" inside aborts the write);
  *    a pre, textarea or listing whose first text starts with a newline gets one
  *    extra newline, since the parser drops the first;
- *  - the output is a pure function of the op stream: no addresses, no clocks.
+ *  - the output is a pure function of the calls: no addresses, no clocks.
  *  Content the HTML parser rearranges (text directly in a table, a p inside a p)
  *  is not detected here; hydration's verify mode catches it in the browser. */
 #ifndef CDOM_HTML_H
@@ -55,18 +56,19 @@ uint32_t cd_html_write(char *dst, uint32_t cap);
  * when no node has that id. Same return rule as cd_html_write. */
 uint32_t cd_html_node(uint32_t id, char *dst, uint32_t cap);
 
-/* The number of ops applied since the last cd_html_reset: what a change costs on the
- * wire, counted where the shim would count it. */
+/* The number of DOM calls (every import but strings and input) since the last cd_html_reset:
+ * what a change costs across the wasm boundary, counted where the shim would count it. A walk
+ * of any length is one call. */
 uint64_t cd_html_ops(void);
 
-/* HOST ops (cdom.h) applied since the last cd_html_reset, by kind (CD_HOST_MOUNT..UNMOUNT).
- * On the server a widget does not run: HOST ops are counted and their values decoded (so
- * every later op stays aligned), and only PROP leaves a trace: value, checked, selected and
+/* host calls (cdom.h) since the last cd_html_reset, by kind (CD_HOST_MOUNT..UNMOUNT).
+ * On the server a widget does not run: host calls are counted and their values decoded and
+ * checked, and only PROP leaves a trace: value, checked, selected and
  * disabled become the attribute (the text of a textarea, the selected option of a select)
  * a no-JS page shows. Every other PROP, MOUNT, CALL, SET and UNMOUNT writes nothing. */
 uint64_t cd_html_host_ops(uint32_t kind);
 
-/* The last HOST op as text, "<kind> <id> <name> <value>", the value printed by the sink's
+/* The last host call as text, "<kind> <id> <name> <value>", the value printed by the sink's
  * cdv decoder: null, true, false, numbers as JavaScript's String(number), "string" with
  * \ and " escaped, f64[a,b] for F64S, [a,b], {key:value}. Same return rule as cd_html_write. */
 uint32_t cd_html_host_last(char *dst, uint32_t cap);
