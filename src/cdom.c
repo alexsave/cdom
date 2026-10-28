@@ -321,11 +321,13 @@ void cd_clear(cd_id id) { ready(); j_clear(id); }
 void cd_detach(cd_id id) { ready(); j_detach(id); }
 void cd_attach(cd_id id) { ready(); j_attach(id); }
 
-/* ---- host: a widget op with a cdv value (format in cdom.h). The value is built in hv
- * with raw string ids; cd_host_end checks it, turns its string ids into sent ones in place,
- * sends the strings and passes the value's address and length to the host import. ---- */
+/* ---- host: a widget op with a cdv value (format in cdom.h). The value is built in hv with
+ * raw string ids; the builders check its shape as it grows (a stack of the values still owed
+ * per level), and cd_host_end turns its string ids into sent ones in place, sends the strings
+ * and passes the value's address and length to the host import. ---- */
 #define HV_CAP (1u << 15)
 static uint32_t hv[HV_CAP], nhv, hv_open, hv_bytes, hv_strs;
+static uint32_t owed[CD_V_DEPTH + 1], in_obj[CD_V_DEPTH + 1], depth, keyed;
 static inline uint32_t slen(cd_str s) { return strs[s].len; }
 
 void cd_host(cd_id id, uint32_t kind, cd_str name) {
@@ -337,10 +339,13 @@ void cd_host(cd_id id, uint32_t kind, cd_str name) {
   nhv = 3;
   hv_bytes = slen(name);
   hv_strs = 1;
+  owed[0] = 1;
+  in_obj[0] = 0;
+  depth = keyed = 0;
 }
 
 static void hv_put(uint32_t w) {
-  if (!hv_open || nhv >= HV_CAP) __builtin_trap();
+  if (nhv >= HV_CAP) __builtin_trap(); /* larger than one host op may be */
   hv[nhv++] = w;
 }
 static void hv_str(cd_str s) {
@@ -348,72 +353,78 @@ static void hv_str(cd_str s) {
   hv_bytes += slen(s);
   hv_strs++;
 }
+/* a value starts: one must be owed here, and inside an object its key must come first */
+static void v_begin(uint32_t tag) {
+  if (!hv_open || !owed[depth] || in_obj[depth] != keyed) __builtin_trap();
+  owed[depth]--;
+  keyed = 0;
+  hv_put(tag);
+}
+/* a value is complete: close every level that owes nothing more */
+static void v_done(void) {
+  while (depth && !owed[depth]) depth--;
+}
+static void v_open(uint32_t tag, uint32_t n) {
+  v_begin(tag);
+  hv_put(n);
+  if (depth == CD_V_DEPTH) __builtin_trap();
+  depth++;
+  owed[depth] = n;
+  in_obj[depth] = tag == CD_V_OBJECT;
+  v_done();
+}
 
-void cd_v_null(void) { hv_put(CD_V_NULL); }
-void cd_v_bool(int b) { hv_put(b ? CD_V_TRUE : CD_V_FALSE); }
-void cd_v_u32(uint32_t v) { hv_put(CD_V_U32); hv_put(v); }
-void cd_v_i32(int32_t v) { hv_put(CD_V_I32); hv_put((uint32_t)v); }
+void cd_v_null(void) { v_begin(CD_V_NULL); v_done(); }
+void cd_v_bool(int b) { v_begin(b ? CD_V_TRUE : CD_V_FALSE); v_done(); }
+void cd_v_u32(uint32_t v) { v_begin(CD_V_U32); hv_put(v); v_done(); }
+void cd_v_i32(int32_t v) { v_begin(CD_V_I32); hv_put((uint32_t)v); v_done(); }
 static void hv_f64(double v) {
   uint64_t b;
   __builtin_memcpy(&b, &v, 8);
   hv_put((uint32_t)b);
   hv_put((uint32_t)(b >> 32));
 }
-void cd_v_f64(double v) { hv_put(CD_V_F64); hv_f64(v); }
-void cd_v_str(cd_str s) { hv_put(CD_V_STR); hv_str(s); }
+void cd_v_f64(double v) { v_begin(CD_V_F64); hv_f64(v); v_done(); }
+void cd_v_str(cd_str s) { v_begin(CD_V_STR); hv_str(s); v_done(); }
 void cd_v_f64s(const double *p, uint32_t n) {
-  hv_put(CD_V_F64S);
+  v_begin(CD_V_F64S);
   hv_put(n);
   for (uint32_t i = 0; i < n; i++) hv_f64(p[i]);
+  v_done();
 }
-void cd_v_arr(uint32_t n) { hv_put(CD_V_ARRAY); hv_put(n); }
-void cd_v_obj(uint32_t n) { hv_put(CD_V_OBJECT); hv_put(n); }
-void cd_v_key(cd_str k) { hv_str(k); }
+void cd_v_arr(uint32_t n) { v_open(CD_V_ARRAY, n); }
+void cd_v_obj(uint32_t n) { v_open(CD_V_OBJECT, n); }
+void cd_v_key(cd_str k) {
+  if (!hv_open || !in_obj[depth] || keyed || !owed[depth]) __builtin_trap();
+  keyed = 1;
+  hv_str(k);
+}
 
 void cd_host_end(void) {
-  if (!hv_open) __builtin_trap();
+  if (!hv_open || depth || owed[0]) __builtin_trap(); /* not exactly one complete value */
   hv_open = 0;
   if (hv_bytes > SB_CAP || hv_strs > SM_CAP) __builtin_trap(); /* cannot fit one batch */
   /* the value's strings are sent in one batch, so a per-op (transient) id never outlives it */
   if (nsb + hv_bytes > SB_CAP || nstrs + hv_strs > SM_CAP) send_strings();
   hv[2] = ref_name(hv[2]);
-  /* walk the tree: exactly one value, nesting under CD_V_DEPTH; strings become sent ids.
-   * left[d] counts the values still owed at depth d, key[d] whether that level is an object. */
+  /* walk the (well-formed) tree, sending each string: keys as names, STR values as text */
   uint32_t left[CD_V_DEPTH + 1], key[CD_V_DEPTH + 1], d = 0, i = 3;
   left[0] = 1;
   key[0] = 0;
-  for (;;) {
-    while (d && !left[d]) d--;
-    if (!left[d]) break;
+  while (i < nhv) {
+    while (!left[d]) d--;
     left[d]--;
-    if (key[d]) {
-      if (i >= nhv) __builtin_trap();
-      hv[i] = ref_name(hv[i]); i++;
-    }
-    if (i >= nhv) __builtin_trap();
-    uint32_t t = hv[i++], n;
-    switch (t) {
-    case CD_V_NULL: case CD_V_FALSE: case CD_V_TRUE: break;
-    case CD_V_U32: case CD_V_I32: if (i + 1 > nhv) __builtin_trap(); i++; break;
-    case CD_V_F64: if (i + 2 > nhv) __builtin_trap(); i += 2; break;
-    case CD_V_STR: if (i + 1 > nhv) __builtin_trap(); hv[i] = ref_text(hv[i]); i++; break;
-    case CD_V_F64S:
-      if (i + 1 > nhv) __builtin_trap();
-      n = hv[i++];
-      if (n > (nhv - i) / 2) __builtin_trap();
-      i += 2 * n;
-      break;
-    case CD_V_ARRAY: case CD_V_OBJECT:
-      if (i + 1 > nhv || d == CD_V_DEPTH) __builtin_trap();
-      n = hv[i++];
-      d++;
-      left[d] = n;
+    if (key[d]) { hv[i] = ref_name(hv[i]); i++; }
+    uint32_t t = hv[i++];
+    if (t == CD_V_U32 || t == CD_V_I32) i++;
+    else if (t == CD_V_F64) i += 2;
+    else if (t == CD_V_STR) { hv[i] = ref_text(hv[i]); i++; }
+    else if (t == CD_V_F64S) i += 1 + 2 * hv[i];
+    else if (t == CD_V_ARRAY || t == CD_V_OBJECT) {
+      left[++d] = hv[i++];
       key[d] = t == CD_V_OBJECT;
-      break;
-    default: __builtin_trap();
     }
   }
-  if (i != nhv) __builtin_trap(); /* more than one value */
   ready();
   j_host(hv[0], hv[1], hv[2], hv + 3, nhv - 3);
 }
