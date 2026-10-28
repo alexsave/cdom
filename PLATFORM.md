@@ -79,3 +79,23 @@ Commits 92e0a06..f0a4de9 (before the rebase; now on top of perf b30fb7e, where t
 - Generic cdom_html counter `cd_html_ops()`. perf's tools/pair.sh and ratio.mjs gained a dist link and BASE=.
 
 Open from M2, carried into M3: hydration refuses an `{#if}` inside an item template (anchor insert) and adjacent text inside a cloned template; CLONE only places at depth 0 (nested lists need it); no SVG namespace, no property sets, no REMOVE_ATTR, no form value read in generated dispatch, no event modifiers, one page template per file.
+
+### Resume (2026-10-28): rebased onto perf's final branch, direct calls
+
+perf finished at 0d0bdd7: the op stream is gone, every DOM op is its own wasm import, only strings are batched, walks cross as one call, template slots exist. The platform track now owns src/cdom.c, src/cdom.h and shim/cdom.js as well; keep their changes in small separate commits and the cdom.h API stable and documented (the foolish web UI port builds on it next).
+
+- Rebased (80 commits on top of perf). Core and shim commits were rewritten in place; the sink was ported in one commit on top (8a35c0d), so the native sink links only from 8a35c0d on. HOST is the `host(id, kind, name, ptr, nwords)` import (cdv encoding unchanged); LISTEN_NAMED folded into one `delegate` import; cdtc emits perf's template slots (DOM calls per row now match the hand-written app exactly).
+- Nested `{#each}` finished (the WIP's failing test never called page_render; a missing order check let a `_lists` mutant survive and is now covered).
+- Regression all green: listfuzz, cdv 13/13 mutants, state 8/8, cdtc 30/30 + browser 7/7, conform 19/19, httpd, ssr_identical both apps, hydrate n = 0/1/1000/10000 both apps, ssr_mutants 30/30. Gates for cdom-tpl: keyed, smoke, DOM identity (22 snapshots), listfuzz.
+- Paired runs (COUNT=15, LOADMAX=3, loads 1.98-2.98): cdom-hand 0.988 / 1.013 vs vanillajs, cdom-tpl 1.006 / 1.014; cdom-tpl vs cdom-hand 1.017 / 1.001. Follow-up: swap's script is 0.4-0.5 ms for cdom-tpl against 0.1 ms hand-written with equal DOM calls, so it is C-side patch work (class-toggle string building per surviving row is the suspect); the signals work should remove it.
+- SHIM_LINES.md justifies every line. Moved into C: event masks and names (`cd_wants`), template slots as named text nodes, one string table, base64 decode of the state blob. Deleted: a no-op remove, the instantiateStreaming fallback, an unsigned cast, two aliases. Shim 312 -> 277 lines, minified gz 3569 -> 3178 (perf's shim alone: 1772). The wasm grew 9513 -> 10682 bytes (4978 -> 5605 gz); shim plus wasm is +236 gz net. Hydration is 109 lines and 1195 gz bytes of the shim and walks all 100029 nodes at load for n=10000: resumability replaces it next.
+
+### Program after the resume (dispatcher + Alex, 2026-10-28)
+
+1. Resumability instead of the hydration walk (design: the virtual first render and the path table live in C; the shim gains resolve imports and a full-path event record).
+2. M3 finish: Chart.js escape-hatch demo, tests/host.mjs, regression.
+3. Signals in C (DECIDED): each state cell keeps the bindings that read it; a write marks exactly those; derived values are computed signals; the compiler wires template reads statically. Plus a React-like component model (props, children, composition, local state) compiled with no runtime VDOM. Prove on rows (no regression) and the email inbox.
+4. Compile-time guard rails: Svelte's a11y rules, unused/undeclared state, invalid nesting (Svelte's parser rearrangement and whitespace rules), unbindable bindings, handler signature mismatch, unkeyed each over mutable lists; Svelte 4 syntax compatibility for the supported subset; scoped CSS by compile-time class.
+5. Dev build (compiled out of release): duplicate keys, foreign-state writes, writes during render, hydration mismatch report with the path. Hydration markers around dynamic regions. Declarative transitions with svelte/easing curves in C.
+6. Forms that work without JS and enhance with it (the SvelteKit action pattern); the government form app is the proof. A per-app generated shim measured against the fixed one (Alex decides).
+7. The remaining reference apps: dashboard, email, events. Optional, pending Alex: Svelte's compiler fixtures as a conformance corpus.
