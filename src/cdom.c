@@ -129,6 +129,7 @@ static void htab_put(uint32_t h, uint32_t id) {
   htab[i] = id;
 }
 
+static uint32_t push_str(cd_str s, uint32_t dest);
 cd_str cd_intern(const char *s, uint32_t len) {
   uint32_t h = hash_bytes(s, len);
   if (hcap) {
@@ -161,6 +162,12 @@ cd_str cd_intern(const char *s, uint32_t len) {
   strs[id] = (str_ent){pool_len, len, u16, h};
   pool_len += len;
   htab_put(h, id);
+#if CDOM_INTERN_TEXT
+  /* Queued now, not at first use: strings are interned in bursts (a list's labels) and then
+   * used one call each, so they decode together in the call before the first use. */
+  sent[id] = 1;
+  push_str(id, id);
+#endif
   return id;
 }
 
