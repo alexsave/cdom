@@ -13,3 +13,6 @@ results/fp*.txt
 results/pairs_*.log
 micro/direct/*.wasm
 ssr/rows/out/
+out/
+bench/cdom-tpl/out/
+ssr/rows-tpl/out/
