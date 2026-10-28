@@ -16,10 +16,11 @@ var cdom = (() => {
     buf = mem.buffer;
     u8 = new Uint8Array(buf); u32 = new Uint32Array(buf); i32 = new Int32Array(buf);
   }
-  const S = (a) => strs[a];
-
-  // Strings arrive together: one TextDecoder call per batch, and a char loop for tiny batches.
-  function decode(n, nbytes) {
+  // Strings arrive together, right before the call that first needs one: n strings in nbytes,
+  // with (id, bytes, UTF-16 length) each. One TextDecoder call per batch, and a char loop for a
+  // tiny batch.
+  function strings(n, nbytes) {
+    if (buf !== mem.buffer) views();
     let m = SM >> 2, o = 0;
     if (nbytes > SMALL) {
       const all = td.decode(u8.subarray(SB, SB + nbytes));
@@ -140,7 +141,7 @@ var cdom = (() => {
   // element-child indices from that node down toward the target.
   function delegate(kind, h, capture) {
     const top = nodes[0];
-    top.addEventListener(S(h), (e) => {
+    top.addEventListener(strs[h], (e) => {
       let path = 0, depth = 0;
       for (let n = e.target; n && n !== top; n = n.parentNode) {
         const i = n.$i;
@@ -173,10 +174,10 @@ var cdom = (() => {
       case 3: return u32[vq++];
       case 4: return i32[vq++];
       case 5: w64[0] = u32[vq++]; w64[1] = u32[vq++]; return f64[0];
-      case 6: return S(u32[vq++]);
+      case 6: return strs[u32[vq++]];
       case 7: { const n = u32[vq++], a = new Float64Array(n); new Uint32Array(a.buffer).set(u32.subarray(vq, vq += 2 * n)); return a; }
       case 8: { const a = []; for (let n = u32[vq++]; n; n--) a.push(val()); return a; }
-      case 9: { const o = {}; for (let n = u32[vq++]; n; n--) { const k = S(u32[vq++]); o[k] = val(); } return o; }
+      case 9: { const o = {}; for (let n = u32[vq++]; n; n--) { const k = strs[u32[vq++]]; o[k] = val(); } return o; }
     }
     throw new Error("cdom: bad value tag " + t);
   }
@@ -186,7 +187,7 @@ var cdom = (() => {
   function host(id, kind, h, v) {
     if (buf !== mem.buffer) views();
     vq = v >>> 2; v = val();
-    const el = nodes[id], name = S(h);
+    const el = nodes[id], name = strs[h];
     if (kind === 3) { el[name] = v; return; }
     const p = name.split(".");
     let o = kind ? el.$h : window;
@@ -201,20 +202,16 @@ var cdom = (() => {
     if (kind === 4) delete el.$h;
   }
 
-  function strings(n, nbytes) {
-    if (buf !== mem.buffer) views();
-    decode(n, nbytes);
-  }
   function at(p, b) { base = p; ref = b; }
-  function open(t) { if (hy) return hOpen(S(t)); const el = doc.createElement(S(t)); if (sp) stack[sp - 1].appendChild(el); stack[sp++] = el; last = el; }
+  function open(t) { if (hy) return hOpen(strs[t]); const el = doc.createElement(strs[t]); if (sp) stack[sp - 1].appendChild(el); stack[sp++] = el; last = el; }
   function close() { if (hy) return hClose(); const el = stack[--sp]; if (!sp) { root = el; place(el); } }
-  function text(s) { if (hy) return hText(S(s)); last = doc.createTextNode(S(s)); place(last); }
+  function text(s) { if (hy) return hText(strs[s]); last = doc.createTextNode(strs[s]); place(last); }
   function text_num(n) { if (hy) return hText(n >>> 0); last = doc.createTextNode(n >>> 0); place(last); }
-  function attr(a, v) { if (hy) return hAttr(S(a), S(v)); last.setAttribute(S(a), S(v)); }
-  function cls(v) { if (hy) return hClass(S(v)); last.className = S(v); }
+  function attr(a, v) { if (hy) return hAttr(strs[a], strs[v]); last.setAttribute(strs[a], strs[v]); }
+  function cls(v) { if (hy) return hClass(strs[v]); last.className = strs[v]; }
   function name(n) { nodes[n] = last; if (hy && !last.isConnected) last.$s = 1; }
   function listen(n) { nodes[n] = last; last.$i = n; }
-  function value(s) { if (hy) return hValue(S(s)); last.nodeValue = S(s); }
+  function value(s) { if (hy) return hValue(strs[s]); last.nodeValue = strs[s]; }
   function value_num(n) { if (hy) return hValue(n >>> 0); last.nodeValue = n >>> 0; }
   function tpl_save(t) { tpl[t] = root; if (hy) tsize[t] = size(root); }
   function clone(t) {
@@ -229,12 +226,12 @@ var cdom = (() => {
     for (; n; n--, steps >>>= 2) el = (steps & 3) === 1 ? el.firstChild : (steps & 3) === 2 ? el.nextSibling : el.parentNode;
     last = el;
   }
-  function walk_value(from, steps, n, s) { walk(from, steps, n); if (hy) return hValue(S(s)); last.nodeValue = S(s); }
+  function walk_value(from, steps, n, s) { walk(from, steps, n); if (hy) return hValue(strs[s]); last.nodeValue = strs[s]; }
   function walk_value_num(from, steps, n, v) { walk(from, steps, n); if (hy) return hValue(v >>> 0); last.nodeValue = v >>> 0; }
-  function set_text(id, s) { nodes[id].nodeValue = S(s); }
+  function set_text(id, s) { nodes[id].nodeValue = strs[s]; }
   function set_text_num(id, n) { nodes[id].nodeValue = n >>> 0; }
-  function set_attr(id, a, v) { nodes[id].setAttribute(S(a), S(v)); }
-  function set_class(id, v) { nodes[id].className = S(v); }
+  function set_attr(id, a, v) { nodes[id].setAttribute(strs[a], strs[v]); }
+  function set_class(id, v) { nodes[id].className = strs[v]; }
   function remove(id) { nodes[id].remove(); nodes[id] = undefined; }
   function free(id) { nodes[id] = undefined; }
   function move(id, b) { const el = nodes[id]; el.parentNode.insertBefore(el, b ? nodes[b] : null); }
