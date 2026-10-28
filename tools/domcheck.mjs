@@ -1,5 +1,6 @@
 // DOM identity: drives every action in the same order on two entries with Math.random pinned,
-// and compares #main's outerHTML after each step. Exit 1 on the first difference.
+// and compares #main's outerHTML after each step. Exit 1 on the first difference. The <h1> holds
+// the entry's own name, so its text is left out of the comparison.
 // Usage: node tools/domcheck.mjs cdomb cdomp
 import { launch, sleep } from './cdp.mjs';
 const [a, c] = process.argv.slice(2);
@@ -13,10 +14,11 @@ async function snaps(name) {
     await b.send('Page.addScriptToEvaluateOnNewDocument', { source: 'Math.random = (() => { let s = 12345; return () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648; })();' });
     await b.send('Page.navigate', { url: `http://localhost:${process.env.PORT || 8093}/frameworks/keyed/${name}/index.html` });
     for (let i = 0; i < 100 && !(await b.evaluate('!!document.getElementById("run")')); i++) await sleep(50);
-    const out = [await b.evaluate('document.getElementById("main").outerHTML')];
+    const main = () => b.evaluate('document.getElementById("main").outerHTML.replace(/<h1>[^<]*<\\/h1>/, "<h1></h1>")');
+    const out = [await main()];
     for (const s of steps) {
       await b.evaluate(`document.querySelector(${JSON.stringify(s)}).click()`);
-      out.push(await b.evaluate('document.getElementById("main").outerHTML'));
+      out.push(await main());
     }
     return out;
   } finally { await b.close(); }
