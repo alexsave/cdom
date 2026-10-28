@@ -6,3 +6,4 @@ results/raw/
 tests/out/
 results/raw_*.log
 results/pairs/
+node_modules/
