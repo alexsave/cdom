@@ -49,7 +49,9 @@ var cdom = (() => {
   }
   // One listener per event type or name at the mount: C installs it on the first listen of it
   // (kind: CD_EV_*, CD_EV_CUSTOM for a name; capture for names, so events that do not bubble
-  // arrive too), or resume does, for the types the server's render listened to.
+  // arrive too), or resume does, for the types the server's render listened to. C calls
+  // delegate once per type (its own check saves a call per listen); hear's check is for the
+  // types resume put on the mount before C ran.
   function hear(t, capture) { if (!(t in on)) { on[t] = 0; nodes[0].addEventListener(t, (e) => handle(t, e), capture); } }
   function delegate(kind, h, capture) { hear(strs[h], capture); on[strs[h]] = [kind, h]; }
   // Walking up from the target, the shim writes each level's index among its siblings (as a walk
