@@ -60,6 +60,8 @@ struct hnode {
   uint32_t len;
   hattr *attrs;
   uint32_t nattr, cattr;
+  uint32_t cid; /* the clone this node came from (0: built by ops); its root has croot */
+  uint32_t croot;
 };
 
 typedef struct { const char *p; uint32_t len; } hstr;
@@ -181,7 +183,9 @@ static void set_value(hnode *n, const char *s, uint32_t len, uint32_t op) { /* n
   n->len = len;
 }
 
-static hnode *clone(const hnode *s) {
+static uint32_t clone_seq;
+
+static hnode *clone_in(const hnode *s, uint32_t cid) {
   hnode *n = ar(sizeof(hnode));
   memset(n, 0, sizeof *n);
   n->tag = s->tag;
@@ -193,7 +197,14 @@ static hnode *clone(const hnode *s) {
     memcpy(n->attrs, s->attrs, s->nattr * sizeof(hattr));
     n->nattr = n->cattr = s->nattr;
   }
-  for (const hnode *c = s->first; c; c = c->next) insert(n, clone(c), 0, OP_CLONE);
+  n->cid = cid;
+  for (const hnode *c = s->first; c; c = c->next) insert(n, clone_in(c, cid), 0, OP_CLONE);
+  return n;
+}
+
+static hnode *clone(const hnode *s) {
+  hnode *n = clone_in(s, ++clone_seq);
+  n->croot = 1;
   return n;
 }
 
@@ -431,10 +442,25 @@ static void write_node(wbuf *w, const hnode *n) {
   put(w, ">", 1);
 }
 
+/* c is part of p's template: both came from one clone and c is not that clone's root */
+static int member(const hnode *c, const hnode *p) { return p->cid && c->cid == p->cid && !c->croot; }
+
+/* Inside a cloned node, a child that is not part of the template but sits before one that is
+ * (an {#if} branch inserted before its anchor) is marked <!--i--> so hydration can tell it
+ * from the template; an empty text node right before a marked node writes <!----> since
+ * nothing would show where it goes. Children after the template's last one need no mark. */
 static void write_children(wbuf *w, const hnode *p) {
+  const hnode *lastm = 0;
+  if (p->cid)
+    for (const hnode *c = p->first; c; c = c->next)
+      if (member(c, p)) lastm = c;
+  int before = lastm != 0;
   for (const hnode *c = p->first; c; c = c->next) {
     if (!c->tag && c->prev && !c->prev->tag) put(w, "<!---->", 7);
+    if (before && !member(c, p)) put(w, "<!--i-->", 8);
+    if (before && c != lastm && !c->tag && !c->len && c->next && !member(c->next, p)) put(w, "<!---->", 7);
     write_node(w, c);
+    if (c == lastm) before = 0;
   }
 }
 

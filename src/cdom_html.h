@@ -27,6 +27,11 @@
  *    hydration must create. Because a separator is written before every text
  *    node that follows a text node (empty or not), the hydrator knows exactly
  *    which comment to drop and where an empty node goes;
+ *  - inside a cloned node (CLONE), a child that is not part of the template and sits before
+ *    one that is (an {#if} branch inserted before its anchor) is written after <!--i-->,
+ *    and an empty text node right before such a child writes <!---->, so hydration can
+ *    match the template against the server's subtree; children after the template's last
+ *    one (a list's rows) need no mark;
  *  - script and style hold raw text (no escaping; "</" inside aborts the write);
  *    a pre, textarea or listing whose first text starts with a newline gets one
  *    extra newline, since the parser drops the first;
