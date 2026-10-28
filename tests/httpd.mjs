@@ -1,12 +1,12 @@
 // Drives src/httpd.c over raw sockets: static files, 404, traversal, routes, POST
 // echo, keep-alive and pipelining, a body split across writes, size limits, HEAD.
-// Usage: node tests/httpd.mjs (builds tests/out/httpd_test first; port 8702).
+// Usage: node tests/httpd.mjs (builds tests/out/httpd_test first; port 8702, or PORT).
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 const here = path.dirname(new URL(import.meta.url).pathname);
-const out = path.join(here, 'out'), root = path.join(out, 'httpd_root'), PORT = 8702;
+const out = path.join(here, 'out'), root = path.join(out, 'httpd_root'), PORT = +(process.env.PORT || 8702);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 fs.mkdirSync(path.join(root, 'sub'), { recursive: true });
 execFileSync('nice', ['-n', '10', 'cc', '-O2', '-Wall', '-Wextra', '-Werror', '-o', path.join(out, 'httpd_test'),
