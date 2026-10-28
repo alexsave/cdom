@@ -1,0 +1,34 @@
+<!-- The escape-hatch demo: Chart.js on a C-owned canvas through the generic HOST op (cdom.h).
+     The template owns the page; app.c owns the actions and every call into the widget. The page
+     runs no JavaScript of its own: the shim, Chart.js, and one cdom.resume call written by C. -->
+<state name="Plot" global="S">
+  u32 next_x = 1;
+  u32 rng;
+  u32 color;
+  u32 smooth = 1;
+  u32 mounted = 1;
+  u32 pings;
+  list points: Point;
+  record Point { u32 x; u32 y; }
+</state>
+
+<template name="point" item="Point *p" state="Plot *S" root="li">
+  <li>x {p->x}: y {p->y}</li>
+</template>
+
+<template name="page" state="Plot *S">
+  <div class="app">
+    <h1>cdom + Chart.js</h1>
+    <div class="chart"><canvas ref="chart" host aria-label="points" role="img"></canvas></div>
+    <div class="bar">
+      <button type="button" id="add" on:click={add_point}>Add point</button>
+      <button type="button" id="recolor" on:click={recolor}>Recolor</button>
+      <button type="button" id="destroy" on:click={destroy}>Destroy</button>
+      <button type="button" id="remount" on:click={remount}>Remount</button>
+      <button type="button" id="toggle" on:click={toggle_smooth}>Toggle smooth</button>
+      <label><input type="checkbox" id="smooth" ref="smooth" on:change={toggle_smooth}/> smooth</label>
+    </div>
+    <p id="ping" on:cdping={ping}>pings: {S->pings}</p>
+    <ul id="points">{#each S->points as p (p->x)}<point/>{/each}</ul>
+  </div>
+</template>
