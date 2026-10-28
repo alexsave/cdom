@@ -135,3 +135,26 @@ Each line added or changed, and why:
 - `timer`, `raf`, `now`: one line each.
 - The network, 19 lines with comments: `utf8`, `deliver` (into C memory), `ws_open` (4 handlers), `ws_send`, `ws_close`, `http`.
 - The import list: 3 lines rewrapped for the 16 new names.
+
+### Gates and the paired runs
+
+Every gate passes on the bench entry built from this branch (cdomf): the harness's keyed check, smoke, DOM identity against perf 0d0bdd7 (entry cdomp0), listfuzz (5 seeds, 40,000 rounds each: the owning list and the list with an end anchor), the unit page (18 cases) and the link tests.
+tools/mutate.py: 37 mutants, every one caught by the test written for it.
+
+Paired, load-gated runs (tools/pair.sh, LOADMAX=3), vanillajs, cdomp0 (perf 0d0bdd7) and cdomf, CPU benchmarks 01-09; tools/ci.mjs bootstraps a 95% interval of the weighted geomean of cdomf over cdomp0.
+| pass | cdomp0 vs vanillajs | cdomf vs vanillajs | cdomf / cdomp0 (95% interval) |
+| --- | ---: | ---: | --- |
+| fix1 | 1.000 | 1.023 | 1.023 (1.004-1.046) |
+| fix1 without 04-06 | | | 1.004 (0.982-1.031) |
+| fix2 | 0.999 | 1.002 | 1.003 (0.997-1.023) |
+fix1's 04_select1k (6.2 ms against 4.4) ran while Spotlight was reindexing (load 2.50 before, 4.85 after); 05 and 06 in that pass also ended above 3.5. fix2 is clean of that and within noise; other processes on the machine still spiked some runs mid-run (load_after up to 6.3, in loads.tsv), equally across the three entries.
+One thing to watch: select1k's script median is 0.4 ms for cdomf in both passes against 0.2-0.3 for cdomp0 (the harness reports to 0.1 ms; the click now goes through post() and cd_event's flush).
+
+Bytes (bench entry, -Oz): app.wasm 9,031 -> 9,561 (brotli 4,312 -> 4,569); index.html with the minified shim inlined 4,003 -> 5,823 (brotli 1,662 -> 2,346). Shim source 138 -> 184 lines.
+The wasm growth is the exports every app now carries (cd_timer, cd_raf), the weak allocator entry points, the alive byte per id, the region recording in cd_id_new, the svg depth and the transient check; the network is in cdom_net.c and costs an app nothing unless linked.
+First paint (40_) was not rerun: the page is 684 bytes more brotli (the network and image code in the shim).
+
+### What the platform branch would need to pick up (it is parked, untouched here)
+
+platform rewrote the shim's event path (named events through `delegate(kind, h)`, a `post` with a key argument), indexes `strs` directly (no transient strings), and adds its own cdom.c work (cdom_html.c, httpd.c, ssr_page.c).
+To take these fixes it would need: the clone append and `open_svg` (and the SVG namespace in cdom_html.c's server-side output); `name_open`; `style`, `style_num` and `image` (and style ops in the HTML renderer); the window, load, timer, frame and clock imports mapped onto its named-event delegate; transient strings back in its string path (`cd_tmp`); the network module; the auto-flush in every export it adds (cd_start_state among them); and, unchanged C it can take as is: regions, the list end anchor, `cd_list_forget`, the alive check, `CD_LIT`, `cd_fmt`, the weak allocator and the weak mini.c.
