@@ -7,7 +7,6 @@
 
 uintptr_t *cd_layout(void); /* cdom.c: string bytes, string meta, inbox */
 
-#define TRANSIENT 0x40000000u
 #define DETACHED 0xffffffffu
 
 static void fail(const char *what, const char *op) {
@@ -58,8 +57,8 @@ struct hnode {
 };
 
 typedef struct { const char *p; uint32_t len; } hstr;
-static hstr *strs, *tmp; /* strs: persistent copies by id; tmp: this batch's transients */
-static uint32_t strs_cap, tmp_cap;
+static hstr *strs; /* copies by id (an id above the interned ones is a per-op string's) */
+static uint32_t strs_cap;
 static hnode **ids, **tpl, **stack;
 static uint32_t ids_cap, tpl_cap, stack_cap, sp;
 static hnode *last, *root;
@@ -78,10 +77,6 @@ static void *grow_array(void *a, uint32_t *cap, uint32_t need, size_t el) {
 }
 
 static hstr S(uint32_t s) {
-  if (s >= TRANSIENT) {
-    if (s - TRANSIENT >= tmp_cap) fail("unknown transient string", "not sent before the call");
-    return tmp[s - TRANSIENT];
-  }
   if (s >= strs_cap || !strs[s].p) fail("unknown string", "not sent before the call");
   return strs[s];
 }
@@ -246,7 +241,7 @@ static void op(void) {
   applied++;
 }
 
-void j_strings(uint32_t nstrs, uint32_t nbytes) { /* persistent ones are copied, transients point into this batch */
+void j_strings(uint32_t nstrs, uint32_t nbytes) { /* each is copied to its id */
   uintptr_t *L = cd_layout();
   const uint8_t *sb = (const uint8_t *)L[0];
   const uint32_t *sm = (const uint32_t *)L[1];
@@ -256,17 +251,12 @@ void j_strings(uint32_t nstrs, uint32_t nbytes) { /* persistent ones are copied,
     const char *p = (const char *)sb + off;
     off += len;
     if (off > nbytes) fail("string bytes overrun", "strings");
-    if (dest >= TRANSIENT) {
-      tmp = grow_array(tmp, &tmp_cap, dest - TRANSIENT, sizeof(hstr));
-      tmp[dest - TRANSIENT] = (hstr){p, len};
-    } else {
-      strs = grow_array(strs, &strs_cap, dest, sizeof(hstr));
-      char *c = malloc(len ? len : 1);
-      if (!c) fail("out of memory", "strings");
-      memcpy(c, p, len);
-      free((void *)strs[dest].p);
-      strs[dest] = (hstr){c, len};
-    }
+    strs = grow_array(strs, &strs_cap, dest, sizeof(hstr));
+    char *c = malloc(len ? len : 1);
+    if (!c) fail("out of memory", "strings");
+    memcpy(c, p, len);
+    free((void *)strs[dest].p);
+    strs[dest] = (hstr){c, len};
   }
 }
 
