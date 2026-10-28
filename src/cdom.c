@@ -88,7 +88,8 @@ IMPORTS("text_num") void j_text_num(uint32_t n);
 IMPORTS("attr") void j_attr(uint32_t name, uint32_t v);
 IMPORTS("class") void j_class(uint32_t v);
 IMPORTS("name") void j_name(cd_id id);
-IMPORTS("listen") void j_listen(cd_id id, uint32_t ev);
+IMPORTS("listen") void j_listen(cd_id id);
+IMPORTS("delegate") void j_delegate(uint32_t kind, uint32_t name, uint32_t capture);
 IMPORTS("value") void j_value(uint32_t s);
 IMPORTS("value_num") void j_value_num(uint32_t n);
 IMPORTS("tpl_save") void j_tpl_save(uint32_t t);
@@ -109,7 +110,6 @@ IMPORTS("move") void j_move(cd_id id, cd_id before);
 IMPORTS("clear") void j_clear(cd_id id);
 IMPORTS("detach") void j_detach(cd_id id);
 IMPORTS("attach") void j_attach(cd_id id);
-IMPORTS("listen_named") void j_listen_named(cd_id id, uint32_t name);
 IMPORTS("host") void j_host(cd_id id, uint32_t kind, uint32_t name, const uint32_t *v, uint32_t nwords);
 
 #define SB_CAP (1u << 18)
@@ -269,8 +269,15 @@ void cd_text_num(uint32_t n) { ready(); j_text_num(n); }
 void cd_attr(cd_str name, cd_str v) { uint32_t a = ref_name(name), b = ref_text(v); ready(); j_attr(a, b); }
 void cd_class(cd_str v) { uint32_t a = ref_text(v); ready(); j_class(a); }
 void cd_name(cd_id id) { ready(); j_name(id); }
-void cd_listen(cd_id id, uint32_t ev) { ready(); j_listen(id, ev); }
-void cd_listen_named(cd_id id, cd_str ev) { uint32_t e = ref_name(ev); ready(); j_listen_named(id, e); }
+/* Events: which ids listen to what is kept here, not in JS. The shim has one delegated
+ * listener per event type or name at the mount, installed by the first listen of it; walking
+ * up from the target it asks cd_wants of each node with an id, and posts the first that does. */
+static void listen_kind(cd_id id, uint32_t kind, cd_str name);
+void cd_listen(cd_id id, uint32_t ev) {
+  if (ev >= CD_EV_CUSTOM) __builtin_trap();
+  listen_kind(id, ev, 0);
+}
+void cd_listen_named(cd_id id, cd_str ev) { listen_kind(id, CD_EV_CUSTOM, ev); }
 void cd_value(cd_str s) {
   uint32_t v = ref_text(s);
   send_strings();
@@ -435,6 +442,15 @@ static cd_id next_id = 1;
 static cd_id *free_ids;
 static uint32_t nfree;
 static uint32_t *tags, tags_cap;
+/* per id: the built-in event types it listens to (bit per CD_EV_*; bit CD_EV_CUSTOM: it
+ * listens to some named event, held in the pairs below) */
+static uint16_t *lmask;
+typedef struct { cd_id id; cd_str name; } named_ev;
+static named_ev *named;           /* (id, name) of every named listen */
+static uint32_t nnamed, named_cap;
+static uint32_t delegated;        /* built-in types with a listener at the mount */
+static cd_str *dnames;            /* names with a listener at the mount */
+static uint32_t ndnames;
 
 cd_id cd_id_new(void) {
   if (nfree) return free_ids[--nfree];
@@ -443,13 +459,56 @@ cd_id cd_id_new(void) {
     tags_cap = tags_cap ? tags_cap * 2 : 4096;
     tags = cd_realloc(tags, tags_cap * 4);
     free_ids = cd_realloc(free_ids, tags_cap * 4);
+    lmask = cd_realloc(lmask, tags_cap * 2);
   }
+  lmask[id] = 0;
   return id;
 }
 
 static void release(cd_id id) {
   tags[id] = 0;
+  if (lmask[id] >> CD_EV_CUSTOM & 1)
+    for (uint32_t i = nnamed; i-- > 0;)
+      if (named[i].id == id) named[i] = named[--nnamed];
+  lmask[id] = 0;
   free_ids[nfree++] = id;
+}
+
+static void listen_kind(cd_id id, uint32_t kind, cd_str name) {
+  int first;
+  if (kind < CD_EV_CUSTOM) {
+    static const char *const NAMES[] = {"click", "dblclick", "input", "change", "keydown", "keyup", "focusin",
+                                        "focusout", "submit", "pointerdown", "pointerup", "pointermove"};
+    first = !(delegated >> kind & 1);
+    delegated |= 1u << kind;
+    if (first) name = cd_internz(NAMES[kind]);
+  } else {
+    first = 1;
+    for (uint32_t i = 0; i < ndnames && first; i++) first = dnames[i] != name;
+    if (first) {
+      dnames = cd_realloc(dnames, (ndnames + 1) * 4);
+      dnames[ndnames++] = name;
+    }
+    uint32_t i = 0;
+    while (i < nnamed && !(named[i].id == id && named[i].name == name)) i++;
+    if (i == nnamed) {
+      if (nnamed == named_cap) named = cd_realloc(named, (named_cap = named_cap ? named_cap * 2 : 16) * sizeof(named_ev));
+      named[nnamed++] = (named_ev){id, name};
+    }
+  }
+  lmask[id] |= (uint16_t)(1u << kind);
+  /* named events are caught in the capture phase, so ones that do not bubble arrive too */
+  if (first) { uint32_t n = ref_name(name); ready(); j_delegate(kind, n, kind == CD_EV_CUSTOM); }
+  ready(); j_listen(id);
+}
+
+/* Does the node named id take events of this kind (and, for CD_EV_CUSTOM, this name)? */
+EXPORT("cd_wants") int cd_wants(cd_id id, uint32_t kind, cd_str name) {
+  if (id >= tags_cap || kind > CD_EV_CUSTOM || !(lmask[id] >> kind & 1)) return 0;
+  if (kind < CD_EV_CUSTOM) return 1;
+  for (uint32_t i = 0; i < nnamed; i++)
+    if (named[i].id == id && named[i].name == name) return 1;
+  return 0;
 }
 
 void cd_id_free(cd_id id) {
