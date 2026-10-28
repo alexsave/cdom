@@ -3,13 +3,15 @@
 // adopted, verify finds no mismatch, #main's HTML is unchanged by hydration, and the page
 // is live (add, select, swap, update all act on the hydrated model and nodes).
 // Usage: node tests/hydrate.mjs [n...]  (builds ssr/rows, serves it on 8701)
+//        SSR_APP=tpl node tests/hydrate.mjs  (the templated app: ssr/rows-tpl on 8704)
 import { spawn, execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { launch, sleep } from '../tools/cdp.mjs';
 const top = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const counts = process.argv.slice(2).length ? process.argv.slice(2).map(Number) : [0, 1, 1000, 10000];
+const tpl = process.env.SSR_APP === 'tpl', PORT = tpl ? 8704 : 8701;
 execFileSync(path.join(top, 'ssr/rows/build.sh'), { stdio: 'inherit' });
-const srv = spawn(path.join(top, 'ssr/rows/out/server'), ['--port', '8701'], { stdio: ['ignore', 'ignore', 'inherit'] });
+const srv = spawn(path.join(top, tpl ? 'ssr/rows-tpl/out/server' : 'ssr/rows/out/server'), ['--port', String(PORT)], { stdio: ['ignore', 'ignore', 'inherit'] });
 const HOOK = `
 window.__c = { createElement: 0, createElementNS: 0, createTextNode: 0, cloneNode: 0 };
 for (const [o, k] of [[Document.prototype, 'createElement'], [Document.prototype, 'createElementNS'],
@@ -29,11 +31,11 @@ let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console.log('ok  ', m); };
 const b = await launch();
 try {
-  for (let i = 0; i < 50; i++) { try { await fetch('http://127.0.0.1:8701/?n=0'); break; } catch { await sleep(100); } }
+  for (let i = 0; i < 50; i++) { try { await fetch(`http://127.0.0.1:${PORT}/?n=0`); break; } catch { await sleep(100); } }
   await b.send('Page.addScriptToEvaluateOnNewDocument', { source: HOOK });
   const E = b.evaluate;
   for (const n of counts) {
-    await b.send('Page.navigate', { url: `http://127.0.0.1:8701/?n=${n}&verify=1` });
+    await b.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/?n=${n}&verify=1` });
     let ready = false;
     for (let i = 0; i < 200 && !ready; i++) { await sleep(50); ready = await E('!!(window.cdom && cdom.stats) || !!window.__err'); }
     const st = await E('JSON.stringify({ stats: cdom.stats, c: window.__c, c0: window.__c0, nodes: window.__serverNodes, err: window.__err })');

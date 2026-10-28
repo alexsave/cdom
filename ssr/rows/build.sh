@@ -1,18 +1,28 @@
 #!/bin/bash
-# Builds the rows SSR demo into ssr/rows/out: the native server (app.c + cdom.c +
-# cdom_html.c + httpd.c), app.wasm from the same app.c, the shim, the benchmark CSS,
-# and /csr/ (the plain client-rendered page from the same build). Port 8701.
+# Builds the rows SSR demo: the native server (app + cdom.c + cdom_html.c + httpd.c), app.wasm
+# from the same app sources, the shim, the benchmark CSS, and /csr/ (the plain client-rendered
+# page from the same build).
+#   SSR_APP unset: the hand-written bench/cdom-keyed/src/app.c into ssr/rows/out (port 8701)
+#   SSR_APP=tpl:   the templated bench/cdom-tpl (rows.cdt compiled by cdtc) into ssr/rows-tpl/out (port 8704)
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 top="$here/../.."
 CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"
-out="$here/out"
+case "${SSR_APP:-}" in
+  "") out="$here/out"; app=("$top/bench/cdom-keyed/src/app.c"); inc=() ;;
+  tpl)
+    out="$top/ssr/rows-tpl/out"
+    mkdir -p "$out/gen"
+    nice -n 10 cc -O2 -Wall -Wextra -Werror -o "$out/gen/cdtc" "$top/tools/cdtc.c"
+    "$out/gen/cdtc" "$top/bench/cdom-tpl/rows.cdt" -o "$out/gen/rows"
+    app=("$top/bench/cdom-tpl/app.c" "$out/gen/rows.c"); inc=(-I "$top/src" -I "$out/gen") ;;
+  *) echo "SSR_APP must be unset or tpl" >&2; exit 2 ;;
+esac
 mkdir -p "$out/csr" "$out/css/bootstrap/dist/css" "$out/css/bootstrap/dist/fonts"
-app="$top/bench/cdom-keyed/src/app.c"
-nice -n 10 cc -O2 -Wall -Wextra -Werror -o "$out/server" \
-  "$here/server.c" "$app" "$top/src/cdom.c" "$top/src/cdom_html.c" "$top/src/httpd.c"
-nice -n 10 "$CC" --target=wasm32 -O2 -nostdlib -mbulk-memory -Wall -Wextra -Werror \
-  -Wl,--no-entry -Wl,--strip-all -o "$out/app.wasm" "$app" "$top/src/cdom.c" "$top/src/mini.c"
+nice -n 10 cc -O2 -Wall -Wextra -Werror ${inc[@]+"${inc[@]}"} -o "$out/server" \
+  "$here/server.c" "${app[@]}" "$top/src/cdom.c" "$top/src/cdom_html.c" "$top/src/httpd.c"
+nice -n 10 "$CC" --target=wasm32 -O2 -nostdlib -mbulk-memory -Wall -Wextra -Werror ${inc[@]+"${inc[@]}"} \
+  -Wl,--no-entry -Wl,--strip-all -o "$out/app.wasm" "${app[@]}" "$top/src/cdom.c" "$top/src/mini.c"
 cp "$top/shim/cdom.js" "$out/cdom.js"
 cp "$out/app.wasm" "$out/cdom.js" "$out/csr/"
 cp "$top/bench/cdom-keyed/index.html" "$out/csr/index.html"

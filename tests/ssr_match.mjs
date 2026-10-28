@@ -6,7 +6,7 @@
 // Usage: node tests/ssr_match.mjs  (expects ssr/rows/out/server on 8701)
 import { launch, sleep } from '../tools/cdp.mjs';
 const SSR_SEED = 0x2545f491; // ssr/rows/server.c
-const BASE = 'http://127.0.0.1:8701';
+const BASE = `http://127.0.0.1:${process.env.SSR_PORT || 8701}`;
 const cases = [[0, null], [1000, 'run'], [10000, 'runlots']];
 const CANON = `window.__canon = (root) => { const out = [];
   const w = (n) => { for (let c = n.firstChild; c; c = c.nextSibling) {
