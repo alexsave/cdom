@@ -2,6 +2,11 @@
 
 ## API changes for track 1
 
+- **The op stream is gone (#4).** Each DOM operation is now its own wasm import (module "cdom": at, open, close, text, text_num, attr, class, name, listen, value, value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num, set_text, set_text_num, set_attr, set_class, remove, free, move, clear, detach, attach), called the moment C emits the op.
+  Only strings are batched (import "strings"), and interned strings are queued when interned.
+  The input-value import is renamed from "value" to "input". cd_layout() now returns 3 words: string bytes, string meta, inbox.
+  cdom.h is unchanged; cd_flush() now sends pending strings and any held walk. Walks (cd_sel/cd_down/cd_next/cd_up) are held in C and cross as one call.
+
 - `cdom.start(url, mount, env)`: `mount` may now be an element id (a string) as well as an element.
   With an id, the wasm is fetched, compiled and instantiated at once, and the app starts when the DOM is ready.
   Passing an element works as before.
@@ -33,3 +38,32 @@ First paint (11 rounds, loads 3.44-3.93): vanillajs 50.3 ms, cdom 90.5 ms (ratio
 | 3 | template slots: text set in the template, then one clone; no walk of the clone | create (run1k, replace, create10k, append) | create10k 1.023, run1k 1.070 | create10k 1.004, run1k 1.060 | vanilla does clone + firstChild x4 + nextSibling + 2 nodeValue + appendChild (9 DOM calls per row); cdom did the same plus a parentNode (10); cdom now does 2 nodeValue on the template + cloneNode + insertBefore (4). Script, harness medians: create10k 26.3 -> 21.0 ms (vanilla 20.8), run1k 3.2 -> 2.8, append 3.2 -> 2.8 (x2 throttle). results/pairs/slots, loads 1.15-2.50; geomean 1.037 -> 1.033 |
 | - | final check of #3 (results/pairs/final1, final2; loads 1.76-2.98) | all CPU | first build 1.038 / 1.029 | 1.020 / 1.018 | react-hooks 1.477 / 1.464 in the same passes |
 | rejected | freed ids coalesced into runs (one FREE op + Array.fill per run instead of one op per id) | clear | 1.048 | 1.040 | script 10.3 -> 10.1 ms at x8 throttle, inside noise; not worth the extra C state. The run code had a wraparound bug the new test found (a reset index of 0xffffffff matched nops == 0). The two-list adjacent-id test stays in listfuzz: it checks that freeing one list's ids never drops a live neighbour's reference |
+| 4 | direct calls: every op is its own import, called at once; only strings are batched (queued at intern time); walks cross as one call | all CPU | 1.045 / 1.035 (op list, same passes) | 1.009 / 1.001 | the direct-call experiment below; results/pairs/dir3, dir4 (loads 1.83-2.96). Script vs vanilla, dir4: run1k 2.4 vs 2.3 (list 2.7), create10k 19.1 vs 20.8 (list 21.6), clear 9.6 vs 9.4 (list 10.4). First paint 1.005 (list 1.029), compressed 5.8 KB |
+
+## Experiment: direct calls against the op list (branch direct-calls, worktree ~/Dev/cdom-direct)
+
+Question: instead of C writing an op stream that the shim interprets, does C calling DOM functions directly through wasm imports win?
+
+Arms, all with template slots, interned strings, -Oz and the inlined minified shim; only the emit layer differs:
+- all-list: the op stream (shim 136 lines).
+- (a) all-direct: one arrow import per op, generated from apply()'s cases (exp/gen_direct.py), sharing the shim's node and string tables; a direct op flushes pending list ops first.
+- (b) direct-native: DOM methods imported as `Function.prototype.call.bind(method)`, with nodes, strings, templates and walk state in externref tables (`__externref_t`, `__builtin_wasm_table_*`, `-mreference-types`; clang 22 expressed it without trouble; shim 92 lines).
+- hybrids: 12 balanced random-half configurations over the 16 ops the benchmark executes (each op direct in 6 of 12), the fit's best assignment, and "all direct except the update walk and CLEAR".
+
+Micro (micro/direct, ns per call from a wasm loop, Chrome 156, quiet machine): nodeValue arrow 41, native-bound 48.5, op list 39.5; firstChild arrow 15-18, native 18, op list 9.5; cloneNode and insertBefore 570-1000 for all three.
+V8 does not fast-path natively bound DOM methods called from wasm here: the bound setter is slower than an arrow. A crossing costs about 5 ns more than an op-list record.
+
+Harness, weighted geomean vs vanillajs, three load-gated sessions (screen, val1, val2; loads 1.55-2.99):
+| arm | screen | val1 | val2 |
+| --- | ---: | ---: | ---: |
+| all-list | 1.034 | 1.039 | 1.031 |
+| (a) all-direct | 1.010 | 1.011 | 0.999 |
+| (b) direct-native | 1.005 | 1.022 | 1.022 |
+| best hybrid from the fit (CLOSE, LISTEN, TPL_TEXT, FREE) | - | 1.020 | 1.008 |
+| hybrid: all direct but SEL/DOWN/NEXT/VALUE/CLEAR | - | 1.004 | 1.001 |
+
+Fitted per-op deltas (direct minus list, ms of harness script, standard error; exp/fit.py over 210 iterations per benchmark): FREE -0.22 +-0.03 (replace) and -0.33 +-0.06 (clear); LISTEN -0.09 +-0.03 (run1k); CLOSE -0.46 +-0.12 and TPL_TEXT -0.65 +-0.18 (create10k); list better: CLEAR +0.15 +-0.05, DOWN +0.28 +-0.06, NEXT +0.12 +-0.05 (update), CLOSE +0.03 +-0.015 (append). The rest are inside 2 SE.
+Flushes forced per click: random halves 1,000-2,000 per 1k rows (every switch between modes); all-direct 125-720, all from first-time strings; the update walk 100-300 crossings direct.
+Why direct wins although each crossing costs more: in the harness's measured click the list arm takes incremental-GC marking steps and V8 interrupt handling (about 0.3 ms on run1k) that the direct arm does not, while synchronous script time is about equal; the one big apply() after five warm-up clicks is the likely difference. Not proven further.
+The hybrids do not beat all-direct beyond noise. What the hybrid taught was where direct loses: the update walk (one crossing per step) and strings decoded one at a time. The shipped design fixes both inside the direct model: a walk crosses as one call, and strings are queued at intern time so a burst decodes in one call. That made update 1.03 / 1.01 instead of 1.05-1.06.
+Every configuration passed the keyed check, smoke, DOM identity and listfuzz built with its own mask. One DOM-identity failure on the fit-best hybrid did not reproduce in 11 reruns; its log had been overwritten, so gate logs are now per entry.
