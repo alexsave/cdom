@@ -109,6 +109,7 @@ IMPORTS("move") void j_move(cd_id id, cd_id before);
 IMPORTS("clear") void j_clear(cd_id id);
 IMPORTS("detach") void j_detach(cd_id id);
 IMPORTS("attach") void j_attach(cd_id id);
+IMPORTS("host") void j_host(cd_id id, uint32_t kind, uint32_t name, const uint32_t *v, uint32_t nwords);
 
 #define SB_CAP (1u << 18)
 #define SM_CAP (1u << 12)
@@ -317,6 +318,103 @@ void cd_move(cd_id id, cd_id before) { ready(); j_move(id, before); }
 void cd_clear(cd_id id) { ready(); j_clear(id); }
 void cd_detach(cd_id id) { ready(); j_detach(id); }
 void cd_attach(cd_id id) { ready(); j_attach(id); }
+
+/* ---- host: a widget op with a cdv value (format in cdom.h). The value is built in hv
+ * with raw string ids; cd_host_end checks it, turns its string ids into sent ones in place,
+ * sends the strings and passes the value's address and length to the host import. ---- */
+#define HV_CAP (1u << 15)
+static uint32_t hv[HV_CAP], nhv, hv_open, hv_bytes, hv_strs;
+static inline uint32_t slen(cd_str s) { return strs[s].len; }
+
+void cd_host(cd_id id, uint32_t kind, cd_str name) {
+  if (hv_open) __builtin_trap(); /* the previous host op was never ended */
+  hv_open = 1;
+  hv[0] = id;
+  hv[1] = kind;
+  hv[2] = name;
+  nhv = 3;
+  hv_bytes = slen(name);
+  hv_strs = 1;
+}
+
+static void hv_put(uint32_t w) {
+  if (!hv_open || nhv >= HV_CAP) __builtin_trap();
+  hv[nhv++] = w;
+}
+static void hv_str(cd_str s) {
+  hv_put(s);
+  hv_bytes += slen(s);
+  hv_strs++;
+}
+
+void cd_v_null(void) { hv_put(CD_V_NULL); }
+void cd_v_bool(int b) { hv_put(b ? CD_V_TRUE : CD_V_FALSE); }
+void cd_v_u32(uint32_t v) { hv_put(CD_V_U32); hv_put(v); }
+void cd_v_i32(int32_t v) { hv_put(CD_V_I32); hv_put((uint32_t)v); }
+static void hv_f64(double v) {
+  uint64_t b;
+  __builtin_memcpy(&b, &v, 8);
+  hv_put((uint32_t)b);
+  hv_put((uint32_t)(b >> 32));
+}
+void cd_v_f64(double v) { hv_put(CD_V_F64); hv_f64(v); }
+void cd_v_str(cd_str s) { hv_put(CD_V_STR); hv_str(s); }
+void cd_v_f64s(const double *p, uint32_t n) {
+  hv_put(CD_V_F64S);
+  hv_put(n);
+  for (uint32_t i = 0; i < n; i++) hv_f64(p[i]);
+}
+void cd_v_arr(uint32_t n) { hv_put(CD_V_ARRAY); hv_put(n); }
+void cd_v_obj(uint32_t n) { hv_put(CD_V_OBJECT); hv_put(n); }
+void cd_v_key(cd_str k) { hv_str(k); }
+
+void cd_host_end(void) {
+  if (!hv_open) __builtin_trap();
+  hv_open = 0;
+  if (hv_bytes > SB_CAP || hv_strs > SM_CAP) __builtin_trap(); /* cannot fit one batch */
+  /* the value's strings are sent in one batch, so a per-op (transient) id never outlives it */
+  if (nsb + hv_bytes > SB_CAP || nstrs + hv_strs > SM_CAP) send_strings();
+  hv[2] = ref_name(hv[2]);
+  /* walk the tree: exactly one value, nesting under CD_V_DEPTH; strings become sent ids.
+   * left[d] counts the values still owed at depth d, key[d] whether that level is an object. */
+  uint32_t left[CD_V_DEPTH + 1], key[CD_V_DEPTH + 1], d = 0, i = 3;
+  left[0] = 1;
+  key[0] = 0;
+  for (;;) {
+    while (d && !left[d]) d--;
+    if (!left[d]) break;
+    left[d]--;
+    if (key[d]) {
+      if (i >= nhv) __builtin_trap();
+      hv[i] = ref_name(hv[i]); i++;
+    }
+    if (i >= nhv) __builtin_trap();
+    uint32_t t = hv[i++], n;
+    switch (t) {
+    case CD_V_NULL: case CD_V_FALSE: case CD_V_TRUE: break;
+    case CD_V_U32: case CD_V_I32: if (i + 1 > nhv) __builtin_trap(); i++; break;
+    case CD_V_F64: if (i + 2 > nhv) __builtin_trap(); i += 2; break;
+    case CD_V_STR: if (i + 1 > nhv) __builtin_trap(); hv[i] = ref_text(hv[i]); i++; break;
+    case CD_V_F64S:
+      if (i + 1 > nhv) __builtin_trap();
+      n = hv[i++];
+      if (n > (nhv - i) / 2) __builtin_trap();
+      i += 2 * n;
+      break;
+    case CD_V_ARRAY: case CD_V_OBJECT:
+      if (i + 1 > nhv || d == CD_V_DEPTH) __builtin_trap();
+      n = hv[i++];
+      d++;
+      left[d] = n;
+      key[d] = t == CD_V_OBJECT;
+      break;
+    default: __builtin_trap();
+    }
+  }
+  if (i != nhv) __builtin_trap(); /* more than one value */
+  ready();
+  j_host(hv[0], hv[1], hv[2], hv + 3, nhv - 3);
+}
 
 /* ---- node ids ---- */
 static cd_id next_id = 1;

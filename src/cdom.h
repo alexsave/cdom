@@ -86,6 +86,58 @@ void cd_on_event(const cd_event_rec *e);
 void cd_main(void);                  /* the app's entry, called once at start */
 uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap); /* copy an input's value on demand */
 
+/* hosting a third-party widget or web component on a C-owned node: one generic op.
+ * cd_host(id, kind, name) begins it, one value follows (built with the cd_v_* calls
+ * below), and cd_host_end() sends it. The shim does, for the node named id:
+ *   CD_HOST_MOUNT    node.$h = new (window.<name>)(node, value)   name is a dotted path
+ *                    walked from window ("Chart", "L.Map"); a missing constructor throws.
+ *   CD_HOST_CALL     node.$h.<name>(...value)                      value is an ARRAY of the
+ *                    arguments (possibly empty); the return value is dropped.
+ *   CD_HOST_SET      node.$h.<path> = value                        name is a dotted path inside
+ *                    the instance ("data.datasets.0.data"); numeric parts index arrays.
+ *   CD_HOST_PROP     node[name] = value                            a DOM property set (value,
+ *                    checked, selected, disabled, scrollTop, a web component's property).
+ *                    The C sink (SSR) writes value/checked/selected/disabled as the matching
+ *                    attribute (or textarea text, or the selected option) so the no-JS page
+ *                    shows the state; every other PROP writes nothing there.
+ *   CD_HOST_UNMOUNT  node.$h.<name>() (e.g. "destroy"), then node.$h is deleted. Unmount a
+ *                    widget before cd_remove of its node or an ancestor: the shim keeps no
+ *                    list of instances, so a removed node's widget is otherwise leaked to it.
+ * The value of an UNMOUNT is ignored but must be present (cd_v_null()).
+ *
+ * The op is one import, host(id, kind, name, v, nwords): v is the address in linear memory
+ * of the value's nwords u32 words. The value ("cdv") is the one fixed format the shim
+ * decodes, a tree of u32 words. Each value is a tag word, then its payload:
+ *   0 NULL   1 FALSE   2 TRUE                    no payload
+ *   3 U32    v                                    one word
+ *   4 I32    v                                    one word, two's complement
+ *   5 F64    lo hi                                the IEEE 754 bits, low word first
+ *   6 STR    s                                    an interned string id (already sent)
+ *   7 F64S   n, then 2n words                     n doubles as above: a Float64Array in JS
+ *   8 ARRAY  n, then n values                     a JS array
+ *   9 OBJECT n, then n pairs (key, value)         key: one word, a string id; a plain object
+ * Strings decode as JS strings, numbers as numbers, TRUE/FALSE as booleans, NULL as null.
+ * Containers nest at most CD_V_DEPTH deep and a whole op holds at most 32768 words (id,
+ * kind and name included); a value over either limit, or one that is not exactly one
+ * complete tree when cd_host_end runs, traps. The value is built aside; cd_host_end sends
+ * every string it references in one batch, then makes the call. */
+enum { CD_HOST_MOUNT, CD_HOST_CALL, CD_HOST_SET, CD_HOST_PROP, CD_HOST_UNMOUNT };
+enum { CD_V_NULL, CD_V_FALSE, CD_V_TRUE, CD_V_U32, CD_V_I32, CD_V_F64, CD_V_STR, CD_V_F64S, CD_V_ARRAY,
+       CD_V_OBJECT };
+#define CD_V_DEPTH 64
+void cd_host(cd_id id, uint32_t kind, cd_str name); /* begins the op; one value follows */
+void cd_v_null(void);
+void cd_v_bool(int b);
+void cd_v_u32(uint32_t v);
+void cd_v_i32(int32_t v);
+void cd_v_f64(double v);
+void cd_v_str(cd_str s);
+void cd_v_f64s(const double *p, uint32_t n);
+void cd_v_arr(uint32_t n);  /* n values follow */
+void cd_v_obj(uint32_t n);  /* n pairs follow: cd_v_key, then a value */
+void cd_v_key(cd_str k);
+void cd_host_end(void);
+
 /* state: the app's model as a fixed binary blob, written by the server build and
  * read by the browser build of the same C, so a server-rendered page hydrates.
  * Layouts hold only fixed-width little-endian integers and byte arrays (no
