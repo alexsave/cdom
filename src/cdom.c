@@ -111,7 +111,6 @@ IMPORTS("host") void j_host(cd_id id, uint32_t kind, uint32_t name, const uint32
 
 #define SB_CAP (1u << 18)
 #define SM_CAP (1u << 12)
-#define TRANSIENT 0x40000000u
 
 static uint8_t sbytes[SB_CAP];
 static uint32_t smeta[SM_CAP * 3];
@@ -226,7 +225,10 @@ static uint32_t ref_text(cd_str s) {
 #if CDOM_INTERN_TEXT
   return ref_name(s);
 #else
-  return push_str(s, TRANSIENT + ntmp++);
+  /* A per-op copy lands in the JS string table just above the interned ids, in a slot an id
+   * interned later may take over: it is read only by the call its batch is sent for, and every
+   * op sends its own batch (an interned string is queued for JS when interned or first used). */
+  return push_str(s, nstr_ids + ntmp++);
 #endif
 }
 
