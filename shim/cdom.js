@@ -2,13 +2,10 @@
 // cdom shim: C calls one of these functions per DOM operation, and the shim posts events back.
 // Fixed per app. Wasm passes i32, so ids and numbers that may pass 2^31 are made unsigned (>>> 0).
 var cdom = (() => {
-  const EVENTS = ["click", "dblclick", "input", "change", "keydown", "keyup", "focusin",
-    "focusout", "submit", "pointerdown", "pointerup", "pointermove"];
   const TRANSIENT = 0x40000000, DETACHED = 0xffffffff, SMALL = 64;
   const doc = document, td = new TextDecoder(), te = new TextEncoder();
-  const nodes = [], strs = [], tmp = [], tpl = [], stack = [], on = [], tslot = [], named = new Set();
+  const nodes = [], strs = [], tmp = [], tpl = [], stack = [], tslot = [];
   let slots = []; // slot text nodes of the template being built
-  let lmask = new Uint16Array(1024); // listened event types per node id
   let x, mem, buf, u8, u32, i32, SB, SM, INBOX;
   let sp = 0, last = null, root = null, base = DETACHED, ref = 0;
   // Hydration (start's opts.hydrate): an op that would create a node under a parent in the
@@ -139,33 +136,22 @@ var cdom = (() => {
     last = el;
   }
 
-  function delegate(type) {
-    on[type] = 1;
-    const bit = 1 << type, top = nodes[0];
-    top.addEventListener(EVENTS[type], (e) => {
-      let path = 0, depth = 0;
-      for (let n = e.target; n && n !== top; n = n.parentNode) {
-        if (n.$i !== undefined && lmask[n.$i] & bit) return post(type, n.$i, e, e.keyCode | 0, path, depth);
-        let i = 0;
-        for (let s = n.previousElementSibling; s; s = s.previousElementSibling) i++;
-        path = (path << 8) | (i & 255); depth++;
-      }
-    });
-  }
-  // listen_named: events by name (a web component's), captured at the mount so ones that do
-  // not bubble arrive too; delivered as CD_EV_CUSTOM (12) with key = the name's string id.
-  function delegateNamed(h) {
-    named.add(h);
+  // One listener per event type or name at the mount, installed by C on the first listen of it
+  // (kind: CD_EV_*, CD_EV_CUSTOM for a name; capture for names, so events that do not bubble
+  // arrive too). It posts the nearest node with an id that C says takes the event, with the
+  // element-child indices from that node down toward the target.
+  function delegate(kind, h, capture) {
     const top = nodes[0];
     top.addEventListener(S(h), (e) => {
       let path = 0, depth = 0;
       for (let n = e.target; n && n !== top; n = n.parentNode) {
-        if (n.$n && n.$n.has(h) && nodes[n.$i] === n) return post(12, n.$i, e, h, path, depth);
-        let i = 0;
-        for (let s = n.previousElementSibling; s; s = s.previousElementSibling) i++;
-        path = (path << 8) | (i & 255); depth++;
+        const i = n.$i;
+        if (i !== undefined && nodes[i] === n && x.cd_wants(i, kind, h)) return post(kind, i, e, kind < 12 ? e.keyCode | 0 : h, path, depth);
+        let k = 0;
+        for (let s = n.previousElementSibling; s; s = s.previousElementSibling) k++;
+        path = (path << 8) | (k & 255); depth++;
       }
-    }, true);
+    }, capture);
   }
   function post(type, id, e, key, path, depth) {
     if (buf !== mem.buffer) views();
@@ -229,15 +215,7 @@ var cdom = (() => {
   function attr(a, v) { if (hy) return hAttr(S(a), S(v)); last.setAttribute(S(a), S(v)); }
   function cls(v) { if (hy) return hClass(S(v)); last.className = S(v); }
   function name(n) { nodes[n] = last; }
-  function listen(n, ev) {
-    nodes[n] = last; last.$i = n;
-    if (n >= lmask.length) { const g = new Uint16Array(n * 2); g.set(lmask); lmask = g; }
-    lmask[n] |= 1 << ev; if (!on[ev]) delegate(ev);
-  }
-  function listen_named(n, h) {
-    nodes[n] = last; last.$i = n;
-    (last.$n || (last.$n = new Set())).add(h); if (!named.has(h)) delegateNamed(h);
-  }
+  function listen(n) { nodes[n] = last; last.$i = n; }
   function value(s) { if (hy) return hValue(S(s)); last.nodeValue = S(s); }
   function value_num(n) { if (hy) return hValue(n >>> 0); last.nodeValue = n >>> 0; }
   function tpl_save(t) { tpl[t] = root; if (hy) tsize[t] = size(root); tslot[t] = slots; slots = []; root.remove(); }
@@ -262,8 +240,8 @@ var cdom = (() => {
   function set_text_num(id, n) { nodes[id].nodeValue = n >>> 0; }
   function set_attr(id, a, v) { nodes[id].setAttribute(S(a), S(v)); }
   function set_class(id, v) { nodes[id].className = S(v); }
-  function remove(id) { nodes[id].remove(); nodes[id] = undefined; lmask[id] = 0; }
-  function free(id) { nodes[id] = undefined; lmask[id] = 0; }
+  function remove(id) { nodes[id].remove(); nodes[id] = undefined; }
+  function free(id) { nodes[id] = undefined; }
   function move(id, b) { const el = nodes[id]; el.parentNode.insertBefore(el, b ? nodes[b] : null); }
   function clear(id) { nodes[id].textContent = ""; }
   function detach(id) { if (hy) return; const el = nodes[id]; el.$p = el.parentNode; el.$s = el.nextSibling; el.remove(); }
@@ -281,7 +259,7 @@ var cdom = (() => {
   async function start(url, mount, env, opts) {
     const imports = { cdom: { strings, at, open, close, text, text_num, attr, class: cls, name, listen, value,
       value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num, set_text,
-      set_text_num, set_attr, set_class, remove, free, move, clear, detach, attach, input, host, listen_named }, env: env || {} };
+      set_text_num, set_attr, set_class, remove, free, move, clear, detach, attach, input, host, delegate }, env: env || {} };
     const res = fetch(url);
     const { instance } = WebAssembly.instantiateStreaming
       ? await WebAssembly.instantiateStreaming(res, imports)
