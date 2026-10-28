@@ -32,6 +32,7 @@
  * Usage: cdtc <in.cdt> -o <out-base>     writes <out-base>.h and <out-base>.c
  * Errors go to stderr as "<in>:<line>:<col>: <message>", exit status 1. */
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -135,7 +136,17 @@ static void out(Buf *b, const char *fmt, ...) {
 
 /* ---- the model ---- */
 enum { T_U32 = 1, T_STR, T_LIST };
-typedef struct { char *name; int type; char *rec; int reci; long long init; int has_init; size_t at; } Field;
+#define MAXW 8 /* dirty words per aggregate: 256 bindings read one state, record or component */
+typedef struct { uint32_t w[MAXW]; } Mask;
+typedef struct {
+  char *name; int type; char *rec; int reci; long long init; int has_init; size_t at;
+  int derived;  /* the state's derived u32/str: recomputed from dexpr when an input changes */
+  char *dexpr;
+  int kd;       /* a record field some {#each}'s key reads: its setter flags the record's lists */
+  Mask rd;      /* the readers: dirty bits a write of this cell sets, in its aggregate's space */
+  int prop;     /* a component's prop (written by its parent's render), not local state */
+  int dbit;     /* a derived field's own bit: set by any input's write, it recomputes the value */
+} Field;
 typedef struct { char *name; Field *f; int n, cap; size_t at; } Record;
 static char *st_name, *st_global;
 static size_t st_at;
@@ -147,7 +158,12 @@ static int nrec, crec;
 
 enum { N_ELEM = 1, N_TEXT, N_BIND, N_IF, N_EACH };
 enum { A_STATIC = 1, A_BIND, A_TOGGLE, A_EVENT, A_REF, A_HOST };
-typedef struct { int kind; char *name, *val; size_t at; int ev; } Attr;
+typedef struct {
+  int kind; char *name, *val; size_t at; int ev;
+  int bi;       /* A_BIND: its binding (BD) */
+  int ectx;     /* A_EVENT: whose handler: -1 the template's (state [, item]), k a component instance's own */
+  int ecb;      /* A_EVENT: val names a callback prop of instance ectx, not yet bound to a handler */
+} Attr;
 typedef struct {
   int kind, tpl, parent;
   size_t at;
@@ -168,15 +184,40 @@ typedef struct {
   /* analysis */
   int ln, frag, depth, path[MAXD], unstable, named, slot, ntog, nattrb, owns;
   int ts; /* BIND: 1 + its template slot (cd_slot), 0 when the clone walks to it */
+  int iroot; /* ELEM: 1 + the component instance whose body's root this is, 0 for none */
+  int bi;   /* BIND, IF, EACH, an ELEM's class toggles: its binding (BD), -1 for none */
+  int ictx; /* whose cells its expressions read: -1 the template's, k component instance k (self) */
 } Node;
 static Node *N;
 static int nn, cn;
+
+/* A component instance: the props its use binds (one per prop of the component, in the order the
+ * component declares them), each a C expression in the using scope's context ctx (-1 the template's,
+ * k instance k) or a static attribute value. A template's instances are numbered in document order
+ * after expansion; instance 0 of a component's own table is the component itself. */
+typedef struct { char *expr; int ctx, stat, bi; size_t at; } PropB; /* stat: a static str (expr is its text) */
+typedef struct { int comp, root; PropB *pb; } Inst;                /* root: the node its body's root became */
 
 typedef struct {
   char *name, *ivar, *itype, *svar, *stype, *rootdecl;
   size_t at, item_at, state_at, root_at;
   int root, rec, page, used, first, last; /* nodes [first, last) */
+  Inst *in; int nin, cin; /* the component instances in it, expanded */
 } Tpl;
+
+/* A component: <component name="Counter" props="u32 start; str label" state="u32 count"
+ * events="change">. Its body is parsed once into nodes [first, last) outside every template and
+ * copied into each use. */
+typedef struct {
+  char *name;
+  size_t at;
+  Field *f; int nf, cf, nprops; /* the props first, then the local state */
+  char **cb; int ncb, ccb;      /* callback props: events="a b" */
+  int root, first, last, slot;  /* slot: its <slot/> node, -1 for none */
+  Inst *in; int nin, cin;       /* instances in its body; 0 is the component itself */
+} Comp;
+static Comp *C;
+static int nc, ccmp __attribute__((unused));
 static Tpl *T;
 static int nt, ct;
 
@@ -201,6 +242,8 @@ static const char *const TABLE_KIDS[] = {"caption", "colgroup", "thead", "tbody"
 static const char *const SECTION_KIDS[] = {"tr", 0};
 static const char *const ROW_KIDS[] = {"td", "th", 0};
 
+static int scope_ctx = -1; /* while parsing: -1 in a template, 0 in a component's body (its self) */
+
 static int new_node(int kind, int tpl, int parent, size_t at) {
   Node x;
   memset(&x, 0, sizeof x);
@@ -209,7 +252,8 @@ static int new_node(int kind, int tpl, int parent, size_t at) {
   x.parent = parent;
   x.at = at;
   x.br[0] = x.br[1] = -1;
-  x.ln = x.frag = x.slot = -1;
+  x.ln = x.frag = x.slot = x.bi = -1;
+  x.ictx = scope_ctx;
   PUSH(N, nn, cn, x);
   return nn - 1;
 }
@@ -334,7 +378,7 @@ static void parse_attrs(Attr **a, int *na, int *ca, int *self_close, size_t tag_
     size_t at = P;
     while (P < slen && !is_ws(src[P]) && !strchr("=>/\"'{", src[P])) P++;
     if (P == at) fail(at, "expected an attribute name");
-    Attr x = {A_STATIC, dupn(src + at, P - at), 0, at, -1};
+    Attr x = {A_STATIC, dupn(src + at, P - at), 0, at, -1, -1, -1, 0};
     skip_ws();
     if (P < slen && src[P] == '=') {
       P++;
@@ -740,9 +784,9 @@ static void parse_state(void) {
     st_skip();
     if (P >= st_end) break;
     size_t dat = P;
-    char *kw = st_ident("u32, str, list or record");
+    char *kw = st_ident("u32, str, derived, list or record");
     if (!strcmp(kw, "u32") || !strcmp(kw, "str")) {
-      Field f = {st_ident("a field name"), kw[0] == 'u' ? T_U32 : T_STR, 0, -1, 0, 0, dat};
+      Field f = {st_ident("a field name"), kw[0] == 'u' ? T_U32 : T_STR, 0, -1, 0, 0, dat, 0, 0, 0, {{0}}, 0, 0};
       field_unique(sf, nsf, f.name, dat);
       if (st_peek('=')) {
         P++;
@@ -756,8 +800,34 @@ static void parse_state(void) {
       }
       st_expect(';');
       PUSH(sf, nsf, csf, f);
+    } else if (!strcmp(kw, "derived")) {
+      /* derived u32 total = S->a + S->b;  a C expression over the state, which it names S */
+      size_t tat = P;
+      char *ty = st_ident("u32 or str");
+      if (strcmp(ty, "u32") && strcmp(ty, "str")) fail(tat, "a derived value is a u32 or a str, not %s", ty);
+      Field f = {st_ident("a field name"), ty[0] == 'u' ? T_U32 : T_STR, 0, -1, 0, 0, dat, 0, 0, 0, {{0}}, 0, 0};
+      field_unique(sf, nsf, f.name, dat);
+      st_expect('=');
+      st_skip();
+      size_t s = P;
+      int depth = 0;
+      while (P < st_end && (depth || src[P] != ';')) {
+        char c = src[P];
+        if (c == '"' || c == '\'') {
+          for (P++; P < st_end && src[P] != c; P++)
+            if (src[P] == '\\') P++;
+        } else if (c == '(' || c == '[') depth++;
+        else if ((c == ')' || c == ']') && depth) depth--;
+        P++;
+      }
+      if (P >= st_end) fail(dat, "derived %s needs a ; after its expression", f.name);
+      f.dexpr = trim(dupn(src + s, P - s));
+      if (!*f.dexpr) fail(s, "derived %s has no expression", f.name);
+      f.derived = 1;
+      P++;
+      PUSH(sf, nsf, csf, f);
     } else if (!strcmp(kw, "list")) {
-      Field f = {st_ident("a list name"), T_LIST, 0, -1, 0, 0, dat};
+      Field f = {st_ident("a list name"), T_LIST, 0, -1, 0, 0, dat, 0, 0, 0, {{0}}, 0, 0};
       field_unique(sf, nsf, f.name, dat);
       st_expect(':');
       f.rec = st_ident("a record name");
@@ -772,9 +842,10 @@ static void parse_state(void) {
       while (!st_peek('}')) {
         size_t fat = P;
         char *ty = st_ident("u32, str or list");
+        if (!strcmp(ty, "derived")) fail(fat, "derived values are fields of the state, not of a record");
         if (strcmp(ty, "u32") && strcmp(ty, "str") && strcmp(ty, "list"))
           fail(fat, "record fields are u32, str or list, not %s", ty);
-        Field f = {st_ident("a field name"), ty[0] == 'u' ? T_U32 : ty[0] == 's' ? T_STR : T_LIST, 0, -1, 0, 0, fat};
+        Field f = {st_ident("a field name"), ty[0] == 'u' ? T_U32 : ty[0] == 's' ? T_STR : T_LIST, 0, -1, 0, 0, fat, 0, 0, 0, {{0}}, 0, 0};
         field_unique(r.f, r.n, f.name, fat);
         if (f.type == T_LIST) {
           st_expect(':');
@@ -790,7 +861,7 @@ static void parse_state(void) {
       if (!r.n) fail(dat, "record %s has no fields", r.name);
       PUSH(recs, nrec, crec, r);
     } else {
-      fail(dat, "unknown declaration %s: expected u32, str, list or record", kw);
+      fail(dat, "unknown declaration %s: expected u32, str, derived, list or record", kw);
     }
   }
   P = st_end + 8;
@@ -839,7 +910,7 @@ static int field_type(const Tpl *t, const char *e) {
 static Field *ag_f(int a);
 static int ag_n(int a);
 
-typedef struct { char *name; char *sig; size_t at; } Handler;
+typedef struct { char *name; char *sig; char *decl; size_t at; } Handler; /* sig: the types, decl: the prototype */
 static Handler *H;
 static int nh, chd;
 static int nslots;
@@ -909,16 +980,25 @@ static void resolve(void) {
           if (a->kind == A_BIND && field_type(t, a->val) == T_U32)
             fail(a->at, "attribute %s binds a u32; attribute values are cd_str", a->name);
           if (a->kind != A_EVENT) continue;
-          char sig[512];
-          if (t->page) snprintf(sig, sizeof sig, "%s *, const cd_event_rec *", t->stype);
-          else snprintf(sig, sizeof sig, "%s *, %s *, const cd_event_rec *", t->stype, t->itype);
+          char sig[512], decl[1024];
+          if (a->ectx >= 0) { /* a component's own handler: it gets its instance, not the state */
+            const char *cn = C[t->in[a->ectx].comp].name;
+            snprintf(sig, sizeof sig, "%s *, const cd_event_rec *", cn);
+            snprintf(decl, sizeof decl, "void %s(%s *self, const cd_event_rec *e);", a->val, cn);
+          } else if (t->page) {
+            snprintf(sig, sizeof sig, "%s *, const cd_event_rec *", t->stype);
+            snprintf(decl, sizeof decl, "void %s(%s *%s, const cd_event_rec *e);", a->val, t->stype, t->svar);
+          } else {
+            snprintf(sig, sizeof sig, "%s *, %s *, const cd_event_rec *", t->stype, t->itype);
+            snprintf(decl, sizeof decl, "void %s(%s *%s, %s *%s, const cd_event_rec *e);", a->val, t->stype, t->svar, t->itype, t->ivar);
+          }
           int h = 0;
           while (h < nh && strcmp(H[h].name, a->val)) h++;
           if (h == nh) {
-            Handler hd = {a->val, dupn(sig, strlen(sig)), a->at};
+            Handler hd = {a->val, dupn(sig, strlen(sig)), dupn(decl, strlen(decl)), a->at};
             PUSH(H, nh, chd, hd);
           } else if (strcmp(H[h].sig, sig)) {
-            fail(a->at, "handler %s is used from a page and from an item template; it needs one signature", a->val);
+            fail(a->at, "handler %s is called with (%s) here and (%s) elsewhere; one name has one signature", a->val, sig, H[h].sig);
           }
           if (x->slot < 0) {
             if (nslots == MAXSLOT) fail(x->at, "more than %d listening elements in one file", MAXSLOT);
@@ -1061,6 +1141,253 @@ static void analyse(void) {
     if (f >= nt || !T[f].page) F[f].tid = ++tid; /* every fragment but the page itself is cloned */
 }
 
+/* ---- signals: which bindings read which cells ----
+ * A cell is a scalar field or a list of the state, of a record, or of a component instance (its
+ * props and local state). A binding is one thing a render may have to redo: a text {expr}, one
+ * bound attribute, an element's class toggles together, an {#if}'s condition, an {#each}'s
+ * keys, a component prop. Each binding owns one dirty bit in its aggregate's space: the state's
+ * for the page's bindings, the item record's for an item template's, the component's for the
+ * bindings in a component's body. A cell's readers are the bits of the bindings whose
+ * expressions name it; a setter ORs them into the dirty words. An item template's binding that
+ * also reads the state gets a second bit in the state's space (list-wide): when it is set, that
+ * one binding is redone for every item. Spaces: 0 the state, 1 + r record r, 1 + nrec + c
+ * component c. */
+enum { BK_TEXT = 1, BK_ATTR, BK_CLASS, BK_IF, BK_EACH, BK_PROP, BK_INST };
+typedef struct { int tpl, ctx, kind, node, attr, inst, prop, space, bit, lw; size_t at; } Bind;
+static Bind *BD;
+static int nbd, cbd;
+static int *spn;      /* bits in use per space */
+static int *rec_shown; /* record r is shown by an item template: it carries dirty words */
+static int *dord, ndord; /* the derived fields, inputs first */
+#define SP_REC(r) (1 + (r))
+#define SP_COMP(c) (1 + nrec + (c))
+
+static int sp_w(int s) { return spn[s] ? (spn[s] + 31) / 32 : 1; }
+static void mask_set(Mask *m, int bit) { m->w[bit >> 5] |= 1u << (bit & 31); }
+static int mask_any(const Mask *m) {
+  for (int w = 0; w < MAXW; w++)
+    if (m->w[w]) return 1;
+  return 0;
+}
+static int new_bit(int s, size_t at) {
+  if (spn[s] == MAXW * 32) fail(at, "more than %d bindings read one state, record or component", MAXW * 32);
+  return spn[s]++;
+}
+static int tpl_space(int t) { return T[t].page ? 0 : SP_REC(T[t].rec); }
+
+/* Marks in cells[] the fields of f that expression e reads through var: each var->field or
+ * var.field (a list's count field_n is the list). var used any other way, say passed to a
+ * function, reads every field. Returns 1 when e names var at all. */
+static int scan_reads(const char *e, const char *var, Field *f, int nf, char *cells, size_t at, const char *agg) {
+  size_t vl = strlen(var);
+  int member = 0, any = 0;
+  for (const char *p = e; *p;) {
+    if (*p == '"' || *p == '\'') {
+      char q = *p++;
+      while (*p && *p != q) p += p[0] == '\\' && p[1] ? 2 : 1;
+      if (*p) p++;
+      member = 0;
+      continue;
+    }
+    if (is_alpha(*p)) {
+      const char *s = p;
+      while (is_alnum(*p)) p++;
+      if (member || (size_t)(p - s) != vl || memcmp(s, var, vl)) { member = 0; continue; }
+      any = 1;
+      const char *q = p;
+      while (is_ws(*q)) q++;
+      int arrow = q[0] == '-' && q[1] == '>';
+      if (!arrow && !(q[0] == '.' && is_alpha(q[1]))) { /* the whole aggregate */
+        for (int i = 0; i < nf; i++) cells[i] = 1;
+        continue;
+      }
+      q += arrow ? 2 : 1;
+      while (is_ws(*q)) q++;
+      const char *fs = q;
+      while (is_alnum(*q)) q++;
+      char *fn = dupn(fs, (size_t)(q - fs));
+      int i = find_field(f, nf, fn);
+      size_t fl = strlen(fn);
+      if (i < 0 && fl > 2 && !strcmp(fn + fl - 2, "_n")) {
+        fn[fl - 2] = 0;
+        i = find_field(f, nf, fn);
+        if (i >= 0 && f[i].type != T_LIST) i = -1;
+      } else if (i < 0 && fl > 4 && !strcmp(fn + fl - 4, "_cap")) {
+        fn[fl - 4] = 0;
+        if ((i = find_field(f, nf, fn)) >= 0 && f[i].type == T_LIST) { p = q; member = 1; continue; }
+        i = -1;
+      } else if (i >= 0 && f[i].type == T_LIST) {
+        const char *r = q;
+        while (is_ws(*r)) r++;
+        if (*r == '[')
+          fail(at, "%.*s reads an item of the list %s by index: the compiler cannot tell which item a write changes "
+                   "(show the items with {#each}, or derive a value)", (int)(r - s), s, fn);
+      }
+      if (i < 0) fail(at, "%s has no field %s (in %s)", agg, fn, e);
+      cells[i] = 1;
+      p = q;
+      member = 1;
+      continue;
+    }
+    if (p[0] == '-' && p[1] == '>') { member = 1; p += 2; continue; }
+    if (*p == '.') { member = 1; p++; continue; }
+    if (!is_ws(*p) && !(*p >= '0' && *p <= '9')) member = 0;
+    p++;
+  }
+  return any;
+}
+
+static Comp *ctx_comp(int tpl, int ctx) { return &C[T[tpl].in[ctx].comp]; }
+
+static int add_bind(int tpl, int ctx, int kind, int node, int attr, size_t at) {
+  Bind b = {tpl, ctx, kind, node, attr, -1, -1, 0, 0, -1, at};
+  b.space = ctx >= 0 ? SP_COMP(T[tpl].in[ctx].comp) : tpl_space(tpl);
+  b.bit = new_bit(b.space, at);
+  PUSH(BD, nbd, cbd, b);
+  return nbd - 1;
+}
+
+/* the cells binding bi's expression e reads become its readers */
+static void bind_reads(int bi, const char *e) {
+  Bind *b = &BD[bi];
+  Tpl *t = &T[b->tpl];
+  char *cells = xrealloc(0, (size_t)(nsf + 1));
+  if (b->ctx >= 0) {
+    Comp *c = ctx_comp(b->tpl, b->ctx);
+    cells = xrealloc(cells, (size_t)c->nf + 1);
+    memset(cells, 0, (size_t)c->nf + 1);
+    scan_reads(e, "self", c->f, c->nf, cells, b->at, c->name);
+    for (int i = 0; i < c->nf; i++)
+      if (cells[i]) mask_set(&c->f[i].rd, b->bit);
+    free(cells);
+    return;
+  }
+  memset(cells, 0, (size_t)nsf + 1);
+  scan_reads(e, t->svar, sf, nsf, cells, b->at, st_name);
+  for (int i = 0; i < nsf; i++) {
+    if (!cells[i]) continue;
+    if (t->page) mask_set(&sf[i].rd, b->bit);
+    else {
+      if (b->lw < 0) b->lw = new_bit(0, b->at); /* list-wide: redo this binding for every item */
+      mask_set(&sf[i].rd, b->lw);
+    }
+  }
+  if (!t->page) {
+    Record *r = &recs[t->rec];
+    cells = xrealloc(cells, (size_t)r->n + 1);
+    memset(cells, 0, (size_t)r->n + 1);
+    scan_reads(e, t->ivar, r->f, r->n, cells, b->at, r->name);
+    for (int i = 0; i < r->n; i++)
+      if (cells[i]) mask_set(&r->f[i].rd, b->bit);
+  }
+  free(cells);
+}
+
+static int *dpath, ndpath; /* the derived values being ordered, outermost first */
+static void derived_order(int d, char *state) { /* depth first: inputs before the derived */
+  if (state[d] == 2) return;
+  if (state[d] == 1) {
+    char cyc[1024] = "";
+    int k = 0;
+    while (dpath[k] != d) k++;
+    for (; k < ndpath; k++) snprintf(cyc + strlen(cyc), sizeof cyc - strlen(cyc), "%s -> ", sf[dpath[k]].name);
+    fail(sf[d].at, "derived values read each other in a cycle: %s%s", cyc, sf[d].name);
+  }
+  state[d] = 1;
+  dpath[ndpath++] = d;
+  char *cells = xrealloc(0, (size_t)nsf + 1);
+  memset(cells, 0, (size_t)nsf + 1);
+  scan_reads(sf[d].dexpr, "S", sf, nsf, cells, sf[d].at, st_name);
+  for (int i = 0; i < nsf; i++)
+    if (cells[i] && sf[i].derived) derived_order(i, state);
+  free(cells);
+  ndpath--;
+  state[d] = 2;
+  dord[ndord++] = d;
+}
+
+static void signals(void) {
+  spn = xrealloc(0, (size_t)(1 + nrec + nc) * sizeof(int));
+  memset(spn, 0, (size_t)(1 + nrec + nc) * sizeof(int));
+  rec_shown = xrealloc(0, (size_t)(nrec + 1) * sizeof(int));
+  memset(rec_shown, 0, (size_t)(nrec + 1) * sizeof(int));
+  for (int ti = 0; ti < nt; ti++)
+    if (!T[ti].page) rec_shown[T[ti].rec] = 1;
+  /* derived values: a bit each in the state's space, set by any input's write */
+  dord = xrealloc(0, (size_t)(nsf + 1) * sizeof(int));
+  dpath = xrealloc(0, (size_t)(nsf + 1) * sizeof(int));
+  char *st = xrealloc(0, (size_t)nsf + 1);
+  memset(st, 0, (size_t)nsf + 1);
+  for (int d = 0; d < nsf; d++)
+    if (sf[d].derived) derived_order(d, st);
+  for (int k = 0; k < ndord; k++) {
+    int d = dord[k], bit = new_bit(0, sf[d].at);
+    memset(st, 0, (size_t)nsf + 1);
+    scan_reads(sf[d].dexpr, "S", sf, nsf, st, sf[d].at, st_name);
+    for (int i = 0; i < nsf; i++)
+      if (st[i]) mask_set(&sf[i].rd, bit);
+    sf[d].dbit = bit;
+  }
+  free(st);
+  for (int ti = 0; ti < nt; ti++) {
+    Tpl *t = &T[ti];
+    for (int ii = 0; ii < t->nin; ii++) /* props first: they are redone before the bindings that read them */
+      for (int p = 0; p < C[t->in[ii].comp].nprops; p++) {
+        PropB *pb = &t->in[ii].pb[p];
+        pb->bi = add_bind(ti, pb->ctx, BK_PROP, -1, -1, pb->at);
+        BD[pb->bi].inst = ii;
+        BD[pb->bi].prop = p;
+        if (!pb->stat) bind_reads(pb->bi, pb->expr);
+      }
+    for (int n = t->first; n < t->last; n++) {
+      Node *x = &N[n];
+      if (x->frag < 0) continue;
+      if (x->kind == N_BIND || x->kind == N_IF) {
+        x->bi = add_bind(ti, x->ictx, x->kind == N_BIND ? BK_TEXT : BK_IF, n, -1, x->at);
+        bind_reads(x->bi, x->expr);
+      } else if (x->kind == N_ELEM) {
+        for (int i = 0; i < x->na; i++) {
+          Attr *a = &x->a[i];
+          if (a->kind == A_TOGGLE) {
+            if (x->bi < 0) x->bi = add_bind(ti, x->ictx, BK_CLASS, n, -1, a->at);
+            bind_reads(x->bi, a->val);
+          } else if (a->kind == A_BIND) {
+            a->bi = add_bind(ti, x->ictx, BK_ATTR, n, i, a->at);
+            bind_reads(a->bi, a->val);
+          }
+        }
+      } else if (x->kind == N_EACH) {
+        /* the list's own cell, and the key: a key field's setter flags the record's lists */
+        x->bi = add_bind(ti, -1, BK_EACH, n, -1, x->at);
+        Bind *b = &BD[x->bi];
+        Field *lf = &ag_f(x->eowner)[x->efield];
+        mask_set(&lf->rd, b->bit);
+        Record *r = &recs[lf->reci];
+        char *cells = xrealloc(0, (size_t)(r->n > nsf ? r->n : nsf) + 1);
+        memset(cells, 0, (size_t)r->n + 1);
+        scan_reads(x->ekey, x->evar, r->f, r->n, cells, x->at, r->name);
+        for (int i = 0; i < r->n; i++)
+          if (cells[i]) r->f[i].kd = 1;
+        memset(cells, 0, (size_t)nsf + 1);
+        scan_reads(x->ekey, t->svar, sf, nsf, cells, x->at, st_name);
+        for (int i = 0; i < nsf; i++) {
+          if (!cells[i]) continue;
+          if (t->page) mask_set(&sf[i].rd, b->bit);
+          else {
+            if (b->lw < 0) b->lw = new_bit(0, x->at);
+            mask_set(&sf[i].rd, b->lw);
+          }
+        }
+        free(cells);
+      }
+    }
+    if (!t->page && t->nin) { /* a component's handler changed its local state: the item is redone */
+      int b = add_bind(ti, -1, BK_INST, -1, -1, t->at);
+      (void)b;
+    }
+  }
+}
+
 /* ---- code generation ---- */
 static char **lits;
 static int nlit, clit;
@@ -1084,6 +1411,11 @@ static void out_cstr(Buf *b, const char *s) {
 
 static int use_cls, use_str;
 static const Tpl *cur; /* the template being generated */
+static const char *ctype(int ty);
+static int shadowed(const Field *f);
+static void inst_init(Buf *b, int k, const char *ind);
+static void inst_props(Buf *b, int f, int create);
+static void inst_clear(Buf *b, int f);
 
 /* user text inside a generated C comment: a star-slash in it would end the comment early */
 static char *cmt(const char *s) {
@@ -1419,6 +1751,7 @@ static void direct(Buf *b, int n, int depth) {
     return;
   }
   if (n == unnamed_root) id = 0;
+  if (x->iroot) inst_init(b, x->iroot - 1, ind);
   if (id) out(b, "%s%s = cd_id_new();\n", ind, id);
   if (id && x->ref && is_froot(n)) out(b, "%scdt_v->%s = %s;\n", ind, x->ref, id);
   out(b, "%scd_open(cdt_s[%d]);\n", ind, lit(x->tag));
@@ -1450,6 +1783,19 @@ static void clone_create(Buf *b, int f) {
   params(b, t);
   out(b, ") {\n");
   voids(b, t);
+  if (f == F[f].tpl && !t->page && rec_shown[t->rec]) { /* created whole: nothing of it is left to redo */
+    Record *r = &recs[t->rec];
+    for (int w = 0; w < sp_w(SP_REC(t->rec)); w++) out(b, "  %s->cdt_d[%d] = 0;\n", t->ivar, w);
+    int any = 0;
+    for (int i = 0; i < r->n; i++) any |= shadowed(&r->f[i]);
+    if (any) {
+      out(b, "#if CDOM_DEV\n");
+      for (int i = 0; i < r->n; i++)
+        if (shadowed(&r->f[i])) out(b, "  %s->cdt_sh_%s = %s->%s;\n", t->ivar, r->f[i].name, t->ivar, r->f[i].name);
+      out(b, "#endif\n");
+    }
+  }
+  inst_props(b, f, 1);
   IntVec v = {0, 0, 0};
   frag_nodes(root, &v);
   out(b, "  cd_id cdt_root = %s = cd_id_new();\n", idx(root));
@@ -1505,7 +1851,7 @@ static void clone_create(Buf *b, int f) {
       out(b, "  cdt_v->list%d = (cd_list){0};\n  cdt_v->list%d.parent = %s;\n  cdt_v->list%d.owns_parent = %d;\n", N[n].ei, N[n].ei,
           idx(N[n].parent), N[n].ei, N[n].owns);
     }
-    out(b, "  %s_lists(%s, %s, cdt_v);\n", t->name, t->svar, t->ivar);
+    out(b, "  %s_lists(%s, %s, cdt_v, cdt_ones);\n", t->name, t->svar, t->ivar);
   }
   out(b, "  return cdt_root;\n}\n\n");
   free(v.v);
@@ -1518,7 +1864,138 @@ static void reach(Buf *b, int n) {
   out(b, " ");
 }
 
+/* the test a binding passes when the render must redo it: its dirty bit, in the words the patch got
+ * (the template's own cells) or in its component instance's words */
+static void guard(Buf *b, int bi) {
+  Bind *x = &BD[bi];
+  if (x->ctx < 0) out(b, "if (cdt_m[%d] & 0x%xu) ", x->bit >> 5, 1u << (x->bit & 31));
+  else out(b, "if (cdt_v->cdt_i%d.cdt_d[%d] & 0x%xu) ", x->ctx, x->bit >> 5, 1u << (x->bit & 31));
+}
+
+static void inst_props(Buf *b, int f, int create);
+
+/* A component instance lives in its template's view (cdt_i<k>): its props, its local state and
+ * its dirty words. Created with its node: zeroed, local state at its initial values, props from
+ * the using scope. A patch first redoes the props that were marked; a prop whose value changed
+ * marks the instance's bindings that read it. */
+static void inst_init(Buf *b, int k, const char *ind) {
+  const Inst *in = &cur->in[k];
+  const Comp *c = &C[in->comp];
+  out(b, "%scdt_v->cdt_i%d = (%s){0};\n", ind, k, c->name);
+  for (int i = c->nprops; i < c->nf; i++)
+    if (c->f[i].has_init) out(b, "%scdt_v->cdt_i%d.%s = %lldu;\n", ind, k, c->f[i].name, c->f[i].init);
+  for (int p = 0; p < c->nprops; p++) {
+    const PropB *pb = &in->pb[p];
+    if (pb->stat && c->f[p].type == T_STR) out(b, "%scdt_v->cdt_i%d.%s = cdt_s[%d];\n", ind, k, c->f[p].name, lit(pb->expr));
+    else out(b, "%scdt_v->cdt_i%d.%s = (%s)(%s);\n", ind, k, c->f[p].name, ctype(c->f[p].type), pb->expr);
+  }
+  int any = 0;
+  for (int i = c->nprops; i < c->nf; i++) any |= shadowed(&c->f[i]);
+  if (any) {
+    out(b, "#if CDOM_DEV\n");
+    for (int i = c->nprops; i < c->nf; i++)
+      if (shadowed(&c->f[i])) out(b, "%scdt_v->cdt_i%d.cdt_sh_%s = cdt_v->cdt_i%d.%s;\n", ind, k, c->f[i].name, k, c->f[i].name);
+    out(b, "#endif\n");
+  }
+}
+
+static void inst_props(Buf *b, int f, int create) {
+  for (int k = 0; k < cur->nin; k++) {
+    const Inst *in = &cur->in[k];
+    if (N[in->root].frag != f) continue;
+    if (create) { inst_init(b, k, "  "); continue; }
+    const Comp *c = &C[in->comp];
+    for (int p = 0; p < c->nprops; p++) {
+      const PropB *pb = &in->pb[p];
+      if (pb->stat) continue;
+      const char *ty = ctype(c->f[p].type);
+      out(b, "  ");
+      guard(b, pb->bi);
+      out(b, "{ /* %s.%s */\n    %s cdt_p = (%s)(%s);\n    CDT_CMP;\n    if (cdt_p != cdt_v->cdt_i%d.%s) {\n      cdt_v->cdt_i%d.%s = cdt_p;\n",
+          c->name, c->f[p].name, ty, ty, pb->expr, k, c->f[p].name, k, c->f[p].name);
+      for (int w = 0; w < MAXW; w++)
+        if (c->f[p].rd.w[w]) out(b, "      cdt_v->cdt_i%d.cdt_d[%d] |= 0x%xu;\n", k, w, c->f[p].rd.w[w]);
+      out(b, "    }\n  }\n");
+    }
+  }
+}
+
+/* at the end of a template's patch: its instances' marks are all redone */
+static void inst_clear(Buf *b, int f) {
+  if (f != F[f].tpl) return;
+  for (int k = 0; k < cur->nin; k++)
+    for (int w = 0; w < sp_w(SP_COMP(cur->in[k].comp)); w++) out(b, "  cdt_v->cdt_i%d.cdt_d[%d] = 0;\n", k, w);
+}
+
+static int inst_bit(int t) { /* an item template's bit for "a component's local state changed" */
+  for (int k = 0; k < nbd; k++)
+    if (BD[k].tpl == t && BD[k].kind == BK_INST) return BD[k].bit;
+  return -1;
+}
+
+static void handler_call(Buf *c, const Tpl *o, const Attr *a, const char *ind) {
+  if (a->ectx < 0) {
+    if (o->page) out(c, " %s(%s, e);", a->val, o->svar);
+    else out(c, " %s(%s, %s, e);", a->val, o->svar, o->ivar);
+    return;
+  }
+  const Comp *cp = &C[o->in[a->ectx].comp];
+  out(c, " {\n%s%s *self = &", ind, cp->name);
+  if (o->page) out(c, "%s_v", o->name);
+  else out(c, "%s_views[cdt_t & 0xffffffu]", o->name);
+  out(c, ".cdt_i%d;\n#if CDOM_DEV\n%scdt_dev_owner = \"%s\";\n#endif\n", a->ectx, ind, cp->name);
+  out(c, "%s%s(self, e);\n#if CDOM_DEV\n%scdt_dev_owner = 0;\n%scdt_dev_inst_%s(self);\n#endif\n", ind, a->val, ind, ind, cp->name);
+  if (!o->page) {
+    int W = sp_w(SP_COMP(o->in[a->ectx].comp)), bit = inst_bit((int)(o - T));
+    out(c, "%sif (self->cdt_d[0]", ind);
+    for (int w = 1; w < W; w++) out(c, " | self->cdt_d[%d]", w);
+    out(c, ") { /* its local state changed: the item is patched */\n%s  %s->cdt_d[%d] |= 0x%xu;\n%s  cdt_queue_%s(%s);\n%s}\n", ind, o->ivar,
+        bit >> 5, 1u << (bit & 31), ind, recs[o->rec].name, o->ivar, ind);
+  }
+  out(c, "%.*s}", (int)strlen(ind) - 2, ind);
+}
+
+/* a component's type: its props, its local state and its dirty words, with a setter per local
+ * state field (the component's own handlers write its local state, and only through these) */
+static void gen_comp(Buf *h, Buf *c, int ci) {
+  const Comp *cp = &C[ci];
+  out(h, "\n/* ---- component %s ---- */\ntypedef struct %s {\n", cp->name, cp->name);
+  for (int i = 0; i < cp->nf; i++)
+    out(h, "  %s %s;%s\n", ctype(cp->f[i].type), cp->f[i].name, i < cp->nprops ? " /* prop: its parent's render writes it */" : "");
+  out(h, "  uint32_t cdt_d[%d]; /* cdtc's dirty bits */\n", sp_w(SP_COMP(ci)));
+  int any = 0;
+  for (int i = cp->nprops; i < cp->nf; i++) any |= shadowed(&cp->f[i]);
+  if (any) {
+    out(h, "#if CDOM_DEV /* what the last setter wrote */\n");
+    for (int i = cp->nprops; i < cp->nf; i++)
+      if (shadowed(&cp->f[i])) out(h, "  %s cdt_sh_%s;\n", ctype(cp->f[i].type), cp->f[i].name);
+    out(h, "#endif\n");
+  }
+  out(h, "} %s;\n", cp->name);
+  for (int i = cp->nprops; i < cp->nf; i++) {
+    const Field *f = &cp->f[i];
+    const char *ty = ctype(f->type);
+    out(h, "void %s_set_%s(%s *self, %s v);\n", cp->name, f->name, cp->name, ty);
+    out(c, "void %s_set_%s(%s *self, %s v) {\n  if (self->%s == v) return;\n  self->%s = v;\n", cp->name, f->name, cp->name, ty, f->name,
+        f->name);
+    for (int w = 0; w < MAXW; w++)
+      if (f->rd.w[w]) out(c, "  self->cdt_d[%d] |= 0x%xu;\n", w, f->rd.w[w]);
+    if (shadowed(f)) out(c, "#if CDOM_DEV\n  self->cdt_sh_%s = v;\n#endif\n", f->name);
+    out(c, "}\n\n");
+  }
+  out(c, "#if CDOM_DEV\nstatic void cdt_dev_inst_%s(%s *self) { /* after its handler: local state written directly */\n  (void)self;\n", cp->name,
+      cp->name);
+  for (int i = cp->nprops; i < cp->nf; i++) {
+    const Field *f = &cp->f[i];
+    if (!shadowed(f)) continue;
+    out(c, "  if (self->%s != self->cdt_sh_%s) cd_dev_warn(\"state written without a setter: %s.%s\");\n  self->cdt_sh_%s = self->%s;\n",
+        f->name, f->name, cp->name, f->name, f->name, f->name);
+  }
+  out(c, "}\n#endif\n\n");
+}
+
 static void patch_body(Buf *b, int f) {
+  inst_props(b, f, 0);
   IntVec v = {0, 0, 0};
   frag_nodes(F[f].root, &v);
   for (int i = 0; i < v.n; i++) {
@@ -1526,9 +2003,11 @@ static void patch_body(Buf *b, int f) {
     Node *x = &N[n];
     const char *id = idx(n);
     if (x->kind == N_ELEM && x->ntog) {
-      out(b, "  {\n    uint32_t cdt_c = ");
+      out(b, "  ");
+      guard(b, x->bi);
+      out(b, "{\n    uint32_t cdt_c = ");
       bits(b, n);
-      out(b, ";\n    if (cdt_c != cdt_v->c%d) {\n      cdt_v->c%d = cdt_c;\n      ", x->ln, x->ln);
+      out(b, ";\n    CDT_CMP;\n    if (cdt_c != cdt_v->c%d) {\n      cdt_v->c%d = cdt_c;\n      ", x->ln, x->ln);
       if (id) out(b, "cd_set_class(%s, ", id);
       else reach(b, n), out(b, "cd_class(");
       cls(b, n, "cdt_c");
@@ -1538,7 +2017,9 @@ static void patch_body(Buf *b, int f) {
       for (int k = 0; k < x->na; k++) {
         Attr *a = &x->a[k];
         if (a->kind != A_BIND) continue;
-        out(b, "  {\n    cd_str cdt_a = (%s);\n    if (cdt_a != cdt_v->a%d_%d) {\n      cdt_v->a%d_%d = cdt_a;\n      ",
+        out(b, "  ");
+        guard(b, a->bi);
+        out(b, "{\n    cd_str cdt_a = (%s);\n    CDT_CMP;\n    if (cdt_a != cdt_v->a%d_%d) {\n      cdt_v->a%d_%d = cdt_a;\n      ",
             a->val, x->ln, k, x->ln, k);
         if (id) out(b, "cd_set_attr(%s, cdt_s[%d], cdt_str(cdt_a));\n", id, lit(a->name));
         else reach(b, n), out(b, "cd_attr(cdt_s[%d], cdt_str(cdt_a));\n", lit(a->name));
@@ -1546,36 +2027,54 @@ static void patch_body(Buf *b, int f) {
       }
     if (x->kind == N_BIND) {
       int s = x->bt == 's';
-      out(b, "  {\n    %s cdt_t = %s(%s);\n    if (cdt_t != cdt_v->t%d) {\n      cdt_v->t%d = cdt_t;\n      ",
+      out(b, "  ");
+      guard(b, x->bi);
+      out(b, "{\n    %s cdt_t = %s(%s);\n    CDT_CMP;\n    if (cdt_t != cdt_v->t%d) {\n      cdt_v->t%d = cdt_t;\n      ",
           s ? "cd_str" : "uint32_t", s ? "" : "(uint32_t)", x->expr, x->ln, x->ln);
       if (id) out(b, "%s(%s, %s);\n", s ? "cd_set_text" : "cd_set_text_num", id, s ? "cdt_str(cdt_t)" : "cdt_t");
       else reach(b, n), out(b, "%s(%s);\n", s ? "cd_value" : "cd_value_num", s ? "cdt_str(cdt_t)" : "cdt_t");
       out(b, "    }\n  }\n");
     }
     if (x->kind == N_IF) {
-      out(b, "  {\n    uint32_t cdt_b = ");
+      /* the condition, when marked: a change swaps the branch (created whole); otherwise the
+       * present branch patches what was marked inside it */
+      int patches = 0;
+      for (int br = 0; br < 2; br++) {
+        int g = branch_frag(n, br);
+        patches |= g >= 0 && F[g].has_patch;
+      }
+      const char *I = patches ? "  " : ""; /* one level deeper inside the block that keeps cdt_b */
+      if (patches) out(b, "  {\n    uint32_t cdt_b = cdt_v->if%d_b;\n    ", x->ln);
+      else out(b, "  ");
+      guard(b, x->bi);
+      out(b, "{\n%s    %scdt_b = ", I, patches ? "" : "uint32_t ");
       cond_b(b, n);
-      out(b, ";\n    if (cdt_b != cdt_v->if%d_b) {\n      if (cdt_v->if%d_b) {\n        cd_remove(cdt_v->if%d_root);\n", x->ln, x->ln, x->ln);
+      out(b, ";\n%s    CDT_CMP;\n%s    if (cdt_b != cdt_v->if%d_b) {\n%s      if (cdt_v->if%d_b) {\n%s        cd_remove(cdt_v->if%d_root);\n", I, I,
+          x->ln, I, x->ln, I, x->ln);
       for (int br = 0; br < 2; br++) {
         int g = branch_frag(n, br);
         if (g < 0 || !F[g].has_free) continue;
-        out(b, "        if (cdt_v->if%d_b == %d) ", x->ln, br + 1);
+        out(b, "%s        if (cdt_v->if%d_b == %d) ", I, x->ln, br + 1);
         fname(b, g, "free");
         out(b, "(cdt_v);\n");
       }
-      out(b, "        cdt_v->if%d_root = 0;\n      }\n      cdt_v->if%d_b = cdt_b;\n", x->ln, x->ln);
-      insert_branches(b, n, "      ");
-      out(b, "    }");
+      out(b, "%s        cdt_v->if%d_root = 0;\n%s      }\n%s      cdt_v->if%d_b = cdt_b;\n", I, x->ln, I, I, x->ln);
+      insert_branches(b, n, patches ? "        " : "      ");
+      if (patches) out(b, "        cdt_b = 0; /* created whole */\n");
+      out(b, "%s    }\n%s  }\n", I, I);
+      if (!patches) continue;
+      int first = 1;
       for (int br = 0; br < 2; br++) {
         int g = branch_frag(n, br);
         if (g < 0 || !F[g].has_patch) continue;
-        out(b, " else if (cdt_b == %d) {\n      ", br + 1);
+        out(b, "    %sif (cdt_b == %d) ", first ? "" : "else ", br + 1);
+        first = 0;
         fname(b, g, "patch");
         out(b, "(");
         args(b, cur);
-        out(b, ");\n    }");
+        out(b, ", cdt_m);\n");
       }
-      out(b, "\n  }\n");
+      out(b, "  }\n");
     }
   }
   free(v.v);
@@ -1587,10 +2086,12 @@ static void patch_fn(Buf *b, int f) {
   fname(b, f, "patch");
   out(b, "(");
   params(b, t);
-  out(b, ") {\n");
+  out(b, ", const uint32_t *cdt_m) {\n");
   voids(b, t);
+  out(b, "  (void)cdt_m;\n");
   patch_body(b, f);
-  if (f == F[f].tpl && !t->page && t_lists_of(f)) out(b, "  %s_lists(%s, %s, cdt_v);\n", t->name, t->svar, t->ivar);
+  if (f == F[f].tpl && !t->page && t_lists_of(f)) out(b, "  %s_lists(%s, %s, cdt_v, cdt_m);\n", t->name, t->svar, t->ivar);
+  if (f == F[f].tpl) inst_clear(b, f);
   out(b, "}\n\n");
 }
 
@@ -1657,6 +2158,7 @@ static void view_struct(Buf *b, const Tpl *t, int ti) {
     if (x->kind == N_BIND) out(b, "  %s t%d;\n", x->bt == 's' ? "cd_str" : "uint32_t", x->ln);
     if (x->kind == N_IF) out(b, "  uint32_t if%d_b;\n  cd_id if%d_root;\n", x->ln, x->ln);
   }
+  for (int k = 0; k < t->nin; k++) out(b, "  %s cdt_i%d; /* a component instance */\n", C[t->in[k].comp].name, k);
   out(b, "} %s_view;\n", t->name);
 }
 
@@ -1685,24 +2187,72 @@ static void mark_reach(int a) {
 }
 static int ag_min(int a) { /* the fewest blob bytes one record can take */
   int k = 0;
-  for (int i = 0; i < ag_n(a); i++) k += ag_f(a)[i].type == T_STR ? 2 : 4;
+  for (int i = 0; i < ag_n(a); i++) k += ag_f(a)[i].derived ? 0 : ag_f(a)[i].type == T_STR ? 2 : 4;
   return k;
+}
+
+/* a scalar field a render must check in a dev build: something reads it, and only setters write it */
+static int shadowed(const Field *f) { return f->type != T_LIST && !f->derived && mask_any(&f->rd); }
+
+/* What a write of cell f of aggregate a (-1 the state, else a record) marks, through pointer p:
+ * its readers' bits; a shown record also goes on its type's queue, and a key field flags the
+ * record's lists for a key rebuild. */
+static void mark_code(Buf *c, int a, const Field *f, const char *p, int voids) {
+  for (int w = 0; w < MAXW; w++)
+    if (f->rd.w[w]) out(c, "  %s->cdt_d[%d] |= 0x%xu;\n", p, w, f->rd.w[w]);
+  if (a >= 0 && rec_shown[a] && mask_any(&f->rd)) out(c, "  cdt_queue_%s(%s);\n", recs[a].name, p);
+  if (a >= 0 && rec_shown[a] && f->kd) out(c, "  cdt_kd_%s = 1;\n", recs[a].name);
+  if (voids && !mask_any(&f->rd)) out(c, "  (void)%s;\n", p);
+}
+
+static void dev_mark(Buf *c, int a, const Field *f, const char *p) {
+  out(c, "#if CDOM_DEV\n");
+  if (shadowed(f)) out(c, "  %s->cdt_sh_%s = %s->%s;\n", p, f->name, p, f->name);
+  out(c, "  CDT_OWN(\"%s.%s\");\n#endif\n", ag_name(a), f->name);
+}
+
+/* <Agg>_set_<field> and <Agg>_mark_<field> for every scalar field */
+static void setters(Buf *h, Buf *c, int a) {
+  const char *A = ag_name(a);
+  for (int i = 0; i < ag_n(a); i++) {
+    const Field *f = &ag_f(a)[i];
+    if (f->type == T_LIST || f->derived) continue;
+    const char *ty = ctype(f->type);
+    out(h, "void %s_set_%s(%s *s, %s v);\nvoid %s_mark_%s(%s *s);\n", A, f->name, A, ty, A, f->name, A);
+    out(c, "void %s_set_%s(%s *s, %s v) {\n  if (s->%s == v) return;\n  s->%s = v;\n", A, f->name, A, ty, f->name, f->name);
+    mark_code(c, a, f, "s", 0);
+    dev_mark(c, a, f, "s");
+    out(c, "}\n\nvoid %s_mark_%s(%s *s) {\n", A, f->name, A);
+    mark_code(c, a, f, "s", 1);
+    dev_mark(c, a, f, "s");
+    out(c, "}\n\n");
+  }
 }
 
 static void list_helpers(Buf *h, Buf *c, int a, Field *f) {
   const char *O = ag_name(a), *L = f->name, *R = f->rec;
   int deep = ag_lists(f->reci);
   out(h, "void %s_%s_reserve(%s *s, uint32_t n);\n", O, L, O);
-  out(h, "%s *%s_%s_push(%s *s); /* a zeroed record at the end */\n", R, O, L, O);
+  out(h, "%s *%s_%s_push(%s *s); /* a zeroed record at the end: fill it directly before the next render */\n", R, O, L, O);
   out(h, "void %s_%s_remove(%s *s, uint32_t i);%s\n", O, L, O, deep ? " /* frees the record's lists */" : "");
+  out(h, "void %s_%s_clear(%s *s);\nvoid %s_%s_swap(%s *s, uint32_t i, uint32_t j);\n", O, L, O, O, L, O);
+  out(h, "void %s_%s_mark(%s *s); /* after writing the array or its count directly */\n", O, L, O);
   out(c, "void %s_%s_reserve(%s *s, uint32_t n) {\n", O, L, O);
   out(c, "  if (n <= s->%s_cap) return;\n  uint32_t c = s->%s_cap ? s->%s_cap : 16;\n  while (c < n) c *= 2;\n", L, L, L);
   out(c, "  s->%s = cd_realloc(s->%s, c * (uint32_t)sizeof(%s));\n  s->%s_cap = c;\n}\n\n", L, L, R, L);
+  out(c, "void %s_%s_mark(%s *s) {\n", O, L, O);
+  mark_code(c, a, f, "s", 1);
+  out(c, "#if CDOM_DEV\n  CDT_OWN(\"%s.%s\");\n#endif\n}\n\n", O, L);
   out(c, "%s *%s_%s_push(%s *s) {\n  if (s->%s_n == s->%s_cap) %s_%s_reserve(s, s->%s_n + 1);\n", R, O, L, O, L, L, O, L, L);
-  out(c, "  %s *r = &s->%s[s->%s_n++];\n  *r = (%s){0};\n  return r;\n}\n\n", R, L, L, R);
+  out(c, "  %s *r = &s->%s[s->%s_n++];\n  *r = (%s){0};\n  %s_%s_mark(s);\n  return r;\n}\n\n", R, L, L, R, O, L);
   out(c, "void %s_%s_remove(%s *s, uint32_t i) {\n  if (i >= s->%s_n) return;\n", O, L, O, L);
   if (deep) out(c, "  cdt_drop_%s(&s->%s[i]);\n", R, L);
-  out(c, "  for (uint32_t j = i + 1; j < s->%s_n; j++) s->%s[j - 1] = s->%s[j];\n  s->%s_n--;\n}\n\n", L, L, L, L);
+  out(c, "  for (uint32_t j = i + 1; j < s->%s_n; j++) s->%s[j - 1] = s->%s[j];\n  s->%s_n--;\n  %s_%s_mark(s);\n}\n\n", L, L, L, L, O, L);
+  out(c, "void %s_%s_clear(%s *s) {\n", O, L, O);
+  if (deep) out(c, "  for (uint32_t i = 0; i < s->%s_n; i++) cdt_drop_%s(&s->%s[i]);\n", L, R, L);
+  out(c, "  if (!s->%s_n) return;\n  s->%s_n = 0;\n  %s_%s_mark(s);\n}\n\n", L, L, O, L);
+  out(c, "void %s_%s_swap(%s *s, uint32_t i, uint32_t j) {\n  if (i >= s->%s_n || j >= s->%s_n || i == j) return;\n", O, L, O, L, L);
+  out(c, "  %s t = s->%s[i];\n  s->%s[i] = s->%s[j];\n  s->%s[j] = t;\n  %s_%s_mark(s);\n}\n\n", R, L, L, L, L, O, L);
 }
 
 static void ag_code(Buf *c, int a) {
@@ -1712,6 +2262,7 @@ static void ag_code(Buf *c, int a) {
   /* size */
   out(c, "static uint64_t cdt_need_%s(const %s *r) {\n  uint64_t need = %d;\n  (void)r;\n", A, A, ag_min(a));
   for (int i = 0; i < n; i++) {
+    if (F[i].derived) continue;
     if (F[i].type == T_STR)
       out(c, "  {\n    uint32_t k = cdt_len(r->%s);\n    if (k > 0xffff) return 0xffffffffffffffffull;\n    need += k;\n  }\n", F[i].name);
     else if (F[i].type == T_LIST) {
@@ -1723,6 +2274,7 @@ static void ag_code(Buf *c, int a) {
   /* writer */
   out(c, "static uint8_t *cdt_put_%s(uint8_t *d, const %s *r) {\n  (void)r;\n", A, A);
   for (int i = 0; i < n; i++) {
+    if (F[i].derived) continue;
     if (F[i].type == T_U32) out(c, "  d = cdt_put32(d, r->%s);\n", F[i].name);
     else if (F[i].type == T_STR) out(c, "  d = cdt_putstr(d, r->%s);\n", F[i].name);
     else
@@ -1734,6 +2286,7 @@ static void ag_code(Buf *c, int a) {
   out(c, "static int cdt_walk_%s(%s *r, const uint8_t *b, uint32_t len, uint32_t *o) {\n  uint32_t k;\n  (void)r; (void)b; (void)k;\n", A, A);
   for (int i = 0; i < n; i++) {
     const char *f = F[i].name;
+    if (F[i].derived) continue;
     if (F[i].type == T_U32) out(c, "  if (len - *o < 4) return -1;\n  if (r) r->%s = cdt_get32(b + *o);\n  *o += 4;\n", f);
     else if (F[i].type == T_STR)
       out(c, "  if (len - *o < 2) return -1;\n  k = cdt_get16(b + *o);\n  *o += 2;\n  if (len - *o < k) return -1;\n"
@@ -1744,7 +2297,7 @@ static void ag_code(Buf *c, int a) {
       out(c, "  if (r) {\n");
       if (deep) out(c, "    for (uint32_t i = 0; i < r->%s_n; i++) cdt_drop_%s(&r->%s[i]);\n", f, F[i].rec, f);
       out(c, "    %s_%s_reserve(r, k);\n    r->%s_n = k;\n", A, f, f);
-      if (deep) out(c, "    for (uint32_t i = 0; i < k; i++) r->%s[i] = (%s){0};\n", f, F[i].rec);
+      if (deep || rec_shown[sub]) out(c, "    for (uint32_t i = 0; i < k; i++) r->%s[i] = (%s){0};\n", f, F[i].rec);
       out(c, "  }\n  for (uint32_t i = 0; i < k; i++)\n    if (cdt_walk_%s(r ? &r->%s[i] : 0, b, len, o)) return -1;\n", F[i].rec, f);
     }
   }
@@ -1771,12 +2324,34 @@ static void gen_state(Buf *h, Buf *c) {
       if (f->type == T_LIST) out(h, " struct %s *%s; uint32_t %s_n, %s_cap;", f->rec, f->name, f->name, f->name);
       else out(h, " %s %s;", ctype(f->type), f->name);
     }
+    if (rec_shown[r]) {
+      out(h, "\n  uint32_t cdt_d[%d], cdt_q; /* cdtc's: dirty bits, and the render it is queued for */\n", sp_w(SP_REC(r)));
+      int any = 0;
+      for (int i = 0; i < recs[r].n; i++) any |= shadowed(&recs[r].f[i]);
+      if (any) {
+        out(h, "#if CDOM_DEV /* what the last setter wrote */\n ");
+        for (int i = 0; i < recs[r].n; i++)
+          if (shadowed(&recs[r].f[i])) out(h, " %s cdt_sh_%s;", ctype(recs[r].f[i].type), recs[r].f[i].name);
+        out(h, "\n#endif\n");
+      }
+    }
     out(h, " } %s;\n", recs[r].name);
   }
   out(h, "typedef struct %s {\n", st_name);
   for (int i = 0; i < nsf; i++) {
     if (sf[i].type == T_LIST) out(h, "  %s *%s;\n  uint32_t %s_n, %s_cap;\n", sf[i].rec, sf[i].name, sf[i].name, sf[i].name);
-    else out(h, "  %s %s;\n", ctype(sf[i].type), sf[i].name);
+    else out(h, "  %s %s;%s\n", ctype(sf[i].type), sf[i].name, sf[i].derived ? " /* derived: the render computes it */" : "");
+  }
+  out(h, "  uint32_t cdt_d[%d]; /* cdtc's dirty bits: the bindings the next render redoes */\n", sp_w(0));
+  {
+    int any = 0;
+    for (int i = 0; i < nsf; i++) any |= shadowed(&sf[i]);
+    if (any) {
+      out(h, "#if CDOM_DEV /* what the last setter wrote */\n");
+      for (int i = 0; i < nsf; i++)
+        if (shadowed(&sf[i])) out(h, "  %s cdt_sh_%s;\n", ctype(sf[i].type), sf[i].name);
+      out(h, "#endif\n");
+    }
   }
   out(h, "} %s;\n", st_name);
   out(h, "/* initial values; a str holds 0 until set, and 0 renders as \"\" */\n#define %s_INIT {", st_name);
@@ -1790,9 +2365,28 @@ static void gen_state(Buf *h, Buf *c) {
   for (int a = -1; a < nrec; a++) {
     if (a >= 0 && !reached[a]) continue;
     for (int i = 0; i < ag_n(a); i++) {
+      if (ag_f(a)[i].derived) continue;
       strs |= ag_f(a)[i].type == T_STR;
       u32s |= ag_f(a)[i].type != T_STR;
     }
+  }
+  /* the render's bookkeeping: a first render or a load redoes everything; each shown record type
+   * keeps a bounded queue of the records its setters marked since the last render */
+  out(c, "static int cdt_full = 1; /* the next render redoes everything: the first, after a load or mark_all */\n");
+  out(c, "#if CDOM_DEV\nstatic const char *cdt_dev_owner; /* the component whose handler is running */\n");
+  out(c, "static void cdt_dev_say(const char *a, const char *b) {\n  char m[256];\n  uint32_t n = 0;\n");
+  out(c, "  for (; *a && n < 128; a++) m[n++] = *a;\n  for (; *b && n < 255; b++) m[n++] = *b;\n  m[n] = 0;\n  cd_dev_warn(m);\n}\n");
+  out(c, "#define CDT_OWN(f) do { if (cdt_dev_owner) cdt_dev_say(cdt_dev_owner, \" writes \" f \", which it does not own\"); } while (0)\n");
+  out(c, "#endif\n");
+  int shown = 0;
+  for (int r = 0; r < nrec; r++) shown |= rec_shown[r];
+  if (shown) out(c, "#define CDT_QCAP 128\nstatic uint32_t cdt_epoch = 1; /* the render to come: a record is queued once per render */\n");
+  for (int r = 0; r < nrec; r++) {
+    if (!rec_shown[r]) continue;
+    const char *R = recs[r].name;
+    out(c, "static %s *cdt_q_%s[CDT_QCAP];\nstatic uint32_t cdt_qn_%s, cdt_kd_%s; /* queued (CDT_QCAP + 1: too many, scan), a key changed */\n", R, R, R, R);
+    out(c, "static void cdt_queue_%s(%s *r) {\n  if (r->cdt_q == cdt_epoch) return;\n  r->cdt_q = cdt_epoch;\n", R, R);
+    out(c, "  if (cdt_qn_%s < CDT_QCAP) cdt_q_%s[cdt_qn_%s++] = r;\n  else cdt_qn_%s = CDT_QCAP + 1;\n}\n", R, R, R, R);
   }
   for (int a = -1; a < nrec; a++) /* prototypes: records may refer to each other in any order */
     if (a < 0 || reached[a]) {
@@ -1802,13 +2396,27 @@ static void gen_state(Buf *h, Buf *c) {
       if (a >= 0 && ag_lists(a)) out(c, "static void cdt_drop_%s(%s *r);\n", A, A);
     }
   out(c, "\n");
+  out(h, "\n/* ---- signals: a render redoes only what was marked ----\n"
+         " * Write a field through its setter, <Agg>_set_<field>(p, v): it stores v and, when v differs, marks\n"
+         " * the bindings that read the field (a record also goes on its type's queue, so the render patches\n"
+         " * only the records marked). After writing a field directly call <Agg>_mark_<field>(p); after\n"
+         " * writing anything directly, %s_mark_all(s) makes the next render redo everything once. A list\n"
+         " * changes through _push, _remove, _clear and _swap, which mark it; after editing its array or count\n"
+         " * by hand call <Owner>_<list>_mark. A record fresh from _push may be filled directly before the\n"
+         " * next render, which creates it whole. A derived field is recomputed by the render when an input\n"
+         " * was marked; it has no setter. A dev build (-DCDOM_DEV=1) reports, through cd_dev_warn, a field\n"
+         " * the render finds changed without a setter, a list changed without a mark, and a component's\n"
+         " * handler writing state it does not own. */\n", st_name);
+  out(h, "void %s_mark_all(%s *s);\n", st_name, st_name);
+  out(c, "void %s_mark_all(%s *s) { (void)s; cdt_full = 1; }\n\n", st_name, st_name);
   for (int a = -1; a < nrec; a++) {
     if (a >= 0 && !reached[a]) continue;
+    setters(h, c, a);
     for (int i = 0; i < ag_n(a); i++)
       if (ag_f(a)[i].type == T_LIST) list_helpers(h, c, a, &ag_f(a)[i]);
   }
-  out(h, "/* the state as a fixed little-endian blob: fields in declaration order, a u32 as 4 bytes,\n"
-         " * a str as a u16 length then its bytes, a list as a u32 count then its records */\n");
+  out(h, "/* the state as a fixed little-endian blob: fields in declaration order (derived ones left out), a\n"
+         " * u32 as 4 bytes, a str as a u16 length then its bytes, a list as a u32 count then its records */\n");
   out(h, "uint32_t %s_save(const %s *s, uint8_t *dst, uint32_t cap); /* bytes, or the need when > cap */\n", st_name, st_name);
   out(h, "int %s_load(%s *s, const uint8_t *src, uint32_t len); /* 0 on success; s untouched on failure */\n", st_name, st_name);
   if (strs || u32s) {
@@ -1831,7 +2439,8 @@ static void gen_state(Buf *h, Buf *c) {
   out(c, "  if (need > 0xfffffffeu) return 0xffffffffu;\n  if (need > cap) return (uint32_t)need;\n");
   out(c, "  cdt_put_%s(dst, s);\n  return (uint32_t)need;\n}\n\n", st_name);
   out(c, "int %s_load(%s *s, const uint8_t *src, uint32_t len) { /* one pass to check, one to fill */\n  uint32_t o = 0;\n", st_name, st_name);
-  out(c, "  if (cdt_walk_%s(0, src, len, &o) || o != len) return -1;\n  o = 0;\n  return cdt_walk_%s(s, src, len, &o);\n}\n\n", st_name, st_name);
+  out(c, "  if (cdt_walk_%s(0, src, len, &o) || o != len) return -1;\n  o = 0;\n", st_name);
+  out(c, "  if (cdt_walk_%s(s, src, len, &o)) return -1;\n  cdt_full = 1; /* everything changed */\n  return 0;\n}\n\n", st_name);
   if (st_global) {
     out(c, "uint32_t cd_state_save(uint8_t *dst, uint32_t cap) { return %s_save(&%s, dst, cap); }\n", st_name, st_global);
     out(c, "int cd_state_load(const uint8_t *src, uint32_t len) { return %s_load(&%s, src, len); }\n\n", st_name, st_global);
@@ -1864,6 +2473,19 @@ static void find_fn(Buf *c, int n) {
 /* An item template's own lists: each view holds a cd_list per {#each}; the callbacks read
  * the state, the parent record and the parent view from a context set before each update
  * (updates of one {#each} never nest: a template's lists hold other templates). */
+/* An item's patch: its dirty words, plus the list-wide words of its template (the bindings that
+ * read the state, when the state cells they read were marked), taken and cleared; the item is
+ * patched only when some bit is set. rv names the record, call is the patch call's prefix. */
+static void ep_body(Buf *c, int r, const char *rv, const char *call) {
+  int W = sp_w(SP_REC(T[r].rec));
+  out(c, "  uint32_t cdt_m[%d];\n  CDT_VISIT;\n", W);
+  for (int w = 0; w < W; w++)
+    out(c, "  cdt_m[%d] = %s->cdt_d[%d] | cdt_lw_%s[%d];\n  %s->cdt_d[%d] = 0;\n", w, rv, w, T[r].name, w, rv, w);
+  out(c, "  if (cdt_m[0]");
+  for (int w = 1; w < W; w++) out(c, " | cdt_m[%d]", w);
+  out(c, ") %s, %s, cdt_v, cdt_m);\n", call, rv);
+}
+
 static void item_lists(Buf *c, int ti) {
   Tpl *t = &T[ti];
   const char *O = t->name, *ST = st_name, *SV = t->svar, *IV = t->ivar;
@@ -1886,18 +2508,26 @@ static void item_lists(Buf *c, int ti) {
     out(c, "  return %s_create(%s_ctx%d.S, &%s_ctx%d.r->%s[cdt_i], cdt_v);\n}\n", r->name, O, e, O, e, L);
     out(c, "static void %s_ep%d(void *cdt_ctx, uint32_t cdt_i, cd_item *cdt_it) {\n  (void)cdt_ctx;\n", O, e);
     out(c, "  %s_view *cdt_v = &%s_views[cdt_it->data];\n  cdt_v->idx = cdt_i;\n", r->name, r->name);
-    out(c, "  %s_patch(%s_ctx%d.S, &%s_ctx%d.r->%s[cdt_i], cdt_v);\n}\n", r->name, O, e, O, e, L);
+    out(c, "  %s *cdt_r = &%s_ctx%d.r->%s[cdt_i];\n", R, O, e, L);
+    char call[300];
+    snprintf(call, sizeof call, "%s_patch(%s_ctx%d.S", r->name, O, e);
+    ep_body(c, x->eref_t, "cdt_r", call);
+    out(c, "}\n");
     out(c, "static void %s_ed%d(void *cdt_ctx, cd_item *cdt_it) { (void)cdt_ctx; %s_release(cdt_it->data); }\n", O, e, r->name);
     out(c, "static cd_list_fns %s_fns%d = {0, %s_ec%d, %s_ep%d, %s_ed%d};\n", O, e, O, e, O, e, O, e);
     if (needs_find(n)) find_fn(c, n);
-    out(&up, "  {\n    uint32_t cdt_n = %s->%s_n;\n", IV, L);
+    Bind *b = &BD[x->bi];
+    out(&up, "  if (cdt_m[%d] & 0x%xu) { /* {#each %s}: a key, an item or the list changed */\n", b->bit >> 5, 1u << (b->bit & 31),
+        cmt(x->expr));
+    out(&up, "    uint32_t cdt_n = %s->%s_n;\n", IV, L);
     out(&up, "    if (cdt_n > %s_kcap%d) {\n      %s_kcap%d = cdt_n * 2;\n      %s_keys%d = cd_realloc(%s_keys%d, %s_kcap%d * 4);\n    }\n", O, e,
         O, e, O, e, O, e, O, e);
     out(&up, "    for (uint32_t cdt_i = 0; cdt_i < cdt_n; cdt_i++) %s_keys%d[cdt_i] = %s_key%d(%s, &%s->%s[cdt_i]);\n", O, e, O, e, SV, IV, L);
     out(&up, "    %s_ctx%d.S = %s;\n    %s_ctx%d.r = %s;\n    %s_ctx%d.pvi = (uint32_t)(cdt_v - %s_views);\n", O, e, SV, O, e, IV, O, e, O);
     out(&up, "    cd_list_update(&cdt_v->list%d, %s_keys%d, cdt_n, &%s_fns%d);\n  }\n", e, O, e, O, e);
   }
-  out(c, "static void %s_lists(%s *%s, %s *%s, %s_view *cdt_v) {\n  (void)%s;\n%s}\n\n", O, ST, SV, t->itype, IV, O, SV, up.d);
+  out(c, "static void %s_lists(%s *%s, %s *%s, %s_view *cdt_v, const uint32_t *cdt_m) {\n  (void)%s;\n%s}\n\n", O, ST, SV, t->itype, IV,
+      O, SV, up.d);
 }
 
 /* a view goes back to its free list: its lists' items first, then the ids it named */
@@ -1923,7 +2553,7 @@ static void gen_item(Buf *h, Buf *c, int ti) {
   params(h, t);
   out(h, ");\nvoid %s_patch(", t->name);
   params(h, t);
-  out(h, ");\n");
+  out(h, ", const uint32_t *cdt_m); /* redoes the bindings whose bits are set in cdt_m */\n");
   out(c, "/* ---- template %s: <%s> per %s ---- */\n", t->name, N[t->root].tag, t->itype);
   out(c, "static %s_view *%s_views;\nstatic uint32_t %s_nviews, %s_vcap, *%s_vfree, %s_nvfree;\n", t->name, t->name, t->name,
       t->name, t->name, t->name);
@@ -1944,14 +2574,21 @@ static void gen_item(Buf *h, Buf *c, int ti) {
   release_fn(c, ti);
 }
 
+/* a call to the handler event attribute a names, on a node of template o; the item (when o is an
+ * item template) is in o->ivar. A component's own handler gets its instance; on an item, a change
+ * to the instance's local state marks the item so the render patches it. */
+static void handler_call(Buf *c, const Tpl *o, const Attr *a, const char *ind);
+
 static void gen_page(Buf *h, Buf *c, int ti) {
   Tpl *t = &T[ti];
   cur = t;
   const char *P = t->name, *SV = t->svar, *ST = t->stype;
   out(h, "void %s_init(void);              /* interns strings, builds every template */\n", P);
   out(h, "void %s_create(%s *%s);  /* builds the page under the mount; call once */\n", P, ST, SV);
-  out(h, "void %s_render(%s *%s);  /* patches the page and its lists to the state */\n", P, ST, SV);
+  out(h, "void %s_render(%s *%s);  /* patches what setters marked since the last render */\n", P, ST, SV);
   out(h, "void %s_dispatch(const cd_event_rec *e); /* calls the handler an event names */\n", P);
+  out(h, "#if CDOM_DEV /* for tests: the bindings renders compared, the list items they looked at */\n"
+         "extern uint32_t %s_dev_compares, %s_dev_visits;\n#endif\n", P, P);
   out(c, "/* ---- the page: %s ---- */\n", P);
   view_struct(h, t, ti);
   out(h, "extern %s_view %s_v; /* the page's ids: ref=\"name\" fields reach named nodes */\n", P, P);
@@ -1976,7 +2613,11 @@ static void gen_page(Buf *h, Buf *c, int ti) {
     out(c, "  return %s_create(%s, &%s->%s[cdt_i], cdt_v);\n}\n", r->name, SV, SV, L);
     out(c, "static void %s_ep%d(void *cdt_ctx, uint32_t cdt_i, cd_item *cdt_it) {\n  %s *%s = cdt_ctx;\n", P, e, ST, SV);
     out(c, "  %s_view *cdt_v = &%s_views[cdt_it->data];\n  cdt_v->idx = cdt_i;\n", r->name, r->name);
-    out(c, "  %s_patch(%s, &%s->%s[cdt_i], cdt_v);\n}\n", r->name, SV, SV, L);
+    out(c, "  %s *cdt_r = &%s->%s[cdt_i];\n", R, SV, L);
+    char call[300];
+    snprintf(call, sizeof call, "%s_patch(%s", r->name, SV);
+    ep_body(c, x->eref_t, "cdt_r", call);
+    out(c, "}\n");
     out(c, "static void %s_ed%d(void *cdt_ctx, cd_item *cdt_it) { (void)cdt_ctx; %s_release(cdt_it->data); }\n", P, e, r->name);
     out(c, "static cd_list_fns %s_fns%d = {0, %s_ec%d, %s_ep%d, %s_ed%d};\n", P, e, P, e, P, e, P, e);
     if (needs_find(n)) find_fn(c, n);
@@ -1998,25 +2639,142 @@ static void gen_page(Buf *h, Buf *c, int ti) {
     shape(&init, F[f].root);
     out(&init, "  cd_tpl_save(%d);\n", F[f].tid);
   }
+  /* derived values, inputs first: recomputed when an input was marked, and their readers marked
+   * when the value changed */
+  if (ndord) {
+    out(c, "static void cdt_derive(%s *S, int cdt_all) {\n", ST);
+    for (int k = 0; k < ndord; k++) {
+      Field *d = &sf[dord[k]];
+      out(c, "  if (cdt_all || (S->cdt_d[%d] & 0x%xu)) { /* %s = %s */\n", d->dbit >> 5, 1u << (d->dbit & 31), d->name, cmt(d->dexpr));
+      out(c, "    %s cdt_x = (%s)(%s);\n    if (cdt_x != S->%s) {\n      S->%s = cdt_x;\n", ctype(d->type), ctype(d->type), d->dexpr,
+          d->name, d->name);
+      for (int w = 0; w < MAXW; w++)
+        if (d->rd.w[w]) out(c, "      S->cdt_d[%d] |= 0x%xu;\n", w, d->rd.w[w]);
+      out(c, "    }\n  }\n");
+    }
+    out(c, "}\n\n");
+  }
+  /* dev checks: a field written without its setter, a list changed without a mark */
+  out(c, "#if CDOM_DEV\nuint32_t %s_dev_compares, %s_dev_visits;\n", P, P);
+  for (int r = 0; r < nrec; r++)
+    if (rec_shown[r]) out(c, "static void cdt_dev_%s(%s *r, int all);\n", recs[r].name, recs[r].name);
+  for (int r = 0; r < nrec; r++) {
+    if (!rec_shown[r]) continue;
+    out(c, "static void cdt_dev_%s(%s *r, int all) {\n  (void)r; (void)all;\n", recs[r].name, recs[r].name);
+    for (int i = 0; i < recs[r].n; i++) {
+      Field *f = &recs[r].f[i];
+      if (shadowed(f))
+        out(c, "  if (!all && r->%s != r->cdt_sh_%s) cd_dev_warn(\"state written without a setter: %s.%s\");\n  r->cdt_sh_%s = r->%s;\n",
+            f->name, f->name, recs[r].name, f->name, f->name, f->name);
+    }
+    for (int u = 0; u < nt; u++) /* into the lists its template shows */
+      if (!T[u].page && T[u].rec == r)
+        for (int n = T[u].first; n < T[u].last; n++)
+          if (N[n].kind == N_EACH && N[n].frag >= 0) {
+            Field *lf = &recs[r].f[N[n].efield];
+            out(c, "  for (uint32_t i = 0; i < r->%s_n; i++) cdt_dev_%s(&r->%s[i], all);\n", lf->name, lf->rec, lf->name);
+          }
+    out(c, "}\n");
+  }
+  out(c, "static void cdt_dev_pre(%s *S, int all) {\n  (void)S; (void)all;\n", ST);
+  for (int i = 0; i < nsf; i++)
+    if (shadowed(&sf[i]))
+      out(c, "  if (!all && S->%s != S->cdt_sh_%s) cd_dev_warn(\"state written without a setter: %s.%s\");\n  S->cdt_sh_%s = S->%s;\n",
+          sf[i].name, sf[i].name, st_name, sf[i].name, sf[i].name, sf[i].name);
+  for (int n = t->first; n < t->last; n++) {
+    if (N[n].kind != N_EACH || N[n].frag < 0) continue;
+    Bind *b = &BD[N[n].bi];
+    const char *L = sf[N[n].efield].name, *R = sf[N[n].efield].rec;
+    int e = N[n].ei;
+    out(c, "  if (!all && !(S->cdt_d[%d] & 0x%xu) && !cdt_kd_%s) {\n    int bad = S->%s_n != %s_list%d.n;\n", b->bit >> 5,
+        1u << (b->bit & 31), R, L, P, e);
+    out(c, "    for (uint32_t i = 0; i < S->%s_n && !bad; i++) bad = %s_key%d(S, &S->%s[i]) != %s_list%d.items[i].key;\n", L, P, e, L, P, e);
+    out(c, "    if (bad) cd_dev_warn(\"list changed without a setter: %s.%s\");\n  }\n", st_name, L);
+  }
+  out(c, "}\nstatic void cdt_dev_post(%s *S, int all) {\n  (void)S; (void)all;\n", ST);
+  for (int n = t->first; n < t->last; n++)
+    if (N[n].kind == N_EACH && N[n].frag >= 0)
+      out(c, "  for (uint32_t i = 0; i < S->%s_n; i++) cdt_dev_%s(&S->%s[i], all);\n", sf[N[n].efield].name, sf[N[n].efield].rec,
+          sf[N[n].efield].name);
+  out(c, "}\n#endif\n\n");
   /* create */
   Buf cr = {0, 0, 0};
   unnamed_root = root_used(ti) ? -1 : t->root;
   direct(&cr, t->root, 0);
   unnamed_root = -1;
-  /* render */
+  /* render: take the dirty words, redo the page's marked bindings, then each list: its keys when
+   * the list or a key changed, else every item when a list-wide binding or too many items were
+   * marked, else only the queued items */
   Buf rd = {0, 0, 0};
+  int W = sp_w(0);
+  out(&rd, "  int cdt_all = cdt_full;\n  cdt_full = 0;\n#if CDOM_DEV\n  cdt_dev_pre(%s, cdt_all);\n#endif\n", SV);
+  out(&rd, "  if (cdt_all) {\n");
+  for (int w = 0; w < W; w++) out(&rd, "    %s->cdt_d[%d] = 0xffffffffu;\n", SV, w);
+  out(&rd, "  }\n");
+  if (ndord) out(&rd, "  cdt_derive(%s, 0);\n", SV);
+  out(&rd, "  uint32_t cdt_m[%d];\n", W);
+  for (int w = 0; w < W; w++) out(&rd, "  cdt_m[%d] = %s->cdt_d[%d];\n  %s->cdt_d[%d] = 0;\n", w, SV, w, SV, w);
   patch_body(&rd, ti);
+  inst_clear(&rd, ti);
+  for (int r = 0; r < nt; r++) { /* list-wide words */
+    if (T[r].page) continue;
+    int RW = sp_w(SP_REC(T[r].rec));
+    for (int w = 0; w < RW; w++) {
+      out(&rd, "  cdt_lw_%s[%d] = cdt_all ? 0xffffffffu : ", T[r].name, w);
+      int terms = 0;
+      for (int k = 0; k < nbd; k++)
+        if (BD[k].tpl == r && BD[k].lw >= 0 && BD[k].bit >> 5 == w)
+          out(&rd, "%s(cdt_m[%d] & 0x%xu ? 0x%xu : 0u)", terms++ ? " | " : "(", BD[k].lw >> 5, 1u << (BD[k].lw & 31), 1u << (BD[k].bit & 31));
+      out(&rd, "%s;\n", terms ? ")" : "0u");
+    }
+  }
+  int maxd = 0;
+  for (int r = 0; r < nt; r++)
+    if (tdepth(r) > maxd) maxd = tdepth(r);
+  for (int d = maxd; d > 0; d--) /* a nested list's marks reach the items holding it */
+    for (int r = 0; r < nt; r++) {
+      if (T[r].page || tdepth(r) != d) continue;
+      for (int n = T[r].first; n < T[r].last; n++) {
+        if (N[n].kind != N_EACH || N[n].frag < 0) continue;
+        int ch = N[n].eref_t, cr2 = T[ch].rec;
+        Bind *b = &BD[N[n].bi];
+        out(&rd, "  if (cdt_qn_%s || cdt_kd_%s", recs[cr2].name, recs[cr2].name);
+        for (int w = 0; w < sp_w(SP_REC(cr2)); w++) out(&rd, " || cdt_lw_%s[%d]", T[ch].name, w);
+        out(&rd, ") cdt_lw_%s[%d] |= 0x%xu; /* {#each %s} */\n", T[r].name, b->bit >> 5, 1u << (b->bit & 31), cmt(N[n].expr));
+      }
+    }
   for (int n = t->first; n < t->last; n++) {
     if (N[n].kind != N_EACH || N[n].frag < 0) continue;
     Node *x = &N[n];
-    const char *L = sf[x->efield].name;
-    int e = x->ei;
-    out(&rd, "  {\n    uint32_t cdt_n = %s->%s_n;\n", SV, L);
+    Bind *b = &BD[x->bi];
+    const char *L = sf[x->efield].name, *R = sf[x->efield].rec;
+    int e = x->ei, r = x->eref_t;
+    out(&rd, "  /* {#each %s} */\n  if ((cdt_m[%d] & 0x%xu) || cdt_kd_%s) {\n", cmt(x->expr), b->bit >> 5, 1u << (b->bit & 31), R);
+    out(&rd, "    uint32_t cdt_n = %s->%s_n;\n", SV, L);
     out(&rd, "    if (cdt_n > %s_kcap%d) {\n      %s_kcap%d = cdt_n * 2;\n      %s_keys%d = cd_realloc(%s_keys%d, %s_kcap%d * 4);\n    }\n", P,
         e, P, e, P, e, P, e, P, e);
     out(&rd, "    for (uint32_t cdt_i = 0; cdt_i < cdt_n; cdt_i++) %s_keys%d[cdt_i] = %s_key%d(%s, &%s->%s[cdt_i]);\n", P, e, P, e, SV, SV, L);
-    out(&rd, "    %s_fns%d.ctx = %s;\n    cd_list_update(&%s_list%d, %s_keys%d, cdt_n, &%s_fns%d);\n  }\n", P, e, SV, P, e, P, e, P, e);
+    out(&rd, "    %s_fns%d.ctx = %s;\n    cd_list_update(&%s_list%d, %s_keys%d, cdt_n, &%s_fns%d);\n", P, e, SV, P, e, P, e, P, e);
+    out(&rd, "  } else if (cdt_qn_%s > CDT_QCAP", R);
+    for (int w = 0; w < sp_w(SP_REC(T[r].rec)); w++) out(&rd, " || cdt_lw_%s[%d]", T[r].name, w);
+    out(&rd, ") {\n    for (uint32_t cdt_i = 0; cdt_i < %s_list%d.n; cdt_i++) %s_ep%d(%s, cdt_i, &%s_list%d.items[cdt_i]);\n", P, e, P, e, SV, P, e);
+    out(&rd, "  } else {\n    for (uint32_t cdt_k = 0; cdt_k < cdt_qn_%s; cdt_k++) { /* the queued items of this list */\n", R);
+    out(&rd, "      uintptr_t cdt_o = (uintptr_t)cdt_q_%s[cdt_k] - (uintptr_t)%s->%s;\n", R, SV, L);
+    out(&rd, "      uint32_t cdt_i = (uint32_t)(cdt_o / sizeof(%s));\n", R);
+    out(&rd, "      if (cdt_o < (uintptr_t)%s->%s_n * sizeof(%s) && cdt_i < %s_list%d.n) %s_ep%d(%s, cdt_i, &%s_list%d.items[cdt_i]);\n", SV, L, R,
+        P, e, P, e, SV, P, e);
+    out(&rd, "    }\n  }\n");
   }
+  {
+    int shown = 0;
+    for (int r = 0; r < nrec; r++)
+      if (rec_shown[r]) {
+        shown = 1;
+        out(&rd, "  cdt_qn_%s = cdt_kd_%s = 0;\n", recs[r].name, recs[r].name);
+      }
+    if (shown) out(&rd, "  cdt_epoch++;\n");
+  }
+  out(&rd, "#if CDOM_DEV\n  cdt_dev_post(%s, cdt_all);\n#endif\n", SV);
   /* the strings exist now: emit the table, its helpers, init, create, render */
   int empty = use_str ? lit("") : 0; /* before the table is written */
   Buf top = {0, 0, 0};
@@ -2028,12 +2786,16 @@ static void gen_page(Buf *h, Buf *c, int ti) {
   out(&top, "%s};\nstatic cd_str cdt_s[%d];\n", nlit ? "" : "\"\"", nlit ? nlit : 1);
   if (use_cls) out(&top, "static cd_str cdt_cls(cd_str *c, const char *const *s, uint32_t b) { return c[b] ? c[b] : (c[b] = cd_internz(s[b])); }\n");
   if (use_str) out(&top, "static cd_str cdt_str(cd_str s) { return s ? s : cdt_s[%d]; }\n", empty);
+  out(&top, "#if CDOM_DEV\n#define CDT_CMP (%s_dev_compares++)\n#define CDT_VISIT (%s_dev_visits++)\n#else\n#define CDT_CMP ((void)0)\n"
+            "#define CDT_VISIT ((void)0)\n#endif\n", P, P);
   out(&top, "\n");
   out(c, "void %s_init(void) {\n  for (uint32_t i = 0; i < %d; i++) cdt_s[i] = cd_internz(cdt_lit[i]);\n", P, nlit ? nlit : 1);
   out(c, "%s}\n\n", init.d ? init.d : "");
   out(c, "void %s_create(%s *%s) {\n  %s_view *cdt_v = &%s_v;\n", P, ST, SV, P, P);
   if (nslots) out(c, "  %s_S = %s;\n", P, SV);
-  out(c, "  (void)%s;\n  cd_at(CD_MOUNT, 0);\n%s}\n\n", SV, cr.d);
+  out(c, "  (void)%s;\n  cdt_full = 1; /* the first render takes the lists' keys and checks everything */\n", SV);
+  if (ndord) out(c, "  cdt_derive(%s, 1);\n", SV);
+  out(c, "  cd_at(CD_MOUNT, 0);\n%s}\n\n", cr.d);
   out(c, "void %s_render(%s *%s) {\n  %s_view *cdt_v = &%s_v;\n  (void)%s; (void)cdt_v;\n%s}\n\n", P, ST, SV, P, P, SV, rd.d ? rd.d : "");
   /* dispatch */
   out(c, "void %s_dispatch(const cd_event_rec *e) {\n", P);
@@ -2055,17 +2817,18 @@ static void gen_page(Buf *h, Buf *c, int ti) {
         Attr *a = &N[n].a[i];
         if (a->kind != A_EVENT) continue;
         if (a->ev < 0) { custom = 1; continue; }
-        if (o->page) out(c, "    case CD_EV_%s: %s(%s, e); break;\n", EVENT_IDS[a->ev], a->val, SV);
-        else out(c, "    case CD_EV_%s: %s(%s, %s, e); break;\n", EVENT_IDS[a->ev], a->val, SV, o->ivar);
+        out(c, "    case CD_EV_%s:", EVENT_IDS[a->ev]);
+        handler_call(c, o, a, "      ");
+        out(c, " break;\n");
       }
       if (custom) { /* named events: e->key is the name's string id */
         out(c, "    case CD_EV_CUSTOM:\n");
         for (int i = 0; i < N[n].na; i++) {
           Attr *a = &N[n].a[i];
           if (a->kind != A_EVENT || a->ev >= 0) continue;
-          out(c, "      if ((cd_str)e->key == cdt_s[%d]) ", lit(a->name + 3));
-          if (o->page) out(c, "%s(%s, e); /* %s */\n", a->val, SV, cmt(a->name + 3));
-          else out(c, "%s(%s, %s, e); /* %s */\n", a->val, SV, o->ivar, cmt(a->name + 3));
+          out(c, "      if ((cd_str)e->key == cdt_s[%d]) { /* %s */", lit(a->name + 3), cmt(a->name + 3));
+          handler_call(c, o, a, "        ");
+          out(c, " }\n");
         }
         out(c, "      break;\n");
       }
@@ -2118,23 +2881,25 @@ static void generate(const char *base) {
     for (int n = T[ti].first; n < T[ti].last; n++)
       if (N[n].kind == N_EACH && N[n].frag >= 0) N[n].ei = ne++;
   }
+  for (int ci = 0; ci < nc; ci++) gen_comp(&h, &body, ci);
+  int nested = 0;
+  for (int ti = 0; ti < nt; ti++) nested |= !T[ti].page && t_lists_of(ti);
+  if (nested) {
+    out(&body, "static const uint32_t cdt_ones[%d] = {", MAXW);
+    for (int w = 0; w < MAXW; w++) out(&body, "%s0xffffffffu", w ? ", " : "");
+    out(&body, "}; /* a create fills its item's lists whole */\n");
+  }
+  for (int ti = 0; ti < nt; ti++)
+    if (!T[ti].page)
+      out(&body, "static uint32_t cdt_lw_%s[%d]; /* this render: %s's bindings to redo for every item */\n", T[ti].name,
+          sp_w(SP_REC(T[ti].rec)), T[ti].name);
   for (int n = 0; n < nn; n++) /* finds call their parents' finds: declare them all first */
     if (N[n].kind == N_EACH && N[n].frag >= 0 && needs_find(n))
       out(&body, "static %s *%s_find%d(%s *%s, uint32_t cdt_i);\n", ag_f(N[n].eowner)[N[n].efield].rec, T[N[n].tpl].name, N[n].ei, st_name,
           T[N[n].tpl].svar);
   if (nh) {
     out(&h, "\n/* ---- handlers: the app defines these ---- */\n");
-    for (int i = 0; i < nh; i++) {
-      /* the signature: from the template using it */
-      int ti = -1;
-      for (int m = 0; m < nn && ti < 0; m++)
-        if (N[m].kind == N_ELEM && N[m].frag >= 0)
-          for (int k = 0; k < N[m].na; k++)
-            if (N[m].a[k].kind == A_EVENT && !strcmp(N[m].a[k].val, H[i].name)) ti = N[m].tpl;
-      Tpl *t = &T[ti];
-      if (t->page) out(&h, "void %s(%s *%s, const cd_event_rec *e);\n", H[i].name, t->stype, t->svar);
-      else out(&h, "void %s(%s *%s, %s *%s, const cd_event_rec *e);\n", H[i].name, t->stype, t->svar, t->itype, t->ivar);
-    }
+    for (int i = 0; i < nh; i++) out(&h, "%s\n", H[i].decl);
   }
   out(&h, "\n/* ---- templates ---- */\n");
   int maxd = 0; /* items deepest first: a template's code calls the templates its lists hold */
@@ -2193,6 +2958,7 @@ int main(int argc, char **argv) {
   }
   resolve();
   analyse();
+  signals();
   generate(base);
   return 0;
 }
