@@ -133,6 +133,7 @@ The shim is written to be read (real names, one statement per line, a comment pe
 | `start`'s `openStore` option | 6,740 | 2,652 | 2,986 |
 | shared helpers (`bytes`, `copyBytes`, `promised`, `place`), store_put answers | 6,623 | 2,658 | 2,987 |
 | network pass: request headers, deadline, `ws_buffered`, socket ids reused, `epoch`, `store_del`, keys read during the call | 7,221 | 2,861 | 3,219 |
+| `rect` (the foolish port's flights) | 7,351 | 2,919 | 3,271 |
 The rewrite costs 125 bytes minified and 17 brotli: separate `const` and `let` declarations, the `if`/`else` blocks terser keeps as statements, and small named functions (`now`, `utf8`, `viewportRecord`) where arrows were inlined.
 
 The imports the port-fixes branch added or changed, and what each is for:
@@ -147,6 +148,10 @@ The imports the port-fixes branch added or changed, and what each is for:
 - `ws_open`, `ws_send`, `ws_close`, `http`: the network (src/cdom_net.c), bytes in and out of C memory.
 - Network pass (598 bytes minified, 203 brotli in all, with `store_del`): `http` (changed) takes a block of request header lines (`headerList` splits it) and a deadline (an AbortController and a timer; the answer tells an abort, 1, from a failure, 0: unit cases "cd_http sends request headers", "a request past its deadline", "a request that never arrives"; mutants http-no-headers, http-status, http-no-deadline, http-deadline-dropped, http-abort-is-failure, http-failure-is-abort); `ws_buffered`, bufferedAmount (case "cd_ws_buffered", mutant ws-buffered-zero); `ws_open` (changed) reuses the ids of closed sockets (`freeSockets`; case "sockets opened and closed 40 times reuse their id", mutant ws-ids-grow); `ws_send` (changed) sends a view, not a copy (the echo case now writes over the message as the send returns; mutant ws-send-late); `epoch`, Date.now() (case "cd_epoch_ms is Date.now", mutant epoch-page-clock).
 - `store_del`: delete a key and answer `cd_on_store_del(token, ok)` (cases "the key misses after a delete" and "a delete that fails answers 0", mutants store-del-noop, store-del-unreported); `store_put` and `store_get` (changed) read the key during the call (case "the key is read during the call", mutant store-key-late).
+- `rect`: a node's box on screen (getBoundingClientRect, transforms included) written into C memory as four doubles, left, top, width and height (130 bytes minified, 58 brotli; measured against the network pass's 7,221 and 2,861 in the same terser run, gzip 3,211 -> 3,271).
+  The foolish port's card flights need it: a flight leaves from the centre of the card it replaces and lands on the centre of a battle cell the browser's flex row placed, which C cannot know without measuring; the row's glide (a FLIP) reads each cell before and after a change.
+  The port measures once per step or row change, never per frame, as the React table does (flightGeometry.ts planFlights in a layout effect).
+  Unit case "cd_rect: the box the styles give, then the transformed box, read in one entry" (a fixed box, then `scale(2)` set in the same entry with no flush between: 10 20 30 40, then -5 0 60 80); mutants rect-order (left and top swapped) and rect-untransformed (offsetLeft and friends, which ignore the transform), both caught.
 - `start(url, mount, env, options)`: `options.openStore` opens the store's database at once, while the wasm is fetched and compiled, for an app that reads its store as it starts (the foolish port's textures; unit case "options.openStore opens the store before the module starts", mutant store-not-early).
 - `store_put`, `store_get`: the key/value store over IndexedDB (src/cdom_store.c): put a copy of the bytes and answer `cd_on_store_put(token, ok)` (1 kept, 0 failed, so a saved game's failed put is not silent; unit case "a put answers 1 when kept and 0 when it failed", mutant store-put-unreported); get answers once, with the bytes or a miss (-1), and the deadline's timer answers a miss.
 - Not imports, shared by them: `post` (the event record writer, used by delegated, window and the old image events), `push` (open, open_svg and clone), `deliver` (bytes into C memory through `cd_bytes_buf`: the encoded image, a network message, a stored value), `utf8`.
@@ -155,7 +160,7 @@ The imports the port-fixes branch added or changed, and what each is for:
 ### Gates and the paired runs
 
 Every gate passes on the bench entry built from this branch (cdomf): the harness's keyed check, smoke, DOM identity against perf 0d0bdd7 (entry cdomp0), listfuzz (5 seeds, 40,000 rounds each: the owning list and the list with an end anchor), the unit page (18 cases) and the link tests.
-tools/mutate.py: 37 mutants, every one caught by the test written for it (48 after the store with its answered put and early open, the two-step image with RGB and placement, and the device pixel ratio: all caught; the unit page 26 cases; 61 and 35 after the network pass).
+tools/mutate.py: 37 mutants, every one caught by the test written for it (48 after the store with its answered put and early open, the two-step image with RGB and placement, and the device pixel ratio: all caught; the unit page 26 cases; 61 and 35 after the network pass; 63 and 36 with `rect`).
 
 Paired, load-gated runs (tools/pair.sh, LOADMAX=3), vanillajs, cdomp0 (perf 0d0bdd7) and cdomf, CPU benchmarks 01-09; tools/ci.mjs bootstraps a 95% interval of the weighted geomean of cdomf over cdomp0.
 | pass | cdomp0 vs vanillajs | cdomf vs vanillajs | cdomf / cdomp0 (95% interval) |

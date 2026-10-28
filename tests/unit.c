@@ -104,6 +104,21 @@ EXPORT("t_viewport") int32_t t_viewport(int32_t which) {
   cd_viewport(&v);
   return which == 0 ? v.w : which == 1 ? v.h : which == 2 ? v.hidden : which == 6 ? v.dpr100 : which == 3 ? resized_w : which == 4 ? resized_h : hidden;
 }
+/* 5b. A node's box, read from C: where the styles put it, and after a transform set in the same
+ * entry (no flush between), the transformed box. */
+static double rect_at[8];
+EXPORT("t_rect") void t_rect(void) {
+  cd_id s = section("rect"), id = cd_id_new();
+  cd_at(s, 0);
+  cd_open(L("div"));
+  cd_attr(L("style"), L("position: fixed; left: 10px; top: 20px; width: 30px; height: 40px;"));
+  cd_name_open(id);
+  cd_close();
+  cd_rect(id, rect_at);
+  cd_set_style(id, L("transform"), L("scale(2)"));
+  cd_rect(id, rect_at + 4);
+}
+EXPORT("t_rect_at") double t_rect_at(int32_t k) { return rect_at[k]; }
 static int32_t loaded_id = -1, loaded_key = -1;
 void cd_on_event(const cd_event_rec *e) {
   enter();

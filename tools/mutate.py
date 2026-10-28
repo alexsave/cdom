@@ -72,6 +72,8 @@ M = [
   ('store-miss', 'shim/cdom.js', 'exports.cd_store_got(token, 0, -1)', 'exports.cd_store_got(token, 0, 0)', UNIT, 'FAIL cd_store: a missing'),
   ('store-no-deadline', 'shim/cdom.js', 'setTimeout(answer, ms);', '', UNIT, 'FAIL cd_store: a get not answered'),
   ('store-no-flush', 'src/cdom_store.c', '  cd_on_store(token, p, len);\n  cd_flush();', '  cd_on_store(token, p, len);', UNIT, 'FAIL cd_store: a put'),
+  ('rect-order', 'shim/cdom.js', '.set([box.left, box.top, box.width, box.height])', '.set([box.top, box.left, box.width, box.height])', UNIT, 'FAIL cd_rect'),
+  ('rect-untransformed', 'shim/cdom.js', 'const box = nodes[id].getBoundingClientRect();', 'const node = nodes[id];\n    const box = { left: node.offsetLeft, top: node.offsetTop, width: node.offsetWidth, height: node.offsetHeight };', UNIT, 'FAIL cd_rect'),
   ('now-zero', 'shim/cdom.js', '    return performance.now();', '    return 0;', UNIT, 'FAIL cd_now'),
   ('mini-strong', 'src/mini.c', '__attribute__((weak, no_builtin)) int memcmp', '__attribute__((no_builtin)) int memcmp', LINK, "FAIL an app's own libc"),
 ]

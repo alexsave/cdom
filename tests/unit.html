@@ -102,6 +102,11 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
     return (a <= c && c <= b && x.t_raf_t() > 0 && x.t_raf_t() <= a) || `${a} ${c} ${b} raf ${x.t_raf_t()}`; });
   check('the timer and frame exports flush what their hooks left pending', () =>
     (trace.includes('strings') && trace.includes('walk') && x.t_stale() === 0) || JSON.stringify(trace) + ' stale ' + x.t_stale());
+  check('cd_rect: the box the styles give, then the transformed box, read in one entry', () => {
+    x.t_rect();
+    const got = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => x.t_rect_at(k)).join(' ');
+    return got === '10 20 30 40 -5 0 60 80' || got;
+  });
   x.t_window();
   check('the viewport, read from C', () => (x.t_viewport(0) === innerWidth && x.t_viewport(1) === innerHeight && x.t_viewport(2) === +document.hidden && x.t_viewport(6) === Math.round(devicePixelRatio * 100)) || 'wrong');
   document.dispatchEvent(new Event('visibilitychange'));
