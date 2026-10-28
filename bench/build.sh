@@ -18,7 +18,7 @@ build() { # name, version note, extra flags...
   # The shim is inlined into the page: one request fewer, and it starts the wasm before the stylesheets.
   # It is minified first (npm install at the repo root provides terser); the source stays readable.
   rm -f "$out/cdom.js"
-  "$top/node_modules/.bin/terser" "$top/shim/cdom.js" -c passes=2 -m -o "$out/cdom.min.tmp"
+  "$top/node_modules/.bin/terser" "${SHIM:-$top/shim/cdom.js}" -c passes=2 -m -o "$out/cdom.min.tmp"
   sed -e "s/cdom-\"keyed\"/$name-\"keyed\"/" -e "/\/\*CDOM_SHIM\*\//{r $out/cdom.min.tmp" -e "d;}" "$here/cdom-keyed/index.html" > "$out/index.html"
   rm -f "$out/cdom.min.tmp"
   cat > "$out/package.json" <<JSON
@@ -35,7 +35,7 @@ JSON
 }
 
 # NAME=x builds only the default entry, as jfb/frameworks/keyed/x (for side-by-side work).
-if [ -n "${NAME:-}" ]; then build "$NAME" "interned strings, templates"; exit 0; fi
+if [ -n "${NAME:-}" ]; then build "$NAME" "interned strings, templates" ${XFLAGS:-}; exit 0; fi
 build cdom "interned strings, templates"
 build cdom-pertext "per-op strings, templates" -DCDOM_INTERN_TEXT=0
 build cdom-notpl "interned strings, no templates" -DCDOM_TEMPLATES=0

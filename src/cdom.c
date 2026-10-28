@@ -7,6 +7,18 @@
 IMPORT("apply") void js_apply(uint32_t nops, uint32_t nargs, uint32_t nstrs, uint32_t nbytes);
 IMPORT("value") uint32_t js_value(cd_id id, char *dst, uint32_t cap);
 
+/* Experiment (branch direct-calls): ops whose bit is set in CDOM_DIRECT skip the op list and
+ * call their own import d<op>(a0, a1, a2) at once, after flushing whatever is pending so the
+ * DOM sees the ops in order. CDOM_DIRECT 0 is the op stream unchanged. */
+#ifndef CDOM_DIRECT
+#define CDOM_DIRECT 0u
+#endif
+#define DIR(op) ((((uint32_t)(CDOM_DIRECT)) >> (op)) & 1u)
+#define DIMP(n) IMPORT("d" #n) void d##n(uint32_t, uint32_t, uint32_t);
+DIMP(1) DIMP(2) DIMP(3) DIMP(4) DIMP(5) DIMP(6) DIMP(7) DIMP(8) DIMP(9) DIMP(10)
+DIMP(11) DIMP(12) DIMP(13) DIMP(14) DIMP(15) DIMP(16) DIMP(17) DIMP(18) DIMP(19) DIMP(20)
+DIMP(21) DIMP(22) DIMP(23) DIMP(24) DIMP(25) DIMP(26) DIMP(27) DIMP(28) DIMP(29) DIMP(30)
+
 /* ---- memory: power-of-two size classes over memory.grow ---- */
 extern unsigned char __heap_base;
 static uintptr_t heap_ptr, heap_end;
@@ -82,7 +94,29 @@ void cd_flush(void) {
   nops = nargs = nsb = nstrs = ntmp = 0;
 }
 
-static inline void reserve(uint32_t o, uint32_t a, uint32_t bytes, uint32_t ns) {
+/* Flushes taken because a direct op had pending ops or strings in front of it. */
+static uint32_t syncs;
+EXPORT("cd_syncs") uint32_t cd_syncs(void) { uint32_t n = syncs; syncs = 0; return n; }
+#ifdef CDOM_OPSTATS
+static uint32_t opstat[32];
+EXPORT("cd_opstat") uint32_t *cd_opstat(void) { return opstat; }
+#define STAT(op) (opstat[op]++)
+#else
+#define STAT(op) ((void)0)
+#endif
+__attribute__((unused)) static inline void sync_pending(void) {
+  if (nops || nstrs) { syncs++; cd_flush(); }
+}
+__attribute__((unused)) static inline void direct(uint32_t op, uint32_t a, uint32_t b, uint32_t c) {
+  switch (op) {
+#define DC(n) case n: d##n(a, b, c); break;
+  DC(1) DC(2) DC(3) DC(4) DC(5) DC(6) DC(7) DC(8) DC(9) DC(10) DC(11) DC(12) DC(13) DC(14) DC(15)
+  DC(16) DC(17) DC(18) DC(19) DC(20) DC(21) DC(22) DC(23) DC(24) DC(25) DC(26) DC(27) DC(28) DC(29) DC(30)
+#undef DC
+  }
+}
+
+__attribute__((unused)) static inline void reserve(uint32_t o, uint32_t a, uint32_t bytes, uint32_t ns) {
   if (nops + o > OPS_CAP || nargs + a > ARGS_CAP || nsb + bytes > SB_CAP || nstrs + ns > SM_CAP)
     cd_flush();
 }
@@ -176,7 +210,7 @@ static uint32_t ref_name(cd_str s) {
 }
 
 /* Content: cached or per-op, by build flag. Call after reserve(). */
-static uint32_t ref_text(cd_str s) {
+__attribute__((unused)) static uint32_t ref_text(cd_str s) {
 #if CDOM_INTERN_TEXT
   return ref_name(s);
 #else
@@ -184,46 +218,56 @@ static uint32_t ref_text(cd_str s) {
 #endif
 }
 
-static inline uint32_t slen(cd_str s) { return strs[s].len; }
+__attribute__((unused)) static inline uint32_t slen(cd_str s) { return strs[s].len; }
 
+#ifndef CDOM_NATIVE
+#define CDOM_NATIVE 0
+#endif
+#if CDOM_NATIVE
+#include "cdom_native.inc"
+#else
 /* ---- emitters ---- */
 #define O(o) (ops[nops++] = (o))
 #define A(v) (args[nargs++] = (v))
+#define E0(op) do { STAT(op); if (DIR(op)) { sync_pending(); direct(op, 0, 0, 0); } else O(op); } while (0)
+#define E1(op, x) do { STAT(op); uint32_t x_ = (x); if (DIR(op)) { sync_pending(); direct(op, x_, 0, 0); } else { O(op); A(x_); } } while (0)
+#define E2(op, x, y) do { STAT(op); uint32_t x_ = (x), y_ = (y); if (DIR(op)) { sync_pending(); direct(op, x_, y_, 0); } else { O(op); A(x_); A(y_); } } while (0)
+#define E3(op, x, y, z) do { STAT(op); uint32_t x_ = (x), y_ = (y), z_ = (z); if (DIR(op)) { sync_pending(); direct(op, x_, y_, z_); } else { O(op); A(x_); A(y_); A(z_); } } while (0)
 
 static cd_id at_parent = CD_DETACHED - 1, at_before = CD_DETACHED - 1;
 
 void cd_at(cd_id parent, cd_id before) {
   if (parent == at_parent && before == at_before) return;
   reserve(1, 2, 0, 0);
-  O(OP_AT); A(parent); A(before);
+  E2(OP_AT, parent, before);
   at_parent = parent;
   at_before = before;
 }
-void cd_open(cd_str tag) { reserve(1, 1, slen(tag), 1); O(OP_OPEN); A(ref_name(tag)); }
-void cd_close(void) { reserve(1, 0, 0, 0); O(OP_CLOSE); }
-void cd_text(cd_str s) { reserve(1, 1, slen(s), 1); O(OP_TEXT); A(ref_text(s)); }
-void cd_text_num(uint32_t n) { reserve(1, 1, 0, 0); O(OP_TEXT_NUM); A(n); }
+void cd_open(cd_str tag) { reserve(1, 1, slen(tag), 1); E1(OP_OPEN, ref_name(tag)); }
+void cd_close(void) { reserve(1, 0, 0, 0); E0(OP_CLOSE); }
+void cd_text(cd_str s) { reserve(1, 1, slen(s), 1); E1(OP_TEXT, ref_text(s)); }
+void cd_text_num(uint32_t n) { reserve(1, 1, 0, 0); E1(OP_TEXT_NUM, n); }
 void cd_attr(cd_str name, cd_str v) {
   reserve(1, 2, slen(name) + slen(v), 2);
-  O(OP_ATTR); A(ref_name(name)); A(ref_text(v));
+  E2(OP_ATTR, ref_name(name), ref_text(v));
 }
-void cd_class(cd_str v) { reserve(1, 1, slen(v), 1); O(OP_CLASS); A(ref_text(v)); }
-void cd_name(cd_id id) { reserve(1, 1, 0, 0); O(OP_NAME); A(id); }
-void cd_listen(cd_id id, uint32_t ev) { reserve(1, 2, 0, 0); O(OP_LISTEN); A(id); A(ev); }
-void cd_value(cd_str s) { reserve(1, 1, slen(s), 1); O(OP_VALUE); A(ref_text(s)); }
-void cd_value_num(uint32_t n) { reserve(1, 1, 0, 0); O(OP_VALUE_NUM); A(n); }
+void cd_class(cd_str v) { reserve(1, 1, slen(v), 1); E1(OP_CLASS, ref_text(v)); }
+void cd_name(cd_id id) { reserve(1, 1, 0, 0); E1(OP_NAME, id); }
+void cd_listen(cd_id id, uint32_t ev) { reserve(1, 2, 0, 0); E2(OP_LISTEN, id, ev); }
+void cd_value(cd_str s) { reserve(1, 1, slen(s), 1); E1(OP_VALUE, ref_text(s)); }
+void cd_value_num(uint32_t n) { reserve(1, 1, 0, 0); E1(OP_VALUE_NUM, n); }
 /* What each template slot holds now (kind 0 unknown, 1 string id, 2 number), so an unchanged
  * value is not written again. */
 static uint32_t slot_val[CD_TPLS][CD_SLOTS];
 static uint8_t slot_kind[CD_TPLS][CD_SLOTS];
 void cd_tpl_save(uint32_t t) {
   if (t < CD_TPLS) __builtin_memset(slot_kind[t], 0, CD_SLOTS);
-  reserve(1, 1, 0, 0); O(OP_TPL_SAVE); A(t);
+  reserve(1, 1, 0, 0); E1(OP_TPL_SAVE, t);
 }
-void cd_clone(uint32_t t) { reserve(1, 1, 0, 0); O(OP_CLONE); A(t); }
+void cd_clone(uint32_t t) { reserve(1, 1, 0, 0); E1(OP_CLONE, t); }
 void cd_slot(uint32_t k) {
   if (k >= CD_SLOTS) __builtin_trap();
-  reserve(1, 1, 0, 0); O(OP_SLOT); A(k);
+  reserve(1, 1, 0, 0); E1(OP_SLOT, k);
 }
 static int slot_same(uint32_t t, uint32_t k, uint8_t kind, uint32_t v) {
   if (t >= CD_TPLS || k >= CD_SLOTS) __builtin_trap();
@@ -234,27 +278,29 @@ static int slot_same(uint32_t t, uint32_t k, uint8_t kind, uint32_t v) {
 }
 void cd_tpl_text(uint32_t t, uint32_t k, cd_str s) {
   if (slot_same(t, k, 1, s)) return;
-  reserve(1, 3, slen(s), 1); O(OP_TPL_TEXT); A(t); A(k); A(ref_text(s));
+  reserve(1, 3, slen(s), 1); E3(OP_TPL_TEXT, t, k, ref_text(s));
 }
 void cd_tpl_text_num(uint32_t t, uint32_t k, uint32_t n) {
   if (slot_same(t, k, 2, n)) return;
-  reserve(1, 3, 0, 0); O(OP_TPL_TEXT_NUM); A(t); A(k); A(n);
+  reserve(1, 3, 0, 0); E3(OP_TPL_TEXT_NUM, t, k, n);
 }
-void cd_down(void) { reserve(1, 0, 0, 0); O(OP_DOWN); }
-void cd_next(void) { reserve(1, 0, 0, 0); O(OP_NEXT); }
-void cd_up(void) { reserve(1, 0, 0, 0); O(OP_UP); }
-void cd_sel(cd_id id) { reserve(1, 1, 0, 0); O(OP_SEL); A(id); }
-void cd_set_text(cd_id id, cd_str s) { reserve(1, 2, slen(s), 1); O(OP_SET_TEXT); A(id); A(ref_text(s)); }
-void cd_set_text_num(cd_id id, uint32_t n) { reserve(1, 2, 0, 0); O(OP_SET_TEXT_NUM); A(id); A(n); }
+void cd_down(void) { reserve(1, 0, 0, 0); E0(OP_DOWN); }
+void cd_next(void) { reserve(1, 0, 0, 0); E0(OP_NEXT); }
+void cd_up(void) { reserve(1, 0, 0, 0); E0(OP_UP); }
+void cd_sel(cd_id id) { reserve(1, 1, 0, 0); E1(OP_SEL, id); }
+void cd_set_text(cd_id id, cd_str s) { reserve(1, 2, slen(s), 1); E2(OP_SET_TEXT, id, ref_text(s)); }
+void cd_set_text_num(cd_id id, uint32_t n) { reserve(1, 2, 0, 0); E2(OP_SET_TEXT_NUM, id, n); }
 void cd_set_attr(cd_id id, cd_str name, cd_str v) {
   reserve(1, 3, slen(name) + slen(v), 2);
-  O(OP_SET_ATTR); A(id); A(ref_name(name)); A(ref_text(v));
+  E3(OP_SET_ATTR, id, ref_name(name), ref_text(v));
 }
-void cd_set_class(cd_id id, cd_str v) { reserve(1, 2, slen(v), 1); O(OP_SET_CLASS); A(id); A(ref_text(v)); }
-void cd_move(cd_id id, cd_id before) { reserve(1, 2, 0, 0); O(OP_MOVE); A(id); A(before); }
-void cd_clear(cd_id id) { reserve(1, 1, 0, 0); O(OP_CLEAR); A(id); }
-void cd_detach(cd_id id) { reserve(1, 1, 0, 0); O(OP_DETACH); A(id); }
-void cd_attach(cd_id id) { reserve(1, 1, 0, 0); O(OP_ATTACH); A(id); }
+void cd_set_class(cd_id id, cd_str v) { reserve(1, 2, slen(v), 1); E2(OP_SET_CLASS, id, ref_text(v)); }
+void cd_move(cd_id id, cd_id before) { reserve(1, 2, 0, 0); E2(OP_MOVE, id, before); }
+void cd_clear(cd_id id) { reserve(1, 1, 0, 0); E1(OP_CLEAR, id); }
+void cd_detach(cd_id id) { reserve(1, 1, 0, 0); E1(OP_DETACH, id); }
+void cd_attach(cd_id id) { reserve(1, 1, 0, 0); E1(OP_ATTACH, id); }
+
+#endif
 
 /* ---- node ids ---- */
 static cd_id next_id = 1;
@@ -279,14 +325,22 @@ static void release(cd_id id) {
 }
 
 void cd_id_free(cd_id id) {
+#if CDOM_NATIVE
+  native_forget(id);
+#else
   reserve(1, 1, 0, 0);
-  O(OP_FREE); A(id);
+  E1(OP_FREE, id);
+#endif
   release(id);
 }
 
 void cd_remove(cd_id id) {
+#if CDOM_NATIVE
+  n_remove(TGET(TN, id)); native_forget(id);
+#else
   reserve(1, 1, 0, 0);
-  O(OP_REMOVE); A(id);
+  E1(OP_REMOVE, id);
+#endif
   release(id);
 }
 
