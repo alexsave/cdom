@@ -2,7 +2,8 @@
  * (native, cdom_html.c). cd_main builds a first frame with every hydration edge (adjacent
  * and empty text nodes, escapes, non-ASCII, mixed-case names, a leading newline in pre, a
  * template, DETACH/ATTACH around a fill, clones with adjacent and empty text slots, nodes
- * inserted before an anchor inside a clone, a clone opened inside an open clone); step(k)
+ * inserted before an anchor inside a clone, a clone opened inside an open clone, clones of a
+ * template whose text is set through slots); step(k)
  * then exercises the ops, and steps past the scripted ones run a keyed list of adjacent text
  * nodes, half of its rows cloned, through random updates. tests/conform.mjs compares the two after every step, and hydrates the native
  * first frame and replays the steps over it. */
@@ -35,6 +36,26 @@ static void item(uint32_t i) { /* a clone of template 1 with its parts filled */
   cd_down(); cd_down(); cd_value_num(i * 11); cd_name(SUB[i]); cd_up();
   cd_next(); cd_attr(z("title"), z(i ? "i>0" : "first"));
   cd_close();
+}
+
+/* Template slots: <p><b>" "</b>" "<i></i></p> with slot 0 in the <b> and slot 1 between the
+ * elements, set in the template before each clone (an empty one, and one left unchanged that
+ * the core does not send again); step 9 clones it again after hydration. */
+static const char *const SV[4] = {"a", "", "", "z"};
+static const uint32_t SN[4] = {0, 1, 1, 7};
+static void slot_clone(const char *s, uint32_t n) {
+  cd_tpl_text(5, 0, z(s));
+  cd_tpl_text_num(5, 1, n);
+  cd_clone(5);
+  cd_close();
+}
+static void slots(void) {
+  cd_at(CD_DETACHED, 0);
+  cd_open(z("p")); cd_open(z("b")); cd_text(z(" ")); cd_slot(0); cd_close();
+  cd_text(z(" ")); cd_slot(1); cd_open(z("i")); cd_close(); cd_close();
+  cd_tpl_save(5);
+  cd_at(CD_MOUNT, 0);
+  for (uint32_t v = 0; v < 4; v++) slot_clone(SV[v], SN[v]);
 }
 
 /* Clones the hydrator must match against the server's subtree: adjacent and empty text
@@ -88,6 +109,7 @@ static void clones(void) {
   }
   /* a walk across the inserted nodes: B, "", the inserted li, then the <i> */
   cd_sel(CP[0]); cd_down(); cd_next(); cd_next(); cd_next(); cd_attr(z("data-w"), z("1"));
+  slots();
 }
 
 void cd_main(void) {
@@ -216,6 +238,7 @@ EXPORT("step") void step(uint32_t k) {
     cd_set_attr(EX[2][0], z("title"), z("inner"));
     cd_set_attr(CI[2], z("title"), z("i"));
     cd_at(CP[1], CI[1]); cd_open(z("q")); cd_close();
+    cd_at(CD_MOUNT, 0); slot_clone("after", 99); slot_clone("", 99);
     break;
   case 8: /* the list's home, and template 4: <li>" " " " " "</li> for its odd rows */
     cd_at(CD_DETACHED, 0);
