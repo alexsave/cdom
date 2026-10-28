@@ -28,7 +28,7 @@ execFileSync('nice', ['-n', '10', CC, '--target=wasm32', '-O2', '-nostdlib', '-m
 fs.copyFileSync(path.join(here, 'conform.html'), path.join(out, 'conform.html'));
 fs.copyFileSync(path.join(here, '../shim/cdom.js'), path.join(out, 'cdom.js'));
 // The sink's frames: "<length>\n<html>" per step.
-const raw = execFileSync(path.join(out, name + '_native'), { maxBuffer: 1 << 30 });
+const raw = execFileSync(path.join(out, name + '_native'), { maxBuffer: 1 << 30, stdio: ['ignore', 'pipe', 'inherit'] });
 const frames = [];
 let blob = '', o0 = 0;
 if (raw[0] === 83) { const nl = raw.indexOf(10); blob = raw.subarray(1, nl).toString(); o0 = nl + 1; } // "S<base64>\n"
@@ -62,9 +62,9 @@ try {
   ok(err === '', `hydration with verify: ${err || 'no mismatch'}`);
   const st = await E('JSON.stringify(cdom.stats)');
   const empties = (strict[0].match(/^""$/gm) || []).length;
-  ok(JSON.parse(st).created === empties, `hydration created exactly the ${empties} empty text nodes (${st})`);
-  bad = 0;
-  for (let k = 0; k <= steps; k++) {
+  ok(JSON.parse(st)?.created === empties, `hydration created exactly the ${empties} empty text nodes (${st})`);
+  bad = err ? 1 : 0; // a failed hydration leaves nothing to replay
+  for (let k = 0; k <= steps && !err; k++) {
     if (k) await E(`x.step(${k})`);
     const dom = await E('canon(true)');
     if (dom !== strict[k] && bad++ < 3) ok(false, `step ${k}: hydrated DOM vs client DOM: ${firstDiff(strict[k], dom)}`);
