@@ -110,6 +110,14 @@ uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap); /* copy an input's v
  *                    widget before cd_remove of its node or an ancestor: the shim keeps no
  *                    list of instances, so a removed node's widget is otherwise leaked to it.
  * The value of an UNMOUNT is ignored but must be present (cd_v_null()).
+ * A widget library must be defined before the wasm starts: put its <script src> before the
+ * shim (ssr_page.h's scripts slot), so window.<name> exists when the first MOUNT runs. On a
+ * server-rendered page the host ops of the first render (cd_main) on the server's nodes are
+ * deferred to the end of that render (resuming, below), and the render itself runs only when
+ * the wasm loads, at the first interaction; by then the library, loaded before the shim, is
+ * defined. So until that interaction the widget does not exist (the server writes its node
+ * empty, and only PROP leaves a trace in the HTML): a page that wants it at once calls
+ * cdom.boot() right after cdom.resume (ssr_page's eager), and the wasm loads at once.
  *
  * The op is one import, host(id, kind, name, v, nwords): v is the address in linear memory
  * of the value's nwords u32 words. The value ("cdv") is the one fixed format the shim
