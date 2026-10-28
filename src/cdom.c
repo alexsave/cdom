@@ -403,9 +403,10 @@ void cd_v_key(cd_str k) {
 void cd_host_end(void) {
   if (!hv_open || depth || owed[0]) __builtin_trap(); /* not exactly one complete value */
   hv_open = 0;
-  if (hv_bytes > SB_CAP || hv_strs > SM_CAP) __builtin_trap(); /* cannot fit one batch */
-  /* the value's strings are sent in one batch, so a per-op (transient) id never outlives it */
-  if (nsb + hv_bytes > SB_CAP || nstrs + hv_strs > SM_CAP) send_strings();
+  /* The value's strings must cross in one batch: a per-op (transient) id is reused after the
+   * batch it came in. The queue is empty here when strings are per-op (every op sends its own
+   * before its call), and holds only interned strings, which outlive any batch, otherwise. */
+  if (hv_bytes > SB_CAP || hv_strs > SM_CAP) __builtin_trap();
   hv[2] = ref_name(hv[2]);
   /* walk the (well-formed) tree, sending each string: keys as names, STR values as text */
   uint32_t left[CD_V_DEPTH + 1], key[CD_V_DEPTH + 1], d = 0, i = 3;
