@@ -305,6 +305,9 @@ void cd_tpl_save(uint32_t t) {
     __builtin_memset(slot_kind[t], 0, CD_SLOTS);
   }
   __builtin_memset(slot_new, 0, sizeof slot_new);
+  /* a template is built off the document (cd_at(CD_DETACHED, 0) before its root), so its root
+   * was never placed and the shim has nothing to take out */
+  if (at_parent != CD_DETACHED && at_parent != CD_DETACHED - 1) __builtin_trap();
   ready(); j_tpl_save(t);
 }
 void cd_clone(uint32_t t) { ready(); j_clone(t); }
