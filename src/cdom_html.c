@@ -638,11 +638,18 @@ static void host_op(const uint32_t *a, uint32_t *q, uint32_t nargs) {
     host_last.d = malloc(host_last.cap);
     if (!host_last.d) fail("out of memory", OP_HOST);
   }
-  host_last.n = 0;
-  char head[32];
-  put(&host_last, head, (uint32_t)snprintf(head, sizeof head, "%u %u ", kind, node_id));
-  put(&host_last, name.p, name.len);
-  put(&host_last, " ", 1);
-  cdv(a, q, nargs, &host_last, 0, 0);
+  for (;;) { /* print, and print again into a larger buffer when it did not fit */
+    host_last.n = 0;
+    *q = at;
+    char head[32];
+    put(&host_last, head, (uint32_t)snprintf(head, sizeof head, "%u %u ", kind, node_id));
+    put(&host_last, name.p, name.len);
+    put(&host_last, " ", 1);
+    cdv(a, q, nargs, &host_last, 0, 0);
+    if (host_last.n <= host_last.cap) break;
+    host_last.cap = host_last.n;
+    host_last.d = realloc(host_last.d, host_last.cap);
+    if (!host_last.d) fail("out of memory", OP_HOST);
+  }
   if (kind == 3) prop(n, name, a, at, nargs);
 }
