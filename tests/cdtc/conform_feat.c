@@ -1,9 +1,10 @@
 /* Shim-vs-sink conformance of compiled templates: tests/cdtc/feat.cdt, compiled by cdtc, runs
  * the same steps in Chrome (wasm, through shim/cdom.js) and natively (into the C sink);
  * tests/conform.mjs compares the DOMs after every step and hydrates the native first frame.
- * The first frame holds the page and three items; the notes list (whose template has an
- * {#if} and adjacent text, which hydration of a clone does not handle yet) starts empty and
- * fills in the steps. Steps change every field at random and click random listeners.
+ * The first frame holds the page, three items and three notes (whose template has an {#if}
+ * inserted before an anchor and adjacent text, one note with an empty text), so hydration
+ * covers clones with inserted branches and separators. Steps change every field at random
+ * and click random listeners.
  * Run: CONFORM_SRCS="tests/cdtc/conform_feat.c <gen>/feat.c" CONFORM_INC="src <gen>" node tests/conform.mjs */
 #include "feat.h"
 #ifdef __wasm__
@@ -50,6 +51,12 @@ void cd_main(void) {
       it->id = i * 3;
       it->name = cd_internz(WORDS[i]);
       it->hot = i & 1;
+    }
+    for (uint32_t i = 1; i <= 3; i++) {
+      Note *o = Feat_notes_push(&G);
+      o->id = i * 5;
+      o->text = cd_internz(i == 2 ? "" : WORDS[i + 3]);
+      o->open = i != 3;
     }
   }
   page_init();
