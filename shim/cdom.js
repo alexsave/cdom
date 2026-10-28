@@ -50,10 +50,17 @@ var cdom = (() => {
   function bad(n, want) { throw new Error("cdom: hydration mismatch at " + (n ? n.nodeName : "the end") + ", want " + want); }
   function into() { const p = sp ? stack[sp - 1] : base === DETACHED ? null : nodes[base]; return p && p.isConnected ? p : null; }
   function cursor(p) { let c = hy.get(p); if (!c) hy.set(p, c = { n: p.firstChild, text: false }); return c; }
+  // An element goes to the cursor's node, or, when it is inserted before a node (AT with a
+  // before) into a parent that holds parked nodes, to the first parked one.
   function adopt(p, tag) {
-    const c = cursor(p), n = c.n;
+    const c = cursor(p);
+    let n = c.n;
+    if (!sp && ref && c.q && c.q.length) {
+      n = c.q.shift(); n.$x = 0;
+      if (verify && !(n.compareDocumentPosition(nodes[ref]) & 4)) bad(n, tag + " before the insert's anchor");
+    } else { c.n = n && n.nextSibling; c.text = false; }
     if (!n || n.nodeType !== 1 || (verify && n.localName !== tag.toLowerCase())) bad(n, tag);
-    c.n = n.nextSibling; c.text = false; stats.adopted++; return n;
+    stats.adopted++; return n;
   }
   function adoptText(p, s) {
     const c = cursor(p);
@@ -64,10 +71,36 @@ var cdom = (() => {
     if (verify && String(s) !== "") bad(n, s); // an empty text node writes as nothing: create it
     stats.created++; return p.insertBefore(doc.createTextNode(s), n);
   }
-  function size(n) { let k = 1; for (let c = n.firstChild; c; c = c.nextSibling) k += size(c); return k; }
-  function same(a, b) {
-    if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName || a.childNodes.length !== b.childNodes.length) bad(a, b.nodeName);
-    for (let i = 0; i < a.childNodes.length; i++) same(a.childNodes[i], b.childNodes[i]);
+  function size(n) { let k = 1; if (!n.$h) for (let c = n.firstChild; c; c = c.nextSibling) k += size(c); return k; }
+  // A clone adopted over the server's node s: template t's children are matched in order, the
+  // <!----> separators dropped and the empty text nodes the server could not write created, as
+  // at page level. A node the server marked <!--i--> was inserted into the clone later (an
+  // {#if} branch before an anchor): it is parked on s, skipped by walks, and adopted by the
+  // insert that places it. What follows the template's last child is left at s's cursor for
+  // later appends. Returns the number of server nodes matched below s.
+  function fit(s, t, root) {
+    let k = 0, c = s.firstChild, txt = false;
+    for (let u = t.firstChild; u; u = u.nextSibling) {
+      while (c && c.nodeType === 8 && c.data === "i") {
+        const e = c.nextSibling, r = cursor(s); c.remove();
+        if (!e) bad(e, "a node after <!--i-->");
+        (r.q || (r.q = [])).push(e); e.$x = 1; c = e.nextSibling; txt = false;
+      }
+      if (u.nodeType === 3) {
+        if (txt) { if (!c || c.nodeType !== 8) bad(c, "<!---->"); const m = c; c = c.nextSibling; m.remove(); }
+        txt = true;
+        if (c && c.nodeType === 3) { k++; c = c.nextSibling; continue; }
+        const m = c && c.nodeType === 8 && c.data === "" && c.nextSibling; // <!----><!--i-->: empty, before a parked node
+        if (m && m.nodeType === 8 && m.data === "i") { c.remove(); c = m; }
+        s.insertBefore(doc.createTextNode(""), c); stats.created++;
+      } else {
+        txt = false;
+        if (!c || c.nodeType !== 1 || (verify && c.localName !== u.localName)) bad(c, u.nodeName);
+        k += 1 + fit(c, u, false); c = c.nextSibling;
+      }
+    }
+    if (c || root || hy.has(s)) { const r = cursor(s); r.n = c; r.text = txt; }
+    return k;
   }
   function check(ok, n, want) { if (verify && !ok) bad(n, want); }
   function hOpen(s) {
@@ -88,9 +121,19 @@ var cdom = (() => {
   function hValue(s) { if (last.isConnected) check(last.nodeType !== 3 || last.nodeValue === String(s), last, s); else last.nodeValue = s; }
   function hClone(t) {
     let el, h;
-    if (!sp && (h = into())) { el = adopt(h, tpl[t].localName); stats.adopted += tsize[t] - 1; if (verify) same(el, tpl[t]); }
+    if ((h = into())) { el = adopt(h, tpl[t].localName); stats.adopted += fit(el, tpl[t], true); }
     else { el = tpl[t].cloneNode(true); stats.templateNodes += tsize[t]; if (sp) stack[sp - 1].appendChild(el); }
     stack[sp++] = el; last = el;
+  }
+  // A walk skips the parked nodes (inserted into a clone later), as the template never had them.
+  function hWalk(from, steps, n) {
+    let el = from === -1 ? last : nodes[from];
+    for (; n; n--, steps >>>= 2) {
+      const k = steps & 3;
+      el = k === 1 ? el.firstChild : k === 2 ? el.nextSibling : el.parentNode;
+      if (k !== 3) while (el && el.$x) el = el.nextSibling;
+    }
+    last = el;
   }
 
   function delegate(type) {
@@ -175,7 +218,7 @@ var cdom = (() => {
     if (buf !== mem.buffer) views();
     decode(n, nbytes);
   }
-  function at(p, b) { base = p >>> 0; ref = b; if (hy && ref && into()) bad(null, "an append"); }
+  function at(p, b) { base = p >>> 0; ref = b; }
   function open(t) { if (hy) return hOpen(S(t)); const el = doc.createElement(S(t)); if (sp) stack[sp - 1].appendChild(el); stack[sp++] = el; last = el; }
   function close() { if (hy) return hClose(); const el = stack[--sp]; if (!sp) { root = el; place(el); } }
   function text(s) { if (hy) return hText(S(s)); last = doc.createTextNode(S(s)); place(last); }
@@ -205,6 +248,7 @@ var cdom = (() => {
   // A walk: n steps of 2 bits (1 firstChild, 2 nextSibling, 3 parentNode) from a named node, or
   // from the last node when from is -1.
   function walk(from, steps, n) {
+    if (hy) return hWalk(from, steps, n);
     let el = from === -1 ? last : nodes[from];
     for (; n; n--, steps >>>= 2) el = (steps & 3) === 1 ? el.firstChild : (steps & 3) === 2 ? el.nextSibling : el.parentNode;
     last = el;
