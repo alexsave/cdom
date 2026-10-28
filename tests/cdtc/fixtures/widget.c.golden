@@ -125,6 +125,7 @@ int W_load(W *s, const uint8_t *src, uint32_t len) { /* one pass to check, one t
 uint32_t cd_state_save(uint8_t *dst, uint32_t cap) { return W_save(&G, dst, cap); }
 int cd_state_load(const uint8_t *src, uint32_t len) { return W_load(&G, src, len); }
 
+static Pt *page_find0(W *S, uint32_t cdt_i);
 /* ---- template pt: <li> per Pt ---- */
 static pt_view *pt_views;
 static uint32_t pt_nviews, pt_vcap, *pt_vfree, pt_nvfree;
@@ -178,6 +179,13 @@ void pt_patch(W *S, Pt *p, pt_view *cdt_v) {
   }
 }
 
+static void pt_release(uint32_t cdt_vi) {
+  pt_view *cdt_v = &pt_views[cdt_vi];
+  (void)cdt_v;
+  pt_f0_free(cdt_v);
+  pt_vfree[pt_nvfree++] = cdt_vi;
+}
+
 /* ---- the page: page ---- */
 page_view page_v;
 static W *page_S;
@@ -201,11 +209,7 @@ static void page_ep0(void *cdt_ctx, uint32_t cdt_i, cd_item *cdt_it) {
   cdt_v->idx = cdt_i;
   pt_patch(S, &S->pts[cdt_i], cdt_v);
 }
-static void page_ed0(void *cdt_ctx, cd_item *cdt_it) {
-  (void)cdt_ctx;
-  pt_f0_free(&pt_views[cdt_it->data]);
-  pt_vfree[pt_nvfree++] = cdt_it->data;
-}
+static void page_ed0(void *cdt_ctx, cd_item *cdt_it) { (void)cdt_ctx; pt_release(cdt_it->data); }
 static cd_list_fns page_fns0 = {0, page_ec0, page_ep0, page_ed0};
 static Pt *page_find0(W *S, uint32_t cdt_i) { /* the item a view shows */
   if (cdt_i >= pt_nviews) return 0;

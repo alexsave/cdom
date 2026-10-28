@@ -1,1 +1,1 @@
-each_in_item.cdt:2:58: {#each} is only allowed in the page template
+each_in_item.cdt:2:58: {#each} needs a list of the item, like r->list (got S->rows)

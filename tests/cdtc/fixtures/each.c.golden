@@ -203,6 +203,7 @@ int St_load(St *s, const uint8_t *src, uint32_t len) { /* one pass to check, one
   return cdt_walk_St(s, src, len, &o);
 }
 
+static Item *page_find0(St *S, uint32_t cdt_i);
 /* ---- template item: <li> per Item ---- */
 static item_view *item_views;
 static uint32_t item_nviews, item_vcap, *item_vfree, item_nvfree;
@@ -237,6 +238,12 @@ void item_patch(St *S, Item *it, item_view *cdt_v) {
       cd_sel(cdt_v->root); cd_down(); cd_value(cdt_str(cdt_t));
     }
   }
+}
+
+static void item_release(uint32_t cdt_vi) {
+  item_view *cdt_v = &item_views[cdt_vi];
+  (void)cdt_v;
+  item_vfree[item_nvfree++] = cdt_vi;
 }
 
 /* ---- template tag: <span> per Tag ---- */
@@ -274,6 +281,12 @@ void tag_patch(St *S, Tag *t, tag_view *cdt_v) {
   }
 }
 
+static void tag_release(uint32_t cdt_vi) {
+  tag_view *cdt_v = &tag_views[cdt_vi];
+  (void)cdt_v;
+  tag_vfree[tag_nvfree++] = cdt_vi;
+}
+
 /* ---- the page: page ---- */
 page_view page_v;
 static St *page_S;
@@ -297,10 +310,7 @@ static void page_ep0(void *cdt_ctx, uint32_t cdt_i, cd_item *cdt_it) {
   cdt_v->idx = cdt_i;
   item_patch(S, &S->items[cdt_i], cdt_v);
 }
-static void page_ed0(void *cdt_ctx, cd_item *cdt_it) {
-  (void)cdt_ctx;
-  item_vfree[item_nvfree++] = cdt_it->data;
-}
+static void page_ed0(void *cdt_ctx, cd_item *cdt_it) { (void)cdt_ctx; item_release(cdt_it->data); }
 static cd_list_fns page_fns0 = {0, page_ec0, page_ep0, page_ed0};
 static Item *page_find0(St *S, uint32_t cdt_i) { /* the item a view shows */
   if (cdt_i >= item_nviews) return 0;
@@ -330,10 +340,7 @@ static void page_ep1(void *cdt_ctx, uint32_t cdt_i, cd_item *cdt_it) {
   cdt_v->idx = cdt_i;
   tag_patch(S, &S->tags[cdt_i], cdt_v);
 }
-static void page_ed1(void *cdt_ctx, cd_item *cdt_it) {
-  (void)cdt_ctx;
-  tag_vfree[tag_nvfree++] = cdt_it->data;
-}
+static void page_ed1(void *cdt_ctx, cd_item *cdt_it) { (void)cdt_ctx; tag_release(cdt_it->data); }
 static cd_list_fns page_fns1 = {0, page_ec1, page_ep1, page_ed1};
 
 void page_init(void) {

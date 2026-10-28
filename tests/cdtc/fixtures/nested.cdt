@@ -1,0 +1,25 @@
+<!-- lists inside item templates, three deep: columns hold cards, cards hold tags; an {#if}
+     inside an item template next to a nested list; events on every level -->
+<state name="Board" global="B">
+  u32 sel;
+  list cols: Col;
+  record Col { u32 id; str title; list cards: Card; }
+  record Card { u32 id; str text; u32 done; list tags: Tag; }
+  record Tag { u32 id; str name; }
+</state>
+
+<template name="tag" item="Tag *g" state="Board *S" root="span">
+  <span class="tag" on:click={tag_click}>{g->name}</span>
+</template>
+
+<template name="card" item="Card *k" state="Board *S" root="li">
+  <li class:done={k->done} class:sel={k->id == S->sel} on:click={card_click}>{k->text}{#if k->done}<b>done</b>{/if}<em>{#each k->tags as g (g->id)}<tag/>{/each}</em></li>
+</template>
+
+<template name="col" item="Col *c" state="Board *S" root="section">
+  <section><h2 on:click={col_click}>{c->title} ({n:c->cards_n})</h2><ul>{#each c->cards as k (k->id)}<card/>{/each}</ul></section>
+</template>
+
+<template name="page" state="Board *S">
+  <main><p>selected {S->sel}</p><div>{#each S->cols as c (c->id)}<col/>{/each}</div></main>
+</template>
