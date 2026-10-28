@@ -1,0 +1,16 @@
+pf-direct run1k alloc: n=8
+  bytes allocated per click: median 111216 mean 111200
+        53983 B/click (anon)  [(anon) < js-to-wasm:: < W]
+        20800 B/click d13  [(root) < (anon) < js-to-wasm::]
+        14265 B/click d9  [(root) < (anon) < js-to-wasm::]
+         7096 B/click (V8 API)  [ < (root)]
+         6035 B/click (anon)  [ < (root)]
+         5352 B/click W  [(root) < (anon) < js-to-wasm::]
+         2613 B/click (BYTECODE_COMPILER)  [ < (root)]
+          342 B/click Promise  [ < (root) < (anon)]
+          282 B/click (IDLE_EXTERNAL)  [ < (root)]
+          169 B/click (PARSER)  [ < (root)]
+          118 B/click (anon)  [ < (root) < (anon)]
+           76 B/click (JS)  [ < (root)]
+           32 B/click get length  [(anon) < js-to-wasm:: < d9]
+           28 B/click (anon)  [(root) < (anon) < Promise]

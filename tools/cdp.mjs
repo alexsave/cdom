@@ -1,4 +1,6 @@
 // Minimal CDP client: one headless Chrome per process, killed by its own PID.
+// CHROME_ARGS adds switches (space separated, or newline separated when one holds a space);
+// CHROME_BIN replaces the binary (the proof's flag-arm wrappers); CHROME_LOG captures its output.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,9 +9,9 @@ export const sleep = ms => new Promise(r => setTimeout(r, ms));
 export async function launch() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cdom-chrome-'));
   const dbg = 9300 + Math.floor(Math.random() * 500);
-  const proc = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  const proc = spawn(process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     ['--headless=new', `--remote-debugging-port=${dbg}`, `--user-data-dir=${dir}`, '--no-first-run',
-     '--no-default-browser-check', '--disable-extensions', '--window-size=1280,800', ...(process.env.CHROME_ARGS ? process.env.CHROME_ARGS.split(' ') : []), 'about:blank'],
+     '--no-default-browser-check', '--disable-extensions', '--window-size=1280,800', ...(process.env.CHROME_ARGS ? process.env.CHROME_ARGS.split(process.env.CHROME_ARGS.includes('\n') ? '\n' : ' ') : []), 'about:blank'],
     { stdio: process.env.CHROME_LOG ? ['ignore', fs.openSync(process.env.CHROME_LOG, 'w'), fs.openSync(process.env.CHROME_LOG + '.err', 'w')] : 'ignore' });
   let ver;
   for (let i = 0; i < 50 && !ver; i++) { try { ver = await (await fetch(`http://127.0.0.1:${dbg}/json/version`)).json(); } catch { await sleep(200); } }

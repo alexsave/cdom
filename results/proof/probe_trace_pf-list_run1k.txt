@@ -1,0 +1,14 @@
+pf-list run1k trace: n=20
+  total median 29.89 ms; click script median 2.37 ms
+  MinorGC                      per click: count 0.00 ms 0.000 | inside the click script: count 0.00 ms 0.000 | clicks with any 0
+  MajorGC                      per click: count 0.00 ms 0.000 | inside the click script: count 0.00 ms 0.000 | clicks with any 0
+  incremental marking step     per click: count 0.00 ms 0.000 | inside the click script: count 0.00 ms 0.000 | clicks with any 0
+  incremental start/finalize   per click: count 0.00 ms 0.000 | inside the click script: count 0.00 ms 0.000 | clicks with any 0
+  scavenge                     per click: count 0.00 ms 0.000 | inside the click script: count 0.00 ms 0.000 | clicks with any 0
+  V8.InterruptHandler          per click: count 0.00 ms 0.000 | inside the click script: count 0.00 ms 0.000 | clicks with any 0
+  V8.StackGuard                per click: count 0.00 ms 0.000 | inside the click script: count 0.00 ms 0.000 | clicks with any 0
+  bytecode budget interrupt (tiering) per click: count 4.00 ms 0.010 | inside the click script: count 4.00 ms 0.010 | clicks with any 20
+  optimizing compile (main thread) per click: count 2.00 ms 0.037 | inside the click script: count 2.00 ms 0.037 | clicks with any 20
+  deopt                        per click: count 0.00 ms 0.000 | inside the click script: count 0.00 ms 0.000 | clicks with any 0
+  any GC or interrupt event (top level) per click: count 4.00 ms 0.010 | inside the click script: count 0.00 ms 0.010 | clicks with any 20
+  GC/interrupt/compile event names on the main thread (count over all clicks): V8.BytecodeBudgetInterrupt 60, V8.MarkCandidatesForOptimization 41, V8.BytecodeBudgetInterruptWithStackCheck 20, V8.OptimizeCode 20, V8.OptimizeConcurrentPrepare 20

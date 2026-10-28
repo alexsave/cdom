@@ -6,7 +6,7 @@ set -u
 top="$(cd "$(dirname "$0")/.." && pwd)"
 e="$1"; base="${2:-cdomb}"; export PORT="${PORT:-8193}"
 fail=0
-step() { local n="$1"; shift; if "$@" > "$top/results/gate_$n.log" 2>&1; then echo "gate $n: ok"; else echo "gate $n: FAIL (results/gate_$n.log)"; fail=1; fi; }
+step() { local n="$1"; shift; if "$@" > "$top/results/gate_${e}_$n.log" 2>&1; then echo "gate $n: ok"; else echo "gate $n: FAIL (results/gate_${e}_$n.log)"; fail=1; fi; }
 keyed() { (cd "$top/jfb/webdriver-ts" && LANG=en_US.UTF-8 node dist/isKeyed.js --headless --chromeBinary "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --framework "keyed/$e") > "$top/results/gate_keyed_raw.log" 2>&1
   grep "appear as" "$top/results/gate_keyed_raw.log"; grep -q "It'll appear as keyed" "$top/results/gate_keyed_raw.log"; }
 step keyed keyed

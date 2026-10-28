@@ -1,7 +1,8 @@
 #!/bin/bash
 # Paired run: the listed frameworks run benchmark by benchmark, interleaved, each start
 # gated on the 1-minute load being under 4 (bounded wait), results kept in results/pairs/$TAG.
-# Usage: TAG=x FWS="vanillajs cdomb cdomp" [COUNT=15] [PORT=8193] tools/pair.sh 01_ 02_ ...
+# Usage: TAG=x FWS="vanillajs cdomb cdomp" [COUNT=15] [PORT=8193] [LOADMAX=4] [CHROME=wrapper] tools/pair.sh 01_ 02_ ...
+# CHROME replaces the Chrome binary the harness launches (the proof's flag arms pass a wrapper script).
 set -u
 top="$(cd "$(dirname "$0")/.." && pwd)"
 out="$top/results/pairs/${TAG:?TAG}"
@@ -26,7 +27,7 @@ for b in "${benches[@]}"; do
     if [ "$gate" = TIMEOUT ]; then printf '%s\t%s\t%s\t%s\t%s\tSKIPPED\n' "$b" "$f" "$(load1)" "$(load1)" "$w" >> "$log"; continue; fi
     before=$(load1)
     PORT=${PORT:-8193} nice -n 0 node "$top/jfb/webdriver-ts/dist/benchmarkRunner.js" --headless \
-      --chromeBinary "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+      --chromeBinary "${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}" \
       --framework "keyed/$f" --benchmark "$b" ${COUNT:+--count $COUNT} > "$out/raw_${b}${f}.log" 2>&1
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$b" "$f" "$before" "$(load1)" "$w" "$gate" >> "$log"
   done
