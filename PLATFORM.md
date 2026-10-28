@@ -67,3 +67,15 @@ Commits ba8ccde..e07cecd. Rebased onto perf 1a78a92.
 - Bytes: page n=1000 248 KB (17.8 KB gz) of which the blob is 32 KB base64 (8.7 KB gz) duplicating the 8.2 KB gz of HTML; wasm 21528 (7003 gz).
 
 Open from M1, carried forward: a core reset/context so a server renders in-process; the op enum exists in three copies (cdom.c, shim, sink; perf's call); the blob duplicates DOM text; no OPEN_NS (SVG) and no property-set op yet; CLONE only places at depth 0.
+
+### Milestone 2: the template compiler (2026-10-27)
+
+Commits 92e0a06..f0a4de9 (before the rebase; now on top of perf b30fb7e, where the shim is inlined and minified by bench/build.sh and `start` accepts a mount id).
+
+- `tools/cdtc.c` (1913 lines, libc only): `cdtc in.cdt -o base` writes `base.h` and `base.c`. A `.cdt` holds a `<state>` block (scalars, `list name: Record`, `record`, `str` fields are cd_str; `global="S"` also generates cd_state_save/cd_state_load), item templates (`item=`, `state=`, `root=`) and one page template. Bindings: `{expr}`, `{n:expr}`, `{s:expr}`, `attr={expr}`, `class:name={cond}`, `on:event={handler}`, `{#if}{:else}{/if}`, `{#each S->list as r (key)}<tpl/>{/each}`. Static shapes become detached templates; create clones and walks; patch compares cached values and emits only changes. 21 error rules with file:line:col and a fixture each.
+- `bench/cdom-tpl/`: the rows app as rows.cdt + 91 lines of actions. Op counts measured in the sink equal the hand-written app for every action (11 per row create, 6 per label patch). Smoke and the official isKeyed check pass. Paired harness runs (COUNT=15, load-gated under 4, loads 3.1-4.0): script time identical on all nine benchmarks, totals within noise (weighted geomean 1.042 and the paint-heavy spread flips with run order; swap gave 1.31/1.13/1.10/0.83 across four runs with 0.1-0.7 ms of script on both sides).
+- SSR + hydration of the templated app (`SSR_APP=tpl ssr/rows/build.sh`, port 8704): 0 nodes created, all server nodes adopted, live afterwards. Shim-vs-sink conformance over 300 random steps of a feature template and 60 of the rows app.
+- Tests: tests/cdtc/run.sh (9 goldens, 21 error fixtures, native round trip, op counts), tests/cdtc/conform.sh; 19 + 6 mutants all killed.
+- Generic cdom_html counter `cd_html_ops()`. perf's tools/pair.sh and ratio.mjs gained a dist link and BASE=.
+
+Open from M2, carried into M3: hydration refuses an `{#if}` inside an item template (anchor insert) and adjacent text inside a cloned template; CLONE only places at depth 0 (nested lists need it); no SVG namespace, no property sets, no REMOVE_ATTR, no form value read in generated dispatch, no event modifiers, one page template per file.
