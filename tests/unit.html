@@ -91,11 +91,29 @@ cdom.start('unit.wasm', 'm').then(async (x) => {
   const fired = await until(() => $('#time i').textContent === '41' && $('#time i + i').textContent === '42');
   tracing = false;
   check('a timer and a frame answer through their hooks', () => fired || $('#time').textContent);
+  check('cd_now is performance.now', () => { const a = performance.now(), c = x.t_now(), b = performance.now();
+    return (a <= c && c <= b && x.t_raf_t() > 0 && x.t_raf_t() <= a) || `${a} ${c} ${b} raf ${x.t_raf_t()}`; });
   check('the timer and frame exports flush what their hooks left pending', () =>
     (trace.includes('strings') && trace.includes('walk') && x.t_stale() === 0) || JSON.stringify(trace) + ' stale ' + x.t_stale());
   x.t_window();
   check('the viewport, read from C', () => (x.t_viewport(0) === innerWidth && x.t_viewport(1) === innerHeight && x.t_viewport(2) === +document.hidden) || 'wrong');
   document.dispatchEvent(new Event('visibilitychange'));
   check('visibilitychange arrives through the event path', () => x.t_viewport(5) === +document.hidden || x.t_viewport(5));
+  // An image: the pixels C wrote come back from the url the shim set, and CD_EV_LOAD says so.
+  x.t_image();
+  const landed = await until(() => x.t_loaded(0) === 1);
+  let got = null;
+  if (landed) {
+    const url = $('#image > div').style.backgroundImage.slice(5, -2);
+    const img = new Image(); img.src = url; await img.decode();
+    const cv = document.createElement('canvas'); cv.width = 3; cv.height = 2;
+    const cx = cv.getContext('2d'); cx.drawImage(img, 0, 0);
+    got = [...cx.getImageData(0, 0, 3, 2).data];
+  }
+  check('cd_set_image: the pixels as a CSS url, then CD_EV_LOAD with the token', () => {
+    const want = []; for (let i = 0; i < 6; i++) want.push(40 * i, 255 - 30 * i, 7 * i, 255);
+    return (landed && x.t_loaded(1) === 77 && JSON.stringify(got) === JSON.stringify(want) && x.t_stale() === 0)
+      || `landed ${landed} key ${x.t_loaded(1)} pixels ${JSON.stringify(got)}`;
+  });
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>

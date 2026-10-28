@@ -46,6 +46,9 @@ M = [
   ('fmt-round', 'src/cdom.c', '(v < 0 ? -0.5 : 0.5)', '0.5', UNIT, 'FAIL cd_fmt'),
   ('two-heaps', 'src/cdom.c', 'void *cd_alloc(uint32_t n) {\n  void *p = malloc(n);', 'void *cd_alloc(uint32_t n) {\n  void *p = heap_alloc(n);', LINK, "FAIL the app's heap"),
   ('foreign-free', 'src/cdom.c', '  if ((uintptr_t)p < heap_lo + 8 || (uintptr_t)p >= heap_ptr) __builtin_trap(); /* not from this heap */', '', LINK, 'FAIL an app that replaces malloc alone'),
+  ('image-pixels', 'shim/cdom.js', 'new ImageData(new Uint8ClampedArray(mem.buffer, ptr, w * h * 4), w, h)', 'new ImageData(new Uint8ClampedArray(mem.buffer, ptr + 4, w * h * 4), w, h)', UNIT, 'FAIL cd_set_image'),
+  ('image-token', 'shim/cdom.js', 'post(14, id, { keyCode: t }, 0, 0)', 'post(14, id, { keyCode: 0 }, 0, 0)', UNIT, 'FAIL cd_set_image'),
+  ('now-zero', 'shim/cdom.js', 'const now = () => performance.now();', 'const now = () => 0;', UNIT, 'FAIL cd_now'),
   ('mini-strong', 'src/mini.c', '__attribute__((weak, no_builtin)) int memcmp', '__attribute__((no_builtin)) int memcmp', LINK, "FAIL an app's own libc"),
 ]
 

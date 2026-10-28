@@ -74,8 +74,12 @@ void cd_on_timer(uint32_t token) {
   cd_intern("timer-flushed", 13);
   hold(timer_txt);
 }
+static double raf_t;
+EXPORT("t_raf_t") double t_raf_t(void) { return raf_t; }
+EXPORT("t_now") double t_now(void) { return cd_now(); }
 void cd_on_raf(uint32_t token, double t) {
   enter();
+  raf_t = t;
   cd_set_text_num(raf_txt, t > 0 ? token : 0);
   hold(raf_txt);
 }
@@ -96,8 +100,10 @@ EXPORT("t_viewport") int32_t t_viewport(int32_t which) {
   cd_viewport(&v);
   return which == 0 ? v.w : which == 1 ? v.h : which == 2 ? v.hidden : which == 3 ? resized_w : which == 4 ? resized_h : hidden;
 }
+static int32_t loaded_id = -1, loaded_key = -1;
 void cd_on_event(const cd_event_rec *e) {
   enter();
+  if (e->type == CD_EV_LOAD) { loaded_id = e->id; loaded_key = e->key; hold((cd_id)e->id); return; }
   if (e->type == CD_EV_RESIZE && e->id == CD_MOUNT) {
     resized_w = e->x; resized_h = e->y;
     cd_set_text_num(vw_txt, (uint32_t)e->x); /* no cd_flush: the event export does it */
@@ -232,6 +238,19 @@ EXPORT("t_tmp_stale") void t_tmp_stale(void) {
   cd_set_class(styled, L("x")); /* another op crosses first */
   cd_set_class(styled, t);       /* traps */
 }
+
+/* Pixels as a CSS image: a 3 x 2 PNG on a div's background, then CD_EV_LOAD. */
+static cd_id imaged;
+static uint8_t pix[3 * 2 * 4];
+EXPORT("t_image") void t_image(void) {
+  cd_id s = section("image");
+  cd_at(s, 0);
+  cd_open(L("div")); cd_name_open(imaged = cd_id_new()); cd_close();
+  for (uint32_t i = 0; i < 6; i++) { pix[i * 4] = (uint8_t)(40 * i); pix[i * 4 + 1] = (uint8_t)(255 - 30 * i); pix[i * 4 + 2] = (uint8_t)(7 * i); pix[i * 4 + 3] = 255; }
+  cd_set_image(imaged, L("background-image"), pix, 3, 2, L("image/png"), 77);
+  __builtin_memset(pix, 0, sizeof pix); /* the shim copied them during the call */
+}
+EXPORT("t_loaded") int32_t t_loaded(int32_t which) { return which ? loaded_key : loaded_id == (int32_t)imaged; }
 
 /* 12. A literal per call site. */
 static cd_str lit_a(void) { return CD_LIT("alpha"); }

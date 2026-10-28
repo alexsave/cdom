@@ -3,7 +3,7 @@
 // Fixed per app. Wasm passes i32, so ids and numbers that may pass 2^31 are made unsigned (>>> 0).
 var cdom = (() => {
   const EVENTS = ["click", "dblclick", "input", "change", "keydown", "keyup", "focusin",
-    "focusout", "submit", "pointerdown", "pointerup", "pointermove", "resize", "visibilitychange"];
+    "focusout", "submit", "pointerdown", "pointerup", "pointermove", "resize", "visibilitychange", "load"];
   const TRANSIENT = 0x40000000, DETACHED = 0xffffffff, SMALL = 64, SVG = "http://www.w3.org/2000/svg";
   const doc = document, td = new TextDecoder(), te = new TextEncoder();
   const nodes = [], strs = [], tmp = [], tpl = [], stack = [], on = [], tslot = [];
@@ -112,6 +112,12 @@ var cdom = (() => {
   function set_class(id, v) { nodes[id].className = S(v); }
   function style(id, p, v) { nodes[id].style.setProperty(S(p), S(v)); }
   function style_num(id, p, v, u) { nodes[id].style.setProperty(S(p), v + S(u)); }
+  // Pixels in C memory as a CSS url(): copied now, encoded off the call, then CD_EV_LOAD (14).
+  function image(id, p, ptr, w, h, m, t) {
+    const c = doc.createElement("canvas"), el = nodes[id], prop = S(p); c.width = w; c.height = h;
+    c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(mem.buffer, ptr, w * h * 4), w, h), 0, 0);
+    c.toBlob((b) => { el.style.setProperty(prop, `url(${URL.createObjectURL(b)})`); post(14, id, { keyCode: t }, 0, 0); }, S(m), 0.92);
+  }
   function remove(id) { nodes[id].remove(); nodes[id] = undefined; lmask[id] = 0; }
   function free(id) { nodes[id] = undefined; lmask[id] = 0; }
   function move(id, b) { const el = nodes[id]; el.parentNode.insertBefore(el, b ? nodes[b] : null); }
@@ -125,6 +131,7 @@ var cdom = (() => {
   function viewport(p) { if (buf !== mem.buffer) views(); i32.set([innerWidth, innerHeight, +doc.hidden], p >> 2); }
   function timer(ms, t) { setTimeout(() => x.cd_timer(t), ms); }
   function raf(t) { requestAnimationFrame((ts) => x.cd_raf(t, ts)); }
+  const now = () => performance.now();
 
   // The network (src/cdom_net.c): bytes go straight into C memory, in room C makes with cd_net_buf.
   const sockets = [], utf8 = (p, n) => td.decode(new Uint8Array(mem.buffer, p, n));
@@ -156,8 +163,8 @@ var cdom = (() => {
   async function start(url, mount, env) {
     const imports = { cdom: { strings, at, open, open_svg, close, text, text_num, attr, class: cls, name, name_open,
       listen, value, value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num, set_text,
-      set_text_num, set_attr, set_class, style, style_num, remove, free, move, clear, detach, attach, input, win, viewport,
-      timer, raf, ws_open, ws_send, ws_close, http }, env: env || {} };
+      set_text_num, set_attr, set_class, style, style_num, image, remove, free, move, clear, detach, attach, input, win, viewport,
+      timer, raf, now, ws_open, ws_send, ws_close, http }, env: env || {} };
     const res = fetch(url);
     const { instance } = WebAssembly.instantiateStreaming
       ? await WebAssembly.instantiateStreaming(res, imports)

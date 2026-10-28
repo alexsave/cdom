@@ -88,3 +88,50 @@ cdom's select and remove counts include the event path the shim computes (which 
 
 What is irreducible: rendering (style, layout, paint) is over 90% of every total and identical for identical DOM, so totals can move only by script; fragment appends and three clear strategies changed nothing measurable.
 cdom's remaining script over the floor is the keyed library's own work: the model and keyed diff in wasm (about 0.15 ms per 1k rows), one reference and one expando per row so rows can be moved, removed and hit by events, and the event path.
+
+## Port fixes (branch port-fixes, worktree ~/Dev/cdom-fixes)
+
+What the foolish table port (foolish branch cdom-port, c/cdom_poc) found missing, folded back.
+Every item has a test in tests/unit.c (the unit page, tools/unit.mjs), tests/listfuzz.c or tests/link, and tools/mutate.py breaks each one and checks the test fails for its own reason.
+
+### API (all additive except where noted)
+
+- A template cloned inside an open element is that element's child (the shim's clone never attached it).
+- SVG: an `<svg>` and everything opened inside it is created in the SVG namespace; C keeps the depth (the interned id of "svg" is recorded when interned, so the check is an id compare) and calls `open_svg`.
+- `cd_name_open(id)` names the innermost open element; `cd_name` keeps its meaning (the last node made) and its comment now says what that is after a close.
+- `cd_set_style(id, prop, value)` and `cd_set_style_num(id, prop, v, unit)`: one `style.setProperty`, prop interned, value a string (transient or interned) or a double plus a unit enum.
+- `cd_tmp(s, len)` / `cd_tmpz`: a one-off string, sent with the next op and never interned; using it after another op crossed traps.
+- `CD_LIT("lit")`: a literal interned once per call site, through the helper `cd_lit_`; `"" lit` makes a variable a compile error.
+- `cd_fmt(dst, v, decimals, unit)` and `cd_fmt_len(dst, double, unit)`: numbers as JS's `String(v / 10 ** d)` writes them, no printf.
+- `cd_str_count()`, `cd_str_bytes()`, `cd_ids_live()`, `cd_ids_high()`, `cd_pending()`: counters for tests.
+- Regions: `cd_region_show(&r, want)` / `cd_region_end` / `cd_region_hide`, a child or a set of children that comes and goes; every id made while it builds is freed when it goes (parent mode: one clear; root mode: one remove).
+- `cd_list.end`: a list followed by fixed siblings inserts its tail before the first of them. `cd_list_forget(L, f)`: the list's DOM already went, free its ids.
+- Freeing a free id traps (an `alive` byte per id).
+- Time: `cd_timer_start(ms, token)` -> `cd_on_timer(token)`, `cd_raf_request(token)` -> `cd_on_raf(token, t)`, `cd_now()`. Hooks have empty weak defaults.
+- Window: `cd_listen_window(CD_EV_RESIZE | CD_EV_VISIBILITY)` delivers through `cd_on_event` (x, y the viewport, key = hidden); `cd_viewport(&v)` reads it now.
+- `cd_set_image(id, prop, rgba, w, h, mime, token)`: pixels in C memory as a CSS `url()` (canvas, toBlob, object URL) on a style property, then `CD_EV_LOAD` with key = token.
+- Network: src/cdom_net.c and cdom_net.h (link it to use it): `cd_ws_open/send/close`, `cd_http`, answered by `cd_on_ws_open/msg/close`, `cd_on_http`; bytes go straight into a buffer cdom owns.
+- Auto-flush: every export (cd_start, cd_event, cd_timer, cd_raf, the four network answers) flushes after the app's hook. Apps no longer call `cd_flush`.
+- Memory: `cd_alloc`, `cd_realloc`, `cd_free` go through `malloc`, `realloc`, `free`; cdom defines all four (and calloc) as weak symbols over its own heap. An app with its own allocator defines them, strong, and cdom allocates from it; cdom's free and realloc trap on a pointer their heap did not hand out. One heap whoever brings it.
+- src/mini.c's memcmp and strlen are weak: an app's own libc links next to it.
+- Not changed: template variants (the port's "10" face and thin card). A per-clone attribute slot would save nothing: the clone's root style is one setAttribute call either way, the "10" variant differs in an inner element's style (a slot would have to remove an attribute to match the plain face's DOM), and the thin card is another structure. Separate templates cost one build each at start.
+
+### SVG: C tracks the namespace, measured (micro/svg)
+
+40,000 opens (20,000 rows of div > span > text, built and cleared), median of 21 fresh loads: namespace in C (an id compare, `open_svg` import) 11.7 ms; the port's JS check per open (tag compare and the parent's `namespaceURI`) 12.0 ms. About 7 ns per open; C kept.
+
+### SHIM_LINES (shim/cdom.js 138 -> 184 lines)
+
+Each line added or changed, and why:
+- `EVENTS` gains "resize", "visibilitychange", "load": the window events and the image's load use the event record.
+- `SVG` constant: the namespace for `open_svg`.
+- `post(...)`, 10 lines with its comment and blank: the event record writer, moved out of the delegate (net 0 for the delegate) so window and image events share it.
+- `push(el)`: open, open_svg and clone append to the open parent the same way; the missing append in clone was the bug.
+- `open`, `open_svg`, `clone`: one line each over push.
+- `name_open`: names the open element.
+- `style`, `style_num`: one setProperty each.
+- `image`, 5 lines: canvas, putImageData from C memory, toBlob, the url set, CD_EV_LOAD.
+- `vp`, `win`, `viewport` and a comment: window events and the viewport read.
+- `timer`, `raf`, `now`: one line each.
+- The network, 19 lines with comments: `utf8`, `deliver` (into C memory), `ws_open` (4 handlers), `ws_send`, `ws_close`, `http`.
+- The import list: 3 lines rewrapped for the 16 new names.

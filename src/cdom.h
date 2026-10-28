@@ -17,10 +17,11 @@ typedef uint32_t cd_str; /* interned string id */
 #define CD_MOUNT 0u
 #define CD_DETACHED 0xffffffffu
 
-/* CD_EV_RESIZE and CD_EV_VISIBILITY are window events (cd_listen_window). */
+/* CD_EV_RESIZE and CD_EV_VISIBILITY are window events (cd_listen_window); CD_EV_LOAD says a
+ * cd_set_image landed. */
 enum { CD_EV_CLICK, CD_EV_DBLCLICK, CD_EV_INPUT, CD_EV_CHANGE, CD_EV_KEYDOWN, CD_EV_KEYUP,
        CD_EV_FOCUSIN, CD_EV_FOCUSOUT, CD_EV_SUBMIT, CD_EV_POINTERDOWN, CD_EV_POINTERUP,
-       CD_EV_POINTERMOVE, CD_EV_RESIZE, CD_EV_VISIBILITY };
+       CD_EV_POINTERMOVE, CD_EV_RESIZE, CD_EV_VISIBILITY, CD_EV_LOAD };
 
 /* ---- memory ----
  * cd_alloc and friends go through malloc, realloc and free. cdom defines those (and calloc)
@@ -109,6 +110,11 @@ void cd_set_class(cd_id id, cd_str value);
 /* One style property: element.style.setProperty(prop, value). value may be a cd_tmp; "" removes it. */
 void cd_set_style(cd_id id, cd_str prop, cd_str value);
 void cd_set_style_num(cd_id id, cd_str prop, double v, uint32_t unit);
+/* Pixels as a CSS image: rgba is w * h * 4 bytes in C memory, read during the call (free it after).
+ * The shim encodes them as mime ("image/png", or "image/jpeg" at quality 0.92) off the call and
+ * sets style property prop of node id to url(blob:...), a custom property such as "--tex" works;
+ * then cd_on_event gets CD_EV_LOAD with that id and key = token. */
+void cd_set_image(cd_id id, cd_str prop, const uint8_t *rgba, uint32_t w, uint32_t h, cd_str mime, uint32_t token);
 void cd_remove(cd_id id);            /* detach and free the id */
 void cd_move(cd_id id, cd_id before);
 void cd_clear(cd_id id);             /* drop all children; caller frees their ids (a cd_region does it for you) */
@@ -138,6 +144,7 @@ void cd_timer_start(uint32_t ms, uint32_t token); /* cd_on_timer(token) after ms
 void cd_raf_request(uint32_t token);              /* cd_on_raf(token, t) before the next frame */
 void cd_on_timer(uint32_t token);
 void cd_on_raf(uint32_t token, double t);
+double cd_now(void);                              /* performance.now(), for work cut into slices */
 
 /* ---- regions: children that come and go ----
  *   if (cd_region_show(&r, want)) { cd_at(...); ...build...; cd_region_end(&r); }

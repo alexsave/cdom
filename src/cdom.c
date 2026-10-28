@@ -127,6 +127,7 @@ IMPORTS("set_attr") void j_set_attr(cd_id id, uint32_t name, uint32_t v);
 IMPORTS("set_class") void j_set_class(cd_id id, uint32_t v);
 IMPORTS("style") void j_style(cd_id id, uint32_t prop, uint32_t v);
 IMPORTS("style_num") void j_style_num(cd_id id, uint32_t prop, double v, uint32_t unit);
+IMPORTS("image") void j_image(cd_id id, uint32_t prop, const uint8_t *rgba, uint32_t w, uint32_t h, uint32_t mime, uint32_t token);
 IMPORTS("remove") void j_remove(cd_id id);
 IMPORTS("free") void j_free(cd_id id);
 IMPORTS("move") void j_move(cd_id id, cd_id before);
@@ -137,6 +138,7 @@ IMPORTS("win") void j_win(uint32_t ev);
 IMPORTS("viewport") void j_viewport(cd_viewport_rec *v);
 IMPORTS("timer") void j_timer(uint32_t ms, uint32_t token);
 IMPORTS("raf") void j_raf(uint32_t token);
+IMPORTS("now") double j_now(void);
 
 #define SB_CAP (1u << 18)
 #define SM_CAP (1u << 12)
@@ -418,6 +420,10 @@ void cd_set_style_num(cd_id id, cd_str prop, double v, uint32_t unit) {
   uint32_t a = ref_name(prop), u = ref_name(unit_ids[unit]);
   ready(); j_style_num(id, a, v, u);
 }
+void cd_set_image(cd_id id, cd_str prop, const uint8_t *rgba, uint32_t w, uint32_t h, cd_str mime, uint32_t token) {
+  uint32_t a = ref_name(prop), m = ref_name(mime);
+  ready(); j_image(id, a, rgba, w, h, m, token);
+}
 void cd_move(cd_id id, cd_id before) { ready(); j_move(id, before); }
 void cd_clear(cd_id id) { ready(); j_clear(id); }
 void cd_detach(cd_id id) { ready(); j_detach(id); }
@@ -515,6 +521,7 @@ void cd_listen_window(uint32_t ev) { j_win(ev); }
 void cd_viewport(cd_viewport_rec *v) { j_viewport(v); }
 void cd_timer_start(uint32_t ms, uint32_t token) { j_timer(ms, token); }
 void cd_raf_request(uint32_t token) { j_raf(token); }
+double cd_now(void) { return j_now(); }
 __attribute__((weak)) void cd_on_timer(uint32_t token) { (void)token; }
 __attribute__((weak)) void cd_on_raf(uint32_t token, double t) { (void)token; (void)t; }
 
