@@ -3,8 +3,9 @@
  * expected one. The same cases built for wasm are decoded by the shim in Chrome
  * (tests/host.mjs mounts a probe class that renders the decoded value the same way), so the
  * C and the JS decoders are held to one rendering. Natively it also checks that a value too
- * large for one batch, a misbuilt tree and a host op left open trap, that a host op after a
- * nearly full batch is never split by a flush, and what PROP leaves in the server's HTML.
+ * large for one call, a misbuilt tree and a host op left open trap, that a host op after a
+ * nearly full string queue or held walks arrives whole, and what PROP leaves in the server's
+ * HTML. tests/cdv.sh runs it with interned strings and with per-op strings.
  *   native: cdv           runs every check, "ok"/"FAIL" per line, exit 1 on a failure
  *           cdv --list    prints "<case>\t<expected>" per case for the browser check
  *   wasm:   exports ncases() and emit(i): MOUNT window.CdvProbe on a node with case i */
@@ -77,7 +78,7 @@ static void c_deep(void) { /* CD_V_DEPTH arrays, the deepest allowed */
   for (uint32_t i = 0; i < CD_V_DEPTH; i++) cd_v_arr(1);
   cd_v_u32(9);
 }
-static void c_big(void) { /* 16000 doubles: 32002 words plus the op's 3, under ARGS_CAP */
+static void c_big(void) { /* 16000 doubles: 32002 words plus the call's 3, under the 32768 cap */
   static double V[16000];
   for (uint32_t i = 0; i < 16000; i++) V[i] = i + 0.5;
   cd_v_obj(1);
@@ -223,10 +224,10 @@ int main(int argc, char **argv) {
   cd_html_reset();
   cd_main();
   cd_flush();
-  char want[4096];
+  char want[4096], *got;
   for (uint32_t i = 0; i < NCASES; i++) {
     emit(i);
-    char *got = last();
+    got = last();
     if (CASES[i].want) {
       snprintf(want, sizeof want, "0 %u CdvProbe %s", NODE, CASES[i].want);
       int same = !strcmp(got, want);
@@ -236,22 +237,23 @@ int main(int argc, char **argv) {
     } else { /* the big one: {n:f64[0.5,1.5,...,15999.5]} */
       ok(!strncmp(got, "0 1 CdvProbe {n:f64[0.5,1.5,2.5,", 32) && strstr(got, ",15998.5,15999.5]}") &&
            got[strlen(got) - 1] == '}',
-         "case 14: 16000 doubles round-trip through one op");
+         "case 14: 16000 doubles round-trip through one call");
     }
     free(got);
   }
   ok(cd_html_host_ops(CD_HOST_MOUNT) == NCASES, "the sink counted every MOUNT");
 
-  /* a host op after a nearly full argument stream: reserve flushes first, never mid-value */
-  for (uint32_t i = 0; i < 32700; i++) cd_sel(NODE);
-  emit(NCASES - 1);
-  char *got = last();
-  ok(strstr(got, ",15999.5]}") != 0, "a host op after 32700 queued words is not split by a flush");
+  /* a host op right after a queue of strings nearly a full batch long arrives whole */
+  char nm[16];
+  for (uint32_t i = 0; i < 4090; i++) { snprintf(nm, sizeof nm, "q%u", i); cd_internz(nm); }
+  emit(12);
+  got = last();
+  ok(strstr(got, "borderColor:\"#c33\"") != 0, "a host op after 4090 queued strings arrives whole");
   free(got);
-  for (uint32_t i = 0; i < 32765; i++) cd_sel(NODE);
+  for (uint32_t i = 0; i < 100; i++) cd_sel(NODE); /* walks held in C cross before the call */
   emit(1);
   got = last();
-  ok(!strcmp(got, "0 1 CdvProbe false"), "a small host op at the end of a batch arrives whole");
+  ok(!strcmp(got, "0 1 CdvProbe false"), "a host op after held walks arrives whole");
   free(got);
 
   ok(traps(t_no_value), "cd_host_end with no value traps");
@@ -261,7 +263,7 @@ int main(int argc, char **argv) {
   ok(traps(t_key_in_array), "a key inside an array traps");
   ok(traps(t_two_keys), "two keys in a row trap");
   ok(traps(t_too_deep), "nesting past CD_V_DEPTH traps");
-  ok(traps(t_too_big), "a value larger than the argument stream traps");
+  ok(traps(t_too_big), "a value larger than one host call may be traps");
   ok(traps(t_left_open), "a host op begun while another is open traps");
   ok(traps(t_no_host), "a value outside a host op traps");
   ok(!traps(t_good), "a well-formed value does not trap");
