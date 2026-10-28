@@ -9,16 +9,15 @@
  *   everything else            static files from the root (out/ next to the binary)
  *
  * Usage: server [--port 8701] [--root dir] | server --render <n> (page to stdout)
- * Each request renders in a forked child: cdom.c and app.c keep their model in
+ * Each request renders in a forked child (ssr_forked): cdom.c and app.c keep their model in
  * globals, so a fresh process image is the clean slate for every page. */
 #include "../../src/cdom.h"
 #include "../../src/cdom_html.h"
 #include "../../src/httpd.h"
+#include "../../src/ssr_page.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 #define SSR_SEED 0x2545f491u /* fixed, so the page is a pure function of n */
 #define MAX_ROWS 100000
@@ -26,69 +25,22 @@
 extern uint32_t cd_seed;
 void app_ssr_fill(uint32_t n); /* app.c: the model "Create n rows" would make from cd_seed */
 
-/* ---- a growable page buffer ---- */
-typedef struct { char *d; size_t len, cap; } page;
+/* The shell (src/ssr_page.h): the benchmark's stylesheet and the readable shim from out/. */
+static const ssr_page SHELL = {
+  .title = "cdom-\"keyed\"",
+  .head = "<link href=\"/css/currentStyle.css\" rel=\"stylesheet\"/>",
+  .shim_src = "cdom.js",
+  .wasm = "app.wasm",
+};
 
-static char *room(page *p, size_t n) {
-  if (p->len + n > p->cap) {
-    size_t c = p->cap ? p->cap : 65536;
-    while (c < p->len + n) c *= 2;
-    p->d = realloc(p->d, c);
-    if (!p->d) abort();
-    p->cap = c;
-  }
-  p->len += n;
-  return p->d + p->len - n;
-}
-
-static void puts_(page *p, const char *s) {
-  size_t n = strlen(s);
-  memcpy(room(p, n), s, n);
-}
-
-static void base64(page *p, const uint8_t *s, size_t n) {
-  static const char A[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  char *d = room(p, (n + 2) / 3 * 4);
-  size_t i = 0;
-  for (; i + 3 <= n; i += 3, d += 4) {
-    uint32_t v = (uint32_t)s[i] << 16 | (uint32_t)s[i + 1] << 8 | s[i + 2];
-    d[0] = A[v >> 18]; d[1] = A[(v >> 12) & 63]; d[2] = A[(v >> 6) & 63]; d[3] = A[v & 63];
-  }
-  if (i < n) {
-    uint32_t v = (uint32_t)s[i] << 16 | (i + 1 < n ? (uint32_t)s[i + 1] << 8 : 0);
-    d[0] = A[v >> 18]; d[1] = A[(v >> 12) & 63];
-    d[2] = i + 1 < n ? A[(v >> 6) & 63] : '=';
-    d[3] = '=';
-  }
+static void fill(void *ctx) {
+  cd_seed = SSR_SEED;
+  app_ssr_fill(*(uint32_t *)ctx);
+  cd_main();
 }
 
 /* The whole page for n rows. Runs the app once: call it in a fresh process. */
-static void render_page(page *p, uint32_t n) {
-  cd_html_reset();
-  cd_seed = SSR_SEED;
-  app_ssr_fill(n);
-  cd_main();
-  cd_flush();
-  puts_(p, "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"/>"
-           "<title>cdom-\"keyed\"</title><link href=\"/css/currentStyle.css\" rel=\"stylesheet\"/>"
-           "</head><body><div id=\"main\">");
-  uint32_t guess = 4096 + n * 320, got;
-  char *h = room(p, guess);
-  got = cd_html_write(h, guess);
-  p->len -= guess;
-  if (got > guess) got = cd_html_write(room(p, got), got);
-  else p->len += got;
-  puts_(p, "</div><script type=\"application/octet-stream\" id=\"cdom-state\">");
-  uint32_t need = cd_state_save(0, 0);
-  uint8_t *blob = malloc(need ? need : 1);
-  if (!blob || cd_state_save(blob, need) != need) abort();
-  base64(p, blob, need);
-  free(blob);
-  puts_(p, "</script><script src=\"cdom.js\"></script><script>cdom.resume('app.wasm', 'main', 'cdom-state', ");
-  uint32_t ne = cd_html_resume_events(0, 0);
-  cd_html_resume_events(room(p, ne), ne);
-  puts_(p, ");</script></body></html>");
-}
+static void render_page(ssr_buf *p, void *ctx) { ssr_render(p, &SHELL, fill, ctx, 4096 + *(uint32_t *)ctx * 320); }
 
 static int parse_n(const char *s, size_t len, uint32_t *n) {
   if (!len || len > 6) return -1;
@@ -111,46 +63,16 @@ static void index_page(const httpd_req *q, httpd_res *r) {
     httpd_write(r, "n must be 0..100000\n", 20);
     return;
   }
-  int fd[2];
-  if (pipe(fd)) goto fail;
-  pid_t pid = fork();
-  if (pid < 0) {
-    close(fd[0]);
-    close(fd[1]);
-    goto fail;
-  }
-  if (!pid) {
-    close(fd[0]);
-    page p = {0};
-    render_page(&p, n);
-    for (size_t o = 0; o < p.len;) {
-      ssize_t k = write(fd[1], p.d + o, p.len - o);
-      if (k <= 0) _exit(1);
-      o += (size_t)k;
-    }
-    _exit(0);
-  }
-  close(fd[1]);
-  page p = {0};
-  for (;;) {
-    ssize_t k = read(fd[0], room(&p, 65536), 65536);
-    p.len -= 65536 - (k > 0 ? (size_t)k : 0);
-    if (k <= 0) break;
-  }
-  close(fd[0]);
-  int st = 0;
-  waitpid(pid, &st, 0);
-  if (!WIFEXITED(st) || WEXITSTATUS(st)) {
+  ssr_buf p = {0};
+  if (ssr_forked(&p, render_page, &n)) {
     free(p.d);
-    goto fail;
+    httpd_status(r, 500, "text/plain");
+    httpd_write(r, "render failed\n", 14);
+    return;
   }
   httpd_status(r, 200, "text/html; charset=utf-8");
   httpd_write(r, p.d, p.len);
   free(p.d);
-  return;
-fail:
-  httpd_status(r, 500, "text/plain");
-  httpd_write(r, "render failed\n", 14);
 }
 
 int main(int argc, char **argv) {
@@ -160,8 +82,8 @@ int main(int argc, char **argv) {
     if (!strcmp(argv[i], "--render") && i + 1 < argc) {
       uint32_t n;
       if (parse_n(argv[i + 1], strlen(argv[i + 1]), &n)) return 2;
-      page p = {0};
-      render_page(&p, n);
+      ssr_buf p = {0};
+      render_page(&p, &n);
       return fwrite(p.d, 1, p.len, stdout) == p.len ? 0 : 1;
     }
     if (!strcmp(argv[i], "--port") && i + 1 < argc) port = atoi(argv[++i]);

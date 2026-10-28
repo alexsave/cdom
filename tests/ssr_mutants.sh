@@ -41,7 +41,7 @@ resume $C 's/static int rs_remove\(cd_id id\) \{\n  if \(!vmode\) \{ touch\(id, 
 resume $C 's/uint32_t want = trail\[2 \* \(L - 1 - j\)\]/uint32_t want = trail[2 * j]/' 'FAIL n=0 the first click loads the wasm' # the event path matched from the wrong end
 resume $J 's/      for \(const \[t, e\] of queue\.splice\(0\)\) handle\(t, e\);\n//' 'FAIL n=0 the first click loads the wasm' # the queued click is dropped
 resume $J 's/if \(queue\.push\(\[t, e\]\) > 64\) queue\.shift\(\);/if (!queue.length) queue.push([t, e]);/' 'FAIL n=1000 the second click, fired during the load' # one event queued only
-resume ssr/rows/server.c 's/  uint32_t ne = cd_html_resume_events\(0, 0\);\n  cd_html_resume_events\(room\(p, ne\), ne\);/  puts_(p, "[],[]");/' 'FAIL n=0 the first click loads the wasm' # the page listens to nothing
+resume src/ssr_page.c 's/  put\(&o, p->events, p->events_len\);/  puts_(&o, "[],[]");/' 'FAIL n=0 the first click loads the wasm' # the page listens to nothing
 resume $J 's/function listen\(n\) \{ nodes\[n\] = last; last\.\$i = n; \}/function listen(n) { nodes[n] = last; }/' 'FAIL n=1 the one node with a JS id is the clicked row' # resolved listeners carry no id for the shim
 resume $A 's/  if \(nrows\) render\(\);//' 'FAIL n=1 1 rows' # server and browser share the C: both lose the rows
 resume $A 's/rng = h\.rng; next_id = h\.next_id;/rng = h.rng;/' 'FAIL n=1 appended ids continue'

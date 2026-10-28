@@ -20,7 +20,7 @@ case "${SSR_APP:-}" in
 esac
 mkdir -p "$out/csr" "$out/css/bootstrap/dist/css" "$out/css/bootstrap/dist/fonts"
 nice -n 10 cc -O2 -Wall -Wextra -Werror ${inc[@]+"${inc[@]}"} -o "$out/server" \
-  "$here/server.c" "${app[@]}" "$top/src/cdom.c" "$top/src/cdom_html.c" "$top/src/httpd.c"
+  "$here/server.c" "${app[@]}" "$top/src/cdom.c" "$top/src/cdom_html.c" "$top/src/httpd.c" "$top/src/ssr_page.c"
 nice -n 10 "$CC" --target=wasm32 -O2 -nostdlib -mbulk-memory -Wall -Wextra -Werror ${inc[@]+"${inc[@]}"} \
   -Wl,--no-entry -Wl,--strip-all -o "$out/app.wasm" "${app[@]}" "$top/src/cdom.c" "$top/src/mini.c"
 cp "$top/shim/cdom.js" "$out/cdom.js"
