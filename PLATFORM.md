@@ -125,3 +125,16 @@ Commits d68b30e..575b40e (Part A and B of M3 landed earlier: 7604256..ad855b4 be
 - `CDOM_RESUME` build flag (default 1): with 0 the virtual render, path tree, resolver and matcher compile out and the state exports vanish. cdom-hand 17508 (8556 gz) -> 10051 (5257 gz); cdom-tpl 18837 (8952 gz) -> 11133 (5590 gz). Smoke and listfuzz pass both ways; tests/resume_flag.sh pins it. Defaults unchanged: Alex's decision.
 - The update "regression" was mostly harness noise (earlier pre-resume runs already had 0.9-1.2 ms medians; means 0.96 vs 0.97). The real part was about 1.3 us per click from the walk's per-step comment check; the walk now checks comments only on a resumed page. Shim 213 -> 214 lines, 2402 gz.
 - cdtc today (for the signals step): per-binding caches in `<tpl>_view` / `page_v` (class bitmask `cN`, attr `aN_i`, text `tN`, if branch, refs, nested `listN`); patch recomputes and compares every binding and emits only differences; class strings are a static 2^k table per element interned lazily; `page_render` re-evaluates every page binding and `{#if}`, rebuilds every list's keys and calls cd_list_update, whose patch runs for every surviving item, so each event is O(n) compares (that is swap's extra 0.3 ms). Dispatch: cd_tag = slot << 24 | view index; handlers `void h(State *S, [Item *it,] const cd_event_rec *e)`; the app calls page_dispatch then page_render.
+
+### Owed: event cancellation and input filtering (found 2026-10-28, due in the forms step or earlier if signals/components touch events)
+
+Neither perf nor platform ever calls preventDefault: the shim ignores `cd_event()`'s return, so a C handler cannot cancel anything. A delegated submit still navigates, keydown shortcuts cannot be swallowed, input cannot be filtered (Alex's case: a field that accepts digits only but also rejects "3"). No import writes a live `.value` or `.checked` (`set_attr("value")` does not change the live value; HOST PROP does, but through the generic path).
+Wanted:
+1. `cd_event` returns flags: bit 0 = `e.preventDefault()`, bit 1 = `stopPropagation()`.
+2. `beforeinput` in EVENTS. The record carries inputType (a small enum) and the incoming text (`e.data`, or dataTransfer text for paste and drop), copied into C scratch the way `input()` does. C decides: allow, prevent, or prevent plus insert a filtered version.
+3. A `set_input(id, s)` import plus a range-insert variant (`setRangeText` with "end") that keeps the caret.
+4. IME fallback: beforeinput for insertCompositionText is not cancelable in Chrome; on compositionend or input C re-reads, filters and writes back, preserving the selection.
+5. Compiler side: a declarative filter in templates (e.g. `accept={digits && !'3'}`) that also emits `inputmode="numeric"` and a matching `pattern=` so the no-JS form validates natively.
+Test: the digits-but-not-3 field: type, paste "1234", drop, IME composition, an undo stack that still works (Ctrl+Z after a rejected key), mobile inputmode. Chrome and Firefox (Firefox 159 is installed, driven over BiDi). Mutation-checked.
+
+Also for the signals step: the select case (1000 compares of one list-wide binding per selection change) can be O(1) with a keyed selection: remember the previous selected key and patch only the old and the new item.
