@@ -255,10 +255,7 @@ var cdom = (() => {
     const imports = { cdom: { strings, at, open, close, text, text_num, attr, class: cls, name, listen, value,
       value_num, tpl_save, clone, walk, walk_value, walk_value_num, set_text,
       set_text_num, set_attr, set_class, remove, free, move, clear, detach, attach, input, host, delegate }, env: env || {} };
-    const res = fetch(url);
-    const { instance } = WebAssembly.instantiateStreaming
-      ? await WebAssembly.instantiateStreaming(res, imports)
-      : await WebAssembly.instantiate(await (await res).arrayBuffer(), imports);
+    const { instance } = await WebAssembly.instantiateStreaming(fetch(url), imports);
     if (typeof mount === "string") {
       if (doc.readyState === "loading") await new Promise((r) => doc.addEventListener("DOMContentLoaded", r, { once: true }));
       mount = doc.getElementById(mount);
