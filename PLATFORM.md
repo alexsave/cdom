@@ -147,3 +147,13 @@ Decision (Alex, 2026-10-28): templates accept INLINE C handler bodies, not only 
 - The return value is the cancel flags (CD_ALLOW, CD_PREVENT, stop-propagation bit). Named handlers (`on:click={row_click}`) keep working. The declarative `accept=` sugar becomes optional and compiles to the same kind of function plus inputmode and pattern.
 - Server side: the same lifted function links into the SSR build, so a no-JS form POST is re-validated on the server by the very same C; the gov-form step tests that.
 - The shim never sees handler bodies, only the flags.
+
+Decisions (Alex, 2026-10-28), for the component step:
+1. Naming: the template language is CML and files use `.cml` (rename `.cdt` to `.cml`; the tool stays `cdtc` unless renamed consistently to `cmlc`). Generated outputs: `x.cml` -> `x.cml.c` and `x.cml.h`.
+2. Plain `.c` logic modules that reach into the DOM, alongside inline handlers; both must work. The split mirrors React: `.cml` is like `.tsx` (UI), `.c` is like `.ts` (logic, server calls, contexts), cdom is the framework.
+   - Refs: `ref:amount` on an element (like Svelte's bind:this). The compiler emits a typed accessor in `x.cml.h`, so logic code writes `cd_on(form_ref_amount(), CD_BEFOREINPUT, filter_fn)`. Renaming the ref breaks the build: that is the guard rail. Prefer this to string queries.
+   - An untyped escape, `cd_query("css selector")`, for server-rendered markup not written in CML; documented as the escape hatch.
+   - One listener table for both: inline and external handlers go through the same delegate and lmask path, in a defined order (inline first, then external in registration order). Flags are ORed, so either can prevent.
+   - Resumability: external registrations made at startup live in C and resolve lazily like inline ones. No DOM walk at load. Tested.
+   - Logic-layer services as plain C APIs: fetch and WebSocket imports, timers, storage. Context: a provide/use pair keyed by type, so components get shared state without prop drilling. State blocks may live in `.c/.h` modules, not only inside templates.
+   - Tests: the digits-but-not-3 field both ways (inline and from a .c module) with identical behaviour; an inline plus external handler on one input showing order and the ORed prevent; a renamed ref failing the build; a resumed page whose first interaction hits an external handler. All mutation-checked.
