@@ -3,13 +3,14 @@
 #include "../src/cdom.h"
 
 __attribute__((import_module("env"), import_name("check"))) void check(const uint32_t *keys, uint32_t n, uint32_t round);
+__attribute__((import_module("env"), import_name("check_end"))) void check_end(const uint32_t *keys, uint32_t n, uint32_t round);
 
 static uint32_t rng = 12345;
 static uint32_t rnd(uint32_t m) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; return rng % m; }
 
 static uint32_t keys[64], nkeys;
 static const uint32_t *cur = keys; /* the key array create() reads */
-static cd_list list;
+static cd_list list, tlist; /* tlist shares its <ul> with a fixed last <li>: its end anchor */
 static cd_str S_LI;
 
 static cd_id create(void *ctx, uint32_t i, uint32_t *data) {
@@ -66,6 +67,25 @@ __attribute__((export_name("run_fuzz"))) void run_fuzz(uint32_t seed, uint32_t r
     cd_list_update(&list, keys, nkeys, &FNS);
     cd_flush();
     check(keys, nkeys, round);
+  }
+}
+
+/* The same transitions on a list followed by a fixed sibling: every insert, move and fill must
+ * land before it. */
+__attribute__((export_name("run_fuzz_end"))) void run_fuzz_end(uint32_t seed, uint32_t rounds) {
+  rng = seed | 1;
+  nkeys = 0;
+  cd_at(CD_MOUNT, 0);
+  cd_open(cd_internz("ul"));
+  cd_class(cd_internz("tail"));
+  cd_name_open(tlist.parent = cd_id_new());
+  cd_open(S_LI); cd_name_open(tlist.end = cd_id_new()); cd_text(cd_internz("end")); cd_close();
+  cd_close();
+  for (uint32_t round = 0; round < rounds; round++) {
+    next_keys();
+    cd_list_update(&tlist, keys, nkeys, &FNS);
+    cd_flush();
+    check_end(keys, nkeys, round);
   }
 }
 

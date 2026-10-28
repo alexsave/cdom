@@ -1,0 +1,103 @@
+<!doctype html><html><head><meta charset="utf-8"><title>unit</title></head><body><div id="m"></div>
+<script src="cdom.js"></script><script>
+// Runs tests/unit.c's cases and checks them; tools/unit.mjs reads window.RESULT, then drives the
+// resize and the network from outside. The imports are wrapped only to see what crosses after an
+// entry returns (the auto-flush check).
+const errors = [], passed = [], trace = [];
+let tracing = false;
+const real = WebAssembly.instantiateStreaming;
+WebAssembly.instantiateStreaming = (res, imp) => {
+  for (const k of ['strings', 'walk']) { const f = imp.cdom[k]; imp.cdom[k] = (...a) => { if (tracing) trace.push(k); return f(...a); }; }
+  return real(res, imp);
+};
+const $ = (s) => document.querySelector(s);
+const SVG = 'http://www.w3.org/2000/svg', HTML = 'http://www.w3.org/1999/xhtml';
+function check(name, fn) {
+  try { const r = fn(); if (r !== true) errors.push(`${name}: ${r}`); else passed.push(name); }
+  catch (e) { errors.push(`${name}: threw ${e}`); }
+}
+const until = async (f, ms = 3000) => { for (let i = 0; i < ms / 10; i++) { if (f()) return true; await new Promise((r) => setTimeout(r, 10)); } return false; };
+
+cdom.start('unit.wasm', 'm').then(async (x) => {
+  window.__x = x;
+  check('clone inside an open element is its child', () => {
+    x.t_clone_inside();
+    const got = [...$('#clone').childNodes].map((n) => n.outerHTML).join('');
+    return got === '<p><b>one</b><b>two</b></p><b>two</b>' || got;
+  });
+  check('svg and its descendants in the SVG namespace, the namespace popped on close', () => {
+    x.t_svg();
+    const ns = (s) => $('#svg ' + s).namespaceURI;
+    const g2 = $('#svg svg').children[1];   // the clone of an HTML template stays HTML
+    const r = [ns('div') === HTML, ns('svg') === SVG, ns('svg > g') === SVG, ns('path') === SVG, ns('circle') === SVG,
+      ns('span') === HTML, g2.namespaceURI === HTML, $('#svg path').getTotalLength() > 5];
+    return r.every(Boolean) || JSON.stringify(r);
+  });
+  check('cd_name_open names the element, not its last child', () => {
+    x.t_name_open();
+    return $('#nameopen > div').className === 'named' || $('#nameopen').innerHTML;
+  });
+  check('cd_set_style and cd_set_style_num; 400 transient values leave the string table alone', () => {
+    const grew = x.t_style(400);
+    const st = $('#style > div').style;
+    const r = [st.left === '399px', st.top === '399.5px', st.color === 'red', st.width === '12.25em', st.opacity === '0.5',
+      $('#style > div').dataset.t === 'one-off é', grew === 10];
+    return r.every(Boolean) || JSON.stringify(r) + ' grew ' + grew;
+  });
+  check('a transient used after another op crossed traps', () => {
+    try { x.t_tmp_stale(); return 'no trap'; } catch (e) { return e instanceof WebAssembly.RuntimeError || String(e); }
+  });
+  check('freeing a free id traps', () => {
+    try { x.t_free_twice(); return 'no trap'; } catch (e) { return e instanceof WebAssembly.RuntimeError || String(e); }
+  });
+  check('CD_LIT: one interned id per call site', () => x.t_lit() === 1 || 'wrong ids');
+  check('cd_fmt matches String(v / 10 ** d) + unit', () => {
+    const U = ['', 'px', '%', 'deg', 'em', 'rem', 'vw', 'vh', 'ms', 's', 'rad'];
+    const vals = [0, 1, -1, 5, -5, 9, 10, 99, 100, 101, 1000, 12345, -12345, 99999, 100000, 2147483647, -2147483647, -2147483648];
+    for (let v = -30000; v <= 30000; v += 7) vals.push(v);
+    for (let v = 1; v < 2147483647 / 3; v = v * 3 + 1) vals.push(v, -v);
+    let n = 0;
+    for (const v of vals) for (let d = 0; d <= 6; d++) for (const u of [0, 1, 2, 3]) {
+      const len = x.t_fmt(v, d, u);
+      const got = new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.t_fmt_buf(), len));
+      const want = String(v / 10 ** d) + U[u];
+      if (got !== want) return `cd_fmt(${v}, ${d}, ${u}) = ${got}, JS ${want}`;
+      n++;
+    }
+    for (const v of [0, 0.5, 22.5, 207.33333333, -3.14159, 49.99999999999999, 1e-5, -1e-5, 12345.67891]) {
+      const len = x.t_fmt_len(v, 1);
+      const got = new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.t_fmt_buf(), len));
+      const want = String(Math.sign(v) * Math.round(Math.abs(v) * 1e4) / 1e4 || 0) + 'px';
+      if (got !== want) return `cd_fmt_len(${v}) = ${got}, JS ${want}`;
+    }
+    return n > 30000 || 'too few';
+  });
+  check('a keyed list with a fixed sibling after it: tail inserts land before the sibling', () => {
+    const seen = [];
+    for (let step = 0; step < 5; step++) { x.t_tail(step); seen.push([...$('#tail ul').children].map((e) => e.textContent).join(',')); }
+    const want = ['1,2,end', '1,2,3,end', '3,1,2,4,end', '4,end', 'end'];
+    return seen.join('|') === want.join('|') || seen.join('|');
+  });
+  check('lists and regions filled and taken away 4000 times: ids and nodes flat', () => {
+    x.t_leak(200);
+    const ids = x.t_ids_live(), high = x.t_ids_high(), nodes = $('#leak').querySelectorAll('*').length;
+    x.t_leak(4000);
+    const r = [x.t_ids_live(), x.t_ids_high(), $('#leak').querySelectorAll('*').length];
+    return (r[0] === ids && r[1] === high && r[2] === nodes) || `live ${ids}->${r[0]}, high ${high}->${r[1]}, nodes ${nodes}->${r[2]}`;
+  });
+  // Timers, frames and the auto-flush: the timer hook leaves a string and a walk pending and calls no flush.
+  x.t_time();
+  tracing = true;
+  const fired = await until(() => $('#time i').textContent === '41' && $('#time i + i').textContent === '42');
+  tracing = false;
+  check('a timer and a frame answer through their hooks', () => fired || $('#time').textContent);
+  check('the timer and frame exports flush what their hooks left pending', () =>
+    (trace.includes('strings') && trace.filter((k) => k === 'walk').length === 2) || JSON.stringify(trace));
+  trace.length = 0;
+  tracing = true; // left on: tools/unit.mjs counts the walks the resize and the network hooks leave
+  x.t_window();
+  check('the viewport, read from C', () => (x.t_viewport(0) === innerWidth && x.t_viewport(1) === innerHeight && x.t_viewport(2) === +document.hidden) || 'wrong');
+  document.dispatchEvent(new Event('visibilitychange'));
+  check('visibilitychange arrives through the event path', () => x.t_viewport(5) === +document.hidden || x.t_viewport(5));
+}).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
+</script></body></html>

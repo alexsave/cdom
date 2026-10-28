@@ -5,10 +5,14 @@ let prev = new Map(), errors = [], rounds = 0, moves = 0, prevKeys = [];
 const ib = Node.prototype.insertBefore;
 Node.prototype.insertBefore = function (n, r) { if (n.parentNode === this && this.tagName === 'UL') moves++; return ib.call(this, n, r); };
 function lisLen(a) { const t = []; for (const v of a) { let lo = 0, hi = t.length; while (lo < hi) { const m = (lo + hi) >> 1; if (t[m] < v) lo = m + 1; else hi = m; } t[lo] = v; } return t.length; }
-const env = { check(p, n, round) {
+const checker = (sel, anchored) => (p, n, round) => {
   rounds++;
   const keys = new Uint32Array(window.__x.memory.buffer, p, n);
-  const lis = document.querySelectorAll('#m ul > li');
+  let lis = [...document.querySelectorAll(sel)];
+  if (anchored) {
+    const end = lis.pop();
+    if (!end || end.textContent !== 'end') errors.push(`round ${round}: the anchor is not last (${end && end.textContent})`);
+  }
   const now = new Map();
   if (lis.length !== n) errors.push(`round ${round}: ${lis.length} nodes, want ${n}`);
   for (let i = 0; i < Math.min(n, lis.length); i++) {
@@ -23,8 +27,11 @@ const env = { check(p, n, round) {
   moves = 0; prevKeys = [...keys];
   prev = now;
   if (errors.length > 5) throw new Error(errors.join('\n'));
-} };
+};
+const env = { check: checker('#m ul:not(.tail) > li', false), check_end: checker('#m ul.tail > li', true) };
 cdom.start('listfuzz.wasm', document.getElementById('m'), env).then(x => { window.__x = x; x.run_fuzz(+(new URLSearchParams(location.search).get('seed') || 1), 20000);
+    prev = new Map(); prevKeys = [];
+    x.run_fuzz_end(+(new URLSearchParams(location.search).get('seed') || 1), 20000);
     try {
       x.run_walks();
       const r = document.querySelector('#m > div:last-of-type');

@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
 export async function launch() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cdom-chrome-'));
-  const dbg = 9300 + Math.floor(Math.random() * 500);
+  const dbg = +(process.env.CDP_PORT || 8730 + Math.floor(Math.random() * 10)); // 8730-8739 unless CDP_PORT
   const proc = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     ['--headless=new', `--remote-debugging-port=${dbg}`, `--user-data-dir=${dir}`, '--no-first-run',
      '--no-default-browser-check', '--disable-extensions', '--window-size=1280,800', ...(process.env.CHROME_ARGS ? process.env.CHROME_ARGS.split(' ') : []), 'about:blank'],

@@ -1,6 +1,7 @@
 #!/bin/bash
 # Every correctness gate for a candidate entry: the harness's keyed check, the smoke test,
-# DOM identity against the frozen baseline entry, and the keyed-diff fuzz (all seeds).
+# DOM identity against the frozen baseline entry, the keyed-diff fuzz (all seeds), the unit page
+# (tests/unit.c) and the link-level tests (tests/link).
 # Usage: tools/gate.sh <entry> [baseline=cdomb]   (PORT defaults to 8193)
 set -u
 top="$(cd "$(dirname "$0")/.." && pwd)"
@@ -13,4 +14,6 @@ step keyed keyed
 step smoke node "$top/tools/smoke.mjs" "$e"
 step dom node "$top/tools/domcheck.mjs" "$base" "$e"
 step fuzz bash -c "nice -n 10 '$top/tests/build.sh' && node '$top/tools/fuzz.mjs'"
+step unit node "$top/tools/unit.mjs"
+step link "$top/tests/link/run.sh"
 exit $fail
