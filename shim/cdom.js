@@ -77,8 +77,9 @@ var cdom = (() => {
   // at page level. A node the server marked <!--i--> was inserted into the clone later (an
   // {#if} branch before an anchor): it is parked on s, skipped by walks, and adopted by the
   // insert that places it. What follows the template's last child is left at s's cursor for
-  // later appends. Returns the number of server nodes matched below s.
-  function fit(s, t, root) {
+  // later appends. With verify, a slot's text (sl: the template's slot nodes) must be the
+  // server's. Returns the number of server nodes matched below s.
+  function fit(s, t, root, sl) {
     let k = 0, c = s.firstChild, txt = false;
     for (let u = t.firstChild; u; u = u.nextSibling) {
       while (c && c.nodeType === 8 && c.data === "i") {
@@ -89,14 +90,16 @@ var cdom = (() => {
       if (u.nodeType === 3) {
         if (txt) { if (!c || c.nodeType !== 8) bad(c, "<!---->"); const m = c; c = c.nextSibling; m.remove(); }
         txt = true;
-        if (c && c.nodeType === 3) { k++; c = c.nextSibling; continue; }
+        const want = verify && sl.includes(u) ? u.nodeValue : null;
+        if (c && c.nodeType === 3) { if (want !== null && c.nodeValue !== want) bad(c, want); k++; c = c.nextSibling; continue; }
+        if (want) bad(c, want);
         const m = c && c.nodeType === 8 && c.data === "" && c.nextSibling; // <!----><!--i-->: empty, before a parked node
         if (m && m.nodeType === 8 && m.data === "i") { c.remove(); c = m; }
         s.insertBefore(doc.createTextNode(""), c); stats.created++;
       } else {
         txt = false;
         if (!c || c.nodeType !== 1 || (verify && c.localName !== u.localName)) bad(c, u.nodeName);
-        k += 1 + fit(c, u, false); c = c.nextSibling;
+        k += 1 + fit(c, u, false, sl); c = c.nextSibling;
       }
     }
     if (c || root || hy.has(s)) { const r = cursor(s); r.n = c; r.text = txt; }
@@ -121,7 +124,7 @@ var cdom = (() => {
   function hValue(s) { if (last.isConnected) check(last.nodeType !== 3 || last.nodeValue === String(s), last, s); else last.nodeValue = s; }
   function hClone(t) {
     let el, h;
-    if ((h = into())) { el = adopt(h, tpl[t].localName); stats.adopted += fit(el, tpl[t], true); }
+    if ((h = into())) { el = adopt(h, tpl[t].localName); stats.adopted += fit(el, tpl[t], true, tslot[t]); }
     else { el = tpl[t].cloneNode(true); stats.templateNodes += tsize[t]; if (sp) stack[sp - 1].appendChild(el); }
     stack[sp++] = el; last = el;
   }
