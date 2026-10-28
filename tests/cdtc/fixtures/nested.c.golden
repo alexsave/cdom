@@ -331,11 +331,10 @@ static uint32_t tag_view_new(void) {
 cd_id tag_create(Board *S, Tag *g, tag_view *cdt_v) {
   (void)S; (void)g; (void)cdt_v;
   cd_id cdt_root = cdt_v->root = cd_id_new();
+  cd_tpl_text(1, 0, cdt_str(cdt_v->t1 = (g->name)));
   cd_clone(1);
   cd_listen(cdt_root, CD_EV_CLICK);
   cd_tag_set(cdt_root, 1u << 24 | (uint32_t)(cdt_v - tag_views));
-  cd_down();
-  cd_value(cdt_str(cdt_v->t1 = (g->name)));
   cd_close();
   return cdt_root;
 }
@@ -439,14 +438,13 @@ cd_id card_create(Board *S, Card *k, card_view *cdt_v) {
   (void)S; (void)k; (void)cdt_v;
   cd_id cdt_root = cdt_v->root = cd_id_new();
   cdt_v->if2_root = 0;
+  cd_tpl_text(2, 0, cdt_str(cdt_v->t1 = (k->text)));
   cd_clone(2);
   cd_listen(cdt_root, CD_EV_CLICK);
   cd_tag_set(cdt_root, 2u << 24 | (uint32_t)(cdt_v - card_views));
   cdt_v->c0 = (((k->done) ? 1u : 0u) | ((k->id == S->sel) ? 2u : 0u));
   if (cdt_v->c0) cd_class(cdt_cls(card_k0_c, card_k0_s, cdt_v->c0));
-  cd_down();
-  cd_value(cdt_str(cdt_v->t1 = (k->text)));
-  cd_next();
+  cd_down(); cd_next();
   cdt_v->id5 = cd_id_new();
   cd_name(cdt_v->id5);
   cd_close();
@@ -575,17 +573,15 @@ static void col_f0_free(col_view *cdt_v) {
 cd_id col_create(Board *S, Col *c, col_view *cdt_v) {
   (void)S; (void)c; (void)cdt_v;
   cd_id cdt_root = cdt_v->root = cd_id_new();
+  cd_tpl_text(3, 0, cdt_str(cdt_v->t2 = (c->title)));
+  cd_tpl_text_num(3, 1, cdt_v->t4 = (uint32_t)(c->cards_n));
   cd_clone(3);
   cd_name(cdt_root);
   cd_down();
   cdt_v->id1 = cd_id_new();
   cd_listen(cdt_v->id1, CD_EV_CLICK);
   cd_tag_set(cdt_v->id1, 3u << 24 | (uint32_t)(cdt_v - col_views));
-  cd_down();
-  cd_value(cdt_str(cdt_v->t2 = (c->title)));
-  cd_next(); cd_next();
-  cd_value_num(cdt_v->t4 = (uint32_t)(c->cards_n));
-  cd_up(); cd_next();
+  cd_next();
   cdt_v->id6 = cd_id_new();
   cd_name(cdt_v->id6);
   cd_close();
@@ -666,12 +662,12 @@ void page_init(void) {
   for (uint32_t i = 0; i < 17; i++) cdt_s[i] = cd_internz(cdt_lit[i]);
   cd_at(CD_DETACHED, 0); /* template 1: tag */
   cd_open(cdt_s[0]); cd_class(cdt_s[1]);
-  cd_text(cdt_s[2]);
+  cd_text(cdt_s[2]); cd_slot(0);
   cd_close();
   cd_tpl_save(1);
   cd_at(CD_DETACHED, 0); /* template 2: card */
   cd_open(cdt_s[3]);
-  cd_text(cdt_s[2]);
+  cd_text(cdt_s[2]); cd_slot(0);
   cd_open(cdt_s[4]);
   cd_close();
   cd_close();
@@ -679,9 +675,9 @@ void page_init(void) {
   cd_at(CD_DETACHED, 0); /* template 3: col */
   cd_open(cdt_s[5]);
   cd_open(cdt_s[6]);
-  cd_text(cdt_s[2]);
+  cd_text(cdt_s[2]); cd_slot(0);
   cd_text(cdt_s[7]);
-  cd_text(cdt_s[2]);
+  cd_text(cdt_s[2]); cd_slot(1);
   cd_text(cdt_s[8]);
   cd_close();
   cd_open(cdt_s[9]);

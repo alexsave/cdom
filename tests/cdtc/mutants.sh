@@ -25,17 +25,20 @@ m 's/\Qcdt_v->%s = cdt_root;\E/cdt_v->%s = 0;/' 'FAIL golden widget: generated c
 m 's/\Qout(c, "      if ((cd_str)e->key == cdt_s[%d]) ", lit(a->name + 3));\E/out(c, "      if (1) ");/' 'FAIL golden widget: generated code differs'
 m 's/\Qelse fail(x->at, "cannot infer\E/else if (0) fail(x->at, "cannot infer/' 'FAIL error untyped'
 # the round trip
-m 's/\Qfor (int i = 0; i < fl - c - 1; i++) out(b, " cd_up();");\E/for (int i = 0; i < fl - c; i++) out(b, " cd_up();");/' 'cdom_html: down from nothing' # the sink refuses the walk
+m 's/\Qfor (int i = 0; i < fl - c - 1; i++) out(b, " cd_up();");\E/for (int i = 0; i < fl - c; i++) out(b, " cd_up();");/' 'cdom_html: no node with that id' # nested: the sink refuses the close
 m 's/\Qif (m >> t++ & 1)\E/if (0 \&\& (m >> t++ \& 1))/' 'FAIL first render'
 m 's/\Qstrcat(b, idx(c));\E/strcat(b, "0");/' 'FAIL flag and mode 1'
 m 's/\Qif (cdt_t != cdt_v->t%d) {\E/if (0 \&\& cdt_t != cdt_v->t%d) {/' 'FAIL title and n change'
-m 's/\Qcdt_v->key = %s_keys%d[cdt_i];\E/cdt_v->key = 0 * %s_keys%d[cdt_i];/' 'FAIL item clicks'
+m 's/\Qcdt_v->key = %s_keys%d[cdt_i];\E/cdt_v->key = 0 * %s_keys%d[cdt_i];/g' 'FAIL item clicks' # page and nested lists
 m 's/\Q|| o != len) return -1;\E/) return -1;/' 'FAIL a blob with a trailing byte is refused'
 # nested lists (tests/cdtc/nested_find.c)
 m 's/\Q%s *cdt_p = %s_find%d(%s, cdt_v->pvi);\E/%s *cdt_p = %s_find%d(%s, 0);/' 'FAIL first render'
 m 's/\Qcd_id_free(cdt_v->list%d.items[i].node);\E/(void)cdt_v->list%d.items[i].node;/' 'FAIL a column removed'
 m 's/\Qif (f == F[f].tpl && !t->page && t_lists_of(f)) out(\E/if (0) out(/' 'FAIL every list reversed: the page shows'
 # op counts against the hand-written app
-m 's/\Q1 + walk_cost(0, 0,\E/0 * walk_cost(0, 0,/' 'FAIL op counts: a templated row creates in 11 ops'
-m 's/\Qif (cdt_t != cdt_v->t%d) {\E/if (1 || cdt_t != cdt_v->t%d) {/' 'FAIL op counts: a label patch is 6 ops'
+m 's/\Qif (cdt_t != cdt_v->t%d) {\E/if (1 || cdt_t != cdt_v->t%d) {/' 'FAIL op counts: a label patch is one call'
+m 's/\Q1 + walk_cost(0, 0,\E/0 * walk_cost(0, 0,/' 'FAIL golden nested' # a clone's walk climbs rather than restarting at the root
+# template slots: the slot never marked (the sink refuses the slot), a slotted text also walked to (more calls)
+m 's/\Qif (x->ts) out(b, " cd_slot(%d);", x->ts - 1);\E//' 'cdom_html: no such template slot'
+m 's/\QN[n].ts || !create_action(n)\E/!create_action(n)/' 'FAIL op counts: a templated row creates in 5 calls'
 exit $bad

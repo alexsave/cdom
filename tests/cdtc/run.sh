@@ -6,8 +6,8 @@
 #  3. round trip: feat.cdt linked with cdom.c and the C sink renders the HTML roundtrip.c expects;
 #  5. nested lists: a click on every listener of fixtures/nested.cdt reaches the record it shows,
 #     and the page shows every level in the state's order, after a reorder and a removal too;
-#  4. op counts: the templated rows app costs the hand-written app's ops for every action,
-#     11 a row on create and 6 for a label patch.
+#  4. op counts: the templated rows app makes the hand-written app's DOM calls for every action,
+#     5 a row on create (two slot texts, clone, listen, close) and one for a label patch.
 # Usage: tests/cdtc/run.sh        UPDATE=1 rewrites the goldens (read the diff before committing)
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -83,9 +83,10 @@ paste "$out/ops_hand.txt" "$out/ops_tpl.txt" | awk '{printf "     %-16s hand %7s
 if cmp -s "$out/ops_hand.txt" "$out/ops_tpl.txt"; then ok "op counts: the template app costs the hand-written ops for every action"; else bad "op counts differ from the hand-written app"; fi
 run=$(awk '$1 == "run1000" {print $2}' "$out/ops_tpl.txt")
 upd=$(awk '$1 == "update10th" {print $2}' "$out/ops_tpl.txt")
-# 1000 creates + DETACH, one AT and ATTACH around the off-document fill
-if [ "$run" = 11003 ]; then ok "op counts: a templated row creates in 11 ops (run 1000 = $run)"; else bad "op counts: a templated row creates in 11 ops: run 1000 = $run, want 11003 (11 a row + 3)"; fi
-if [ "$upd" = 600 ]; then ok "op counts: a label patch is 6 ops (update every 10th of 1000 = $upd)"; else bad "op counts: a label patch is 6 ops: update every 10th of 1000 = $upd, want 600"; fi
+# 1000 creates + detach, one at and attach around the off-document fill; a slot whose value
+# did not change since the last clone is not sent again (the seed gives one repeated label)
+if [ "$run" -ge 5000 ] && [ "$run" -le 5003 ]; then ok "op counts: a templated row creates in 5 calls (run 1000 = $run)"; else bad "op counts: a templated row creates in 5 calls: run 1000 = $run, want 5000-5003 (5 a row + 3, less unchanged slots)"; fi
+if [ "$upd" = 100 ]; then ok "op counts: a label patch is one call (update every 10th of 1000 = $upd)"; else bad "op counts: a label patch is one call: update every 10th of 1000 = $upd, want 100"; fi
 
 echo
 if [ $fails -eq 0 ]; then echo "cdtc tests: all ok"; else echo "cdtc tests: $fails FAILED"; fi

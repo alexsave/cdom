@@ -69,10 +69,9 @@ static cd_id page_f6_create(St *S, page_view *cdt_v) {
 static cd_id page_f4_create(St *S, page_view *cdt_v) {
   (void)S; (void)cdt_v;
   cd_id cdt_root = cdt_v->if3_root = cd_id_new();
+  cd_tpl_text_num(1, 0, cdt_v->t5 = (uint32_t)(S->n));
   cd_clone(1);
   cd_name(cdt_root);
-  cd_down();
-  cd_value_num(cdt_v->t5 = (uint32_t)(S->n));
   cd_close();
   return cdt_root;
 }
@@ -92,7 +91,7 @@ void page_init(void) {
   for (uint32_t i = 0; i < 9; i++) cdt_s[i] = cd_internz(cdt_lit[i]);
   cd_at(CD_DETACHED, 0); /* template 1: page, the then branch of {#if S->on} */
   cd_open(cdt_s[0]); cd_class(cdt_s[1]);
-  cd_text(cdt_s[2]);
+  cd_text(cdt_s[2]); cd_slot(0);
   cd_close();
   cd_tpl_save(1);
   cd_at(CD_DETACHED, 0); /* template 2: page, the else branch of {#if S->on} */

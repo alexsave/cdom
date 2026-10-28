@@ -147,16 +147,14 @@ cd_id pt_create(W *S, Pt *p, pt_view *cdt_v) {
   (void)S; (void)p; (void)cdt_v;
   cd_id cdt_root = cdt_v->root = cd_id_new();
   cdt_v->me = cdt_root;
+  cd_tpl_text_num(1, 0, cdt_v->t2 = (uint32_t)(p->v));
+  cd_tpl_text_num(1, 1, cdt_v->t4 = (uint32_t)(p->id));
   cd_clone(1);
   cd_listen_named(cdt_root, cdt_s[0]); /* sl-change */
   cd_tag_set(cdt_root, 1u << 24 | (uint32_t)(cdt_v - pt_views));
   cd_down();
   cdt_v->val = cd_id_new();
   cd_name(cdt_v->val);
-  cd_down();
-  cd_value_num(cdt_v->t2 = (uint32_t)(p->v));
-  cd_up(); cd_next(); cd_down();
-  cd_value_num(cdt_v->t4 = (uint32_t)(p->id));
   cd_close();
   return cdt_root;
 }
@@ -235,10 +233,10 @@ void page_init(void) {
   cd_at(CD_DETACHED, 0); /* template 1: pt */
   cd_open(cdt_s[1]);
   cd_open(cdt_s[2]);
-  cd_text(cdt_s[3]);
+  cd_text(cdt_s[3]); cd_slot(0);
   cd_close();
   cd_open(cdt_s[4]);
-  cd_text(cdt_s[3]);
+  cd_text(cdt_s[3]); cd_slot(1);
   cd_close();
   cd_close();
   cd_tpl_save(1);
