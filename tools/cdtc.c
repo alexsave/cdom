@@ -164,7 +164,7 @@ typedef struct {
   int br[2];  /* IF: then and else roots, -1 for none */
   char *evar, *ekey, *eref; /* EACH */
   size_t eref_at;
-  int efield, eref_t, ei;
+  int efield, eref_t, ei, eowner; /* eowner: the record holding the list, -1 for the state */
   /* analysis */
   int ln, frag, depth, path[MAXD], unstable, named, slot, ntog, nattrb, owns;
 } Node;
@@ -833,6 +833,9 @@ static int field_type(const Tpl *t, const char *e) {
   return 0;
 }
 
+static Field *ag_f(int a);
+static int ag_n(int a);
+
 typedef struct { char *name; char *sig; size_t at; } Handler;
 static Handler *H;
 static int nh, chd;
@@ -925,24 +928,26 @@ static void resolve(void) {
           }
         }
       if (x->kind != N_EACH) continue;
-      if (!t->page) fail(x->at, "{#each} is only allowed in the page template");
       for (int p = x->parent; p >= 0; p = N[p].parent)
         if (N[p].kind == N_IF) fail(x->at, "{#each} cannot be inside {#if}");
       Node *par = &N[x->parent];
       if (par->k[par->nk - 1] != n) fail(x->at, "{#each} must be the last child of its element");
       x->owns = par->nk == 1;
-      /* S->field */
-      const char *e = x->expr;
-      size_t sl = strlen(t->svar);
-      if (strncmp(e, t->svar, sl) || strncmp(e + sl, "->", 2) || (x->efield = find_field(sf, nsf, e + sl + 2)) < 0 ||
-          sf[x->efield].type != T_LIST)
-        fail(x->at, "{#each} needs a list of the state, like %s->list (got %s)", t->svar, e);
+      /* S->list on the page, item->list (a list of the item's record) in an item template */
+      const char *e = x->expr, *base = t->page ? t->svar : t->ivar;
+      x->eowner = t->page ? -1 : t->rec;
+      Field *lf = ag_f(x->eowner);
+      size_t sl = strlen(base);
+      if (strncmp(e, base, sl) || strncmp(e + sl, "->", 2) || (x->efield = find_field(lf, ag_n(x->eowner), e + sl + 2)) < 0 ||
+          lf[x->efield].type != T_LIST)
+        fail(x->at, "{#each} needs a list of the %s, like %s->list (got %s)", t->page ? "state" : "item", base, e);
+      lf += x->efield;
       x->eref_t = find_tpl(x->eref);
       if (x->eref_t < 0) fail(x->eref_at, "unknown template <%s/>", x->eref);
       Tpl *r = &T[x->eref_t];
       if (r->page) fail(x->eref_at, "<%s/> is the page; an {#each} needs an item template", x->eref);
-      if (r->rec != sf[x->efield].reci)
-        fail(x->eref_at, "template %s takes a %s but %s holds %s", r->name, r->itype, sf[x->efield].name, sf[x->efield].rec);
+      if (r->rec != lf->reci)
+        fail(x->eref_at, "template %s takes a %s but %s holds %s", r->name, r->itype, lf->name, lf->rec);
       if (r->used) fail(x->eref_at, "template %s is already used by another {#each}", r->name);
       r->used = n + 1;
       check_elem(par->tag, N[r->root].tag, x->eref_at);
@@ -950,6 +955,33 @@ static void resolve(void) {
   }
   for (int ti = 0; ti < nt; ti++)
     if (!T[ti].page && !T[ti].used) fail(T[ti].at, "template \"%s\" is not used by any {#each}", T[ti].name);
+  for (int ti = 0; ti < nt; ti++) { /* every item template hangs off the page through its {#each} chain */
+    int u = ti, k = 0;
+    while (!T[u].page && k++ <= nt) u = N[T[u].used - 1].tpl;
+    if (!T[u].page) fail(T[ti].at, "template \"%s\" never reaches the page: its {#each} chain loops", T[ti].name);
+  }
+}
+
+/* the template that owns item template t's {#each}, and how deep t sits under the page */
+static int owner_of(int t) { return N[T[t].used - 1].tpl; }
+static int tdepth(int t) { return T[t].page ? 0 : 1 + tdepth(owner_of(t)); }
+static int t_lists_of(int t) { /* how many {#each} template t holds */
+  int k = 0;
+  for (int n = T[t].first; n < T[t].last; n++) k += N[n].kind == N_EACH && N[n].frag >= 0;
+  return k;
+}
+static int listens(int t) {
+  for (int m = T[t].first; m < T[t].last; m++)
+    if (N[m].frag >= 0 && N[m].slot > 0) return 1;
+  return 0;
+}
+/* does an event need to find the record an {#each}'s view shows: some template at or under it listens */
+static int needs_find(int x) {
+  int r = N[x].eref_t;
+  if (listens(r)) return 1;
+  for (int n = T[r].first; n < T[r].last; n++)
+    if (N[n].kind == N_EACH && N[n].frag >= 0 && needs_find(n)) return 1;
+  return 0;
 }
 
 /* ---- analysis: fragments, static paths, which nodes need ids ---- */
@@ -1449,6 +1481,14 @@ static void clone_create(Buf *b, int f) {
     insert_branches(b, n, "    ");
     out(b, "  }\n");
   }
+  if (f == F[f].tpl && t_lists_of(f)) { /* the item's own lists, filled once it is in place */
+    for (int n = t->first; n < t->last; n++) {
+      if (N[n].kind != N_EACH || N[n].frag < 0) continue;
+      out(b, "  cdt_v->list%d = (cd_list){0};\n  cdt_v->list%d.parent = %s;\n  cdt_v->list%d.owns_parent = %d;\n", N[n].ei, N[n].ei,
+          idx(N[n].parent), N[n].ei, N[n].owns);
+    }
+    out(b, "  %s_lists(%s, %s, cdt_v);\n", t->name, t->svar, t->ivar);
+  }
   out(b, "  return cdt_root;\n}\n\n");
   free(v.v);
 }
@@ -1532,6 +1572,7 @@ static void patch_fn(Buf *b, int f) {
   out(b, ") {\n");
   voids(b, t);
   patch_body(b, f);
+  if (f == F[f].tpl && !t->page && t_lists_of(f)) out(b, "  %s_lists(%s, %s, cdt_v);\n", t->name, t->svar, t->ivar);
   out(b, "}\n\n");
 }
 
@@ -1582,6 +1623,10 @@ static void free_fn(Buf *b, int f) {
 static void view_struct(Buf *b, const Tpl *t, int ti) {
   out(b, "typedef struct %s_view {\n  cd_id root;\n", t->name);
   if (!t->page) out(b, "  uint32_t key, idx; /* the item's key and its index at the last render */\n");
+  if (!t->page && !T[owner_of(ti)].page) out(b, "  uint32_t pvi; /* the view of the item whose list holds this one */\n");
+  if (!t->page)
+    for (int n = t->first; n < t->last; n++)
+      if (N[n].kind == N_EACH && N[n].frag >= 0) out(b, "  cd_list list%d; /* {#each %s} */\n", N[n].ei, cmt(N[n].expr));
   for (int n = t->first; n < t->last; n++) {
     Node *x = &N[n];
     if (x->frag < 0 || N[n].tpl != ti) continue;
@@ -1775,6 +1820,83 @@ static void gen_state(Buf *h, Buf *c) {
   }
 }
 
+/* the record an {#each}'s view i shows, found by the key it was made with: for a list of the
+ * state directly, for an item's list through the parent item's own find */
+static void find_fn(Buf *c, int n) {
+  Node *x = &N[n];
+  Tpl *t = &T[N[n].tpl], *r = &T[x->eref_t];
+  Field *lf = &ag_f(x->eowner)[x->efield];
+  const char *O = t->name, *L = lf->name, *R = lf->rec, *SV = t->svar;
+  int e = x->ei;
+  out(c, "static %s *%s_find%d(%s *%s, uint32_t cdt_i) { /* the item a view shows */\n", R, O, e, st_name, SV);
+  out(c, "  if (cdt_i >= %s_nviews) return 0;\n  %s_view *cdt_v = &%s_views[cdt_i];\n", r->name, r->name, r->name);
+  const char *P = SV;
+  if (!t->page) {
+    Node *up = &N[t->used - 1];
+    out(c, "  %s *cdt_p = %s_find%d(%s, cdt_v->pvi);\n  if (!cdt_p) return 0;\n", t->itype, T[up->tpl].name, up->ei, SV);
+    P = "cdt_p";
+  }
+  out(c, "  if (cdt_v->idx < %s->%s_n && %s_key%d(%s, &%s->%s[cdt_v->idx]) == cdt_v->key) return &%s->%s[cdt_v->idx];\n", P, L, O, e,
+      SV, P, L, P, L);
+  out(c, "  for (uint32_t k = 0; k < %s->%s_n; k++)\n    if (%s_key%d(%s, &%s->%s[k]) == cdt_v->key) return &%s->%s[k];\n", P, L, O, e,
+      SV, P, L, P, L);
+  out(c, "  return 0;\n}\n");
+}
+
+/* An item template's own lists: each view holds a cd_list per {#each}; the callbacks read
+ * the state, the parent record and the parent view from a context set before each update
+ * (updates of one {#each} never nest: a template's lists hold other templates). */
+static void item_lists(Buf *c, int ti) {
+  Tpl *t = &T[ti];
+  const char *O = t->name, *ST = st_name, *SV = t->svar, *IV = t->ivar;
+  Buf up = {0, 0, 0};
+  for (int n = t->first; n < t->last; n++) {
+    if (N[n].kind != N_EACH || N[n].frag < 0) continue;
+    Node *x = &N[n];
+    Tpl *r = &T[x->eref_t];
+    Field *lf = &ag_f(x->eowner)[x->efield];
+    const char *L = lf->name, *R = lf->rec;
+    int e = x->ei;
+    out(c, "\n/* {#each %s as %s (%s)} <%s/> */\n", cmt(x->expr), x->evar, cmt(x->ekey), r->name);
+    out(c, "static struct { %s *S; %s *r; uint32_t pvi; } %s_ctx%d;\nstatic uint32_t *%s_keys%d, %s_kcap%d;\n", ST, t->itype, O, e, O,
+        e, O, e);
+    out(c, "static uint32_t %s_key%d(%s *%s, %s *%s) { (void)%s; (void)%s; return (uint32_t)(%s); }\n", O, e, ST, SV, R, x->evar, SV,
+        x->evar, x->ekey);
+    out(c, "static cd_id %s_ec%d(void *cdt_ctx, uint32_t cdt_i, uint32_t *cdt_data) {\n  (void)cdt_ctx;\n", O, e);
+    out(c, "  uint32_t cdt_vi = %s_view_new();\n  %s_view *cdt_v = &%s_views[cdt_vi];\n", r->name, r->name, r->name);
+    out(c, "  cdt_v->key = %s_keys%d[cdt_i];\n  cdt_v->idx = cdt_i;\n  cdt_v->pvi = %s_ctx%d.pvi;\n  *cdt_data = cdt_vi;\n", O, e, O, e);
+    out(c, "  return %s_create(%s_ctx%d.S, &%s_ctx%d.r->%s[cdt_i], cdt_v);\n}\n", r->name, O, e, O, e, L);
+    out(c, "static void %s_ep%d(void *cdt_ctx, uint32_t cdt_i, cd_item *cdt_it) {\n  (void)cdt_ctx;\n", O, e);
+    out(c, "  %s_view *cdt_v = &%s_views[cdt_it->data];\n  cdt_v->idx = cdt_i;\n", r->name, r->name);
+    out(c, "  %s_patch(%s_ctx%d.S, &%s_ctx%d.r->%s[cdt_i], cdt_v);\n}\n", r->name, O, e, O, e, L);
+    out(c, "static void %s_ed%d(void *cdt_ctx, cd_item *cdt_it) { (void)cdt_ctx; %s_release(cdt_it->data); }\n", O, e, r->name);
+    out(c, "static cd_list_fns %s_fns%d = {0, %s_ec%d, %s_ep%d, %s_ed%d};\n", O, e, O, e, O, e, O, e);
+    if (needs_find(n)) find_fn(c, n);
+    out(&up, "  {\n    uint32_t cdt_n = %s->%s_n;\n", IV, L);
+    out(&up, "    if (cdt_n > %s_kcap%d) {\n      %s_kcap%d = cdt_n * 2;\n      %s_keys%d = cd_realloc(%s_keys%d, %s_kcap%d * 4);\n    }\n", O, e,
+        O, e, O, e, O, e, O, e);
+    out(&up, "    for (uint32_t cdt_i = 0; cdt_i < cdt_n; cdt_i++) %s_keys%d[cdt_i] = %s_key%d(%s, &%s->%s[cdt_i]);\n", O, e, O, e, SV, IV, L);
+    out(&up, "    %s_ctx%d.S = %s;\n    %s_ctx%d.r = %s;\n    %s_ctx%d.pvi = (uint32_t)(cdt_v - %s_views);\n", O, e, SV, O, e, IV, O, e, O);
+    out(&up, "    cd_list_update(&cdt_v->list%d, %s_keys%d, cdt_n, &%s_fns%d);\n  }\n", e, O, e, O, e);
+  }
+  out(c, "static void %s_lists(%s *%s, %s *%s, %s_view *cdt_v) {\n  (void)%s;\n%s}\n\n", O, ST, SV, t->itype, IV, O, SV, up.d);
+}
+
+/* a view goes back to its free list: its lists' items first, then the ids it named */
+static void release_fn(Buf *c, int ti) {
+  Tpl *t = &T[ti];
+  out(c, "static void %s_release(uint32_t cdt_vi) {\n  %s_view *cdt_v = &%s_views[cdt_vi];\n  (void)cdt_v;\n", t->name, t->name, t->name);
+  for (int n = t->first; n < t->last; n++) {
+    if (N[n].kind != N_EACH || N[n].frag < 0) continue;
+    out(c, "  for (uint32_t i = 0; i < cdt_v->list%d.n; i++) {\n", N[n].ei);
+    out(c, "    cd_id_free(cdt_v->list%d.items[i].node);\n    %s_release(cdt_v->list%d.items[i].data);\n  }\n", N[n].ei, T[N[n].eref_t].name,
+        N[n].ei);
+    out(c, "  cd_free(cdt_v->list%d.items);\n  cdt_v->list%d = (cd_list){0};\n", N[n].ei, N[n].ei);
+  }
+  if (F[ti].has_free) out(c, "  %s_f%d_free(cdt_v);\n", t->name, N[t->root].ln);
+  out(c, "  %s_vfree[%s_nvfree++] = cdt_vi;\n}\n\n", t->name, t->name);
+}
+
 static void gen_item(Buf *h, Buf *c, int ti) {
   Tpl *t = &T[ti];
   cur = t;
@@ -1794,12 +1916,14 @@ static void gen_item(Buf *h, Buf *c, int ti) {
   for (int n = t->first; n < t->last; n++)
     if (N[n].frag >= 0 && N[n].kind == N_ELEM && N[n].ntog) class_table(c, n);
   out(c, "\n");
+  if (t_lists_of(ti)) item_lists(c, ti);
   for (int f = nf; f-- > 0;) {
     if (F[f].tpl != ti) continue;
     if (F[f].has_free) free_fn(c, f);
     clone_create(c, f);
     if (F[f].has_patch) patch_fn(c, f);
   }
+  release_fn(c, ti);
 }
 
 static void gen_page(Buf *h, Buf *c, int ti) {
@@ -1818,11 +1942,9 @@ static void gen_page(Buf *h, Buf *c, int ti) {
   for (int n = t->first; n < t->last; n++)
     if (N[n].frag >= 0 && N[n].kind == N_ELEM && N[n].ntog) class_table(c, n);
   /* the lists */
-  int ne = 0;
   for (int n = t->first; n < t->last; n++) {
     if (N[n].kind != N_EACH || N[n].frag < 0) continue;
     Node *x = &N[n];
-    x->ei = ne++;
     Tpl *r = &T[x->eref_t];
     const char *L = sf[x->efield].name, *R = sf[x->efield].rec;
     int e = x->ei;
@@ -1837,21 +1959,9 @@ static void gen_page(Buf *h, Buf *c, int ti) {
     out(c, "static void %s_ep%d(void *cdt_ctx, uint32_t cdt_i, cd_item *cdt_it) {\n  %s *%s = cdt_ctx;\n", P, e, ST, SV);
     out(c, "  %s_view *cdt_v = &%s_views[cdt_it->data];\n  cdt_v->idx = cdt_i;\n", r->name, r->name);
     out(c, "  %s_patch(%s, &%s->%s[cdt_i], cdt_v);\n}\n", r->name, SV, SV, L);
-    out(c, "static void %s_ed%d(void *cdt_ctx, cd_item *cdt_it) {\n  (void)cdt_ctx;\n", P, e);
-    if (F[x->eref_t].has_free) out(c, "  %s_f%d_free(&%s_views[cdt_it->data]);\n", r->name, N[r->root].ln, r->name);
-    out(c, "  %s_vfree[%s_nvfree++] = cdt_it->data;\n}\n", r->name, r->name);
+    out(c, "static void %s_ed%d(void *cdt_ctx, cd_item *cdt_it) { (void)cdt_ctx; %s_release(cdt_it->data); }\n", P, e, r->name);
     out(c, "static cd_list_fns %s_fns%d = {0, %s_ec%d, %s_ep%d, %s_ed%d};\n", P, e, P, e, P, e, P, e);
-    int listens = 0;
-    for (int m = r->first; m < r->last; m++) listens |= N[m].frag >= 0 && N[m].slot > 0;
-    if (listens) {
-      out(c, "static %s *%s_find%d(%s *%s, uint32_t cdt_i) { /* the item a view shows */\n", R, P, e, ST, SV);
-      out(c, "  if (cdt_i >= %s_nviews) return 0;\n  %s_view *cdt_v = &%s_views[cdt_i];\n", r->name, r->name, r->name);
-      out(c, "  if (cdt_v->idx < %s->%s_n && %s_key%d(%s, &%s->%s[cdt_v->idx]) == cdt_v->key) return &%s->%s[cdt_v->idx];\n", SV, L, P,
-          e, SV, SV, L, SV, L);
-      out(c, "  for (uint32_t k = 0; k < %s->%s_n; k++)\n    if (%s_key%d(%s, &%s->%s[k]) == cdt_v->key) return &%s->%s[k];\n", SV, L,
-          P, e, SV, SV, L, SV, L);
-      out(c, "  return 0;\n}\n");
-    }
+    if (needs_find(n)) find_fn(c, n);
   }
   out(c, "\n");
   for (int f = nf; f-- > 0;) {
@@ -1918,7 +2028,8 @@ static void gen_page(Buf *h, Buf *c, int ti) {
       out(c, "  case %d: { /* %s: <%s> */\n", s, o->name, N[n].tag);
       if (!o->page) {
         Node *each = &N[o->used - 1];
-        out(c, "    %s *%s = %s_find%d(%s, cdt_t & 0xffffffu);\n    if (!%s) return;\n", o->itype, o->ivar, P, each->ei, SV, o->ivar);
+        out(c, "    %s *%s = %s_find%d(%s, cdt_t & 0xffffffu);\n    if (!%s) return;\n", o->itype, o->ivar, T[each->tpl].name, each->ei,
+            SV, o->ivar);
       }
       out(c, "    switch (e->type) {\n");
       int custom = 0;
@@ -1973,6 +2084,15 @@ static void generate(const char *base) {
     F[f].has_free = frag_has_free(f);
     F[f].has_patch = f < nt || frag_has_patch(f); /* a template's patch is public: always there */
   }
+  for (int ti = 0; ti < nt; ti++) { /* each template numbers its own lists */
+    int ne = 0;
+    for (int n = T[ti].first; n < T[ti].last; n++)
+      if (N[n].kind == N_EACH && N[n].frag >= 0) N[n].ei = ne++;
+  }
+  for (int n = 0; n < nn; n++) /* finds call their parents' finds: declare them all first */
+    if (N[n].kind == N_EACH && N[n].frag >= 0 && needs_find(n))
+      out(&body, "static %s *%s_find%d(%s *%s, uint32_t cdt_i);\n", ag_f(N[n].eowner)[N[n].efield].rec, T[N[n].tpl].name, N[n].ei, st_name,
+          T[N[n].tpl].svar);
   if (nh) {
     out(&h, "\n/* ---- handlers: the app defines these ---- */\n");
     for (int i = 0; i < nh; i++) {
@@ -1988,8 +2108,12 @@ static void generate(const char *base) {
     }
   }
   out(&h, "\n/* ---- templates ---- */\n");
+  int maxd = 0; /* items deepest first: a template's code calls the templates its lists hold */
   for (int ti = 0; ti < nt; ti++)
-    if (!T[ti].page) gen_item(&h, &body, ti);
+    if (tdepth(ti) > maxd) maxd = tdepth(ti);
+  for (int d = maxd; d > 0; d--)
+    for (int ti = 0; ti < nt; ti++)
+      if (!T[ti].page && tdepth(ti) == d) gen_item(&h, &body, ti);
   for (int ti = 0; ti < nt; ti++)
     if (T[ti].page) gen_page(&h, &body, ti);
   out(&h, "\n#endif\n");
