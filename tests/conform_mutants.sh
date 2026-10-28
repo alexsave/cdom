@@ -19,6 +19,9 @@ m $S 's/ n\.\$x = 0;//' 'FAIL hydration with verify'
 m $H 's/\Qif (before && !member(c, p)) put(w, "<!--i-->", 8);\E//' 'FAIL hydration with verify'
 m $H 's/\Q!c->len && c->next && !member(c->next, p)) put(w, "<!---->", 7);\E/!c->len \&\& c->next \&\& !member(c->next, p)) {}/' 'FAIL step 0: hydrated DOM vs client DOM'
 m $H 's/\Qif (sp) insert(stack[sp - 1], el, 0, "clone");\E//' 'FAIL step 0: client DOM vs sink HTML'
+# template slots: hydration marks a template's named text nodes; the core names each slot
+m $S 's/ if \(hy && !last\.isConnected\) last\.\$s = 1;//' 'FAIL verify refuses a slot text'
+m src/cdom.c 's/\Qready(); j_name(slot_new[k]);\E/ready();/' 'cdom_html: no node with that id (set_text)'
 # events: the mount's listeners (shim) and who listens to what (core)
 m $S 's/\Q}, capture);\E/});/' 'FAIL a named event that does not bubble'
 m $S 's/\Qnodes[i] === n && \E//' 'FAIL a click on a node whose id was freed'

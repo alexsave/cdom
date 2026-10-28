@@ -39,6 +39,6 @@ m 's/\Qif (f == F[f].tpl && !t->page && t_lists_of(f)) out(\E/if (0) out(/' 'FAI
 m 's/\Qif (cdt_t != cdt_v->t%d) {\E/if (1 || cdt_t != cdt_v->t%d) {/' 'FAIL op counts: a label patch is one call'
 m 's/\Q1 + walk_cost(0, 0,\E/0 * walk_cost(0, 0,/' 'FAIL golden nested' # a clone's walk climbs rather than restarting at the root
 # template slots: the slot never marked (the sink refuses the slot), a slotted text also walked to (more calls)
-m 's/\Qif (x->ts) out(b, " cd_slot(%d);", x->ts - 1);\E//' 'cdom_html: no such template slot'
+m 's/\Qif (x->ts) out(b, " cd_slot(%d);", x->ts - 1);\E//' 'FAIL round trip' # cd_tpl_text on a slot never marked traps
 m 's/\QN[n].ts || !create_action(n)\E/!create_action(n)/' 'FAIL op counts: a templated row creates in 5 calls'
 exit $bad
