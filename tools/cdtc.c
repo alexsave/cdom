@@ -768,10 +768,15 @@ static void parse_state(void) {
       st_expect('{');
       while (!st_peek('}')) {
         size_t fat = P;
-        char *ty = st_ident("u32 or str");
-        if (strcmp(ty, "u32") && strcmp(ty, "str")) fail(fat, "record fields are u32 or str, not %s", ty);
-        Field f = {st_ident("a field name"), ty[0] == 'u' ? T_U32 : T_STR, 0, -1, 0, 0, fat};
+        char *ty = st_ident("u32, str or list");
+        if (strcmp(ty, "u32") && strcmp(ty, "str") && strcmp(ty, "list"))
+          fail(fat, "record fields are u32, str or list, not %s", ty);
+        Field f = {st_ident("a field name"), ty[0] == 'u' ? T_U32 : ty[0] == 's' ? T_STR : T_LIST, 0, -1, 0, 0, fat};
         field_unique(r.f, r.n, f.name, fat);
+        if (f.type == T_LIST) {
+          st_expect(':');
+          f.rec = st_ident("a record name");
+        }
         st_expect(';');
         PUSH(r.f, r.n, r.cap, f);
         st_skip();
@@ -843,6 +848,18 @@ static int find_tpl(const char *name) {
 
 static void resolve(void) {
   if (!have_state) fail(0, "a file needs a <state> block");
+  for (int r = 0; r < nrec; r++)
+    for (int i = 0; i < recs[r].n; i++) {
+      Field *f = &recs[r].f[i];
+      if (f->type != T_LIST) continue;
+      f->reci = find_rec(f->rec);
+      if (f->reci < 0) fail(f->at, "list %s holds an unknown record %s", f->name, f->rec);
+      char buf[300];
+      snprintf(buf, sizeof buf, "%s_n", f->name);
+      if (find_field(recs[r].f, recs[r].n, buf) >= 0) fail(f->at, "list %s needs the name %s for its count", f->name, buf);
+      snprintf(buf, sizeof buf, "%s_cap", f->name);
+      if (find_field(recs[r].f, recs[r].n, buf) >= 0) fail(f->at, "list %s needs the name %s for its capacity", f->name, buf);
+    }
   for (int i = 0; i < nsf; i++) {
     if (sf[i].type != T_LIST) continue;
     sf[i].reci = find_rec(sf[i].rec);
@@ -1582,10 +1599,115 @@ static void view_struct(Buf *b, const Tpl *t, int ti) {
 
 static const char *ctype(int ty) { return ty == T_STR ? "cd_str" : "uint32_t"; }
 
+/* ---- the state's code. An aggregate is the state (-1) or a record (0..nrec-1); every one
+ * reachable from the state gets a blob size, writer and reader, and one holding lists a
+ * drop that frees them. ---- */
+static const char *ag_name(int a) { return a < 0 ? st_name : recs[a].name; }
+static Field *ag_f(int a) { return a < 0 ? sf : recs[a].f; }
+static int ag_n(int a) { return a < 0 ? nsf : recs[a].n; }
+static int ag_lists(int a) {
+  for (int i = 0; i < ag_n(a); i++)
+    if (ag_f(a)[i].type == T_LIST) return 1;
+  return 0;
+}
+static int *reached;
+static void mark_reach(int a) {
+  for (int i = 0; i < ag_n(a); i++) {
+    Field *f = &ag_f(a)[i];
+    if (f->type == T_LIST && !reached[f->reci]) {
+      reached[f->reci] = 1;
+      mark_reach(f->reci);
+    }
+  }
+}
+static int ag_min(int a) { /* the fewest blob bytes one record can take */
+  int k = 0;
+  for (int i = 0; i < ag_n(a); i++) k += ag_f(a)[i].type == T_STR ? 2 : 4;
+  return k;
+}
+
+static void list_helpers(Buf *h, Buf *c, int a, Field *f) {
+  const char *O = ag_name(a), *L = f->name, *R = f->rec;
+  int deep = ag_lists(f->reci);
+  out(h, "void %s_%s_reserve(%s *s, uint32_t n);\n", O, L, O);
+  out(h, "%s *%s_%s_push(%s *s); /* a zeroed record at the end */\n", R, O, L, O);
+  out(h, "void %s_%s_remove(%s *s, uint32_t i);%s\n", O, L, O, deep ? " /* frees the record's lists */" : "");
+  out(c, "void %s_%s_reserve(%s *s, uint32_t n) {\n", O, L, O);
+  out(c, "  if (n <= s->%s_cap) return;\n  uint32_t c = s->%s_cap ? s->%s_cap : 16;\n  while (c < n) c *= 2;\n", L, L, L);
+  out(c, "  s->%s = cd_realloc(s->%s, c * (uint32_t)sizeof(%s));\n  s->%s_cap = c;\n}\n\n", L, L, R, L);
+  out(c, "%s *%s_%s_push(%s *s) {\n  if (s->%s_n == s->%s_cap) %s_%s_reserve(s, s->%s_n + 1);\n", R, O, L, O, L, L, O, L, L);
+  out(c, "  %s *r = &s->%s[s->%s_n++];\n  *r = (%s){0};\n  return r;\n}\n\n", R, L, L, R);
+  out(c, "void %s_%s_remove(%s *s, uint32_t i) {\n  if (i >= s->%s_n) return;\n", O, L, O, L);
+  if (deep) out(c, "  cdt_drop_%s(&s->%s[i]);\n", R, L);
+  out(c, "  for (uint32_t j = i + 1; j < s->%s_n; j++) s->%s[j - 1] = s->%s[j];\n  s->%s_n--;\n}\n\n", L, L, L, L);
+}
+
+static void ag_code(Buf *c, int a) {
+  const char *A = ag_name(a);
+  Field *F = ag_f(a);
+  int n = ag_n(a);
+  /* size */
+  out(c, "static uint64_t cdt_need_%s(const %s *r) {\n  uint64_t need = %d;\n  (void)r;\n", A, A, ag_min(a));
+  for (int i = 0; i < n; i++) {
+    if (F[i].type == T_STR)
+      out(c, "  {\n    uint32_t k = cdt_len(r->%s);\n    if (k > 0xffff) return 0xffffffffffffffffull;\n    need += k;\n  }\n", F[i].name);
+    else if (F[i].type == T_LIST) {
+      out(c, "  for (uint32_t i = 0; i < r->%s_n; i++) {\n    uint64_t k = cdt_need_%s(&r->%s[i]);\n", F[i].name, F[i].rec, F[i].name);
+      out(c, "    if (k == 0xffffffffffffffffull) return k;\n    need += k;\n  }\n");
+    }
+  }
+  out(c, "  return need;\n}\n\n");
+  /* writer */
+  out(c, "static uint8_t *cdt_put_%s(uint8_t *d, const %s *r) {\n  (void)r;\n", A, A);
+  for (int i = 0; i < n; i++) {
+    if (F[i].type == T_U32) out(c, "  d = cdt_put32(d, r->%s);\n", F[i].name);
+    else if (F[i].type == T_STR) out(c, "  d = cdt_putstr(d, r->%s);\n", F[i].name);
+    else
+      out(c, "  d = cdt_put32(d, r->%s_n);\n  for (uint32_t i = 0; i < r->%s_n; i++) d = cdt_put_%s(d, &r->%s[i]);\n", F[i].name,
+          F[i].name, F[i].rec, F[i].name);
+  }
+  out(c, "  return d;\n}\n\n");
+  /* reader: with r 0 it only checks */
+  out(c, "static int cdt_walk_%s(%s *r, const uint8_t *b, uint32_t len, uint32_t *o) {\n  uint32_t k;\n  (void)r; (void)b; (void)k;\n", A, A);
+  for (int i = 0; i < n; i++) {
+    const char *f = F[i].name;
+    if (F[i].type == T_U32) out(c, "  if (len - *o < 4) return -1;\n  if (r) r->%s = cdt_get32(b + *o);\n  *o += 4;\n", f);
+    else if (F[i].type == T_STR)
+      out(c, "  if (len - *o < 2) return -1;\n  k = cdt_get16(b + *o);\n  *o += 2;\n  if (len - *o < k) return -1;\n"
+             "  if (r) r->%s = cd_intern((const char *)b + *o, k);\n  *o += k;\n", f);
+    else {
+      int sub = F[i].reci, deep = ag_lists(sub);
+      out(c, "  if (len - *o < 4) return -1;\n  k = cdt_get32(b + *o);\n  *o += 4;\n  if (k > (len - *o) / %d) return -1;\n", ag_min(sub));
+      out(c, "  if (r) {\n");
+      if (deep) out(c, "    for (uint32_t i = 0; i < r->%s_n; i++) cdt_drop_%s(&r->%s[i]);\n", f, F[i].rec, f);
+      out(c, "    %s_%s_reserve(r, k);\n    r->%s_n = k;\n", A, f, f);
+      if (deep) out(c, "    for (uint32_t i = 0; i < k; i++) r->%s[i] = (%s){0};\n", f, F[i].rec);
+      out(c, "  }\n  for (uint32_t i = 0; i < k; i++)\n    if (cdt_walk_%s(r ? &r->%s[i] : 0, b, len, o)) return -1;\n", F[i].rec, f);
+    }
+  }
+  out(c, "  return 0;\n}\n\n");
+  if (a >= 0 && ag_lists(a)) {
+    out(c, "static void cdt_drop_%s(%s *r) {\n", A, A);
+    for (int i = 0; i < n; i++) {
+      if (F[i].type != T_LIST) continue;
+      if (ag_lists(F[i].reci)) out(c, "  for (uint32_t i = 0; i < r->%s_n; i++) cdt_drop_%s(&r->%s[i]);\n", F[i].name, F[i].rec, F[i].name);
+      out(c, "  cd_free(r->%s);\n  r->%s = 0;\n  r->%s_n = r->%s_cap = 0;\n", F[i].name, F[i].name, F[i].name, F[i].name);
+    }
+    out(c, "}\n\n");
+  }
+}
+
 static void gen_state(Buf *h, Buf *c) {
+  reached = xrealloc(0, (size_t)(nrec ? nrec : 1) * sizeof(int));
+  memset(reached, 0, (size_t)(nrec ? nrec : 1) * sizeof(int));
+  mark_reach(-1);
   for (int r = 0; r < nrec; r++) {
     out(h, "typedef struct %s {", recs[r].name);
-    for (int i = 0; i < recs[r].n; i++) out(h, " %s %s;", ctype(recs[r].f[i].type), recs[r].f[i].name);
+    for (int i = 0; i < recs[r].n; i++) {
+      Field *f = &recs[r].f[i];
+      if (f->type == T_LIST) out(h, " struct %s *%s; uint32_t %s_n, %s_cap;", f->rec, f->name, f->name, f->name);
+      else out(h, " %s %s;", ctype(f->type), f->name);
+    }
     out(h, " } %s;\n", recs[r].name);
   }
   out(h, "typedef struct %s {\n", st_name);
@@ -1600,33 +1722,32 @@ static void gen_state(Buf *h, Buf *c) {
     if (sf[i].has_init) out(h, "%s.%s = %lld", any++ ? ", " : "", sf[i].name, sf[i].init);
   out(h, "%s}\n", any ? "" : "0");
   if (st_global) out(h, "extern %s %s;\n", st_name, st_global);
-  for (int i = 0; i < nsf; i++) {
-    if (sf[i].type != T_LIST) continue;
-    const char *L = sf[i].name, *R = sf[i].rec;
-    out(h, "void %s_%s_reserve(%s *s, uint32_t n);\n", st_name, L, st_name);
-    out(h, "%s *%s_%s_push(%s *s); /* a zeroed record at the end */\n", R, st_name, L, st_name);
-    out(h, "void %s_%s_remove(%s *s, uint32_t i);\n", st_name, L, st_name);
-    out(c, "void %s_%s_reserve(%s *s, uint32_t n) {\n", st_name, L, st_name);
-    out(c, "  if (n <= s->%s_cap) return;\n  uint32_t c = s->%s_cap ? s->%s_cap : 16;\n  while (c < n) c *= 2;\n", L, L, L);
-    out(c, "  s->%s = cd_realloc(s->%s, c * (uint32_t)sizeof(%s));\n  s->%s_cap = c;\n}\n\n", L, L, R, L);
-    out(c, "%s *%s_%s_push(%s *s) {\n  if (s->%s_n == s->%s_cap) %s_%s_reserve(s, s->%s_n + 1);\n", R, st_name, L, st_name, L, L,
-        st_name, L, L);
-    out(c, "  %s *r = &s->%s[s->%s_n++];\n  *r = (%s){0};\n  return r;\n}\n\n", R, L, L, R);
-    out(c, "void %s_%s_remove(%s *s, uint32_t i) {\n  if (i >= s->%s_n) return;\n", st_name, L, st_name, L);
-    out(c, "  for (uint32_t j = i + 1; j < s->%s_n; j++) s->%s[j - 1] = s->%s[j];\n  s->%s_n--;\n}\n\n", L, L, L, L);
+  /* which encoders the layout needs: a list's count is a u32 */
+  int strs = 0, u32s = 0;
+  for (int a = -1; a < nrec; a++) {
+    if (a >= 0 && !reached[a]) continue;
+    for (int i = 0; i < ag_n(a); i++) {
+      strs |= ag_f(a)[i].type == T_STR;
+      u32s |= ag_f(a)[i].type != T_STR;
+    }
   }
-  out(h, "/* the state as a fixed little-endian blob: scalars in declaration order, each list\n"
-         " * as a u32 count then its records, a str as a u16 length then its bytes */\n");
+  for (int a = -1; a < nrec; a++) /* prototypes: records may refer to each other in any order */
+    if (a < 0 || reached[a]) {
+      const char *A = ag_name(a);
+      out(c, "static uint64_t cdt_need_%s(const %s *r);\nstatic uint8_t *cdt_put_%s(uint8_t *d, const %s *r);\n", A, A, A, A);
+      out(c, "static int cdt_walk_%s(%s *r, const uint8_t *b, uint32_t len, uint32_t *o);\n", A, A);
+      if (a >= 0 && ag_lists(a)) out(c, "static void cdt_drop_%s(%s *r);\n", A, A);
+    }
+  out(c, "\n");
+  for (int a = -1; a < nrec; a++) {
+    if (a >= 0 && !reached[a]) continue;
+    for (int i = 0; i < ag_n(a); i++)
+      if (ag_f(a)[i].type == T_LIST) list_helpers(h, c, a, &ag_f(a)[i]);
+  }
+  out(h, "/* the state as a fixed little-endian blob: fields in declaration order, a u32 as 4 bytes,\n"
+         " * a str as a u16 length then its bytes, a list as a u32 count then its records */\n");
   out(h, "uint32_t %s_save(const %s *s, uint8_t *dst, uint32_t cap); /* bytes, or the need when > cap */\n", st_name, st_name);
   out(h, "int %s_load(%s *s, const uint8_t *src, uint32_t len); /* 0 on success; s untouched on failure */\n", st_name, st_name);
-  /* blob helpers */
-  int strs = 0, u32s = 0; /* which encoders the layout needs: a list's count is a u32 */
-  for (int i = 0; i < nsf; i++) {
-    strs |= sf[i].type == T_STR;
-    u32s |= sf[i].type != T_STR;
-    if (sf[i].type == T_LIST)
-      for (int j = 0; j < recs[sf[i].reci].n; j++) strs |= recs[sf[i].reci].f[j].type == T_STR;
-  }
   if (strs || u32s) {
     out(c, "static uint8_t *cdt_put16(uint8_t *d, uint32_t v) { d[0] = (uint8_t)v; d[1] = (uint8_t)(v >> 8); return d + 2; }\n");
     out(c, "static uint32_t cdt_get16(const uint8_t *s) { return s[0] | (uint32_t)s[1] << 8; }\n");
@@ -1641,69 +1762,13 @@ static void gen_state(Buf *h, Buf *c) {
     out(c, "  d = cdt_put16(d, n);\n  for (uint32_t i = 0; i < n; i++) d[i] = (uint8_t)b[i];\n  return d + n;\n}\n");
   }
   out(c, "\n");
-  /* save */
-  out(c, "uint32_t %s_save(const %s *s, uint8_t *dst, uint32_t cap) {\n  uint64_t need = 0;\n  (void)s;\n", st_name, st_name);
-  for (int i = 0; i < nsf; i++) {
-    if (sf[i].type == T_U32) out(c, "  need += 4;\n");
-    else if (sf[i].type == T_STR) out(c, "  if (cdt_len(s->%s) > 0xffff) return 0xffffffffu;\n  need += 2 + cdt_len(s->%s);\n", sf[i].name, sf[i].name);
-    else {
-      Record *r = &recs[sf[i].reci];
-      int fixed = 0;
-      for (int j = 0; j < r->n; j++) fixed += r->f[j].type == T_U32 ? 4 : 2;
-      out(c, "  need += 4 + (uint64_t)s->%s_n * %d;\n", sf[i].name, fixed);
-      int any = 0;
-      for (int j = 0; j < r->n; j++) any |= r->f[j].type == T_STR;
-      if (any) {
-        out(c, "  for (uint32_t i = 0; i < s->%s_n; i++) {\n", sf[i].name);
-        for (int j = 0; j < r->n; j++)
-          if (r->f[j].type == T_STR)
-            out(c, "    uint32_t n%d = cdt_len(s->%s[i].%s);\n    if (n%d > 0xffff) return 0xffffffffu;\n    need += n%d;\n", j,
-                sf[i].name, r->f[j].name, j, j);
-        out(c, "  }\n");
-      }
-    }
-  }
-  out(c, "  if (need > 0xfffffffeu) return 0xffffffffu;\n  if (need > cap) return (uint32_t)need;\n  uint8_t *d = dst;\n  (void)d;\n");
-  for (int i = 0; i < nsf; i++) {
-    if (sf[i].type == T_U32) out(c, "  d = cdt_put32(d, s->%s);\n", sf[i].name);
-    else if (sf[i].type == T_STR) out(c, "  d = cdt_putstr(d, s->%s);\n", sf[i].name);
-    else {
-      Record *r = &recs[sf[i].reci];
-      out(c, "  d = cdt_put32(d, s->%s_n);\n  for (uint32_t i = 0; i < s->%s_n; i++) {\n", sf[i].name, sf[i].name);
-      for (int j = 0; j < r->n; j++)
-        out(c, "    d = cdt_put%s(d, s->%s[i].%s);\n", r->f[j].type == T_U32 ? "32" : "str", sf[i].name, r->f[j].name);
-      out(c, "  }\n");
-    }
-  }
-  out(c, "  return (uint32_t)need;\n}\n\n");
-  /* load: one pass to check, one to fill */
-  out(c, "static int cdt_walk(%s *s, const uint8_t *b, uint32_t len) {\n  uint32_t o = 0, k;\n  (void)s; (void)b; (void)k;\n", st_name);
-  for (int i = 0; i < nsf; i++) {
-    if (sf[i].type == T_U32) out(c, "  if (len - o < 4) return -1;\n  if (s) s->%s = cdt_get32(b + o);\n  o += 4;\n", sf[i].name);
-    else if (sf[i].type == T_STR)
-      out(c, "  if (len - o < 2) return -1;\n  k = cdt_get16(b + o);\n  o += 2;\n  if (len - o < k) return -1;\n"
-             "  if (s) s->%s = cd_intern((const char *)b + o, k);\n  o += k;\n", sf[i].name);
-    else {
-      Record *r = &recs[sf[i].reci];
-      int fixed = 0;
-      for (int j = 0; j < r->n; j++) fixed += r->f[j].type == T_U32 ? 4 : 2;
-      out(c, "  if (len - o < 4) return -1;\n  {\n    uint32_t n = cdt_get32(b + o);\n    o += 4;\n");
-      out(c, "    if (n > (len - o) / %d) return -1;\n", fixed);
-      out(c, "    if (s) { %s_%s_reserve(s, n); s->%s_n = n; }\n", st_name, sf[i].name, sf[i].name);
-      out(c, "    for (uint32_t i = 0; i < n; i++) {\n");
-      for (int j = 0; j < r->n; j++) {
-        if (r->f[j].type == T_U32)
-          out(c, "      if (len - o < 4) return -1;\n      if (s) s->%s[i].%s = cdt_get32(b + o);\n      o += 4;\n", sf[i].name, r->f[j].name);
-        else
-          out(c, "      if (len - o < 2) return -1;\n      k = cdt_get16(b + o);\n      o += 2;\n      if (len - o < k) return -1;\n"
-                 "      if (s) s->%s[i].%s = cd_intern((const char *)b + o, k);\n      o += k;\n", sf[i].name, r->f[j].name);
-      }
-      out(c, "    }\n  }\n");
-    }
-  }
-  out(c, "  return o == len ? 0 : -1;\n}\n\n");
-  out(c, "int %s_load(%s *s, const uint8_t *src, uint32_t len) {\n  if (cdt_walk(0, src, len)) return -1;\n", st_name, st_name);
-  out(c, "  return cdt_walk(s, src, len);\n}\n\n");
+  for (int a = -1; a < nrec; a++)
+    if (a < 0 || reached[a]) ag_code(c, a);
+  out(c, "uint32_t %s_save(const %s *s, uint8_t *dst, uint32_t cap) {\n  uint64_t need = cdt_need_%s(s);\n", st_name, st_name, st_name);
+  out(c, "  if (need > 0xfffffffeu) return 0xffffffffu;\n  if (need > cap) return (uint32_t)need;\n");
+  out(c, "  cdt_put_%s(dst, s);\n  return (uint32_t)need;\n}\n\n", st_name);
+  out(c, "int %s_load(%s *s, const uint8_t *src, uint32_t len) { /* one pass to check, one to fill */\n  uint32_t o = 0;\n", st_name, st_name);
+  out(c, "  if (cdt_walk_%s(0, src, len, &o) || o != len) return -1;\n  o = 0;\n  return cdt_walk_%s(s, src, len, &o);\n}\n\n", st_name, st_name);
   if (st_global) {
     out(c, "uint32_t cd_state_save(uint8_t *dst, uint32_t cap) { return %s_save(&%s, dst, cap); }\n", st_name, st_global);
     out(c, "int cd_state_load(const uint8_t *src, uint32_t len) { return %s_load(&%s, src, len); }\n\n", st_name, st_global);
