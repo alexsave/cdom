@@ -13,9 +13,11 @@ Line numbers refer to shim/cdom.js at f7735c3 (unchanged by the commit that adds
 | after the port to direct calls (before this audit) | 312 | 16689 | 8623 | 3569 |
 | after this audit | 277 | 15249 | 7567 | 3178 |
 | after this audit, hydration taken out (measured, not shipped) | 168 | 8341 | | 1983 |
+| resumability instead of hydration (1cc247e) | 213 | 11206 | 5212 | 2408 |
 
 The audit took 35 lines and 391 gzip bytes out.
-The hydration walk is 109 of the remaining lines and 1195 of the gzip bytes; resumability replaces it (last section).
+The hydration walk was 109 of the remaining lines and 1195 of the gzip bytes; resumability replaced it with 45 lines and 425 gzip bytes over the shim without either (last section).
+The line-by-line table below is for f7735c3; its hydration rows (10-13, 44-136, 265-273 and the `if (hy)` tests) are gone, and the last section lists the lines that took their place.
 
 ## What only JavaScript can do
 
@@ -103,33 +105,38 @@ Each step has its own commits (core, then shim, then sink) and the test that pro
 - `env` in `start`: perf's tests/listfuzz.html passes its oracle through it. A shipped page passes nothing; the platform rule against per-app JS holds for pages, not for test harnesses.
 - the TextDecoder / char-loop split in `strings`: perf's measurement (one decode per batch, a loop for tiny batches).
 
-## Hydration: what it costs today and what resumability must keep
+## Resuming: the lines it takes and why each is JavaScript
 
-Hydration is lines 10-13, 44-136, the `if (hy)` test in 16 ops (open, close, text, text_num, attr, class, name, value, value_num, tpl_save, clone, walk, walk_value, walk_value_num, detach, attach) and lines 265-273 of start.
-It is 109 lines and 1195 of the 3178 minified gzip bytes.
-At load it walks the whole server DOM once, in order, as the first render's ops arrive: every server node is visited, every element is matched, and with verify every tag, attribute, class and text is compared.
-The hydrate test's numbers: n=10000 adopts 100029 server nodes and creates 0; the hydrate call itself took 18.7 ms at milestone 1.
-Each op pays one `if (hy)` test after hydration too; it is a predictable branch on a closure variable.
+A server-rendered page runs `cdom.resume(url, mountId, stateId, types, names)` and nothing else: no DOM walk, no wasm fetch.
+The first event loads the module; C renders the first frame virtually (cdom.h, resuming) and finds a server node by its path only when an op first takes its id.
+Hydration's 109 lines are gone; these are the lines resuming adds to the shim (line numbers at 1cc247e), 45 in all, comments included.
 
-Where the shim touches the DOM during a hydrated first render:
+| lines | what | why it is JS | owner |
+| --- | --- | --- | --- |
+| 7-8 (part) | `on` (event type to C's kind and name id), `queue`, `PEND`, `TRAIL`, `page`, `loading` | the listeners exist before the module does, so the type table and the waiting events live in JS until C is there | resume, events |
+| 40-49 | `skip(c)`: passes over `<!---->`, turns `<!--e-->` into the empty text node it stands for | a comment and a text node are DOM objects; replacing one is a DOM call | resume |
+| 50-56 | `hear(t, capture)` and `delegate`: one listener per type at the mount, installed by C's first listen or by resume | addEventListener is DOM; hear's check is for the types resume installed before C ran (C's own check saves a call per listen) | events, resume |
+| 61 | events before the module: queued (64 at most), and the first one boots | only JS sees an event before the wasm exists | resume |
+| 66-74 | the walk up: each level's index as a walk counts it and its element index into C's trail, up to the first JS-known listener, or to the mount while server listeners are unresolved (`u32[PEND]`) | `previousSibling`, `nodeType` and `$i` are DOM; which node takes the event, the element path and the resume match are C's | events |
+| 145 | a walk reads the server's comments as `skip` does | a walk is DOM navigation; this is how C resolves a server node (a walk along its path, then name or listen), so resolving needs no import of its own | walks, resume |
+| 173-176 | `init`: exports, memory and the five layout addresses (two more than before: the pending-listener count and the trail) | reading linear memory needs the exports | start, resume |
+| 188-208 | `resume`: the listeners now; `boot`: fetch and instantiate, copy the base64 state, `cd_start_state`, deliver the queue | fetch and instantiate are JS; the state text is in the page | resume |
+| 209 | `cdom.loaded`, `cdom.boot` | the page (or a test) can tell whether the module was fetched, and start it at once | resume |
 
-- `open`, `text`, `text_num` and `clone` under a parent in the document take the parent's cursor node instead of creating one (`adopt`, `adoptText`, `fit`); under a detached parent (a template being built) they create as usual and count `templateNodes`.
-- `adoptText` removes the `<!---->` comment the sink writes between two adjacent text nodes, and creates the one node HTML cannot carry, an empty text node (the only nodes hydration creates).
-- `fit` matches a clone's template against the server subtree child by child: separators removed, empty text created, a node after `<!--i-->` (inserted into the clone before an anchor, an `{#if}` branch) taken out of the walk order and parked on its parent until the insert that places it.
-- `attr`, `class`, `value` and the walks' values on an adopted node only compare (verify) and write nothing.
-- `close` does not place an adopted root; `detach` and `attach` do nothing (the server's list is already in place).
+What C took, so the shim did not need it:
 
-Where ids get bound: `name` and `listen` bind an id to `last`, which during hydration is the adopted server node; templates' slot nodes are named while the template is built detached, and are marked `$s` so verify can compare a clone's slot texts with the server's.
+- the first render: C runs cd_main with no import for nodes the server wrote, keeping a virtual tree (parent, first, next, child index; a clone's inside copied from its template only when a walk or an append goes in), and keeps it afterwards as the map from ids to paths;
+- resolving: a walk along the path with the existing `walk` import (16 steps a call; the first walk of a batch starts at the nearest node JS already knows, the rest go on from the one before), then `name` or `listen`; JS's last node is named before and restored after;
+- the structural rule: before an insert, move, remove, clear or detach under a parent, every unresolved id below it resolves in one batch, since paths hold only against the untouched DOM;
+- events: one record form for every page; C matches the trail against the virtual tree, resolves the deepest unresolved listener and builds the element path the app sees;
+- which event types to listen to before the module: the sink records them during the server's render and the server writes them into the resume call;
+- template slots set during the first render: sent once at its end, not once per virtual clone.
 
-How walks resolve: against adopted nodes, from a named node or from `last`, skipping parked nodes (`$x`) on firstChild and nextSibling steps, because the template the walk was computed from never had them.
+What resuming keeps from hydration:
 
-How templates and slots meet adopted nodes: templates are always built detached (C enforces it now), so they are real DOM subtrees even on a hydrated page; a clone under a document parent adopts the server subtree and never calls cloneNode; slot values set before the clone land in the detached template only, and verify compares them with the adopted subtree's texts.
+- `<!---->` between two text nodes, so the parser keeps them apart; it is never removed, and walks, paths and event trails pass over it;
+- empty text nodes: written as `<!--e-->` (hydration's position-read `<!---->` broke after an insert or remove next to it); the first walk that reaches one replaces it with an empty text node, the only node resuming creates;
+- templates built off the document and real: their ops reach JS during the virtual render as always;
+- ids bound to the server's own nodes, never copies: the rows test checks the clicked row is the server's node and that no node in `#main` is new.
 
-What the replacement (no walk at load, nodes resolved by path when C first touches them) must keep:
-
-- the `<!---->` rule: the sink writes a separator before every text node that follows a text node, so a path through text children stays countable after the parser would otherwise merge them;
-- empty text nodes: the server cannot write them, so a path that reaches one must create it in place (between the separator and the next node) rather than miss it;
-- the `<!--i-->` mark for nodes inserted into a clone before its template's end, so a path computed from the template skips them;
-- template nodes created detached and real: templates are cloned for every new row after load, hydrated or not;
-- the guarantee that adopting creates nothing else: the tests count 0 created nodes besides the empty texts, and `#main` byte-identical before and after;
-- ids bound at first touch to the server's node, never to a copy, since `free`, `remove` and events use `nodes[id]` identity (the event path now checks `nodes[$i] === node`).
+What it dropped: `<!--i-->` (C's virtual tree renumbers the children an insert shifts) and verify (a dev-build mismatch report is program item 5).
