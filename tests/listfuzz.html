@@ -25,6 +25,15 @@ const env = { check(p, n, round) {
   if (errors.length > 5) throw new Error(errors.join('\n'));
 } };
 cdom.start('listfuzz.wasm', document.getElementById('m'), env).then(x => { window.__x = x; x.run_fuzz(+(new URLSearchParams(location.search).get('seed') || 1), 20000);
+    try {
+      x.run_walks();
+      const r = document.querySelector('#m > div:last-of-type');
+      const deep = r.querySelector('.w20'), inner = r.querySelector('.w'), w19 = r.querySelector('.w19');
+      if (!deep || deep.textContent !== 'deep' || deep.children.length) errors.push('walks: up from the last node');
+      if (!inner || inner.tagName !== 'I' || inner.parentNode.tagName !== 'I') errors.push('walks: sel down next next down');
+      let d = 0; for (let n = w19; n && n !== r; n = n.parentNode) d++;
+      if (!w19 || d !== 19) errors.push('walks: 19 steps landed at depth ' + d);
+    } catch (e) { errors.push('walks: ' + e); }
     try { x.run_freeruns(+(new URLSearchParams(location.search).get('seed') || 1), 3000); }
     catch (e) { errors.push('freeruns: ' + e); }
     const want = ['plain', 'h\u00e9llo', '\u65e5\u672c', '\u{1F600}x', ''];

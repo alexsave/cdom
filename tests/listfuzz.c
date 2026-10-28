@@ -138,3 +138,23 @@ __attribute__((export_name("run_freeruns"))) void run_freeruns(uint32_t seed, ui
   for (int j = 0; j < 2; j++) { nk[j] = 0; cd_list_update(&L[j], K[j], 0, &FNS); }
   cd_flush();
 }
+
+/* Walks cross as one call, split every 16 steps, and must land before any op that reads the
+ * node they reach: a class after a walk, a walk from the last node, a 20-step walk. The page
+ * checks where each class landed. */
+__attribute__((export_name("run_walks"))) void run_walks(void) {
+  cd_str S_DIV = cd_internz("div"), S_I = cd_internz("i"), S_W = cd_internz("w");
+  cd_id root = cd_id_new();
+  cd_at(CD_MOUNT, 0);
+  cd_open(S_DIV); cd_name(root);
+  for (int d = 0; d < 20; d++) cd_open(S_DIV);
+  cd_text(cd_internz("deep"));
+  cd_up(); cd_class(cd_internz("w20"));          /* from the last node (the text) up to its div */
+  for (int d = 0; d < 20; d++) cd_close();
+  cd_open(S_I); cd_text(cd_internz("a")); cd_close();
+  cd_open(S_I); cd_open(S_I); cd_text(cd_internz("b")); cd_close(); cd_close();
+  cd_close();
+  cd_sel(root); cd_down(); cd_next(); cd_next(); cd_down(); cd_class(S_W);   /* the inner i */
+  cd_sel(root); for (int d = 0; d < 19; d++) cd_down(); cd_class(cd_internz("w19")); /* 19 steps: one split */
+    cd_flush();
+}

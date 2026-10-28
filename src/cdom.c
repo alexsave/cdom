@@ -4,8 +4,7 @@
 #define IMPORT(n) __attribute__((import_module("cdom"), import_name(n)))
 #define EXPORT(n) __attribute__((export_name(n)))
 
-IMPORT("apply") void js_apply(uint32_t nops, uint32_t nargs, uint32_t nstrs, uint32_t nbytes);
-IMPORT("value") uint32_t js_value(cd_id id, char *dst, uint32_t cap);
+IMPORT("input") uint32_t js_input(cd_id id, char *dst, uint32_t cap);
 
 /* ---- memory: power-of-two size classes over memory.grow ---- */
 extern unsigned char __heap_base;
@@ -55,36 +54,58 @@ void *cd_realloc(void *p, uint32_t n) {
   return q;
 }
 
-/* ---- op stream ---- */
-enum {
-  OP_AT = 1, OP_OPEN, OP_CLOSE, OP_TEXT, OP_TEXT_NUM, OP_ATTR, OP_CLASS, OP_NAME, OP_LISTEN,
-  OP_VALUE, OP_VALUE_NUM, OP_TPL_SAVE, OP_CLONE, OP_DOWN, OP_NEXT, OP_UP, OP_SET_TEXT,
-  OP_SET_TEXT_NUM, OP_SET_ATTR, OP_SET_CLASS, OP_REMOVE, OP_FREE, OP_MOVE, OP_CLEAR, OP_DETACH,
-  OP_ATTACH, OP_SEL, OP_SLOT, OP_TPL_TEXT, OP_TPL_TEXT_NUM
-};
+/* ---- calls ----
+ * Every DOM operation is its own import, called the moment C emits it. Only strings are
+ * batched: a string crosses once (an id thereafter), and new strings are decoded together
+ * right before the call that first needs them. Paired harness runs measured this against a
+ * batched op list that the shim interpreted: the calls won on creates and clears
+ * (PERF_LOG.md, the direct-call experiment), except for walks, which travel as one call. */
+#define IMPORTS(n) __attribute__((import_module("cdom"), import_name(n)))
+IMPORTS("strings") void j_strings(uint32_t n, uint32_t nbytes);
+IMPORTS("at") void j_at(cd_id parent, cd_id before);
+IMPORTS("open") void j_open(uint32_t tag);
+IMPORTS("close") void j_close(void);
+IMPORTS("text") void j_text(uint32_t s);
+IMPORTS("text_num") void j_text_num(uint32_t n);
+IMPORTS("attr") void j_attr(uint32_t name, uint32_t v);
+IMPORTS("class") void j_class(uint32_t v);
+IMPORTS("name") void j_name(cd_id id);
+IMPORTS("listen") void j_listen(cd_id id, uint32_t ev);
+IMPORTS("value") void j_value(uint32_t s);
+IMPORTS("value_num") void j_value_num(uint32_t n);
+IMPORTS("tpl_save") void j_tpl_save(uint32_t t);
+IMPORTS("clone") void j_clone(uint32_t t);
+IMPORTS("slot") void j_slot(uint32_t k);
+IMPORTS("tpl_text") void j_tpl_text(uint32_t t, uint32_t k, uint32_t s);
+IMPORTS("tpl_text_num") void j_tpl_text_num(uint32_t t, uint32_t k, uint32_t n);
+IMPORTS("walk") void j_walk(cd_id from, uint32_t steps, uint32_t n);
+IMPORTS("walk_value") void j_walk_value(cd_id from, uint32_t steps, uint32_t n, uint32_t s);
+IMPORTS("walk_value_num") void j_walk_value_num(cd_id from, uint32_t steps, uint32_t n, uint32_t v);
+IMPORTS("set_text") void j_set_text(cd_id id, uint32_t s);
+IMPORTS("set_text_num") void j_set_text_num(cd_id id, uint32_t n);
+IMPORTS("set_attr") void j_set_attr(cd_id id, uint32_t name, uint32_t v);
+IMPORTS("set_class") void j_set_class(cd_id id, uint32_t v);
+IMPORTS("remove") void j_remove(cd_id id);
+IMPORTS("free") void j_free(cd_id id);
+IMPORTS("move") void j_move(cd_id id, cd_id before);
+IMPORTS("clear") void j_clear(cd_id id);
+IMPORTS("detach") void j_detach(cd_id id);
+IMPORTS("attach") void j_attach(cd_id id);
 
-#define OPS_CAP (1u << 16)
-#define ARGS_CAP (1u << 15)
 #define SB_CAP (1u << 18)
 #define SM_CAP (1u << 12)
 #define TRANSIENT 0x40000000u
 
-static uint8_t ops[OPS_CAP];
-static uint32_t args[ARGS_CAP];
 static uint8_t sbytes[SB_CAP];
 static uint32_t smeta[SM_CAP * 3];
-static uint32_t nops, nargs, nsb, nstrs, ntmp;
+static uint32_t nsb, nstrs, ntmp;
 static cd_event_rec inbox;
-static uint32_t layout[5];
+static uint32_t layout[3];
 
-void cd_flush(void) {
-  if (nops || nstrs) js_apply(nops, nargs, nstrs, nsb);
-  nops = nargs = nsb = nstrs = ntmp = 0;
-}
-
-static inline void reserve(uint32_t o, uint32_t a, uint32_t bytes, uint32_t ns) {
-  if (nops + o > OPS_CAP || nargs + a > ARGS_CAP || nsb + bytes > SB_CAP || nstrs + ns > SM_CAP)
-    cd_flush();
+/* Decodes the pending strings in JS. */
+static void send_strings(void) {
+  if (nstrs) j_strings(nstrs, nsb);
+  nsb = nstrs = ntmp = 0;
 }
 
 /* ---- strings ---- */
@@ -157,6 +178,7 @@ const char *cd_bytes(cd_str s, uint32_t *len) {
 static uint32_t push_str(cd_str s, uint32_t dest) {
   str_ent *e = &strs[s];
   if (e->len > SB_CAP) __builtin_trap();
+  if (nsb + e->len > SB_CAP || nstrs + 1 > SM_CAP) send_strings();
   uint32_t *m = &smeta[nstrs++ * 3];
   m[0] = dest;
   m[1] = e->len;
@@ -166,7 +188,7 @@ static uint32_t push_str(cd_str s, uint32_t dest) {
   return dest;
 }
 
-/* A name (tag, attribute): always cached in JS. Call after reserve(). */
+/* A name (tag, attribute): always cached in JS. */
 static uint32_t ref_name(cd_str s) {
   if (!sent[s]) {
     sent[s] = 1;
@@ -175,7 +197,7 @@ static uint32_t ref_name(cd_str s) {
   return s;
 }
 
-/* Content: cached or per-op, by build flag. Call after reserve(). */
+/* Content: cached or per-op, by build flag. */
 static uint32_t ref_text(cd_str s) {
 #if CDOM_INTERN_TEXT
   return ref_name(s);
@@ -184,46 +206,64 @@ static uint32_t ref_text(cd_str s) {
 #endif
 }
 
-static inline uint32_t slen(cd_str s) { return strs[s].len; }
 
 /* ---- emitters ---- */
-#define O(o) (ops[nops++] = (o))
-#define A(v) (args[nargs++] = (v))
+/* A walk (cd_sel, cd_down, cd_next, cd_up) is held here and crosses as one call: with the value
+ * it leads to, or before the next op that reads the node it reached. Steps are 2 bits each:
+ * 1 down, 2 next, 3 up. */
+#define WALK_LAST 0xffffffffu /* walk from the last node rather than a named one */
+static cd_id walk_from;
+static uint32_t walk_steps, walk_n, walking;
+static void walk_done(void) {
+  if (walking) { walking = 0; j_walk(walk_from, walk_steps, walk_n); }
+}
+static void walk_step(uint32_t s) {
+  if (walking && walk_n == 16) walk_done();
+  if (!walking) { walking = 1; walk_from = WALK_LAST; walk_steps = walk_n = 0; }
+  walk_steps |= s << (2 * walk_n++);
+}
+/* Strings an op takes are queued by ref_*; this sends them, and any held walk, before the call. */
+static inline void ready(void) { walk_done(); send_strings(); }
+
+void cd_flush(void) { ready(); }
 
 static cd_id at_parent = CD_DETACHED - 1, at_before = CD_DETACHED - 1;
 
 void cd_at(cd_id parent, cd_id before) {
   if (parent == at_parent && before == at_before) return;
-  reserve(1, 2, 0, 0);
-  O(OP_AT); A(parent); A(before);
+  ready(); j_at(parent, before);
   at_parent = parent;
   at_before = before;
 }
-void cd_open(cd_str tag) { reserve(1, 1, slen(tag), 1); O(OP_OPEN); A(ref_name(tag)); }
-void cd_close(void) { reserve(1, 0, 0, 0); O(OP_CLOSE); }
-void cd_text(cd_str s) { reserve(1, 1, slen(s), 1); O(OP_TEXT); A(ref_text(s)); }
-void cd_text_num(uint32_t n) { reserve(1, 1, 0, 0); O(OP_TEXT_NUM); A(n); }
-void cd_attr(cd_str name, cd_str v) {
-  reserve(1, 2, slen(name) + slen(v), 2);
-  O(OP_ATTR); A(ref_name(name)); A(ref_text(v));
+void cd_open(cd_str tag) { uint32_t t = ref_name(tag); ready(); j_open(t); }
+void cd_close(void) { ready(); j_close(); }
+void cd_text(cd_str s) { uint32_t v = ref_text(s); ready(); j_text(v); }
+void cd_text_num(uint32_t n) { ready(); j_text_num(n); }
+void cd_attr(cd_str name, cd_str v) { uint32_t a = ref_name(name), b = ref_text(v); ready(); j_attr(a, b); }
+void cd_class(cd_str v) { uint32_t a = ref_text(v); ready(); j_class(a); }
+void cd_name(cd_id id) { ready(); j_name(id); }
+void cd_listen(cd_id id, uint32_t ev) { ready(); j_listen(id, ev); }
+void cd_value(cd_str s) {
+  uint32_t v = ref_text(s);
+  send_strings();
+  if (walking) { walking = 0; j_walk_value(walk_from, walk_steps, walk_n, v); } else j_value(v);
 }
-void cd_class(cd_str v) { reserve(1, 1, slen(v), 1); O(OP_CLASS); A(ref_text(v)); }
-void cd_name(cd_id id) { reserve(1, 1, 0, 0); O(OP_NAME); A(id); }
-void cd_listen(cd_id id, uint32_t ev) { reserve(1, 2, 0, 0); O(OP_LISTEN); A(id); A(ev); }
-void cd_value(cd_str s) { reserve(1, 1, slen(s), 1); O(OP_VALUE); A(ref_text(s)); }
-void cd_value_num(uint32_t n) { reserve(1, 1, 0, 0); O(OP_VALUE_NUM); A(n); }
+void cd_value_num(uint32_t n) {
+  send_strings();
+  if (walking) { walking = 0; j_walk_value_num(walk_from, walk_steps, walk_n, n); } else j_value_num(n);
+}
 /* What each template slot holds now (kind 0 unknown, 1 string id, 2 number), so an unchanged
  * value is not written again. */
 static uint32_t slot_val[CD_TPLS][CD_SLOTS];
 static uint8_t slot_kind[CD_TPLS][CD_SLOTS];
 void cd_tpl_save(uint32_t t) {
   if (t < CD_TPLS) __builtin_memset(slot_kind[t], 0, CD_SLOTS);
-  reserve(1, 1, 0, 0); O(OP_TPL_SAVE); A(t);
+  ready(); j_tpl_save(t);
 }
-void cd_clone(uint32_t t) { reserve(1, 1, 0, 0); O(OP_CLONE); A(t); }
+void cd_clone(uint32_t t) { ready(); j_clone(t); }
 void cd_slot(uint32_t k) {
   if (k >= CD_SLOTS) __builtin_trap();
-  reserve(1, 1, 0, 0); O(OP_SLOT); A(k);
+  ready(); j_slot(k);
 }
 static int slot_same(uint32_t t, uint32_t k, uint8_t kind, uint32_t v) {
   if (t >= CD_TPLS || k >= CD_SLOTS) __builtin_trap();
@@ -234,27 +274,24 @@ static int slot_same(uint32_t t, uint32_t k, uint8_t kind, uint32_t v) {
 }
 void cd_tpl_text(uint32_t t, uint32_t k, cd_str s) {
   if (slot_same(t, k, 1, s)) return;
-  reserve(1, 3, slen(s), 1); O(OP_TPL_TEXT); A(t); A(k); A(ref_text(s));
+  uint32_t v = ref_text(s); ready(); j_tpl_text(t, k, v);
 }
 void cd_tpl_text_num(uint32_t t, uint32_t k, uint32_t n) {
   if (slot_same(t, k, 2, n)) return;
-  reserve(1, 3, 0, 0); O(OP_TPL_TEXT_NUM); A(t); A(k); A(n);
+  ready(); j_tpl_text_num(t, k, n);
 }
-void cd_down(void) { reserve(1, 0, 0, 0); O(OP_DOWN); }
-void cd_next(void) { reserve(1, 0, 0, 0); O(OP_NEXT); }
-void cd_up(void) { reserve(1, 0, 0, 0); O(OP_UP); }
-void cd_sel(cd_id id) { reserve(1, 1, 0, 0); O(OP_SEL); A(id); }
-void cd_set_text(cd_id id, cd_str s) { reserve(1, 2, slen(s), 1); O(OP_SET_TEXT); A(id); A(ref_text(s)); }
-void cd_set_text_num(cd_id id, uint32_t n) { reserve(1, 2, 0, 0); O(OP_SET_TEXT_NUM); A(id); A(n); }
-void cd_set_attr(cd_id id, cd_str name, cd_str v) {
-  reserve(1, 3, slen(name) + slen(v), 2);
-  O(OP_SET_ATTR); A(id); A(ref_name(name)); A(ref_text(v));
-}
-void cd_set_class(cd_id id, cd_str v) { reserve(1, 2, slen(v), 1); O(OP_SET_CLASS); A(id); A(ref_text(v)); }
-void cd_move(cd_id id, cd_id before) { reserve(1, 2, 0, 0); O(OP_MOVE); A(id); A(before); }
-void cd_clear(cd_id id) { reserve(1, 1, 0, 0); O(OP_CLEAR); A(id); }
-void cd_detach(cd_id id) { reserve(1, 1, 0, 0); O(OP_DETACH); A(id); }
-void cd_attach(cd_id id) { reserve(1, 1, 0, 0); O(OP_ATTACH); A(id); }
+void cd_down(void) { walk_step(1); }
+void cd_next(void) { walk_step(2); }
+void cd_up(void) { walk_step(3); }
+void cd_sel(cd_id id) { walk_done(); walking = 1; walk_from = id; walk_steps = walk_n = 0; }
+void cd_set_text(cd_id id, cd_str s) { uint32_t v = ref_text(s); ready(); j_set_text(id, v); }
+void cd_set_text_num(cd_id id, uint32_t n) { ready(); j_set_text_num(id, n); }
+void cd_set_attr(cd_id id, cd_str name, cd_str v) { uint32_t a = ref_name(name), b = ref_text(v); ready(); j_set_attr(id, a, b); }
+void cd_set_class(cd_id id, cd_str v) { uint32_t a = ref_text(v); ready(); j_set_class(id, a); }
+void cd_move(cd_id id, cd_id before) { ready(); j_move(id, before); }
+void cd_clear(cd_id id) { ready(); j_clear(id); }
+void cd_detach(cd_id id) { ready(); j_detach(id); }
+void cd_attach(cd_id id) { ready(); j_attach(id); }
 
 /* ---- node ids ---- */
 static cd_id next_id = 1;
@@ -279,29 +316,25 @@ static void release(cd_id id) {
 }
 
 void cd_id_free(cd_id id) {
-  reserve(1, 1, 0, 0);
-  O(OP_FREE); A(id);
+  ready(); j_free(id);
   release(id);
 }
 
 void cd_remove(cd_id id) {
-  reserve(1, 1, 0, 0);
-  O(OP_REMOVE); A(id);
+  ready(); j_remove(id);
   release(id);
 }
 
 void cd_tag_set(cd_id id, uint32_t tag) { tags[id] = tag; }
 uint32_t cd_tag(cd_id id) { return id < tags_cap ? tags[id] : 0; }
 
-uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap) { return js_value(id, dst, cap); }
+uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap) { ready(); return js_input(id, dst, cap); }
 
 /* ---- entry points ---- */
 EXPORT("cd_layout") uint32_t *cd_layout(void) {
-  layout[0] = (uint32_t)(uintptr_t)ops;
-  layout[1] = (uint32_t)(uintptr_t)args;
-  layout[2] = (uint32_t)(uintptr_t)sbytes;
-  layout[3] = (uint32_t)(uintptr_t)smeta;
-  layout[4] = (uint32_t)(uintptr_t)&inbox;
+  layout[0] = (uint32_t)(uintptr_t)sbytes;
+  layout[1] = (uint32_t)(uintptr_t)smeta;
+  layout[2] = (uint32_t)(uintptr_t)&inbox;
   return layout;
 }
 
