@@ -67,3 +67,24 @@ Flushes forced per click: random halves 1,000-2,000 per 1k rows (every switch be
 Why direct wins although each crossing costs more: in the harness's measured click the list arm takes incremental-GC marking steps and V8 interrupt handling (about 0.3 ms on run1k) that the direct arm does not, while synchronous script time is about equal; the one big apply() after five warm-up clicks is the likely difference. Not proven further.
 The hybrids do not beat all-direct beyond noise. What the hybrid taught was where direct loses: the update walk (one crossing per step) and strings decoded one at a time. The shipped design fixes both inside the direct model: a walk crosses as one call, and strings are queued at intern time so a burst decodes in one call. That made update 1.03 / 1.01 instead of 1.05-1.06.
 Every configuration passed the keyed check, smoke, DOM identity and listfuzz built with its own mask. One DOM-identity failure on the fit-best hybrid did not reproduce in 11 reruns; its log had been overwritten, so gate logs are now per entry.
+
+## Final (results/pairs/last1, last2; every start at load < 3, range 1.82-2.99)
+
+Weighted geomean vs vanillajs: first build (cdomb) 1.036 / 1.033, last build 1.007 / 0.998, react-hooks 1.466 / 1.457.
+First paint 1.005 vs vanillajs (first build 1.80); compressed 5.8 KB (first 7.7, vanillajs 2.5).
+Stop: every operation is within noise of vanillajs, and create10k is below it in all four passes since #4 (0.987-0.993; script 19.0-19.2 ms against 20.7-20.9).
+
+DOM calls per operation (tools/domcount.mjs, one measured click after the harness's warm-ups):
+| operation | vanillajs | cdom first | cdom last | floor |
+| --- | ---: | ---: | ---: | --- |
+| run1k, replace1k, append (per row) | 9 | 10 | 4 | 4: clone, 2 text writes, insert |
+| create10k | 90,008 | 100,004 | 40,002 | 40,000 |
+| update (100 rows) | 403 | 500 | 500 | 100 text writes, plus reaching the nodes (400 without cached references) |
+| select | 12 | 7 | 7 | 2 className writes |
+| swap | 8 | 4 | 4 | 2 insertBefore |
+| remove | 17 | 9 | 9 | 1 remove |
+| clear | 6 | 1 | 1 | 1 textContent |
+cdom's select and remove counts include the event path the shim computes (which cell was hit), and swap's the parentNode of each moved row.
+
+What is irreducible: rendering (style, layout, paint) is over 90% of every total and identical for identical DOM, so totals can move only by script; fragment appends and three clear strategies changed nothing measurable.
+cdom's remaining script over the floor is the keyed library's own work: the model and keyed diff in wasm (about 0.15 ms per 1k rows), one reference and one expando per row so rows can be moved, removed and hit by events, and the event path.
