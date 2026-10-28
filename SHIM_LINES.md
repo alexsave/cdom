@@ -14,6 +14,7 @@ Line numbers refer to shim/cdom.js at f7735c3 (unchanged by the commit that adds
 | after this audit | 277 | 15249 | 7567 | 3178 |
 | after this audit, hydration taken out (measured, not shipped) | 168 | 8341 | | 1983 |
 | resumability instead of hydration (1cc247e) | 213 | 11206 | 5212 | 2408 |
+| the walk's comment check only on a resumed page (M3 finish; the row above measures 5213 / 2400 with this terser and gzip) | 214 | 11321 | 5216 | 2402 |
 
 The audit took 35 lines and 391 gzip bytes out.
 The hydration walk was 109 of the remaining lines and 1195 of the gzip bytes; resumability replaced it with 45 lines and 425 gzip bytes over the shim without either (last section).
@@ -118,7 +119,7 @@ Hydration's 109 lines are gone; these are the lines resuming adds to the shim (l
 | 50-56 | `hear(t, capture)` and `delegate`: one listener per type at the mount, installed by C's first listen or by resume | addEventListener is DOM; hear's check is for the types resume installed before C ran (C's own check saves a call per listen) | events, resume |
 | 61 | events before the module: queued (64 at most), and the first one boots | only JS sees an event before the wasm exists | resume |
 | 66-74 | the walk up: each level's index as a walk counts it and its element index into C's trail, up to the first JS-known listener, or to the mount while server listeners are unresolved (`u32[PEND]`) | `previousSibling`, `nodeType` and `$i` are DOM; which node takes the event, the element path and the resume match are C's | events |
-| 145 | a walk reads the server's comments as `skip` does | a walk is DOM navigation; this is how C resolves a server node (a walk along its path, then name or listen), so resolving needs no import of its own | walks, resume |
+| 145 | a walk reads the server's comments as `skip` does, on a resumed page only (`page` is set by `resume`; a page that never resumed has no such comments and skips the per-step `nodeType` read, 1.3 us of shim time per update click) | a walk is DOM navigation; this is how C resolves a server node (a walk along its path, then name or listen), so resolving needs no import of its own | walks, resume |
 | 173-176 | `init`: exports, memory and the five layout addresses (two more than before: the pending-listener count and the trail) | reading linear memory needs the exports | start, resume |
 | 188-208 | `resume`: the listeners now; `boot`: fetch and instantiate, copy the base64 state, `cd_start_state`, deliver the queue | fetch and instantiate are JS; the state text is in the page | resume |
 | 209 | `cdom.loaded`, `cdom.boot` | the page (or a test) can tell whether the module was fetched, and start it at once | resume |
