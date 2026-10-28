@@ -18,7 +18,14 @@
  * Text {expr} binds a cd_str or a u32: a bare field of the item or the state is typed
  * from the state block, {n:expr} forces a number and {s:expr} a cd_str. attr={expr}
  * binds a whole cd_str value; class:name={cond} toggles a class on the static part;
- * on:event={handler} listens; {#if c}<a/>{:else}<b/>{/if} swaps one element.
+ * on:event={handler} listens (one of the 12 built-in events; any other name, such as
+ * on:value-change={h}, listens for that DOM event by name through cd_listen_named and is
+ * dispatched on CD_EV_CUSTOM with the name's id in e->key); {#if c}<a/>{:else}<b/>{/if}
+ * swaps one element. ref="name" on an element gives the template's view a cd_id field
+ * holding its id (the page's view is page_v, declared in the header; a ref inside an
+ * {#if} branch holds a freed id while the branch is gone). host on an element
+ * (<canvas ref="chart" host>) makes it a widget's node: it is named, its static
+ * attributes are written, and the template never puts or patches anything inside it.
  * Every static shape becomes a cloned template; the generated create clones it and
  * walks it with down/next/up to fill bindings, and patch emits only what changed.
  *
@@ -139,12 +146,14 @@ static Record *recs;
 static int nrec, crec;
 
 enum { N_ELEM = 1, N_TEXT, N_BIND, N_IF, N_EACH };
-enum { A_STATIC = 1, A_BIND, A_TOGGLE, A_EVENT };
+enum { A_STATIC = 1, A_BIND, A_TOGGLE, A_EVENT, A_REF, A_HOST };
 typedef struct { int kind; char *name, *val; size_t at; int ev; } Attr;
 typedef struct {
   int kind, tpl, parent;
   size_t at;
   char *tag; /* ELEM */
+  char *ref; /* ELEM: ref="name", the view field holding its id */
+  int host;  /* ELEM: host, a widget's node: named, opaque to the template */
   Attr *a;
   int na, cap_a, self_close;
   int *k; /* children */
@@ -369,6 +378,8 @@ static void stray_close(void) {
 
 static const char *ptag(int check) { return check && osp ? ostk[osp - 1].tag : 0; }
 
+static int reserved_field(const char *s);
+
 static void classify_attrs(int me) {
   Node *x = &N[me];
   int has_class_bind = 0;
@@ -377,10 +388,26 @@ static void classify_attrs(int me) {
     if (!strncmp(a->name, "on:", 3)) {
       int e = 0;
       while (EVENTS[e] && strcmp(EVENTS[e], a->name + 3)) e++;
-      if (!EVENTS[e]) fail(a->at, "unknown event \"%s\" (known: click, dblclick, input, change, keydown, keyup, focusin, focusout, submit, pointerdown, pointerup, pointermove)", a->name + 3);
+      if (!EVENTS[e]) { /* any other name is a custom event: cd_listen_named */
+        const char *c = a->name + 3;
+        int okname = is_alpha(*c) && *c != '_';
+        for (; *c && okname; c++) okname = is_alnum(*c) || *c == '-' || *c == '.' || *c == ':';
+        if (!okname)
+          fail(a->at, "bad event name \"%s\": a custom event's name is a letter, then letters, digits, -, _, . or :", a->name + 3);
+        e = -1;
+      }
       if (a->kind != A_BIND || !is_ident(a->val)) fail(a->at, "%s needs a handler name: %s={handler}", a->name, a->name);
       a->kind = A_EVENT;
       a->ev = e;
+    } else if (!strcmp(a->name, "ref")) {
+      if (a->kind != A_STATIC || !is_ident(a->val)) fail(a->at, "ref needs an identifier: ref=\"name\"");
+      if (reserved_field(a->val)) fail(a->at, "ref=\"%s\" clashes with a field cdtc generates; pick another name", a->val);
+      a->kind = A_REF;
+      x->ref = a->val;
+    } else if (!strcmp(a->name, "host")) {
+      if (a->kind != A_STATIC || *a->val) fail(a->at, "host takes no value: <%s ref=\"name\" host>", x->tag);
+      a->kind = A_HOST;
+      x->host = 1;
     } else if (!strncmp(a->name, "class:", 6)) {
       if (a->kind != A_BIND) fail(a->at, "%s needs a condition: %s={cond}", a->name, a->name);
       if (!a->name[6]) fail(a->at, "class: needs a class name");
@@ -392,6 +419,18 @@ static void classify_attrs(int me) {
     }
   }
   if (has_class_bind && x->ntog) fail(x->at, "class={...} and class: toggles cannot be mixed on one element");
+  if (x->host && !x->ref) fail(x->at, "a host element needs ref=\"name\" so the app can reach its widget");
+}
+
+/* names cdtc gives view fields: root, key, idx, id<n>, c<n>, t<n>, a<n>_<n>, if<n>_b, if<n>_root, list<n> */
+static int reserved_field(const char *s) {
+  if (!strcmp(s, "root") || !strcmp(s, "key") || !strcmp(s, "idx")) return 1;
+  static const char *const P[] = {"id", "c", "t", "a", "if", "list", 0};
+  for (const char *const *p = P; *p; p++) {
+    size_t n = strlen(*p);
+    if (!strncmp(s, *p, n) && s[n] >= '0' && s[n] <= '9') return 1;
+  }
+  return !strncmp(s, "cdt_", 4);
 }
 
 static void parse_element(int tpl, int parent, IntVec *kids, int check) {
@@ -422,6 +461,8 @@ static void parse_element(int tpl, int parent, IntVec *kids, int check) {
   IntVec ck = {0, 0, 0};
   int t = parse_content(tpl, me, &ck, 1);
   if (t == END_TAG && !strcmp(term_name, tag)) {
+    if (N[me].host && ck.n)
+      fail(N[ck.v[0]].at, "<%s host> belongs to its widget: the template cannot put anything inside it", tag);
     osp--;
     N[me].k = ck.v;
     N[me].nk = ck.n;
@@ -835,6 +876,10 @@ static void resolve(void) {
         else if (ty == T_STR) x->bt = 's';
         else fail(x->at, "cannot infer the type of {%s}: write {n:%s} for a u32 or {s:%s} for a cd_str", x->expr, x->expr, x->expr);
       }
+      if (x->kind == N_ELEM && x->ref)
+        for (int m = t->first; m < n; m++)
+          if (N[m].kind == N_ELEM && N[m].ref && !strcmp(N[m].ref, x->ref))
+            fail(x->at, "ref=\"%s\" is used twice in template \"%s\"", x->ref, t->name);
       if (x->kind == N_ELEM)
         for (int i = 0; i < x->na; i++) {
           Attr *a = &x->a[i];
@@ -939,7 +984,7 @@ static void analyse(void) {
     Node *x = &N[n];
     if (x->frag < 0 || is_froot(n)) continue;
     if (x->kind == N_ELEM) {
-      if (x->slot > 0) x->named = 1;
+      if (x->slot > 0 || x->ref) x->named = 1;
       for (int i = 0; i < x->nk; i++)
         if (N[x->k[i]].kind == N_IF || N[x->k[i]].kind == N_EACH) x->named = 1;
       if (x->unstable && (x->ntog || x->nattrb)) x->named = 1;
@@ -1025,17 +1070,18 @@ static void fname(Buf *b, int f, const char *what) {
 
 /* the id expression of a node, or 0 when it has none */
 static const char *idx(int n) {
-  static char b[4][64];
+  static char b[4][300];
   static int k;
   char *s = b[k++ & 3];
   if (is_froot(n)) {
     int f = N[n].frag;
     if (F[f].ifn < 0) return "cdt_v->root";
-    snprintf(s, 64, "cdt_v->if%d_root", N[F[f].ifn].ln);
+    snprintf(s, 300, "cdt_v->if%d_root", N[F[f].ifn].ln);
     return s;
   }
   if (!N[n].named) return 0;
-  snprintf(s, 64, "cdt_v->id%d", N[n].ln);
+  if (N[n].ref) snprintf(s, 300, "cdt_v->%s", N[n].ref);
+  else snprintf(s, 300, "cdt_v->id%d", N[n].ln);
   return s;
 }
 
@@ -1091,8 +1137,12 @@ static void tagval(Buf *b, int n) {
 }
 
 static void listen(Buf *b, int n, const char *id, const char *ind) {
-  for (int i = 0; i < N[n].na; i++)
-    if (N[n].a[i].kind == A_EVENT) out(b, "%scd_listen(%s, CD_EV_%s);\n", ind, id, EVENT_IDS[N[n].a[i].ev]);
+  for (int i = 0; i < N[n].na; i++) {
+    Attr *a = &N[n].a[i];
+    if (a->kind != A_EVENT) continue;
+    if (a->ev >= 0) out(b, "%scd_listen(%s, CD_EV_%s);\n", ind, id, EVENT_IDS[a->ev]);
+    else out(b, "%scd_listen_named(%s, cdt_s[%d]); /* %s */\n", ind, id, lit(a->name + 3), cmt(a->name + 3));
+  }
   out(b, "%scd_tag_set(%s, ", ind, id);
   tagval(b, n);
   out(b, ");\n");
@@ -1262,7 +1312,7 @@ static int unnamed_root = -1; /* the page root when nothing names or reaches it 
  * or a patch that walks from it? */
 static int root_used(int f) {
   int r = F[f].root;
-  if (N[r].slot > 0 || N[r].ntog || N[r].nattrb) return 1;
+  if (N[r].slot > 0 || N[r].ntog || N[r].nattrb || N[r].ref) return 1;
   IntVec v = {0, 0, 0};
   frag_nodes(r, &v);
   int used = 0;
@@ -1313,6 +1363,7 @@ static void direct(Buf *b, int n, int depth) {
   }
   if (n == unnamed_root) id = 0;
   if (id) out(b, "%s%s = cd_id_new();\n", ind, id);
+  if (id && x->ref && is_froot(n)) out(b, "%scdt_v->%s = %s;\n", ind, x->ref, id);
   out(b, "%scd_open(cdt_s[%d]);\n", ind, lit(x->tag));
   if (id) name_it(b, n, ind);
   elem_values(b, n, ind, 0);
@@ -1345,6 +1396,7 @@ static void clone_create(Buf *b, int f) {
   IntVec v = {0, 0, 0};
   frag_nodes(root, &v);
   out(b, "  cd_id cdt_root = %s = cd_id_new();\n", idx(root));
+  if (N[root].ref) out(b, "  cdt_v->%s = cdt_root;\n", N[root].ref);
   for (int i = 0; i < v.n; i++)
     if (N[v.v[i]].kind == N_IF) out(b, "  cdt_v->if%d_root = 0;\n", N[v.v[i]].ln);
   out(b, "  cd_clone(%d);\n", F[f].tid);
@@ -1516,7 +1568,8 @@ static void view_struct(Buf *b, const Tpl *t, int ti) {
   for (int n = t->first; n < t->last; n++) {
     Node *x = &N[n];
     if (x->frag < 0 || N[n].tpl != ti) continue;
-    if (x->named && !is_froot(n)) out(b, "  cd_id id%d;\n", x->ln);
+    if (x->ref) out(b, "  cd_id %s; /* ref */\n", x->ref);
+    else if (x->named && !is_froot(n)) out(b, "  cd_id id%d;\n", x->ln);
     if (x->kind == N_ELEM && x->ntog) out(b, "  uint32_t c%d;\n", x->ln);
     if (x->kind == N_ELEM)
       for (int i = 0; i < x->na; i++)
@@ -1693,8 +1746,9 @@ static void gen_page(Buf *h, Buf *c, int ti) {
   out(h, "void %s_render(%s *%s);  /* patches the page and its lists to the state */\n", P, ST, SV);
   out(h, "void %s_dispatch(const cd_event_rec *e); /* calls the handler an event names */\n", P);
   out(c, "/* ---- the page: %s ---- */\n", P);
-  view_struct(c, t, ti);
-  out(c, "static %s_view %s_v;\n", P, P);
+  view_struct(h, t, ti);
+  out(h, "extern %s_view %s_v; /* the page's ids: ref=\"name\" fields reach named nodes */\n", P, P);
+  out(c, "%s_view %s_v;\n", P, P);
   if (nslots) out(c, "static %s *%s_S;\n", ST, P);
   for (int n = t->first; n < t->last; n++)
     if (N[n].frag >= 0 && N[n].kind == N_ELEM && N[n].ntog) class_table(c, n);
@@ -1802,11 +1856,24 @@ static void gen_page(Buf *h, Buf *c, int ti) {
         out(c, "    %s *%s = %s_find%d(%s, cdt_t & 0xffffffu);\n    if (!%s) return;\n", o->itype, o->ivar, P, each->ei, SV, o->ivar);
       }
       out(c, "    switch (e->type) {\n");
+      int custom = 0;
       for (int i = 0; i < N[n].na; i++) {
         Attr *a = &N[n].a[i];
         if (a->kind != A_EVENT) continue;
+        if (a->ev < 0) { custom = 1; continue; }
         if (o->page) out(c, "    case CD_EV_%s: %s(%s, e); break;\n", EVENT_IDS[a->ev], a->val, SV);
         else out(c, "    case CD_EV_%s: %s(%s, %s, e); break;\n", EVENT_IDS[a->ev], a->val, SV, o->ivar);
+      }
+      if (custom) { /* named events: e->key is the name's string id */
+        out(c, "    case CD_EV_CUSTOM:\n");
+        for (int i = 0; i < N[n].na; i++) {
+          Attr *a = &N[n].a[i];
+          if (a->kind != A_EVENT || a->ev >= 0) continue;
+          out(c, "      if ((cd_str)e->key == cdt_s[%d]) ", lit(a->name + 3));
+          if (o->page) out(c, "%s(%s, e); /* %s */\n", a->val, SV, cmt(a->name + 3));
+          else out(c, "%s(%s, %s, e); /* %s */\n", a->val, SV, o->ivar, cmt(a->name + 3));
+        }
+        out(c, "      break;\n");
       }
       out(c, "    default: break;\n    }\n    break;\n  }\n");
     }
