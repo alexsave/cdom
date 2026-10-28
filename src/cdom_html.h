@@ -23,22 +23,17 @@
  *  - void elements (br hr img input meta link area base col embed source track
  *    wbr) have no close tag; children under one cannot be expressed in HTML and
  *    abort the write;
- *  - two adjacent text nodes are separated by <!----> so the parser keeps them
- *    as two nodes. An empty text node is written as nothing: it is the one node
- *    hydration must create. Because a separator is written before every text
- *    node that follows a text node (empty or not), the hydrator knows exactly
- *    which comment to drop and where an empty node goes;
- *  - inside a cloned node (clone), a child that is not part of the template and sits before
- *    one that is (an {#if} branch inserted before its anchor) is written after <!--i-->,
- *    and an empty text node right before such a child writes <!---->, so hydration can
- *    match the template against the server's subtree; children after the template's last
- *    one (a list's rows) need no mark;
+ *  - an empty text node, which HTML cannot carry, is written as <!--e-->, and a
+ *    text node right after a non-empty text node is written after <!---->, so
+ *    the parser keeps the two apart. Resuming (cdom.h) reads them back: <!--e-->
+ *    stands for the empty text node, <!----> is skipped. No comment is written
+ *    inside script, style, textarea or title, where it would be text;
  *  - script and style hold raw text (no escaping; "</" inside aborts the write);
  *    a pre, textarea or listing whose first text starts with a newline gets one
  *    extra newline, since the parser drops the first;
  *  - the output is a pure function of the calls: no addresses, no clocks.
  *  Content the HTML parser rearranges (text directly in a table, a p inside a p)
- *  is not detected here; hydration's verify mode catches it in the browser. */
+ *  is not detected here. */
 #ifndef CDOM_HTML_H
 #define CDOM_HTML_H
 #include <stdint.h>
@@ -60,6 +55,13 @@ uint32_t cd_html_node(uint32_t id, char *dst, uint32_t cap);
  * what a change costs across the wasm boundary, counted where the shim would count it. A walk
  * of any length is one call. */
 uint64_t cd_html_ops(void);
+
+/* The event types the render listened to, as the last two arguments of the page's
+ * cdom.resume call (shim/cdom.js): the built-in types, then the custom names (caught in the
+ * capture phase), e.g. "['click'],['cdping']". Names are checked against [A-Za-z0-9_.:-] when
+ * listened to, so the text is a safe script literal. Kept for the process (the core installs a
+ * type once). Same return rule as cd_html_write. */
+uint32_t cd_html_resume_events(char *dst, uint32_t cap);
 
 /* host calls (cdom.h) since the last cd_html_reset, by kind (CD_HOST_MOUNT..UNMOUNT).
  * On the server a widget does not run: host calls are counted and their values decoded and

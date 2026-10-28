@@ -52,8 +52,6 @@ struct hnode {
   uint32_t len;
   hattr *attrs;
   uint32_t nattr, cattr;
-  uint32_t cid; /* the clone this node came from (0: built by ops); its root has croot */
-  uint32_t croot;
 };
 
 typedef struct { const char *p; uint32_t len; } hstr;
@@ -171,9 +169,7 @@ static void set_value(hnode *n, const char *s, uint32_t len, const char *op) { /
   n->len = len;
 }
 
-static uint32_t clone_seq;
-
-static hnode *clone_in(const hnode *s, uint32_t cid) {
+static hnode *clone(const hnode *s) {
   hnode *n = ar(sizeof(hnode));
   memset(n, 0, sizeof *n);
   n->tag = s->tag;
@@ -185,14 +181,7 @@ static hnode *clone_in(const hnode *s, uint32_t cid) {
     memcpy(n->attrs, s->attrs, s->nattr * sizeof(hattr));
     n->nattr = n->cattr = s->nattr;
   }
-  n->cid = cid;
-  for (const hnode *c = s->first; c; c = c->next) insert(n, clone_in(c, cid), 0, "clone");
-  return n;
-}
-
-static hnode *clone(const hnode *s) {
-  hnode *n = clone_in(s, ++clone_seq);
-  n->croot = 1;
+  for (const hnode *c = s->first; c; c = c->next) insert(n, clone(c), 0, "clone");
   return n;
 }
 
@@ -281,7 +270,43 @@ void j_attr(uint32_t a, uint32_t v) { op(); hstr nm = S(a); set_attr(last, nm.p,
 void j_class(uint32_t v) { op(); set_attr(last, "class", 5, S(v), "class"); }
 void j_name(cd_id i) { op(); name(i, last); }
 void j_listen(cd_id i) { op(); name(i, last); }
-void j_delegate(uint32_t kind, uint32_t ev, uint32_t capture) { op(); (void)kind; (void)capture; S(ev); } /* the mount's listener */
+/* the mount's listener: the page's resume call installs the same ones (cd_html_resume_events) */
+static struct { hstr name; uint32_t capture; } evs[64];
+static uint32_t nevs;
+void j_delegate(uint32_t kind, uint32_t ev, uint32_t capture) {
+  op();
+  (void)kind;
+  hstr s = S(ev);
+  if (!s.len) fail("an empty event name", "delegate");
+  for (uint32_t i = 0; i < s.len; i++) {
+    char c = s.p[i];
+    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == ':'))
+      fail("an event name with a character outside [A-Za-z0-9_.:-]", "delegate");
+  }
+  if (nevs == 64) fail("more than 64 event types", "delegate");
+  evs[nevs].name = s;
+  evs[nevs++].capture = capture;
+}
+uint32_t cd_html_resume_events(char *dst, uint32_t cap) {
+  uint32_t n = 0;
+  for (uint32_t pass = 0; pass < 2; pass++) {
+    if (pass && n < cap) dst[n] = ',';
+    n += pass;
+    if (n < cap) dst[n] = '[';
+    n++;
+    for (uint32_t i = 0, k = 0; i < nevs; i++) {
+      if (evs[i].capture != pass) continue;
+      const char *q = k++ ? ",'" : "'";
+      for (; *q; q++, n++) if (n < cap) dst[n] = *q;
+      for (uint32_t j = 0; j < evs[i].name.len; j++, n++) if (n < cap) dst[n] = evs[i].name.p[j];
+      if (n < cap) dst[n] = '\'';
+      n++;
+    }
+    if (n < cap) dst[n] = ']';
+    n++;
+  }
+  return n;
+}
 void j_value(uint32_t s) { op(); hstr v = S(s); set_value(last, v.p, v.len, "value"); }
 void j_value_num(uint32_t n) { op(); set_value(last, num, utoa(num, n), "value_num"); }
 void j_tpl_save(uint32_t t) {
@@ -350,7 +375,6 @@ void j_attach(cd_id i) {
   el->dparent = el->dnext = 0;
 }
 void j_host(cd_id i, uint32_t kind, uint32_t nm, const uint32_t *v, uint32_t nwords) { op(); host_op(i, kind, nm, v, nwords); }
-
 uint32_t js_input(cd_id i, char *dst, uint32_t cap) { /* the value attribute, as an unedited input's .value */
   hnode *n = id(i, "input");
   for (uint32_t k = 0; k < n->nattr; k++)
@@ -443,25 +467,20 @@ static void write_node(wbuf *w, const hnode *n) {
   put(w, ">", 1);
 }
 
-/* c is part of p's template: both came from one clone and c is not that clone's root */
-static int member(const hnode *c, const hnode *p) { return p->cid && c->cid == p->cid && !c->croot; }
-
-/* Inside a cloned node, a child that is not part of the template but sits before one that is
- * (an {#if} branch inserted before its anchor) is marked <!--i--> so hydration can tell it
- * from the template; an empty text node right before a marked node writes <!----> since
- * nothing would show where it goes. Children after the template's last one need no mark. */
+/* An empty text node, which HTML cannot carry, is written as <!--e-->, and a text node right
+ * after a (non-empty) text node is written after <!---->, so the parser keeps the two apart.
+ * Resuming (cdom.h) reads them back: <!--e--> is the empty text node, <!----> is nothing.
+ * Inside script, style, textarea and title a comment would be text, so none is written there
+ * (their texts merge). */
 static void write_children(wbuf *w, const hnode *p) {
-  const hnode *lastm = 0;
-  if (p->cid)
-    for (const hnode *c = p->first; c; c = c->next)
-      if (member(c, p)) lastm = c;
-  int before = lastm != 0;
+  int raw = is(p, "script") || is(p, "style") || is(p, "textarea") || is(p, "title");
   for (const hnode *c = p->first; c; c = c->next) {
-    if (!c->tag && c->prev && !c->prev->tag) put(w, "<!---->", 7);
-    if (before && !member(c, p)) put(w, "<!--i-->", 8);
-    if (before && c != lastm && !c->tag && !c->len && c->next && !member(c->next, p)) put(w, "<!---->", 7);
-    write_node(w, c);
-    if (c == lastm) before = 0;
+    if (raw || c->tag) write_node(w, c);
+    else if (!c->len) put(w, "<!--e-->", 8);
+    else {
+      if (c->prev && !c->prev->tag && c->prev->len) put(w, "<!---->", 7);
+      write_node(w, c);
+    }
   }
 }
 
