@@ -24,8 +24,9 @@ nice -n 10 cc -O2 -Wall -Wextra -Werror ${inc[@]+"${inc[@]}"} -o "$out/server" \
 nice -n 10 "$CC" --target=wasm32 -O2 -nostdlib -mbulk-memory -Wall -Wextra -Werror ${inc[@]+"${inc[@]}"} \
   -Wl,--no-entry -Wl,--strip-all -o "$out/app.wasm" "${app[@]}" "$top/src/cdom.c" "$top/src/mini.c"
 cp "$top/shim/cdom.js" "$out/cdom.js"
-cp "$out/app.wasm" "$out/cdom.js" "$out/csr/"
-cp "$top/bench/cdom-keyed/index.html" "$out/csr/index.html"
+cp "$out/app.wasm" "$out/csr/"
+# the benchmark page inlines the shim at /*CDOM_SHIM*/ (bench/build.sh minifies it; here it stays readable)
+sed -e "/\/\*CDOM_SHIM\*\//{r $top/shim/cdom.js" -e "d;}" "$top/bench/cdom-keyed/index.html" > "$out/csr/index.html"
 css="$top/jfb/css"
 cp "$css/currentStyle.css" "$css/main.css" "$out/css/"
 cp "$css/bootstrap/dist/css/bootstrap.min.css" "$out/css/bootstrap/dist/css/"

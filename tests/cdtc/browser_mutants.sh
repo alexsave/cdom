@@ -3,7 +3,7 @@
 # any benchmark run has finished). Each mutant must fail its test with the named assertion.
 #  hydration of the templated rows page (SSR_APP=tpl tests/hydrate.mjs, port 8704): the server
 #  and the client are the same C, so the mutants sit where they diverge: the blob and cd_main;
-#  shim vs sink (tests/cdtc/conform.sh): sink ops the compiled templates lean on.
+#  shim vs sink (tests/cdtc/conform.sh): sink calls the compiled templates lean on (template slots too).
 set -u
 cd "$(dirname "$0")/../.."
 bad=0
@@ -15,5 +15,6 @@ hydrate $C 's/\Qif (s) s->%s = cdt_get32(b + o);\E/if (0) s->%s = cdt_get32(b + 
 hydrate $C 's/\Qif (s) s->%s[i].%s = cd_intern((const char *)b + o, k);\E/if (s) s->%s[i].%s = cd_intern((const char *)b + o, k - (k > 0));/' 'FAIL n=1 no error or verify mismatch'
 conform $H 's/\Qif (n->tag) return; \/* nodeValue on an element does nothing *\/\E/if (!n->tag) return;/' 'FAIL client DOM equals the parsed sink HTML' rows
 conform $H 's/\Qinsert(id(base, op), n, ref ? id(ref, op) : 0, op);\E/insert(id(base, op), n, 0, op);/' 'FAIL client DOM equals the parsed sink HTML' feat
-conform $H 's/\Qcase OP_SET_CLASS: el = id(a[q++], op); set_attr(el, "class", 5, S(a[q++]), op); break;\E/case OP_SET_CLASS: el = id(a[q++], op); q++; break;/' 'FAIL client DOM equals the parsed sink HTML' rows
+conform $H 's/\Qset_attr(id(i, "set_class"), "class", 5, S(v), "set_class");\E/id(i, "set_class"); S(v);/' 'FAIL client DOM equals the parsed sink HTML' rows
+conform $H 's/\Qhstr v = S(s); set_value(slot_node(t, k, "tpl_text"), v.p, v.len, "tpl_text");\E/S(s); slot_node(t, k, "tpl_text");/' 'FAIL client DOM equals the parsed sink HTML' rows
 exit $bad
