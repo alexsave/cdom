@@ -1,6 +1,6 @@
 /* Shim-vs-sink conformance of the templated rows app: bench/cdom-tpl/app.c and its compiled
  * rows.cdt run the same benchmark actions in Chrome (wasm, through shim/cdom.js) and natively
- * (into the C sink); tests/conform.mjs compares the DOMs after every step and hydrates the
+ * (into the C sink); tests/conform.mjs compares the DOMs after every step and resumes over the
  * native first frame. Row clicks go through cd_on_event and page_dispatch, so the path that
  * finds a row's item from its node is exercised too.
  * Run: CONFORM_SRCS="tests/cdtc/conform_rows.c bench/cdom-tpl/app.c <gen>/rows.c" CONFORM_INC="src <gen>" node tests/conform.mjs */
@@ -92,6 +92,9 @@ static void blob(void) {
   }
   putchar('\n');
   free(s);
+  char ev[256];
+  uint32_t ne = cd_html_resume_events(ev, sizeof ev);
+  if (ne <= sizeof ev) printf("E%.*s\n", (int)ne, ev);
 }
 int main(void) {
   cd_html_reset();

@@ -1,8 +1,8 @@
 /* Shim-vs-sink conformance of compiled templates: tests/cdtc/feat.cdt, compiled by cdtc, runs
  * the same steps in Chrome (wasm, through shim/cdom.js) and natively (into the C sink);
- * tests/conform.mjs compares the DOMs after every step and hydrates the native first frame.
+ * tests/conform.mjs compares the DOMs after every step and resumes over the native first frame.
  * The first frame holds the page, three items and three notes (whose template has an {#if}
- * inserted before an anchor and adjacent text, one note with an empty text), so hydration
+ * inserted before an anchor and adjacent text, one note with an empty text), so resuming
  * covers clones with inserted branches and separators. Steps change every field at random
  * and click random listeners.
  * Run: CONFORM_SRCS="tests/cdtc/conform_feat.c <gen>/feat.c" CONFORM_INC="src <gen>" node tests/conform.mjs */
@@ -133,7 +133,8 @@ static void dump(void) { /* <length>\n<html> */
   fwrite(b, 1, n, stdout);
   free(b);
 }
-static void blob(void) { /* S<base64>\n: the state after the first frame, for hydration */
+static void blob(void) { /* S<base64>\n: the state after the first frame, for resuming;
+                            * then E<types>, <names>: the event types the page listens to at once */
   static const char A[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   uint32_t n = cd_state_save(0, 0);
   uint8_t *s = malloc(n + 3);
@@ -147,6 +148,9 @@ static void blob(void) { /* S<base64>\n: the state after the first frame, for hy
   }
   putchar('\n');
   free(s);
+  char ev[256];
+  uint32_t ne = cd_html_resume_events(ev, sizeof ev);
+  if (ne <= sizeof ev) printf("E%.*s\n", (int)ne, ev);
 }
 int main(void) {
   cd_html_reset();

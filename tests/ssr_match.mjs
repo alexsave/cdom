@@ -25,7 +25,7 @@ try {
     const a = page.indexOf('<div id="main">') + 15, z = page.indexOf('</div><script type="application/octet-stream"');
     const server = page.slice(a, z);
     await b.send('Page.navigate', { url: `${BASE}/csr/` });
-    for (let i = 0; i < 100 && !(await E('!!(window.cdom && cdom.stats)')); i++) await sleep(50);
+    for (let i = 0; i < 100 && !(await E('!!document.getElementById("run")')); i++) await sleep(50);
     if (button) await E(`document.getElementById(${JSON.stringify(button)}).click()`);
     const csr = await E('document.getElementById("main").innerHTML');
     ok(csr === server, `n=${n}: client DOM innerHTML (${csr.length} chars) === server bytes (${server.length})`);

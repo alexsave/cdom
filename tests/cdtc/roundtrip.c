@@ -88,7 +88,7 @@ int main(void) {
          DIV0 "<h1>T</h1><p>count: <!---->7<!----> of <!---->2</p><b>off</b>"
          "<section><i>not two</i><kbd>7</kbd></section>"
          "<ul>" LI_A LI_B_SEL "</ul>"
-         "<table><tbody><tr><td>#<!---->3<!---->: <!---->x<!---->!</td><td><!--i--><span class=\"open\">x</span><u>7</u></td></tr></tbody></table>"
+         "<table><tbody><tr><td>#<!---->3<!---->: <!---->x<!---->!</td><td><span class=\"open\">x</span><u>7</u></td></tr></tbody></table>"
          "<button>bump</button></div>");
 
   G.title = cd_internz("U");
@@ -98,7 +98,7 @@ int main(void) {
          "<div id=\"feat\" class=\"page\" title=\"U\"><h1>U</h1><p>count: <!---->8<!----> of <!---->2</p><b>off</b>"
          "<section><i>not two</i><kbd>8</kbd></section>"
          "<ul>" LI_A LI_B "</ul>"
-         "<table><tbody><tr><td>#<!---->3<!---->: <!---->x<!---->!</td><td><!--i--><span class=\"open\">x</span><u>8</u></td></tr></tbody></table>"
+         "<table><tbody><tr><td>#<!---->3<!---->: <!---->x<!---->!</td><td><span class=\"open\">x</span><u>8</u></td></tr></tbody></table>"
          "<button>bump</button></div>");
 
   G.flag = 1;
@@ -109,7 +109,7 @@ int main(void) {
          "<div id=\"feat\" class=\"page flag\" title=\"U\"><h1>U</h1><p>count: <!---->8<!----> of <!---->2</p><a href=\"/y\">on</a>"
          "<section><span>one <!---->1</span><i>not two</i><kbd>8</kbd></section>"
          "<ul>" LI_A LI_B "</ul>"
-         "<table><tbody><tr><td>#<!---->3<!---->: <!---->x<!---->!</td><td><!--i--><span class=\"open\">x</span><u>8</u></td></tr></tbody></table>"
+         "<table><tbody><tr><td>#<!---->3<!---->: <!---->x<!---->!</td><td><span class=\"open\">x</span><u>8</u></td></tr></tbody></table>"
          "<button>bump</button></div>");
 
   G.link = cd_internz("/z");
@@ -119,7 +119,7 @@ int main(void) {
          "<div id=\"feat\" class=\"page flag\" title=\"U\"><h1>U</h1><p>count: <!---->8<!----> of <!---->2</p><a href=\"/z\">on</a>"
          "<section><em>two</em><kbd>8</kbd></section>"
          "<ul>" LI_A LI_B "</ul>"
-         "<table><tbody><tr><td>#<!---->3<!---->: <!---->x<!---->!</td><td><!--i--><span class=\"open\">x</span><u>8</u></td></tr></tbody></table>"
+         "<table><tbody><tr><td>#<!---->3<!---->: <!---->x<!---->!</td><td><span class=\"open\">x</span><u>8</u></td></tr></tbody></table>"
          "<button>bump</button></div>");
 
   G.mode = 1;
@@ -128,7 +128,7 @@ int main(void) {
          "<div id=\"feat\" class=\"page flag\" title=\"U\"><h1>U</h1><p>count: <!---->8<!----> of <!---->2</p><a href=\"/z\">on</a>"
          "<section><span>one <!---->1</span><i>not two</i><kbd>8</kbd></section>"
          "<ul>" LI_A LI_B "</ul>"
-         "<table><tbody><tr><td>#<!---->3<!---->: <!---->x<!---->!</td><td><!--i--><span class=\"open\">x</span><u>8</u></td></tr></tbody></table>"
+         "<table><tbody><tr><td>#<!---->3<!---->: <!---->x<!---->!</td><td><span class=\"open\">x</span><u>8</u></td></tr></tbody></table>"
          "<button>bump</button></div>");
 
   /* reorder, add, remove: [1, 7] -> [7, 9] */
@@ -141,7 +141,7 @@ int main(void) {
          "<div id=\"feat\" class=\"page flag\" title=\"U\"><h1>U</h1><p>count: <!---->8<!----> of <!---->2</p><a href=\"/z\">on</a>"
          "<section><span>one <!---->1</span><i>not two</i><kbd>8</kbd></section>"
          "<ul>" LI_B LI_C "</ul>"
-         "<table><tbody><tr><td>#<!---->3<!---->: <!---->y<!---->!</td><td><!--i--><em>closed <!---->3</em><u>8</u></td></tr></tbody></table>"
+         "<table><tbody><tr><td>#<!---->3<!---->: <!---->y<!---->!</td><td><em>closed <!---->3</em><u>8</u></td></tr></tbody></table>"
          "<button>bump</button></div>");
 
   /* events: every item listener reaches item_click with its own item */
@@ -163,7 +163,7 @@ int main(void) {
          "<div id=\"feat\" class=\"page\" title=\"U\"><h1>U</h1><p>count: <!---->9<!----> of <!---->2</p><b>off</b>"
          "<section><span>one <!---->1</span><i>not two</i><kbd>9</kbd></section>"
          "<ul>" LI_B "<li class=\"item sel\" data-name=\"c\"><b>9</b><i>c</i></li></ul>"
-         "<table><tbody><tr><td>#<!---->3<!---->: <!---->y<!---->!</td><td><!--i--><span class=\"open\">y</span><u>9</u></td></tr></tbody></table>"
+         "<table><tbody><tr><td>#<!---->3<!---->: <!---->y<!---->!</td><td><span class=\"open\">y</span><u>9</u></td></tr></tbody></table>"
          "<button>bump</button></div>");
   click_all(4, CD_EV_DBLCLICK); /* reset: n -> 0 */
   G.items_n = 0;
@@ -171,7 +171,7 @@ int main(void) {
   G.title = 0; /* an unset str renders as "" */
   page_render(&G);
   expect("dblclick on the same button reaches its second handler; both lists empty; a zero str is \"\"",
-         "<div id=\"feat\" class=\"page\" title=\"\"><h1></h1><p>count: <!---->0<!----> of <!---->0</p><b>off</b>"
+         "<div id=\"feat\" class=\"page\" title=\"\"><h1><!--e--></h1><p>count: <!---->0<!----> of <!---->0</p><b>off</b>"
          "<section><span>one <!---->1</span><i>not two</i><kbd>0</kbd></section>"
          "<ul></ul><table><tbody></tbody></table><button>bump</button></div>");
 

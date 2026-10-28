@@ -1,7 +1,7 @@
 /* Shim-vs-sink conformance of lists inside item templates: tests/cdtc/fixtures/nested.cdt
  * (columns hold cards, cards hold tags, a card has an {#if} before its tag list), compiled by
  * cdtc, runs the same steps in Chrome and natively; tests/conform.mjs compares the DOMs after
- * every step and hydrates the native first frame (three columns with cards and tags, an empty
+ * every step and resumes over the native first frame (three columns with cards and tags, an empty
  * card list and an empty tag list among them). Steps add, remove, reorder and edit records on
  * every level at random and click random listeners on every level.
  * Run: tests/cdtc/conform.sh nested */
@@ -143,7 +143,8 @@ static void dump(void) { /* <length>\n<html> */
   fwrite(b, 1, n, stdout);
   free(b);
 }
-static void blob(void) { /* S<base64>\n: the state after the first frame, for hydration */
+static void blob(void) { /* S<base64>\n: the state after the first frame, for resuming;
+                            * then E<types>, <names>: the event types the page listens to at once */
   static const char A[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   uint32_t n = cd_state_save(0, 0);
   uint8_t *s = malloc(n + 3);
@@ -157,6 +158,9 @@ static void blob(void) { /* S<base64>\n: the state after the first frame, for hy
   }
   putchar('\n');
   free(s);
+  char ev[256];
+  uint32_t ne = cd_html_resume_events(ev, sizeof ev);
+  if (ne <= sizeof ev) printf("E%.*s\n", (int)ne, ev);
 }
 int main(void) {
   cd_html_reset();

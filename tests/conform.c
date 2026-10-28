@@ -14,7 +14,7 @@
 #define EXPORT(n)
 #endif
 
-#define SCRIPTED 9
+#define SCRIPTED 10
 #define RANDOM 300
 
 static cd_str z(const char *s) { return cd_internz(s); }
@@ -22,6 +22,7 @@ static cd_id ROOT, UL, INPUT, P, NUMTXT, LBL, ITEM[8], SUB[8], LATE;
 static cd_id TT[5][3];             /* adjacent text slots inside clones of template 3 */
 static cd_id CP[3], CT[3][2], CI[3]; /* clones of template 2 and the nodes inserted into them */
 static cd_id EX[3][4];
+static cd_id OL, LI[4], DL, DT, WALKED;
 static uint32_t rng = 0x9e3779b9u;
 static uint32_t rnd(uint32_t m) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; return rng % m; }
 
@@ -153,7 +154,7 @@ void cd_main(void) {
   cd_text_num(42); NUMTXT = cd_id_new(); cd_name(NUMTXT);
   cd_text(z("<&>\"\xc3\xa9\xe6\x97\xa5\xe6\x9c\xac\xf0\x9f\x98\x80")); LBL = cd_id_new(); cd_name(LBL);
   cd_close();
-  cd_open(z("ul")); UL = cd_id_new(); cd_name(UL); cd_listen_named(UL, z("cdpang")); cd_close();
+  cd_open(z("ul")); UL = cd_id_new(); cd_name(UL); cd_listen_named(UL, z("cdpang")); cd_listen(UL, CD_EV_CLICK); cd_close();
   cd_open(z("input")); cd_attr(z("value"), z("v&1")); INPUT = cd_id_new(); cd_name(INPUT); cd_close();
   cd_open(z("span")); cd_text(z("")); cd_close();
   cd_open(z("span")); cd_close();
@@ -167,7 +168,23 @@ void cd_main(void) {
   cd_at(CD_MOUNT, 0);
   cd_text(z("tail")); /* text at depth 0 */
   cd_text_num(7);
+  /* the first render changes what it made: a remove, a move before a node, a clear and a
+   * refill (resumed, in the virtual tree; step 10 touches what is left) */
+  cd_open(z("ol")); OL = cd_id_new(); cd_name(OL);
+  for (uint32_t i = 0; i < 4; i++) { cd_open(z("li")); LI[i] = cd_id_new(); cd_name(LI[i]); cd_text(z(i & 1 ? "" : "l")); cd_close(); }
+  cd_close();
+  cd_remove(LI[1]);
+  cd_move(LI[3], LI[0]);
+  cd_open(z("dl")); DL = cd_id_new(); cd_name(DL);
+  cd_open(z("dd")); DT = cd_id_new(); cd_name(DT); cd_close();
+  cd_close();
+  cd_clear(DL);
+  cd_id_free(DT);
+  cd_at(DL, 0);
+  cd_text(z("")); cd_open(z("dt")); DT = cd_id_new(); cd_name(DT); cd_close();
+  cd_at(CD_MOUNT, 0);
   clones();
+  cd_at(DL, 0); /* where step 1's first text goes without an AT of its own */
 }
 
 /* ---- the random keyed list: <li>key label ""</li>, adjacent text in every row ---- */
@@ -206,7 +223,17 @@ static const cd_list_fns FNS = {0, row_create, row_patch, row_destroy};
 EXPORT("step") void step(uint32_t k) {
   char buf[64];
   switch (k) {
-  case 1: /* AT with a before, SET_TEXT, SET_TEXT_NUM, SET_ATTR (replace and add), SET_CLASS */
+  case 1: /* resumed, each of these runs before anything resolves the whole page: a text where
+           * the first render left AT (in the <dl>); an insert before a node with a sibling after
+           * it whose path the insert shifts; a server node named after a walk and removed (where
+           * it sits is not known, so everything resolves first, before ROOT's children shift).
+           * Then AT with a before, SET_TEXT, SET_TEXT_NUM, SET_ATTR (replace and add), SET_CLASS */
+    cd_text(z("no at"));
+    cd_at(OL, LI[0]); cd_open(z("li")); cd_text(z("ins")); cd_close();
+    cd_set_class(LI[2], z("after the insert"));
+    cd_sel(ROOT); cd_down(); WALKED = cd_id_new(); cd_name(WALKED);
+    cd_remove(WALKED);
+    cd_set_text(LBL, z("after the walk"));
     cd_at(CD_MOUNT, ROOT);
     cd_open(z("header")); cd_text(z("head")); cd_close();
     cd_set_text(LBL, z("changed <label>"));
@@ -263,7 +290,12 @@ EXPORT("step") void step(uint32_t k) {
     cd_set_attr(EX[2][0], z("title"), z("inner"));
     cd_set_attr(CI[2], z("title"), z("i"));
     cd_at(CP[1], CI[1]); cd_open(z("q")); cd_close();
-    cd_at(CD_MOUNT, 0); slot_clone("after", 99); slot_clone("", 99);
+    cd_at(CD_MOUNT, 0); slot_clone(SV[3], SN[3]); slot_clone("after", 99); slot_clone("", 99); /* the first: the slots as cd_main left them */
+    break;
+  case 10: /* what the first render's remove, move and clear left */
+    for (uint32_t i = 0; i < 4; i++) if (i != 1) cd_set_class(LI[i], z(i == 3 ? "moved" : "kept"));
+    cd_set_attr(DT, z("title"), z("refilled"));
+    cd_at(OL, LI[2]); cd_open(z("li")); cd_text(z("new")); cd_close();
     break;
   case 8: /* the list's home, and template 4: <li>" " " " " "</li> for its odd rows */
     cd_at(CD_DETACHED, 0);
@@ -308,6 +340,10 @@ int main(void) {
   cd_html_reset();
   cd_main();
   cd_flush();
+  char ev[256]; /* "E" and the page's resume arguments: the event types the render listened to */
+  uint32_t ne = cd_html_resume_events(ev, sizeof ev);
+  if (ne > sizeof ev) return 1;
+  printf("E%.*s\n", (int)ne, ev);
   dump();
   for (uint32_t k = 1; k <= steps(); k++) { step(k); dump(); }
   return 0;
