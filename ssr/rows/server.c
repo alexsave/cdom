@@ -1,9 +1,10 @@
 /* The rows app, server-rendered. The same app.c that runs in the browser runs
  * here natively: cdom.c emits its op stream into the C sink (cdom_html.c), which
  * writes the HTML; the model goes into the page as a base64 state blob, and the
- * shim hydrates over the server's nodes instead of building them.
+ * page resumes (cdom.h): listeners for the event types the render listened to go on the
+ * mount, and the wasm loads only on the first event.
  *
- *   GET /?n=<rows>[&verify=1]  the page with n rows (default 1000), seed SSR_SEED
+ *   GET /?n=<rows>             the page with n rows (default 1000), seed SSR_SEED
  *   GET /csr/                  the plain client-rendered benchmark page, same build
  *   everything else            static files from the root (out/ next to the binary)
  *
@@ -62,7 +63,7 @@ static void base64(page *p, const uint8_t *s, size_t n) {
 }
 
 /* The whole page for n rows. Runs the app once: call it in a fresh process. */
-static void render_page(page *p, uint32_t n, int verify) {
+static void render_page(page *p, uint32_t n) {
   cd_html_reset();
   cd_seed = SSR_SEED;
   app_ssr_fill(n);
@@ -70,7 +71,6 @@ static void render_page(page *p, uint32_t n, int verify) {
   cd_flush();
   puts_(p, "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"/>"
            "<title>cdom-\"keyed\"</title><link href=\"/css/currentStyle.css\" rel=\"stylesheet\"/>"
-           "<link rel=\"preload\" href=\"app.wasm\" as=\"fetch\" type=\"application/wasm\" crossorigin/>"
            "</head><body><div id=\"main\">");
   uint32_t guess = 4096 + n * 320, got;
   char *h = room(p, guess);
@@ -84,10 +84,10 @@ static void render_page(page *p, uint32_t n, int verify) {
   if (!blob || cd_state_save(blob, need) != need) abort();
   base64(p, blob, need);
   free(blob);
-  puts_(p, "</script><script src=\"cdom.js\"></script><script>cdom.start('app.wasm', "
-           "document.getElementById('main'), null, {hydrate: 'cdom-state'");
-  if (verify) puts_(p, ", verify: true");
-  puts_(p, "});</script></body></html>");
+  puts_(p, "</script><script src=\"cdom.js\"></script><script>cdom.resume('app.wasm', 'main', 'cdom-state', ");
+  uint32_t ne = cd_html_resume_events(0, 0);
+  cd_html_resume_events(room(p, ne), ne);
+  puts_(p, ");</script></body></html>");
 }
 
 static int parse_n(const char *s, size_t len, uint32_t *n) {
@@ -111,8 +111,6 @@ static void index_page(const httpd_req *q, httpd_res *r) {
     httpd_write(r, "n must be 0..100000\n", 20);
     return;
   }
-  const char *vf = httpd_query(q, "verify", &len);
-  int verify = vf && len == 1 && vf[0] == '1';
   int fd[2];
   if (pipe(fd)) goto fail;
   pid_t pid = fork();
@@ -124,7 +122,7 @@ static void index_page(const httpd_req *q, httpd_res *r) {
   if (!pid) {
     close(fd[0]);
     page p = {0};
-    render_page(&p, n, verify);
+    render_page(&p, n);
     for (size_t o = 0; o < p.len;) {
       ssize_t k = write(fd[1], p.d + o, p.len - o);
       if (k <= 0) _exit(1);
@@ -163,7 +161,7 @@ int main(int argc, char **argv) {
       uint32_t n;
       if (parse_n(argv[i + 1], strlen(argv[i + 1]), &n)) return 2;
       page p = {0};
-      render_page(&p, n, 0);
+      render_page(&p, n);
       return fwrite(p.d, 1, p.len, stdout) == p.len ? 0 : 1;
     }
     if (!strcmp(argv[i], "--port") && i + 1 < argc) port = atoi(argv[++i]);
