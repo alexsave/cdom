@@ -18,7 +18,12 @@ function check(name, fn) {
 }
 const until = async (f, ms = 3000) => { for (let i = 0; i < ms / 10; i++) { if (f()) return true; await new Promise((r) => setTimeout(r, 10)); } return false; };
 
-cdom.start('unit.wasm', 'm').then(async (x) => {
+// The store opened early (options.openStore): indexedDB.open is called before the module starts.
+let storeOpenedAt = -1;
+const realOpen = indexedDB.open.bind(indexedDB);
+indexedDB.open = (...a) => { if (storeOpenedAt < 0) storeOpenedAt = performance.now(); return realOpen(...a); };
+cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
+  check('options.openStore opens the store before the module starts', () => (storeOpenedAt >= 0 && storeOpenedAt <= x.t_started()) || `opened at ${storeOpenedAt}, started at ${x.t_started()}`);
   window.__x = x;
   check('clone inside an open element is its child', () => {
     x.t_clone_inside();

@@ -53,6 +53,7 @@ M = [
   ('image-place', 'shim/cdom.js', 'putImageData(new ImageData(pixels, width, height), x, y)', 'putImageData(new ImageData(pixels, width, height), 0, 0)', UNIT, 'FAIL cd_encode_image_in with RGB'),
   ('image-bytes', 'shim/cdom.js', 'new Blob([new Uint8Array(memory.buffer, bytesPtr, length).slice()]', 'new Blob([new Uint8Array(memory.buffer, bytesPtr + 1, length).slice()]', UNIT, 'FAIL cd_encode_image'),
   ('store-put-bytes', 'shim/cdom.js', 'const bytes = new Uint8Array(memory.buffer, bytesPtr, length).slice();', 'const bytes = new Uint8Array(memory.buffer, bytesPtr, length).slice().reverse();', UNIT, 'FAIL cd_store: a put'),
+  ('store-not-early', 'shim/cdom.js', '    if (options && options.openStore) {', '    if (false) {', UNIT, 'FAIL options.openStore'),
   ('store-miss', 'shim/cdom.js', 'exports.cd_store_got(token, 0, -1)', 'exports.cd_store_got(token, 0, 0)', UNIT, 'FAIL cd_store: a missing'),
   ('store-no-deadline', 'shim/cdom.js', 'setTimeout(() => answer(null), ms);', '', UNIT, 'FAIL cd_store: a get not answered'),
   ('store-no-flush', 'src/cdom_store.c', '  cd_on_store(token, p, len);\n  cd_flush();', '  cd_on_store(token, p, len);', UNIT, 'FAIL cd_store: a put'),

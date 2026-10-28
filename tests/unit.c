@@ -7,7 +7,10 @@
 #define EXPORT(n) __attribute__((export_name(n)))
 #define L(s) CD_LIT(s)
 
-void cd_main(void) {}
+/* When the module started (the store's early open is checked against it). */
+static double started_at;
+void cd_main(void) { started_at = cd_now(); }
+EXPORT("t_started") double t_started(void) { return started_at; }
 
 /* Every case builds under its own section: <section id=NAME>. */
 static cd_id section(const char *name) {

@@ -129,6 +129,7 @@ The shim is written to be read (real names, one statement per line, a comment pe
 | --- | ---: | ---: | ---: |
 | golfed, before the rewrite (207 source lines) | 6,553 | 2,615 | 2,951 |
 | readable (497 source lines) | 6,678 | 2,632 | 2,966 |
+| `start`'s `openStore` option | 6,740 | 2,652 | 2,986 |
 The rewrite costs 125 bytes minified and 17 brotli: separate `const` and `let` declarations, the `if`/`else` blocks terser keeps as statements, and small named functions (`now`, `utf8`, `viewportRecord`) where arrows were inlined.
 
 The imports the port-fixes branch added or changed, and what each is for:
@@ -141,6 +142,7 @@ The imports the port-fixes branch added or changed, and what each is for:
 - `win`, `viewport`: window events (resize, visibilitychange) through the event record, and the viewport read now: width, height, hidden and `devicePixelRatio` times 100 (so an app can size a picture for the screen's device pixels; the port's fern).
 - `timer`, `raf`, `now`: setTimeout, requestAnimationFrame and performance.now for C's hooks.
 - `ws_open`, `ws_send`, `ws_close`, `http`: the network (src/cdom_net.c), bytes in and out of C memory.
+- `start(url, mount, env, options)`: `options.openStore` opens the store's database at once, while the wasm is fetched and compiled, for an app that reads its store as it starts (the foolish port's textures; unit case "options.openStore opens the store before the module starts", mutant store-not-early).
 - `store_put`, `store_get`: the key/value store over IndexedDB (src/cdom_store.c): put a copy of the bytes, errors dropped; get answers once, with the bytes or a miss (-1), and the deadline's timer answers a miss.
 - Not imports, shared by them: `post` (the event record writer, used by delegated, window and the old image events), `push` (open, open_svg and clone), `deliver` (bytes into C memory through `cd_bytes_buf`: the encoded image, a network message, a stored value), `utf8`.
 - `EVENTS` gained "resize" and "visibilitychange" (a "load" for images came and went with the first image import).
