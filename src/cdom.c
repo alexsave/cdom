@@ -557,15 +557,40 @@ EXPORT("cd_start") void cd_start(uint32_t seed) {
 __attribute__((weak)) uint32_t cd_state_save(uint8_t *dst, uint32_t cap) { (void)dst; (void)cap; return 0; }
 __attribute__((weak)) int cd_state_load(const uint8_t *src, uint32_t len) { (void)src; return len != 0; }
 
-/* Hydration: the shim copies the page's state blob into cd_state_buf, then
- * cd_start_state loads it and renders the first frame over the server's DOM. */
+/* Hydration: the shim copies the page's state blob, as the base64 text the page holds, into
+ * cd_state_buf; cd_start_state decodes it in place, loads it and renders the first frame over
+ * the server's DOM. */
 static uint8_t *state_buf;
 EXPORT("cd_state_buf") uint8_t *cd_state_buf(uint32_t len) {
   cd_free(state_buf);
   return state_buf = cd_alloc(len);
 }
+/* Standard base64 with padding, decoded in place; the decoded length, or -1 when s is not
+ * base64 (a length not a multiple of 4, a byte outside the alphabet, padding not at the end). */
+static int32_t unbase64(uint8_t *s, uint32_t len) {
+  if (len & 3) return -1;
+  uint32_t o = 0;
+  for (uint32_t i = 0; i < len; i += 4) {
+    uint32_t v = 0, pad = 0;
+    for (uint32_t k = 0; k < 4; k++) {
+      uint8_t c = s[i + k];
+      int32_t d = c >= 'A' && c <= 'Z' ? c - 'A' : c >= 'a' && c <= 'z' ? c - 'a' + 26 : c >= '0' && c <= '9' ? c - '0' + 52
+                : c == '+' ? 62 : c == '/' ? 63 : -1;
+      /* '=' only in the last group's last place, or its last two */
+      if (c == '=' && k >= 2 && i + 4 == len && (k == 3 || s[i + 3] == '=')) { pad++; d = 0; }
+      else if (d < 0) return -1;
+      v = v << 6 | (uint32_t)d;
+    }
+    s[o++] = (uint8_t)(v >> 16);
+    if (pad < 2) s[o++] = (uint8_t)(v >> 8);
+    if (pad < 1) s[o++] = (uint8_t)v;
+  }
+  return (int32_t)o;
+}
+
 EXPORT("cd_start_state") int cd_start_state(uint32_t len) {
-  int bad = cd_state_load(state_buf, len);
+  int32_t n = unbase64(state_buf, len);
+  int bad = n < 0 ? -1 : cd_state_load(state_buf, (uint32_t)n);
   cd_free(state_buf);
   state_buf = 0;
   if (bad) return bad;
