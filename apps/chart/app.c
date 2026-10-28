@@ -29,14 +29,16 @@ static void push_point(Plot *s) {
   p->y = rnd(s);
 }
 
+/* writes go through chart.h's setters: they mark what the template reads (sync() below compares
+ * the widget's own copy, so it needs no marks) */
 void add_point(Plot *s, const cd_event_rec *e) { (void)e; push_point(s); }
-void recolor(Plot *s, const cd_event_rec *e) { (void)e; s->color = (s->color + 1) % NCOLORS; }
-void destroy(Plot *s, const cd_event_rec *e) { (void)e; s->mounted = 0; }
-void remount(Plot *s, const cd_event_rec *e) { (void)e; s->mounted = 1; }
+void recolor(Plot *s, const cd_event_rec *e) { (void)e; Plot_set_color(s, (s->color + 1) % NCOLORS); }
+void destroy(Plot *s, const cd_event_rec *e) { (void)e; Plot_set_mounted(s, 0); }
+void remount(Plot *s, const cd_event_rec *e) { (void)e; Plot_set_mounted(s, 1); }
 /* the button and the checkbox both flip the state; PROP then sets the box from it */
-void toggle_smooth(Plot *s, const cd_event_rec *e) { (void)e; s->smooth = !s->smooth; }
+void toggle_smooth(Plot *s, const cd_event_rec *e) { (void)e; Plot_set_smooth(s, !s->smooth); }
 /* a DOM CustomEvent named cdping on the paragraph (on:cdping): e->key is the name's string id */
-void ping(Plot *s, const cd_event_rec *e) { (void)e; s->pings++; }
+void ping(Plot *s, const cd_event_rec *e) { (void)e; Plot_set_pings(s, s->pings + 1); }
 
 /* ---- the widget: what it shows, and the host calls that bring it to the state ---- */
 static struct { uint32_t live, n, color, smooth; } shown;

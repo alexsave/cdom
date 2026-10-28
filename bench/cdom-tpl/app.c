@@ -38,10 +38,12 @@ static void build(Rows *s, uint32_t count) {
   }
 }
 
-void run(Rows *s, const cd_event_rec *e) { (void)e; s->rows_n = 0; build(s, 1000); s->selected = 0; }
-void runlots(Rows *s, const cd_event_rec *e) { (void)e; s->rows_n = 0; build(s, 10000); s->selected = 0; }
+/* Writes go through the setters rows.h declares, which mark what reads them; the rng and next_id
+ * are read by no binding, so they are written directly. */
+void run(Rows *s, const cd_event_rec *e) { (void)e; Rows_rows_clear(s); build(s, 1000); Rows_set_selected(s, 0); }
+void runlots(Rows *s, const cd_event_rec *e) { (void)e; Rows_rows_clear(s); build(s, 10000); Rows_set_selected(s, 0); }
 void add(Rows *s, const cd_event_rec *e) { (void)e; build(s, 1000); }
-void clear(Rows *s, const cd_event_rec *e) { (void)e; s->rows_n = 0; s->selected = 0; }
+void clear(Rows *s, const cd_event_rec *e) { (void)e; Rows_rows_clear(s); Rows_set_selected(s, 0); }
 
 void update(Rows *s, const cd_event_rec *e) {
   (void)e;
@@ -52,20 +54,17 @@ void update(Rows *s, const cd_event_rec *e) {
     if (len + 4 > sizeof buf) continue;
     for (uint32_t j = 0; j < len; j++) buf[j] = b[j];
     buf[len] = ' '; buf[len + 1] = '!'; buf[len + 2] = '!'; buf[len + 3] = '!';
-    s->rows[i].label = cd_intern(buf, len + 4);
+    Row_set_label(&s->rows[i], cd_intern(buf, len + 4));
   }
 }
 
-void swaprows(Rows *s, const cd_event_rec *e) {
-  (void)e;
-  if (s->rows_n > 998) { Row t = s->rows[1]; s->rows[1] = s->rows[998]; s->rows[998] = t; }
-}
+void swaprows(Rows *s, const cd_event_rec *e) { (void)e; if (s->rows_n > 998) Rows_rows_swap(s, 1, 998); }
 
 /* A click on a row reports which cell through the path: 1 the label, 2 the remove icon. */
 void row_click(Rows *s, Row *r, const cd_event_rec *e) {
   uint32_t cell = e->depth ? (uint32_t)e->path & 255 : 0xff;
   if (cell == 2) Rows_rows_remove(s, (uint32_t)(r - s->rows));
-  else if (cell == 1) s->selected = r->id;
+  else if (cell == 1) Rows_set_selected(s, r->id);
 }
 
 void cd_on_event(const cd_event_rec *e) {
