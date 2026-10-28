@@ -4,8 +4,7 @@
 var cdom = (() => {
   const TRANSIENT = 0x40000000, DETACHED = 0xffffffff, SMALL = 64;
   const doc = document, td = new TextDecoder(), te = new TextEncoder();
-  const nodes = [], strs = [], tmp = [], tpl = [], stack = [], tslot = [];
-  let slots = []; // slot text nodes of the template being built
+  const nodes = [], strs = [], tmp = [], tpl = [], stack = [];
   let x, mem, buf, u8, u32, i32, SB, SM, INBOX;
   let sp = 0, last = null, root = null, base = DETACHED, ref = 0;
   // Hydration (start's opts.hydrate): an op that would create a node under a parent in the
@@ -74,9 +73,9 @@ var cdom = (() => {
   // at page level. A node the server marked <!--i--> was inserted into the clone later (an
   // {#if} branch before an anchor): it is parked on s, skipped by walks, and adopted by the
   // insert that places it. What follows the template's last child is left at s's cursor for
-  // later appends. With verify, a slot's text (sl: the template's slot nodes) must be the
-  // server's. Returns the number of server nodes matched below s.
-  function fit(s, t, root, sl) {
+  // later appends. With verify, a template slot's text (a template text node with an id, $s)
+  // must be the server's. Returns the number of server nodes matched below s.
+  function fit(s, t, root) {
     let k = 0, c = s.firstChild, txt = false;
     for (let u = t.firstChild; u; u = u.nextSibling) {
       while (c && c.nodeType === 8 && c.data === "i") {
@@ -87,7 +86,7 @@ var cdom = (() => {
       if (u.nodeType === 3) {
         if (txt) { if (!c || c.nodeType !== 8) bad(c, "<!---->"); const m = c; c = c.nextSibling; m.remove(); }
         txt = true;
-        const want = verify && sl.includes(u) ? u.nodeValue : null;
+        const want = verify && u.$s ? u.nodeValue : null;
         if (c && c.nodeType === 3) { if (want !== null && c.nodeValue !== want) bad(c, want); k++; c = c.nextSibling; continue; }
         if (want) bad(c, want);
         const m = c && c.nodeType === 8 && c.data === "" && c.nextSibling; // <!----><!--i-->: empty, before a parked node
@@ -96,7 +95,7 @@ var cdom = (() => {
       } else {
         txt = false;
         if (!c || c.nodeType !== 1 || (verify && c.localName !== u.localName)) bad(c, u.nodeName);
-        k += 1 + fit(c, u, false, sl); c = c.nextSibling;
+        k += 1 + fit(c, u, false); c = c.nextSibling;
       }
     }
     if (c || root || hy.has(s)) { const r = cursor(s); r.n = c; r.text = txt; }
@@ -121,7 +120,7 @@ var cdom = (() => {
   function hValue(s) { if (last.isConnected) check(last.nodeType !== 3 || last.nodeValue === String(s), last, s); else last.nodeValue = s; }
   function hClone(t) {
     let el, h;
-    if ((h = into())) { el = adopt(h, tpl[t].localName); stats.adopted += fit(el, tpl[t], true, tslot[t]); }
+    if ((h = into())) { el = adopt(h, tpl[t].localName); stats.adopted += fit(el, tpl[t], true); }
     else { el = tpl[t].cloneNode(true); stats.templateNodes += tsize[t]; if (sp) stack[sp - 1].appendChild(el); }
     stack[sp++] = el; last = el;
   }
@@ -214,18 +213,15 @@ var cdom = (() => {
   function text_num(n) { if (hy) return hText(n >>> 0); last = doc.createTextNode(n >>> 0); place(last); }
   function attr(a, v) { if (hy) return hAttr(S(a), S(v)); last.setAttribute(S(a), S(v)); }
   function cls(v) { if (hy) return hClass(S(v)); last.className = S(v); }
-  function name(n) { nodes[n] = last; }
+  function name(n) { nodes[n] = last; if (hy && !last.isConnected) last.$s = 1; }
   function listen(n) { nodes[n] = last; last.$i = n; }
   function value(s) { if (hy) return hValue(S(s)); last.nodeValue = S(s); }
   function value_num(n) { if (hy) return hValue(n >>> 0); last.nodeValue = n >>> 0; }
-  function tpl_save(t) { tpl[t] = root; if (hy) tsize[t] = size(root); tslot[t] = slots; slots = []; root.remove(); }
+  function tpl_save(t) { tpl[t] = root; if (hy) tsize[t] = size(root); root.remove(); }
   function clone(t) {
     if (hy) return hClone(t);
     const el = tpl[t].cloneNode(true); if (sp) stack[sp - 1].appendChild(el); stack[sp++] = el; last = el;
   }
-  function slot(k) { slots[k] = last; }
-  function tpl_text(t, k, s) { tslot[t][k].nodeValue = S(s); }
-  function tpl_text_num(t, k, n) { tslot[t][k].nodeValue = n >>> 0; }
   // A walk: n steps of 2 bits (1 firstChild, 2 nextSibling, 3 parentNode) from a named node, or
   // from the last node when from is -1.
   function walk(from, steps, n) {
@@ -258,7 +254,7 @@ var cdom = (() => {
   // server's DOM under mount. opts.verify: also compare every tag, attribute and text.
   async function start(url, mount, env, opts) {
     const imports = { cdom: { strings, at, open, close, text, text_num, attr, class: cls, name, listen, value,
-      value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num, set_text,
+      value_num, tpl_save, clone, walk, walk_value, walk_value_num, set_text,
       set_text_num, set_attr, set_class, remove, free, move, clear, detach, attach, input, host, delegate }, env: env || {} };
     const res = fetch(url);
     const { instance } = WebAssembly.instantiateStreaming
