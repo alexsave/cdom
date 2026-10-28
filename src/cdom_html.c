@@ -80,10 +80,10 @@ static void *grow_array(void *a, uint32_t *cap, uint32_t need, size_t el) {
 
 static hstr S(uint32_t s) {
   if (s >= TRANSIENT) {
-    if (s - TRANSIENT >= tmp_cap) fail("unknown transient string", "text");
+    if (s - TRANSIENT >= tmp_cap) fail("unknown transient string", "not sent before the call");
     return tmp[s - TRANSIENT];
   }
-  if (s >= strs_cap || !strs[s].p) fail("unknown string", "text");
+  if (s >= strs_cap || !strs[s].p) fail("unknown string", "not sent before the call");
   return strs[s];
 }
 
