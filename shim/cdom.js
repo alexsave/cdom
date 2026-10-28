@@ -116,6 +116,46 @@ var cdom = (() => {
     });
   }
 
+  // cdv (cdom.h): one value from linear memory at word vq.
+  const f64 = new Float64Array(1), w64 = new Uint32Array(f64.buffer);
+  let vq = 0;
+  function val() {
+    const t = u32[vq++];
+    switch (t) {
+      case 0: return null;
+      case 1: return false;
+      case 2: return true;
+      case 3: return u32[vq++];
+      case 4: return i32[vq++];
+      case 5: w64[0] = u32[vq++]; w64[1] = u32[vq++]; return f64[0];
+      case 6: return S(u32[vq++]);
+      case 7: { const n = u32[vq++], a = new Float64Array(n); new Uint32Array(a.buffer).set(u32.subarray(vq, vq += 2 * n)); return a; }
+      case 8: { const a = []; for (let n = u32[vq++]; n; n--) a.push(val()); return a; }
+      case 9: { const o = {}; for (let n = u32[vq++]; n; n--) { const k = S(u32[vq++]); o[k] = val(); } return o; }
+    }
+    throw new Error("cdom: bad value tag " + t);
+  }
+
+  // HOST (cdom.h): MOUNT, CALL, SET, PROP, UNMOUNT on the widget instance el.$h; the value is
+  // the cdv at address v (its nwords are not needed: the tree delimits itself).
+  function host(id, kind, h, v) {
+    if (buf !== mem.buffer) views();
+    vq = v >>> 2; v = val();
+    const el = nodes[id], name = S(h);
+    if (kind === 3) { el[name] = v; return; }
+    const p = name.split(".");
+    let o = kind ? el.$h : window;
+    if (!kind) {
+      for (const k of p) o = o == null ? o : o[k];
+      if (typeof o !== "function") throw new Error("cdom: no widget constructor window." + name);
+      el.$h = new o(el, v); return;
+    }
+    if (!o) throw new Error("cdom: no widget mounted for " + name);
+    if (kind === 2) { for (let i = 0; i < p.length - 1; i++) o = o[p[i]]; o[p[p.length - 1]] = v; return; }
+    o[name](...(kind === 1 ? v : []));
+    if (kind === 4) delete el.$h;
+  }
+
   function strings(n, nbytes) {
     if (buf !== mem.buffer) views();
     decode(n, nbytes);
@@ -172,7 +212,7 @@ var cdom = (() => {
   async function start(url, mount, env, opts) {
     const imports = { cdom: { strings, at, open, close, text, text_num, attr, class: cls, name, listen, value,
       value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num, set_text,
-      set_text_num, set_attr, set_class, remove, free, move, clear, detach, attach, input }, env: env || {} };
+      set_text_num, set_attr, set_class, remove, free, move, clear, detach, attach, input, host }, env: env || {} };
     const res = fetch(url);
     const { instance } = WebAssembly.instantiateStreaming
       ? await WebAssembly.instantiateStreaming(res, imports)
