@@ -111,6 +111,64 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
   check('the viewport, read from C', () => (x.t_viewport(0) === innerWidth && x.t_viewport(1) === innerHeight && x.t_viewport(2) === +document.hidden && x.t_viewport(6) === Math.round(devicePixelRatio * 100)) || 'wrong');
   document.dispatchEvent(new Event('visibilitychange'));
   check('visibilitychange arrives through the event path', () => x.t_viewport(5) === +document.hidden || x.t_viewport(5));
+  // A drag's and a key's events (5c in unit.c).
+  x.t_input();
+  const box = $('#input span'), field = $('#input input');
+  const ev = () => [0, 1, 2, 3, 4, 5, 6, 7].map((k) => x.t_ev(k));
+  const fire = (target, e) => { target.dispatchEvent(e); return e.defaultPrevented; };
+  const touch = (type, target, cx, cy) => { const t = new Touch({ identifier: 1, target, clientX: cx, clientY: cy });
+    return new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], changedTouches: [t] }); };
+  check('a mousedown and a touchstart are delegated with their point, and C can stop the default', () => {
+    x.t_prevent(1);
+    const stopped = fire(box, new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 120, clientY: 110 }));
+    const down = ev();
+    x.t_prevent(0);
+    const kept = fire(box, new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 121, clientY: 111 }));
+    const touched = fire(box, touch('touchstart', box, 130, 115));
+    const start = ev();
+    const id = x.t_input_id(0);
+    const r = [down[0] === 14, down[1] === id, down[2] === 120, down[3] === 110, stopped, !kept,
+      start[0] === 17, start[1] === id, start[2] === 130, start[3] === 115, !touched];
+    return r.every(Boolean) || JSON.stringify(r) + ' ' + down + ' / ' + start;
+  });
+  check('the document\'s moves while C listens on it, once however often asked, and none after', () => {
+    x.t_listen_win(15, 1); x.t_listen_win(15, 1);
+    const n0 = x.t_ev(7);
+    fire(document.body, new MouseEvent('mousemove', { bubbles: true, clientX: 7, clientY: 9, shiftKey: true }));
+    const moved = ev();
+    x.t_listen_win(15, 0);
+    fire(document.body, new MouseEvent('mousemove', { bubbles: true, clientX: 8, clientY: 9 }));
+    const r = [moved[7] === n0 + 1, moved[0] === 15, moved[1] === 0, moved[2] === 7, moved[3] === 9, moved[4] === 1, x.t_ev(7) === n0 + 1];
+    return r.every(Boolean) || JSON.stringify(r) + ' ' + moved;
+  });
+  check('a touchmove on the document is not passive: C stops the page scrolling', () => {
+    x.t_listen_win(18, 1); x.t_listen_win(19, 1);
+    x.t_prevent(1);
+    const stopped = fire(document.body, touch('touchmove', document.body, 40, 60));
+    const moved = ev();
+    const ended = fire(document.body, touch('touchend', document.body, 41, 61));
+    const end = ev();
+    x.t_prevent(0);
+    x.t_listen_win(18, 0); x.t_listen_win(19, 0);
+    const r = [stopped, moved[0] === 18, moved[2] === 40, moved[3] === 60, ended, end[0] === 19, end[2] === 41, end[3] === 61];
+    return r.every(Boolean) || JSON.stringify(r);
+  });
+  check('a keydown on the document: its character, its modifiers, and whether it was typed into a field', () => {
+    x.t_listen_win(4, 1);
+    fire(document.body, new KeyboardEvent('keydown', { bubbles: true, key: 'a', shiftKey: true, metaKey: true }));
+    const a = ev();
+    fire(document.body, new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowUp', altKey: true, ctrlKey: true }));
+    const up = ev();
+    fire(field, new KeyboardEvent('keydown', { bubbles: true, key: '-' }));
+    const typed = ev();
+    const r = [a[0] === 4, a[6] === 97, a[4] === 9, up[6] === 0, up[4] === 6, typed[6] === 45, typed[4] === 16];
+    return r.every(Boolean) || JSON.stringify(r) + ' ' + a + ' / ' + up + ' / ' + typed;
+  });
+  check('cd_hit: the listening node under a point, through an overlay that takes no pointer events, and not a freed one', () => {
+    const r = [x.t_hit(120, 110) === x.t_input_id(0), x.t_hit(310, 110) === x.t_input_id(1), x.t_hit(5, 400) === 0, x.t_hit(410, 110) === 0];
+    return r.every(Boolean) || JSON.stringify(r) + ' ' + x.t_hit(120, 110);
+  });
+
   // An image: the pixels C wrote, encoded, their bytes back in C, then set as a url.
   x.t_image();
   const landed = await until(() => x.t_loaded(0) === 1);

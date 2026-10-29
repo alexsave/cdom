@@ -75,6 +75,18 @@ M = [
   ('rect-order', 'shim/cdom.js', '.set([box.left, box.top, box.width, box.height])', '.set([box.top, box.left, box.width, box.height])', UNIT, 'FAIL cd_rect'),
   ('rect-untransformed', 'shim/cdom.js', 'const box = nodes[id].getBoundingClientRect();', 'const node = nodes[id];\n    const box = { left: node.offsetLeft, top: node.offsetTop, width: node.offsetWidth, height: node.offsetHeight };', UNIT, 'FAIL cd_rect'),
   ('now-zero', 'shim/cdom.js', '    return performance.now();', '    return 0;', UNIT, 'FAIL cd_now'),
+  ('input-no-prevent', 'shim/cdom.js', '    if (i32[record + 10] && event.preventDefault) {', '    if (false) {', UNIT, 'FAIL a mousedown and a touchstart'),
+  ('input-touch-point', 'shim/cdom.js', '    return event.changedTouches ? event.changedTouches[0] : event;', '    return event;', UNIT, 'FAIL a mousedown and a touchstart'),
+  ('input-mask-16', 'shim/cdom.js', '  let listenMask = new Uint32Array(1024);', '  let listenMask = new Uint16Array(1024);', UNIT, 'FAIL a mousedown and a touchstart'),
+  ('input-win-viewport', 'shim/cdom.js', '    const viewportEvent = type === RESIZE || type === VISIBILITY;', '    const viewportEvent = true;', UNIT, 'FAIL the document'),
+  ('input-unwin-noop', 'shim/cdom.js', '    windowTarget(type).removeEventListener(EVENTS[type], listener);', '', UNIT, 'FAIL the document'),
+  ('input-win-twice', 'shim/cdom.js', '    if (windowListeners[type]) {\n      return;\n    }\n    const viewportEvent', '    const viewportEvent', UNIT, 'FAIL the document'),
+  ('input-touchmove-passive', 'shim/cdom.js', 'listener, { passive: false });', 'listener);', UNIT, 'FAIL a touchmove on the document'),
+  ('input-no-char', 'shim/cdom.js', 'key.length === 1 ? key.charCodeAt(0) : 0;', 'key.length === 1 ? 0 : 0;', UNIT, 'FAIL a keydown on the document'),
+  ('input-no-editing', 'shim/cdom.js', '      | (editing(event.target) << 4);', ';', UNIT, 'FAIL a keydown on the document'),
+  ('input-prevent-c', 'src/cdom.c', 'void cd_prevent_default(void) { inbox.prevent = 1; }', 'void cd_prevent_default(void) { }', UNIT, 'FAIL a mousedown and a touchstart'),
+  ('hit-no-walk', 'shim/cdom.js', '    for (let node = doc.elementFromPoint(x, y); node && node !== mount; node = node.parentNode) {', '    for (let node = doc.elementFromPoint(x, y); node && node !== mount; node = null) {', UNIT, 'FAIL cd_hit'),
+  ('hit-not-listening', 'shim/cdom.js', '      if (node.$i !== undefined && listenMask[node.$i]) {\n        return node.$i;', '      if (node.$i !== undefined) {\n        return node.$i;', UNIT, 'FAIL cd_hit'),
   ('mini-strong', 'src/mini.c', '__attribute__((weak, no_builtin)) int memcmp', '__attribute__((no_builtin)) int memcmp', LINK, "FAIL an app's own libc"),
 ]
 

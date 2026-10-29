@@ -119,6 +119,45 @@ EXPORT("t_rect") void t_rect(void) {
   cd_rect(id, rect_at + 4);
 }
 EXPORT("t_rect_at") double t_rect_at(int32_t k) { return rect_at[k]; }
+/* 5c. A drag's and a key's events: a press delegated to a listening box (mouse and touch) with
+ * its point, the document's moves and keys while C listens on it, the default action stopped when
+ * C asks, and the node under a point (cd_hit) through an overlay that takes no pointer events. */
+static cd_id input_box, input_other;
+static int32_t ev_rec[8], ev_count, prevent_next;
+EXPORT("t_input") void t_input(void) {
+  cd_id s = section("input");
+  cd_at(s, 0);
+  cd_open(L("div"));
+  cd_attr(L("style"), L("position: fixed; left: 100px; top: 100px; width: 100px; height: 50px;"));
+  cd_listen(input_box = cd_id_new(), CD_EV_MOUSEDOWN);
+  cd_listen(input_box, CD_EV_TOUCHSTART);
+  cd_open(L("span")); cd_text(L("inside")); cd_close();
+  cd_close();
+  cd_open(L("div")); /* over the box, and seen through */
+  cd_attr(L("style"), L("position: fixed; left: 90px; top: 90px; width: 200px; height: 80px; pointer-events: none;"));
+  cd_close();
+  cd_open(L("div"));
+  cd_attr(L("style"), L("position: fixed; left: 300px; top: 100px; width: 40px; height: 40px;"));
+  cd_listen(input_other = cd_id_new(), CD_EV_CLICK);
+  cd_close();
+  cd_open(L("input")); cd_close();
+  cd_id freed = cd_id_new(); /* listened, then its id freed with the node left in place: no longer a target */
+  cd_open(L("div"));
+  cd_attr(L("style"), L("position: fixed; left: 400px; top: 100px; width: 40px; height: 40px;"));
+  cd_listen(freed, CD_EV_CLICK);
+  cd_close();
+  cd_id_free(freed);
+}
+EXPORT("t_input_id") int32_t t_input_id(int32_t which) { return (int32_t)(which ? input_other : input_box); }
+EXPORT("t_listen_win") void t_listen_win(int32_t type, int32_t on) {
+  if (on) cd_listen_window((uint32_t)type);
+  else cd_unlisten_window((uint32_t)type);
+}
+EXPORT("t_prevent") void t_prevent(int32_t on) { prevent_next = on; }
+/* The last event's type, id, x, y, mods, key, ch, and how many came (k = 7). */
+EXPORT("t_ev") int32_t t_ev(int32_t k) { return k == 7 ? ev_count : ev_rec[k]; }
+EXPORT("t_hit") int32_t t_hit(int32_t x, int32_t y) { return (int32_t)cd_hit(x, y); }
+
 static int32_t loaded_id = -1, loaded_key = -1;
 void cd_on_event(const cd_event_rec *e) {
   enter();
@@ -127,6 +166,12 @@ void cd_on_event(const cd_event_rec *e) {
     cd_set_text_num(vw_txt, (uint32_t)e->x); /* no cd_flush: the event export does it */
     hold(vw_txt);
   } else if (e->type == CD_EV_VISIBILITY) hidden = e->key;
+  else {
+    const int32_t rec[7] = {e->type, e->id, e->x, e->y, e->mods, e->key, e->ch};
+    for (int k = 0; k < 7; k++) ev_rec[k] = rec[k];
+    ev_count++;
+    if (prevent_next) cd_prevent_default();
+  }
 }
 
 /* 7. A keyed list followed by a fixed sibling: tail inserts land before it. */

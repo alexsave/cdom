@@ -70,6 +70,14 @@ try {
   let dpr = 0;
   for (let i = 0; i < 100 && dpr !== 200; i++) { await sleep(20); dpr = await b.evaluate('__x.t_viewport(6)'); }
   if (dpr === 200) passed.push('the device pixel ratio, read from C'); else errors.push('the device pixel ratio: ' + dpr);
+  // A real key (CDP): the keyCode C reads, no character for an arrow, and the default stopped
+  // (read by a window listener, which runs after the document's).
+  await b.evaluate(`window.__kd = []; addEventListener('keydown', (e) => __kd.push(e.defaultPrevented)); __x.t_prevent(1)`);
+  await b.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'ArrowLeft', code: 'ArrowLeft', windowsVirtualKeyCode: 37 });
+  await b.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowLeft', code: 'ArrowLeft', windowsVirtualKeyCode: 37 });
+  const key = await b.evaluate(`[__x.t_ev(0), __x.t_ev(5), __x.t_ev(6), __kd[0]].join(' ')`);
+  await b.evaluate(`__x.t_prevent(0); __x.t_listen_win(4, 0)`);
+  if (key === '4 37 0 true') passed.push('a real ArrowLeft: keyCode 37, no character, the default stopped'); else errors.push('real key: ' + key);
   await b.evaluate(`__x.t_net(${PORT})`);
   let v = '';
   for (let i = 0; i < 200; i++) { await sleep(20); v = await b.evaluate(`document.querySelector('#net i').textContent`); if (v !== 'waiting' && v !== 'ws ok') break; }
