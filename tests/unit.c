@@ -123,7 +123,7 @@ EXPORT("t_rect_at") double t_rect_at(int32_t k) { return rect_at[k]; }
  * its point, the document's moves and keys while C listens on it, the default action stopped when
  * C asks, and the node under a point (cd_hit) through an overlay that takes no pointer events. */
 static cd_id input_box, input_other;
-static int32_t ev_rec[8], ev_count, prevent_next;
+static int32_t ev_rec[9], ev_count, prevent_next;
 EXPORT("t_input") void t_input(void) {
   cd_id s = section("input");
   cd_at(s, 0);
@@ -154,7 +154,7 @@ EXPORT("t_listen_win") void t_listen_win(int32_t type, int32_t on) {
   else cd_unlisten_window((uint32_t)type);
 }
 EXPORT("t_prevent") void t_prevent(int32_t on) { prevent_next = on; }
-/* The last event's type, id, x, y, mods, key, ch, and how many came (k = 7). */
+/* The last event's type, id, x, y, mods, key, ch, how many came (k = 7), and its time (k = 8). */
 EXPORT("t_ev") int32_t t_ev(int32_t k) { return k == 7 ? ev_count : ev_rec[k]; }
 EXPORT("t_hit") int32_t t_hit(int32_t x, int32_t y) { return (int32_t)cd_hit(x, y); }
 
@@ -167,8 +167,8 @@ void cd_on_event(const cd_event_rec *e) {
     hold(vw_txt);
   } else if (e->type == CD_EV_VISIBILITY) hidden = e->key;
   else {
-    const int32_t rec[7] = {e->type, e->id, e->x, e->y, e->mods, e->key, e->ch};
-    for (int k = 0; k < 7; k++) ev_rec[k] = rec[k];
+    const int32_t rec[9] = {e->type, e->id, e->x, e->y, e->mods, e->key, e->ch, 0, e->ms};
+    for (int k = 0; k < 9; k++) ev_rec[k] = rec[k];
     ev_count++;
     if (prevent_next) cd_prevent_default();
   }

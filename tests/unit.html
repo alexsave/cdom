@@ -118,16 +118,19 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
   const fire = (target, e) => { target.dispatchEvent(e); return e.defaultPrevented; };
   const touch = (type, target, cx, cy) => { const t = new Touch({ identifier: 1, target, clientX: cx, clientY: cy });
     return new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], changedTouches: [t] }); };
-  check('a mousedown and a touchstart are delegated with their point, and C can stop the default', () => {
+  check('a mousedown and a touchstart are delegated with their point and their time, and C can stop the default', () => {
     x.t_prevent(1);
-    const stopped = fire(box, new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 120, clientY: 110 }));
-    const down = ev();
+    const made = new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 120, clientY: 110 });
+    const busy = performance.now() + 30;
+    while (performance.now() < busy) { /* the handler runs 30 ms after the event was made */ }
+    const stopped = fire(box, made);
+    const down = ev(), when = x.t_ev(8);
     x.t_prevent(0);
     const kept = fire(box, new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: 121, clientY: 111 }));
     const touched = fire(box, touch('touchstart', box, 130, 115));
     const start = ev();
     const id = x.t_input_id(0);
-    const r = [down[0] === 14, down[1] === id, down[2] === 120, down[3] === 110, stopped, !kept,
+    const r = [down[0] === 14, down[1] === id, down[2] === 120, down[3] === 110, stopped, !kept, Math.abs(when - made.timeStamp) <= 1,
       start[0] === 17, start[1] === id, start[2] === 130, start[3] === 115, !touched];
     return r.every(Boolean) || JSON.stringify(r) + ' ' + down + ' / ' + start;
   });
