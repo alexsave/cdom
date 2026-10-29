@@ -88,8 +88,9 @@ M = [
   ('input-no-editing', 'shim/cdom.js', '      | (editing(event.target) << 4);', ';', UNIT, 'FAIL a keydown on the document'),
   ('input-prevent-c', 'src/cdom.c', 'void cd_prevent_default(void) { inbox.prevent = 1; }', 'void cd_prevent_default(void) { }', UNIT, 'FAIL a mousedown and a touchstart'),
   ('input-no-time', 'shim/cdom.js', '    i32[record + 11] = Math.round(event.timeStamp || 0);', '    i32[record + 11] = Math.round(performance.now());', UNIT, 'FAIL a mousedown and a touchstart'),
-  ('hit-no-walk', 'shim/cdom.js', '    for (let node = doc.elementFromPoint(x, y); node && node !== mount; node = node.parentNode) {', '    for (let node = doc.elementFromPoint(x, y); node && node !== mount; node = null) {', UNIT, 'FAIL cd_hit'),
+  ('hit-bottom-first', 'shim/cdom.js', '    for (const node of doc.elementsFromPoint(x, y)) {', '    for (const node of [...doc.elementsFromPoint(x, y)].reverse()) {', UNIT, 'FAIL cd_hit'),
   ('hit-not-listening', 'shim/cdom.js', '      if (node.$i !== undefined && listenMask[node.$i]) {\n        return node.$i;', '      if (node.$i !== undefined) {\n        return node.$i;', UNIT, 'FAIL cd_hit'),
+  ('hit-topmost-only', 'shim/cdom.js', '    for (const node of doc.elementsFromPoint(x, y)) {', '    for (const node of [doc.elementFromPoint(x, y)]) {', UNIT, 'FAIL cd_hit: through a layer'),
   ('mini-strong', 'src/mini.c', '__attribute__((weak, no_builtin)) int memcmp', '__attribute__((no_builtin)) int memcmp', LINK, "FAIL an app's own libc"),
 ]
 

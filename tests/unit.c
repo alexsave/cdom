@@ -140,6 +140,9 @@ EXPORT("t_input") void t_input(void) {
   cd_attr(L("style"), L("position: fixed; left: 300px; top: 100px; width: 40px; height: 40px;"));
   cd_listen(input_other = cd_id_new(), CD_EV_CLICK);
   cd_close();
+  cd_open(L("div")); /* over input_other's left half, taking pointer events but listening nowhere */
+  cd_attr(L("style"), L("position: fixed; left: 300px; top: 100px; width: 20px; height: 40px;"));
+  cd_close();
   cd_open(L("input")); cd_close();
   cd_id freed = cd_id_new(); /* listened, then its id freed with the node left in place: no longer a target */
   cd_open(L("div"));

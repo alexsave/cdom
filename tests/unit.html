@@ -168,7 +168,11 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
     return r.every(Boolean) || JSON.stringify(r) + ' ' + a + ' / ' + up + ' / ' + typed;
   });
   check('cd_hit: the listening node under a point, through an overlay that takes no pointer events, and not a freed one', () => {
-    const r = [x.t_hit(120, 110) === x.t_input_id(0), x.t_hit(310, 110) === x.t_input_id(1), x.t_hit(5, 400) === 0, x.t_hit(410, 110) === 0];
+    const r = [x.t_hit(120, 110) === x.t_input_id(0), x.t_hit(330, 110) === x.t_input_id(1), x.t_hit(5, 400) === 0, x.t_hit(410, 110) === 0];
+    return r.every(Boolean) || JSON.stringify(r) + ' ' + x.t_hit(120, 110);
+  });
+  check('cd_hit: through a layer that takes pointer events but listens nowhere, to the listening node under it', () => {
+    const r = [x.t_hit(310, 110) === x.t_input_id(1), document.elementFromPoint(310, 110).childNodes.length === 0];
     return r.every(Boolean) || JSON.stringify(r) + ' ' + x.t_hit(120, 110);
   });
 
