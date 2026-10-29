@@ -136,6 +136,7 @@ The shim is written to be read (real names, one statement per line, a comment pe
 | `rect` (the foolish port's flights) | 7,351 | 2,919 | 3,271 |
 | drag and keys (the foolish port's passes 4 and 5): seven mouse and touch types, the event's character, the field bit, `cd_prevent_default`, window listeners removed again, `hit` (same terser run: 7,352 / 2,921 / 3,274 before) | 8,112 | 3,211 | 3,592 |
 | the event's own time in the record (`ms`, event.timeStamp) | 8,147 | 3,228 | 3,609 |
+| `image_bytes` sets its url once the picture has decoded and answers `cd_image(token, ok)` (same terser run: 8,146 / 3,228 / 3,618 before) | 8,260 | 3,274 | 3,671 |
 The rewrite costs 125 bytes minified and 17 brotli: separate `const` and `let` declarations, the `if`/`else` blocks terser keeps as statements, and small named functions (`now`, `utf8`, `viewportRecord`) where arrows were inlined.
 
 The imports the port-fixes branch added or changed, and what each is for:
@@ -144,7 +145,10 @@ The imports the port-fixes branch added or changed, and what each is for:
 - `name_open`: names the open element rather than the last node.
 - `style`, `style_num`: one style property (`setProperty`), a string or a number with a unit.
 - `encode`: pixels in C memory (RGBA, or RGB widened to RGBA so an opaque picture takes a quarter less room in C), placed at (x, y) in an image of a given size, encoded off the call (toBlob), the file's bytes delivered back into C. The placement is for a picture of which only a part is ever made but whose full size the page lays out by: the foolish port's wool is woven only where it shows and placed in the app's 3840 x 2160, so the browser sizes, snaps and resamples it as it does the app's (a crop given its own size landed 0.67 px off after snapping, and every pixel differed).
-- `image_bytes`: an image file's bytes from C memory as a `url(blob:)` on a style property, now.
+- `image_bytes`: an image file's bytes from C memory as a `url(blob:)` on a style property, set once the picture has decoded, then answered with `cd_image(token, ok)` (`cd_on_image` in C; 0 and nothing set for bytes that do not decode).
+  It was set at once: the foolish port's card backs turned black (the colour under the fern) a frame before the fern itself painted, one frame of black on every back at every load, cold or warm (the browser loads a blob url's picture off the call).
+  Set after the decode, the picture is ready when the property lands, and the answer lets the app set what goes with it (the black under the fern) in the same task, so both paint in one frame.
+  Unit case "cd_set_image_bytes sets the url once the picture has decoded, answers 1 with what goes with it, and 0 and nothing for bytes that are no image" (a MutationObserver sees the url and the mark the answer sets always together); mutants image-set-early (the url set at the call, as before) and image-unanswered, both caught (114 bytes minified, 46 brotli).
 - `win`, `viewport`: window events (resize, visibilitychange) through the event record, and the viewport read now: width, height, hidden and `devicePixelRatio` times 100 (so an app can size a picture for the screen's device pixels; the port's fern).
 - `timer`, `raf`, `now`: setTimeout, requestAnimationFrame and performance.now for C's hooks.
 - `ws_open`, `ws_send`, `ws_close`, `http`: the network (src/cdom_net.c), bytes in and out of C memory.

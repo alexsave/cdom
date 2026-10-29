@@ -172,9 +172,24 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
     return r.every(Boolean) || JSON.stringify(r) + ' ' + x.t_hit(120, 110);
   });
 
-  // An image: the pixels C wrote, encoded, their bytes back in C, then set as a url.
+  // An image: the pixels C wrote, encoded, their bytes back in C, then set as a url once decoded.
+  // Every change to the div's style is seen as it happens: the url must never be there without
+  // the mark C sets in the answer (the same task, so the same frame).
+  const imageStyles = [];
+  const imageWatch = new MutationObserver(() => { const e = $('#image > div'); if (e) imageStyles.push([e.style.backgroundImage !== '', e.style.getPropertyValue('--landed')]); });
   x.t_image();
+  imageWatch.observe($('#image > div'), { attributes: true, attributeFilter: ['style'] });
   const landed = await until(() => x.t_loaded(0) === 1);
+  await until(() => x.t_image_answer(0) !== -1);
+  imageWatch.disconnect();
+  x.t_image_bad();
+  const badNow = $('#imagebad > div').style.backgroundImage;
+  await until(() => x.t_image_answer(1) !== -1);
+  check('cd_set_image_bytes sets the url once the picture has decoded, answers 1 with what goes with it, and 0 and nothing for bytes that are no image', () => {
+    const r = [x.t_image_answer(0) === 1, imageStyles.length > 0 && imageStyles.every(([url, mark]) => url === (mark === '1')),
+      badNow === '', x.t_image_answer(1) === 0, $('#imagebad > div').style.backgroundImage === ''];
+    return r.every(Boolean) || JSON.stringify(r) + ' ' + JSON.stringify(imageStyles) + ' bad: ' + JSON.stringify($('#imagebad > div').style.backgroundImage);
+  });
   let got = null;
   if (landed) {
     const url = $('#image > div').style.backgroundImage.slice(5, -2);

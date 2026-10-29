@@ -329,10 +329,28 @@ void cd_on_encoded(uint32_t token, const uint8_t *p, uint32_t len) {
   loaded_key = (int32_t)token;
   loaded_id = (int32_t)len;
   /* a PNG starts 0x89 'P' 'N' 'G' */
-  if (len > 4 && p[0] == 0x89 && p[1] == 'P') cd_set_image_bytes(imaged, L("background-image"), p, len, L("image/png"));
+  if (len > 4 && p[0] == 0x89 && p[1] == 'P') cd_set_image_bytes(imaged, L("background-image"), p, len, L("image/png"), 79);
   hold(imaged); /* no cd_flush: the export does it */
 }
 EXPORT("t_loaded") int32_t t_loaded(int32_t which) { return which ? loaded_key : loaded_id > 8; }
+/* Bytes that are no image: nothing is set on the second div, and the answer is 0. The answer for
+ * a picture marks its node (--landed) in the hook, which must paint with the picture. */
+static cd_id unimaged;
+static int32_t image_answer[2] = {-1, -1};
+EXPORT("t_image_bad") void t_image_bad(void) {
+  static const uint8_t junk[8] = {0x89, 'P', 'N', 'G', 1, 2, 3, 4};
+  cd_id s = section("imagebad");
+  cd_at(s, 0);
+  cd_open(L("div")); cd_name_open(unimaged = cd_id_new()); cd_close();
+  cd_set_image_bytes(unimaged, L("background-image"), junk, sizeof junk, L("image/png"), 80);
+}
+void cd_on_image(uint32_t token, uint32_t ok) {
+  enter();
+  if (token == 79 || token == 80) image_answer[token - 79] = (int32_t)ok;
+  if (token == 79) cd_set_style(imaged, L("--landed"), L("1"));
+  hold(imaged); /* no cd_flush: the export does it */
+}
+EXPORT("t_image_answer") int32_t t_image_answer(int32_t k) { return image_answer[k]; }
 
 /* The store: a put, then gets that hit, miss, and miss by the deadline. */
 static int32_t store_len[8] = {-2, -2, -2, -2, -2, -2, -2, -2};
