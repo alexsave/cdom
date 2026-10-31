@@ -8,6 +8,7 @@
 #include "../src/cdom_url.h"
 #include "../src/cdom_locale.h"
 #include "../src/cdom_share.h"
+#include "../src/cdom_fonts.h"
 
 #define EXPORT(n) __attribute__((export_name(n)))
 #define L(s) CD_LIT(s)
@@ -771,3 +772,30 @@ EXPORT("t_clipboard_status") int32_t t_clipboard_status(uint32_t token) { return
 EXPORT("t_clipboard_answers") uint32_t t_clipboard_answers(uint32_t token) { return clipboard_answers[token & 15]; }
 EXPORT("t_share_status") int32_t t_share_status(uint32_t token) { return share_status[token & 15]; }
 EXPORT("t_share_answers") uint32_t t_share_answers(uint32_t token) { return share_answers[token & 15]; }
+
+/* 19. The page's fonts: every answer by token (-1 until it came) with how many came, and how often
+ * a load was heard done. */
+static int32_t fonts_status[16];
+static uint32_t fonts_answers[16], fonts_changed;
+static cd_id fonts_txt;
+EXPORT("t_fonts_section") void t_fonts_section(void) {
+  cd_id s = section("fonts");
+  cd_at(s, 0);
+  cd_open(L("i")); cd_text(L("fonts")); cd_name(fonts_txt = cd_id_new()); cd_close();
+  for (int i = 0; i < 16; i++) fonts_status[i] = -1;
+}
+EXPORT("t_fonts_wait") void t_fonts_wait(uint32_t token, uint32_t deadline_ms) { cd_fonts_wait(token, deadline_ms); }
+void cd_on_fonts(uint32_t token, uint32_t status) {
+  enter();
+  fonts_status[token & 15] = (int32_t)status;
+  fonts_answers[token & 15]++;
+  hold(fonts_txt); /* no cd_flush: the export does it */
+}
+void cd_on_fonts_changed(void) {
+  enter();
+  fonts_changed++;
+  hold(fonts_txt);
+}
+EXPORT("t_fonts_status") int32_t t_fonts_status(uint32_t token) { return fonts_status[token & 15]; }
+EXPORT("t_fonts_answers") uint32_t t_fonts_answers(uint32_t token) { return fonts_answers[token & 15]; }
+EXPORT("t_fonts_changed") uint32_t t_fonts_changed(void) { return fonts_changed; }

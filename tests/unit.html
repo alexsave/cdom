@@ -576,5 +576,44 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
     const r = [cancelled.join() === `-1,${SHARE_CANCELLED},1`, refused.join() === `-1,${SHARE_FAILED},1`, invalid.join() === `-1,${SHARE_FAILED},1`];
     return r.every(Boolean) || JSON.stringify(r) + ` ${cancelled} / ${refused} / ${invalid}`;
   });
+
+  // The page's fonts (19 in unit.c): a font tools/unit.mjs's server answers after 800 ms, with
+  // bytes that are no font (it fails, and the wait is over all the same).
+  x.t_fonts_section();
+  const FONTS_TIMEOUT = 0, FONTS_READY = 1, FONTS_UNAVAILABLE = 2;
+  const fontsAsk = (token, deadline) => { x.t_fonts_wait(token, deadline); return x.t_fonts_status(token); };
+  const fontsHeard = (token) => [x.t_fonts_status(token), x.t_fonts_answers(token)].join();
+  const idleNow = fontsAsk(1, 1000);
+  await until(() => x.t_fonts_status(1) !== -1, 1000);
+  check('cd_fonts_wait: nothing loading answers READY, from the event loop, and the export flushes', () =>
+    (idleNow === -1 && fontsHeard(1) === `${FONTS_READY},1` && x.t_stale() === 0) || `${idleNow} then ${fontsHeard(1)}, stale ${x.t_stale()}`);
+  const changedBefore = x.t_fonts_changed();
+  const fontStart = performance.now();
+  const face = new FontFace('slow', 'url(/slow-font)');
+  document.fonts.add(face);
+  face.load().catch(() => {});
+  const loadingNow = [fontsAsk(2, 100), fontsAsk(3, 1200), fontsAsk(4, 0)];
+  await until(() => x.t_fonts_status(2) !== -1, 1000);
+  const timeoutAt = performance.now() - fontStart;
+  await until(() => x.t_fonts_status(3) !== -1 && x.t_fonts_status(4) !== -1, 3000);
+  const readyAt = performance.now() - fontStart;
+  const changedAt = await until(() => x.t_fonts_changed() !== changedBefore, 1000) && performance.now() - fontStart;
+  await sleep(1300 - (performance.now() - fontStart)); // past token 3's deadline: no second answer
+  document.fonts.delete(face);
+  check('cd_fonts_wait: a font still loading past the deadline answers TIMEOUT; given time, or no deadline, READY once it is done; each answered once', () => {
+    const r = [loadingNow.join() === '-1,-1,-1', fontsHeard(2) === `${FONTS_TIMEOUT},1`, timeoutAt < 600, fontsHeard(3) === `${FONTS_READY},1`,
+      fontsHeard(4) === `${FONTS_READY},1`, readyAt >= 700, face.status === 'error'];
+    return r.every(Boolean) || JSON.stringify(r) + ` ${loadingNow}: ${fontsHeard(2)} at ${Math.round(timeoutAt)} ms, ${fontsHeard(3)} and ${fontsHeard(4)} at ${Math.round(readyAt)} ms, the face ${face.status}`;
+  });
+  check('cd_on_fonts_changed: a load done (document.fonts loadingdone) is heard once, and the export flushes', () =>
+    (x.t_fonts_changed() === changedBefore + 1 && changedAt >= 700 && x.t_stale() === 0) || `heard ${x.t_fonts_changed() - changedBefore} at ${changedAt}, stale ${x.t_stale()}`);
+  Object.defineProperty(document, 'fonts', { configurable: true, get: () => undefined });
+  let noFontsNow;
+  try { noFontsNow = fontsAsk(5, 100); } catch (e) { noFontsNow = String(e); }
+  delete document.fonts;
+  await until(() => x.t_fonts_status(5) !== -1, 1000);
+  await sleep(150);
+  check('no document.fonts: cd_fonts_wait answers UNAVAILABLE once, from the event loop', () =>
+    (noFontsNow === -1 && fontsHeard(5) === `${FONTS_UNAVAILABLE},1`) || `${noFontsNow} then ${fontsHeard(5)}`);
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>
