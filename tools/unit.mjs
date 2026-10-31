@@ -19,6 +19,7 @@ const srv = http.createServer((q, r) => {
     q.on('end', () => { r.writeHead(201); r.end(`${q.headers.authorization || ''}|${q.headers['content-type'] || ''}|${q.headers['x-last'] || ''}`); });
     return;
   }
+  if (q.url === '/slow-font') { setTimeout(() => { r.writeHead(200, { 'content-type': 'font/woff2' }); r.end('no font'); }, 800); return; } // a font that loads slowly, then fails
   if (q.url === '/slow') { setTimeout(() => { r.writeHead(200); r.end('late'); }, 2000); return; }
   if (q.url === '/echo' && q.method === 'POST') {
     const parts = [];

@@ -847,6 +847,35 @@ var cdom = (() => {
     shareAnswer(exports.cd_share_done, token, sharing);
   }
 
+  // The page's fonts (src/cdom_fonts.c): C asks to hear when they are ready, with a deadline, and
+  // hears when a load is done.
+  const FONTS_TIMEOUT = 0;
+  const FONTS_READY = 1;
+  const FONTS_UNAVAILABLE = 2;
+  // Answers once with token, from the event loop: ready, unavailable without document.fonts, or
+  // timeout when deadlineMs passes first (0: no deadline).
+  function fonts_wait(token, deadlineMs) {
+    let answered = false;
+    const answer = (status) => {
+      if (answered) {
+        return;
+      }
+      answered = true;
+      exports.cd_fonts_done(token, status);
+    };
+    if (!doc.fonts) {
+      Promise.resolve().then(() => answer(FONTS_UNAVAILABLE));
+      return;
+    }
+    if (deadlineMs) {
+      setTimeout(() => answer(FONTS_TIMEOUT), deadlineMs);
+    }
+    doc.fonts.ready.then(() => answer(FONTS_READY));
+  }
+  function fontsChanged() {
+    exports.cd_fonts_changed();
+  }
+
   // An input's value into C memory as UTF-8; returns the bytes written.
   function input(id, destPtr, capacity) {
     const result = textEncoder.encodeInto(String(nodes[id].value ?? ""), bytes(destPtr, capacity));
@@ -873,6 +902,7 @@ var cdom = (() => {
         url_read, url_go, title,
         language, prefs,
         clipboard_write, share,
+        fonts_wait,
       },
       env: env || {},
     };
@@ -902,6 +932,9 @@ var cdom = (() => {
     }
     if (exports.cd_prefs_changed) {
       listenPrefs();
+    }
+    if (exports.cd_fonts_changed && doc.fonts) {
+      doc.fonts.addEventListener("loadingdone", fontsChanged);
     }
     exports.cd_start((Math.random() * 4294967296) >>> 0);
     return exports;
