@@ -136,6 +136,18 @@ M = [
   ('random-zero-asks', 'src/cdom_random.c', '  while (len) {', '  for (int once = 1; once || len; once = 0) {', UNIT, 'FAIL cd_random_bytes: two fills differ'),
   ('random-unavailable-ok', 'shim/cdom.js', '    if (!globalThis.crypto || !crypto.getRandomValues) {\n      return 0;', '    if (!globalThis.crypto || !crypto.getRandomValues) {\n      return 1;', UNIT, 'FAIL no crypto.getRandomValues'),
   ('random-unavailable-ignored', 'src/cdom_random.c', '    if (!j_random(p, n)) return CD_RANDOM_UNAVAILABLE;', '    j_random(p, n);', UNIT, 'FAIL no crypto.getRandomValues'),
+  ('url-parts-swapped', 'shim/cdom.js', 'const URL_PARTS = ["pathname", "search", "hash"];', 'const URL_PARTS = ["pathname", "hash", "search"];', UNIT, 'FAIL cd_url_read'),
+  ('url-all-path-only', 'shim/cdom.js', '    return location.pathname + location.search + location.hash;', '    return location.pathname;', UNIT, 'FAIL cd_url_read'),
+  ('url-read-overflow', 'shim/cdom.js', '    bytes(destPtr, capacity).set(encoded.subarray(0, capacity));', '    bytes(destPtr, encoded.length).set(encoded);', UNIT, 'FAIL cd_url_read'),
+  ('url-read-written', 'shim/cdom.js', '    return encoded.length;', '    return Math.min(encoded.length, capacity);', UNIT, 'FAIL cd_url_read'),
+  ('url-push-is-replace', 'src/cdom_url.c', '{ return j_url_go(path, len, 0); }', '{ return j_url_go(path, len, 1); }', UNIT, 'FAIL cd_url_push adds'),
+  ('url-replace-is-push', 'src/cdom_url.c', '{ return j_url_go(path, len, 1); }', '{ return j_url_go(path, len, 0); }', UNIT, 'FAIL cd_url_push adds'),
+  ('url-refused-ok', 'shim/cdom.js', '    } catch {\n      return 0;', '    } catch {\n      return 1;', UNIT, 'FAIL cd_url_push refused'),
+  ('url-let-go-ok', 'shim/cdom.js', '    return +(location.href === wanted);', '    return 1;', UNIT, 'FAIL cd_url_push refused'),
+  ('url-no-popstate', 'shim/cdom.js', '      addEventListener("popstate", urlChanged);', '', UNIT, 'FAIL back, forward'),
+  ('url-popped-path-only', 'shim/cdom.js', '    const path = textEncoder.encode(urlOf(URL_PARTS.length));', '    const path = textEncoder.encode(urlOf(0));', UNIT, 'FAIL back, forward'),
+  ('url-changed-no-flush', 'src/cdom_url.c', '  cd_on_url(path, len);\n  cd_flush();', '  cd_on_url(path, len);', UNIT, 'FAIL back, forward'),
+  ('url-title-noop', 'shim/cdom.js', '    doc.title = utf8(textPtr, textLen);', '    utf8(textPtr, textLen);', UNIT, 'FAIL cd_set_title'),
   ('mini-strong', 'src/mini.c', '__attribute__((weak, no_builtin)) int memcmp', '__attribute__((no_builtin)) int memcmp', LINK, "FAIL an app's own libc"),
 ]
 
