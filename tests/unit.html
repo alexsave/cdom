@@ -421,5 +421,69 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
   Crypto.prototype.getRandomValues = realRandom;
   check('no crypto.getRandomValues: cd_random_bytes answers UNAVAILABLE and writes nothing', () =>
     (unavailable === 0 && untouched) || `answered ${unavailable}, untouched ${untouched}`);
+
+  // The address (16 in unit.c): C pushes and replaces paths the page writes into its memory, and
+  // hears back and forward.
+  x.t_url_section();
+  const startUrl = location.href;
+  const putPath = (s) => { const e = new TextEncoder().encode(s); new Uint8Array(x.memory.buffer, x.t_url_in(), e.length).set(e); return e.length; };
+  const urlOut = (n) => new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.t_url_out(), n));
+  const urlHeard = () => new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.t_url_heard(), x.t_url_heard_len()));
+  const URL_PATH = 0, URL_SEARCH = 1, URL_HASH = 2, URL_ALL = 3;
+  const replaced = x.t_url_replace(putPath('/unit.html?q=a%20b&r=1#frag-é'));
+  check('cd_url_read: the path, the search and the hash, and all three as one path; a part longer than the room answers its length and writes only the room', () => {
+    const read = (part) => urlOut(x.t_url_read(part, 256));
+    const all = '/unit.html?q=a%20b&r=1#frag-%C3%A9';
+    const short = x.t_url_read(URL_ALL, 5);
+    const shortOut = urlOut(7);
+    const r = [replaced === 1, read(URL_PATH) === '/unit.html', read(URL_SEARCH) === '?q=a%20b&r=1', read(URL_HASH) === '#frag-%C3%A9',
+      read(URL_ALL) === all, short === all.length, shortOut === '/unit**'];
+    x.t_url_replace(putPath('/unit.html'));
+    const r2 = [x.t_url_read(URL_SEARCH, 256) === 0, x.t_url_read(URL_HASH, 256) === 0];
+    return [...r, ...r2].every(Boolean) || JSON.stringify([...r, ...r2]) + ' ' + read(URL_ALL);
+  });
+  check('cd_url_push adds a history entry and cd_url_replace changes the current one; a relative path resolves; neither calls cd_on_url', () => {
+    const entries = history.length;
+    const pushed = x.t_url_push(putPath('/route/a'));
+    const afterPush = [location.pathname, history.length];
+    const replacedNow = x.t_url_replace(putPath('/route/b?x=1'));
+    const afterReplace = [location.pathname + location.search, history.length];
+    const relative = x.t_url_push(putPath('c#d'));
+    const r = [pushed === 1, afterPush[0] === '/route/a', afterPush[1] === entries + 1, replacedNow === 1, afterReplace[0] === '/route/b?x=1',
+      afterReplace[1] === entries + 1, relative === 1, location.pathname + location.hash === '/route/c#d', history.length === entries + 2, x.t_url_heard_count() === 0];
+    return r.every(Boolean) || JSON.stringify(r) + ` ${afterPush} ${afterReplace} ${location.href} ${history.length - entries}`;
+  });
+  const popped = (n) => until(() => x.t_url_heard_count() === n, 2000);
+  history.back();
+  const back = await popped(1) && urlHeard();
+  history.forward();
+  const forward = await popped(2) && urlHeard();
+  const anchor = document.createElement('a');
+  anchor.href = '#here';
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  const fragment = await popped(3) && urlHeard();
+  check('back, forward and a link to a #fragment reach cd_on_url with the new path, answered without a cd_flush', () =>
+    (back === '/route/b?x=1' && forward === '/route/c#d' && fragment === '/route/c#here' && x.t_stale() === 0) || `back ${back}, forward ${forward}, fragment ${fragment}, stale ${x.t_stale()}`);
+  check('cd_url_push refused (another origin, a SecurityError as Safari throws past its limit, a change the browser let go, no History API): REFUSED, the address as it was', () => {
+    const was = location.href, entries = history.length;
+    const realPush = History.prototype.pushState;
+    const answers = [x.t_url_push(putPath('http://example.com/x')), x.t_url_replace(putPath('http://example.com/y'))];
+    History.prototype.pushState = () => { throw new DOMException('too many', 'SecurityError'); };
+    answers.push(x.t_url_push(putPath('/route/limit')));
+    History.prototype.pushState = () => {};
+    answers.push(x.t_url_push(putPath('/route/ignored')));
+    History.prototype.pushState = undefined;
+    answers.push(x.t_url_push(putPath('/route/none')));
+    History.prototype.pushState = realPush;
+    const r = [answers.every((a) => a === 0), location.href === was, history.length === entries];
+    return r.every(Boolean) || JSON.stringify(r) + ` answers ${answers}, at ${location.href}`;
+  });
+  check('cd_set_title: the document\'s title, from UTF-8', () => {
+    x.t_title(putPath('Ünit: cartes à jouer'));
+    return document.title === 'Ünit: cartes à jouer' || document.title;
+  });
+  history.replaceState(null, '', startUrl);
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>

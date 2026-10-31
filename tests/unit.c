@@ -5,6 +5,7 @@
 #include "../src/cdom_store.h"
 #include "../src/cdom_audio.h"
 #include "../src/cdom_random.h"
+#include "../src/cdom_url.h"
 
 #define EXPORT(n) __attribute__((export_name(n)))
 #define L(s) CD_LIT(s)
@@ -676,3 +677,34 @@ EXPORT("t_random_new") uint32_t t_random_new(void) {
   }
   return differs;
 }
+
+/* 16. The address: the page writes a path into url_in and has C push, replace or title with it;
+ * reads land in url_out, which is filled with '*' first so the page sees what was written. */
+static char url_in[256], url_out[256];
+static uint8_t url_heard[256];
+static uint32_t url_heard_len, url_heard_count;
+static cd_id url_txt;
+EXPORT("t_url_section") void t_url_section(void) {
+  cd_id s = section("url");
+  cd_at(s, 0);
+  cd_open(L("i")); cd_text(L("url")); cd_name(url_txt = cd_id_new()); cd_close();
+}
+EXPORT("t_url_in") char *t_url_in(void) { return url_in; }
+EXPORT("t_url_out") char *t_url_out(void) { return url_out; }
+EXPORT("t_url_read") uint32_t t_url_read(uint32_t part, uint32_t cap) {
+  __builtin_memset(url_out, '*', sizeof url_out);
+  return cd_url_read(part, url_out, cap);
+}
+EXPORT("t_url_push") uint32_t t_url_push(uint32_t len) { return cd_url_push(url_in, len); }
+EXPORT("t_url_replace") uint32_t t_url_replace(uint32_t len) { return cd_url_replace(url_in, len); }
+EXPORT("t_title") void t_title(uint32_t len) { cd_set_title(url_in, len); }
+void cd_on_url(const uint8_t *path, uint32_t len) {
+  enter();
+  url_heard_count++;
+  url_heard_len = len;
+  for (uint32_t i = 0; i < len && i < sizeof url_heard; i++) url_heard[i] = path[i];
+  hold(url_txt); /* no cd_flush: the export does it */
+}
+EXPORT("t_url_heard") uint8_t *t_url_heard(void) { return url_heard; }
+EXPORT("t_url_heard_len") uint32_t t_url_heard_len(void) { return url_heard_len; }
+EXPORT("t_url_heard_count") uint32_t t_url_heard_count(void) { return url_heard_count; }
