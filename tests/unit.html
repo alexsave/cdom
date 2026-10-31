@@ -297,15 +297,17 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
       !!clip && near(at(0.25), 0.25) && near(at(0.75), -0.25), x.t_stale() === 0];
     return r.every(Boolean) || JSON.stringify(r) + ' ' + [1, 2, 3, 4].map(x.t_audio_loaded) + (clip ? ' ' + at(0.25) + ' ' + at(0.75) : ' no clip');
   });
-  // A freed clip's id comes back from the next load, and the shim lets its buffer go.
+  // A freed clip: the shim lets its buffer go (before anything takes its id), and the next load
+  // takes the id.
   const freedBuffer = heard.decoded.find((w) => w.deref() && Math.abs(w.deref().duration - 0.01) < 0.001);
-  x.t_audio_free(3);
-  x.t_audio_load(5, 10);
-  await until(() => x.t_audio_loaded(5) !== -1);
+  x.t_audio_free(x.t_audio_loaded(4));
   await sleep(0);
   if (window.gc) gc();
-  check('cd_audio_free: the id comes back from the next load, and the shim lets the buffer go', () =>
-    (x.t_audio_loaded(5) === 3 && !!window.gc && freedBuffer.deref() === undefined) || `id ${x.t_audio_loaded(5)}, gc ${!!window.gc}, buffer kept ${!!freedBuffer.deref()}`);
+  const bufferGone = !!window.gc && freedBuffer.deref() === undefined;
+  x.t_audio_load(5, 10);
+  await until(() => x.t_audio_loaded(5) !== -1);
+  check('cd_audio_free: the shim lets the buffer go, and the next load takes the id', () =>
+    (bufferGone && x.t_audio_loaded(5) === x.t_audio_loaded(4)) || `buffer gone ${bufferGone} (gc ${!!window.gc}), ids ${x.t_audio_loaded(4)} then ${x.t_audio_loaded(5)}`);
   check('playing a clip that is not loaded traps, and so does freeing a free clip', () => {
     const traps = (f) => { try { f(); return false; } catch (e) { return e instanceof WebAssembly.RuntimeError; } };
     return (traps(() => x.t_audio_play_unloaded(9)) && traps(() => x.t_audio_free(9))) || 'no trap';
