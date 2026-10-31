@@ -455,6 +455,13 @@ var cdom = (() => {
   function utf8(ptr, length) {
     return textDecoder.decode(bytes(ptr, length));
   }
+  // A string into C memory as UTF-8, at most capacity bytes; returns its whole length in bytes,
+  // so C can tell it was cut and ask again with more room.
+  function writeString(text, destPtr, capacity) {
+    const encoded = textEncoder.encode(text);
+    bytes(destPtr, capacity).set(encoded.subarray(0, capacity));
+    return encoded.length;
+  }
   // Bytes into C memory, in room C makes with cd_bytes_buf, then answer(arg, ptr, length).
   function deliver(answer, arg, data) {
     const incoming = new Uint8Array(data);
@@ -727,9 +734,7 @@ var cdom = (() => {
   }
   // One part of the address into C memory as UTF-8, at most capacity bytes; returns its length.
   function url_read(part, destPtr, capacity) {
-    const encoded = textEncoder.encode(urlOf(part));
-    bytes(destPtr, capacity).set(encoded.subarray(0, capacity));
-    return encoded.length;
+    return writeString(urlOf(part), destPtr, capacity);
   }
   // Shows the path in C memory in the address bar, as a new history entry or in place of the
   // current one: 1 when the address is now that path, 0 when the browser threw (another origin,
@@ -759,6 +764,55 @@ var cdom = (() => {
     doc.title = utf8(textPtr, textLen);
   }
 
+  // The user's languages and display preferences (src/cdom_locale.c): read here, used by C.
+  const PREFS_DARK = 1;
+  const PREFS_REDUCED_MOTION = 2;
+  const DARK_QUERY = "(prefers-color-scheme: dark)";
+  const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+  const prefQueries = []; // the media query lists listened to, held so they live as long as the page
+  // The languages in the user's order: navigator.languages, else navigator.language alone.
+  function languageList() {
+    if (navigator.languages && navigator.languages.length) {
+      return navigator.languages;
+    }
+    return navigator.language ? [navigator.language] : [];
+  }
+  // The index-th language's tag into C memory; returns its length, 0 past the last.
+  function language(index, destPtr, capacity) {
+    const tag = languageList()[index];
+    if (!tag) {
+      return 0;
+    }
+    return writeString(tag, destPtr, capacity);
+  }
+  // A media query list, or null in a browser without matchMedia.
+  function mediaQuery(query) {
+    return window.matchMedia ? matchMedia(query) : null;
+  }
+  function matches(query) {
+    const list = mediaQuery(query);
+    return list ? list.matches : false;
+  }
+  // The preferences as C's bits: dark, reduced motion.
+  function prefs() {
+    const dark = matches(DARK_QUERY) ? PREFS_DARK : 0;
+    const reducedMotion = matches(REDUCED_MOTION_QUERY) ? PREFS_REDUCED_MOTION : 0;
+    return dark | reducedMotion;
+  }
+  function prefsChanged() {
+    exports.cd_prefs_changed(prefs());
+  }
+  // Listened for from start, by an app that links src/cdom_locale.c (its export is there).
+  function listenPrefs() {
+    for (const query of [DARK_QUERY, REDUCED_MOTION_QUERY]) {
+      const list = mediaQuery(query);
+      if (list) {
+        list.addEventListener("change", prefsChanged);
+        prefQueries.push(list);
+      }
+    }
+  }
+
   // An input's value into C memory as UTF-8; returns the bytes written.
   function input(id, destPtr, capacity) {
     const result = textEncoder.encodeInto(String(nodes[id].value ?? ""), bytes(destPtr, capacity));
@@ -783,6 +837,7 @@ var cdom = (() => {
         audio_load, audio_free, audio_play, audio_stop, audio_gain, audio_master, audio_state,
         random,
         url_read, url_go, title,
+        language, prefs,
       },
       env: env || {},
     };
@@ -809,6 +864,9 @@ var cdom = (() => {
     inbox = u32[layout + 2];
     if (exports.cd_url_changed) {
       addEventListener("popstate", urlChanged);
+    }
+    if (exports.cd_prefs_changed) {
+      listenPrefs();
     }
     exports.cd_start((Math.random() * 4294967296) >>> 0);
     return exports;

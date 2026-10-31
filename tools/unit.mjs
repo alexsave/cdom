@@ -1,5 +1,5 @@
 // Runs tests/out/unit.html in headless Chrome (tests/build.sh first): the in-page cases, then the
-// ones that need the outside: a resize (CDP) and the network (this server's WebSocket echo, a POST
+// ones that need the outside: a resize and the display preferences (CDP) and the network (this server's WebSocket echo, a POST
 // answered reversed, request headers, a deadline, a port nobody listens on, sockets opened and
 // closed, a large send draining), the click that unlocks sound when the page asks for one, and the
 // click demo tapped. Chrome runs with its autoplay policy enforced (sound only after a real
@@ -89,6 +89,20 @@ try {
   const key = await b.evaluate(`[__x.t_ev(0), __x.t_ev(5), __x.t_ev(6), __kd[0]].join(' ')`);
   await b.evaluate(`__x.t_prevent(0); __x.t_listen_win(4, 0)`);
   if (key === '4 37 0 true') passed.push('a real ArrowLeft: keyCode 37, no character, the default stopped'); else errors.push('real key: ' + key);
+  // The display preferences change (CDP emulates the media queries): dark, then dark with reduced
+  // motion, then neither; cd_on_prefs hears each with what cd_prefs reads (heard: prefs + 1 a digit).
+  const prefsAfter = async (features, last) => {
+    await b.send('Emulation.setEmulatedMedia', { features });
+    for (let i = 0; i < 100; i++) { await sleep(20); if (await b.evaluate(`__x.t_prefs_heard() % 10 === ${last} && __x.t_prefs() === ${last - 1}`)) return true; }
+    return false;
+  };
+  const heardFrom = await b.evaluate('__x.t_prefs_heard()');
+  const darkHeard = await prefsAfter([{ name: 'prefers-color-scheme', value: 'dark' }], 2);
+  const bothHeard = await prefsAfter([{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'reduce' }], 4);
+  const noneHeard = await prefsAfter([], 1);
+  const prefsHeard = await b.evaluate('__x.t_prefs_heard()');
+  if (heardFrom === 0 && darkHeard && bothHeard && noneHeard && await stale() === 0) passed.push('cd_on_prefs: dark, then reduced motion too, then neither, each heard with what cd_prefs reads, and the export flushes');
+  else errors.push(`cd_on_prefs: heard ${prefsHeard} (dark ${darkHeard}, both ${bothHeard}, none ${noneHeard}), stale ${await stale()}`);
   await b.evaluate(`__x.t_net(${PORT})`);
   let v = '';
   for (let i = 0; i < 200; i++) { await sleep(20); v = await b.evaluate(`document.querySelector('#net i').textContent`); if (v !== 'waiting' && v !== 'ws ok') break; }

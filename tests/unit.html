@@ -486,5 +486,44 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
     return document.title === 'Ünit: cartes à jouer' || document.title;
   });
   history.replaceState(null, '', startUrl);
+
+  // Languages and display preferences (17 in unit.c); tools/unit.mjs changes the real media
+  // queries from outside (CDP) once the page is done.
+  x.t_locale_section();
+  const langOut = (n) => new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.t_lang_out(), n));
+  const languages = (n) => { const tags = []; for (let i = 0; i < n; i++) { const len = x.t_language(i, 64); tags.push(len ? langOut(len) : 0); } return tags.join(); };
+  const own = (name, value) => Object.defineProperty(navigator, name, { configurable: true, get: () => value });
+  check('cd_language: the user\'s languages in their order, then 0 past the last; a tag longer than the room answers its length and writes only the room', () => {
+    const real = languages(navigator.languages.length + 1) === [...navigator.languages, 0].join();
+    own('languages', ['fr-CA', 'fr', 'en-GB']);
+    const stubbed = languages(4);
+    const cut = x.t_language(0, 2), cutOut = langOut(4);
+    delete navigator.languages;
+    const r = [real, stubbed === 'fr-CA,fr,en-GB,0', cut === 5, cutOut === 'fr**'];
+    return r.every(Boolean) || JSON.stringify(r) + ` ${stubbed} ${cutOut} (real ${navigator.languages})`;
+  });
+  check('no navigator.languages (or an empty one): navigator.language alone; neither: 0 at once', () => {
+    own('languages', undefined); own('language', 'de-AT');
+    const single = languages(2);
+    own('languages', []); own('language', 'pt');
+    const empty = languages(2);
+    own('language', undefined);
+    const none = languages(1);
+    delete navigator.languages; delete navigator.language;
+    const r = [single === 'de-AT,0', empty === 'pt,0', none === '0'];
+    return r.every(Boolean) || JSON.stringify(r) + ` ${single} / ${empty} / ${none}`;
+  });
+  check('cd_prefs: dark and reduced motion, each from its own media query; 0 without matchMedia', () => {
+    const realMatchMedia = window.matchMedia;
+    const real = x.t_prefs() === (matchMedia('(prefers-color-scheme: dark)').matches ? 1 : 0) + (matchMedia('(prefers-reduced-motion: reduce)').matches ? 2 : 0);
+    const only = (query) => { window.matchMedia = (q) => ({ matches: q === query }); return x.t_prefs(); };
+    const dark = only('(prefers-color-scheme: dark)'), reduced = only('(prefers-reduced-motion: reduce)');
+    window.matchMedia = undefined;
+    let none;
+    try { none = x.t_prefs(); } catch (e) { none = String(e); }
+    window.matchMedia = realMatchMedia;
+    const r = [real, dark === 1, reduced === 2, none === 0];
+    return r.every(Boolean) || JSON.stringify(r) + ` dark ${dark}, reduced ${reduced}, none ${none}`;
+  });
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>
