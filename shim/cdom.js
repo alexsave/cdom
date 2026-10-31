@@ -809,6 +809,44 @@ var cdom = (() => {
     }
   }
 
+  // The clipboard and the share sheet (src/cdom_share.c): C asks with a token, and the answer is
+  // one of C's status codes, always from the event loop. The strings are read during the call.
+  const SHARE_FAILED = 0;
+  const SHARE_DONE = 1;
+  const SHARE_UNAVAILABLE = 2;
+  const SHARE_CANCELLED = 3;
+  // What a rejection means: the user closed the share sheet (an AbortError), or anything else.
+  function shareFailure(error) {
+    return error && error.name === "AbortError" ? SHARE_CANCELLED : SHARE_FAILED;
+  }
+  // Answers answer(token, status) once the browser's promise settles; no promise: the browser has
+  // no such API, answered unavailable all the same from the event loop.
+  function shareAnswer(answer, token, promise) {
+    let status = Promise.resolve(SHARE_UNAVAILABLE);
+    if (promise) {
+      status = promise.then(() => SHARE_DONE, shareFailure);
+    }
+    status.then((settled) => answer(token, settled));
+  }
+  function clipboard_write(token, textPtr, textLen) {
+    const text = utf8(textPtr, textLen);
+    const clipboard = navigator.clipboard;
+    const writing = clipboard && clipboard.writeText ? clipboard.writeText(text) : null;
+    shareAnswer(exports.cd_clipboard_done, token, writing);
+  }
+  // A title and a url, each left out when C gives none.
+  function share(token, titlePtr, titleLen, urlPtr, urlLen) {
+    const data = {};
+    if (titleLen) {
+      data.title = utf8(titlePtr, titleLen);
+    }
+    if (urlLen) {
+      data.url = utf8(urlPtr, urlLen);
+    }
+    const sharing = navigator.share ? navigator.share(data) : null;
+    shareAnswer(exports.cd_share_done, token, sharing);
+  }
+
   // An input's value into C memory as UTF-8; returns the bytes written.
   function input(id, destPtr, capacity) {
     const result = textEncoder.encodeInto(String(nodes[id].value ?? ""), bytes(destPtr, capacity));
@@ -834,6 +872,7 @@ var cdom = (() => {
         random,
         url_read, url_go, title,
         language, prefs,
+        clipboard_write, share,
       },
       env: env || {},
     };

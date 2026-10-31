@@ -104,6 +104,26 @@ try {
   const prefsHeard = await b.evaluate('__x.t_prefs_heard()');
   if (heardFrom === 0 && darkHeard && bothHeard && noneHeard && await stale() === 0) passed.push('cd_on_prefs: dark, then reduced motion too, then neither, each heard with what cd_prefs reads, and the export flushes');
   else errors.push(`cd_on_prefs: heard ${prefsHeard} (dark ${darkHeard}, both ${bothHeard}, none ${noneHeard}), stale ${await stale()}`);
+  // The real clipboard: denied by CDP (the browser refuses as it does outside a gesture) answers
+  // FAILED; granted, the text C wrote (scribbled over in C as the call returns) is on it.
+  const origin = `http://127.0.0.1:${PORT}`;
+  const clipboardAsk = async (token, text) => {
+    await b.evaluate(`(() => {
+      const bytes = new TextEncoder().encode(${JSON.stringify(text)});
+      new Uint8Array(__x.memory.buffer, __x.t_share_text(), bytes.length).set(bytes);
+      __x.t_clipboard(${token}, bytes.length);
+      new Uint8Array(__x.memory.buffer, __x.t_share_text(), 256).fill(42);
+    })()`);
+    for (let i = 0; i < 100 && await b.evaluate(`__x.t_clipboard_status(${token})`) === -1; i++) await sleep(20);
+    return b.evaluate(`[__x.t_clipboard_status(${token}), __x.t_clipboard_answers(${token})].join()`);
+  };
+  await b.sendBrowser('Browser.setPermission', { permission: { name: 'clipboard-write' }, setting: 'denied', origin });
+  const denied = await clipboardAsk(2, 'refused');
+  await b.sendBrowser('Browser.grantPermissions', { permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'], origin });
+  const written = await clipboardAsk(3, 'Ünit: cartes à jouer');
+  const pasted = await b.evaluate('navigator.clipboard.readText()');
+  if (denied === '0,1' && written === '1,1' && pasted === 'Ünit: cartes à jouer' && await stale() === 0) passed.push('cd_clipboard_write: denied, FAILED; granted, DONE and the text on the clipboard, read during the call, and the export flushes');
+  else errors.push(`cd_clipboard_write: denied ${denied}, granted ${written}, pasted ${pasted}, stale ${await stale()}`);
   await b.evaluate(`__x.t_net(${PORT})`);
   let v = '';
   for (let i = 0; i < 200; i++) { await sleep(20); v = await b.evaluate(`document.querySelector('#net i').textContent`); if (v !== 'waiting' && v !== 'ws ok') break; }

@@ -525,5 +525,56 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
     const r = [real, dark === 1, reduced === 2, none === 0];
     return r.every(Boolean) || JSON.stringify(r) + ` dark ${dark}, reduced ${reduced}, none ${none}`;
   });
+
+  // The clipboard and the share sheet (18 in unit.c): navigator.share stubbed (headless Chrome has
+  // no share sheet), the clipboard taken away; tools/unit.mjs writes the real clipboard, denied
+  // and then granted by CDP, once the page is done.
+  x.t_share_section();
+  const SHARE_FAILED = 0, SHARE_DONE = 1, SHARE_UNAVAILABLE = 2, SHARE_CANCELLED = 3;
+  const putShare = (ptr, s) => { const e = new TextEncoder().encode(s); new Uint8Array(x.memory.buffer, ptr, e.length).set(e); return e.length; };
+  const scribble = () => { new Uint8Array(x.memory.buffer, x.t_share_text(), 256).fill(42); new Uint8Array(x.memory.buffer, x.t_share_url(), 256).fill(42); };
+  // Each ask: [status right after the call, status once answered, answers]
+  const shareAsk = async (token, ask, status, answers) => {
+    ask();
+    scribble();
+    const now = status(token);
+    await until(() => status(token) !== -1, 1000);
+    await sleep(20);
+    return [now, status(token), answers(token)];
+  };
+  const clip = (token, text) => shareAsk(token, () => x.t_clipboard(token, putShare(x.t_share_text(), text)), x.t_clipboard_status, x.t_clipboard_answers);
+  const sharing = (token, title, url) => shareAsk(token, () => x.t_share(token, putShare(x.t_share_text(), title), putShare(x.t_share_url(), url)), x.t_share_status, x.t_share_answers);
+  own('clipboard', undefined);
+  const noClipboard = await clip(1, 'gone');
+  delete navigator.clipboard;
+  check('no navigator.clipboard (an insecure page): cd_clipboard_write answers UNAVAILABLE once, from the event loop, and the export flushes', () =>
+    (noClipboard.join() === `-1,${SHARE_UNAVAILABLE},1` && x.t_stale() === 0) || `${noClipboard}, stale ${x.t_stale()}`);
+  own('share', undefined);
+  const noShare = await sharing(1, 'Ünit', '/cards/7');
+  const shared = [];
+  const shareThen = (outcome) => own('share', (data) => { shared.push(data); return outcome(); });
+  shareThen(() => Promise.resolve());
+  const done = await sharing(2, 'Ünit: cartes à jouer', '/cards/7?deck=red');
+  const titleOnly = await sharing(3, 'Ünit', '');
+  const urlOnly = await sharing(4, '', 'https://example.com/a');
+  shareThen(() => Promise.reject(new DOMException('closed', 'AbortError')));
+  const cancelled = await sharing(5, 'Ünit', '/cards/7');
+  shareThen(() => Promise.reject(new DOMException('no gesture', 'NotAllowedError')));
+  const refused = await sharing(6, 'Ünit', '/cards/7');
+  shareThen(() => Promise.reject(new TypeError('nothing to share')));
+  const invalid = await sharing(7, '', '');
+  delete navigator.share;
+  check('no navigator.share (headless, most desktop browsers): cd_share answers UNAVAILABLE once, from the event loop', () =>
+    noShare.join() === `-1,${SHARE_UNAVAILABLE},1` || String(noShare));
+  check('cd_share: the title and the url, read during the call, each left out when empty; DONE once, from the event loop, and the export flushes', () => {
+    const data = shared.slice(0, 3).map((d) => JSON.stringify(d)).join(' ');
+    const r = [done.join() === `-1,${SHARE_DONE},1`, titleOnly.join() === `-1,${SHARE_DONE},1`, urlOnly.join() === `-1,${SHARE_DONE},1`,
+      data === '{"title":"Ünit: cartes à jouer","url":"/cards/7?deck=red"} {"title":"Ünit"} {"url":"https://example.com/a"}', x.t_stale() === 0];
+    return r.every(Boolean) || JSON.stringify(r) + ` ${done} / ${titleOnly} / ${urlOnly}: ${data}`;
+  });
+  check('cd_share: the sheet closed (AbortError) answers CANCELLED; refused (NotAllowedError) or invalid (TypeError) answers FAILED', () => {
+    const r = [cancelled.join() === `-1,${SHARE_CANCELLED},1`, refused.join() === `-1,${SHARE_FAILED},1`, invalid.join() === `-1,${SHARE_FAILED},1`];
+    return r.every(Boolean) || JSON.stringify(r) + ` ${cancelled} / ${refused} / ${invalid}`;
+  });
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>
