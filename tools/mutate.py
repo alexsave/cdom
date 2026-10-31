@@ -148,6 +148,17 @@ M = [
   ('url-popped-path-only', 'shim/cdom.js', '    const path = textEncoder.encode(urlOf(URL_PARTS.length));', '    const path = textEncoder.encode(urlOf(0));', UNIT, 'FAIL back, forward'),
   ('url-changed-no-flush', 'src/cdom_url.c', '  cd_on_url(path, len);\n  cd_flush();', '  cd_on_url(path, len);', UNIT, 'FAIL back, forward'),
   ('url-title-noop', 'shim/cdom.js', '    doc.title = utf8(textPtr, textLen);', '    utf8(textPtr, textLen);', UNIT, 'FAIL cd_set_title'),
+  ('locale-languages-ignored', 'shim/cdom.js', '    if (navigator.languages && navigator.languages.length) {\n      return navigator.languages;', '    if (false) {\n      return navigator.languages;', UNIT, 'FAIL cd_language: the user'),
+  ('locale-past-last', 'shim/cdom.js', 'languageList()[index] ?? ""', 'languageList()[index] ?? "und"', UNIT, 'FAIL cd_language: the user'),
+  ('locale-no-fallback', 'shim/cdom.js', '    return navigator.language ? [navigator.language] : [];', '    return [];', UNIT, 'FAIL no navigator.languages'),
+  ('locale-empty-languages', 'shim/cdom.js', '    if (navigator.languages && navigator.languages.length) {', '    if (navigator.languages) {', UNIT, 'FAIL no navigator.languages'),
+  ('locale-bits-swapped', 'shim/cdom.js', '  const PREFS_DARK = 1;\n  const PREFS_REDUCED_MOTION = 2;', '  const PREFS_DARK = 2;\n  const PREFS_REDUCED_MOTION = 1;', UNIT, 'FAIL cd_prefs: dark and reduced motion'),
+  ('locale-motion-query', 'shim/cdom.js', 'const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";', 'const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: no-preference)";', UNIT, 'FAIL cd_prefs: dark and reduced motion'),
+  ('locale-no-matchmedia-throws', 'shim/cdom.js', '    return window.matchMedia ? matchMedia(query) : null;', '    return matchMedia(query);', UNIT, 'FAIL cd_prefs: dark and reduced motion'),
+  ('locale-no-listen', 'shim/cdom.js', '    if (exports.cd_prefs_changed) {\n      listenPrefs();', '    if (exports.cd_prefs_changed) {', UNIT, 'FAIL cd_on_prefs'),
+  ('locale-motion-unheard', 'shim/cdom.js', '    for (const query of [DARK_QUERY, REDUCED_MOTION_QUERY]) {', '    for (const query of [DARK_QUERY]) {', UNIT, 'FAIL cd_on_prefs'),
+  ('locale-changed-stale', 'shim/cdom.js', '    exports.cd_prefs_changed(prefs());', '    exports.cd_prefs_changed(0);', UNIT, 'FAIL cd_on_prefs'),
+  ('locale-prefs-no-flush', 'src/cdom_locale.c', '  cd_on_prefs(prefs);\n  cd_flush();', '  cd_on_prefs(prefs);', UNIT, 'FAIL cd_on_prefs'),
   ('mini-strong', 'src/mini.c', '__attribute__((weak, no_builtin)) int memcmp', '__attribute__((no_builtin)) int memcmp', LINK, "FAIL an app's own libc"),
 ]
 
