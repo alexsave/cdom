@@ -533,9 +533,9 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
   const SHARE_FAILED = 0, SHARE_DONE = 1, SHARE_UNAVAILABLE = 2, SHARE_CANCELLED = 3;
   const putShare = (ptr, s) => { const e = new TextEncoder().encode(s); new Uint8Array(x.memory.buffer, ptr, e.length).set(e); return e.length; };
   const scribble = () => { new Uint8Array(x.memory.buffer, x.t_share_text(), 256).fill(42); new Uint8Array(x.memory.buffer, x.t_share_url(), 256).fill(42); };
-  // Each ask: [status right after the call, status once answered, answers]
+  // Each ask: [status right after the call, status once answered, answers], or what it threw.
   const shareAsk = async (token, ask, status, answers) => {
-    ask();
+    try { ask(); } catch (e) { return [String(e)]; }
     scribble();
     const now = status(token);
     await until(() => status(token) !== -1, 1000);
