@@ -426,6 +426,7 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
   // hears back and forward.
   x.t_url_section();
   const startUrl = location.href;
+  history.pushState(null, '', '#url'); // an entry of the page's own, so going back never leaves it
   const putPath = (s) => { const e = new TextEncoder().encode(s); new Uint8Array(x.memory.buffer, x.t_url_in(), e.length).set(e); return e.length; };
   const urlOut = (n) => new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.t_url_out(), n));
   const urlHeard = () => new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.t_url_heard(), x.t_url_heard_len()));
