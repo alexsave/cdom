@@ -1,9 +1,10 @@
 // Runs tests/out/unit.html in headless Chrome (tests/build.sh first): the in-page cases, then the
-// ones that need the outside: a resize and the display preferences (CDP) and the network (this server's WebSocket echo, a POST
-// answered reversed, request headers, a deadline, a port nobody listens on, sockets opened and
-// closed, a large send draining), the click that unlocks sound when the page asks for one, and the
-// click demo tapped. Chrome runs with its autoplay policy enforced (sound only after a real
-// gesture) and gc() exposed (the page sees a freed clip's buffer go). Exit 1 on any failure.
+// ones that need the outside: a resize and the display preferences (CDP) and the network (this
+// server's WebSocket echo, a POST answered reversed, request headers, a deadline, a port nobody
+// listens on, sockets opened and closed, a large send draining), the click that unlocks sound
+// when the page asks for one, and the click demo tapped. Chrome runs with its autoplay policy
+// enforced (sound only after a real gesture) and gc() exposed (the page sees a freed clip's buffer
+// go). Exit 1 on any failure.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';

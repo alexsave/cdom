@@ -777,13 +777,9 @@ var cdom = (() => {
     }
     return navigator.language ? [navigator.language] : [];
   }
-  // The index-th language's tag into C memory; returns its length, 0 past the last.
+  // The index-th language's tag into C memory; returns its length, 0 past the last (no tag).
   function language(index, destPtr, capacity) {
-    const tag = languageList()[index];
-    if (!tag) {
-      return 0;
-    }
-    return writeString(tag, destPtr, capacity);
+    return writeString(languageList()[index] ?? "", destPtr, capacity);
   }
   // A media query list, or null in a browser without matchMedia.
   function mediaQuery(query) {
