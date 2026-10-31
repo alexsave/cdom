@@ -3,6 +3,7 @@
 #include "../src/cdom.h"
 #include "../src/cdom_net.h"
 #include "../src/cdom_store.h"
+#include "../src/cdom_audio.h"
 
 #define EXPORT(n) __attribute__((export_name(n)))
 #define L(s) CD_LIT(s)
@@ -552,3 +553,96 @@ void cd_on_http(uint32_t token, uint32_t status, const uint8_t *p, uint32_t len)
   hold(net_txt);
 }
 EXPORT("t_epoch") double t_epoch(void) { return cd_epoch_ms(); }
+
+/* 14. Sound: clips made in C as WAV bytes, loaded, played, scheduled, stopped, made quieter and
+ * muted; ids handed out again. The page reads what Web Audio was asked to do. */
+static cd_id audio_txt;
+EXPORT("t_audio_section") void t_audio_section(void) {
+  cd_id s = section("audio");
+  cd_at(s, 0);
+  cd_open(L("i")); cd_text(L("audio")); cd_name(audio_txt = cd_id_new()); cd_close();
+}
+/* A WAV file of ms milliseconds (ms <= 1000): 8 kHz, 16-bit mono, +0.25 for the first half and
+ * -0.25 for the second. ms 0: eight bytes that are no sound. */
+static uint8_t wav_buf[44 + 2 * 8 * 1000];
+static void put32(uint8_t *p, uint32_t v) { for (int i = 0; i < 4; i++) p[i] = (uint8_t)(v >> (8 * i)); }
+static void put16(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
+static uint32_t wav(uint32_t ms) {
+  if (!ms) {
+    __builtin_memcpy(wav_buf, "RIFFjunk", 8);
+    return 8;
+  }
+  uint32_t n = 8 * ms, data = 2 * n;
+  __builtin_memcpy(wav_buf, "RIFF", 4); put32(wav_buf + 4, 36 + data);
+  __builtin_memcpy(wav_buf + 8, "WAVEfmt ", 8); put32(wav_buf + 16, 16);
+  put16(wav_buf + 20, 1); put16(wav_buf + 22, 1);          /* PCM, one channel */
+  put32(wav_buf + 24, 8000); put32(wav_buf + 28, 16000);   /* samples and bytes per second */
+  put16(wav_buf + 32, 2); put16(wav_buf + 34, 16);          /* bytes per frame, bits per sample */
+  __builtin_memcpy(wav_buf + 36, "data", 4); put32(wav_buf + 40, data);
+  for (uint32_t i = 0; i < n; i++) put16(wav_buf + 44 + 2 * i, i < n / 2 ? 8192 : (uint32_t)-8192);
+  return 44 + data;
+}
+static int32_t audio_clip[16] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+EXPORT("t_audio_load") void t_audio_load(uint32_t token, uint32_t ms) {
+  uint32_t len = wav(ms);
+  cd_audio_load(token, wav_buf, len);
+  __builtin_memset(wav_buf, 0, len); /* the shim copied the bytes during the call */
+}
+void cd_on_audio_loaded(uint32_t token, uint32_t clip) {
+  enter();
+  audio_clip[token & 15] = (int32_t)clip;
+  hold(audio_txt); /* no cd_flush: the export does it */
+}
+EXPORT("t_audio_loaded") int32_t t_audio_loaded(uint32_t token) { return audio_clip[token & 15]; }
+EXPORT("t_audio_free") void t_audio_free(uint32_t clip) { cd_audio_free(clip); }
+EXPORT("t_audio_state") uint32_t t_audio_state(void) { return cd_audio_state(); }
+/* When each voice started being asked for and when it ended (0: not yet), by voice id. */
+static double audio_played_at[64], audio_ended_at[64];
+EXPORT("t_audio_play") uint32_t t_audio_play(uint32_t clip, double gain, double rate, double delay_ms) {
+  double now = cd_now();
+  uint32_t voice = cd_audio_play(clip, gain, rate, delay_ms ? now + delay_ms : 0);
+  audio_played_at[voice & 63] = now;
+  audio_ended_at[voice & 63] = 0;
+  return voice;
+}
+EXPORT("t_audio_took") double t_audio_took(uint32_t voice) {
+  return audio_ended_at[voice & 63] ? audio_ended_at[voice & 63] - audio_played_at[voice & 63] : 0;
+}
+EXPORT("t_audio_stop") void t_audio_stop(uint32_t voice) { cd_audio_stop(voice); }
+EXPORT("t_audio_gain") void t_audio_gain(uint32_t voice, double gain) { cd_audio_set_gain(voice, gain); }
+EXPORT("t_audio_master") void t_audio_master(double gain) { cd_audio_master(gain); }
+EXPORT("t_audio_mute") void t_audio_mute(int32_t on) { cd_audio_mute(on); }
+EXPORT("t_audio_play_unloaded") void t_audio_play_unloaded(uint32_t clip) { cd_audio_play(clip, 1, 1, 0); }
+/* Voices played one after another, each from the last one's ended hook: the ids they get. */
+static uint32_t chain_clip, chain_left, chain_done, chain_lo = ~0u, chain_hi;
+static void chain_play(void) {
+  uint32_t voice = cd_audio_play(chain_clip, 1, 1, 0);
+  if (voice < chain_lo) chain_lo = voice;
+  if (voice > chain_hi) chain_hi = voice;
+}
+EXPORT("t_audio_chain") void t_audio_chain(uint32_t clip, uint32_t n) {
+  chain_clip = clip;
+  chain_left = n;
+  chain_play();
+}
+EXPORT("t_audio_chained") uint32_t t_audio_chained(uint32_t which) { return which == 0 ? chain_done : which == 1 ? chain_lo : chain_hi; }
+void cd_on_audio_ended(uint32_t voice) {
+  enter();
+  audio_ended_at[voice & 63] = cd_now();
+  if (chain_left) {
+    chain_done++;
+    if (--chain_left) chain_play();
+  }
+  hold(audio_txt); /* no cd_flush: the export does it */
+}
+/* Every state the hook heard, in order. */
+static uint32_t audio_states[16], audio_nstates;
+void cd_on_audio_state(uint32_t state) {
+  enter();
+  audio_states[audio_nstates++ & 15] = state;
+}
+EXPORT("t_audio_states") uint32_t t_audio_states(void) {
+  uint32_t all = 0; /* the last eight, one decimal digit each, oldest first */
+  for (uint32_t i = audio_nstates > 8 ? audio_nstates - 8 : 0; i < audio_nstates; i++) all = all * 10 + audio_states[i & 15] + 1;
+  return all;
+}

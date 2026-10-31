@@ -596,6 +596,115 @@ var cdom = (() => {
     storeRequest("readonly", (store) => store.get(key)).then(answer, () => answer());
   }
 
+  // Sound over Web Audio (src/cdom_audio.c): C chooses what plays, when and how loud, and hands
+  // out the clip and voice ids; the shim keeps a decoded buffer per clip and two nodes per voice.
+  const AUDIO_LOCKED = 0;       // the context has never run: the browser waits for a gesture
+  const AUDIO_RUNNING = 1;
+  const AUDIO_SUSPENDED = 2;    // it ran, and stopped: the page is hidden, or the system took it
+  const GESTURES = ["pointerdown", "pointerup", "touchend", "keydown", "click"]; // any may unlock
+  const GAIN_EASE = 0.005;      // seconds: a gain change eases in over a few of these, so it does not click
+  const clips = [];             // the decoded AudioBuffer by clip id
+  const voiceSources = [];      // the playing AudioBufferSourceNode by voice id
+  const voiceGains = [];        // and its GainNode
+  let audioContext;             // made on first use
+  let masterGain;               // every voice goes through it to the speakers
+  let audioRan = false;         // the context has run once: a gesture unlocked it
+  // The audio context, made on first use. The browser keeps it suspended until a gesture, so every
+  // gesture, caught on the window before anything can stop it, resumes it when it is not running:
+  // the first unlocks it, a later one brings it back after the system took it. Hidden, the page
+  // makes no sound (the context suspends); shown again, it resumes.
+  function audio() {
+    if (audioContext) {
+      return audioContext;
+    }
+    audioContext = new AudioContext();
+    masterGain = audioContext.createGain();
+    masterGain.connect(audioContext.destination);
+    audioContext.onstatechange = audioStateChanged;
+    for (const type of GESTURES) {
+      addEventListener(type, unlockAudio, { capture: true, passive: true });
+    }
+    doc.addEventListener(EVENTS[VISIBILITY], audioFollowsPage);
+    return audioContext;
+  }
+  function unlockAudio() {
+    if (audioContext.state !== "running") {
+      audioContext.resume().catch(() => {});
+    }
+  }
+  function audioFollowsPage() {
+    if (doc.hidden) {
+      audioContext.suspend();
+    } else {
+      audioContext.resume().catch(() => {});
+    }
+  }
+  function audioStateChanged() {
+    if (audioContext.state === "running") {
+      audioRan = true;
+    }
+    exports.cd_audio_state_changed(audio_state());
+  }
+  function audio_state() {
+    if (audio().state === "running") {
+      return AUDIO_RUNNING;
+    }
+    return audioRan ? AUDIO_SUSPENDED : AUDIO_LOCKED;
+  }
+  // Decodes the clip from bytes in C memory, copied now (decoding takes the buffer it is given),
+  // then answers with token: the buffer kept as clip, 1, or 0 for bytes that are no sound.
+  function audio_load(token, clip, bytesPtr, length) {
+    const data = copyBytes(bytesPtr, length).buffer;
+    audio().decodeAudioData(data).then(
+      (buffer) => {
+        clips[clip] = buffer;
+        exports.cd_audio_loaded(token, clip, 1);
+      },
+      () => exports.cd_audio_loaded(token, clip, 0));
+  }
+  function audio_free(clip) {
+    clips[clip] = undefined;
+  }
+  // Plays clip as voice, through a gain of its own, at playback rate, from atMs on cd_now()'s clock
+  // (a time already past: now). Its ended answer comes when it played out or was stopped.
+  function audio_play(clip, voice, gain, rate, atMs) {
+    const context = audio();
+    const source = context.createBufferSource();
+    const voiceGain = context.createGain();
+    source.buffer = clips[clip];
+    source.playbackRate.value = rate;
+    voiceGain.gain.value = gain;
+    source.connect(voiceGain);
+    voiceGain.connect(masterGain);
+    source.$v = voice;
+    source.onended = voiceEnded;
+    voiceSources[voice] = source;
+    voiceGains[voice] = voiceGain;
+    source.start(Math.max(0, context.currentTime + (atMs - performance.now()) / 1000));
+  }
+  // One handler for every voice (no function made per play): the shim lets go of the voice's
+  // nodes, then C frees its id.
+  function voiceEnded(event) {
+    const voice = event.target.$v;
+    voiceGains[voice].disconnect();
+    voiceSources[voice] = undefined;
+    voiceGains[voice] = undefined;
+    exports.cd_audio_ended(voice);
+  }
+  function audio_stop(voice) {
+    voiceSources[voice].stop();
+  }
+  function easeGain(node, gain) {
+    node.gain.setTargetAtTime(gain, audioContext.currentTime, GAIN_EASE);
+  }
+  function audio_gain(voice, gain) {
+    easeGain(voiceGains[voice], gain);
+  }
+  function audio_master(gain) {
+    audio();
+    easeGain(masterGain, gain);
+  }
+
   // An input's value into C memory as UTF-8; returns the bytes written.
   function input(id, destPtr, capacity) {
     const result = textEncoder.encodeInto(String(nodes[id].value ?? ""), bytes(destPtr, capacity));
@@ -617,6 +726,7 @@ var cdom = (() => {
         set_text, set_text_num, set_attr, set_class, style, style_num, encode, image_bytes, remove, free, move, clear,
         detach, attach, input, win, unwin, hit, viewport, rect, timer, raf, now, ws_open, ws_send, ws_close, ws_buffered, http, epoch,
         store_put, store_get, store_del,
+        audio_load, audio_free, audio_play, audio_stop, audio_gain, audio_master, audio_state,
       },
       env: env || {},
     };

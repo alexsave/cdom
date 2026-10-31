@@ -1,7 +1,9 @@
 // Runs tests/out/unit.html in headless Chrome (tests/build.sh first): the in-page cases, then the
 // ones that need the outside: a resize (CDP) and the network (this server's WebSocket echo, a POST
 // answered reversed, request headers, a deadline, a port nobody listens on, sockets opened and
-// closed, a large send draining). Exit 1 on any failure.
+// closed, a large send draining), the click that unlocks sound when the page asks for one, and the
+// click demo tapped. Chrome runs with its autoplay policy enforced (sound only after a real
+// gesture) and gc() exposed (the page sees a freed clip's buffer go). Exit 1 on any failure.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -48,14 +50,23 @@ srv.on('upgrade', (req, sock) => { // a minimal RFC 6455 echo: binary frames und
   });
 });
 await new Promise((r) => srv.listen(PORT, '127.0.0.1', r));
-const b = await launch();
+const b = await launch(['--autoplay-policy=document-user-activation-required', '--js-flags=--expose-gc']);
+// A real click (CDP input, so a user gesture to Chrome) at a point where the page listens for nothing.
+const click = async (x, y) => {
+  for (const type of ['mousePressed', 'mouseReleased']) await b.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
+};
 const errors = [];
 let passed = [];
 try {
   await b.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false });
   await b.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/unit.html` });
   let r;
-  for (let i = 0; i < 300 && !r; i++) { await sleep(50); r = await b.evaluate('window.RESULT'); }
+  let clicked = false;
+  for (let i = 0; i < 400 && !r; i++) {
+    await sleep(50);
+    if (!clicked && await b.evaluate('window.WANT_GESTURE === true')) { await click(990, 690); clicked = true; }
+    r = await b.evaluate('window.RESULT');
+  }
   if (!r) errors.push('the page never finished');
   else { errors.push(...r.errors); passed = r.passed; }
   // A resize arrives as CD_EV_RESIZE with the new size, and the app's patch lands without a cd_flush.
@@ -108,6 +119,16 @@ try {
   for (let i = 0; i < 300; i++) { await sleep(20); buffered = await b.evaluate('__x.t_ws_buffered()'); if (buffered === 0) break; }
   await b.evaluate('__x.t_ws_big_close()');
   if (after >= 4 << 20 && buffered === 0) passed.push('cd_ws_buffered: the bytes just sent, then 0 once drained'); else errors.push(`buffered: ${after} after the send, ${buffered} later`);
+  // The click demo: the hint until a tap, then the tap heard (the voice played out) and the hint gone.
+  await b.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/click.html` });
+  const page = () => b.evaluate(`[...document.querySelectorAll('#m p')].map((p) => p.textContent).join('|')`);
+  let before = '';
+  for (let i = 0; i < 100 && !before.includes('clicks'); i++) { await sleep(20); before = await page(); }
+  const at = await b.evaluate(`(() => { const r = document.querySelector('#m button').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
+  await click(at[0], at[1]);
+  let tapped = '';
+  for (let i = 0; i < 200 && tapped !== 'sound on|clicks played: 1'; i++) { await sleep(20); tapped = await page(); }
+  if (before === 'tap for sound|clicks played: 0' && tapped === 'sound on|clicks played: 1') passed.push('the click demo: "tap for sound" until a tap, then the tap\'s click played'); else errors.push(`demo: ${before} then ${tapped}`);
 } catch (e) { errors.push('threw: ' + String(e.message || e).slice(0, 300)); } finally { await b.close(); srv.close(); }
 for (const p of passed) console.log('ok  ', p);
 for (const e of errors) console.log('FAIL', e);

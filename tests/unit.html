@@ -6,10 +6,22 @@
 const errors = [], passed = [], trace = [];
 let tracing = false;
 const real = WebAssembly.instantiateStreaming;
+let shim; // the shim's imports, to ask it directly what it still holds
 WebAssembly.instantiateStreaming = (res, imp) => {
   for (const k of ['strings', 'walk']) { const f = imp.cdom[k]; imp.cdom[k] = (...a) => { if (tracing) trace.push(k); return f(...a); }; }
+  shim = imp.cdom;
   return real(res, imp);
 };
+// Web Audio seen from outside: the nodes the shim makes, what it connects and disconnects, the
+// buffers it decodes (weakly held, to see a freed one go), and the resumes it asks for.
+const heard = { gains: [], sources: [], edges: [], cut: [], decoded: [], resumes: 0 };
+const after = (proto, name, f) => { const real = proto[name]; proto[name] = function (...a) { const r = real.apply(this, a); f(this, r, a); return r; }; };
+after(BaseAudioContext.prototype, 'createGain', (c, node) => heard.gains.push(node));
+after(BaseAudioContext.prototype, 'createBufferSource', (c, node) => heard.sources.push(node));
+after(AudioNode.prototype, 'connect', (from, r, [to]) => heard.edges.push([from, to]));
+after(AudioNode.prototype, 'disconnect', (node) => heard.cut.push(node));
+after(BaseAudioContext.prototype, 'decodeAudioData', (c, p) => p.then((b) => heard.decoded.push(new WeakRef(b)), () => {}));
+after(AudioContext.prototype, 'resume', () => heard.resumes++);
 const $ = (s) => document.querySelector(s);
 const SVG = 'http://www.w3.org/2000/svg', HTML = 'http://www.w3.org/1999/xhtml';
 function check(name, fn) {
@@ -266,5 +278,119 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
   const early = await until(() => x.t_store(3, 0) !== -2, 300);
   check('cd_store: a get not answered by its deadline answers -1', () => (early && x.t_store(3, 0) === -1 && performance.now() - t0 < 300) || `answered ${early} with ${x.t_store(3, 0)}`);
   await new Promise((r) => { tx.oncomplete = r; });
+
+  // Sound (14 in unit.c). Chrome lets no page make sound before a real gesture, so the context is
+  // locked until tools/unit.mjs clicks (CDP input) when the page asks for it.
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const near = (a, b) => Math.abs(a - b) < 1e-3;
+  x.t_audio_section();
+  const lockedAtStart = x.t_audio_state();
+  x.t_audio_load(1, 200); x.t_audio_load(2, 0);
+  await until(() => x.t_audio_loaded(1) !== -1 && x.t_audio_loaded(2) !== -1);
+  x.t_audio_load(3, 1000); // takes the id the bytes that were no sound gave back
+  x.t_audio_load(4, 10);
+  await until(() => x.t_audio_loaded(3) !== -1 && x.t_audio_loaded(4) !== -1);
+  check('cd_audio_load: a WAV made in C decodes (its samples as written), bytes that are no sound answer FAILED, and its id is handed out again', () => {
+    const clip = heard.decoded.map((w) => w.deref()).find((b) => b && Math.abs(b.duration - 0.2) < 0.001);
+    const at = (f) => clip.getChannelData(0)[Math.floor(clip.length * f)];
+    const r = [x.t_audio_loaded(1) === 1, x.t_audio_loaded(2) === 0, x.t_audio_loaded(3) === 2, x.t_audio_loaded(4) === 3,
+      !!clip && near(at(0.25), 0.25) && near(at(0.75), -0.25), x.t_stale() === 0];
+    return r.every(Boolean) || JSON.stringify(r) + ' ' + [1, 2, 3, 4].map(x.t_audio_loaded) + (clip ? ' ' + at(0.25) + ' ' + at(0.75) : ' no clip');
+  });
+  // A freed clip's id comes back from the next load, and the shim lets its buffer go.
+  const freedBuffer = heard.decoded.find((w) => w.deref() && Math.abs(w.deref().duration - 0.01) < 0.001);
+  x.t_audio_free(3);
+  x.t_audio_load(5, 10);
+  await until(() => x.t_audio_loaded(5) !== -1);
+  await sleep(0);
+  if (window.gc) gc();
+  check('cd_audio_free: the id comes back from the next load, and the shim lets the buffer go', () =>
+    (x.t_audio_loaded(5) === 3 && !!window.gc && freedBuffer.deref() === undefined) || `id ${x.t_audio_loaded(5)}, gc ${!!window.gc}, buffer kept ${!!freedBuffer.deref()}`);
+  check('playing a clip that is not loaded traps, and so does freeing a free clip', () => {
+    const traps = (f) => { try { f(); return false; } catch (e) { return e instanceof WebAssembly.RuntimeError; } };
+    return (traps(() => x.t_audio_play_unloaded(9)) && traps(() => x.t_audio_free(9))) || 'no trap';
+  });
+  // The lock: a synthetic gesture asks for a resume, but only a real one unlocks the context.
+  const asked = heard.resumes;
+  document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+  await sleep(100);
+  check('cd_audio_state is LOCKED until a gesture; a synthetic one asks the context to resume and leaves it locked', () =>
+    (lockedAtStart === 0 && heard.resumes === asked + 1 && x.t_audio_state() === 0) || `state ${lockedAtStart} then ${x.t_audio_state()}, resumes ${heard.resumes - asked}`);
+  window.WANT_GESTURE = true;
+  const unlocked = await until(() => x.t_audio_state() === 1 && x.t_audio_states() % 10 === 2, 5000); // the state changes, then its event comes
+  check('a real gesture (a click from tools/unit.mjs) unlocks it: RUNNING, and cd_on_audio_state hears it', () =>
+    (unlocked && x.t_audio_states() % 10 === 2) || `state ${x.t_audio_state()}, heard ${x.t_audio_states()}`);
+  const short = x.t_audio_loaded(1), long = x.t_audio_loaded(3), tick = x.t_audio_loaded(5);
+  // Playback: the graph a voice makes, then the ended answer once it played out.
+  const master = heard.edges.find(([, to]) => to instanceof AudioDestinationNode)[0];
+  const v1 = x.t_audio_play(short, 0.5, 1, 0);
+  const source = heard.sources.at(-1), gain = heard.gains.at(-1);
+  const edge = (a, b) => heard.edges.some(([from, to]) => from === a && to === b);
+  const graph = [edge(source, gain), edge(gain, master), source.buffer && near(source.buffer.duration, 0.2), near(gain.gain.value, 0.5), source.playbackRate.value === 1];
+  await until(() => x.t_audio_took(v1) > 0);
+  check('cd_audio_play: clip, source, voice gain, master, speakers; cd_on_audio_ended once it played out, without a cd_flush, and the voice let go', () => {
+    const r = [...graph, x.t_audio_took(v1) >= 180, x.t_audio_took(v1) < 1000, heard.cut.includes(gain), x.t_stale() === 0];
+    return r.every(Boolean) || JSON.stringify(r) + ' took ' + x.t_audio_took(v1);
+  });
+  check('a voice whose ended answer came: the shim holds nothing of it, and C ignores a stop or a gain on its id', () => {
+    let empty = false;
+    try { shim.audio_stop(v1); } catch (e) { empty = e instanceof TypeError; }
+    try { x.t_audio_stop(v1); x.t_audio_gain(v1, 1); } catch (e) { return 'threw ' + e; }
+    return empty || 'the shim still holds the voice';
+  });
+  // A voice at a time on cd_now()'s clock, and one at a rate.
+  const v2 = x.t_audio_play(short, 1, 1, 300);
+  await until(() => x.t_audio_took(v2) > 0);
+  check('cd_audio_play at a time on cd_now()\'s clock: it starts then, and ends a clip later', () =>
+    (x.t_audio_took(v2) >= 480 && x.t_audio_took(v2) < 1500) || 'took ' + x.t_audio_took(v2));
+  const v3 = x.t_audio_play(long, 1, 4, 0);
+  const rate = heard.sources.at(-1).playbackRate.value;
+  await until(() => x.t_audio_took(v3) > 0);
+  check('cd_audio_play at rate 4: a one-second clip plays in a quarter of one', () =>
+    (rate === 4 && x.t_audio_took(v3) >= 200 && x.t_audio_took(v3) < 700) || `rate ${rate}, took ${x.t_audio_took(v3)}`);
+  // Stopping: a voice that plays, and one that has not started.
+  const v4 = x.t_audio_play(long, 1, 1, 0);
+  const v5 = x.t_audio_play(long, 1, 1, 500);
+  await sleep(50);
+  x.t_audio_stop(v4); x.t_audio_stop(v5);
+  await until(() => x.t_audio_took(v4) > 0 && x.t_audio_took(v5) > 0);
+  check('cd_audio_stop: a playing voice and one not started yet both end at once', () =>
+    (x.t_audio_took(v4) > 0 && x.t_audio_took(v4) < 300 && x.t_audio_took(v5) > 0 && x.t_audio_took(v5) < 300) || `took ${x.t_audio_took(v4)} and ${x.t_audio_took(v5)}`);
+  // Gain and mute: the voice's gain node and the master, eased to what C set.
+  const v6 = x.t_audio_play(long, 0.5, 1, 0);
+  const g6 = heard.gains.at(-1);
+  x.t_audio_gain(v6, 0.25);
+  x.t_audio_master(0.8);
+  const eased = await until(() => near(g6.gain.value, 0.25) && near(master.gain.value, 0.8), 1000);
+  x.t_audio_mute(1);
+  const muted = await until(() => near(master.gain.value, 0), 1000);
+  x.t_audio_master(0.3);
+  await sleep(60);
+  const stillMuted = near(master.gain.value, 0);
+  x.t_audio_mute(0);
+  const unmuted = await until(() => near(master.gain.value, 0.3), 1000);
+  x.t_audio_master(1);
+  x.t_audio_stop(v6);
+  check('cd_audio_set_gain, cd_audio_master and cd_audio_mute: the voice\'s gain node and the master follow, and unmuting brings back the master set while muted', () =>
+    (eased && muted && stillMuted && unmuted) || JSON.stringify([eased, muted, stillMuted, unmuted]) + ` ${g6.gain.value} ${master.gain.value}`);
+  // Ids: 20 voices one after another, each played from the last one's ended hook, all get one id.
+  await until(() => x.t_audio_took(v6) > 0);
+  x.t_audio_chain(tick, 20);
+  await until(() => x.t_audio_chained(0) === 20, 3000);
+  check('20 voices played one after another reuse one id', () =>
+    (x.t_audio_chained(0) === 20 && x.t_audio_chained(1) === x.t_audio_chained(2)) || [0, 1, 2].map(x.t_audio_chained).join(' '));
+  // Hidden, the context suspends and a voice waits; shown, it resumes and the voice plays.
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+  document.dispatchEvent(new Event('visibilitychange'));
+  const suspended = await until(() => x.t_audio_state() === 2 && x.t_audio_states() % 10 === 3, 1000);
+  const v7 = x.t_audio_play(tick, 1, 1, 0);
+  await sleep(300);
+  const waited = x.t_audio_took(v7) === 0;
+  delete document.hidden;
+  document.dispatchEvent(new Event('visibilitychange'));
+  const resumed = await until(() => x.t_audio_state() === 1 && x.t_audio_states() % 100 === 32, 1000);
+  await until(() => x.t_audio_took(v7) > 0, 1000);
+  check('hidden, the context suspends (SUSPENDED, heard by C) and a voice waits; shown, it resumes and the voice plays', () =>
+    (suspended && waited && resumed && x.t_audio_took(v7) >= 300 && x.t_audio_states() % 100 === 32) || JSON.stringify([suspended, waited, resumed]) + ` took ${x.t_audio_took(v7)} heard ${x.t_audio_states()}`);
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>
