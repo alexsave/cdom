@@ -127,6 +127,14 @@ Every item has a test in tests/unit.c (the unit page, tools/unit.mjs), tests/lis
   `cd_random_bytes(buf, len)` fills len bytes of C memory from the browser's cryptographic generator (crypto.getRandomValues), synchronously: the bytes are there when it returns, so no answer comes back.
   The browser fills at most 65536 bytes per call, so C asks chunk by chunk (`CD_RANDOM_CHUNK`) and any len works; the chunking is C's alone, and the shim fills the one view it is given.
   It returns `CD_RANDOM_OK` (1), or `CD_RANDOM_UNAVAILABLE` (0) with nothing written when the page has no `crypto.getRandomValues`, so an app that needs the bytes secret checks rather than falling back on Math.random.
+- The address: src/cdom_url.c and cdom_url.h (link it to use it), for an app that routes in C.
+  C owns routing: it reads the address, decides what a path shows and changes the address as it navigates; the shim only reports the address and applies what C asks, through the History API, so nothing loads.
+  A path is what follows the origin, the pathname then the search and the hash, as UTF-8 bytes percent-encoded as the browser keeps them.
+  `cd_url_read(part, dst, cap)` writes one part of the current address (`CD_URL_PATH`, `CD_URL_SEARCH` with its "?", `CD_URL_HASH` with its "#", or `CD_URL_ALL`, the three in a row) and returns its length, which may be more than cap: then only cap bytes were written, and C asks again with more room.
+  `cd_url_push(path, len)` adds a history entry and `cd_url_replace(path, len)` changes the current one; a relative path resolves against the address, and no `cd_on_url` follows, as C shows what the path means itself.
+  Both return `CD_URL_OK` (1), or `CD_URL_REFUSED` (0) with the address as it was when the browser threw (another origin, a page whose history cannot change, Safari past 100 changes in 30 seconds) or let the change go without throwing (Chrome's own throttle): the shim compares the address after the call with the path resolved before it.
+  `cd_set_title(text, len)` sets the document's title.
+  `cd_on_url(path, len)` hears back, forward and a link to a #fragment (popstate) with the new path; the shim listens from start for an app whose module carries the export (`cd_url_changed`), so an app that does not link cdom_url.c gets no listener.
 - Not changed: template variants (the port's "10" face and thin card). A per-clone attribute slot would save nothing: the clone's root style is one setAttribute call either way, the "10" variant differs in an inner element's style (a slot would have to remove an attribute to match the plain face's DOM), and the thin card is another structure. Separate templates cost one build each at start.
 
 ### SVG: C tracks the namespace, measured (micro/svg)
@@ -150,6 +158,7 @@ The shim is written to be read (real names, one statement per line, a comment pe
 | `hit` reads every layer under the point (elementsFromPoint), as the React table's drop does | 8,258 | 3,276 | 3,678 |
 | sound (`audio_load`, `audio_free`, `audio_play`, `audio_stop`, `audio_gain`, `audio_master`, `audio_state`; the unlock and the page's visibility), measured in one run against 8,258 / 3,275 / 3,666 before (node's zlib at brotli quality 11, gzip 1.12) | 9,602 | 3,750 | 4,191 |
 | random bytes (`random`), measured in one run against 9,603 / 3,752 / 4,177 before | 9,716 | 3,789 | 4,223 |
+| the address (`url_read`, `url_go`, `title`; popstate from start) | 10,306 | 3,997 | 4,450 |
 The rewrite costs 125 bytes minified and 17 brotli: separate `const` and `let` declarations, the `if`/`else` blocks terser keeps as statements, and small named functions (`now`, `utf8`, `viewportRecord`) where arrows were inlined.
 
 The imports the port-fixes branch added or changed, and what each is for:
@@ -204,13 +213,20 @@ The imports the port-fixes branch added or changed, and what each is for:
   C splits a long fill into chunks of 65536 bytes (getRandomValues throws a QuotaExceededError past that).
   - Unit cases (tests/unit.c section 15, tests/unit.html, getRandomValues wrapped to record what it is asked to fill): "cd_random_bytes: 200,000 bytes in chunks of 65536, every chunk random, nothing written past either end" (asked 65536, 65536, 65536, 3392; each chunk's zero bytes near 1 in 256; a guard byte on either side kept); "cd_random_bytes: two fills differ, and len 0 asks for nothing and is OK"; "no crypto.getRandomValues: cd_random_bytes answers UNAVAILABLE and writes nothing" (the method removed for the call).
   - Mutants, all caught: random-one-call, random-chunk-small, random-no-advance, random-offset, random-noop, random-zero-asks, random-unavailable-ok, random-unavailable-ignored.
+- The address (src/cdom_url.c; 590 bytes minified, 208 brotli, 227 gzip): `url_read(part, ptr, cap)` encodes `location.pathname`, `search`, `hash` or the three in a row and writes at most cap bytes, returning the full length.
+  `url_go(ptr, len, replace)` resolves the path against `document.baseURI`, calls `pushState` or `replaceState` (state null: C keeps its own), and answers 1 only when `location.href` is the resolved path afterwards, 0 when it threw or the address did not change.
+  `title(ptr, len)` sets `document.title`.
+  `start` adds one popstate listener when the module exports `cd_url_changed`, and the listener delivers the new path into C through `cd_bytes_buf`.
+  - Unit cases (tests/unit.c section 16, tests/unit.html): "cd_url_read: the path, the search and the hash, and all three as one path; a part longer than the room answers its length and writes only the room"; "cd_url_push adds a history entry and cd_url_replace changes the current one; a relative path resolves; neither calls cd_on_url" (history.length); "back, forward and a link to a #fragment reach cd_on_url with the new path, answered without a cd_flush"; "cd_url_push refused (another origin, a SecurityError as Safari throws past its limit, a change the browser let go, no History API): REFUSED, the address as it was" (pushState made to throw, made a no-op, and removed); "cd_set_title: the document's title, from UTF-8".
+    The page pushes an entry of its own first, so a broken push cannot send the page back off itself.
+  - Mutants, all caught: url-parts-swapped, url-all-path-only, url-read-overflow, url-read-written, url-push-is-replace, url-replace-is-push, url-refused-ok, url-let-go-ok, url-no-popstate, url-popped-path-only, url-changed-no-flush, url-title-noop.
 - Not imports, shared by them: `post` (the event record writer, used by delegated, window and the old image events), `push` (open, open_svg and clone), `deliver` (bytes into C memory through `cd_bytes_buf`: the encoded image, a network message, a stored value), `utf8`.
 - `EVENTS` gained "resize" and "visibilitychange" (a "load" for images came and went with the first image import).
 
 ### Gates and the paired runs
 
 Every gate passes on the bench entry built from this branch (cdomf): the harness's keyed check, smoke, DOM identity against perf 0d0bdd7 (entry cdomp0), listfuzz (5 seeds, 40,000 rounds each: the owning list and the list with an end anchor), the unit page (18 cases) and the link tests.
-tools/mutate.py: 37 mutants, every one caught by the test written for it (48 after the store with its answered put and early open, the two-step image with RGB and placement, and the device pixel ratio: all caught; the unit page 26 cases; 61 and 35 after the network pass; 63 and 36 with `rect`); with sound, 116 mutants (visibility-target's text brought up to date: it had been skipped since `windowTarget`) and 58 unit cases, all caught and all green; with random bytes, 124 mutants and 61 unit cases, all caught and all green.
+tools/mutate.py: 37 mutants, every one caught by the test written for it (48 after the store with its answered put and early open, the two-step image with RGB and placement, and the device pixel ratio: all caught; the unit page 26 cases; 61 and 35 after the network pass; 63 and 36 with `rect`); with sound, 116 mutants (visibility-target's text brought up to date: it had been skipped since `windowTarget`) and 58 unit cases, all caught and all green; with random bytes, 124 mutants and 61 unit cases; with the address, 136 mutants and 66 unit cases, all caught and all green.
 
 Paired, load-gated runs (tools/pair.sh, LOADMAX=3), vanillajs, cdomp0 (perf 0d0bdd7) and cdomf, CPU benchmarks 01-09; tools/ci.mjs bootstraps a 95% interval of the weighted geomean of cdomf over cdomp0.
 | pass | cdomp0 vs vanillajs | cdomf vs vanillajs | cdomf / cdomp0 (95% interval) |
