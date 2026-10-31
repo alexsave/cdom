@@ -716,6 +716,49 @@ var cdom = (() => {
     return 1;
   }
 
+  // The address (src/cdom_url.c): C routes; the shim reads the address, changes it as C asks
+  // (the History API, so nothing loads) and reports back and forward.
+  const URL_PARTS = ["pathname", "search", "hash"]; // cd_url_read's parts; past them, all three
+  function urlOf(part) {
+    if (part < URL_PARTS.length) {
+      return location[URL_PARTS[part]];
+    }
+    return location.pathname + location.search + location.hash;
+  }
+  // One part of the address into C memory as UTF-8, at most capacity bytes; returns its length.
+  function url_read(part, destPtr, capacity) {
+    const encoded = textEncoder.encode(urlOf(part));
+    bytes(destPtr, capacity).set(encoded.subarray(0, capacity));
+    return encoded.length;
+  }
+  // Shows the path in C memory in the address bar, as a new history entry or in place of the
+  // current one: 1 when the address is now that path, 0 when the browser threw (another origin,
+  // too many changes too fast, no History API) or let the change go (Chrome's own throttle).
+  function url_go(pathPtr, pathLen, replace) {
+    const path = utf8(pathPtr, pathLen);
+    let wanted;
+    try {
+      wanted = new URL(path, doc.baseURI).href;
+      if (replace) {
+        history.replaceState(null, "", path);
+      } else {
+        history.pushState(null, "", path);
+      }
+    } catch {
+      return 0;
+    }
+    return +(location.href === wanted);
+  }
+  // Back or forward (or a link to a #fragment): the new path into C. Listened for from start, by an
+  // app that links src/cdom_url.c (its export is there).
+  function urlChanged() {
+    const path = textEncoder.encode(urlOf(URL_PARTS.length));
+    deliver((arg, ptr, length) => exports.cd_url_changed(ptr, length), 0, path);
+  }
+  function title(textPtr, textLen) {
+    doc.title = utf8(textPtr, textLen);
+  }
+
   // An input's value into C memory as UTF-8; returns the bytes written.
   function input(id, destPtr, capacity) {
     const result = textEncoder.encodeInto(String(nodes[id].value ?? ""), bytes(destPtr, capacity));
@@ -739,6 +782,7 @@ var cdom = (() => {
         store_put, store_get, store_del,
         audio_load, audio_free, audio_play, audio_stop, audio_gain, audio_master, audio_state,
         random,
+        url_read, url_go, title,
       },
       env: env || {},
     };
@@ -763,6 +807,9 @@ var cdom = (() => {
     stringBytes = u32[layout];
     stringMeta = u32[layout + 1];
     inbox = u32[layout + 2];
+    if (exports.cd_url_changed) {
+      addEventListener("popstate", urlChanged);
+    }
     exports.cd_start((Math.random() * 4294967296) >>> 0);
     return exports;
   }
