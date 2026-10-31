@@ -6,6 +6,7 @@
 #include "../src/cdom_audio.h"
 #include "../src/cdom_random.h"
 #include "../src/cdom_url.h"
+#include "../src/cdom_locale.h"
 
 #define EXPORT(n) __attribute__((export_name(n)))
 #define L(s) CD_LIT(s)
@@ -708,3 +709,30 @@ void cd_on_url(const uint8_t *path, uint32_t len) {
 EXPORT("t_url_heard") uint8_t *t_url_heard(void) { return url_heard; }
 EXPORT("t_url_heard_len") uint32_t t_url_heard_len(void) { return url_heard_len; }
 EXPORT("t_url_heard_count") uint32_t t_url_heard_count(void) { return url_heard_count; }
+
+/* 17. Languages and display preferences: tags read into lang_out (filled with '*' first), and
+ * every preference change the hook heard. */
+static char lang_out[64];
+static cd_id prefs_txt;
+EXPORT("t_locale_section") void t_locale_section(void) {
+  cd_id s = section("locale");
+  cd_at(s, 0);
+  cd_open(L("i")); cd_text(L("prefs")); cd_name(prefs_txt = cd_id_new()); cd_close();
+}
+EXPORT("t_lang_out") char *t_lang_out(void) { return lang_out; }
+EXPORT("t_language") uint32_t t_language(uint32_t i, uint32_t cap) {
+  __builtin_memset(lang_out, '*', sizeof lang_out);
+  return cd_language(i, lang_out, cap);
+}
+EXPORT("t_prefs") uint32_t t_prefs(void) { return cd_prefs(); }
+static uint32_t prefs_heard[16], prefs_nheard;
+void cd_on_prefs(uint32_t prefs) {
+  enter();
+  prefs_heard[prefs_nheard++ & 15] = prefs;
+  hold(prefs_txt); /* no cd_flush: the export does it */
+}
+EXPORT("t_prefs_heard") uint32_t t_prefs_heard(void) {
+  uint32_t all = 0; /* the last eight, one decimal digit each (prefs + 1), oldest first */
+  for (uint32_t i = prefs_nheard > 8 ? prefs_nheard - 8 : 0; i < prefs_nheard; i++) all = all * 10 + prefs_heard[i & 15] + 1;
+  return all;
+}
