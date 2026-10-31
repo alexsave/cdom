@@ -1,4 +1,5 @@
-// Minimal CDP client: one headless Chrome per process, killed by its own PID.
+// Minimal CDP client: one headless Chrome per process, killed by its own PID. CHROME names the
+// binary (default: the macOS app's).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,7 +8,7 @@ export const sleep = ms => new Promise(r => setTimeout(r, ms));
 export async function launch() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cdom-chrome-'));
   const dbg = +(process.env.CDP_PORT || 8730 + Math.floor(Math.random() * 10)); // 8730-8739 unless CDP_PORT
-  const proc = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  const proc = spawn(process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     ['--headless=new', `--remote-debugging-port=${dbg}`, `--user-data-dir=${dir}`, '--no-first-run',
      '--no-default-browser-check', '--disable-extensions', '--window-size=1280,800', ...(process.env.CHROME_ARGS ? process.env.CHROME_ARGS.split(' ') : []), 'about:blank'],
     { stdio: process.env.CHROME_LOG ? ['ignore', fs.openSync(process.env.CHROME_LOG, 'w'), fs.openSync(process.env.CHROME_LOG + '.err', 'w')] : 'ignore' });
