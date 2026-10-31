@@ -705,6 +705,17 @@ var cdom = (() => {
     easeGain(masterGain, gain);
   }
 
+  // Random bytes (src/cdom_random.c): one chunk of C memory filled by the browser's cryptographic
+  // generator, C asking chunk by chunk (getRandomValues takes at most 65536 bytes). 1 written, 0
+  // when the page has no crypto.getRandomValues (nothing written).
+  function random(bufferPtr, length) {
+    if (!globalThis.crypto || !crypto.getRandomValues) {
+      return 0;
+    }
+    crypto.getRandomValues(bytes(bufferPtr, length));
+    return 1;
+  }
+
   // An input's value into C memory as UTF-8; returns the bytes written.
   function input(id, destPtr, capacity) {
     const result = textEncoder.encodeInto(String(nodes[id].value ?? ""), bytes(destPtr, capacity));
@@ -727,6 +738,7 @@ var cdom = (() => {
         detach, attach, input, win, unwin, hit, viewport, rect, timer, raf, now, ws_open, ws_send, ws_close, ws_buffered, http, epoch,
         store_put, store_get, store_del,
         audio_load, audio_free, audio_play, audio_stop, audio_gain, audio_master, audio_state,
+        random,
       },
       env: env || {},
     };

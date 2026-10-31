@@ -394,5 +394,32 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
   await until(() => x.t_audio_took(v7) > 0, 1000);
   check('hidden, the context suspends (SUSPENDED, heard by C) and a voice waits; shown, it resumes and the voice plays', () =>
     (suspended && waited && resumed && x.t_audio_took(v7) >= 300 && x.t_audio_states() % 100 === 32) || JSON.stringify([suspended, waited, resumed]) + ` took ${x.t_audio_took(v7)} heard ${x.t_audio_states()}`);
+
+  // Random bytes (15 in unit.c): what getRandomValues was asked to fill, and what C finds written.
+  const asks = [];
+  const realRandom = Crypto.prototype.getRandomValues;
+  Crypto.prototype.getRandomValues = function (view) { asks.push(view.length); return realRandom.call(this, view); };
+  check('cd_random_bytes: 200,000 bytes in chunks of 65536, every chunk random, nothing written past either end', () => {
+    const status = x.t_random(200000);
+    const zeros = [0, 1, 2, 3].map(x.t_random_zeros);
+    const sizes = [65536, 65536, 65536, 3392];
+    const r = [status === 1, asks.join() === sizes.join(), zeros.every((z, k) => z * 32 < sizes[k]), x.t_random_guards() === 1];
+    return r.every(Boolean) || JSON.stringify(r) + ` status ${status}, asked ${asks}, zeros ${zeros}`;
+  });
+  check('cd_random_bytes: two fills differ, and len 0 asks for nothing and is OK', () => {
+    x.t_random(16); x.t_random_new();
+    x.t_random(16);
+    const differs = x.t_random_new();
+    asks.length = 0;
+    const empty = x.t_random(0);
+    const r = [differs === 1, empty === 1, asks.length === 0, x.t_random_guards() === 1];
+    return r.every(Boolean) || JSON.stringify(r);
+  });
+  Crypto.prototype.getRandomValues = undefined;
+  const unavailable = x.t_random(100);
+  const untouched = x.t_random_zeros(0) === 100 && x.t_random_guards() === 1;
+  Crypto.prototype.getRandomValues = realRandom;
+  check('no crypto.getRandomValues: cd_random_bytes answers UNAVAILABLE and writes nothing', () =>
+    (unavailable === 0 && untouched) || `answered ${unavailable}, untouched ${untouched}`);
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>
