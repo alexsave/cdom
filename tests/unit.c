@@ -7,6 +7,7 @@
 #include "../src/cdom_random.h"
 #include "../src/cdom_url.h"
 #include "../src/cdom_locale.h"
+#include "../src/cdom_share.h"
 
 #define EXPORT(n) __attribute__((export_name(n)))
 #define L(s) CD_LIT(s)
@@ -736,3 +737,37 @@ EXPORT("t_prefs_heard") uint32_t t_prefs_heard(void) {
   for (uint32_t i = prefs_nheard > 8 ? prefs_nheard - 8 : 0; i < prefs_nheard; i++) all = all * 10 + prefs_heard[i & 15] + 1;
   return all;
 }
+
+/* 18. The clipboard and the share sheet: the page writes the text, the title and the url into
+ * share_text and share_url, and reads every answer back by token (-1 until it came) with how many
+ * came. */
+static char share_text[256], share_url[256];
+static int32_t clipboard_status[16], share_status[16];
+static uint32_t clipboard_answers[16], share_answers[16];
+static cd_id share_txt;
+EXPORT("t_share_section") void t_share_section(void) {
+  cd_id s = section("share");
+  cd_at(s, 0);
+  cd_open(L("i")); cd_text(L("share")); cd_name(share_txt = cd_id_new()); cd_close();
+  for (int i = 0; i < 16; i++) clipboard_status[i] = share_status[i] = -1;
+}
+EXPORT("t_share_text") char *t_share_text(void) { return share_text; }
+EXPORT("t_share_url") char *t_share_url(void) { return share_url; }
+EXPORT("t_clipboard") void t_clipboard(uint32_t token, uint32_t len) { cd_clipboard_write(token, share_text, len); }
+EXPORT("t_share") void t_share(uint32_t token, uint32_t tlen, uint32_t ulen) { cd_share(token, share_text, tlen, share_url, ulen); }
+void cd_on_clipboard(uint32_t token, uint32_t status) {
+  enter();
+  clipboard_status[token & 15] = (int32_t)status;
+  clipboard_answers[token & 15]++;
+  hold(share_txt); /* no cd_flush: the export does it */
+}
+void cd_on_share(uint32_t token, uint32_t status) {
+  enter();
+  share_status[token & 15] = (int32_t)status;
+  share_answers[token & 15]++;
+  hold(share_txt);
+}
+EXPORT("t_clipboard_status") int32_t t_clipboard_status(uint32_t token) { return clipboard_status[token & 15]; }
+EXPORT("t_clipboard_answers") uint32_t t_clipboard_answers(uint32_t token) { return clipboard_answers[token & 15]; }
+EXPORT("t_share_status") int32_t t_share_status(uint32_t token) { return share_status[token & 15]; }
+EXPORT("t_share_answers") uint32_t t_share_answers(uint32_t token) { return share_answers[token & 15]; }
