@@ -123,6 +123,10 @@ Every item has a test in tests/unit.c (the unit page, tools/unit.mjs), tests/lis
   `cd_audio_stop(voice)`, `cd_audio_set_gain(voice, gain)`, `cd_audio_master(gain)`, `cd_audio_mute(on)`, `cd_audio_free(clip)`, and `cd_on_audio_ended(voice)`, which always comes, played out or stopped.
   `cd_audio_state()` is `CD_AUDIO_LOCKED` (the context never ran: the browser waits for a gesture), `CD_AUDIO_RUNNING` or `CD_AUDIO_SUSPENDED` (it ran, and stopped: the page is hidden, or the system took it), and `cd_on_audio_state(state)` hears every change, so an app shows "tap for sound" until it runs without polling.
   C owns every decision and every id: clip and voice ids are handed out from 1 in C, a freed id first (the socket ids' rule, here in C with an alive byte per id, so freeing a free clip traps and a stop or a gain on an ended voice is ignored), and the mute is C's (the shim has one master gain and is told what it is).
+- Random bytes: src/cdom_random.c and cdom_random.h (link it to use it).
+  `cd_random_bytes(buf, len)` fills len bytes of C memory from the browser's cryptographic generator (crypto.getRandomValues), synchronously: the bytes are there when it returns, so no answer comes back.
+  The browser fills at most 65536 bytes per call, so C asks chunk by chunk (`CD_RANDOM_CHUNK`) and any len works; the chunking is C's alone, and the shim fills the one view it is given.
+  It returns `CD_RANDOM_OK` (1), or `CD_RANDOM_UNAVAILABLE` (0) with nothing written when the page has no `crypto.getRandomValues`, so an app that needs the bytes secret checks rather than falling back on Math.random.
 - Not changed: template variants (the port's "10" face and thin card). A per-clone attribute slot would save nothing: the clone's root style is one setAttribute call either way, the "10" variant differs in an inner element's style (a slot would have to remove an attribute to match the plain face's DOM), and the thin card is another structure. Separate templates cost one build each at start.
 
 ### SVG: C tracks the namespace, measured (micro/svg)
@@ -145,6 +149,7 @@ The shim is written to be read (real names, one statement per line, a comment pe
 | `image_bytes` sets its url once the picture has decoded and answers `cd_image(token, ok)` (same terser run: 8,146 / 3,228 / 3,618 before) | 8,260 | 3,274 | 3,671 |
 | `hit` reads every layer under the point (elementsFromPoint), as the React table's drop does | 8,258 | 3,276 | 3,678 |
 | sound (`audio_load`, `audio_free`, `audio_play`, `audio_stop`, `audio_gain`, `audio_master`, `audio_state`; the unlock and the page's visibility), measured in one run against 8,258 / 3,275 / 3,666 before (node's zlib at brotli quality 11, gzip 1.12) | 9,602 | 3,750 | 4,191 |
+| random bytes (`random`), measured in one run against 9,603 / 3,752 / 4,177 before | 9,716 | 3,789 | 4,223 |
 The rewrite costs 125 bytes minified and 17 brotli: separate `const` and `let` declarations, the `if`/`else` blocks terser keeps as statements, and small named functions (`now`, `utf8`, `viewportRecord`) where arrows were inlined.
 
 The imports the port-fixes branch added or changed, and what each is for:
@@ -195,13 +200,17 @@ The imports the port-fixes branch added or changed, and what each is for:
     The hidden page is `document.hidden` overridden and a visibilitychange dispatched; the context's suspend and resume are real.
   - Mutants, all caught: audio-load-bytes, audio-load-late, audio-failed-is-clip, audio-failed-keeps-id, audio-loaded-no-flush, audio-free-keeps-id, audio-free-keeps-buffer, audio-play-unloaded, audio-double-free-silent, audio-locked-is-running, audio-no-unlock, audio-unlock-no-resume, audio-state-unheard, audio-no-start, audio-initial-gain, audio-no-voice-gain, audio-not-let-go, audio-ended-no-flush, audio-voice-kept, audio-stop-dead, audio-gain-dead, audio-at-ignored, audio-at-dropped, audio-rate-ignored, audio-stop-noop, audio-gain-noop, audio-master-noop, audio-mute-ignored, audio-master-lost-while-muted, audio-ids-grow, audio-ended-keeps-id, audio-ended-wrong-voice, audio-never-ran, audio-no-suspend, audio-no-resume-shown, demo-silent, demo-hint-stuck.
   - demo/click.c and demo/click.html: a tap plays a click (30 ms of noise made in C as WAV bytes, its pitch within 10% either way), "tap for sound" until the context runs; built by tests/build.sh at -Oz, and tapped by tools/unit.mjs.
+- Random bytes (src/cdom_random.c; 113 bytes minified, 37 brotli, 46 gzip): `random(ptr, len)` fills a view of C memory with `crypto.getRandomValues` and answers 1, or answers 0 and writes nothing when the page has no `crypto.getRandomValues`.
+  C splits a long fill into chunks of 65536 bytes (getRandomValues throws a QuotaExceededError past that).
+  - Unit cases (tests/unit.c section 15, tests/unit.html, getRandomValues wrapped to record what it is asked to fill): "cd_random_bytes: 200,000 bytes in chunks of 65536, every chunk random, nothing written past either end" (asked 65536, 65536, 65536, 3392; each chunk's zero bytes near 1 in 256; a guard byte on either side kept); "cd_random_bytes: two fills differ, and len 0 asks for nothing and is OK"; "no crypto.getRandomValues: cd_random_bytes answers UNAVAILABLE and writes nothing" (the method removed for the call).
+  - Mutants, all caught: random-one-call, random-chunk-small, random-no-advance, random-offset, random-noop, random-zero-asks, random-unavailable-ok, random-unavailable-ignored.
 - Not imports, shared by them: `post` (the event record writer, used by delegated, window and the old image events), `push` (open, open_svg and clone), `deliver` (bytes into C memory through `cd_bytes_buf`: the encoded image, a network message, a stored value), `utf8`.
 - `EVENTS` gained "resize" and "visibilitychange" (a "load" for images came and went with the first image import).
 
 ### Gates and the paired runs
 
 Every gate passes on the bench entry built from this branch (cdomf): the harness's keyed check, smoke, DOM identity against perf 0d0bdd7 (entry cdomp0), listfuzz (5 seeds, 40,000 rounds each: the owning list and the list with an end anchor), the unit page (18 cases) and the link tests.
-tools/mutate.py: 37 mutants, every one caught by the test written for it (48 after the store with its answered put and early open, the two-step image with RGB and placement, and the device pixel ratio: all caught; the unit page 26 cases; 61 and 35 after the network pass; 63 and 36 with `rect`); with sound, 116 mutants (visibility-target's text brought up to date: it had been skipped since `windowTarget`) and 58 unit cases, all caught and all green.
+tools/mutate.py: 37 mutants, every one caught by the test written for it (48 after the store with its answered put and early open, the two-step image with RGB and placement, and the device pixel ratio: all caught; the unit page 26 cases; 61 and 35 after the network pass; 63 and 36 with `rect`); with sound, 116 mutants (visibility-target's text brought up to date: it had been skipped since `windowTarget`) and 58 unit cases, all caught and all green; with random bytes, 124 mutants and 61 unit cases, all caught and all green.
 
 Paired, load-gated runs (tools/pair.sh, LOADMAX=3), vanillajs, cdomp0 (perf 0d0bdd7) and cdomf, CPU benchmarks 01-09; tools/ci.mjs bootstraps a 95% interval of the weighted geomean of cdomf over cdomp0.
 | pass | cdomp0 vs vanillajs | cdomf vs vanillajs | cdomf / cdomp0 (95% interval) |
