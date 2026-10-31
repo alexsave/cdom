@@ -4,6 +4,7 @@
 #include "../src/cdom_net.h"
 #include "../src/cdom_store.h"
 #include "../src/cdom_audio.h"
+#include "../src/cdom_random.h"
 
 #define EXPORT(n) __attribute__((export_name(n)))
 #define L(s) CD_LIT(s)
@@ -645,4 +646,33 @@ EXPORT("t_audio_states") uint32_t t_audio_states(void) {
   uint32_t all = 0; /* the last eight, one decimal digit each, oldest first */
   for (uint32_t i = audio_nstates > 8 ? audio_nstates - 8 : 0; i < audio_nstates; i++) all = all * 10 + audio_states[i & 15] + 1;
   return all;
+}
+
+/* 15. Random bytes: a buffer between two guard bytes, filled from C in one call that the module
+ * splits into chunks; the page counts what getRandomValues was asked for. */
+#define RANDOM_MAX 200000
+static uint8_t random_buf[1 + RANDOM_MAX + 1], random_last[16];
+static uint32_t random_len;
+EXPORT("t_random") uint32_t t_random(uint32_t len) {
+  random_len = len;
+  __builtin_memset(random_buf, 0, sizeof random_buf);
+  random_buf[0] = 0xa5;
+  random_buf[1 + len] = 0xa5;
+  return cd_random_bytes(random_buf + 1, len);
+}
+/* The zero bytes in chunk k of the last fill (about 1 in 256 when it was written). */
+EXPORT("t_random_zeros") uint32_t t_random_zeros(uint32_t k) {
+  uint32_t zeros = 0;
+  for (uint32_t i = k * CD_RANDOM_CHUNK; i < (k + 1) * CD_RANDOM_CHUNK && i < random_len; i++) zeros += !random_buf[1 + i];
+  return zeros;
+}
+EXPORT("t_random_guards") uint32_t t_random_guards(void) { return random_buf[0] == 0xa5 && random_buf[1 + random_len] == 0xa5; }
+/* 1 when the first 16 bytes of this fill differ from the last one's. */
+EXPORT("t_random_new") uint32_t t_random_new(void) {
+  uint32_t differs = 0;
+  for (int i = 0; i < 16; i++) {
+    differs |= random_buf[1 + i] != random_last[i];
+    random_last[i] = random_buf[1 + i];
+  }
+  return differs;
 }
