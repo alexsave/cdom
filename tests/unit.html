@@ -597,7 +597,8 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
   const timeoutAt = performance.now() - fontStart;
   await until(() => x.t_fonts_status(3) !== -1 && x.t_fonts_status(4) !== -1, 3000);
   const readyAt = performance.now() - fontStart;
-  const changedAt = await until(() => x.t_fonts_changed() !== changedBefore, 1000) && performance.now() - fontStart;
+  await until(() => x.t_fonts_changed() !== changedBefore, 1000);
+  const changedAt = x.t_fonts_changed_at() - fontStart; // heard in C, not when the page looked
   await sleep(1300 - (performance.now() - fontStart)); // past token 3's deadline: no second answer
   document.fonts.delete(face);
   check('cd_fonts_wait: a font still loading past the deadline answers TIMEOUT; given time, or no deadline, READY once it is done; each answered once', () => {
@@ -606,7 +607,7 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true }).then(async (x) => {
     return r.every(Boolean) || JSON.stringify(r) + ` ${loadingNow}: ${fontsHeard(2)} at ${Math.round(timeoutAt)} ms, ${fontsHeard(3)} and ${fontsHeard(4)} at ${Math.round(readyAt)} ms, the face ${face.status}`;
   });
   check('cd_on_fonts_changed: a load done (document.fonts loadingdone) is heard once, and the export flushes', () =>
-    (x.t_fonts_changed() === changedBefore + 1 && changedAt >= 700 && x.t_stale() === 0) || `heard ${x.t_fonts_changed() - changedBefore} at ${changedAt}, stale ${x.t_stale()}`);
+    (x.t_fonts_changed() === changedBefore + 1 && changedAt >= 700 && x.t_stale() === 0) || `heard ${x.t_fonts_changed() - changedBefore} at ${Math.round(changedAt)} ms, stale ${x.t_stale()}`);
   Object.defineProperty(document, 'fonts', { configurable: true, get: () => undefined });
   let noFontsNow;
   try { noFontsNow = fontsAsk(5, 100); } catch (e) { noFontsNow = String(e); }

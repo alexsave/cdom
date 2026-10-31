@@ -774,9 +774,10 @@ EXPORT("t_share_status") int32_t t_share_status(uint32_t token) { return share_s
 EXPORT("t_share_answers") uint32_t t_share_answers(uint32_t token) { return share_answers[token & 15]; }
 
 /* 19. The page's fonts: every answer by token (-1 until it came) with how many came, and how often
- * a load was heard done. */
+ * a load was heard done, and when last (on cd_now's clock). */
 static int32_t fonts_status[16];
 static uint32_t fonts_answers[16], fonts_changed;
+static double fonts_changed_at;
 static cd_id fonts_txt;
 EXPORT("t_fonts_section") void t_fonts_section(void) {
   cd_id s = section("fonts");
@@ -794,8 +795,10 @@ void cd_on_fonts(uint32_t token, uint32_t status) {
 void cd_on_fonts_changed(void) {
   enter();
   fonts_changed++;
+  fonts_changed_at = cd_now();
   hold(fonts_txt);
 }
 EXPORT("t_fonts_status") int32_t t_fonts_status(uint32_t token) { return fonts_status[token & 15]; }
 EXPORT("t_fonts_answers") uint32_t t_fonts_answers(uint32_t token) { return fonts_answers[token & 15]; }
 EXPORT("t_fonts_changed") uint32_t t_fonts_changed(void) { return fonts_changed; }
+EXPORT("t_fonts_changed_at") double t_fonts_changed_at(void) { return fonts_changed_at; }
