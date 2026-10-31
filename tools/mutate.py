@@ -128,6 +128,14 @@ M = [
   ('audio-no-resume-shown', 'shim/cdom.js', '    } else {\n      audioContext.resume().catch(() => {});', '    } else {', UNIT, 'FAIL hidden, the context suspends'),
   ('demo-silent', 'demo/click.c', '  cd_audio_play(clip, 0.8, rate, 0);', '  (void)rate;', UNIT, 'FAIL demo'),
   ('demo-hint-stuck', 'demo/click.c', '  (void)state;\n  show_state();', '  (void)state;', UNIT, 'FAIL demo'),
+  ('random-one-call', 'src/cdom_random.c', '    uint32_t n = len < CD_RANDOM_CHUNK ? len : CD_RANDOM_CHUNK;', '    uint32_t n = len;', UNIT, 'FAIL cd_random_bytes: 200,000 bytes'),
+  ('random-chunk-small', 'src/cdom_random.h', '#define CD_RANDOM_CHUNK 65536', '#define CD_RANDOM_CHUNK 32768', UNIT, 'FAIL cd_random_bytes: 200,000 bytes'),
+  ('random-no-advance', 'src/cdom_random.c', '    p += n;\n', '', UNIT, 'FAIL cd_random_bytes: 200,000 bytes'),
+  ('random-offset', 'shim/cdom.js', '    crypto.getRandomValues(bytes(bufferPtr, length));', '    crypto.getRandomValues(bytes(bufferPtr + 1, length));', UNIT, 'FAIL cd_random_bytes: 200,000 bytes'),
+  ('random-noop', 'shim/cdom.js', '    crypto.getRandomValues(bytes(bufferPtr, length));', '    bytes(bufferPtr, length);', UNIT, 'FAIL cd_random_bytes: two fills differ'),
+  ('random-zero-asks', 'src/cdom_random.c', '  while (len) {', '  for (int once = 1; once || len; once = 0) {', UNIT, 'FAIL cd_random_bytes: two fills differ'),
+  ('random-unavailable-ok', 'shim/cdom.js', '    if (!globalThis.crypto || !crypto.getRandomValues) {\n      return 0;', '    if (!globalThis.crypto || !crypto.getRandomValues) {\n      return 1;', UNIT, 'FAIL no crypto.getRandomValues'),
+  ('random-unavailable-ignored', 'src/cdom_random.c', '    if (!j_random(p, n)) return CD_RANDOM_UNAVAILABLE;', '    j_random(p, n);', UNIT, 'FAIL no crypto.getRandomValues'),
   ('mini-strong', 'src/mini.c', '__attribute__((weak, no_builtin)) int memcmp', '__attribute__((no_builtin)) int memcmp', LINK, "FAIL an app's own libc"),
 ]
 
