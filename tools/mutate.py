@@ -23,7 +23,7 @@ M = [
   ('timer-token', 'shim/cdom.js', 'setTimeout(() => exports.cd_timer(token), ms)', 'setTimeout(() => exports.cd_timer(token + 1), ms)', UNIT, 'FAIL a timer and a frame'),
   ('event-no-flush', 'src/cdom.c', '  cd_on_event(&inbox);\n  cd_flush();', '  cd_on_event(&inbox);', UNIT, 'FAIL resize'),
   ('resize-size', 'shim/cdom.js', 'clientX: innerWidth, clientY: innerHeight', 'clientX: innerHeight, clientY: innerWidth', UNIT, 'FAIL resize'),
-  ('visibility-target', 'shim/cdom.js', 'const target = EVENTS[type] === "resize" ? window : doc;', 'const target = window;', UNIT, 'FAIL visibilitychange'),
+  ('visibility-target', 'shim/cdom.js', '    return type === RESIZE ? window : doc;', '    return window;', UNIT, 'FAIL visibilitychange'),
   ('viewport-dpr', 'shim/cdom.js', 'Math.round(devicePixelRatio * 100)', '100', UNIT, 'FAIL the device pixel ratio'),
   ('viewport-order', 'shim/cdom.js', 'i32.set([innerWidth, innerHeight, +doc.hidden,', 'i32.set([innerHeight, innerWidth, +doc.hidden,', UNIT, 'FAIL the viewport'),
   ('ws-bytes', 'shim/cdom.js', 'bytes(ptr, incoming.length).set(incoming);', 'bytes(ptr, incoming.length).set(incoming.reverse());', UNIT, 'FAIL net'),
