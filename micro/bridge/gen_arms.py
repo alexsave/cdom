@@ -26,10 +26,12 @@ The arms (RESULTS.md says what each one measures):
         receiver and the arguments; the list of natives is generated from the IMPORTS declarations
         through NATIVE below (numbers with a unit go through CSS Typed OM: CSS.px(v) and
         attributeStyleMap.set, since a native setProperty takes no number-plus-unit).
-  e     fused operations (superinstructions) on top of a: a multi-property style op
-        (cd_style_begin/num/str/end: one crossing, one node lookup, one .style), template slots
-        sent with the clone that reads them (clone_slots), and freed ids sent in one call
-        (free_n), the last two transparent to apps.
+  e     fused operations (superinstructions) and batch-shaped DOM calls on top of a: a
+        multi-property style op (cd_style_begin/num/str/end: one crossing, one node lookup, one
+        .style; the port's movers use it through port_patch.py), and, transparent to apps, one
+        queue of the ops that only need to land before the next crossing (template slot texts,
+        which go with the clone that reads them, freed ids, and moves, a run of moves before the
+        same node going in as one DocumentFragment), and clear as replaceChildren().
   f     a, with performance.now imported as Function.prototype.call.bind(Performance.prototype.now)
         and the performance object passed from an externref table: the one hot-path function with
         a Fast API C function ([NoAllocDirectCall], performance.idl:38); V8 takes it only behind
@@ -337,21 +339,27 @@ void cd_style_end(void) {
 }
 """
 E_C_PENDING = r"""
-/* bench arm e: template slots set ahead of their clone, and freed ids, cross later in one call:
- * with the clone (clone_slots), or before whatever op crosses next (ready). */
-typedef struct { uint32_t t, k, kind, v; } slot_set; /* kind 1 string id, 2 number */
-#define SLOT_SETS 64
-#define FREE_Q 1024
-static slot_set slot_sets[SLOT_SETS];
-static uint32_t n_slot_sets;
-static cd_id free_q[FREE_Q];
-static uint32_t n_free_q, batches;
-IMPORTS("apply_slots") void j_slots(const slot_set *sets, uint32_t n);
-IMPORTS("clone_slots") void j_clone_slots(uint32_t t, const slot_set *sets, uint32_t n);
-IMPORTS("free_n") void j_free_n(const cd_id *ids, uint32_t n);
+/* bench arm e: operations that only need to land before the next op that crosses are held in one
+ * queue, in the order C made them, and cross together: template slot texts (with the clone that
+ * reads them, clone_slots), freed ids (free_n in one call), and moves (consecutive moves before the
+ * same node go in as one DocumentFragment). Every crossing op, walk, read (rect, hit, input) and
+ * flush applies the queue first, so the DOM is the same as arm a's at every crossing. */
+typedef struct { uint32_t kind, a, b, c; } pending_op; /* kind: 1 slot string (t, k, id), 2 slot number, 3 free (id), 4 move (id, before) */
+#define PENDING_CAP 1024
+static pending_op pending_ops[PENDING_CAP];
+static uint32_t n_pending, batches;
+IMPORTS("pending") void j_pending(const pending_op *ops, uint32_t n);
+IMPORTS("clone_slots") void j_clone_slots(uint32_t t, const pending_op *ops, uint32_t n);
 static void fused_pending(void) {
-  if (n_free_q) { j_free_n(free_q, n_free_q); n_free_q = 0; }
-  if (n_slot_sets) { j_slots(slot_sets, n_slot_sets); n_slot_sets = 0; }
+  if (n_pending) { j_pending(pending_ops, n_pending); n_pending = 0; }
+}
+static void walk_done(void);
+static void send_strings(void);
+/* Queues one op; a held walk crosses first (it came before it), and a full queue goes. */
+static void pend(uint32_t kind, uint32_t a, uint32_t b, uint32_t c) {
+  walk_done();
+  if (n_pending == PENDING_CAP) { send_strings(); fused_pending(); }
+  pending_ops[n_pending++] = (pending_op){kind, a, b, c};
 }
 """
 E_H = r"""
@@ -372,7 +380,10 @@ def sub_once(text, old, new, what):
 
 def gen_c(arm, c):
     start, end, block, imports = parse_imports(c)
+    shipped = c
     c = c[:start] + c_arm_block(arm, block, imports) + c[end:]
+    if arm == "a" and c != shipped:
+        raise SystemExit("arm a must be the shipped cdom.c byte for byte")
     if arm == "list":
         c = sub_once(c, 'IMPORT("input") uint32_t js_input(cd_id id, char *dst, uint32_t cap);',
                      'IMPORT("input") uint32_t js_input_raw(cd_id id, char *dst, uint32_t cap);\n'
@@ -385,24 +396,33 @@ def gen_c(arm, c):
     if arm == "e":
         c = sub_once(c, "static inline void ready(void) { walk_done(); send_strings(); }",
                      "static inline void ready(void) { walk_done(); send_strings(); fused_pending(); }", "e ready")
-        c = sub_once(c, "#define SB_CAP (1u << 18)\n", E_C_PENDING + "\n#define SB_CAP (1u << 18)\n", "e pending")
+        c = sub_once(c, "#define SB_CAP (1u << 18)\n", "#define SB_CAP (1u << 18)\n", "e anchor")
+        c = sub_once(c, "static cd_event_rec inbox;\n", "static cd_event_rec inbox;\n" + E_C_PENDING, "e pending")
         c = sub_once(c, "  if (nstrs) j_strings(nstrs, nsb);\n", "  if (nstrs) { j_strings(nstrs, nsb); batches++; }\n", "e batches")
+        # a held walk reads the DOM the queued moves make: the queue lands before it crosses
+        c = sub_once(c, "static void walk_done(void) {\n  if (walking) { walking = 0; j_walk(",
+                     "static void walk_done(void) {\n  if (walking) { send_strings(); fused_pending(); walking = 0; j_walk(", "e walk")
+        c = sub_once(c, "  uint32_t v = ref_text(s);\n  send_strings();\n  if (walking)",
+                     "  uint32_t v = ref_text(s);\n  send_strings();\n  fused_pending();\n  if (walking)", "e value")
+        c = sub_once(c, "void cd_value_num(uint32_t n) {\n  send_strings();\n",
+                     "void cd_value_num(uint32_t n) {\n  send_strings();\n  fused_pending();\n", "e value_num")
         c = sub_once(c, "  uint32_t v = ref_text(s); ready(); j_tpl_text(t, k, v);\n",
-                     "  uint32_t v = ref_text(s);\n"
-                     "  if (n_slot_sets == SLOT_SETS) ready();\n"
-                     "  slot_sets[n_slot_sets++] = (slot_set){t, k, 1, v};\n", "e tpl_text")
-        c = sub_once(c, "  ready(); j_tpl_text_num(t, k, n);\n",
-                     "  if (n_slot_sets == SLOT_SETS) ready();\n"
-                     "  slot_sets[n_slot_sets++] = (slot_set){t, k, 2, n};\n", "e tpl_text_num")
+                     "  uint32_t v = ref_text(s);\n  pend(1, t, k, v);\n", "e tpl_text")
+        c = sub_once(c, "  ready(); j_tpl_text_num(t, k, n);\n", "  pend(2, t, k, n);\n", "e tpl_text_num")
         c = sub_once(c, "void cd_clone(uint32_t t) { if (svg_depth) svg_depth++; ready(); j_clone(t); }",
                      "void cd_clone(uint32_t t) {\n"
                      "  if (svg_depth) svg_depth++;\n"
                      "  walk_done(); send_strings();\n"
-                     "  if (n_free_q) { j_free_n(free_q, n_free_q); n_free_q = 0; }\n"
-                     "  if (n_slot_sets) { j_clone_slots(t, slot_sets, n_slot_sets); n_slot_sets = 0; } else j_clone(t);\n"
+                     "  if (n_pending) { j_clone_slots(t, pending_ops, n_pending); n_pending = 0; } else j_clone(t);\n"
                      "}", "e clone")
         c = sub_once(c, "void cd_id_free(cd_id id) {\n  ready(); j_free(id);\n",
-                     "void cd_id_free(cd_id id) {\n  if (n_free_q == FREE_Q) ready();\n  free_q[n_free_q++] = id;\n", "e free")
+                     "void cd_id_free(cd_id id) {\n  pend(3, id, 0, 0);\n", "e free")
+        c = sub_once(c, "void cd_move(cd_id id, cd_id before) { ready(); j_move(id, before); }",
+                     "void cd_move(cd_id id, cd_id before) { pend(4, id, before, 0); }", "e move")
+        c = sub_once(c, "cd_id cd_hit(int32_t x, int32_t y) { return j_hit(x, y); }",
+                     "cd_id cd_hit(int32_t x, int32_t y) { fused_pending(); return j_hit(x, y); }", "e hit")
+        c = sub_once(c, "void cd_rect(cd_id id, double out[4]) { j_rect(id, out); }",
+                     "void cd_rect(cd_id id, double out[4]) { fused_pending(); j_rect(id, out); }", "e rect")
         c += E_C
     return c
 
@@ -451,30 +471,53 @@ JS_ARM["e"] = r"""
       }
     }
   }
-  // Template slot texts set ahead of their clone: (template, slot, kind, value), 16 bytes each.
-  function apply_slots(setsPtr, count) {
+  // The held queue (cdom.c pending_op, 16 bytes each: kind, a, b, c), applied in order: slot texts
+  // (template a, slot b, string id or number c), frees (id a) and moves (id a before node b; a run
+  // of moves before the same node goes in as one fragment, unless that node is in the run).
+  function pending(opsPtr, count) {
     if (buffer !== memory.buffer) {
       views();
     }
-    for (let p = setsPtr >> 2, end = p + count * 4; p < end; p += 4) {
-      const node = templateSlots[u32[p]][u32[p + 1]];
-      node.nodeValue = u32[p + 2] === 1 ? stringOf(u32[p + 3]) : u32[p + 3];
+    for (let p = opsPtr >> 2, end = p + count * 4; p < end;) {
+      const kind = u32[p];
+      if (kind === 1 || kind === 2) {
+        const node = templateSlots[u32[p + 1]][u32[p + 2]];
+        node.nodeValue = kind === 1 ? stringOf(u32[p + 3]) : u32[p + 3];
+        p += 4;
+      } else if (kind === 3) {
+        free(u32[p + 1]);
+        p += 4;
+      } else {
+        const before = u32[p + 2];
+        let runEnd = p + 4;
+        while (runEnd < end && u32[runEnd] === 4 && u32[runEnd + 2] === before && u32[runEnd + 1] !== before) {
+          runEnd += 4;
+        }
+        if (runEnd - p === 4) {
+          move(u32[p + 1], before);
+        } else {
+          const first = nodes[u32[p + 1]];
+          const parent = first.parentNode;
+          const fragment = doc.createDocumentFragment();
+          for (let q = p; q < runEnd; q += 4) {
+            fragment.appendChild(nodes[u32[q + 1]]);
+          }
+          place(parent, fragment, before ? nodes[before] : null);
+        }
+        p = runEnd;
+      }
     }
   }
-  function clone_slots(templateId, setsPtr, count) {
-    apply_slots(setsPtr, count);
+  function clone_slots(templateId, opsPtr, count) {
+    pending(opsPtr, count);
     clone(templateId);
   }
-  function free_n(idsPtr, count) {
-    if (buffer !== memory.buffer) {
-      views();
-    }
-    for (let p = idsPtr >> 2, end = p + count; p < end; p++) {
-      free(u32[p]);
-    }
+  // A clear is replaceChildren() here (the batch-shaped API) rather than textContent = "".
+  function clear_children(id) {
+    nodes[id].replaceChildren();
   }
   function armImports(table) {
-    return Object.assign(table, { style_n, apply_slots, clone_slots, free_n });
+    return Object.assign(table, { style_n, pending, clone_slots, clear: clear_children });
   }
   function armReady() {}
 """
