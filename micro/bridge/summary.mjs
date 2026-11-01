@@ -13,41 +13,46 @@ if (counted.length) { // run.mjs count: import calls / strings decoded (/ op-lis
   for (const page of ['port', 'keyed', 'micro']) {
     const segs = [...new Set(arms.flatMap((a) => Object.keys(c.arms[a][page] || {})))];
     if (!segs.length) continue;
-    console.log(`\n${page}: import calls / strings decoded${page === 'micro' ? ' per operation' : ' per flow'} (list: + records applied), ${c.chrome}`);
+    console.log(`\n${page}: import calls / strings decoded${page === 'micro' ? ' per operation' : ' per flow'} (list: + op-list records applied; d: + calls into wasm to mirror references), ${c.chrome}`);
     console.log(`| ${page === 'micro' ? 'op' : 'flow'} | ${arms.join(' | ')} |`);
     console.log(`| --- |${arms.map(() => ' ---: |').join('')}`);
     for (const sg of segs) {
       console.log(`| ${sg} | ${arms.map((a) => { const v = c.arms[a][page]?.[sg]; if (!v) return '-';
-        const calls = page === 'micro' ? v.crossings : v.calls; return `${+calls.toFixed(2)} / ${+(v.strings || 0).toFixed(2)}${v.records ? ' (+' + +v.records.toFixed(2) + ')' : ''}`; }).join(' | ')} |`);
+        const calls = page === 'micro' ? v.crossings : v.calls; return `${+calls.toFixed(2)} / ${+(v.strings || 0).toFixed(2)}${v.records ? ' (+' + +v.records.toFixed(2) + ' records)' : ''}${v.exports ? ' (+' + +v.exports.toFixed(2) + ' exports)' : ''}`; }).join(' | ')} |`);
     }
   }
   process.exit(0);
 }
-const rows = all;
-const kept = rows.filter((r) => !r.over);
-const q = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))]; };
+const rows = all.filter((r) => !r.cut);
+const cut = all.length - rows.length;
+// Left out: loads marked busy (other processes over OTHERS_MAX), invalid (a window's check failed),
+// or, in older files, over the load gate.
+const kept = rows.filter((r) => !r.busy && !r.over && !(r.invalid && r.invalid.length));
+if (!kept.length) { console.log(`${file}: no load kept (${rows.length} loads, ${cut} cut, all busy or invalid)`); process.exit(0); }
+// Quantiles by linear interpolation (type 7), so an even count's median is the mean of the middle two.
+const q = (a, p) => { const s = [...a].sort((x, y) => x - y); const h = (s.length - 1) * p, lo = Math.floor(h); return s[lo] + (s[Math.min(lo + 1, s.length - 1)] - s[lo]) * (h - lo); };
 const med = (a) => q(a, 0.5);
 const arms = [...new Set(kept.map((r) => r.arm))];
+const per = Object.fromEntries(arms.map((a) => [a, per[a]]));
 const loads = kept.map((r) => r.load);
-console.log(`${file}: ${kept.length} loads (${rows.length - kept.length} over the gate left out), loads ${Math.min(...loads)}-${Math.max(...loads)}, ${rows[0].chrome}, CPU x${rows[0].cpu}${rows[0].flags ? ', ' + rows[0].flags : ''}`);
+const reasons = rows.filter((r) => !kept.includes(r)).map((r) => `${r.arm} r${r.round}: ${r.busy ? 'busy ' + r.others + '%' : r.over ? 'over' : r.invalid.join('; ')}`);
+console.log(`${file}: ${kept.length} of ${rows.length} loads kept${cut ? `, ${cut} cut by the budget` : ''}; per arm ${arms.map((a) => `${a} ${per[a].length}`).join(', ')}; load averages ${Math.min(...loads)}-${Math.max(...loads)}; ${rows[0].chrome}, CPU x${rows[0].cpu}${rows[0].flags ? ', ' + rows[0].flags : ''}`);
+for (const r of reasons) console.log(`  left out: ${r}`);
+const head = (label) => { console.log(`| ${label} | ${arms.map((a) => `${a} (n=${per[a].length})`).join(' | ')} |`); console.log(`| --- |${arms.map(() => ' ---: |').join('')}`); };
 if (rows[0].mode === 'micro') {
   const kinds = Object.keys(kept[0].micro);
-  console.log(`| ns per op | ${arms.join(' | ')} |`);
-  console.log(`| --- |${arms.map(() => ' ---: |').join('')}`);
-  for (const k of kinds) {
-    console.log(`| ${k} | ${arms.map((a) => med(kept.filter((r) => r.arm === a).map((r) => r.micro[k])).toFixed(1)).join(' | ')} |`);
-  }
+  head('ns per op');
+  for (const k of kinds) console.log(`| ${k} | ${arms.map((a) => med(per[a].map((r) => r.micro[k])).toFixed(1)).join(' | ')} |`);
   process.exit(0);
 }
 const segs = Object.keys(kept[0].windows);
 for (const m of metrics) {
-  console.log(`\n${m} (ms, median of ${Math.round(kept.length / arms.length)} loads; 25th-75th; / arm a)`);
-  console.log(`| window | ${arms.join(' | ')} |`);
-  console.log(`| --- |${arms.map(() => ' ---: |').join('')}`);
+  console.log(`\n${m} (ms, median over loads; 25th-75th; / arm a)`);
+  head('window');
   for (const s of segs) {
-    const base = med(kept.filter((r) => r.arm === 'a').map((r) => r.windows[s][m]));
+    const base = med((per.a || []).map((r) => r.windows[s][m]));
     const cells = arms.map((a) => {
-      const v = kept.filter((r) => r.arm === a).map((r) => r.windows[s][m]);
+      const v = per[a].map((r) => r.windows[s][m]);
       const md = med(v);
       const ratio = a === 'a' || !base ? '' : ` (${(md / base).toFixed(2)})`;
       return `${md.toFixed(2)} [${q(v, 0.25).toFixed(2)}-${q(v, 0.75).toFixed(2)}]${ratio}`;
@@ -57,8 +62,7 @@ for (const m of metrics) {
 }
 const extra = ['frames', 'long', 'max'];
 console.log(`\nframes / long tasks / longest task (ms), medians`);
-console.log(`| window | ${arms.join(' | ')} |`);
-console.log(`| --- |${arms.map(() => ' ---: |').join('')}`);
+head('window');
 for (const s of segs) {
-  console.log(`| ${s} | ${arms.map((a) => extra.map((m) => { const v = med(kept.filter((r) => r.arm === a).map((r) => r.windows[s][m])); return m === 'max' ? v.toFixed(1) : v; }).join(' / ')).join(' | ')} |`);
+  console.log(`| ${s} | ${arms.map((a) => extra.map((m) => { const v = med(per[a].map((r) => r.windows[s][m])); return m === 'max' ? v.toFixed(1) : v; }).join(' / ')).join(' | ')} |`);
 }
