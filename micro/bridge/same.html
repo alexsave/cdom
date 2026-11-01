@@ -10,15 +10,30 @@
 cdom.start('same.wasm', 'main').then((x) => {
   const mount = document.getElementById('main');
   const out = { html: [mount.innerHTML] };
+  // the touched properties as the browser computed them, per touched element, after each step
+  const PROPS = ['left', 'top', 'width', 'opacity', 'transform', 'filter', 'margin-left', 'padding-top', 'letter-spacing',
+    'rotate', 'border-top-color', 'position'];
+  const computed = () => [...mount.querySelectorAll('div, p, circle')].slice(0, 8).map((e) => { const c = getComputedStyle(e); return PROPS.map((p) => c.getPropertyValue(p)).join('|'); });
+  out.computed = [computed()];
   for (let k = 0; k < x.test_steps(); k++) {
     x.test_step(k);
     out.html.push(mount.innerHTML);
+    out.computed.push(computed());
   }
   const rects = new Float64Array(x.memory.buffer, x.test_rects(), 4 * x.test_nrects());
   out.rects = [...rects].map((v) => +v.toFixed(3));
   out.hits = [0, 1].map((i) => x.test_hit(i));
   // events through the record: a click on each row's label (the path from the listening row)
   for (const a of mount.querySelectorAll('.row i')) a.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
+  // a click on the box, whose default C prevents through the record; and the field's value read by
+  // C during its input event (cd_input_value)
+  const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+  mount.querySelector('[data-kind]').dispatchEvent(click);
+  out.prevented = click.defaultPrevented;
+  const field = mount.querySelector('input');
+  field.value = 'typed \u00e9\u4e2d';
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  out.input = new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.test_input(), x.test_input_len()));
   out.events = x.test_events();
   out.live = x.test_live();
   window.RESULT = out;

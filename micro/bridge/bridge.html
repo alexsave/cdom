@@ -6,41 +6,55 @@
 <body><div id="main"></div>
 <script>
 // Each kind runs N operations of bridge.c inside one export (bench_run); the page reports ns per
-// operation, the median of R runs after warm-up runs (every path to its top tier). ?count=1 (the
-// counting build) runs each kind once with N = 1000 and reports import calls and strings per operation.
+// operation, the median of R runs, after each kind has been warmed for WARM_MS of runs (every path to
+// its top tier). The kinds go in an order that rotates with ?round. 'frame_rendered' is one card-table
+// frame per animation frame, timed from the write to the end of a forced style and layout (the
+// rendering the writes cost, which the other kinds leave to the next frame), median of 60 frames.
+// ?count=1 (the counting build) runs each kind once with N = 1000 and reports import calls, export
+// calls and strings per operation.
 const KINDS = ['style_num', 'style_tmp', 'set_text', 'attr', 'mount', 'clone', 'ghost', 'frame', 'now'];
 const q = new URLSearchParams(location.search);
-const N = +(q.get('n') || 20000), R = +(q.get('r') || 15), COUNT = q.get('count') === '1';
+const N = +(q.get('n') || 20000), R = +(q.get('r') || 15), COUNT = q.get('count') === '1', ROUND = +(q.get('round') || 0);
+const WARM_MS = 300;
 cdom.start('bridge.wasm', 'main').then(async (x) => {
   const out = {};
   const target = document.querySelector('#main > div');
   const click = new MouseEvent('click', { bubbles: true });
   const events = (n) => { for (let i = 0; i < n; i++) target.dispatchEvent(click); };
+  x.bench_prevent(1); // the record's prevent path on from the start, warm-up included
   if (COUNT) {
     const cross = globalThis.__cdomCross;
-    const total = () => Object.entries(cross).reduce((a, [k, v]) => (k[0] === '$' ? a : a + v), 0);
-    for (let k = 0; k < KINDS.length; k++) {
-      const c0 = total(), s0 = cross.$strings | 0, r0 = cross.$records | 0;
-      x.bench_run(k, 1000);
-      out[KINDS[k]] = { crossings: (total() - c0) / 1000, strings: ((cross.$strings | 0) - s0) / 1000, records: ((cross.$records | 0) - r0) / 1000 };
-    }
-    const c0 = total(), s0 = cross.$strings | 0;
-    events(1000);
-    out.event = { crossings: (total() - c0) / 1000, strings: ((cross.$strings | 0) - s0) / 1000, records: 0 };
+    const tally = () => { let calls = 0, exportsN = 0; for (const [k, v] of Object.entries(cross)) { if (k.startsWith('$export_')) exportsN += v; else if (k[0] !== '$') calls += v; }
+      return { calls, exportsN, strings: cross.$strings | 0, records: cross.$records | 0 }; };
+    const per = (a, b, n) => ({ crossings: (b.calls - a.calls) / n, exports: (b.exportsN - a.exportsN) / n, strings: (b.strings - a.strings) / n, records: (b.records - a.records) / n });
+    for (let k = 0; k < KINDS.length; k++) { const t = tally(); x.bench_run(k, 1000); out[KINDS[k]] = per(t, tally(), 1000); }
+    const t = tally(); events(1000); out.event = per(t, tally(), 1000);
     window.RESULT = out;
     return;
   }
   const time = (f, n) => { const v = []; for (let r = 0; r < R; r++) { const t = performance.now(); f(n); v.push((performance.now() - t) * 1e6 / n); }
-    v.sort((a, b) => a - b); return +v[R >> 1].toFixed(1); };
-  for (let w = 0; w < 3; w++) { for (let k = 0; k < KINDS.length; k++) x.bench_run(k, N / 4); events(N / 4); }
-  for (let k = 0; k < KINDS.length; k++) {
+    v.sort((a, b) => a - b); return +(R % 2 ? v[R >> 1] : (v[R / 2 - 1] + v[R / 2]) / 2).toFixed(1); };
+  const warm = (f, n) => { const t0 = performance.now(); while (performance.now() - t0 < WARM_MS) f(n); };
+  const order = KINDS.map((_, k) => (k + ROUND) % KINDS.length);
+  for (const k of order) {
     const n = KINDS[k] === 'mount' || KINDS[k] === 'clone' || KINDS[k] === 'frame' ? N / 4 : N;
+    warm((m) => x.bench_run(k, m), n / 10);
     out[KINDS[k]] = time((m) => x.bench_run(k, m), n);
     await new Promise((r) => setTimeout(r, 0)); // let rendering of the writes happen off the clock
   }
-  x.bench_prevent(1);
+  warm(events, N / 40);
   out.event = time(events, N / 4);
   if (x.bench_events() === 0) throw new Error('no events reached C');
+  const FRAME = KINDS.indexOf('frame'), frames = [];
+  for (let f = 0; f < 70; f++) {
+    await new Promise((r) => requestAnimationFrame(r));
+    const t = performance.now();
+    x.bench_run(FRAME, 1);
+    document.body.offsetHeight; // style and layout, forced now
+    if (f >= 10) frames.push((performance.now() - t) * 1e6);
+  }
+  frames.sort((a, b) => a - b);
+  out.frame_rendered = +((frames[29] + frames[30]) / 2).toFixed(1);
   window.RESULT = out;
 }).catch((e) => { window.RESULT = { error: String(e && e.stack || e) }; });
 </script></body></html>

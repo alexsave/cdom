@@ -14,7 +14,9 @@
 #define L(s) CD_LIT(s)
 
 enum { T_ROW = 0, T_CELL = 1 };
-static cd_id box, label, count, svg_c, panel, list_parent, moved, held, region_parent;
+static cd_id box, label, count, svg_c, panel, list_parent, moved, held, region_parent, field;
+static char input_got[64];
+static uint32_t input_len;
 static cd_list list;
 static cd_region region;
 static uint32_t keys[64], nkeys;
@@ -72,7 +74,7 @@ static void list_to(const uint32_t *k, uint32_t n) {
 
 void cd_main(void) {
   box = cd_id_new(); label = cd_id_new(); count = cd_id_new(); svg_c = cd_id_new(); panel = cd_id_new();
-  list_parent = cd_id_new(); moved = cd_id_new(); held = cd_id_new(); region_parent = cd_id_new();
+  list_parent = cd_id_new(); moved = cd_id_new(); held = cd_id_new(); region_parent = cd_id_new(); field = cd_id_new();
   /* templates first, off the document */
   cd_at(CD_DETACHED, 0);
   cd_open(L("div")); cd_class(L("row"));
@@ -84,7 +86,7 @@ void cd_main(void) {
   cd_tpl_save(T_CELL);
 
   cd_at(0, 0);
-  cd_open(L("div")); cd_name_open(box);
+  cd_open(L("div")); cd_listen(box, CD_EV_CLICK); /* listened: C prevents its clicks' default */
   cd_attr(L("style"), L("position: absolute; left: 0px; top: 0px; width: 40px; height: 20px;"));
   cd_attr(L("data-kind"), L("box"));
   cd_class(L("box first"));
@@ -101,6 +103,7 @@ void cd_main(void) {
   cd_open(L("p")); cd_name_open(held); cd_text(L("held")); cd_close();
   cd_close();
   cd_open(L("ul")); cd_name_open(region_parent); cd_close();
+  cd_open(L("input")); cd_listen(field, CD_EV_INPUT); cd_attr(L("type"), L("text")); cd_close();
   cd_open(L("div")); cd_name_open(list_parent); cd_close();
   region.parent = region_parent;
   list.parent = list_parent;
@@ -113,6 +116,7 @@ void cd_on_event(const cd_event_rec *e) {
   ev_sum += (uint32_t)(e->type * 7 + e->id * 31 + e->path * 3 + e->depth + e->button);
   ev_n++;
   if (e->id == (int32_t)box) cd_prevent_default();
+  if (e->id == (int32_t)field) input_len = cd_input_value(field, input_got, sizeof input_got); /* read during the event */
 }
 
 EXPORT("test_step") void test_step(uint32_t k) {
@@ -134,6 +138,12 @@ EXPORT("test_step") void test_step(uint32_t k) {
     cd_set_style_num(box, L("width"), 42.5, CD_UNIT_PX);
     cd_set_style_num(box, L("opacity"), 0.25, CD_UNIT_NONE);
     cd_set_style_num(box, L("margin-left"), 12.5, CD_UNIT_PCT);
+    cd_set_style_num(box, L("padding-top"), 1.0 / 3.0, CD_UNIT_PX);   /* numbers no format holds exactly */
+    cd_set_style_num(box, L("letter-spacing"), 2.0 / 3.0, CD_UNIT_EM);
+    cd_set_style_num(box, L("rotate"), 1.0 / 7.0, CD_UNIT_DEG);
+    cd_tpl_text(T_CELL, 0, cd_tmpz("a one-off slot text")); /* a template slot set from a one-off string, then cloned */
+    cd_at(panel, 0);
+    cd_clone(T_CELL); cd_close();
     cd_set_style_num(svg_c, L("opacity"), 0.5, CD_UNIT_NONE);
     style4(held, 10.25, -3, "translate(-50%, -50%) rotate(90deg) scale(1.2)", "drop-shadow(0 2px 3px rgba(0,0,0,0.4))");
     break;
@@ -186,3 +196,5 @@ EXPORT("test_nrects") uint32_t test_nrects(void) { return nrects; }
 EXPORT("test_hit") int32_t test_hit(uint32_t i) { return i < nhits ? hits[i] : -1; }
 EXPORT("test_events") uint32_t test_events(void) { return ev_sum * 1000 + ev_n; }
 EXPORT("test_live") uint32_t test_live(void) { return cd_ids_live(); }
+EXPORT("test_input") char *test_input(void) { return input_got; }
+EXPORT("test_input_len") uint32_t test_input_len(void) { return input_len; }
