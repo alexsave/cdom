@@ -159,10 +159,8 @@ NATIVE = {
     "n_class_name": ("void n_class_name(cd_ref element, cd_ref value)", 'call.bind(setter(Element.prototype, "className"))'),
     "n_text_content": ("void n_text_content(cd_ref node, cd_ref value)", 'call.bind(setter(Node.prototype, "textContent"))'),
     "n_set_attribute": ("void n_set_attribute(cd_ref element, cd_ref name, cd_ref value)", "call.bind(Element.prototype.setAttribute)"),
-    "n_style": ("cd_ref n_style(cd_ref element)", 'call.bind(getter(HTMLElement.prototype, "style"))'),
     "n_set_property": ("void n_set_property(cd_ref style, cd_ref property, cd_ref value)",
                        "call.bind(CSSStyleDeclaration.prototype.setProperty)"),
-    "n_style_map": ("cd_ref n_style_map(cd_ref element)", 'call.bind(getter(HTMLElement.prototype, "attributeStyleMap"))'),
     "n_style_map_set": ("void n_style_map_set(cd_ref map, cd_ref property, cd_ref value)",
                         "call.bind(StylePropertyMap.prototype.set)"),
 }
@@ -174,7 +172,7 @@ DIRECT_NATIVE = {  # import -> C body over the natives
     "set_text": "n_node_value(node_ref(id), str_ref(s));",
     "set_attr": "n_set_attribute(node_ref(id), str_ref(name), str_ref(v));",
     "set_class": "n_class_name(node_ref(id), str_ref(v));",
-    "style": "n_set_property(n_style(node_ref(id)), str_ref(prop), str_ref(v));",
+    "style": "n_set_property(style_ref(id), str_ref(prop), str_ref(v));",
     "clear": "n_text_content(node_ref(id), str_ref(0));",
 }
 
@@ -261,26 +259,27 @@ static inline list_rec *list_push(uint32_t op) {
         return "".join(out)
     if arm == "d":
         out.append("""typedef __externref_t cd_ref;
-/* The nodes C names and the strings JS holds, mirrored as references for the natives: the shim
- * puts each one in as it names or decodes it (cd_ref_node, cd_ref_str). */
-static cd_ref ref_nodes[0], ref_strs[0], ref_tmps[0];
-static void ref_put(int which, uint32_t i, cd_ref r) {
-  if (which == 0) {
-    if (i >= __builtin_wasm_table_size(ref_nodes)) __builtin_wasm_table_grow(ref_nodes, __builtin_wasm_ref_null_extern(), i + 1024);
-    __builtin_wasm_table_set(ref_nodes, i, r);
-  } else if (which == 1) {
-    if (i >= __builtin_wasm_table_size(ref_strs)) __builtin_wasm_table_grow(ref_strs, __builtin_wasm_ref_null_extern(), i + 1024);
-    __builtin_wasm_table_set(ref_strs, i, r);
-  } else {
-    if (i >= __builtin_wasm_table_size(ref_tmps)) __builtin_wasm_table_grow(ref_tmps, __builtin_wasm_ref_null_extern(), i + 1024);
-    __builtin_wasm_table_set(ref_tmps, i, r);
-  }
+/* The nodes C names, their style declarations and style maps, and the strings JS holds, mirrored
+ * as references for the natives: the shim puts each in as it names a node (cd_ref_node, with the
+ * node's own .style and .attributeStyleMap, so no getter is called per write and an SVG element's
+ * come from its own interface) or decodes a string (cd_ref_str). A text node has no style: null. */
+static cd_ref ref_nodes[0], ref_styles[0], ref_maps[0], ref_strs[0], ref_tmps[0];
+#define REF_PUT(table, i, r) do { \
+    uint32_t size_ = __builtin_wasm_table_size(table); \
+    if ((i) >= size_) __builtin_wasm_table_grow(table, __builtin_wasm_ref_null_extern(), (i) + 1024 - size_); \
+    __builtin_wasm_table_set(table, (i), (r)); \
+  } while (0)
+__attribute__((export_name("cd_ref_node"))) void cd_ref_node(uint32_t id, cd_ref node, cd_ref style, cd_ref map) {
+  REF_PUT(ref_nodes, id, node);
+  REF_PUT(ref_styles, id, style);
+  REF_PUT(ref_maps, id, map);
 }
-__attribute__((export_name("cd_ref_node"))) void cd_ref_node(uint32_t id, cd_ref r) { ref_put(0, id, r); }
 __attribute__((export_name("cd_ref_str"))) void cd_ref_str(uint32_t id, cd_ref r) {
-  if (id >= 0x40000000u) ref_put(2, id - 0x40000000u, r); else ref_put(1, id, r);
+  if (id >= 0x40000000u) REF_PUT(ref_tmps, id - 0x40000000u, r); else REF_PUT(ref_strs, id, r);
 }
 static inline cd_ref node_ref(cd_id id) { return __builtin_wasm_table_get(ref_nodes, id); }
+static inline cd_ref style_ref(cd_id id) { return __builtin_wasm_table_get(ref_styles, id); }
+static inline cd_ref map_ref(cd_id id) { return __builtin_wasm_table_get(ref_maps, id); }
 static inline cd_ref str_ref(uint32_t s) {
   return s >= 0x40000000u ? __builtin_wasm_table_get(ref_tmps, s - 0x40000000u) : __builtin_wasm_table_get(ref_strs, s);
 }
@@ -296,7 +295,7 @@ static inline cd_ref str_ref(uint32_t s) {
                 out.append(direct(i))
         # numbers with a unit: C passes the unit's enum (cd_set_style_num is patched to call this one)
         out.append("static inline void j_style_num_unit(cd_id id, uint32_t prop, double v, uint32_t unit) {\n"
-                   "  n_style_map_set(n_style_map(node_ref(id)), str_ref(prop), css_unit(v, unit));\n}\n")
+                   "  n_style_map_set(map_ref(id), str_ref(prop), css_unit(v, unit));\n}\n")
         return "".join(out)
     raise SystemExit(f"no arm {arm}")
 
@@ -398,7 +397,13 @@ def gen_c(arm, c):
                      "static inline void ready(void) { walk_done(); send_strings(); fused_pending(); }", "e ready")
         c = sub_once(c, "#define SB_CAP (1u << 18)\n", "#define SB_CAP (1u << 18)\n", "e anchor")
         c = sub_once(c, "static cd_event_rec inbox;\n", "static cd_event_rec inbox;\n" + E_C_PENDING, "e pending")
+        # the queue lands right after any string batch it may name goes: a batch forced mid-queue (a
+        # full buffer in push_raw or cd_tmp) would otherwise let the next one overwrite its one-off strings
         c = sub_once(c, "  if (nstrs) j_strings(nstrs, nsb);\n", "  if (nstrs) { j_strings(nstrs, nsb); batches++; }\n", "e batches")
+        c = sub_once(c, "  if (nsb + len > SB_CAP || nstrs + 1 > SM_CAP) send_strings();\n",
+                     "  if (nsb + len > SB_CAP || nstrs + 1 > SM_CAP) { send_strings(); fused_pending(); }\n", "e forced batch (push_raw)")
+        c = sub_once(c, "  if (nstrs + 1 > SM_CAP || nsb + len > SB_CAP) send_strings();\n",
+                     "  if (nstrs + 1 > SM_CAP || nsb + len > SB_CAP) { send_strings(); fused_pending(); }\n", "e forced batch (cd_tmp)")
         # a held walk reads the DOM the queued moves make: the queue lands before it crosses
         c = sub_once(c, "static void walk_done(void) {\n  if (walking) { walking = 0; j_walk(",
                      "static void walk_done(void) {\n  if (walking) { send_strings(); fused_pending(); walking = 0; j_walk(", "e walk")
@@ -473,7 +478,7 @@ JS_ARM["e"] = r"""
   }
   // The held queue (cdom.c pending_op, 16 bytes each: kind, a, b, c), applied in order: slot texts
   // (template a, slot b, string id or number c), frees (id a) and moves (id a before node b; a run
-  // of moves before the same node goes in as one fragment, unless that node is in the run).
+  // of moves of siblings before the same node goes in as one fragment, unless that node is in the run).
   function pending(opsPtr, count) {
     if (buffer !== memory.buffer) {
       views();
@@ -489,15 +494,15 @@ JS_ARM["e"] = r"""
         p += 4;
       } else {
         const before = u32[p + 2];
+        const parent = nodes[u32[p + 1]].parentNode;
         let runEnd = p + 4;
-        while (runEnd < end && u32[runEnd] === 4 && u32[runEnd + 2] === before && u32[runEnd + 1] !== before) {
+        while (runEnd < end && u32[runEnd] === 4 && u32[runEnd + 2] === before && u32[runEnd + 1] !== before
+          && nodes[u32[runEnd + 1]].parentNode === parent) {
           runEnd += 4;
         }
         if (runEnd - p === 4) {
           move(u32[p + 1], before);
         } else {
-          const first = nodes[u32[p + 1]];
-          const parent = first.parentNode;
           const fragment = doc.createDocumentFragment();
           for (let q = p; q < runEnd; q += 4) {
             fragment.appendChild(nodes[u32[q + 1]]);
@@ -676,27 +681,36 @@ def js_table():
 """ % (shapes, fns, ", ".join(f'"{n}"' for n in TABLE), ", ".join(SHAPES))
 
 
-def js_native():
+def js_native(count):
     binds = "\n".join(f"      {n}: {how}," for n, (_, how) in NATIVE.items())
+    tally = lambda name: f"crossings.{name} = (crossings.{name} | 0) + 1;" if count else ""
     return r"""
   // Natives bound at instantiation (Function.prototype.call.bind(method): the first argument is the
-  // receiver), with nodes and strings mirrored into wasm's reference tables as the shim names or
-  // decodes them.
+  // receiver), with nodes, their style declarations and maps, and strings mirrored into wasm's
+  // reference tables as the shim names or decodes them. Each accessor is taken from the prototype
+  // that owns it (the chain walked), so a move of a property between interfaces cannot hand back
+  // undefined.
   const call = Function.prototype.call;
+  function owned(proto, name) {
+    for (let p = proto; p; p = Object.getPrototypeOf(p)) {
+      const d = Object.getOwnPropertyDescriptor(p, name);
+      if (d) {
+        return d;
+      }
+    }
+    throw new Error(`no ${name} on ${proto.constructor.name}'s chain`);
+  }
   function setter(proto, name) {
-    return Object.getOwnPropertyDescriptor(proto, name).set;
+    return owned(proto, name).set;
   }
-  function getter(proto, name) {
-    return Object.getOwnPropertyDescriptor(proto, name).get;
-  }
-  function mirrored(fn) {
-    return (id, ...rest) => {
-      fn(id, ...rest);
-      exports.cd_ref_node(id, nodes[id] ?? null);
-    };
+  function mirror(id) {
+    const node = nodes[id] ?? null;
+    TALLY_NODE
+    exports.cd_ref_node(id, node, (node && node.style) || null, (node && node.attributeStyleMap) || null);
   }
   function armKeep(id, value) {
     if (exports) {
+      TALLY_STR
       exports.cd_ref_str(id, value);
     }
   }
@@ -704,9 +718,12 @@ def js_native():
     for (const name of [%s]) {
       delete table[name];
     }
-    for (const name of ["name", "name_open", "listen", "remove", "free"]) {
-      table[name] = mirrored(table[name]);
-    }
+    const { name, name_open, listen, remove, free } = table;
+    table.name = (id) => { name(id); mirror(id); };
+    table.name_open = (id) => { name_open(id); mirror(id); };
+    table.listen = (id, type) => { listen(id, type); mirror(id); };
+    table.remove = (id) => { remove(id); mirror(id); };
+    table.free = (id) => { free(id); mirror(id); };
     return Object.assign(table, {
 %s
     });
@@ -714,7 +731,8 @@ def js_native():
   function armReady() {
     exports.cd_ref_str(0, "");
   }
-""" % (", ".join(f'"{n}"' for n in list(DIRECT_NATIVE) + ["style_num"]), binds)
+""".replace("TALLY_NODE", tally("$export_cd_ref_node")).replace("TALLY_STR", tally("$export_cd_ref_str")) % (
+        ", ".join(f'"{n}"' for n in list(DIRECT_NATIVE) + ["style_num"]), binds)
 
 
 JS_COUNT = r"""
@@ -736,7 +754,7 @@ JS_COUNT = r"""
 def gen_js(arm, js, imports, count):
     block = JS_COMMON % {"arm": arm}
     block += {"list": lambda: js_list(imports), "b": lambda: js_bridge(imports), "c": js_table,
-              "d": js_native}.get(arm, lambda: JS_ARM[arm])()
+              "d": lambda: js_native(count)}.get(arm, lambda: JS_ARM[arm])()
     block = block.replace("COUNT_RECORDS", "crossings.$records = (crossings.$records | 0) + count;" if count else "")
     if count:
         block += JS_COUNT
