@@ -6,7 +6,24 @@ import fs from 'node:fs';
 
 const [file, ...want] = process.argv.slice(2);
 const metrics = want.length ? want : ['script', 'total'];
-const rows = fs.readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.mode !== 'count');
+const all = fs.readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+const counted = all.filter((r) => r.mode === 'count');
+if (counted.length) { // run.mjs count: import calls / strings decoded (/ op-list records) per flow, the last session
+  const c = counted.at(-1), arms = Object.keys(c.arms);
+  for (const page of ['port', 'keyed', 'micro']) {
+    const segs = [...new Set(arms.flatMap((a) => Object.keys(c.arms[a][page] || {})))];
+    if (!segs.length) continue;
+    console.log(`\n${page}: import calls / strings decoded${page === 'micro' ? ' per operation' : ' per flow'} (list: + records applied), ${c.chrome}`);
+    console.log(`| ${page === 'micro' ? 'op' : 'flow'} | ${arms.join(' | ')} |`);
+    console.log(`| --- |${arms.map(() => ' ---: |').join('')}`);
+    for (const sg of segs) {
+      console.log(`| ${sg} | ${arms.map((a) => { const v = c.arms[a][page]?.[sg]; if (!v) return '-';
+        const calls = page === 'micro' ? v.crossings : v.calls; return `${+calls.toFixed(2)} / ${+(v.strings || 0).toFixed(2)}${v.records ? ' (+' + +v.records.toFixed(2) + ')' : ''}`; }).join(' | ')} |`);
+    }
+  }
+  process.exit(0);
+}
+const rows = all;
 const kept = rows.filter((r) => !r.over);
 const q = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))]; };
 const med = (a) => q(a, 0.5);

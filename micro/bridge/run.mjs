@@ -11,7 +11,11 @@
 //   keyed  cdom's js-framework-benchmark entry through the benchmark's operations, traced the same.
 //   micro  micro/bridge/bridge.html: ns per operation per kind.
 //   count  the counting builds through the port's and the keyed page's flows and the micro, untimed:
-//          import calls and strings decoded per flow (one load per arm).
+//          import calls and strings decoded per flow (one load per arm), and a hash of the page's
+//          DOM at the end of each flow, compared with arm a's (e_t and e_css move by transform
+//          or one style string by design: their differences are reported, not failed).
+//   same   micro/bridge/same.html per arm: every arm's DOM after each step and C's reads equal to
+//          arm a's, or exit 1 naming the first difference.
 // Results append as JSON lines to micro/bridge/results/<mode>_x<cpu>.jsonl; summary.mjs reads them.
 // LOADMAX (default 4): each load waits, bounded (180 s), for the 1-minute load average under it.
 import fs from 'node:fs';
@@ -28,12 +32,13 @@ const PORT_POC = process.env.PORT_POC || '/Users/alex/Dev/foolish-cdom-port/fool
 const FOOLISH = path.resolve(PORT_POC, '../../..', 'foolish');
 const MODE = process.argv[2];
 const ROUNDS = Number(process.argv[3] || 3), CPU = Number(process.argv[4] || 1);
-const DEFAULT_ARMS = { port: 'a,list,b,c,d,e,f,e_t,e_css', keyed: 'a,list,b,c,d,e', micro: 'a,list,b,c,d,e,f', count: 'a,list,b,c,d,e,f,e_t,e_css' };
+const DEFAULT_ARMS = { port: 'a,list,b,c,d,e,f,e_t,e_css', keyed: 'a,list,b,c,d,e', micro: 'a,list,b,c,d,e,f', count: 'a,list,b,c,d,e,f,e_t,e_css', same: 'a,list,b,c,d,e,f' };
 const ARMS = (process.argv[5] || DEFAULT_ARMS[MODE] || '').split(',').filter(Boolean);
 const LOADMAX = Number(process.env.LOADMAX || 4);
+const ROUND0 = Number(process.env.ROUND || 0); // bench.sh runs one round per command: the arms' order rotates by it
 const HTTP_PORT = 8741, CDP_PORT = 8742;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-if (!DEFAULT_ARMS[MODE]) { console.error('modes: port keyed micro count'); process.exit(2); }
+if (!DEFAULT_ARMS[MODE]) { console.error('modes: port keyed micro count same'); process.exit(2); }
 
 // ---- the server: out/ first, then the foolish tree (the port's /src/styles), cross-origin isolated
 const TYPES = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.wasm': 'application/wasm',
@@ -105,6 +110,7 @@ async function launch() {
   const goto = async (url) => {
     const loaded = new Promise((r) => { const off = listen('Page.loadEventFired', () => { off(); r(); }); });
     await s('Page.navigate', { url }); await loaded;
+    await s('Page.bringToFront'); // headless renders a target brought to the front (the port's README); no window is shown
   };
   const until = async (expr, ms = 10000) => {
     for (let n = 0; n < ms / 50; n++) { if (await evaluate(expr)) return; await sleep(50); }
@@ -205,7 +211,7 @@ async function portLoad(b, arm, count) {
   await b.evaluate('window.app.then((x) => x.app_debug_hold(1))');
   await sleep(500);
   const counts = {};
-  const snap = () => (count ? b.evaluate('({ ...globalThis.__cdomCross })') : null);
+  const snap = () => (count ? b.evaluate(SNAP('root')) : null);
   let before = await snap();
   const seg = async (name, fn) => {
     await mark(b, name);
@@ -263,7 +269,7 @@ async function keyedLoad(b, arm, count) {
   await b.until('!!document.getElementById("run") && !!window.cdom');
   await sleep(300);
   const counts = {};
-  const snap = () => (count ? b.evaluate('({ ...globalThis.__cdomCross })') : null);
+  const snap = () => (count ? b.evaluate(SNAP('main')) : null);
   let before = await snap();
   const stop = count ? null : await traceStart(b);
   await sleep(200);
@@ -297,16 +303,37 @@ async function keyedLoad(b, arm, count) {
   return { windows: w };
 }
 
+// The counters, and a hash (FNV-1a) of the mount's HTML: the DOM each flow leaves.
+const SNAP = (mount) => `(() => { const html = document.getElementById(${JSON.stringify(mount)}).outerHTML; let h = 2166136261;
+  for (let i = 0; i < html.length; i++) h = Math.imul(h ^ html.charCodeAt(i), 16777619) >>> 0;
+  return { ...globalThis.__cdomCross, $$hash: h }; })()`;
 function delta(a, b) {
-  const d = {};
+  const d = { hash: b.$$hash };
   let calls = 0;
   for (const k of Object.keys(b)) {
+    if (k === '$$hash') continue;
     const v = (b[k] | 0) - (a[k] | 0);
     if (!v) continue;
     if (k[0] === '$') d[k.slice(1)] = v; else { d[k] = v; calls += v; }
   }
   d.calls = calls;
   return d;
+}
+
+// ---- the correctness test
+async function sameLoad(b, arm) {
+  await b.goto(`${ORIGIN}/same/${arm}/index.html`);
+  for (let n = 0; n < 200; n++) {
+    const r = await b.evaluate('window.RESULT');
+    if (r) { if (r.error) throw new Error(`${arm}: ${r.error}`); return r; }
+    await sleep(50);
+  }
+  throw new Error(`${arm}: same: no result`);
+}
+function firstDifference(x, y) {
+  let i = 0;
+  while (i < x.length && x[i] === y[i]) i++;
+  return `at ${i}: ${JSON.stringify(x.slice(Math.max(0, i - 40), i + 60))} vs ${JSON.stringify(y.slice(Math.max(0, i - 40), i + 60))}`;
 }
 
 // ---- micro
@@ -324,14 +351,28 @@ async function microLoad(b, arm, count) {
 fs.mkdirSync(RESULTS, { recursive: true });
 const server = await serve();
 const b = await launch();
-const file = path.join(RESULTS, `${MODE}_x${CPU}.jsonl`);
+const file = path.join(RESULTS, `${MODE}_x${CPU}${process.env.TAG ? '_' + process.env.TAG : ''}.jsonl`);
 try {
   await b.send('Network.enable');
   await b.send('Network.setCacheDisabled', { cacheDisabled: true });
   if (CPU > 1) await b.send('Emulation.setCPUThrottlingRate', { rate: CPU });
   const session = new Date().toISOString();
   console.log(`${MODE}: ${ARMS.join(' ')}, ${ROUNDS} rounds, CPU x${CPU}, ${b.version}, ${process.env.CHROME_FLAGS || 'no extra flags'}`);
-  if (MODE === 'count') {
+  if (MODE === 'same') {
+    const got = {};
+    for (const arm of ARMS) got[arm] = await sameLoad(b, arm);
+    let bad = 0;
+    for (const arm of ARMS.filter((x) => x !== 'a')) {
+      const a = got.a, x = got[arm];
+      const diffs = [];
+      a.html.forEach((h, k) => { if (x.html[k] !== h) diffs.push(`DOM after step ${k - 1} ${firstDifference(h, x.html[k])}`); });
+      for (const key of ['rects', 'hits', 'events', 'live']) if (JSON.stringify(a[key]) !== JSON.stringify(x[key])) diffs.push(`${key}: ${JSON.stringify(a[key])} vs ${JSON.stringify(x[key])}`);
+      console.log(`${arm}: ${diffs.length ? 'DIFFERS\n  ' + diffs.join('\n  ') : 'same as a'} (${a.html.length} DOM snapshots, ${a.rects.length / 4} rects, events ${a.events})`);
+      bad += diffs.length;
+    }
+    fs.appendFileSync(path.join(RESULTS, 'same.jsonl'), JSON.stringify({ session, chrome: b.version, got }) + '\n');
+    process.exitCode = bad ? 1 : 0;
+  } else if (MODE === 'count') {
     const out = { session, mode: 'count', chrome: b.version, arms: {} };
     for (const arm of ARMS) {
       out.arms[arm] = { port: (await portLoad(b, arm, true)).counts };
@@ -341,17 +382,26 @@ try {
       await b.goto('about:blank');
     }
     fs.appendFileSync(file, JSON.stringify(out) + '\n');
+    // the DOM each flow leaves, against arm a's
+    for (const arm of ARMS.filter((x) => x !== 'a' && out.arms.a)) {
+      for (const page of ['port', 'keyed']) {
+        const base = out.arms.a[page], mine = out.arms[arm][page];
+        if (!base || !mine) continue;
+        const differ = Object.keys(base).filter((seg) => base[seg].hash !== mine[seg]?.hash);
+        console.log(`${arm} ${page}: DOM ${differ.length ? 'differs after ' + differ.join(', ') : 'the same as a after every flow'}`);
+      }
+    }
   } else {
     for (let r = 0; r < ROUNDS; r++) {
       for (let k = 0; k < ARMS.length; k++) {
-        const arm = ARMS[(k + r) % ARMS.length];
+        const arm = ARMS[(k + r + ROUND0) % ARMS.length];
         const g = await gate();
         await b.goto('about:blank'); await sleep(300); // tear down the last load before the next
         let res;
         if (MODE === 'port') res = await portLoad(b, arm, false);
         else if (MODE === 'keyed') res = await keyedLoad(b, arm, false);
         else res = { micro: await microLoad(b, arm, false) };
-        const row = { session, mode: MODE, cpu: CPU, round: r, arm, ...g, loadAfter: +os.loadavg()[0].toFixed(2), flags: process.env.CHROME_FLAGS || '', chrome: b.version, ...res };
+        const row = { session, mode: MODE, cpu: CPU, round: r + ROUND0, arm, ...g, loadAfter: +os.loadavg()[0].toFixed(2), flags: process.env.CHROME_FLAGS || '', chrome: b.version, ...res };
         fs.appendFileSync(file, JSON.stringify(row) + '\n');
         const brief = res.windows ? Object.entries(res.windows).map(([n, w]) => `${n} ${w.script.toFixed(2)}/${w.total.toFixed(1)}`).join('  ') : JSON.stringify(res.micro);
         console.log(`r${r} ${arm.padEnd(6)} load ${g.load}${g.over ? ' OVER' : ''}  ${brief}`);
