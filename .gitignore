@@ -13,3 +13,4 @@ results/fp*.txt
 results/pairs_*.log
 micro/direct/*.wasm
 micro/svg/out/
+micro/bridge/out/
