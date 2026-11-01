@@ -101,6 +101,9 @@ if [ "$WHAT" = all ] || [ "$WHAT" = port ]; then
     mode=base; case "$arm" in e|e_t|e_css) mode="$arm";; esac
     app="$out/port/table_app_$arm.c"
     python3 "$here/port_patch.py" "$mode" "$PORT/src/table_app.c" "$app"
+    # ui.h includes ../vendor/cdom.h by path: beside the copy, it takes the arm's cdom.h (-I) instead
+    grep -q '#include "../vendor/cdom.h"' "$PORT/src/ui.h" || { echo "ui.h: its cdom.h include moved" >&2; exit 1; }
+    sed 's|#include "../vendor/cdom.h"|#include "cdom.h"|' "$PORT/src/ui.h" > "$out/port/ui.h"
     AFLAGS=("${KFLAGS[@]}" -mreference-types -I"$out/gen/$cdom" -I"$PORT/src" -I"$PORT/vendor" -I"$c" -Werror)
     aobj="$out/port/obj_$arm"; mkdir -p "$aobj"
     objs=("${kobjs[@]}")
