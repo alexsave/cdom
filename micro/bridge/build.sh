@@ -19,9 +19,9 @@ PORT_ARMS=(a list b c d e f e_t e_css) # e_t and e_css: arm a's cdom with the po
 KEYED_ARMS=(a list b c d e)
 mkdir -p "$out"
 
-gen() { # arm: generated sources in out/gen/<arm> and out/gen/<arm>_count
+gen() { # arm: generated sources in out/gen/<arm> and out/gen/<arm>_count, always made again (they take
+  # milliseconds, and a stale arm would measure the wrong shim)
   local arm="$1"
-  [ -f "$out/gen/$arm/cdom.c" ] && [ "$out/gen/$arm/cdom.c" -nt "$here/gen_arms.py" ] && return
   python3 "$here/gen_arms.py" "$arm" "$out/gen/$arm"
   python3 "$here/gen_arms.py" "$arm" "$out/gen/${arm}_count" --count
 }
@@ -29,6 +29,7 @@ shim() { # gen dir, out file: the shim minified
   "$TERSER" "$1/cdom.js" -c passes=2 -m -o "$2"
 }
 inline() { # template, shim, out html
+  grep -q '/\*CDOM_SHIM\*/' "$1" || { echo "$1: no /*CDOM_SHIM*/ marker" >&2; exit 1; }
   sed -e "/\/\*CDOM_SHIM\*\//{r $2" -e "d;}" "$1" > "$3"
 }
 for arm in "${ARMS[@]}"; do gen "$arm"; done
@@ -82,24 +83,24 @@ if [ "$WHAT" = all ] || [ "$WHAT" = port ]; then
   KERNEL=(src/game.c src/legal.c src/view.c src/awire.c src/evwire.c src/anim_plan.c src/client_table.c
     src/card.c src/hand_layout.c src/roster.c src/bot_drive.c src/handwritten_prod_strategy.c)
   SHARED=(deal_rng.c wasm/libc.c wasm/libm.c)
+  # The kernel's objects are made again whenever any kernel or shared source or header is newer
+  # than the stamp (one rule for all of them: a header change reaches every object).
+  stamp="$obj/.stamp"
+  if [ ! -f "$stamp" ] || [ -n "$(find "$c/src" "$c/wasm/include" "$shared" -newer "$stamp" \( -name '*.c' -o -name '*.h' \) -print -quit)" ]; then
+    for f in "${KERNEL[@]}"; do "$CC" "${KFLAGS[@]}" -c "$c/$f" -o "$obj/$(basename "${f%.c}").o"; done
+    for f in "${SHARED[@]}"; do "$CC" "${KFLAGS[@]}" -c "$shared/$f" -o "$obj/shared_$(basename "${f%.c}").o"; done
+    touch "$stamp"
+  fi
   kobjs=()
-  for f in "${KERNEL[@]}"; do
-    o="$obj/$(basename "${f%.c}").o"
-    [ "$o" -nt "$c/$f" ] || "$CC" "${KFLAGS[@]}" -c "$c/$f" -o "$o"
-    kobjs+=("$o")
-  done
-  for f in "${SHARED[@]}"; do
-    o="$obj/shared_$(basename "${f%.c}").o"
-    [ "$o" -nt "$shared/$f" ] || "$CC" "${KFLAGS[@]}" -c "$shared/$f" -o "$o"
-    kobjs+=("$o")
-  done
+  for f in "${KERNEL[@]}"; do kobjs+=("$obj/$(basename "${f%.c}").o"); done
+  for f in "${SHARED[@]}"; do kobjs+=("$obj/shared_$(basename "${f%.c}").o"); done
   for arm in "${PORT_ARMS[@]}"; do
     cdom="$arm"; case "$arm" in e_t|e_css) cdom=a;; esac
-    app="$PORT/src/table_app.c"
-    if [ "$arm" = e ] || [ "$arm" = e_t ] || [ "$arm" = e_css ]; then
-      app="$out/port/table_app_$arm.c"
-      python3 "$here/port_patch.py" "$arm" "$PORT/src/table_app.c" "$app"
-    fi
+    # every arm builds from a rewritten copy: the base rewrite (the debug exports flush), and for
+    # e, e_t and e_css their movers (port_patch.py)
+    mode=base; case "$arm" in e|e_t|e_css) mode="$arm";; esac
+    app="$out/port/table_app_$arm.c"
+    python3 "$here/port_patch.py" "$mode" "$PORT/src/table_app.c" "$app"
     AFLAGS=("${KFLAGS[@]}" -mreference-types -I"$out/gen/$cdom" -I"$PORT/src" -I"$PORT/vendor" -I"$c" -Werror)
     aobj="$out/port/obj_$arm"; mkdir -p "$aobj"
     objs=("${kobjs[@]}")
