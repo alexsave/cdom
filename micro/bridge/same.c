@@ -15,6 +15,7 @@
 
 enum { T_ROW = 0, T_CELL = 1 };
 static cd_id box, label, count, svg_c, panel, list_parent, moved, held, region_parent, field;
+static cd_id run_p[4];
 static char input_got[64];
 static uint32_t input_len;
 static cd_list list;
@@ -103,6 +104,9 @@ void cd_main(void) {
   cd_open(L("p")); cd_name_open(held); cd_text(L("held")); cd_close();
   cd_close();
   cd_open(L("ul")); cd_name_open(region_parent); cd_close();
+  cd_open(L("ol")); /* four siblings for runs of moves before one node */
+  for (int i = 0; i < 4; i++) { run_p[i] = cd_id_new(); cd_open(L("li")); cd_name_open(run_p[i]); cd_text_num((uint32_t)i); cd_close(); }
+  cd_close();
   cd_open(L("input")); cd_listen(field, CD_EV_INPUT); cd_attr(L("type"), L("text")); cd_close();
   cd_open(L("div")); cd_name_open(list_parent); cd_close();
   region.parent = region_parent;
@@ -140,7 +144,7 @@ EXPORT("test_step") void test_step(uint32_t k) {
     cd_set_style_num(box, L("margin-left"), 12.5, CD_UNIT_PCT);
     cd_set_style_num(box, L("padding-top"), 1.0 / 3.0, CD_UNIT_PX);   /* numbers no format holds exactly */
     cd_set_style_num(box, L("letter-spacing"), 2.0 / 3.0, CD_UNIT_EM);
-    cd_set_style_num(box, L("rotate"), 1.0 / 7.0, CD_UNIT_DEG);
+    cd_set_style_num(box, L("outline-offset"), 1.0 / 7.0, CD_UNIT_PX); /* not rotate: Typed OM refuses an angle for it (arm d) */
     cd_tpl_text(T_CELL, 0, cd_tmpz("a one-off slot text")); /* a template slot set from a one-off string, then cloned */
     cd_at(panel, 0);
     cd_clone(T_CELL); cd_close();
@@ -168,6 +172,9 @@ EXPORT("test_step") void test_step(uint32_t k) {
       }
     }
     cd_move(held, moved);
+    /* runs of moves before one node (arm e: one fragment each): 1 2 3 before 0, then 0 1 to the end */
+    cd_move(run_p[1], run_p[0]); cd_move(run_p[2], run_p[0]); cd_move(run_p[3], run_p[0]);
+    cd_move(run_p[0], 0); cd_move(run_p[1], 0);
     cd_detach(moved);
     cd_set_text(label, L("detached: "));
     cd_attach(moved);
@@ -189,6 +196,7 @@ EXPORT("test_step") void test_step(uint32_t k) {
     hits[nhits++] = (int32_t)cd_hit(900, 700);
     break;
   }
+  cd_flush(); /* as every cdom export ends: an arm that holds ops (list, e) lands them here */
 }
 EXPORT("test_steps") uint32_t test_steps(void) { return 4; }
 EXPORT("test_rects") double *test_rects(void) { return rects; }

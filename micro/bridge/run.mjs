@@ -470,7 +470,7 @@ try {
       if (x.html.length !== a.html.length) diffs.push(`${x.html.length} DOM snapshots, not ${a.html.length}`);
       a.html.forEach((h, k) => { if (x.html[k] !== h) diffs.push(`DOM after step ${k - 1} ${firstDifference(h, x.html[k])}`); });
       for (const key of Object.keys(a).filter((k) => k !== 'html')) {
-        if (JSON.stringify(a[key]) !== JSON.stringify(x[key])) diffs.push(`${key}: ${JSON.stringify(a[key])} vs ${JSON.stringify(x[key])}`);
+        if (JSON.stringify(a[key]) !== JSON.stringify(x[key])) diffs.push(`${key}: ${firstDifference(JSON.stringify(a[key]), JSON.stringify(x[key]))}`);
       }
       console.log(`${arm}: ${diffs.length ? 'DIFFERS\n  ' + diffs.join('\n  ') : 'same as a'}`);
       bad += diffs.length;

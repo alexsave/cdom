@@ -12,7 +12,7 @@ cdom.start('same.wasm', 'main').then((x) => {
   const out = { html: [mount.innerHTML] };
   // the touched properties as the browser computed them, per touched element, after each step
   const PROPS = ['left', 'top', 'width', 'opacity', 'transform', 'filter', 'margin-left', 'padding-top', 'letter-spacing',
-    'rotate', 'border-top-color', 'position'];
+    'outline-offset', 'border-top-color', 'position'];
   const computed = () => [...mount.querySelectorAll('div, p, circle')].slice(0, 8).map((e) => { const c = getComputedStyle(e); return PROPS.map((p) => c.getPropertyValue(p)).join('|'); });
   out.computed = [computed()];
   for (let k = 0; k < x.test_steps(); k++) {
