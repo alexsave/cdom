@@ -3,7 +3,7 @@
 # js-framework-benchmark entry (bench/cdom-keyed) and the foolish cdom port's table (read from
 # PORT, never written), each with the arm's cdom.c and its shim minified and inlined as shipped,
 # plus a counting build of each (<arm>_count: every import counted, untimed).
-#   micro/bridge/build.sh [what]      what: all (default), micro, keyed, port
+#   micro/bridge/build.sh [what]      what: all (default), micro (with the same test), keyed, port
 # The port's kernel objects are compiled once into out/port/obj and shared by every arm.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -42,6 +42,12 @@ if [ "$WHAT" = all ] || [ "$WHAT" = micro ]; then
       shim "$out/gen/$v" "$d/cdom.min.js"
       inline "$here/bridge.html" "$d/cdom.min.js" "$d/index.html"
     done
+    # the correctness test (run.mjs same): same.c on this arm
+    d="$out/same/$arm"; mkdir -p "$d"
+    "$CC" --target=wasm32 -Oz -nostdlib -mbulk-memory -mreference-types -Wall -Wextra -Werror -I"$out/gen/$arm" \
+      -Wl,--no-entry -Wl,--strip-all -o "$d/same.wasm" "$here/same.c" "$out/gen/$arm/cdom.c" "$top/src/mini.c"
+    shim "$out/gen/$arm" "$d/cdom.min.js"
+    inline "$here/same.html" "$d/cdom.min.js" "$d/index.html"
   done
   echo "micro: $(ls "$out/micro" | wc -l | tr -d ' ') builds"
 fi

@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>cdom bridge same</title>
+<script>
+/*CDOM_SHIM*/
+</script></head>
+<body style="margin: 0"><div id="main"></div>
+<script>
+// same.c's steps, the mount's HTML after each, C's reads and the events: run.mjs same compares
+// every arm's RESULT with arm a's.
+cdom.start('same.wasm', 'main').then((x) => {
+  const mount = document.getElementById('main');
+  const out = { html: [mount.innerHTML] };
+  for (let k = 0; k < x.test_steps(); k++) {
+    x.test_step(k);
+    out.html.push(mount.innerHTML);
+  }
+  const rects = new Float64Array(x.memory.buffer, x.test_rects(), 4 * x.test_nrects());
+  out.rects = [...rects].map((v) => +v.toFixed(3));
+  out.hits = [0, 1].map((i) => x.test_hit(i));
+  // events through the record: a click on each row's label (the path from the listening row)
+  for (const a of mount.querySelectorAll('.row i')) a.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
+  out.events = x.test_events();
+  out.live = x.test_live();
+  window.RESULT = out;
+}).catch((e) => { window.RESULT = { error: String(e && e.stack || e) }; });
+</script></body></html>
