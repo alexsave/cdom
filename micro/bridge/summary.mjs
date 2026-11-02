@@ -32,7 +32,8 @@ if (!kept.length) { console.log(`${file}: no load kept (${rows.length} loads, ${
 // Quantiles by linear interpolation (type 7), so an even count's median is the mean of the middle two.
 const q = (a, p) => { const s = [...a].sort((x, y) => x - y); const h = (s.length - 1) * p, lo = Math.floor(h); return s[lo] + (s[Math.min(lo + 1, s.length - 1)] - s[lo]) * (h - lo); };
 const med = (a) => q(a, 0.5);
-const arms = [...new Set(kept.map((r) => r.arm))];
+const ORDER = ['a', 'list', 'b', 'c', 'd', 'e', 'f', 'e_t', 'e_css'];
+const arms = [...new Set(kept.map((r) => r.arm))].sort((x, y) => ORDER.indexOf(x) - ORDER.indexOf(y));
 const per = Object.fromEntries(arms.map((a) => [a, kept.filter((r) => r.arm === a)]));
 const loads = kept.map((r) => r.load);
 const reasons = rows.filter((r) => !kept.includes(r)).map((r) => `${r.arm} r${r.round}: ${r.busy ? 'busy ' + r.others + '%' : r.over ? 'over' : r.invalid.join('; ')}`);

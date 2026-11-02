@@ -68,6 +68,10 @@ Why direct wins although each crossing costs more: in the harness's measured cli
 The hybrids do not beat all-direct beyond noise. What the hybrid taught was where direct loses: the update walk (one crossing per step) and strings decoded one at a time. The shipped design fixes both inside the direct model: a walk crosses as one call, and strings are queued at intern time so a burst decodes in one call. That made update 1.03 / 1.01 instead of 1.05-1.06.
 Every configuration passed the keyed check, smoke, DOM identity and listfuzz built with its own mask. One DOM-identity failure on the fit-best hybrid did not reproduce in 11 reruns; its log had been overwritten, so gate logs are now per entry.
 
+## Experiment: the bridge itself (branch generic-bridge, micro/bridge/RESULTS.md)
+
+A generic dispatcher by name id, a pre-resolved function table, natively bound imports, fused operations and the op list, each against one import per operation on the foolish port's real flows and on the keyed entry: no arm moves a page window beyond the noise between identical code (0.8-1.2); moving the drag shadow and the ghosts by transform halves the drag's layout; the op list is 1.18-1.38 at x4 on the port's drag, bot and drop; no DOM function has a Fast API C function in Chrome 156 (performance.now does).
+
 ## Final (results/pairs/last1, last2; every start at load < 3, range 1.82-2.99)
 
 Weighted geomean vs vanillajs: first build (cdomb) 1.036 / 1.033, last build 1.007 / 0.998, react-hooks 1.466 / 1.457.
