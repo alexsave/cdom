@@ -278,3 +278,7 @@ First paint (40_) was not rerun: the page is 684 bytes more brotli (the network 
 
 platform rewrote the shim's event path (named events through `delegate(kind, h)`, a `post` with a key argument), indexes `strs` directly (no transient strings), and adds its own cdom.c work (cdom_html.c, httpd.c, ssr_page.c).
 To take these fixes it would need: the clone append and `open_svg` (and the SVG namespace in cdom_html.c's server-side output); `name_open`; `style`, `style_num` and `image` (and style ops in the HTML renderer); the window, load, timer, frame and clock imports mapped onto its named-event delegate; transient strings back in its string path (`cd_tmp`); the network module; the auto-flush in every export it adds (cd_start_state among them); and, unchanged C it can take as is: regions, the list end anchor, `cd_list_forget`, the alive check, `CD_LIT`, `cd_fmt`, the weak allocator and the weak mini.c.
+
+## Bridge designs compared (2026-11-01)
+
+One import per DOM operation stays: a generic dispatcher, a function table, natively bound imports, fused operations, the old op list and the Fast API were each measured against it on real pages and none was faster beyond the noise. Why, and what does help, is in BRIDGE.md; the benchmark is at the tag bridge-bench-2026-11-01.
