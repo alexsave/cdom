@@ -7,6 +7,17 @@ This file says what was tried, what each did, and why the plain design is the fa
 The benchmark code is not on any branch; it is kept at the tag `bridge-bench-2026-11-01` (commit 7b18697, `micro/bridge/`), with its full tables in `micro/bridge/RESULTS.md` and raw rows in `micro/bridge/results/` there.
 It was cdom PR #3, closed without merging the code.
 
+## What worked (the speedups, with numbers)
+
+| Change | Where | Measured gain |
+| --- | --- | --- |
+| Move the drag ghost and shadow with `transform` instead of `left`/`top` (arm e_t) | the app's movers, not the bridge | drag window layout 0.45x (4.2 vs 9.4 ms over 49 frames) at normal speed, 0.63x at 4x CPU throttle; drag total 0.86x and 0.93x |
+| Fuse a node's several style writes into one call (arm e) | cdom, `cd_style_begin/num/str/end` | 15-18% off a frame's writes in the micro (ghost frame 1,850 vs 2,266 ns; card-table frame 4,592 vs 5,388 ns); not visible on the page |
+| Import `performance.now` bound to the browser's own method (arm f) | cdom's `now` import | 118.5 ns to 60.5 ns per call (49 ns with V8's off-by-default `--wasm-fast-api`); a few hundred ns per frame, not visible on the page |
+
+Only the first is worth shipping for speed today, and it is an app change: the port's movers should use `transform`.
+Everything else that was tried (the op list, a generic dispatcher, a function table, bound DOM natives) was no faster or slower; the table below says how much.
+
 ## The short answer
 
 A DOM operation costs 90-440 ns, and almost all of that is the browser's own work: building the style change, the node, the attribute.
