@@ -24,7 +24,7 @@
 // assertions (row counts and the like); a load that fails one is kept but marked invalid, and
 // summary.mjs leaves it out.
 // The gate: before Chrome starts, the 1-minute load average under LOADMAX (default 4, waited for at
-// most 120 s); per load, the CPU of every process but this one and its Chrome (ps), recorded, and the
+// most 120 s); per load, the CPU of every process but this one and its Chrome (ps, sampled as the load ends), recorded, and the
 // load marked busy above OTHERS_MAX (default 150, per cent of one core). Each command stops starting
 // loads past BUDGET_S (default 780 s) of wall time, and says so.
 // Results append as JSON lines to micro/bridge/results/<mode>_x<cpu>[_TAG].jsonl; summary.mjs reads them.
@@ -165,15 +165,20 @@ async function gateBeforeLaunch() {
 }
 // The CPU (per cent of one core, ps's decaying average) of every process but this node and its
 // Chrome's whole tree: what else the machine is doing while a load runs.
+let othersTop = [];
 function othersCpu() {
-  const rows = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,pcpu=']).toString().trim().split('\n')
-    .map((l) => l.trim().split(/\s+/).map(Number));
+  const lines = execFileSync('ps', ['-A', '-ww', '-o', 'pid=,ppid=,pcpu=,args=']).toString().trim().split('\n');
+  const rows = lines.map((l) => { const m = l.trim().split(/\s+/); return [Number(m[0]), Number(m[1]), Number(m[2]), m.slice(3).join(' ')]; });
   const kids = new Map();
   for (const [pid, ppid] of rows) { if (!kids.has(ppid)) kids.set(ppid, []); kids.get(ppid).push(pid); }
   const mine = new Set([process.pid]);
   const stack = [process.pid];
   while (stack.length) for (const k of kids.get(stack.pop()) || []) if (!mine.has(k)) { mine.add(k); stack.push(k); }
-  return +rows.filter(([pid]) => !mine.has(pid)).reduce((a, [, , c]) => a + (c || 0), 0).toFixed(1);
+  // Chrome's helpers on macOS (the crash handler) can be reparented: a process naming our profile
+  // directory is ours too
+  const others = rows.filter(([pid, , , args]) => !mine.has(pid) && !(chromeDir && args.includes(chromeDir)));
+  othersTop = others.filter((r) => r[2] > 20).sort((x, y) => y[2] - x[2]).slice(0, 4).map(([pid, , c, args]) => `${pid} ${c}% ${path.basename(args.split(' ')[0])}`);
+  return +others.reduce((a, [, , c]) => a + (c || 0), 0).toFixed(1);
 }
 // A shuffle seeded by the round (mulberry32): the arms' order differs from round to round, and no arm
 // always follows the same one.
@@ -189,7 +194,10 @@ function shuffled(list, seed) {
 async function traceStart(b) {
   const events = [];
   const off = b.listen('Tracing.dataCollected', (p) => { for (const e of p.value) events.push(e); });
-  await b.send('Tracing.start', { categories: 'devtools.timeline,blink.user_timing', transferMode: 'ReportEvents' });
+  // framepace.mjs's categories: RunTask is in toplevel, Paint and the frame events in the timeline ones
+  await b.send('Tracing.start', { traceConfig: { includedCategories: ['devtools.timeline', 'disabled-by-default-devtools.timeline',
+    'disabled-by-default-devtools.timeline.frame', 'toplevel', 'blink.user_timing'], recordMode: 'recordAsMuchAsPossible', traceBufferSizeInKb: 400000 },
+  transferMode: 'ReportEvents' });
   return async () => {
     const done = new Promise((r) => { const o = b.listen('Tracing.tracingComplete', () => { o(); r(); }); });
     await b.send('Tracing.end'); await done; off();
@@ -527,12 +535,13 @@ try {
         if (MODE === 'port') res = await portLoad(b, arm, false, ref);
         else if (MODE === 'keyed') res = await keyedLoad(b, arm, false, ref);
         else res = { micro: await microLoad(b, arm, false), invalid: [] };
-        const others = Math.max(others0, othersCpu());
-        const row = { session, mode: MODE, cpu: CPU, round: ROUND0 + r, arm, load: +os.loadavg()[0].toFixed(2), others,
-          busy: others > OTHERS_MAX, flags: process.env.CHROME_FLAGS || '', chrome: b.version, ...res };
+        // ps's %cpu is a decaying average: the sample taken as the load ends covers the load itself
+        const others = othersCpu();
+        const row = { session, mode: MODE, cpu: CPU, round: ROUND0 + r, arm, load: +os.loadavg()[0].toFixed(2), others, othersAtStart: others0,
+          busy: others > OTHERS_MAX, othersTop, flags: process.env.CHROME_FLAGS || '', chrome: b.version, ...res };
         fs.appendFileSync(file, JSON.stringify(row) + '\n');
         const brief = res.windows ? Object.entries(res.windows).map(([n, w]) => `${n} ${w.script.toFixed(2)}/${w.total.toFixed(1)}`).join('  ') : JSON.stringify(res.micro);
-        console.log(`r${ROUND0 + r} ${arm.padEnd(6)} others ${others}%${row.busy ? ' BUSY' : ''}${res.invalid.length ? ' INVALID ' + res.invalid.join('; ') : ''}  ${brief}`);
+        console.log(`r${ROUND0 + r} ${arm.padEnd(6)} others ${others}%${row.busy ? ' BUSY (' + othersTop.join(', ') + ')' : ''}${res.invalid.length ? ' INVALID ' + res.invalid.join('; ') : ''}  ${brief}`);
       }
     }
   }

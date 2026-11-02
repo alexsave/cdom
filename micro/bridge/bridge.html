@@ -55,6 +55,7 @@ cdom.start('bridge.wasm', 'main').then(async (x) => {
   }
   frames.sort((a, b) => a - b);
   out.frame_rendered = +((frames[29] + frames[30]) / 2).toFixed(1);
+  out.isolated = crossOriginIsolated ? 1 : 0;
   window.RESULT = out;
 }).catch((e) => { window.RESULT = { error: String(e && e.stack || e) }; });
 </script></body></html>
