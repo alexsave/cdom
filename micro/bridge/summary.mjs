@@ -33,7 +33,7 @@ if (!kept.length) { console.log(`${file}: no load kept (${rows.length} loads, ${
 const q = (a, p) => { const s = [...a].sort((x, y) => x - y); const h = (s.length - 1) * p, lo = Math.floor(h); return s[lo] + (s[Math.min(lo + 1, s.length - 1)] - s[lo]) * (h - lo); };
 const med = (a) => q(a, 0.5);
 const arms = [...new Set(kept.map((r) => r.arm))];
-const per = Object.fromEntries(arms.map((a) => [a, per[a]]));
+const per = Object.fromEntries(arms.map((a) => [a, kept.filter((r) => r.arm === a)]));
 const loads = kept.map((r) => r.load);
 const reasons = rows.filter((r) => !kept.includes(r)).map((r) => `${r.arm} r${r.round}: ${r.busy ? 'busy ' + r.others + '%' : r.over ? 'over' : r.invalid.join('; ')}`);
 console.log(`${file}: ${kept.length} of ${rows.length} loads kept${cut ? `, ${cut} cut by the budget` : ''}; per arm ${arms.map((a) => `${a} ${per[a].length}`).join(', ')}; load averages ${Math.min(...loads)}-${Math.max(...loads)}; ${rows[0].chrome}, CPU x${rows[0].cpu}${rows[0].flags ? ', ' + rows[0].flags : ''}`);
