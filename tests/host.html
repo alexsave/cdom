@@ -1,0 +1,146 @@
+<!doctype html><html><head><meta charset="utf-8"><title>host</title></head><body><div id="m"></div>
+<script src="cdom.js"></script><script>
+// tools/host.mjs drives real input; this page holds the probes and the checks that need no input.
+const LOG = [], STRS = [], reported = [], page = {};
+const DET = 0xffffffff, I = { BOX: 0, OTHER: 1, TEXT: 2, CHECK: 3, FILE: 4, MEDIA: 5, GOOD: 6, BAD: 7, SCROLLER: 8,
+  DEEP: 9, PARA: 10, FSBTN: 11, ALL: 12, ALL_CHILD: 13, DBL_ONLY: 14, LIST: 15, ITEM_A: 16, ITEM_B: 17 };
+const EVENTS = ["click", "dblclick", "input", "change", "keydown", "keyup", "focusin", "focusout", "submit",
+  "pointerdown", "pointerup", "pointermove", "contextmenu", "wheel", "pointerover", "pointerout", "pointercancel",
+  "dragover", "drop", "focus", "blur", "scroll", "load", "error", "loadedmetadata", "timeupdate", "ended", "play",
+  "pause", "resize", "fullscreenchange", "visibilitychange"];
+window.addEventListener('error', (e) => reported.push(e.error ? e.error.name : e.message));
+for (const t of ['contextmenu', 'wheel', 'click', 'drop']) window.addEventListener(t, (e) => { page[t] = e.defaultPrevented; });
+let X;
+const enc = new TextEncoder(), dec = new TextDecoder();
+const w = (s, off = 0) => enc.encodeInto(s, new Uint8Array(X.memory.buffer, X.io() + off, 16384 - off)).written;
+const rd = (n) => dec.decode(new Uint8Array(X.memory.buffer, X.io(), n));
+const env = {
+  ev(t, id, a, b) { LOG.push([t, id >>> 0, a, b]); },
+  str(p, n) { STRS.push(dec.decode(new Uint8Array(X.memory.buffer, p, n))); },
+};
+const H = {
+  id: (k) => X.id(I[k]), el: (k) => document.getElementById(['box', 'other', 'text', 'check', 'file', 'media', 'good', 'bad',
+    'scroller', 'deep', 'para', 'fs', 'all', 'allchild', 'dblonly', 'list', 'a', 'b'][I[k]]),
+  num: (id, p) => X.g_num(id, w(p)), str: (id, p) => rd(X.g_str(id, w(p))), nid: (id, p) => X.g_id(id, w(p)) >>> 0,
+  setS(id, p, v) { const n = w(p); X.s_str(id, n, w(v, n)); }, setN: (id, p, v) => X.s_num(id, w(p), v),
+  setB: (id, p, v) => X.s_bool(id, w(p), v), setNull: (id, p) => X.s_null(id, w(p)),
+  since: (n) => LOG.slice(n),
+};
+
+// A 0.25 s silent 8 kHz 8-bit mono WAV as a data URL.
+function wav() {
+  const n = 2000, b = new Uint8Array(44 + n), v = new DataView(b.buffer), s = (o, t) => [...t].forEach((c, i) => b[o + i] = c.charCodeAt(0));
+  s(0, 'RIFF'); v.setUint32(4, 36 + n, true); s(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true);
+  v.setUint16(34, 8, true); s(36, 'data'); v.setUint32(40, n, true); b.fill(128, 44);
+  let bin = ''; for (const c of b) bin += String.fromCharCode(c);
+  return 'data:audio/wav;base64,' + btoa(bin);
+}
+
+// Checks that need no real input. Each returns a list of failures.
+function syncChecks() {
+  const errs = [], eq = (got, want, m) => { if (!Object.is(got, want)) errs.push(`${m}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); };
+  const box = H.id('BOX'), para = H.id('PARA'), file = H.id('FILE');
+  // reserved ids are bound and reachable as values
+  eq(cdom.node(1), window, 'node(CD_WINDOW)'); eq(cdom.node(2), document, 'node(CD_DOCUMENT)'); eq(cdom.node(3), document.body, 'node(CD_BODY)');
+  eq(H.nid(2, 'body'), 3, 'id of document.body'); eq(H.nid(1, 'document'), 2, 'id of window.document');
+  eq(H.nid(box, 'parentNode'), 0, 'id of the mount'); eq(H.nid(box, 'nextSibling'), H.id('OTHER'), 'id of a named sibling');
+  eq(H.nid(para, 'firstChild'), DET, 'id of an unnamed node'); eq(H.nid(box, 'title'), DET, 'id of a string');
+  // window and document values
+  eq(H.num(1, 'innerWidth'), innerWidth, 'innerWidth'); eq(H.num(1, 'devicePixelRatio'), devicePixelRatio, 'devicePixelRatio');
+  eq(H.str(2, 'fullscreenElement'), '', 'fullscreenElement null as string'); eq(H.num(2, 'fullscreenElement'), NaN, 'fullscreenElement null as number');
+  eq(H.nid(2, 'fullscreenElement'), DET, 'fullscreenElement null as id');
+  eq(H.str(2, 'fullscreenElement.id'), '', 'a step past null'); eq(H.num(2, 'fullscreenElement.id.length'), NaN, 'two steps past null');
+  eq(H.str(1, 'location.protocol'), 'http:', 'window.location.protocol'); eq(H.str(2, 'doctype.name'), 'html', 'document.doctype.name');
+  eq(H.str(2, 'hidden'), 'false', 'a boolean as a string'); eq(H.num(2, 'hidden'), 0, 'a boolean as a number');
+  // dotted paths with indexes
+  eq(H.str(para, 'childNodes.2.nodeValue'), 'c', 'childNodes.2.nodeValue'); eq(H.num(para, 'childNodes.length'), 3, 'childNodes.length');
+  eq(H.str(para, 'childNodes.0.nodeValue'), 'a', 'childNodes.0'); eq(H.str(para, 'childNodes.7.nodeValue'), '', 'missing index');
+  eq(H.num(para, 'childNodes.7.length'), NaN, 'missing index as number'); eq(H.str(box, 'style.position'), 'fixed', 'style.position');
+  eq(H.str(box, 'classList.length'), '0', 'a number as a string');
+  // numbers against strings
+  eq(H.num(box, 'clientWidth'), 100, 'clientWidth as number'); eq(H.str(box, 'clientWidth'), '100', 'clientWidth as string');
+  eq(H.num(box, 'id'), NaN, 'a string as a number'); eq(H.str(box, 'id'), 'box', 'id');
+  eq(H.num(box, 'nope'), NaN, 'missing as number'); eq(H.str(box, 'nope'), '', 'missing as string'); eq(H.str(box, 'nope.deeper'), '', 'past missing');
+  eq(H.str(box, ''), '[object HTMLDivElement]', 'path 0 reads the object'); eq(H.num(99999, 'x'), NaN, 'unbound id');
+  eq(H.str(box, 'tagName.0'), 'D', 'index into a string');
+  // a FileList through DataTransfer
+  const dt = new DataTransfer(); dt.items.add(new File(['hello'], 'a.txt')); dt.items.add(new File([new Uint8Array(3)], 'bé.bin'));
+  H.el('FILE').files = dt.files;
+  eq(H.str(file, 'files.0.name'), 'a.txt', 'files.0.name'); eq(H.num(file, 'files.0.size'), 5, 'files.0.size');
+  eq(H.num(file, 'files.length'), 2, 'files.length'); eq(H.str(file, 'files.1.name'), 'bé.bin', 'files.1.name (UTF-8)');
+  eq(H.str(file, 'files.2.name'), '', 'files.2.name missing'); eq(H.num(file, 'files.2.size'), NaN, 'files.2.size missing');
+  // a truncated read never splits a character
+  eq(X.g_strcap(file, w('files.1.name'), 2), 1, 'a read cut inside a character stops before it');
+  eq(rd(X.g_strcap(file, w('files.1.name'), 3)), 'b\u00e9', 'a read cut after a character keeps it');
+  // rect
+  eq(X.g_rect(box), 1, 'rect found'); eq([...new Float64Array(X.memory.buffer, X.rect(), 4)].join(), '10,10,100,100', 'rect values');
+  eq(X.g_rect(1), 0, 'window has no rect'); eq(X.g_rect(99999), 0, 'unbound id has no rect');
+  // SET
+  H.setS(box, 'style.width', '120px'); eq(H.el('BOX').style.width, '120px', 'set style.width'); H.setS(box, 'style.width', '100px');
+  H.setS(box, 'style.--accent', 'red'); eq(H.el('BOX').style.getPropertyValue('--accent'), 'red', 'set custom property');
+  eq(H.str(box, 'style.--accent'), 'red', 'get custom property');
+  X.c_flag(1); eq(H.el('BOX').dataset.flag, 'true', 'set boolean true'); X.c_flag(0); eq(H.el('BOX').dataset.flag, 'false', 'set boolean false');
+  H.setN(box, 'dataset.n', 2.5); eq(H.el('BOX').dataset.n, '2.5', 'set number'); H.setN(box, 'dataset.n', -1e300); eq(H.el('BOX').dataset.n, '-1e+300', 'set large number');
+  H.el('BOX').onclick = () => {}; H.setNull(box, 'onclick'); eq(H.el('BOX').onclick, null, 'set null');
+  H.setS(2, 'title', 'from C'); eq(document.title, 'from C', 'set on CD_DOCUMENT');
+  // CALLA
+  H.setS(H.id('TEXT'), 'value', 'abcdef'); X.c_select(); const t = H.el('TEXT');
+  eq([t.selectionStart, t.selectionEnd, t.selectionDirection].join(), '1,3,backward', 'setSelectionRange(1, 3, "backward")');
+  X.c_attr(); eq(H.el('BOX').getAttribute('data-n'), '42.5', 'setAttribute(string, number)');
+  X.c_toggle(1); eq(H.el('BOX').classList.contains('on'), true, 'classList.toggle(s, true)');
+  X.c_toggle(0); eq(H.el('BOX').classList.contains('on'), false, 'classList.toggle(s, false)');
+  X.c_insert(); eq([...H.el('LIST').children].map((e) => e.id).join(), 'b,a', 'insertBefore(node, null)');
+  eq(X.c_contains(), 1, 'contains(node) read back from CD_RESULT'); eq(rd(X.c_getattr()), 'box', 'getAttribute read back from CD_RESULT');
+  X.c_scroll(); eq(H.el('SCROLLER').scrollTop, 460, 'scrollIntoView({block: "end"})');
+  const nrep = reported.length; X.c_bad();
+  eq(reported.slice(nrep).join(), 'NotFoundError,TypeError,TypeError', 'failed calls and sets are reported');
+  eq(H.el('BOX').dataset.after, 'bad', 'the batch goes on after a failed call');
+  eq(X.g_value(H.id('TEXT')), 6, 'cd_input_value'); eq(rd(6), 'abcdef', 'cd_input_value bytes');
+  // a read in the same batch as a set, with a path never sent before
+  eq(rd(X.c_rw()), 'fresh title', 'read after write in one batch');
+  eq(X.c_ids(), 0, 'cd_id_new never returns a reserved id');
+  eq(cdom.node(1), window, 'window still bound after free'); eq(cdom.node(2), document, 'document still bound after remove');
+  eq(H.num(2, 'body.childElementCount') > 0, true, 'document still reachable');
+  // every mount-delivered type reaches the listening ancestor with its own number, and nothing else
+  const child = H.el('ALL_CHILD'), dbl = H.el('DBL_ONLY'), all = H.id('ALL'), dblid = H.id('DBL_ONLY');
+  for (let ty = 0; ty <= 28; ty++) {
+    const n = LOG.length, bubbles = ty < 19;
+    child.dispatchEvent(new Event(EVENTS[ty], { bubbles, cancelable: true }));
+    const got = H.since(n).filter((r) => r[1] === all);
+    eq(got.map((r) => r.join()).join('|'), `${ty},${all},0,1`, `synthetic ${EVENTS[ty]} at a child of the listener`);
+    const m = LOG.length;
+    dbl.dispatchEvent(new Event(EVENTS[ty], { bubbles, cancelable: true }));
+    eq(H.since(m).filter((r) => r[1] === dblid).length, ty === 1 ? 1 : 0, `synthetic ${EVENTS[ty]} at a dblclick-only node`);
+  }
+  // stopPropagation keeps the body listener from hearing a click the mount delivered; others reach it
+  let n = LOG.length; child.click(); eq(H.since(n).map((r) => r[1]).join(), `${all}`, 'click stopped at the mount');
+  n = LOG.length; H.el('PARA').click(); eq(H.since(n).map((r) => r.slice(0, 2).join()).join('|'), '0,3', 'click on CD_BODY');
+  // drop reads the event's files through CD_EVENT and prevents the default
+  const ddt = new DataTransfer(); ddt.items.add(new File(['x'], 'drop.txt'));
+  n = LOG.length; H.el('BOX').dispatchEvent(new DragEvent('drop', { dataTransfer: ddt, bubbles: true, cancelable: true }));
+  eq(H.since(n).map((r) => r.slice(0, 2).join()).join('|'), `18,${box}`, 'drop delivered'); eq(STRS.at(-1), 'drop.txt', 'CD_EVENT dataTransfer.files.0.name');
+  eq(page.drop, true, 'drop default prevented');
+  // window blur and focus (synthetic: headless windows do not change focus)
+  n = LOG.length; window.dispatchEvent(new FocusEvent('blur')); window.dispatchEvent(new FocusEvent('focus'));
+  eq(H.since(n).map((r) => r.slice(0, 2).join()).join('|'), '20,1|19,1', 'window blur and focus on CD_WINDOW');
+  return errs;
+}
+
+// focus() inside a batch: the focus events wait for a microtask, the batch is applied once and goes on.
+async function focusCheck() {
+  const errs = [], eq = (got, want, m) => { if (!Object.is(got, want)) errs.push(`${m}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); };
+  document.activeElement?.blur(); const n = LOG.length, t = H.el('TEXT');
+  X.c_focus();
+  eq(document.querySelectorAll('p.mark').length, 1, 'ops before the focus call applied once');
+  eq(t.dataset.after, 'yes', 'ops after the focus call applied'); eq(document.activeElement, t, 'focused');
+  await Promise.resolve(); await Promise.resolve();
+  eq(H.since(n).map((r) => r.slice(0, 2).join()).join('|'), `6,${H.id('TEXT')}`, 'focusin delivered after the batch');
+  eq(t.dataset.focused, 'yes', 'the deferred handler ran its ops');
+  t.blur(); delete t.dataset.focused;
+  return errs;
+}
+
+cdom.start('host.wasm', document.getElementById('m'), env).then((x) => { X = x; window.READY = true; })
+  .catch((e) => { window.READY = String(e); });
+</script></body></html>

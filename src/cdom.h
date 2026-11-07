@@ -52,7 +52,7 @@ const char *cd_bytes(cd_str s, uint32_t *len);
 
 /* node ids */
 cd_id cd_id_new(void);
-void cd_id_free(cd_id id);           /* JS drops its reference; no DOM change */
+void cd_id_free(cd_id id);           /* JS drops its reference; no DOM change; ignored below CD_FIRST_ID */
 void cd_tag_set(cd_id id, uint32_t tag); /* app data per node, for events */
 uint32_t cd_tag(cd_id id);
 
@@ -81,7 +81,7 @@ void cd_set_text(cd_id id, cd_str s); /* id is a text node */
 void cd_set_text_num(cd_id id, uint32_t n);
 void cd_set_attr(cd_id id, cd_str name, cd_str value);
 void cd_set_class(cd_id id, cd_str value);
-void cd_remove(cd_id id);            /* detach and free the id */
+void cd_remove(cd_id id);            /* detach and free the id; ignored below CD_FIRST_ID */
 void cd_move(cd_id id, cd_id before);
 void cd_clear(cd_id id);             /* drop all children; caller frees their ids */
 void cd_detach(cd_id id);            /* take a node out of the document, remembering its place */
@@ -130,7 +130,8 @@ static inline void cd_set_bool(cd_id id, cd_str path, int b) { cd_set(id, path, 
 void cd_call_args(cd_id id, cd_str method, uint32_t n, const cd_val *a);
 
 /* Reads apply the pending batch first, so they see every op emitted before them, then walk the path from id
- * synchronously. A missing or null step never throws: it reads as NaN, an empty string or CD_DETACHED. */
+ * synchronously. A missing or null step never throws: it reads as NaN, an empty string or CD_DETACHED.
+ * Path 0 reads the object itself, e.g. cd_get_num(CD_RESULT, 0) for a call's result. */
 double cd_get_num(cd_id id, cd_str path);  /* a number, a boolean as 0 or 1; NaN for anything else */
 /* The string form (String(v)) as UTF-8 into dst, at most cap bytes and never a split character; returns
  * the bytes written. An object reads as its "[object ...]" name, so a non-zero length also tests presence. */

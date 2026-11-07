@@ -32,5 +32,5 @@ export async function launch() {
     await sleep(300);
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   };
-  return { version: ver.Browser, send: s, evaluate, close };
+  return { version: ver.Browser, send: s, root: send, targetId, evaluate, close };
 }

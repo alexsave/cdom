@@ -320,18 +320,20 @@ cd_id cd_id_new(void) {
 }
 
 static void release(cd_id id) {
-  if (id < CD_FIRST_ID) return; /* the mount and the reserved ids are never handed out again */
   tags[id] = 0;
   free_ids[nfree++] = id;
 }
 
+/* The mount and the reserved ids are never freed, so they stay bound and cd_id_new never returns them. */
 void cd_id_free(cd_id id) {
+  if (id < CD_FIRST_ID) return;
   reserve(1, 1, 0, 0);
   O(OP_FREE); A(id);
   release(id);
 }
 
 void cd_remove(cd_id id) {
+  if (id < CD_FIRST_ID) return;
   reserve(1, 1, 0, 0);
   O(OP_REMOVE); A(id);
   release(id);

@@ -167,7 +167,7 @@ var cdom = (() => {
     try { const k = K(p); v = walk(nodes[id], k, k.length); } catch {}
     if (kind === 0) return typeof v === "boolean" ? +v : typeof v === "number" ? v : NaN;
     if (kind === 1) return te.encodeInto(v == null ? "" : String(v), new Uint8Array(mem.buffer, dst, cap)).written;
-    if (kind === 2) { const i = v == null ? -1 : nodes.indexOf(v, 1); return i === RESULT ? nodes.indexOf(v, RESULT + 1) : i; }
+    if (kind === 2) { const i = v == null ? -1 : nodes.indexOf(v); return i === RESULT ? nodes.indexOf(v, RESULT + 1) : i; }
     const r = v?.getBoundingClientRect?.();
     if (!r) return 0;
     new Float64Array(mem.buffer, dst, 4).set([r.left, r.top, r.width, r.height]); return 1;
