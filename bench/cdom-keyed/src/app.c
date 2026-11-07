@@ -58,8 +58,11 @@ typedef struct { cd_str label; uint8_t sel; } RowView;
 static RowView *views;
 static uint32_t nviews, views_cap, *free_views, nfree_views;
 static cd_list list;
-static cd_str S_TR, S_TD, S_A, S_SPAN, S_DANGER, S_EMPTY, S_SPACE, S_COL1, S_COL4, S_COL6, S_REMOVE,
+static cd_str S_TR, S_TD, S_A, S_SPAN, S_DANGER, S_EMPTY, S_COL1, S_COL4, S_COL6, S_REMOVE,
   S_ARIA, S_TRUE;
+#if CDOM_TEMPLATES
+static cd_str S_SPACE; /* placeholder text in the row template */
+#endif
 enum { T_ROW = 1 };
 enum { K_RUN = 1, K_RUNLOTS, K_ADD, K_UPDATE, K_CLEAR, K_SWAP, K_ROW = 0x80000000u };
 
@@ -201,11 +204,12 @@ static void button(const char *id, const char *label, uint32_t k) {
 void cd_main(void) {
   rng = cd_seed | 1;
   S_TR = z("tr"); S_TD = z("td"); S_A = z("a"); S_SPAN = z("span");
-  S_DANGER = z("danger"); S_EMPTY = z(""); S_SPACE = z(" ");
+  S_DANGER = z("danger"); S_EMPTY = z("");
   S_COL1 = z("col-md-1"); S_COL4 = z("col-md-4"); S_COL6 = z("col-md-6");
   S_REMOVE = z("glyphicon glyphicon-remove"); S_ARIA = z("aria-hidden"); S_TRUE = z("true");
 
 #if CDOM_TEMPLATES
+  S_SPACE = z(" ");
   cd_at(CD_DETACHED, 0);
   cd_open(S_TR);
   cd_open(S_TD); cd_class(S_COL1); cd_text(S_SPACE); cd_close();
