@@ -104,9 +104,25 @@ Less than 10% of cdom's script time is spent in C (CDP profile of create 10k: ab
 
 ## The shim
 
-shim/cdom.js is 126 lines (117 non-blank, non-comment), 6,175 bytes, 2,341 bytes gzip.
-It has 27 op codes, the per-batch string decoder, the delegated event inbox and one import for reading an input's value.
+shim/cdom.js was 126 lines (117 non-blank, non-comment), 6,175 bytes, 2,341 bytes gzip, when these numbers were taken (132 lines and 30 ops since the canvas ops below).
+It had 27 op codes, the per-batch string decoder, the delegated event inbox and one import for reading an input's value.
 The design estimated 300-400 lines once history, fetch, storage, clipboard, focus and rAF imports exist; none of those were needed here.
+
+### Canvas, frames and method calls (branch canvas-blit)
+
+Three ops were added for apps that draw pixels, taking the shim from 126 to 132 lines and 27 to 30 ops.
+`cd_blit(canvas, rgba, w, h)` is BLIT: `putImageData` of an `ImageData` that views linear memory directly, so the pixels are not copied into the op stream.
+The pixels are RGBA bytes, the canvas's own format, so the shim never touches a pixel; converting from another layout is the app's job in C, where it can be fused with whatever pass already writes the frame.
+`cd_frames(1)` is FRAMES: a `requestAnimationFrame` loop that calls the exported `cd_frame(ms)`, which calls the app's `cd_on_frame` and flushes; `cd_frames(0)` stops it, and an app that never starts it pays nothing.
+`cd_call(id, "click")` is CALL: a no-argument method on a node, applied inside the event that emitted it, so it keeps the user activation that `click()` on a file input and `requestFullscreen()` need.
+The method must not synchronously dispatch an event the app listens for, because the shim would re-enter `cd_event` while it is still applying the batch.
+`cdom.node(id)` lets page glue (an app's own `env` imports) reach a node C created.
+`CDOM_NO_ALLOC` drops cdom's allocator so an app with its own malloc can supply `cd_alloc`, `cd_realloc` and `cd_free`, and one allocator owns `memory.grow`.
+
+tests/canvas.c with tools/canvas.mjs checks blit bytes exactly, a blit after memory grew, the loop stopping after n frames and restarting, a double start not doubling the loop, the call reaching the node and `node(id)`.
+Seven mutants (width and height swapped, double start, no cancel, stale memory views, method not invoked, node off by one, stop sending start) were all caught.
+The fuzz and smoke tests pass unchanged.
+The micro run below the line was `node tools/quick.mjs` on a snapshot of the main build against the branch build, six runs each, interleaved because another project's build kept the load between 10 and 16: median run1k 1.99 ms against 1.99 ms and create10k 18.83 ms against 18.79 ms, so the new switch cases cost nothing measurable.
 
 ## Step 0: what a call across the boundary costs
 
@@ -180,7 +196,7 @@ The first version of cdom's swap took 65 us of script, all in the generic map-an
 ```
 cd /Users/alex/Dev/cdom
 bench/build.sh                  # cdom, cdom-pertext, cdom-notpl, cdom-oz into jfb/frameworks/keyed
-tests/build.sh && node tools/fuzz.mjs
+tests/build.sh && node tools/fuzz.mjs && node tools/canvas.mjs
 (cd jfb/server && PORT=8093 npx tsx index.ts) &
 node tools/smoke.mjs cdom
 TAG=p2 KEEP=pass2 tools/final.sh 01_ 02_ 03_ 04_ 05_ 06_ 07_ 08_ 09_

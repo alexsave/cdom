@@ -7,7 +7,10 @@
 IMPORT("apply") void js_apply(uint32_t nops, uint32_t nargs, uint32_t nstrs, uint32_t nbytes);
 IMPORT("value") uint32_t js_value(cd_id id, char *dst, uint32_t cap);
 
-/* ---- memory: power-of-two size classes over memory.grow ---- */
+/* ---- memory: power-of-two size classes over memory.grow ----
+ * An app that links its own malloc defines CDOM_NO_ALLOC and supplies cd_alloc, cd_realloc and cd_free,
+ * so one allocator owns memory.grow; two that each start at __heap_base would hand out the same bytes. */
+#ifndef CDOM_NO_ALLOC
 extern unsigned char __heap_base;
 static uintptr_t heap_ptr, heap_end;
 static void *free_lists[32];
@@ -54,13 +57,14 @@ void *cd_realloc(void *p, uint32_t n) {
   }
   return q;
 }
+#endif
 
 /* ---- op stream ---- */
 enum {
   OP_AT = 1, OP_OPEN, OP_CLOSE, OP_TEXT, OP_TEXT_NUM, OP_ATTR, OP_CLASS, OP_NAME, OP_LISTEN,
   OP_VALUE, OP_VALUE_NUM, OP_TPL_SAVE, OP_CLONE, OP_DOWN, OP_NEXT, OP_UP, OP_SET_TEXT,
   OP_SET_TEXT_NUM, OP_SET_ATTR, OP_SET_CLASS, OP_REMOVE, OP_FREE, OP_MOVE, OP_CLEAR, OP_DETACH,
-  OP_ATTACH, OP_SEL
+  OP_ATTACH, OP_SEL, OP_BLIT, OP_FRAMES, OP_CALL
 };
 
 #define OPS_CAP (1u << 16)
@@ -229,6 +233,12 @@ void cd_move(cd_id id, cd_id before) { reserve(1, 2, 0, 0); O(OP_MOVE); A(id); A
 void cd_clear(cd_id id) { reserve(1, 1, 0, 0); O(OP_CLEAR); A(id); }
 void cd_detach(cd_id id) { reserve(1, 1, 0, 0); O(OP_DETACH); A(id); }
 void cd_attach(cd_id id) { reserve(1, 1, 0, 0); O(OP_ATTACH); A(id); }
+void cd_blit(cd_id canvas, const void *rgba, uint32_t w, uint32_t h) {
+  reserve(1, 4, 0, 0);
+  O(OP_BLIT); A(canvas); A((uint32_t)(uintptr_t)rgba); A(w); A(h);
+}
+void cd_frames(int on) { reserve(1, 1, 0, 0); O(OP_FRAMES); A(on != 0); }
+void cd_call(cd_id id, cd_str method) { reserve(1, 2, slen(method), 1); O(OP_CALL); A(id); A(ref_name(method)); }
 
 /* ---- node ids ---- */
 static cd_id next_id = 1;
@@ -288,6 +298,13 @@ EXPORT("cd_start") void cd_start(uint32_t seed) {
 
 EXPORT("cd_event") void cd_event(void) {
   cd_on_event(&inbox);
+  cd_flush();
+}
+
+/* Apps that never call cd_frames(1) need not define a frame handler. */
+__attribute__((weak)) void cd_on_frame(double ms) { (void)ms; }
+EXPORT("cd_frame") void cd_frame(double ms) {
+  cd_on_frame(ms);
   cd_flush();
 }
 

@@ -8,7 +8,7 @@ var cdom = (() => {
   const nodes = [], strs = [], tmp = [], tpl = [], stack = [], on = [];
   let lmask = new Uint16Array(1024); // listened event types per node id
   let x, mem, buf, u8, u32, i32, OPS, ARGS, SB, SM, INBOX;
-  let sp = 0, last = null, root = null, base = DETACHED, ref = 0;
+  let sp = 0, last = null, root = null, base = DETACHED, ref = 0, raf = 0;
 
   function views() {
     buf = mem.buffer;
@@ -62,10 +62,12 @@ var cdom = (() => {
     });
   }
 
+  function tick(t) { raf = requestAnimationFrame(tick); x.cd_frame(t); }
+
   function apply(nops, nargs, nstr, nbytes) {
     if (buf !== mem.buffer) views();
     if (nstr) decode(nstr, nbytes);
-    let q = ARGS >> 2, n, el;
+    let q = ARGS >> 2, n, el, w;
     for (let p = OPS, e = OPS + nops; p < e; p++) {
       switch (u8[p]) {
         case 1: base = u32[q++]; ref = u32[q++]; break; // AT
@@ -98,6 +100,10 @@ var cdom = (() => {
         case 25: el = nodes[u32[q++]]; el.$p = el.parentNode; el.$s = el.nextSibling; el.remove(); break; // DETACH
         case 26: el = nodes[u32[q++]]; el.$p.insertBefore(el, el.$s); el.$p = el.$s = null; break; // ATTACH
         case 27: last = nodes[u32[q++]]; break; // SEL
+        case 28: el = nodes[u32[q++]]; n = u32[q++]; w = u32[q++]; // BLIT
+          (el.$g ??= el.getContext("2d")).putImageData(new ImageData(new Uint8ClampedArray(buf, n, w * u32[q] * 4), w, u32[q++]), 0, 0); break;
+        case 29: if (u32[q++]) raf ||= requestAnimationFrame(tick); else { cancelAnimationFrame(raf); raf = 0; } break; // FRAMES
+        case 30: el = nodes[u32[q++]]; el[S(u32[q++])]()?.catch?.(() => {}); break; // CALL
         default: throw new Error("cdom: bad op " + u8[p] + " at " + (p - OPS));
       }
     }
@@ -122,5 +128,5 @@ var cdom = (() => {
     x.cd_start((Math.random() * 4294967296) >>> 0);
     return x;
   }
-  return { start };
+  return { start, node: (id) => nodes[id] };
 })();

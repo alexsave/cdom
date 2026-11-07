@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><title>canvas</title></head><body><div id="m"></div>
+<script src="cdom.js"></script><script>
+const errors = [], seen = [];
+const fail = (m) => errors.push(m);
+HTMLDivElement.prototype.ping = function () { window.pinged = this.id; return Promise.reject(new Error('ignored')); };
+function expectPixels(x, ptr, label) {
+  const want = new Uint8Array(x.memory.buffer, ptr, 7 * 5 * 4);
+  const got = document.querySelector('#m canvas').getContext('2d').getImageData(0, 0, 7, 5).data;
+  for (let i = 0; i < want.length; i++) if (got[i] !== want[i]) { fail(`${label}: byte ${i} = ${got[i]}, want ${want[i]}`); return; }
+}
+const env = { frame_seen(n, ms) { seen.push([n, ms]); } };
+cdom.start('canvas.wasm', document.getElementById('m'), env).then(async (x) => {
+  expectPixels(x, x.blit_small(0), 'blit');
+  expectPixels(x, x.blit_small(100), 'blit again');
+  const pages = x.memory.buffer.byteLength;
+  const p = x.blit_grown(50);
+  if (x.memory.buffer.byteLength <= pages) fail('memory did not grow');
+  expectPixels(x, p, 'blit after grow');
+  x.frames_for(5);
+  await new Promise(r => setTimeout(r, 600));
+  if (x.frame_count() !== 5) fail(`frames: ${x.frame_count()}, want 5 (loop did not stop or did not run)`);
+  for (let i = 1; i < seen.length; i++) if (!(seen[i][1] > seen[i - 1][1])) fail(`frame times not increasing: ${seen.map(s => s[1])}`);
+  x.frames_for(3);
+  await new Promise(r => setTimeout(r, 400));
+  if (x.frame_count() !== 3) fail(`restart frames: ${x.frame_count()}, want 3`);
+  x.call_ping();
+  if (window.pinged !== 'target') fail(`call: pinged = ${window.pinged}`);
+  if (cdom.node(x.target_id()) !== document.getElementById('target')) fail('node(id) is not the named element');
+}).catch(e => fail(String(e))).finally(() => { window.RESULT = { errors }; });
+</script></body></html>

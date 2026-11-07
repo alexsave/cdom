@@ -68,6 +68,18 @@ void cd_detach(cd_id id);            /* take a node out of the document, remembe
 void cd_attach(cd_id id);            /* put it back where it was */
 void cd_flush(void);
 
+/* canvas and frames */
+/* Copy w*h RGBA pixels (bytes R,G,B,A; a uint32 0xAABBGGRR) from linear memory into the canvas at 0,0 with
+ * putImageData when the batch is applied. The pixels are read then, so keep them alive until the flush.
+ * The canvas's width and height attributes are the app's to set. */
+void cd_blit(cd_id canvas, const void *rgba, uint32_t w, uint32_t h);
+/* 1 starts a requestAnimationFrame loop that calls cd_on_frame every frame, 0 stops it. */
+void cd_frames(int on);
+void cd_on_frame(double ms);         /* the app may implement this; ms is the rAF timestamp */
+/* Call a no-argument method on a node, e.g. "click" or "requestFullscreen", when the batch is applied.
+ * Inside an event the batch is applied before the handler returns, so the call keeps the user activation. */
+void cd_call(cd_id id, cd_str method);
+
 /* events: the app implements this; the shim fills the record */
 /* id is the nearest listening ancestor-or-self of the target. path holds the
  * element-child indices from that node down toward the target, one byte per

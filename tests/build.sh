@@ -7,3 +7,6 @@ mkdir -p "$here/out"
 "$CC" --target=wasm32 -O2 -nostdlib -mbulk-memory -Wall -Wextra -Werror -Wl,--no-entry \
   -o "$here/out/listfuzz.wasm" "$here/listfuzz.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 cp "$here/listfuzz.html" "$here/../shim/cdom.js" "$here/out/"
+"$CC" --target=wasm32 -O2 -nostdlib -mbulk-memory -Wall -Wextra -Werror -Wl,--no-entry \
+  -o "$here/out/canvas.wasm" "$here/canvas.c" "$here/../src/cdom.c" "$here/../src/mini.c"
+cp "$here/canvas.html" "$here/out/"
