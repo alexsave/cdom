@@ -5,7 +5,7 @@
 #define EXPORT(n) __attribute__((export_name(n)))
 
 IMPORT("apply") void js_apply(uint32_t nops, uint32_t nargs, uint32_t nstrs, uint32_t nbytes);
-IMPORT("value") uint32_t js_value(cd_id id, char *dst, uint32_t cap);
+IMPORT("get") double js_get(cd_id id, cd_str path, uint32_t kind, void *dst, uint32_t cap);
 
 /* ---- memory: power-of-two size classes over memory.grow ----
  * An app that links its own malloc defines CDOM_NO_ALLOC and supplies cd_alloc, cd_realloc and cd_free,
@@ -64,7 +64,7 @@ enum {
   OP_AT = 1, OP_OPEN, OP_CLOSE, OP_TEXT, OP_TEXT_NUM, OP_ATTR, OP_CLASS, OP_NAME, OP_LISTEN,
   OP_VALUE, OP_VALUE_NUM, OP_TPL_SAVE, OP_CLONE, OP_DOWN, OP_NEXT, OP_UP, OP_SET_TEXT,
   OP_SET_TEXT_NUM, OP_SET_ATTR, OP_SET_CLASS, OP_REMOVE, OP_FREE, OP_MOVE, OP_CLEAR, OP_DETACH,
-  OP_ATTACH, OP_SEL, OP_BLIT, OP_FRAMES, OP_CALL
+  OP_ATTACH, OP_SEL, OP_BLIT, OP_FRAMES, OP_CALL, OP_SET, OP_CALLA
 };
 
 #define OPS_CAP (1u << 16)
@@ -240,8 +240,68 @@ void cd_blit(cd_id canvas, const void *rgba, uint32_t w, uint32_t h) {
 void cd_frames(int on) { reserve(1, 1, 0, 0); O(OP_FRAMES); A(on != 0); }
 void cd_call(cd_id id, cd_str method) { reserve(1, 2, slen(method), 1); O(OP_CALL); A(id); A(ref_name(method)); }
 
+/* ---- host access ---- */
+/* Values cross as a tag word and a payload: a number as two words (the f64's low then high half), a string
+ * id, a 0 or 1, a node id, nothing for null, and for an object its pair count followed by the pairs as
+ * values. measure() counts the array entries n top-level values take, with their string bytes and count. */
+static uint32_t measure(const cd_val *a, uint32_t n, uint32_t *bytes, uint32_t *ns) {
+  uint32_t used = 0;
+  for (; n; n--) {
+    const cd_val *v = &a[used++];
+    if (v->tag == CD_V_STR) { *bytes += slen(v->u); ++*ns; }
+    else if (v->tag == CD_V_OBJ) used += measure(a + used, v->u * 2, bytes, ns);
+  }
+  return used;
+}
+
+/* Call after reserve(). */
+static void put_vals(const cd_val *a, uint32_t entries) {
+  for (uint32_t i = 0; i < entries; i++) {
+    const cd_val *v = &a[i];
+    A(v->tag);
+    if (v->tag == CD_V_NUM) {
+      uint64_t b;
+      __builtin_memcpy(&b, &v->num, 8);
+      A((uint32_t)b); A((uint32_t)(b >> 32));
+    } else if (v->tag == CD_V_STR) A(ref_text(v->u));
+    else if (v->tag == CD_V_BOOL) A(v->u != 0);
+    else if (v->tag != CD_V_NULL) A(v->u); /* an id, or an object's pair count */
+  }
+}
+
+void cd_set(cd_id id, cd_str path, cd_val v) {
+  uint32_t bytes = slen(path), ns = 1, e = measure(&v, 1, &bytes, &ns);
+  if (3 + 3 * e > ARGS_CAP || ns > SM_CAP) __builtin_trap();
+  reserve(1, 3 + 3 * e, bytes, ns);
+  O(OP_SET); A(id); A(ref_name(path));
+  put_vals(&v, e);
+}
+
+void cd_call_args(cd_id id, cd_str method, uint32_t n, const cd_val *a) {
+  uint32_t bytes = slen(method), ns = 1, e = measure(a, n, &bytes, &ns);
+  if (4 + 3 * e > ARGS_CAP || ns > SM_CAP) __builtin_trap();
+  reserve(1, 3 + 3 * e, bytes, ns);
+  O(OP_CALLA); A(id); A(ref_name(method)); A(n);
+  put_vals(a, e);
+}
+
+enum { GET_NUM, GET_STR, GET_ID, GET_RECT };
+/* A read sees the DOM after every op emitted so far, so the batch goes first; the path rides with it. */
+static double get(cd_id id, cd_str path, uint32_t kind, void *dst, uint32_t cap) {
+  if (path) { reserve(0, 0, slen(path), 1); ref_name(path); }
+  cd_flush();
+  return js_get(id, path, kind, dst, cap);
+}
+double cd_get_num(cd_id id, cd_str path) { return get(id, path, GET_NUM, 0, 0); }
+uint32_t cd_get_str(cd_id id, cd_str path, char *dst, uint32_t cap) { return (uint32_t)get(id, path, GET_STR, dst, cap); }
+cd_id cd_get_id(cd_id id, cd_str path) {
+  double r = get(id, path, GET_ID, 0, 0);
+  return r < 0 ? CD_DETACHED : (cd_id)r;
+}
+int cd_get_rect(cd_id id, double out[4]) { return get(id, 0, GET_RECT, out, 4) != 0; }
+
 /* ---- node ids ---- */
-static cd_id next_id = 1;
+static cd_id next_id = CD_FIRST_ID;
 static cd_id *free_ids;
 static uint32_t nfree;
 static uint32_t *tags, tags_cap;
@@ -250,14 +310,17 @@ cd_id cd_id_new(void) {
   if (nfree) return free_ids[--nfree];
   cd_id id = next_id++;
   if (id >= tags_cap) {
+    uint32_t old = tags_cap;
     tags_cap = tags_cap ? tags_cap * 2 : 4096;
     tags = cd_realloc(tags, tags_cap * 4);
+    __builtin_memset(tags + old, 0, (tags_cap - old) * 4); /* cd_tag of a fresh id reads 0 */
     free_ids = cd_realloc(free_ids, tags_cap * 4);
   }
   return id;
 }
 
 static void release(cd_id id) {
+  if (id < CD_FIRST_ID) return; /* the mount and the reserved ids are never handed out again */
   tags[id] = 0;
   free_ids[nfree++] = id;
 }
@@ -277,7 +340,11 @@ void cd_remove(cd_id id) {
 void cd_tag_set(cd_id id, uint32_t tag) { tags[id] = tag; }
 uint32_t cd_tag(cd_id id) { return id < tags_cap ? tags[id] : 0; }
 
-uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap) { return js_value(id, dst, cap); }
+static cd_str s_value;
+uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap) {
+  if (!s_value) s_value = cd_internz("value");
+  return cd_get_str(id, s_value, dst, cap);
+}
 
 /* ---- entry points ---- */
 EXPORT("cd_layout") uint32_t *cd_layout(void) {
@@ -296,10 +363,17 @@ EXPORT("cd_start") void cd_start(uint32_t seed) {
   cd_flush();
 }
 
-EXPORT("cd_event") void cd_event(void) {
+/* Returns the flags the handler set, read before the flush, so an event the flush itself dispatches cannot
+ * overwrite them. */
+EXPORT("cd_event") uint32_t cd_event(void) {
+  inbox.flags = 0;
   cd_on_event(&inbox);
+  uint32_t f = (uint32_t)inbox.flags;
   cd_flush();
+  return f;
 }
+void cd_prevent_default(void) { inbox.flags |= CD_PREVENT; }
+void cd_stop_propagation(void) { inbox.flags |= CD_STOP; }
 
 /* Apps that never call cd_frames(1) need not define a frame handler. */
 __attribute__((weak)) void cd_on_frame(double ms) { (void)ms; }
