@@ -104,7 +104,7 @@ Less than 10% of cdom's script time is spent in C (CDP profile of create 10k: ab
 
 ## The shim
 
-shim/cdom.js was 126 lines (117 non-blank, non-comment), 6,175 bytes, 2,341 bytes gzip, when these numbers were taken (132 lines and 30 ops since the canvas ops below).
+shim/cdom.js was 126 lines (117 non-blank, non-comment), 6,175 bytes, 2,341 bytes gzip, when these numbers were taken (132 lines and 30 ops since the canvas ops below, 195 lines and 32 ops since host access).
 It had 27 op codes, the per-batch string decoder, the delegated event inbox and one import for reading an input's value.
 The design estimated 300-400 lines once history, fetch, storage, clipboard, focus and rAF imports exist; none of those were needed here.
 
@@ -115,7 +115,7 @@ Three ops were added for apps that draw pixels, taking the shim from 126 to 132 
 The pixels are RGBA bytes, the canvas's own format, so the shim never touches a pixel; converting from another layout is the app's job in C, where it can be fused with whatever pass already writes the frame.
 `cd_frames(1)` is FRAMES: a `requestAnimationFrame` loop that calls the exported `cd_frame(ms)`, which calls the app's `cd_on_frame` and flushes; `cd_frames(0)` stops it, and an app that never starts it pays nothing.
 `cd_call(id, "click")` is CALL: a no-argument method on a node, applied inside the event that emitted it, so it keeps the user activation that `click()` on a file input and `requestFullscreen()` need.
-The method must not synchronously dispatch an event the app listens for, because the shim would re-enter `cd_event` while it is still applying the batch.
+The method must not synchronously dispatch an event the app listens for, because the shim would re-enter `cd_event` while it is still applying the batch (since host access such an event is queued and delivered after the batch, see below).
 `cdom.node(id)` lets page glue (an app's own `env` imports) reach a node C created.
 `CDOM_NO_ALLOC` drops cdom's allocator so an app with its own malloc can supply `cd_alloc`, `cd_realloc` and `cd_free`, and one allocator owns `memory.grow`.
 
@@ -123,6 +123,60 @@ tests/canvas.c with tools/canvas.mjs checks blit bytes exactly, a blit after mem
 Seven mutants (width and height swapped, double start, no cancel, stale memory views, method not invoked, node off by one, stop sending start) were all caught.
 The fuzz and smoke tests pass unchanged.
 The micro run below the line was `node tools/quick.mjs` on a snapshot of the main build against the branch build, six runs each, interleaved because another project's build kept the load between 10 and 16: median run1k 1.99 ms against 1.99 ms and create10k 18.83 ms against 18.79 ms, so the new switch cases cost nothing measurable.
+
+### Host access (branch host-access)
+
+An app on cdom needed page glue for anything beyond the node tree: reading a property, setting one (setAttribute is not the property once the user has edited an input), calling a method with arguments, hearing window or document events, preventing a default action.
+This branch makes that general, so an app needs no glue for DOM and window access.
+Two ops, one import, five reserved ids and twenty event types were added, taking the shim from 132 to 195 lines (122 to 174 non-blank, non-comment), 6,727 to 10,853 bytes, 2,541 to 4,182 bytes gzip -9 and 2,256 to 3,649 bytes brotli.
+
+Reserved ids: `CD_WINDOW` (1), `CD_DOCUMENT` (2), `CD_BODY` (3), `CD_EVENT` (4, the DOM event being delivered) and `CD_RESULT` (5, what the last call returned); `cd_id_new` starts at `CD_FIRST_ID` (6), and `cd_id_free` and `cd_remove` ignore ids below it.
+They are low, not at the top of the id space, because the shim's `nodes` array and listener masks are indexed by id: an id near 2^32 would turn `nodes` into a dictionary (slowing every lookup) or need a branch on every lookup, while a low id is an ordinary slot that works in every op, `sel` and `call` included, at no cost.
+
+Paths are interned strings walked one property per segment ("files.0.name", "childNodes.2.nodeValue", "style.width"); a digit segment indexes an array or collection with no special code, because property access already does, and a "--" segment reads or writes a CSS variable through `getPropertyValue` or `setProperty` on the style object before it.
+Each path is split once and cached by its string id.
+- `cd_get_num`, `cd_get_str`, `cd_get_id` and `cd_get_rect` share one import, `get(id, path, kind, dst, cap)`, which replaces `value`; `cd_input_value` is now `cd_get_str` of "value".
+  A read applies the pending batch first, so it sees every op emitted before it (a set and a read in the same handler agree) and its path string travels in that batch.
+  A missing or null step reads as NaN, an empty string or `CD_DETACHED`, and a throwing getter is caught, so a read never throws.
+  `cd_get_num` returns numbers and booleans (as 0 or 1) and NaN for anything else, numeric strings included; `cd_get_str` writes `String(v)` as UTF-8, never splitting a character; `cd_get_id` returns the id under which a node value is named (`document.activeElement`, `fullscreenElement`, `CD_EVENT` "target"); it searches the id table, so it is linear in the number of ids and belongs off hot paths.
+- SET (31) `cd_set(id, path, v)` sets a property, with `cd_set_num`, `cd_set_str` and `cd_set_bool` as inline wrappers.
+- CALLA (32) `cd_call_args(id, method, n, args)` calls the method at a path ("setPointerCapture", "classList.toggle", "history.pushState") with tagged arguments, inside the event that emitted it like CALL; the result is kept as `CD_RESULT`, a rejected promise is swallowed, and a thrown error goes to `reportError` so the rest of the batch still applies (SET does the same).
+- Values are tagged `cd_val`s: number (two words of the f64), string, boolean, node id, null, and a plain object of key-value pairs, so `scrollIntoView({block: "end"})` and `requestFullscreen({navigationUI: "hide"})` need no glue.
+
+Events: the listener masks went from 16 to 32 bits, and contextmenu, wheel, pointerover, pointerout, pointercancel, dragover, drop (bubbling, 12 to 18), focus, blur, scroll, load, error, loadedmetadata, timeupdate, ended, play, pause (non-bubbling, 19 to 28, heard by a capture-phase listener on the mount) and resize, fullscreenchange, visibilitychange (29 to 31) were appended after the stable twelve.
+That fills the 32 bits; a further type needs a second mask word (or a per-type array) in the shim.
+`cd_listen(CD_WINDOW, CD_EV_RESIZE)` (or any type on `CD_DOCUMENT` or `CD_BODY`) adds one listener on that object, delivering with that id, in addition to the mount delivery; it does not touch the last node.
+The record gained `pointer`, `buttons`, `dx`, `dy` (filled for the pointer events and wheel only, so other events skip four getters) and `flags`; every other event property is a path on `CD_EVENT` ("key", "dataTransfer.files.0.name").
+`cd_prevent_default` and `cd_stop_propagation` set `flags`; `cd_event` clears it, runs the handler, reads it before the flush and returns it, and the shim then calls `preventDefault` and `stopPropagation`.
+Returning the flags, instead of letting the shim read the inbox, means an event the flush itself dispatches cannot overwrite them.
+That case is now handled in general: an event dispatched while C is running (focus() or click() in a batch) is queued and delivered in a microtask after the batch, where before it re-entered `cd_event` and re-applied the batch from its start.
+Pointer capture needed no op: pointerdown gives the pointer id and `cd_call_args(id, "setPointerCapture", 1, &p)` keeps the moves and the up on that node.
+
+tests/host.c with tests/host.html and tools/host.mjs covers every op, import and event in headless Chrome, with real input through CDP where the browser allows it.
+The page checks need no input: reserved ids bound and reported by `cd_get_id`; innerWidth, devicePixelRatio, location.protocol, doctype.name, fullscreenElement null as "", NaN and `CD_DETACHED` and a step past it; childNodes indexes, missing indexes, numbers against strings, booleans, a numeric string, a throwing getter; a FileList set through DataTransfer (names, sizes, length, a missing third file, a UTF-8 name and a read cut inside a character); the rect; SET of style, a CSS variable, booleans (dataset "true", not "1"), numbers, null (dataset "null", not "undefined") and on `CD_DOCUMENT`; CALLA with setSelectionRange(1, 3, "backward"), setAttribute(string, number), classList.toggle(string, boolean), insertBefore(node, null), contains(node) and getAttribute read back through `CD_RESULT`, querySelector with `cd_get_id` past `CD_RESULT`, scrollIntoView with an object, and three failing calls reported while the batch goes on; a read after a write in one batch; reserved ids never handed out or freed; every type 0 to 28 dispatched at a child of a node listening to all of them (exactly one delivery each, with path and depth) and at a node listening only to dblclick (no delivery for any other type); stopPropagation keeping a click from the body listener; a drop reading its file name through `CD_EVENT`; window blur and focus; focus() inside a batch.
+The driver adds real input: img load and error, scroll, media loadedmetadata with the duration of a generated 0.25 s WAV data URL, volume, currentTime, muted, play (its promise as `CD_RESULT`), timeupdate and ended; pointerover, pointerdown with its pointer id, and pointer capture proved by a drag whose moves and up over another box still reach the first box, with a control showing that box receives moves otherwise; contextmenu and wheel (deltaY 120 in the record and through `CD_EVENT`) with `defaultPrevented` true, and the next click with it false; keydown and keyup on `CD_DOCUMENT` with the focus on body; SET of value after the user typed and of checked after the user clicked, each with a control showing the attribute path fails; resize through `Emulation.setDeviceMetricsOverride` (innerWidth 900, devicePixelRatio 2, one delivery although the type was listened twice); a real fullscreen entered by a click and exited by `cd_call(CD_DOCUMENT, "exitFullscreen")`; a real visibilitychange ("hidden") by bringing a second tab to the front.
+The canvas, fuzz and smoke tests pass unchanged.
+
+Forty mutants were applied one at a time; thirty-nine made the test fail on the assertion they target:
+the walk skipping its first or last segment; digit segments not used as indexes; the read's try removed (a throwing getter then throws); SET through setAttribute; a CSS variable set as a plain property; `CD_DOCUMENT` bound to window; `CD_BODY` bound to the mount; the flag not cleared; the flag read before the handler runs; preventDefault or stopPropagation not called; no capture listener; the mask still 16 bits; the bit taken mod 16 (17 aliasing 1); CALLA dropping its last argument; a boolean decoded as a number; the two halves of a number swapped; object keys dropped; null decoded as undefined; no queue for events during a batch; no `CD_RESULT`; a failed call thrown instead of reported; `cd_get_id` answering `CD_RESULT`; a read without the flush, or without sending its path; `cd_id_new` starting at 1; a reserved id freed; a second listener for a type listened twice; reserved-id listens going through the mount; pointerId not written, missing from the pointer mask, or buttons missing for pointermove; deltaY in the deltaX slot; wheel fields not filled for wheel; strings accepted as numbers; the rect fields out of order; an object argument measured wrongly in C.
+The one survivor is equivalent by design: the walk stops at a null step so a missing value costs no exception, and the read's try covers the same case, so removing the null check changes speed only.
+The first round also found four weak checks (a throwing getter, null against undefined, a numeric string, `cd_get_id` with `CD_RESULT`), which were added, and the first play() attempt was refused by Chrome's autoplay policy, which `CD_RESULT` made visible; play now runs after the real clicks, as an app would.
+
+Unused features cost nothing measurable.
+For the keyed benchmark app the wasm grew from 20,558 to 20,677 bytes (6,673 to 6,816 gzip, 5,478 to 5,605 brotli), from the flags in `cd_event` and the reserved-id guards.
+`tools/evcost.mjs` times delegated event delivery, 20,000 clicks on two row links per sample, median of 15; canvas-blit against host-access, built into two new jfb entries and interleaved with the order alternating: 7,685 ns against 7,681 ns per click over ten rounds gated at a load under 6 (loads 4.27 to 5.81), with the single-change variants scattering by up to 130 ns either way.
+Earlier runs at loads of 5 to 14 put the difference at 70 to 90 ns (about 1%); reading the pointer fields only for their event types was tried for that and changed nothing measurable.
+`node tools/quick.mjs` (script time per click, median per run) in three interleaved series of eight rounds, canvas-blit against host-access, all medians in ms:
+
+| series (loads) | run1k | replace1k | append | clear1k | create10k |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 (3.29 to 4.91) | 2.17 / 2.30 | 2.26 / 2.33 | 1.98 / 1.94 | 0.27 / 0.27 | 18.83 / 18.53 |
+| 2 (4.03 to 5.77, gated under 6) | 2.24 / 2.32 | 2.30 / 2.36 | 1.89 / 1.88 | 0.27 / 0.27 | 18.95 / 18.51 |
+| 3 (5.00 to 5.65, gated under 6) | 2.35 / 2.27 | 2.28 / 2.27 | 1.90 / 1.91 | 0.28 / 0.27 | 18.87 / 18.77 |
+
+Series 1 ran before the pointer fields were limited to their types, which does not touch these paths.
+run1k read 3 to 5% slower in the first two series and 3% faster in the third, and series 3 also carried a variant with the old 16-bit LISTEN case (2.25 ms), so the LISTEN change is not a cost and the spread is noise; swap, update and select stay at the 10 us timer floor for both.
+Other agents were building on the Mac throughout, which is why the loads are higher than in the runs above.
 
 ## Step 0: what a call across the boundary costs
 
@@ -196,12 +250,13 @@ The first version of cdom's swap took 65 us of script, all in the generic map-an
 ```
 cd /Users/alex/Dev/cdom
 bench/build.sh                  # cdom, cdom-pertext, cdom-notpl, cdom-oz into jfb/frameworks/keyed
-tests/build.sh && node tools/fuzz.mjs && node tools/canvas.mjs
+tests/build.sh && node tools/fuzz.mjs && node tools/canvas.mjs && node tools/host.mjs
 (cd jfb/server && PORT=8093 npx tsx index.ts) &
 node tools/smoke.mjs cdom
 TAG=p2 KEEP=pass2 tools/final.sh 01_ 02_ 03_ 04_ 05_ 06_ 07_ 08_ 09_
 node tools/table.mjs $PWD/results/pass2 <frameworks> results/loads.tsv p2
 node tools/run_micro.mjs
+node tools/evcost.mjs cdom cdom-pertext   # event delivery, any entries built into jfb
 ```
 
 jfb/ is a shallow clone of krausest/js-framework-benchmark and is not committed; bench/build.sh writes the entries into it.

@@ -136,7 +136,9 @@ double cd_get_num(cd_id id, cd_str path);  /* a number, a boolean as 0 or 1; NaN
 /* The string form (String(v)) as UTF-8 into dst, at most cap bytes and never a split character; returns
  * the bytes written. An object reads as its "[object ...]" name, so a non-zero length also tests presence. */
 uint32_t cd_get_str(cd_id id, cd_str path, char *dst, uint32_t cap);
-cd_id cd_get_id(cd_id id, cd_str path);    /* the id of the named node the path holds, or CD_DETACHED */
+/* The id under which the node the path holds is named, or CD_DETACHED. It searches the id table, so it is
+ * linear in the number of ids: fine for activeElement in a handler, not for a per-row loop. */
+cd_id cd_get_id(cd_id id, cd_str path);
 /* getBoundingClientRect of the node into out as left, top, width, height; returns 0 (out untouched) if
  * id names nothing with a rect. */
 int cd_get_rect(cd_id id, double out[4]);
