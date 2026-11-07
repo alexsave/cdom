@@ -7,6 +7,7 @@ var cdom = (() => {
     "error", "loadedmetadata", "timeupdate", "ended", "play", "pause", "resize", "fullscreenchange",
     "visibilitychange"];
   const CAPTURE = 0x1ff80000; // focus to pause do not bubble: the mount hears them in the capture phase
+  const POINTER = 0x1ee00, WHEEL = 13; // pointerdown, up, move, wheel, over, out, cancel fill pointer and buttons
   const TRANSIENT = 0x40000000, DETACHED = 0xffffffff, SMALL = 64, EVENT = 4, RESULT = 5;
   const doc = document, td = new TextDecoder(), te = new TextEncoder();
   const nodes = [], strs = [], tmp = [], tpl = [], stack = [], on = [], segs = [], queue = [];
@@ -54,8 +55,10 @@ var cdom = (() => {
     i32[k] = type; i32[k + 1] = id; i32[k + 2] = e.clientX | 0; i32[k + 3] = e.clientY | 0;
     i32[k + 4] = e.button | 0; i32[k + 5] = e.keyCode | 0;
     i32[k + 6] = e.shiftKey | (e.ctrlKey << 1) | (e.altKey << 2) | (e.metaKey << 3);
-    i32[k + 7] = path; i32[k + 8] = depth; i32[k + 9] = e.pointerId | 0; i32[k + 10] = e.buttons | 0;
-    f32[k + 11] = e.deltaX || 0; f32[k + 12] = e.deltaY || 0;
+    i32[k + 7] = path; i32[k + 8] = depth;
+    const p = POINTER >> type & 1, wh = type === WHEEL; // other types skip the getters and read 0
+    i32[k + 9] = p ? e.pointerId : 0; i32[k + 10] = p ? e.buttons : 0;
+    f32[k + 11] = wh ? e.deltaX : 0; f32[k + 12] = wh ? e.deltaY : 0;
     nodes[EVENT] = e;
     const f = x.cd_event();
     nodes[EVENT] = undefined; busy = 0;

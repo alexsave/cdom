@@ -144,8 +144,9 @@ int cd_get_rect(cd_id id, double out[4]);
 /* events: the app implements this; the shim fills the record */
 /* id is the nearest listening ancestor-or-self of the target (or the reserved id listened on). path holds
  * the element-child indices from that node down toward the target, one byte per level (byte 0 = which
- * child of the listener), for depth levels (max 4). Fields are only ever appended. pointer is pointerId,
- * buttons the pressed-buttons mask, dx and dy the wheel deltas. Any other event property is a path away:
+ * child of the listener), for depth levels (max 4). Fields are only ever appended. pointer (pointerId) and
+ * buttons are filled for pointerdown, pointerup, pointermove, pointerover, pointerout, pointercancel and
+ * wheel, dx and dy (deltaX, deltaY) for wheel; other types read 0 there. Any event property is a path away:
  * cd_get_str(CD_EVENT, "key", ...), cd_get_id(CD_EVENT, "target"), "dataTransfer.files.0.name". */
 typedef struct {
   int32_t type, id, x, y, button, key, mods, path, depth;
