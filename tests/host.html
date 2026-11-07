@@ -37,9 +37,10 @@ function wav() {
   return 'data:audio/wav;base64,' + btoa(bin);
 }
 
+const show = (v) => { try { return JSON.stringify(v) ?? String(v); } catch { return String(v); } };
 // Checks that need no real input. Each returns a list of failures.
 function syncChecks() {
-  const errs = [], eq = (got, want, m) => { if (!Object.is(got, want)) errs.push(`${m}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); };
+  const errs = [], eq = (got, want, m) => { if (!Object.is(got, want)) errs.push(`${m}: got ${show(got)}, want ${show(want)}`); };
   const box = H.id('BOX'), para = H.id('PARA'), file = H.id('FILE');
   // reserved ids are bound and reachable as values
   eq(cdom.node(1), window, 'node(CD_WINDOW)'); eq(cdom.node(2), document, 'node(CD_DOCUMENT)'); eq(cdom.node(3), document.body, 'node(CD_BODY)');
@@ -64,6 +65,8 @@ function syncChecks() {
   eq(H.num(box, 'nope'), NaN, 'missing as number'); eq(H.str(box, 'nope'), '', 'missing as string'); eq(H.str(box, 'nope.deeper'), '', 'past missing');
   eq(H.str(box, ''), '[object HTMLDivElement]', 'path 0 reads the object'); eq(H.num(99999, 'x'), NaN, 'unbound id');
   eq(H.str(box, 'tagName.0'), 'D', 'index into a string');
+  Object.defineProperty(H.el('BOX'), 'boom', { get() { throw new Error('getter'); }, configurable: true });
+  eq(H.str(box, 'boom.x'), '', 'a throwing getter reads as empty'); eq(H.num(box, 'boom'), NaN, 'a throwing getter reads as NaN');
   // a FileList through DataTransfer
   const dt = new DataTransfer(); dt.items.add(new File(['hello'], 'a.txt')); dt.items.add(new File([new Uint8Array(3)], 'bé.bin'));
   H.el('FILE').files = dt.files;
@@ -82,6 +85,8 @@ function syncChecks() {
   eq(H.str(box, 'style.--accent'), 'red', 'get custom property');
   X.c_flag(1); eq(H.el('BOX').dataset.flag, 'true', 'set boolean true'); X.c_flag(0); eq(H.el('BOX').dataset.flag, 'false', 'set boolean false');
   H.setN(box, 'dataset.n', 2.5); eq(H.el('BOX').dataset.n, '2.5', 'set number'); H.setN(box, 'dataset.n', -1e300); eq(H.el('BOX').dataset.n, '-1e+300', 'set large number');
+  eq(H.num(box, 'dataset.n'), NaN, 'a numeric string is not a number');
+  H.setNull(box, 'dataset.nul'); eq(H.el('BOX').dataset.nul, 'null', 'set null, not undefined');
   H.el('BOX').onclick = () => {}; H.setNull(box, 'onclick'); eq(H.el('BOX').onclick, null, 'set null');
   H.setS(2, 'title', 'from C'); eq(document.title, 'from C', 'set on CD_DOCUMENT');
   // CALLA
@@ -92,6 +97,7 @@ function syncChecks() {
   X.c_toggle(0); eq(H.el('BOX').classList.contains('on'), false, 'classList.toggle(s, false)');
   X.c_insert(); eq([...H.el('LIST').children].map((e) => e.id).join(), 'b,a', 'insertBefore(node, null)');
   eq(X.c_contains(), 1, 'contains(node) read back from CD_RESULT'); eq(rd(X.c_getattr()), 'box', 'getAttribute read back from CD_RESULT');
+  eq(X.c_query() >>> 0, H.id('ITEM_B'), 'id of a node CD_RESULT also holds'); eq(cdom.node(5), H.el('ITEM_B'), 'querySelector result');
   X.c_scroll(); eq(H.el('SCROLLER').scrollTop, 460, 'scrollIntoView({block: "end"})');
   const nrep = reported.length; X.c_bad();
   eq(reported.slice(nrep).join(), 'NotFoundError,TypeError,TypeError', 'failed calls and sets are reported');
@@ -129,7 +135,7 @@ function syncChecks() {
 
 // focus() inside a batch: the focus events wait for a microtask, the batch is applied once and goes on.
 async function focusCheck() {
-  const errs = [], eq = (got, want, m) => { if (!Object.is(got, want)) errs.push(`${m}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); };
+  const errs = [], eq = (got, want, m) => { if (!Object.is(got, want)) errs.push(`${m}: got ${show(got)}, want ${show(want)}`); };
   document.activeElement?.blur(); const n = LOG.length, t = H.el('TEXT');
   X.c_focus();
   eq(document.querySelectorAll('p.mark').length, 1, 'ops before the focus call applied once');

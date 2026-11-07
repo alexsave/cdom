@@ -81,6 +81,8 @@ var cdom = (() => {
   }
 
   // Host access along dotted paths; a "--" segment is a custom property of the style object before it.
+  // walk stops at a null step so a missing value costs no exception; get and host still catch, for getters
+  // and setters that throw.
   const K = (p) => (segs[p] ??= p ? S(p).split(".") : []);
   function walk(o, k, n) {
     for (let i = 0; i < n && o != null; i++) o = k[i].startsWith("--") ? o.getPropertyValue(k[i]) : o[k[i]];

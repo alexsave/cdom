@@ -47,6 +47,7 @@ void cd_main(void) {
   ids[SCROLLER] = el("div", "scroller", "position:fixed;left:450px;top:10px;width:100px;height:50px;overflow:auto");
   cd_open(z("div")); cd_attr(z("style"), z("height:500px")); cd_close();
   ids[DEEP] = el("div", "deep", "height:10px"); cd_close();
+  cd_open(z("div")); cd_attr(z("style"), z("height:500px")); cd_close();
   cd_close();
   ids[PARA] = el("p", "para", 0); cd_text(z("a")); cd_text(z("b")); cd_text(z("c")); cd_close();
   ids[FSBTN] = el("button", "fs", "position:fixed;left:10px;top:200px;width:80px;height:30px");
@@ -189,6 +190,12 @@ EXPORT("c_getattr") uint32_t c_getattr(void) {
   cd_val a = cd_v_str(z("id"));
   cd_call_args(ids[BOX], z("getAttribute"), 1, &a);
   return cd_get_str(CD_RESULT, 0, io, sizeof io);
+}
+/* CD_RESULT holds a named node; cd_get_id still names it by its own id. */
+EXPORT("c_query") cd_id c_query(void) {
+  cd_val a = cd_v_str(z("#b"));
+  cd_call_args(ids[LIST], z("querySelector"), 1, &a);
+  return cd_get_id(ids[LIST], z("firstElementChild"));
 }
 EXPORT("c_scroll") void c_scroll(void) { /* an object argument */
   cd_val a[3] = {cd_v_obj(1), cd_v_str(z("block")), cd_v_str(z("end"))};
