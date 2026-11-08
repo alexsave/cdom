@@ -137,6 +137,46 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
       return (!threw && r.every(Boolean)) || JSON.stringify(r) + ' ' + $('#openid').innerHTML + ' live ' + live + ' ' + threw;
     });
   }
+  {
+    // 26. cd_on.
+    let threw = '';
+    const click = (el, type = 'click') => el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+    try { x.t_on_section(); } catch (e) { threw = String(e); }
+    const btn = [...document.querySelectorAll('#on button')], id = [0, 1, 2].map((k) => x.t_on_btn(k));
+    const calls = () => [0, 1, 2, 3].map((k) => x.t_on_calls(k)).join();
+    const CLICK = 0, DBLCLICK = 1, FULLSCREEN = 38;
+    const ev0 = x.t_ev(7);
+    const notPrevented = [click(btn[1]), click(btn[0])]; // b prevents, then a's record starts with no flags
+    const first = [calls(), x.t_on_last(0, 0) === id[0], x.t_on_last(0, 1) === CLICK, x.t_on_last(1, 0) === id[1], x.t_ev(7) - ev0];
+    click(btn[2]);
+    const fallback = [x.t_ev(7) - ev0, x.t_ev(0), x.t_ev(1) === id[2]];
+    click(btn[0], 'dblclick');
+    const otherType = [x.t_ev(7) - ev0, x.t_ev(0), x.t_ev(1) === id[0], calls()];
+    document.dispatchEvent(new Event('fullscreenchange'));
+    const doc = [calls(), x.t_on_last(3, 0), x.t_on_last(3, 1)];
+    try { x.t_on_change(); } catch (e) { threw += String(e); }
+    const ev1 = x.t_ev(7);
+    click(btn[0]); click(btn[1]); document.dispatchEvent(new Event('fullscreenchange'));
+    const changed = [calls(), x.t_on_last(2, 0) === id[0], x.t_ev(7) - ev1, x.t_stale()];
+    check('cd_on: a handler gets its own events with its ctx (and can prevent them), cd_on_event the rest; a replace and a remove take effect', () => {
+      const r = [notPrevented.join() === 'false,true', first.join() === '1,1,0,0,true,true,true,0',
+        fallback.join() === `1,${CLICK},true`, otherType.join() === `2,${DBLCLICK},true,1,1,0,0`,
+        doc.join() === `1,1,0,1,2,${FULLSCREEN}`, changed.join() === '1,1,1,1,true,0,0'];
+      return (!threw && r.every(Boolean)) || JSON.stringify({ r, notPrevented, first, fallback, otherType, doc, changed, threw });
+    });
+    let same = -1;
+    try { x.t_on_many(); same = x.t_on_many_free(); } catch (e) { threw += String(e); }
+    const spans = [...document.querySelectorAll('#onmany span')], bs = [...document.querySelectorAll('#onmany b')];
+    const ev2 = x.t_ev(7);
+    for (const el of spans) click(el);
+    for (const el of bs) click(el);
+    const many = [...Array(300).keys()].map((i) => x.t_on_many_calls(i));
+    check('cd_on: 300 ids with two handlers each, every other id freed and handed out again; the kept ids still hear their clicks, the reused ones reach cd_on_event, not the old handlers', () => {
+      const bad = many.filter((n, i) => n !== (i & 1)).length;
+      return (!threw && same === 150 && spans.length === 300 && bs.length === 150 && bad === 0 && x.t_ev(7) - ev2 === 150) ||
+        `same ${same}, ${spans.length} spans, ${bs.length} b, ${bad} wrong counts (${many.slice(0, 8)}), fallback ${x.t_ev(7) - ev2} ${threw}`;
+    });
+  }
   check('options.seed is cd_seed, so one line makes a run deterministic', () => (x.t_seed() >>> 0) === 0xdeadbeef || x.t_seed() >>> 0);
   const shimSource = await (await fetch('cdom.js')).text();
   check('the shim draws no stray random: no Math.random, no Date.now seed', () =>

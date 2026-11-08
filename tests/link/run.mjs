@@ -18,4 +18,12 @@ try { x.free_one(); } catch (e) { trapped = e instanceof WebAssembly.RuntimeErro
 ok(trapped, 'an app that replaces malloc alone traps at the first free, not silently');
 x = await load(`${dir}/own_libc.wasm`);
 ok(x.own_libc() === 1, "an app's own memcmp and strlen link next to mini.c");
+x = await load(`${dir}/on_only.wasm`);
+x.cd_start(0);
+const inbox = new Uint32Array(x.memory.buffer, x.cd_layout(), 3)[2] >> 2, rec = new Int32Array(x.memory.buffer);
+const event = (type, id) => { rec[inbox] = type; rec[inbox + 1] = id; x.cd_event(); };
+event(0, x.node()); // CD_EV_CLICK: the handler
+event(0, x.node() + 1); // no handler: cdom's empty cd_on_event
+event(2, x.node()); // another type: the same
+ok(x.heard() === 1, `an app that uses cd_on alone links with no cd_on_event, and only its handler's event reaches it (heard ${x.heard()})`);
 process.exit(bad ? 1 : 0);

@@ -931,3 +931,76 @@ EXPORT("t_open_hide") void t_open_hide(void) {
   open_live[2] = cd_ids_live();
 }
 EXPORT("t_open_live") uint32_t t_open_live(uint32_t k) { return open_live[k]; }
+
+/* 26. cd_on: a handler per (id, type), called with its ctx in place of cd_on_event; other events (no
+ * handler for the id, or for that type) still reach cd_on_event. a and b get handlers once all three
+ * buttons are built (the last node is c's text), c only listens; the document gets one too. */
+typedef struct { uint32_t calls; int32_t id, type, prevent; } on_ctx;
+static on_ctx on_a, on_b, on_r, on_doc; /* k = 0 to 3 */
+static on_ctx *const ON_CTX[] = {&on_a, &on_b, &on_r, &on_doc};
+static cd_id on_btn[3];
+static void on_hit(const cd_event_rec *e, void *ctx) {
+  enter();
+  on_ctx *c = ctx;
+  c->calls++;
+  c->id = e->id;
+  c->type = e->type;
+  if (c->prevent) cd_prevent_default();
+  hold(on_btn[2]); /* no cd_flush: the event export does it */
+}
+static void on_hit_r(const cd_event_rec *e, void *ctx) { on_hit(e, ctx); } /* a second fn, for the replace */
+EXPORT("t_on_section") void t_on_section(void) {
+  cd_id s = section("on");
+  cd_at(s, 0);
+  for (int k = 0; k < 3; k++) { on_btn[k] = cd_open_id(L("button")); cd_text_num((uint32_t)k); cd_close(); }
+  on_b.prevent = 1;
+  cd_on(on_btn[0], CD_EV_CLICK, on_hit, &on_a);
+  cd_on(on_btn[1], CD_EV_CLICK, on_hit, &on_b);
+  cd_sel(on_btn[0]); cd_listen(on_btn[0], CD_EV_DBLCLICK); /* a's dblclick has no handler */
+  cd_sel(on_btn[2]); cd_listen(on_btn[2], CD_EV_CLICK);
+  cd_on(CD_DOCUMENT, CD_EV_FULLSCREENCHANGE, on_hit, &on_doc);
+}
+/* a's click replaced (another fn and ctx), b's and the document's removed. */
+EXPORT("t_on_change") void t_on_change(void) {
+  cd_on(on_btn[0], CD_EV_CLICK, on_hit_r, &on_r);
+  cd_on(on_btn[1], CD_EV_CLICK, 0, 0);
+  cd_on(CD_DOCUMENT, CD_EV_FULLSCREENCHANGE, 0, 0);
+  cd_on(on_btn[1], CD_EV_CLICK, 0, 0); /* removing again does nothing */
+}
+EXPORT("t_on_btn") cd_id t_on_btn(uint32_t k) { return on_btn[k]; }
+EXPORT("t_on_calls") uint32_t t_on_calls(uint32_t k) { return ON_CTX[k]->calls; }
+EXPORT("t_on_last") int32_t t_on_last(uint32_t k, uint32_t type) { return type ? ON_CTX[k]->type : ON_CTX[k]->id; }
+
+/* 300 spans, each with a click and an input handler; then every other id freed (its node left in place)
+ * and handed out again to a new span that only listens: the old handlers stay with the odd ids, and the
+ * new spans' clicks reach cd_on_event. */
+#define ON_MANY 300
+static uint32_t on_many_calls[ON_MANY];
+static cd_id on_many_id[ON_MANY], on_reused[ON_MANY / 2];
+static cd_id on_many_box;
+static void on_count(const cd_event_rec *e, void *ctx) { (void)e; enter(); ++*(uint32_t *)ctx; }
+EXPORT("t_on_many") void t_on_many(void) {
+  cd_id s = section("onmany");
+  cd_at(s, 0);
+  on_many_box = cd_open_id(L("div"));
+  for (int i = 0; i < ON_MANY; i++) {
+    on_many_id[i] = cd_open_id(L("span"));
+    cd_on(on_many_id[i], CD_EV_INPUT, on_count, &on_many_calls[i]);
+    cd_on(on_many_id[i], CD_EV_CLICK, on_count, &on_many_calls[i]);
+    cd_close();
+  }
+  cd_close();
+}
+EXPORT("t_on_many_free") uint32_t t_on_many_free(void) {
+  for (int i = 0; i < ON_MANY; i += 2) cd_id_free(on_many_id[i]);
+  uint32_t same = 0;
+  cd_at(on_many_box, 0);
+  for (int i = 0; i < ON_MANY / 2; i++) {
+    cd_open(L("b"));
+    cd_listen(on_reused[i] = cd_id_new(), CD_EV_CLICK);
+    cd_close();
+    for (int k = 0; k < ON_MANY; k += 2) same += on_reused[i] == on_many_id[k];
+  }
+  return same; /* how many of the new ids are freed ones */
+}
+EXPORT("t_on_many_calls") uint32_t t_on_many_calls(uint32_t i) { return on_many_calls[i]; }
