@@ -29,7 +29,8 @@ typedef uint32_t cd_str; /* interned string id */
 /* Event types. The numbers are stable: new ones are only appended, and there are at most 64.
  * Listened for on a node (cd_listen), a type is delivered from one listener on the mount to the nearest
  * listening ancestor-or-self of the target: in the bubble phase for the types that bubble, in the capture
- * phase for the ones that do not (CD_EV_FOCUS to CD_EV_PAUSE), so a node hears its own load or scroll.
+ * phase for the ones that do not (CD_EV_FOCUS to CD_EV_PAUSE, and a <dialog>'s CD_EV_CANCEL and CD_EV_CLOSE),
+ * so a node hears its own load or scroll, and a dialog its own closing.
  * Listened for on CD_WINDOW, CD_DOCUMENT or CD_BODY, it is delivered by a listener on that object, with
  * that id in the record: CD_EV_RESIZE on the window, CD_EV_VISIBILITY and CD_EV_FULLSCREENCHANGE on the
  * document, keys and the moves and release of a drag on the document, focus and blur on the window.
@@ -43,7 +44,7 @@ enum { CD_EV_CLICK, CD_EV_DBLCLICK, CD_EV_INPUT, CD_EV_CHANGE, CD_EV_KEYDOWN, CD
        CD_EV_DRAGOVER, CD_EV_DROP,
        CD_EV_FOCUS, CD_EV_BLUR, CD_EV_SCROLL, CD_EV_LOAD, CD_EV_ERROR, CD_EV_LOADEDMETADATA,
        CD_EV_TIMEUPDATE, CD_EV_ENDED, CD_EV_PLAY, CD_EV_PAUSE,
-       CD_EV_FULLSCREENCHANGE, CD_EV_TYPES };
+       CD_EV_FULLSCREENCHANGE, CD_EV_CANCEL, CD_EV_CLOSE, CD_EV_TYPES };
 
 /* The event record's mods bits. CD_MOD_EDITING: the event's target is an input, a textarea, a
  * select or contenteditable (a key typed into a field, which an app's shortcuts leave alone). */

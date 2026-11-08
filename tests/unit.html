@@ -104,6 +104,25 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
       (focusedAt[2] && fired.alive === 1 && document.activeElement === other && x.t_deferred(3) === 1) || `fired ${fired.alive}, active ${document.activeElement?.className}, heard ${x.t_deferred(3)}`);
     other.blur();
   }
+  {
+    // 24. A <dialog>.
+    const id = x.t_dialog_section();
+    const dialog = $('#dialog dialog');
+    x.t_dialog_show();
+    const opened = dialog.open && dialog.matches(':modal');
+    const before = x.t_ev(7);
+    dialog.requestClose ? dialog.requestClose() : dialog.dispatchEvent(new Event('cancel')) && dialog.close();
+    await until(() => x.t_ev(7) >= before + 2, 2000);
+    const afterCancel = [x.t_ev(7) - before, x.t_ev(0), x.t_ev(1)];
+    x.t_dialog_show();
+    const before2 = x.t_ev(7);
+    x.t_dialog_close();
+    await until(() => x.t_ev(7) > before2, 2000);
+    const afterClose = [x.t_ev(7) - before2, x.t_ev(0), x.t_ev(1)];
+    check('a <dialog> shown with cd_call(showModal): its cancel then close reach C, on the dialog; a close alone, close', () =>
+      (opened && afterCancel.join() === `2,${x.t_ev_close()},${id}` && afterClose.join() === `1,${x.t_ev_close()},${id}` && !dialog.open)
+      || JSON.stringify({ opened, afterCancel, afterClose }));
+  }
   check('options.seed is cd_seed, so one line makes a run deterministic', () => (x.t_seed() >>> 0) === 0xdeadbeef || x.t_seed() >>> 0);
   const shimSource = await (await fetch('cdom.js')).text();
   check('the shim draws no stray random: no Math.random, no Date.now seed', () =>
