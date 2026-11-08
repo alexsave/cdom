@@ -366,6 +366,27 @@ Two collisions found by putting amgi's UI, cdom and the c_base C client in one w
 The shim is unchanged: 14,386 bytes minified (5,444 brotli at q11, 6,059 gzip at -9).
 In C, at -Oz, cdom_net.c's code grows 322 -> 909 bytes and cdom_store.c's 120 -> 497.
 
+### Zero edges, and the shim's offsets from C (branch zero-edges-offsets)
+
+Two decisions of 2026-11-08: cdom and its sibling C library have zero edges between them, and cdom takes no struct generator.
+- The name gate: tools/edges.mjs, run by tests/link/run.sh, fails naming file and line when a tracked file other than the docs (every *.md, and LICENSE) names the library or its old spelling, case-insensitively.
+  The docs keep their history (this file, RESULTS.md, BRIDGE.md).
+  The link test's second flag set was named for the library it was copied from; it is now named for what it is, "freestanding" (-ffreestanding -mno-nontrapping-fptoint -std=c11 -Wshadow -Wvla -Wstrict-prototypes), with both flag sets and the test unchanged.
+  Mutants edges-name and edges-old-name (the name in a header comment, the old spelling in a script) are caught; mutate.py's worker copies are git repos now, so the gate sees the files a copy tracks.
+- The offsets: cd_layout hands the shim one block of const data, its entry count and then CD_LAYOUT's entries (src/cdom.c): where the string batch and the event record live, and every field offset and struct size the shim reads or writes, from offsetof and sizeof.
+  That is the batch's per-string record (now a struct, str_meta: id, bytes, chars), every field of cd_event_rec the shim fills (type to dy, ms, ch and the field bit's mods among them), cd_viewport_rec and cd_val (size, tag, num, u).
+  rect's out-parameter is a double[4] in the order cdom.h documents and the byte buffers are (pointer, length), so neither has fields to map.
+  The shim reads the block once at start, in the same order, and throws when the count is not the number it read (a shim from another cdom).
+  The event record never moves, so each of its fields becomes a word index of its own at start, and post() writes `i32[evX]` where it wrote `i32[record + 2]`: no extra import and no extra add per event.
+- The test: tools/offsets.mjs, run by tools/unit.mjs, finds every reach into C memory in shim/cdom.js (an index into u8, u32, i32, f32 or f64, their set and subarray, a typed array over memory.buffer, the bytes helpers) and fails on a number in one, on a base pointer indexed bare (a first field by position) and on a base stepped by a number; a shift is a unit, the one literal allowed.
+  main's shim fails it in 30 places, this one in none of its 50 reaches.
+  Unit case 31 fires a pointer, a wheel and a key at a grandchild of a cd_on box with a distinct value in every field, and C hands each field back by name; C also passes every cd_val kind to a page function and reads the viewport.
+  With cd_event_rec's fields scrambled in cdom.h (dy first, then ms, flags, buttons, id, y, x, depth, path, mods, key, button, ch, type, dx, pointer), the unit page, host, link and the rest stay green, where main's shim would misread every field.
+  Mutants offsets-literal (`i32[evType + 13]`, right at run time), offsets-bare-base (`u32[at]`), offsets-size (`index * 4`) and offsets-meta-step (`meta += 3`) are caught by the scan alone; offsets-event-order and offsets-val-order (two entries of the map swapped) by the field case; offsets-count (one entry the shim does not read) at start.
+  The existing mutants on those lines (viewport-order, input-no-time, host-pointer-fields, host-wheel-dy, host-val-num) are rewritten onto the new text and still caught.
+- Cost, measured against main's entry built beside it (bench/build.sh into a scratch jfb, served on a free port), interleaved, three rounds at loads 13-16: tools/evcost.mjs 7,625 / 7,640 / 7,830 ns per click on main against 7,570 / 7,580 / 7,725 here; tools/quick.mjs run1k 2.0 / 2.0 / 1.9 ms against 1.7 / 1.7 / 1.7, replace1k 2.2 / 2.0 / 2.0 against 2.1 / 1.9 / 2.0, create10k 18.0 / 15.9 / 16.5 against 18.0 / 16.1 / 16.5, the rest at the timer floor for both: the same within the noise.
+- Bytes: the shim grows 14,387 -> 14,891 minified (5,444 -> 5,626 brotli at q11, 6,063 -> 6,290 gzip at -9; main measured in the same terser run), the 29 names the map fills and their reads at start; app.wasm (-Oz) 10,630 -> 10,725, the block being data the linker fills rather than code (as 31 stores at start it was 10,821).
+
 ## Bridge designs compared (2026-11-01)
 
 One import per DOM operation stays: a generic dispatcher, a function table, natively bound imports, fused operations, the old op list and the Fast API were each measured against it on real pages and none was faster beyond the noise. Why, and what does help, is in BRIDGE.md; the benchmark is at the tag bridge-bench-2026-11-01.
