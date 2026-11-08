@@ -9,12 +9,14 @@ var cdom = (() => {
     "mousedown", "mousemove", "mouseup", "touchstart", "touchmove", "touchend", "touchcancel",
     "contextmenu", "wheel", "pointerover", "pointerout", "pointercancel", "dragover", "drop",
     "focus", "blur", "scroll", "load", "error", "loadedmetadata", "timeupdate", "ended", "play", "pause",
-    "fullscreenchange"];
+    "fullscreenchange", "cancel", "close"];
   const RESIZE = 12;            // EVENTS index of the window's resize
   const VISIBILITY = 13;        // and of visibilitychange
   const WHEEL = 22;
   const FOCUS = 28;             // FOCUS to PAUSE do not bubble: the mount hears them in the capture phase
   const PAUSE = 37;
+  const CANCEL = 39;            // a <dialog>'s cancel and close do not bubble either
+  const CLOSE = 40;
   const POINTER_TYPES = [9, 10, 11, 22, 23, 24, 25]; // the types whose record has pointerId and buttons
   const fillsPointer = [];      // by type: 1 for those
   for (const type of POINTER_TYPES) {
@@ -230,7 +232,7 @@ var cdom = (() => {
         path = (path << 8) | (index & 255);
         pathDepth++;
       }
-    }, { capture: type >= FOCUS && type <= PAUSE, passive: false });
+    }, { capture: (type >= FOCUS && type <= PAUSE) || type === CANCEL || type === CLOSE, passive: false });
   }
 
   // C sends a batch of new strings.

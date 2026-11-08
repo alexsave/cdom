@@ -883,3 +883,20 @@ static void deferred_event(const cd_event_rec *e) {
     def_heard[3] += id == def_other;
   }
 }
+/* 24. A <dialog>: shown with cd_call(showModal), its cancel and close heard on the dialog itself
+ * (they do not bubble: the mount hears them in the capture phase). */
+static cd_id dialog_node;
+EXPORT("t_dialog_section") cd_id t_dialog_section(void) {
+  cd_id s = section("dialog");
+  cd_at(s, 0);
+  cd_open(L("dialog"));
+  dialog_node = cd_id_new();
+  cd_listen(dialog_node, CD_EV_CANCEL);
+  cd_listen(dialog_node, CD_EV_CLOSE);
+  cd_open(L("button")); cd_text(L("ok")); cd_close();
+  cd_close();
+  return dialog_node;
+}
+EXPORT("t_dialog_show") void t_dialog_show(void) { cd_call(dialog_node, L("showModal")); }
+EXPORT("t_dialog_close") void t_dialog_close(void) { cd_call(dialog_node, L("close")); }
+EXPORT("t_ev_close") int32_t t_ev_close(void) { return CD_EV_CLOSE; }
