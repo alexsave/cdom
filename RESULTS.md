@@ -251,6 +251,43 @@ Twenty-five mutants on direct calls (boot always or never falling back, no facto
 The short fill was caught by a hang (the C looped on bytes it never cleared), so `tools/legacy.mjs` now fails any run that takes over 90 seconds.
 The first round left six alive: a two-byte decode bug that é cannot show (its lead byte reads the same under both masks, so the text now has a Cyrillic letter), and five polyfills the app cannot tell from wrong ones (a wrong imul still gives a consistent intern hash, a short fill leaves bytes that were zero anyway), which is why the built-in comparison exists; it then found that copyWithin threw where the built-in clamps.
 
+#### IE 9, below the floor (2026-11-08)
+
+`LEGACY=ie9` in `tools/cdp.mjs` is `LEGACY=1` and then what IE 9 lacks that IE 11 has, each with the IE version it arrived in, read from mdn/browser-compat-data rather than memory.
+Typed arrays and DataView arrived in IE 10, requestAnimationFrame 10, MutationObserver 11, classList 10, dataset 11, pushState and replaceState 10, WebSocket, Blob, File, FormData and URL 10, indexedDB, atob and btoa 10, performance.now 10 (performance itself is 9's), Map, Set and WeakMap 11, matchMedia, document.hidden and String.prototype.trim 10, devicePixelRatio 11, and crypto.getRandomValues 11, as msCrypto only.
+Symbol, WeakSet, URLSearchParams and an unprefixed Element.matches never arrived; BCD records that by having no IE entry at all.
+The profile keeps performance.getEntriesByType (IE 10), which the harness reads to see what a page fetched.
+`LEGACY=ie9-gaps` is the same with typed arrays and msCrypto put back, so the rest of IE 9's gaps can be tested on a page that boots.
+The fuzz page's harness used Map and URLSearchParams, which both delete, so it now keeps its keys in plain objects.
+
+What broke under `LEGACY=ie9`, on the legacy page, the fuzz page and the keyed app alike: both fallback files were fetched and each failed at its first typed array, `cdom.legacy.js` at the fround polyfill's `new Float32Array(1)` and the wasm2js file at its base64 table's `new Uint8Array(123)` (before `new ArrayBuffer`, which comes later, in asmFunc), and then the boot failed on `cdom.start` of an undefined `cdom`.
+Three errors, two of them inside minified files, and nothing drawn.
+Under `LEGACY=ie9-gaps` every check passes unchanged (`tools/legacy.mjs`, the five fuzz seeds, the keyed smoke): with no MutationObserver, queueMicrotask falls back to a timeout, and requestAnimationFrame to a 16 ms timeout, and the legacy test now checks that those forms are the ones installed and that they work.
+The one gap that does not degrade is devicePixelRatio: without it the viewport record's ratio is 0.
+It is left alone, because no browser above the floor lacks it (IE 11 has it), so a fallback would be dead code.
+
+The walls are two, not one.
+IE 9 has no typed arrays, and IE 9 and 10 have no crypto.getRandomValues, the only source the shim seeds cd_seed from (a page can fix a seed, but `cdomBoot` passes none, and seeding from Math.random or the clock is what the seed rule forbids).
+So the fallback's real floor is IE 11, and before this an IE 10 page fetched both files and stopped at a rejected `start()` that promise-polyfill only reported as a console warning.
+Now the boot checks both before it loads anything, and below the floor throws one error naming each missing thing: under `LEGACY=ie9`, "cdom: this browser cannot run cdom without WebAssembly: it has no ArrayBuffer, Int8Array, Uint8Array, Int16Array, Uint16Array, Int32Array, Uint32Array, Float32Array, Float64Array, crypto.getRandomValues", and with typed arrays but no crypto, as in IE 10, the same naming crypto.getRandomValues alone.
+`tools/legacy.mjs`, `fuzz.mjs` and `smoke.mjs` under `LEGACY=ie9` check exactly that: one error (besides the modern shim's own script, which a real old browser fails as a syntax error), no fallback file or wasm fetched, the mount empty, and the legacy page never ready.
+The check runs only without WebAssembly, but every page carries it: the keyed page grows by 470 bytes (158 brotli).
+Mutants caught: no throw, no crypto check, one typed array left out of the list, and crypto read without msCrypto (which `LEGACY=1` catches, since IE 11 has only msCrypto); in the ie9-gaps checks, a requestAnimationFrame calling back without a time and a queueMicrotask that runs at once.
+
+Could IE 9 run without typed arrays at all?
+A typed-array polyfill cannot alias: IE 9 has no Proxy, so `HEAP32[i]` can be intercepted only by a getter and setter per index.
+Measured in headless Chrome at the keyed app's peak memory (3.4 MB, after add on top of runlots), defining just a Uint8 and an Int32 view as accessors over one byte store took 1.2 s and 115 MB of heap, and an aliased 32-bit read and write cost 99 to 143 ns against 1 to 1.5 ns on an Int32Array; each memory.grow would redefine them all.
+That is refuted.
+The other way is memory as a plain Array, every load and store through small functions.
+Binaryen has no such mode: `--instrument-memory` and `--safe-heap` wrap loads and stores but still do them on the typed-array memory.
+A post-pass over wasm2js output would be sound to write, because its memory traffic is regular: in the keyed app 566 `HEAPxx[index]` reads and writes (45 of them byte-wide, none float), plus `bufferView` in exactly four helpers (the data segments' base64 decode, memory.fill, memory.copy and grow), all of which an acorn pass can rewrite and refuse anything else.
+A float app would also need f32 and f64 loads, stores and reinterprets as hand-written IEEE 754 packing, and Math.fround as software rounding.
+In V8 the cost of a word Array is small for 32-bit access (1.4 to 1.7 ns, as fast as an Int32Array) and 8 to 20 times a Uint8Array for a byte's read-modify-write (8 to 12 ns).
+But the shim reads and writes the same memory in about 40 places (strings, the event inbox, cd_val arrays, rects, the viewport, encodeInto, the listen masks), so it would need a second build with every one of them through the same accessors, and a third file per entry.
+And none of it would start the app, because IE 9 still has no crypto.getRandomValues: the keyed smoke could only pass under `LEGACY=ie9` by seeding from what the seed rule forbids.
+So the third tier was not built, and IE 9 and 10 get the boot's error instead.
+If cdom ever wants them, the door is a seed the server sends (its own cryptographic generator, given to `start` as `options.seed`), and then the word-Array pass above.
+
 #### Cheerp, the direct C-to-JS compiler (tried 2026-11-08 on the op-stream line, not adopted)
 
 Upstream clang has no JavaScript target (clang 23 registers only wasm32 and wasm64 for the browser), and never had one: the old asm.js backend lived in Emscripten's fastcomp fork, now gone, and `emcc -sWASM=0` today is wasm plus wasm2js.
