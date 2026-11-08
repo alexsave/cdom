@@ -63,5 +63,8 @@ void cd_on_frame(double ms) {
 }
 
 EXPORT("frame_count") uint32_t frame_count(void) { return frames; }
+/* A stop from outside a frame (an event, a timer) while the next frame is already asked for: that frame must
+ * not reach cd_on_frame. */
+EXPORT("frames_stop") void frames_stop(void) { cd_frames(0); cd_flush(); }
 EXPORT("call_ping") void call_ping(void) { cd_call(target, z("ping")); cd_flush(); }
 EXPORT("target_id") uint32_t target_id(void) { return target; }

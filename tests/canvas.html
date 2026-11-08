@@ -23,6 +23,12 @@ cdom.start('canvas.wasm', document.getElementById('m'), env).then(async (x) => {
   x.frames_for(3);
   await new Promise(r => setTimeout(r, 400));
   if (x.frame_count() !== 3) fail(`restart frames: ${x.frame_count()}, want 3`);
+  x.frames_for(1000000);
+  await new Promise(r => setTimeout(r, 100));
+  x.frames_stop();
+  const atStop = x.frame_count();
+  await new Promise(r => setTimeout(r, 300));
+  if (atStop < 1 || x.frame_count() !== atStop) fail(`frames after a stop from outside a frame: ${atStop} then ${x.frame_count()}`);
   x.call_ping();
   if (window.pinged !== 'target') fail(`call: pinged = ${window.pinged}`);
   if (cdom.node(x.target_id()) !== document.getElementById('target')) fail('node(id) is not the named element');
