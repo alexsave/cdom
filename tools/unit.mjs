@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { launch, sleep } from './cdp.mjs';
+import { literalOffsets, memoryReaches } from './offsets.mjs';
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
 let PORT = +(process.env.UNIT_PORT || 0); // 0: a free port, so two worktrees' runs never collide (the page is told the port)
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
@@ -196,6 +197,11 @@ try {
   for (let i = 0; i < 200 && tapped !== 'sound on|clicks played: 1'; i++) { await sleep(20); tapped = await page(); }
   if (before === 'tap for sound|clicks played: 0' && tapped === 'sound on|clicks played: 1') passed.push('the click demo: "tap for sound" until a tap, then the tap\'s click played'); else errors.push(`demo: ${before} then ${tapped}`);
 } catch (e) { errors.push('threw: ' + String(e.message || e).slice(0, 300)); } finally { await b.close(); srv.close(); }
+// The shim hardcodes no offset into C memory: every one comes from cd_layout (tools/offsets.mjs).
+const shimSource = fs.readFileSync(path.join(root, '../../shim/cdom.js'), 'utf8');
+const literal = literalOffsets(shimSource);
+if (literal.length || memoryReaches(shimSource) < 40) errors.push(`the shim indexes C memory by a literal offset: ${literal.map((f) => `cdom.js:${f.line}: ${f.text}`).join('; ') || 'the scan found too few reaches'}`);
+else passed.push(`the shim indexes C memory by no literal offset (${memoryReaches(shimSource)} reaches, every offset from cd_layout)`);
 for (const p of passed) console.log('ok  ', p);
 for (const e of errors) console.log('FAIL', e);
 console.log(`${passed.length} passed, ${errors.length} failed`);

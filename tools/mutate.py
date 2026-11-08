@@ -306,6 +306,15 @@ M = [
   # the program's string.h (src/libc) and mini.c's copy and fill
   ('libc-no-builtin', 'src/libc/string.h', '#define memcpy(dst, src, n) __builtin_memcpy((dst), (src), (n))\n', '', LINK, 'FAIL string.h (freestanding flags): undefined memcpy'),
   ('libc-no-real-copy', 'src/mini.c', '__attribute__((weak)) void *memcpy(void *restrict d, const void *restrict s, size_t n) { return __builtin_memcpy(d, s, n); }\n', '', LINK, "FAIL string.h (cdom flags): taking memcpy's address"),
+  # offsets from cd_layout, none in the shim: a literal put back (each still right at run time, so only the
+  # scan, tools/offsets.mjs, sees it), and the map and the shim out of step (the page sees each field)
+  ('offsets-literal', 'shim/cdom.js', '    i32[evButtons] = pointer ? event.buttons : 0;', '    i32[evType + 13] = pointer ? event.buttons : 0;', UNIT, 'FAIL the shim indexes C memory by a literal offset: cdom.js:'),
+  ('offsets-bare-base', 'shim/cdom.js', '    const tag = u32[at + valTag];', '    const tag = u32[at];', UNIT, 'FAIL the shim indexes C memory by a literal offset: cdom.js:'),
+  ('offsets-size', 'shim/cdom.js', 'const at = (ptr >> 2) + index * valWords;', 'const at = (ptr >> 2) + index * 4;', UNIT, 'FAIL the shim indexes C memory by a literal offset: cdom.js:'),
+  ('offsets-meta-step', 'shim/cdom.js', '    for (let i = 0; i < count; i++, meta += metaWords) {\n      const bytes', '    for (let i = 0; i < count; i++, meta += 3) {\n      const bytes', UNIT, 'FAIL the shim indexes C memory by a literal offset: cdom.js:'),
+  ('offsets-event-order', 'src/cdom.c', 'X(offsetof(cd_event_rec, pointer)) \\\n  X(offsetof(cd_event_rec, buttons))', 'X(offsetof(cd_event_rec, buttons)) \\\n  X(offsetof(cd_event_rec, pointer))', UNIT, "FAIL the shim's view of C's structs"),
+  ('offsets-val-order', 'src/cdom.c', 'X(offsetof(cd_val, tag)) X(offsetof(cd_val, num))', 'X(offsetof(cd_val, num)) X(offsetof(cd_val, tag))', UNIT, "FAIL the shim's view of C's structs"),
+  ('offsets-count', 'shim/cdom.js', '    valU = word();\n', '', UNIT, 'lay out C memory differently'),
   # the name gate (tools/edges.mjs): the other repo's name, spelled in pieces here so this file does not carry it
   ('edges-name', 'src/cdom.h', '#ifndef CDOM_H\n', '/* built beside ' + 'c' + 'base */\n#ifndef CDOM_H\n', LINK, 'FAIL src/cdom.h:8: names the other repo'),
   ('edges-old-name', 'tools/fuzz.mjs', 'import http from', '// from C_' + 'BASE\nimport http from', LINK, 'FAIL tools/fuzz.mjs:2: names the other repo'),
