@@ -4,6 +4,29 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
+// LEGACY=1 makes every page an old browser before its first script runs: no WebAssembly, and none of the
+// APIs tools/legacy/polyfills.js supplies, so those polyfills and PEP are what the page runs on. Chrome
+// still fires its own pointer events, so trusted ones are stopped at the window and only PEP's, made from
+// mouse events, get through. addEventListener reads its third argument as useCapture, as before options
+// objects; __adds logs what each call passed (type, typeof, capture) for tools/legacy.mjs.
+export const LEGACY = process.env.LEGACY === '1';
+const OLD = `(() => {
+  for (const k of ['WebAssembly', 'TextDecoder', 'TextEncoder', 'queueMicrotask', 'reportError', 'Promise', 'fetch',
+    'PointerEvent']) delete window[k];
+  for (const k of ['imul', 'clz32', 'fround', 'trunc']) delete Math[k];
+  delete String.prototype.startsWith; delete String.prototype.includes;
+  const ta = Object.getPrototypeOf(Uint8Array.prototype); delete ta.copyWithin; delete ta.fill;
+  for (const t of ['pointerdown', 'pointerup', 'pointermove', 'pointerover', 'pointerout', 'pointercancel',
+    'pointerenter', 'pointerleave', 'gotpointercapture', 'lostpointercapture'])
+    window.addEventListener(t, (e) => { if (e.isTrusted) e.stopImmediatePropagation(); }, true);
+  const P = EventTarget.prototype, add = P.addEventListener, rem = P.removeEventListener;
+  const adds = window.__adds = [];
+  P.addEventListener = function (t, f, c) { adds.push([t, typeof c, !!c]); return add.call(this, t, f, !!c); };
+  P.removeEventListener = function (t, f, c) { return rem.call(this, t, f, !!c); };
+})();`;
+// The scripts a page fetched, by file name, to prove which path it took.
+export const FETCHED = "performance.getEntriesByType('resource').map(r => r.name.split('/').pop().split('?')[0])";
+
 export async function launch() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cdom-chrome-'));
   const dbg = 9300 + Math.floor(Math.random() * 500);
@@ -21,6 +44,7 @@ export async function launch() {
   const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true });
   const s = (m, p) => send(m, p, sessionId);
   await s('Page.enable'); await s('Runtime.enable');
+  if (LEGACY) await s('Page.addScriptToEvaluateOnNewDocument', { source: OLD });
   const evaluate = async (expr) => {
     const r = await s('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
     if (r.result?.exceptionDetails) throw new Error(JSON.stringify(r.result.exceptionDetails));

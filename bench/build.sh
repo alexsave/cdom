@@ -6,6 +6,8 @@ top="$here/.."
 CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"
 OPT="${OPT:--O2}"
 jfb="$top/jfb/frameworks/keyed"
+legacy="$top/tools/legacy/build.mjs"
+[ -d "$top/tools/legacy/node_modules" ] || (cd "$top/tools/legacy" && npm ci --no-audit --no-fund)
 
 build() { # name, version note, extra flags...
   local name="$1" note="$2"; shift 2
@@ -16,7 +18,12 @@ build() { # name, version note, extra flags...
     -Wl,--no-entry -Wl,--strip-all "$@" -o "$out/app.wasm" \
     "$here/cdom-keyed/src/app.c" "$top/src/cdom.c" "$top/src/mini.c"
   cp "$top/shim/cdom.js" "$out/cdom.js"
-  sed "s/cdom-\"keyed\"/$name-\"keyed\"/" "$here/cdom-keyed/index.html" > "$out/index.html"
+  # Without WebAssembly the page loads these two instead of cdom.js's wasm path (see shim/boot.js).
+  node "$legacy" shim "$out/cdom.legacy.js"
+  node "$legacy" app "$out/app.wasm" "$out/app.wasm.js"
+  sed "s/cdom-\"keyed\"/$name-\"keyed\"/" "$here/cdom-keyed/index.html" > "$out/index.src.html"
+  node "$legacy" page "$out/index.src.html" "$out/index.html"
+  rm "$out/index.src.html"
   cat > "$out/package.json" <<JSON
 {
   "name": "js-framework-benchmark-$name",

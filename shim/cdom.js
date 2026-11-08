@@ -1,6 +1,7 @@
-"use strict";
 // cdom shim: applies the C op stream to the DOM and posts events back. Fixed per app.
+// Strict mode is declared inside the closure, so it holds when the legacy build puts polyfills in front.
 var cdom = (() => {
+  "use strict";
   const EVENTS = ["click", "dblclick", "input", "change", "keydown", "keyup", "focusin",
     "focusout", "submit", "pointerdown", "pointerup", "pointermove", "contextmenu", "wheel",
     "pointerover", "pointerout", "pointercancel", "dragover", "drop", "focus", "blur", "scroll", "load",
@@ -178,13 +179,19 @@ var cdom = (() => {
     new Float64Array(mem.buffer, dst, 4).set([r.left, r.top, r.width, r.height]); return 1;
   }
 
-  async function start(url, mount, env) {
+  // src is the wasm URL, and start returns a promise of the exports; or it is the wasm2js build of the same
+  // app (a function of the imports that returns the exports), which needs no WebAssembly, and start returns
+  // the exports at once. shim/boot.js picks one.
+  function start(src, mount, env) {
     const imports = { cdom: { apply, get }, env: env || {} };
-    const res = fetch(url);
-    const { instance } = WebAssembly.instantiateStreaming
-      ? await WebAssembly.instantiateStreaming(res, imports)
-      : await WebAssembly.instantiate(await (await res).arrayBuffer(), imports);
-    x = instance.exports; mem = x.memory; views();
+    if (typeof src === "function") return run(src(imports), mount);
+    const res = fetch(src);
+    return (WebAssembly.instantiateStreaming ? WebAssembly.instantiateStreaming(res, imports)
+      : res.then((r) => r.arrayBuffer()).then((b) => WebAssembly.instantiate(b, imports)))
+      .then((r) => run(r.instance.exports, mount));
+  }
+  function run(exports, mount) {
+    x = exports; mem = x.memory; views();
     nodes[0] = mount; nodes[1] = window; nodes[2] = doc; nodes[3] = doc.body;
     const L = x.cd_layout() >> 2;
     [OPS, ARGS, SB, SM, INBOX] = [u32[L], u32[L + 1], u32[L + 2], u32[L + 3], u32[L + 4]];
