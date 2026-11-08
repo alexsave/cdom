@@ -1,5 +1,6 @@
 /* cdom core: allocator, strings, DOM calls, node ids, regions, events, keyed diff. */
 #include "cdom.h"
+#include "cdom_cb.h"
 #include <stddef.h>
 
 void *malloc(size_t n);
@@ -143,7 +144,8 @@ IMPORTS("blit") void j_blit(cd_id id, const void *rgba, uint32_t w, uint32_t h);
 IMPORTS("set") void j_set(cd_id id, uint32_t path, const cd_val *v);
 IMPORTS("call") void j_call(cd_id id, uint32_t method, uint32_t n, const cd_val *a);
 IMPORTS("get") double j_get(cd_id id, uint32_t path, uint32_t kind, void *dst, uint32_t cap);
-IMPORTS("timer") void j_timer(uint32_t ms, uint32_t token);
+IMPORTS("timer") uint32_t j_timer(uint32_t ms, uint32_t token);
+IMPORTS("timer_stop") void j_timer_stop(uint32_t handle);
 IMPORTS("raf") void j_raf(uint32_t token);
 IMPORTS("now") double j_now(void);
 
@@ -691,6 +693,76 @@ void cd_on(cd_id id, uint32_t ev, cd_event_fn fn, void *ctx) {
   cd_listen(id, ev);
 }
 
+/* ---- callback slots (cdom_cb.h): the one owner of cdom's own tokens ---- */
+typedef struct { cd_cb_fn fn; void *ctx; uint16_t gen, live; } cb_slot;
+static cb_slot *cb_slots;
+static uint16_t *cb_free;
+static uint32_t cb_n, cb_cap, cb_nfree;
+#define CB_SLOTS_MAX 0xffffu /* slot 0xffff is never used, so no token is CD_FRAMES_TOKEN */
+uint32_t cd_cb_new(cd_cb_fn fn, void *ctx) {
+  uint32_t i;
+  if (cb_nfree) i = cb_free[--cb_nfree];
+  else {
+    if (cb_n == CB_SLOTS_MAX) __builtin_trap();
+    if (cb_n == cb_cap) {
+      cb_cap = cb_cap ? cb_cap * 2 : 16;
+      cb_slots = cd_realloc(cb_slots, cb_cap * sizeof(cb_slot));
+      cb_free = cd_realloc(cb_free, cb_cap * sizeof(uint16_t));
+    }
+    i = cb_n++;
+    cb_slots[i].gen = 0;
+  }
+  cb_slots[i].fn = fn;
+  cb_slots[i].ctx = ctx;
+  cb_slots[i].live = 1;
+  return CD_TOKEN_CDOM | (uint32_t)cb_slots[i].gen << 16 | i;
+}
+static cb_slot *cb_named(uint32_t token) {
+  uint32_t i = token & 0xffffu;
+  if (token < CD_TOKEN_CDOM || i >= cb_n) return 0;
+  cb_slot *c = &cb_slots[i];
+  return c->live && c->gen == ((token >> 16) & 0x7fffu) ? c : 0;
+}
+static void cb_free_slot(cb_slot *c) {
+  c->live = 0;
+  c->gen = (c->gen + 1) & 0x7fffu;
+  cb_free[cb_nfree++] = (uint16_t)(c - cb_slots);
+}
+int cd_cb_take(uint32_t token, cd_cb_fn *fn, void **ctx) {
+  cb_slot *c = cb_named(token);
+  if (!c) return 0;
+  *fn = c->fn;
+  *ctx = c->ctx;
+  cb_free_slot(c);
+  return 1;
+}
+void cd_cb_drop(uint32_t token) {
+  cb_slot *c = cb_named(token);
+  if (c) cb_free_slot(c);
+}
+
+/* ---- timers ----
+ * timers owns every timer started and not yet fired or stopped, as (token, the shim's setTimeout
+ * handle): a token started twice is two entries, and cd_timer_stop clears every one of its token. */
+static pair_tab timers;
+static void timer_start(uint32_t ms, uint32_t token) { pair_put(&timers, token, j_timer(ms, token), 0, 0); }
+void cd_timer_start(uint32_t ms, uint32_t token) {
+  if (token >= CD_TOKEN_CDOM) __builtin_trap(); /* cdom's range */
+  timer_start(ms, token);
+}
+uint32_t cd_timer_cb(uint32_t ms, cd_timer_fn fn, void *ctx) {
+  uint32_t token = cd_cb_new((cd_cb_fn)fn, ctx);
+  timer_start(ms, token);
+  return token;
+}
+void cd_timer_stop(uint32_t token) {
+  for (pair_ent *e; (e = pair_any(&timers, token));) {
+    j_timer_stop(e->b);
+    pair_del(&timers, e);
+  }
+  cd_cb_drop(token);
+}
+
 /* ---- window and time ---- */
 static cd_id window_target(uint32_t ev) { return ev == CD_EV_RESIZE ? CD_WINDOW : CD_DOCUMENT; }
 void cd_listen_window(uint32_t ev) { cd_listen(window_target(ev), ev); }
@@ -700,7 +772,6 @@ void cd_stop_propagation(void) { inbox.flags |= CD_STOP; }
 cd_id cd_hit(int32_t x, int32_t y) { return j_hit(x, y); }
 void cd_viewport(cd_viewport_rec *v) { j_viewport(v); }
 int cd_rect(cd_id id, double out[4]) { return (int)j_rect(id, out); }
-void cd_timer_start(uint32_t ms, uint32_t token) { j_timer(ms, token); }
 void cd_raf_request(uint32_t token) { j_raf(token); }
 double cd_now(void) { return j_now(); }
 __attribute__((weak)) void cd_on_timer(uint32_t token) { (void)token; }
@@ -747,8 +818,15 @@ EXPORT("cd_event") uint32_t cd_event(void) {
   cd_flush();
   return (uint32_t)inbox.flags;
 }
-EXPORT("cd_timer") void cd_timer(uint32_t token) {
-  cd_on_timer(token);
+/* A timer fired: it is no longer pending; an app token goes to cd_on_timer, cdom's to its callback
+ * (taken, so the callback may start another in the same slot: a repeat). */
+EXPORT("cd_timer") void cd_timer(uint32_t token, uint32_t handle) {
+  pair_ent *e = pair_find(&timers, token, handle);
+  if (e) pair_del(&timers, e);
+  cd_cb_fn fn;
+  void *ctx;
+  if (token < CD_TOKEN_CDOM) cd_on_timer(token);
+  else if (cd_cb_take(token, &fn, &ctx)) ((cd_timer_fn)fn)(ctx);
   cd_flush();
 }
 EXPORT("cd_raf") void cd_raf(uint32_t token, double t) {

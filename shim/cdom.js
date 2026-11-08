@@ -517,8 +517,13 @@ var cdom = (() => {
     new Float64Array(memory.buffer, outPtr, 4).set([box.left, box.top, box.width, box.height]);
     return 1;
   }
+  // A timer: C keeps the handle (by token) to stop it, and is told which one fired.
   function timer(ms, token) {
-    setTimeout(() => exports.cd_timer(token), ms);
+    const handle = setTimeout(() => exports.cd_timer(token, handle), ms);
+    return handle;
+  }
+  function timer_stop(handle) {
+    clearTimeout(handle);
   }
   function raf(token) {
     requestAnimationFrame((time) => exports.cd_raf(token, time));
@@ -1106,7 +1111,7 @@ var cdom = (() => {
         strings, at, open, open_svg, close, text, text_num, attr, class: setClass, name, name_open,
         listen, value, value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num,
         set_text, set_text_num, set_attr, set_class, style, style_num, encode, image_bytes, remove, free, move, clear,
-        detach, attach, unlisten, hit, viewport, rect, blit, set, call, get, timer, raf, now, ws_open, ws_send, ws_close, ws_buffered, http, epoch,
+        detach, attach, unlisten, hit, viewport, rect, blit, set, call, get, timer, timer_stop, raf, now, ws_open, ws_send, ws_close, ws_buffered, http, epoch,
         store_put, store_get, store_del,
         audio_load, audio_free, audio_play, audio_stop, audio_gain, audio_master, audio_state,
         random,
