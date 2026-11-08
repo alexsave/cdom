@@ -2,9 +2,10 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { launch, sleep, LEGACY, IE9, FETCHED, refused } from './cdp.mjs';
-// LEGACY=1 runs the same seeds as an old browser, on cdom.legacy.js and the wasm2js build (see cdp.mjs);
-// LEGACY=ie9 checks instead that the boot refuses IE 9 (refused, in cdp.mjs).
+import { launch, sleep, BELOW, FETCHED, refused, tierFetched } from './cdp.mjs';
+// LEGACY=1 runs the same seeds as an old browser, on cdom.legacy.js and the wasm2js build (see cdp.mjs), and
+// LEGACY=ie9 on cdom.legacy-ie9.js and the words build; LEGACY=ie8 checks instead that the boot refuses IE 8
+// (refused, in cdp.mjs).
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
 const srv = http.createServer((q, r) => { const f = path.join(root, q.url.split(/[?#]/)[0]);
@@ -12,20 +13,19 @@ const srv = http.createServer((q, r) => { const f = path.join(root, q.url.split(
 const b = await launch();
 let bad = 0;
 try {
-  if (IE9) {
+  if (BELOW) {
     await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/listfuzz.html?seed=1` });
     for (const [c, m] of await refused(b, '#m')) { console.log(c ? 'ok  ' : 'FAIL', m); if (!c) bad++; }
   }
-  for (const seed of IE9 ? [] : [1, 2, 3, 4, 5]) {
+  for (const seed of BELOW ? [] : [1, 2, 3, 4, 5]) {
     await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/listfuzz.html?seed=${seed}` });
     let r;
     for (let i = 0; i < 600 && !r; i++) { await sleep(100); r = await b.evaluate('window.RESULT'); }
     console.log(`seed ${seed}: ${r.rounds} rounds, ${r.errors.length} errors`, r.errors.slice(0, 3).join(' | '));
     if (!r || r.errors.length || r.rounds !== 40000) bad++;
-    // The wasm path never fetches the fallback, and the fallback never fetches the wasm.
-    const got = await b.evaluate(FETCHED), want = LEGACY ? ['cdom.legacy.js', 'listfuzz.wasm.js'] : ['listfuzz.wasm'];
-    const other = LEGACY ? ['listfuzz.wasm'] : ['cdom.legacy.js', 'listfuzz.wasm.js'];
-    if (!want.every(f => got.includes(f)) || other.some(f => got.includes(f))) { bad++; console.log('wrong path, fetched', got.join(' ')); }
+    // Each tier fetches its own files and no other's.
+    const [right, what] = tierFetched(await b.evaluate(FETCHED), 'listfuzz');
+    if (!right) { bad++; console.log('wrong path:', what); }
   }
 } finally { await b.close(); srv.close(); }
 process.exit(bad ? 1 : 0);

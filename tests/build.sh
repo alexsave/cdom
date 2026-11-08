@@ -34,11 +34,14 @@ page "$here/unit.html" "$here/out/unit.html" "$here/out/unit.wasm"
 wasm -O2 "$here/out/unit_check.wasm" -DCD_STATE_CHECK "$here/unit.c" "$here/../src/cdom.c" "$here/../src/cdom_net.c" "$here/../src/cdom_store.c" "$here/../src/cdom_audio.c" "$here/../src/cdom_random.c" "$here/../src/cdom_url.c" "$here/../src/cdom_locale.c" "$here/../src/cdom_share.c" "$here/../src/cdom_fonts.c" "$here/../src/cdom_ui.c" "$here/../src/cdom_file.c" "$here/../src/cdom_image_sjlj.c" -DCDOM_IMAGE_SJLJ_JS "$here/../src/mini.c"
 page "$here/unit.html" "$here/out/unit_check.html" "$here/out/unit_check.wasm"
 page "$here/../demo/click.html" "$here/out/click.html" "$here/out/click.wasm"
-# The fuzz page and the legacy page go through the boot, so LEGACY=1 runs them on the wasm2js build.
+# The fuzz page and the legacy page go through the boot, so LEGACY=1 runs them on the wasm2js build, and
+# LEGACY=ie9 on its words build.
 page "$here/listfuzz.html" "$here/out/listfuzz.shim.html" "$here/out/listfuzz.wasm"
 node "$legacy" page "$here/out/listfuzz.shim.html" "$here/out/listfuzz.html"
 node "$legacy" shim "$here/out/cdom.legacy.js"
+node "$legacy" shim-ie9 "$here/out/cdom.legacy-ie9.js"
 node "$legacy" app "$here/out/listfuzz.wasm" "$here/out/listfuzz.wasm.js"
+node "$legacy" app-ie9 "$here/out/listfuzz.wasm" "$here/out/listfuzz.wasm.ie9.js"
 # The _try allocations at a small cap, and on an app's own allocator (tools/alloc.mjs, in Node).
 wasm -O2 "$here/out/alloc_try.wasm" -DCDOM_HEAP_PAGES_MAX=40 "$here/alloc_try.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 # The same cases with no cap of cdom's but a memory whose maximum is 40 pages: memory.grow itself refuses.
@@ -57,6 +60,7 @@ wasm -O2 "$here/out/host.wasm" "$here/host.c" "$here/../src/cdom.c" "$here/../sr
 page "$here/host.html" "$here/out/host.html" "$here/out/host.wasm"
 wasm -O2 "$here/out/legacy.wasm" "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/cdom_image_sjlj.c" -DCDOM_IMAGE_SJLJ_JS "$here/../src/mini.c"
 node "$legacy" app "$here/out/legacy.wasm" "$here/out/legacy.wasm.js"
+node "$legacy" app-ie9 "$here/out/legacy.wasm" "$here/out/legacy.wasm.ie9.js"
 page "$here/legacy.html" "$here/out/legacy.shim.html" "$here/out/legacy.wasm"
 node "$legacy" page "$here/out/legacy.shim.html" "$here/out/legacy.html"
 # Every memory access form as wasm, as wasm2js output and through the words pass, for tools/words.mjs to run side

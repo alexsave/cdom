@@ -273,3 +273,28 @@ export function noTypedArrays(name, code) {
   }
   if (bad.size) throw new Error(`${name} still names typed-array memory: ${[...bad].join(' ')}`);
 }
+
+// What shim-ie9 (build.mjs) must not leave in cdom.legacy-ie9.js, Babel's output before minifying, given acorn: a
+// typed-array name anywhere but in seed and randomBytes (both behind a check for crypto.getRandomValues, which no
+// browser without typed arrays has), and any read of the typed backing's views (u8, u32, i32, f32, f64), which
+// memory-words.js's functions replace and so nothing may reach any more; their declarations alone may stay.
+// Returns each as "name in function".
+export const SHIM_TYPED_ALLOWED = new Set(['seed', 'randomBytes']);
+export const SHIM_VIEWS = new Set(['u8', 'u32', 'i32', 'f32', 'f64']);
+export function shimLeftovers(code, acorn) {
+  const found = new Set();
+  const names = new Set(TYPED);
+  (function walk(node, fn, parent) {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'FunctionDeclaration') fn = node.id.name;
+    if (node.type === 'Identifier' && names.has(node.name) && !SHIM_TYPED_ALLOWED.has(fn)) found.add(`${node.name} in ${fn || 'the top level'}`);
+    if (node.type === 'Identifier' && SHIM_VIEWS.has(node.name) && !(parent && parent.type === 'VariableDeclarator' && parent.id === node)) {
+      found.add(`${node.name} in ${fn || 'the top level'}`);
+    }
+    for (const k of Object.keys(node)) {
+      const v = node[k];
+      if (Array.isArray(v)) for (const c of v) walk(c, fn, node); else if (v && typeof v === 'object' && k !== 'loc') walk(v, fn, node);
+    }
+  })(acorn.parse(code, { ecmaVersion: 5, sourceType: 'script' }), null, null);
+  return [...found];
+}
