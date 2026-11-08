@@ -471,6 +471,12 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
   const fragment = await popped(3) && urlHeard();
   check('back, forward and a link to a #fragment reach cd_on_url with the new path, answered without a cd_flush', () =>
     (back === '/route/b?x=1' && forward === '/route/c#d' && fragment === '/route/c#here' && x.t_stale() === 0) || `back ${back}, forward ${forward}, fragment ${fragment}, stale ${x.t_stale()}`);
+  x.t_url_step(-1);
+  const steppedBack = await popped(4) && urlHeard();
+  x.t_url_step(1);
+  const steppedForward = await popped(5) && urlHeard();
+  check('cd_url_step(-1) and cd_url_step(1) go back and forward as the browser\'s buttons do, and cd_on_url hears each new path', () =>
+    (steppedBack === '/route/c#d' && steppedForward === '/route/c#here' && location.hash === '#here') || `back ${steppedBack}, forward ${steppedForward}, at ${location.href}`);
   check('cd_url_push refused (another origin, a SecurityError as Safari throws past its limit, a change the browser let go, no History API): REFUSED, the address as it was', () => {
     const was = location.href, entries = history.length;
     const realPush = History.prototype.pushState;

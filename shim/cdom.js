@@ -819,6 +819,10 @@ var cdom = (() => {
     const path = textEncoder.encode(urlOf(URL_PARTS.length));
     deliver((arg, ptr, length) => exports.cd_url_changed(ptr, length), 0, path);
   }
+  // Back (-1) or forward (1) through the history; popstate brings the new path to C.
+  function url_step(delta) {
+    history.go(delta);
+  }
   function title(textPtr, textLen) {
     doc.title = utf8(textPtr, textLen);
   }
@@ -1084,7 +1088,7 @@ var cdom = (() => {
         store_put, store_get, store_del,
         audio_load, audio_free, audio_play, audio_stop, audio_gain, audio_master, audio_state,
         random,
-        url_read, url_go, title,
+        url_read, url_go, url_step, title,
         language, prefs,
         clipboard_write, share,
         fonts_wait,

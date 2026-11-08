@@ -9,11 +9,13 @@
 
 IMPORT("url_read") uint32_t j_url_read(uint32_t part, char *dst, uint32_t cap);
 IMPORT("url_go") uint32_t j_url_go(const char *path, uint32_t len, uint32_t replace);
+IMPORT("url_step") void j_url_step(int32_t delta);
 IMPORT("title") void j_title(const char *text, uint32_t len);
 
 uint32_t cd_url_read(uint32_t part, char *dst, uint32_t cap) { return j_url_read(part, dst, cap); }
 uint32_t cd_url_push(const char *path, uint32_t len) { return j_url_go(path, len, 0); }
 uint32_t cd_url_replace(const char *path, uint32_t len) { return j_url_go(path, len, 1); }
+void cd_url_step(int32_t delta) { j_url_step(delta); }
 void cd_set_title(const char *text, uint32_t len) { j_title(text, len); }
 
 __attribute__((weak)) void cd_on_url(const uint8_t *path, uint32_t len) { (void)path; (void)len; }

@@ -25,6 +25,11 @@ enum { CD_URL_REFUSED, CD_URL_OK };
 uint32_t cd_url_push(const char *path, uint32_t len);
 uint32_t cd_url_replace(const char *path, uint32_t len);
 
+/* Move through the history as the browser's own buttons do: delta -1 is back, 1 forward
+ * (history.go(delta)). It runs from the event loop, so cd_on_url brings the new path afterwards, as
+ * it does for the browser's buttons; a step past either end of the history does nothing. */
+void cd_url_step(int32_t delta);
+
 /* The document's title (the tab's and the history entry's name), len bytes of UTF-8. Set it after
  * a push, so the new entry gets it. */
 void cd_set_title(const char *text, uint32_t len);
