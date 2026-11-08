@@ -31,6 +31,17 @@
   })(new Float32Array(1));
   if (!M.trunc) M.trunc = function (v) { return v < 0 ? M.ceil(v) : M.floor(v); };
 
+  /* The shim checks globalThis.crypto; in a page the global object is the window. */
+  if (typeof globalThis === "undefined") w.globalThis = w;
+  /* MDN's Object.entries polyfill: the shim wraps each export it gets from C. */
+  if (!Object.entries) {
+    Object.entries = function (obj) {
+      var ownProps = Object.keys(obj), i = ownProps.length, resArray = new Array(i);
+      while (i--) resArray[i] = [ownProps[i], obj[ownProps[i]]];
+      return resArray;
+    };
+  }
+
   /* wasm2js lowers memory.copy and memory.fill to these, on a Uint8Array over the whole memory. set copies
    * as if through a temporary when the two ranges share a buffer, so copyWithin may overlap. */
   var U8 = Uint8Array.prototype;

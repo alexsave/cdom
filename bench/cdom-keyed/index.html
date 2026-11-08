@@ -3,13 +3,16 @@
 <head>
   <meta charset="utf-8"/>
   <title>cdom-"keyed"</title>
+  <script>
+/*CDOM_SHIM*/
+  </script>
+  <script>
+/*CDOM_BOOT*/
+cdomBoot('app.wasm', 'main');
+  </script>
   <link href="/css/currentStyle.css" rel="stylesheet"/>
-  <link rel="preload" href="app.wasm" as="fetch" type="application/wasm" crossorigin/>
 </head>
 <body>
 <div id='main'></div>
-<script src='cdom.js'></script>
-<!-- cdom:boot -->
-<script>cdomBoot('app.wasm', document.getElementById('main'));</script>
 </body>
 </html>

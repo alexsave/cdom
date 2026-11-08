@@ -10,7 +10,10 @@ const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../t
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
 const srv = http.createServer((q, r) => { const f = path.join(root, q.url.split(/[?#]/)[0]);
   fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': types[path.extname(f)] }); r.end(b); }); }).listen(0);
-const EV = { CLICK: 0, INPUT: 2, POINTERDOWN: 9, POINTERUP: 10, POINTERMOVE: 11, FOCUS: 19 };
+// Event types by name, read from cdom.h's enum (its numbers are cdom's to change).
+const header = fs.readFileSync(path.resolve(root, '../../src/cdom.h'), 'utf8');
+const EV = Object.fromEntries(header.match(/enum \{ (CD_EV_CLICK[^}]*)\}/)[1].split(',')
+  .map((n, i) => [n.trim().replace(/^CD_EV_/, ''), i]));
 const b = await launch();
 let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console.log('ok  ', m); };
@@ -96,13 +99,15 @@ try {
       ...['1.7', '-1.7', '0.2', '-0.2', '1e21', '-0', 'NaN', 'Infinity'].map(v => `Math.trunc(${v})`),
       U('copyWithin(2, 0, 5)'), U('copyWithin(0, 3, 8)'), U('copyWithin(5, 1)'), U('copyWithin(-2, 0)'), U('copyWithin(1, -3, -1)'),
       U('fill(7, 2, 5)'), U('fill(9)'), U('fill(0, 6)'), U('fill(3, -2)'), U('fill(4, 1, 99)'),
+      'Object.entries({ a: 1, b: "x", c: [2] })', 'Object.entries({})', 'Object.entries([7, 8])',
       '"--x".startsWith("--")', '"a--".startsWith("--", 1)', '"x--".startsWith("--")', '"pan-y".includes("pan-")', '"abc".includes("d")', '"abcabc".includes("a", 4)',
     ];
     const show = (v) => Object.is(v, -0) ? '-0' : JSON.stringify(v) ?? String(v);
     const page = await E(`[${exprs.join(', ')}].map(function (v) { return 1 / v === -Infinity ? '-0' : JSON.stringify(v) || String(v); })`);
     const bad = exprs.filter((x, i) => page[i] !== show(new Function('return ' + x)()));
     ok(!bad.length, `polyfills agree with the built-ins on ${exprs.length} cases: ${bad.map(x => `${x} gave ${page[exprs.indexOf(x)]}`).join('; ')}`);
-    ok(await E('!/native code/.test(String(Math.imul) + String(Math.clz32) + String(Math.fround) + String(Math.trunc) + String(Uint8Array.prototype.fill) + String(Uint8Array.prototype.copyWithin))'),
+    ok(await E('globalThis === window'), 'globalThis is the window');
+    ok(await E('!/native code/.test(String(Object.entries)) && !/native code/.test(String(Math.imul) + String(Math.clz32) + String(Math.fround) + String(Math.trunc) + String(Uint8Array.prototype.fill) + String(Uint8Array.prototype.copyWithin))'),
       'those were the polyfills');
   }
 

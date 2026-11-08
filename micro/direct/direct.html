@@ -1,0 +1,49 @@
+<!doctype html><html><head><meta charset="utf-8"><title>direct calls</title></head><body><table><tbody id="b"></tbody></table>
+<script>
+// Each case runs N calls inside one wasm export; the page reports ns per call, median of R runs.
+const tpl = document.createElement('tr');
+tpl.innerHTML = "<td class='col-md-1'> </td><td class='col-md-4'><a> </a></td><td class='col-md-1'><a><span class='glyphicon glyphicon-remove' aria-hidden='true'></span></a></td><td class='col-md-6'></td>";
+const body = document.getElementById('b'), row = tpl.cloneNode(true), row2 = tpl.cloneNode(true);
+body.append(row2, row);
+const text = tpl.firstChild.firstChild, str = 'pretty red table';
+const nodes = [text, null, tpl, body, row], strs = [null, str];
+let last, x, i32;
+const call = Function.prototype.call;
+const d = {
+  a_empty: (v) => {},
+  a_value: (n, s) => { nodes[n].nodeValue = strs[s]; },
+  b_value: call.bind(Object.getOwnPropertyDescriptor(Node.prototype, 'nodeValue').set),
+  a_first: (n) => { last = nodes[n].firstChild; },
+  b_first: call.bind(Object.getOwnPropertyDescriptor(Node.prototype, 'firstChild').get),
+  a_clone: (n) => { last = nodes[n].cloneNode(true); },
+  b_clone: call.bind(Node.prototype.cloneNode),
+  a_move: (p, n) => { nodes[p].insertBefore(nodes[n], null); },
+  b_move: call.bind(Node.prototype.insertBefore),
+  apply: (m) => { // the op-list arm: one import call, a switch per record
+    for (let p = OPS >> 2, e = p + 3 * m; p < e; p += 3) {
+      switch (i32[p]) {
+        case 1: nodes[i32[p + 1]].nodeValue = strs[i32[p + 2]]; break;
+        case 2: last = nodes[i32[p + 1]].firstChild; break;
+        case 3: nodes[i32[p + 1]].insertBefore(nodes[i32[p + 2]], null); break;
+        case 4: last = nodes[i32[p + 1]].cloneNode(true); break;
+      }
+    }
+  },
+};
+let OPS;
+const names = ['empty arrow', 'nodeValue arrow', 'nodeValue native', 'firstChild arrow', 'firstChild native', 'cloneNode arrow', 'cloneNode native',
+  'insertBefore arrow', 'insertBefore native', 'op list: nodeValue', 'op list: firstChild', 'op list: insertBefore', 'op list: cloneNode'];
+const which = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13];
+WebAssembly.instantiateStreaming(fetch('direct.wasm'), { d }).then(({ instance }) => {
+  x = instance.exports; i32 = new Int32Array(x.memory.buffer); OPS = x.ops();
+  x.grow(8); [text, str, tpl, body, row].forEach((v, i) => x.put(i, v));
+  const N = +(new URLSearchParams(location.search).get('n') || 200000), R = 15, out = {};
+  for (let w = 0; w < which.length; w++) x.run(which[w], 20000); // warm every path to its top tier
+  for (let w = 0; w < which.length; w++) {
+    const n = which[w] === 5 || which[w] === 6 || which[w] === 13 ? N / 10 : N, v = [];
+    for (let r = 0; r < R; r++) { const t = performance.now(); x.run(which[w], n); v.push((performance.now() - t) * 1e6 / n); }
+    v.sort((a, b) => a - b); out[names[w]] = +v[R >> 1].toFixed(1);
+  }
+  window.RESULT = out;
+});
+</script></body></html>

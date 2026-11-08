@@ -6,15 +6,12 @@ let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console.log('ok  ', m); };
 try {
   // BASE serves the entries from somewhere other than the harness server.
-  await b.send('Page.navigate', { url: `${process.env.BASE || 'http://localhost:8093/frameworks/keyed'}/${name}/index.html` });
+  await b.send('Page.navigate', { url: `${process.env.BASE || `http://localhost:${process.env.PORT || 8093}/frameworks/keyed`}/${name}/index.html` });
   for (let i = 0; i < 50 && !(await b.evaluate('!!document.getElementById("run")')); i++) await sleep(100);
   const E = b.evaluate;
   // LEGACY=1 (see cdp.mjs) runs every check on the wasm2js build; either way only one path is fetched.
-  // The page preloads app.wasm, which a browser with preload and no WebAssembly (Chrome 50 to 56) still
-  // downloads, so on that path the wasm may come from the preload link but never from the script.
   const got = await E(FETCHED), mine = ['app.wasm.js', 'cdom.legacy.js'];
-  const byScript = await E("performance.getEntriesByType('resource').some(r => /\\/app\\.wasm$/.test(r.name) && r.initiatorType !== 'link')");
-  ok(LEGACY ? mine.every(f => got.includes(f)) && !byScript : !got.some(f => mine.includes(f)) && got.includes('app.wasm'),
+  ok(LEGACY ? mine.every(f => got.includes(f)) && !got.includes('app.wasm') : !got.some(f => mine.includes(f)) && got.includes('app.wasm'),
     `${LEGACY ? 'wasm2js' : 'wasm'} path only: ${got.filter(f => /\.(js|wasm)$/.test(f)).join(' ')}`);
   const click = sel => E(`document.querySelector(${JSON.stringify(sel)}).click()`);
   const rows = () => E('document.querySelectorAll("tbody tr").length');
