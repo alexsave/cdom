@@ -199,8 +199,19 @@ That scan found two real gaps on its first run: PEP calls `String.prototype.incl
 The targets assumed are IE 11, Safari 9, Chrome 49, Firefox 45, Android 4.4 and iOS 9: typed arrays, nothing from ES2015.
 
 Bytes, for the keyed entry (brotli in parentheses): `cdom.legacy.js` 73,754 (16,860), `app.wasm.js` 101,582 (11,213), against `cdom.js` 11,356 (3,811) and `app.wasm` 20,677 (5,605).
-The inlined boot is the one cost every browser pays: the page grows from 398 to 1,571 bytes (151 to 591 brotli).
+The inlined boot, with its comments cut, is the one cost every browser pays: the page grows from 398 to 1,069 bytes (151 to 388 brotli).
 The page still preloads `app.wasm`, which helps first paint; a browser with preload and no wasm (Chrome 50 to 56) downloads it for nothing, while IE and the old Edge ignore preload.
+
+In Chrome the wasm2js path is about as fast as wasm, because less than 10% of script time is C (see "The library").
+`node tools/quick.mjs` (script time per click, median ms), three interleaved rounds at loads of 3.8 to 3.9 while another agent was benchmarking on the same Mac, wasm against wasm2js: run1k 2.2 to 2.3 against 2.3 to 2.6, replace1k 2.4 against 2.3 to 3.0, append 1.8 to 2.1 against 2.1 to 2.3, create10k 18.4 to 20.5 against 18.7 to 22.2, and update 0.1 against 0.3, the one clear cost.
+That is V8 running the output; the browsers this path is for have far slower engines, so these numbers say the design costs nothing extra, not how fast IE 11 is.
+
+Testing without an old browser: `LEGACY=1` makes `tools/cdp.mjs` delete, before any page script runs, WebAssembly and everything the polyfills supply (TextDecoder, TextEncoder, queueMicrotask, reportError, Promise, fetch, PointerEvent, the four Math functions, startsWith, includes, typed-array copyWithin and fill), stop Chrome's own pointer events at the window so only PEP's reach the page, and make addEventListener read its third argument as useCapture.
+Under it, `tools/fuzz.mjs` runs its five seeds of 20,000 list transitions and both string paths on the wasm2js build, `tools/smoke.mjs` runs every benchmark action, and `tools/legacy.mjs` with `tests/legacy.c` checks pointer events with real CDP input (one pointerdown, move and up each, with coordinates, pointer id and buttons), text typed in Latin, Cyrillic, CJK and an emoji read into C and echoed back, reads cut at every byte count never splitting a character, a failed call reported once with the batch going on, focus() in a batch delivered after it, every listener given a plain capture flag of the right phase, and each polyfill against the built-in on 139 cases.
+Each also checks which files the page fetched: the fallback files only on that path, and never on the wasm one.
+Without `LEGACY` the same tools run on wasm and pass unchanged, as do canvas and host.
+Twenty-four mutants (boot always or never falling back, no factory, the shim without its factory branch, no capture wrapper or the wrong phase, PEP left out, each UTF-8 branch, the fit check, the surrogate pair, microtasks dropped, reportError silent, startsWith always true, includes ignoring its start, and each Math and typed-array polyfill) were all caught.
+The first round left six alive: a two-byte decode bug that é cannot show (its lead byte reads the same under both masks, so the text now has a Cyrillic letter), and five polyfills the app cannot tell from wrong ones (a wrong imul still gives a consistent intern hash, a short fill leaves bytes that were zero anyway), which is why the built-in comparison exists; it then found that copyWithin threw where the built-in clamps.
 
 ## Step 0: what a call across the boundary costs
 
@@ -274,7 +285,8 @@ The first version of cdom's swap took 65 us of script, all in the generic map-an
 ```
 cd /Users/alex/Dev/cdom
 bench/build.sh                  # cdom, cdom-pertext, cdom-notpl, cdom-oz into jfb/frameworks/keyed
-tests/build.sh && node tools/fuzz.mjs && node tools/canvas.mjs && node tools/host.mjs
+tests/build.sh && node tools/fuzz.mjs && node tools/canvas.mjs && node tools/host.mjs && node tools/legacy.mjs
+LEGACY=1 node tools/fuzz.mjs && LEGACY=1 node tools/legacy.mjs   # the no-WebAssembly path
 (cd jfb/server && PORT=8093 npx tsx index.ts) &
 node tools/smoke.mjs cdom
 TAG=p2 KEEP=pass2 tools/final.sh 01_ 02_ 03_ 04_ 05_ 06_ 07_ 08_ 09_
