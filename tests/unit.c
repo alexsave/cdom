@@ -439,7 +439,7 @@ static int ws_ok;
 static uint32_t net_port;
 static void say(const char *s) { cd_set_text(net_txt, cd_internz(s)); }
 /* What the sockets are doing: the echo, the open-and-close cycles, the large send. */
-enum { WS_ECHO, WS_CYCLE, WS_BIG };
+enum { WS_ECHO, WS_CYCLE, WS_BIG, WS_PAIR };
 static int ws_mode;
 static uint32_t ws_url(char *url) {
   uint32_t n = 0;
@@ -481,8 +481,10 @@ EXPORT("t_ws_big_after_send") uint32_t t_ws_big_after_send(void) { return big_af
 EXPORT("t_ws_buffered") int32_t t_ws_buffered(void) { return big_id == ~0u ? -1 : (int32_t)cd_ws_buffered(big_id); }
 EXPORT("t_ws_big_close") void t_ws_big_close(void) { cd_ws_close(big_id); }
 
+static void wp_hook(uint32_t ev, uint32_t id, const uint8_t *p, uint32_t len);
 void cd_on_ws_open(uint32_t id) {
   enter();
+  if (ws_mode == WS_PAIR) { wp_hook(CD_WS_OPEN, id, 0, 0); return; }
   if (ws_mode == WS_CYCLE) {
     if (id < cycle_lo) cycle_lo = id;
     if (id > cycle_hi) cycle_hi = id;
@@ -505,6 +507,7 @@ void cd_on_ws_open(uint32_t id) {
 }
 void cd_on_ws_close(uint32_t id, uint32_t code) {
   enter();
+  if (ws_mode == WS_PAIR) { wp_hook(CD_WS_CLOSE, id, 0, code); return; }
   (void)id; (void)code;
   if (ws_mode == WS_ECHO) echo_closed = 1;
   if (ws_mode != WS_CYCLE) return;
@@ -513,6 +516,7 @@ void cd_on_ws_close(uint32_t id, uint32_t code) {
 }
 void cd_on_ws_msg(uint32_t id, const uint8_t *p, uint32_t len) {
   enter();
+  if (ws_mode == WS_PAIR) { wp_hook(CD_WS_MSG, id, p, len); return; }
   ws_ok = len == sizeof MSG;
   for (uint32_t i = 0; ws_ok && i < len; i++) ws_ok = p[i] == MSG[i];
   say(ws_ok ? "ws ok" : "ws wrong bytes");
@@ -1088,4 +1092,106 @@ EXPORT("t_http_cb_seen") int32_t t_http_cb_seen(uint32_t k, uint32_t f) {
   if (k == 3) return (int32_t)http_cdom_heard;
   const hc_ctx *c = &hc[k];
   return f == 0 ? c->status : f == 1 ? (int32_t)c->calls : f == 2 ? (int32_t)c->len : c->body[f - 3];
+}
+
+/* A free callback slot's index: a timer callback started and stopped at once takes the free list's top
+ * and gives it back, so two probes around work that frees every slot it took name the same slot. */
+static void slot_probe_fire(void *ctx) { (void)ctx; }
+static uint32_t slot_probe(void) {
+  uint32_t t = cd_timer_cb(1000, slot_probe_fire, 0);
+  cd_timer_stop(t);
+  return t & 0xffffu;
+}
+
+/* 30. cd_ws_open_cb next to cd_ws_open, against the page server's echo. The hooks' sockets send WA, the
+ * callback's send WB, each closes once its echo is back, so a message that reached the wrong sink is
+ * the wrong bytes there. At once: socket G1 (the hooks) and C1 (a callback, ctx wc[0]). G1's close
+ * opens C2 (ctx wc[1]) and C1's close opens G2, each from the close answer, when the id just closed is
+ * the one the shim hands out next: so C2 takes G1's id and G2 takes C1's, and a socket's kind must not
+ * follow its id. Then (t_ws_cb_cycles) n callback sockets opened and closed one after another, each
+ * from the last one's close: their ids are one id, and a slot probe before and after names one slot
+ * (every socket's slot freed at its close). */
+static const uint8_t WA[3] = {0xa1, 0xa2, 0xa3}, WB[4] = {0xb1, 0xb2, 0xb3, 0xb4};
+typedef struct { uint32_t open, msg, close, ok, code, id, own; } wp_sink;
+static wp_sink wp_g, wp_c[2]; /* the hooks' (both sockets), and each callback socket's */
+static uint32_t wp_g1, wp_g2 = ~0u, wp_c1, wp_c2 = ~0u;
+static int bytes_are(const uint8_t *p, uint32_t len, const uint8_t *want, uint32_t n) {
+  if (len != n) return 0;
+  for (uint32_t i = 0; i < n; i++) if (p[i] != want[i]) return 0;
+  return 1;
+}
+static void wp_sink_ev(wp_sink *s, uint32_t ev, uint32_t id, const uint8_t *p, uint32_t len, const uint8_t *mine, uint32_t n) {
+  if (ev == CD_WS_OPEN) {
+    s->open++;
+    __builtin_memcpy(out_msg, mine, n);
+    cd_ws_send(id, out_msg, n);
+    __builtin_memset(out_msg, 0xee, n);
+  } else if (ev == CD_WS_MSG) {
+    s->msg++;
+    s->ok += bytes_are(p, len, mine, n);
+    cd_ws_close(id);
+  } else {
+    s->close++;
+    s->code = len;
+  }
+}
+static void wp_cb(void *ctx, uint32_t id, uint32_t ev, const uint8_t *p, uint32_t len);
+static void wp_hook(uint32_t ev, uint32_t id, const uint8_t *p, uint32_t len) {
+  wp_sink_ev(&wp_g, ev, id, p, len, WA, sizeof WA);
+  if (ev == CD_WS_CLOSE && id == wp_g1 && wp_c2 == ~0u) {
+    char url[40];
+    wp_c2 = cd_ws_open_cb(wp_cb, &wp_c[1], url, ws_url(url));
+  }
+  hold(net_txt); /* no cd_flush: the network exports flush */
+}
+static void wp_cb(void *ctx, uint32_t id, uint32_t ev, const uint8_t *p, uint32_t len) {
+  enter();
+  wp_sink *s = ctx;
+  s->own += s == &wp_c[0] || s == &wp_c[1];
+  s->id = id;
+  wp_sink_ev(s, ev, id, p, len, WB, sizeof WB);
+  if (ev == CD_WS_CLOSE && s == &wp_c[0]) wp_g2 = ws_open_here();
+  hold(net_txt);
+}
+EXPORT("t_ws_pair") void t_ws_pair(void) {
+  char url[40];
+  ws_mode = WS_PAIR;
+  wp_g1 = ws_open_here();
+  wp_c1 = cd_ws_open_cb(wp_cb, &wp_c[0], url, ws_url(url));
+}
+/* k 0 the hooks, 1 and 2 the callback sockets: open, msg, close, ok (bytes right), close code, the id the
+ * callback heard, calls with its own ctx; k 3: the ids G1, C1, C2, G2. */
+EXPORT("t_ws_pair_seen") uint32_t t_ws_pair_seen(uint32_t k, uint32_t f) {
+  if (k == 3) return f == 0 ? wp_g1 : f == 1 ? wp_c1 : f == 2 ? wp_c2 : wp_g2;
+  const wp_sink *s = k == 0 ? &wp_g : &wp_c[k - 1];
+  const uint32_t v[7] = {s->open, s->msg, s->close, s->ok, s->code, s->id, s->own};
+  return v[f];
+}
+
+static uint32_t wcy_left, wcy_done, wcy_lo = ~0u, wcy_hi, wcy_probe[2], wcy_ctx_ok;
+static void wcy_cb(void *ctx, uint32_t id, uint32_t ev, const uint8_t *p, uint32_t len) {
+  enter();
+  (void)p; (void)len;
+  wcy_ctx_ok += ctx == &wcy_left;
+  if (ev == CD_WS_OPEN) {
+    if (id < wcy_lo) wcy_lo = id;
+    if (id > wcy_hi) wcy_hi = id;
+    cd_ws_close(id);
+  } else if (ev == CD_WS_CLOSE) {
+    wcy_done++;
+    char url[40];
+    if (--wcy_left) cd_ws_open_cb(wcy_cb, &wcy_left, url, ws_url(url));
+    else wcy_probe[1] = slot_probe();
+  }
+}
+EXPORT("t_ws_cb_cycles") void t_ws_cb_cycles(uint32_t n) {
+  char url[40];
+  wcy_left = n;
+  wcy_probe[0] = slot_probe();
+  cd_ws_open_cb(wcy_cb, &wcy_left, url, ws_url(url));
+}
+/* 0 cycles done, 1 and 2 the lowest and highest id, 3 and 4 the probes, 5 calls with the right ctx. */
+EXPORT("t_ws_cb_cycle") uint32_t t_ws_cb_cycle(uint32_t f) {
+  const uint32_t v[6] = {wcy_done, wcy_lo, wcy_hi, wcy_probe[0], wcy_probe[1], wcy_ctx_ok};
+  return v[f];
 }

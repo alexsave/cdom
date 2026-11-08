@@ -728,13 +728,19 @@ static void cb_free_slot(cb_slot *c) {
   c->gen = (c->gen + 1) & 0x7fffu;
   cb_free[cb_nfree++] = (uint16_t)(c - cb_slots);
 }
-int cd_cb_take(uint32_t token, cd_cb_fn *fn, void **ctx) {
+static cb_slot *cb_read(uint32_t token, cd_cb_fn *fn, void **ctx) {
   cb_slot *c = cb_named(token);
-  if (!c) return 0;
-  *fn = c->fn;
-  *ctx = c->ctx;
-  cb_free_slot(c);
-  return 1;
+  if (c) {
+    *fn = c->fn;
+    *ctx = c->ctx;
+  }
+  return c;
+}
+int cd_cb_get(uint32_t token, cd_cb_fn *fn, void **ctx) { return cb_read(token, fn, ctx) != 0; }
+int cd_cb_take(uint32_t token, cd_cb_fn *fn, void **ctx) {
+  cb_slot *c = cb_read(token, fn, ctx);
+  if (c) cb_free_slot(c);
+  return c != 0;
 }
 void cd_cb_drop(uint32_t token) {
   cb_slot *c = cb_named(token);
