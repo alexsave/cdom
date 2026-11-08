@@ -43,7 +43,7 @@ var cdom = (() => {
   const templateSlots = []; // slot text nodes by template id
   let slots = [];           // slot text nodes of the template being built
   const hostListeners = [];  // the listener per (host object, event type), while listened
-  let listenMask = new Uint32Array(2048); // listened event types per node id: two words, a bit per type
+  let listenMask = newMask(2048); // listened event types per node id: two words, a bit per type
   const queue = [];         // events the browser dispatched while C was running, delivered after
   let busy = 0;             // how many calls into C are on the stack
   let exports;              // the wasm module's exports
@@ -63,6 +63,10 @@ var cdom = (() => {
   let base = DETACHED;      // the parent new top-level nodes go into
   let before = 0;           // the node they go before (0: at the end)
 
+  // C's memory. Every read and write of it goes through the functions from here to "end of C's memory", over
+  // typed-array views. The build for a browser without typed arrays (cdom.legacy-ie9.js, tools/legacy/build.mjs)
+  // puts tools/legacy/memory-words.js's functions of the same names in their place, over app.wasm.ie9.js's words,
+  // and refuses to write the file if a typed array is left anywhere else.
   // Typed views over wasm memory, made again after it grows.
   function views() {
     buffer = memory.buffer;
@@ -72,6 +76,32 @@ var cdom = (() => {
     f32 = new Float32Array(buffer);
     f64 = new Float64Array(buffer);
   }
+  // Before the views are read: the memory may have grown since they were made.
+  function fresh() {
+    if (buffer !== memory.buffer) {
+      views();
+    }
+  }
+  // A byte at ptr; a word, unsigned, at word index; a word stored, an f32 stored at word index; an f64 at f64
+  // index read and stored.
+  function load8(ptr) {
+    return u8[ptr];
+  }
+  function load32(index) {
+    return u32[index];
+  }
+  function store32(index, value) {
+    i32[index] = value;
+  }
+  function storeF32(index, value) {
+    f32[index] = value;
+  }
+  function loadF64(index) {
+    return f64[index];
+  }
+  function storeF64(index, value) {
+    f64[index] = value;
+  }
   // A view of length bytes of C memory at ptr, good until the memory grows.
   function bytes(ptr, length) {
     return new Uint8Array(memory.buffer, ptr, length);
@@ -80,6 +110,50 @@ var cdom = (() => {
   function copyBytes(ptr, length) {
     return bytes(ptr, length).slice();
   }
+  // The first length bytes of data (bytes, as bytesOf gives them) into C memory at ptr.
+  function writeBytes(ptr, data, length) {
+    bytes(ptr, length).set(length === data.length ? data : data.subarray(0, length));
+  }
+  // Bytes to write: an ArrayBuffer's, or a Uint8Array as it is.
+  function bytesOf(data) {
+    return new Uint8Array(data);
+  }
+  // Whether data is bytes: what the store gives back for what store_put kept.
+  function isBytes(data) {
+    return data instanceof Uint8Array;
+  }
+  // As many whole characters of text as fit in capacity bytes at ptr, as UTF-8; returns the bytes written.
+  function encodeTo(text, ptr, capacity) {
+    return textEncoder.encodeInto(text, bytes(ptr, capacity)).written;
+  }
+  // length bytes at ptr from the browser's cryptographic generator (at most 65536).
+  function randomBytes(ptr, length) {
+    crypto.getRandomValues(bytes(ptr, length));
+  }
+  // The pixels at ptr (channels bytes each: RGBA, or RGB and opaque) as an ImageData for context.
+  function pixels(context, ptr, width, height, channels) {
+    let data = new Uint8ClampedArray(memory.buffer, ptr, width * height * channels);
+    if (channels === 3) {
+      const rgba = new Uint8ClampedArray(width * height * 4);
+      for (let from = 0, to = 0; to < rgba.length; from += 3, to += 4) {
+        rgba[to] = data[from];
+        rgba[to + 1] = data[from + 1];
+        rgba[to + 2] = data[from + 2];
+        rgba[to + 3] = 255;
+      }
+      data = rgba;
+    }
+    return new ImageData(data, width, height);
+  }
+  // Two words per node for listenMask, all zero, with old's in front when it grows.
+  function newMask(length, old) {
+    const mask = new Uint32Array(length);
+    if (old) {
+      mask.set(old);
+    }
+    return mask;
+  }
+  // (end of C's memory)
   // Puts node into parent before node next (null: at the end).
   function place(parent, node, next) {
     parent.insertBefore(node, next);
@@ -102,29 +176,29 @@ var cdom = (() => {
   function decode(count, byteCount) {
     let meta = stringMeta >> 2;
     if (byteCount > SMALL) {
-      const all = textDecoder.decode(u8.subarray(stringBytes, stringBytes + byteCount));
+      const all = textDecoder.decode(bytes(stringBytes, byteCount));
       let offset = 0;
       for (let i = 0; i < count; i++, meta += 3) {
-        const chars = u32[meta + 2];
-        keep(u32[meta], all.substring(offset, offset + chars));
+        const chars = load32(meta + 2);
+        keep(load32(meta), all.substring(offset, offset + chars));
         offset += chars;
       }
       return;
     }
     let at = stringBytes;
     for (let i = 0; i < count; i++, meta += 3) {
-      const bytes = u32[meta + 1];
+      const length = load32(meta + 1);
       let value;
-      if (bytes === u32[meta + 2]) { // ASCII: one char per byte
+      if (length === load32(meta + 2)) { // ASCII: one char per byte
         value = "";
-        for (let k = 0; k < bytes; k++) {
-          value += String.fromCharCode(u8[at + k]);
+        for (let k = 0; k < length; k++) {
+          value += String.fromCharCode(load8(at + k));
         }
       } else {
-        value = textDecoder.decode(u8.subarray(at, at + bytes));
+        value = textDecoder.decode(bytes(at, length));
       }
-      keep(u32[meta], value);
-      at += bytes;
+      keep(load32(meta), value);
+      at += length;
     }
   }
 
@@ -161,31 +235,29 @@ var cdom = (() => {
       }
       return;
     }
-    if (buffer !== memory.buffer) {
-      views();
-    }
+    fresh();
     const record = inbox >> 2;
     const key = event.key;
     const viewport = type === RESIZE || type === VISIBILITY;
     const point = pointOf(event);
     const pointer = fillsPointer[type] === 1; // other types skip the getters and read 0
     const wheel = type === WHEEL;
-    i32[record] = type;
-    i32[record + 1] = id;
-    i32[record + 2] = viewport ? innerWidth : point.clientX | 0;
-    i32[record + 3] = viewport ? innerHeight : point.clientY | 0;
-    i32[record + 4] = event.button | 0;
-    i32[record + 5] = viewport ? +doc.hidden : event.keyCode | 0;
-    i32[record + 6] = event.shiftKey | (event.ctrlKey << 1) | (event.altKey << 2) | (event.metaKey << 3)
-      | (editing(event.target) << 4);
-    i32[record + 7] = path;
-    i32[record + 8] = pathDepth;
-    i32[record + 9] = typeof key === "string" && key.length === 1 ? key.charCodeAt(0) : 0;
-    i32[record + 11] = Math.round(event.timeStamp || 0);
-    i32[record + 12] = pointer ? event.pointerId : 0;
-    i32[record + 13] = pointer ? event.buttons : 0;
-    f32[record + 14] = wheel ? event.deltaX : 0;
-    f32[record + 15] = wheel ? event.deltaY : 0;
+    store32(record, type);
+    store32(record + 1, id);
+    store32(record + 2, viewport ? innerWidth : point.clientX | 0);
+    store32(record + 3, viewport ? innerHeight : point.clientY | 0);
+    store32(record + 4, event.button | 0);
+    store32(record + 5, viewport ? +doc.hidden : event.keyCode | 0);
+    store32(record + 6, event.shiftKey | (event.ctrlKey << 1) | (event.altKey << 2) | (event.metaKey << 3)
+      | (editing(event.target) << 4));
+    store32(record + 7, path);
+    store32(record + 8, pathDepth);
+    store32(record + 9, typeof key === "string" && key.length === 1 ? key.charCodeAt(0) : 0);
+    store32(record + 11, Math.round(event.timeStamp || 0));
+    store32(record + 12, pointer ? event.pointerId : 0);
+    store32(record + 13, pointer ? event.buttons : 0);
+    storeF32(record + 14, wheel ? event.deltaX : 0);
+    storeF32(record + 15, wheel ? event.deltaY : 0);
     nodes[EVENT] = event;
     const flags = exports.cd_event();
     nodes[EVENT] = undefined;
@@ -237,9 +309,7 @@ var cdom = (() => {
 
   // C sends a batch of new strings.
   function strings(count, byteCount) {
-    if (buffer !== memory.buffer) {
-      views();
-    }
+    fresh();
     decode(count, byteCount);
   }
   // Where new top-level nodes go: into parent, before node beforeId (0: at the end).
@@ -301,9 +371,7 @@ var cdom = (() => {
     nodes[id] = last;
     last.$i = id;
     if (id * 2 + 1 >= listenMask.length) {
-      const grown = new Uint32Array(id * 4 + 2);
-      grown.set(listenMask);
-      listenMask = grown;
+      listenMask = newMask(id * 4 + 2, listenMask);
     }
     listenMask[id * 2 + (type >> 5)] |= 1 << (type & 31);
     if (!delegated[type]) {
@@ -392,18 +460,8 @@ var cdom = (() => {
     const canvas = doc.createElement("canvas");
     canvas.width = fullWidth;
     canvas.height = fullHeight;
-    let pixels = new Uint8ClampedArray(memory.buffer, pixelsPtr, width * height * channels);
-    if (channels === 3) {
-      const rgba = new Uint8ClampedArray(width * height * 4);
-      for (let from = 0, to = 0; to < rgba.length; from += 3, to += 4) {
-        rgba[to] = pixels[from];
-        rgba[to + 1] = pixels[from + 1];
-        rgba[to + 2] = pixels[from + 2];
-        rgba[to + 3] = 255;
-      }
-      pixels = rgba;
-    }
-    canvas.getContext("2d").putImageData(new ImageData(pixels, width, height), x, y);
+    const context = canvas.getContext("2d");
+    context.putImageData(pixels(context, pixelsPtr, width, height, channels), x, y);
     canvas.toBlob(async (blob) => deliver(exports.cd_encoded, token, await blob.arrayBuffer()), stringOf(mime), 0.92);
   }
   // An image file's bytes in C memory as a url(blob:) on a style property, set once the image has
@@ -501,10 +559,12 @@ var cdom = (() => {
   }
   // The viewport into C memory: width, height, hidden, device pixel ratio times 100.
   function viewport(recordPtr) {
-    if (buffer !== memory.buffer) {
-      views();
-    }
-    i32.set([innerWidth, innerHeight, +doc.hidden, Math.round(devicePixelRatio * 100)], recordPtr >> 2);
+    fresh();
+    const record = recordPtr >> 2;
+    store32(record, innerWidth);
+    store32(record + 1, innerHeight);
+    store32(record + 2, +doc.hidden);
+    store32(record + 3, Math.round(devicePixelRatio * 100));
   }
   // A node's box on screen into C memory as four doubles: left, top, width, height; 0 when id names
   // nothing with a box.
@@ -514,7 +574,12 @@ var cdom = (() => {
       return 0;
     }
     const box = node.getBoundingClientRect();
-    new Float64Array(memory.buffer, outPtr, 4).set([box.left, box.top, box.width, box.height]);
+    fresh();
+    const out = outPtr >> 3;
+    storeF64(out, box.left);
+    storeF64(out + 1, box.top);
+    storeF64(out + 2, box.width);
+    storeF64(out + 3, box.height);
     return 1;
   }
   // A timer: C keeps the handle (by token) to stop it, and is told which one fired.
@@ -540,14 +605,14 @@ var cdom = (() => {
   // so C can tell it was cut and ask again with more room.
   function writeString(text, destPtr, capacity) {
     const encoded = textEncoder.encode(text);
-    bytes(destPtr, capacity).set(encoded.subarray(0, capacity));
+    writeBytes(destPtr, encoded, Math.min(capacity, encoded.length));
     return encoded.length;
   }
   // Bytes into C memory, in room C makes with cd_bytes_buf, then answer(arg, ptr, length).
   function deliver(answer, arg, data) {
-    const incoming = new Uint8Array(data);
+    const incoming = bytesOf(data);
     const ptr = exports.cd_bytes_buf(incoming.length);
-    bytes(ptr, incoming.length).set(incoming);
+    writeBytes(ptr, incoming, incoming.length);
     answer(arg, ptr, incoming.length);
   }
 
@@ -673,7 +738,7 @@ var cdom = (() => {
         return;
       }
       answered = true;
-      if (data instanceof Uint8Array) {
+      if (isBytes(data)) {
         deliver(exports.cd_store_got, token, data);
       } else {
         exports.cd_store_got(token, 0, -1);
@@ -800,7 +865,7 @@ var cdom = (() => {
     if (!globalThis.crypto || !crypto.getRandomValues) {
       return 0;
     }
-    crypto.getRandomValues(bytes(bufferPtr, length));
+    randomBytes(bufferPtr, length);
     return 1;
   }
 
@@ -965,8 +1030,7 @@ var cdom = (() => {
   function blit(id, pixelsPtr, width, height) {
     const canvas = nodes[id];
     canvas.$g ??= canvas.getContext("2d");
-    const pixels = new Uint8ClampedArray(memory.buffer, pixelsPtr, width * height * 4);
-    canvas.$g.putImageData(new ImageData(pixels, width, height), 0, 0);
+    canvas.$g.putImageData(pixels(canvas.$g, pixelsPtr, width, height, 4), 0, 0);
   }
 
   // Host access along dotted paths (cdom.h); a "--" segment is a custom property of the style object
@@ -995,10 +1059,10 @@ var cdom = (() => {
   // object's pairs follow it. Returns [value, index of the next entry].
   function valueAt(ptr, index) {
     const at = (ptr >> 2) + index * 4;
-    const tag = u32[at];
-    const payload = u32[at + 2];
+    const tag = load32(at);
+    const payload = load32(at + 2);
     switch (tag) {
-      case 0: return [f64[(at + 2) >> 1], index + 1];
+      case 0: return [loadF64((at + 2) >> 1), index + 1];
       case 1: return [stringOf(payload), index + 1];
       case 2: return [payload === 1, index + 1];
       case 3: return [nodes[payload], index + 1];
@@ -1019,9 +1083,7 @@ var cdom = (() => {
   // Sets the value at valuePtr on the path's last segment. A failure is reported, not thrown, so C
   // goes on.
   function set(id, path, valuePtr) {
-    if (buffer !== memory.buffer) {
-      views();
-    }
+    fresh();
     const value = valueAt(valuePtr, 0)[0];
     try {
       const keys = segmentsOf(path);
@@ -1039,9 +1101,7 @@ var cdom = (() => {
   // Calls the method at the path's last segment with count values from argsPtr; the result is kept
   // as CD_RESULT, a returned promise's rejection is swallowed and a thrown error is reported.
   function call(id, method, count, argsPtr) {
-    if (buffer !== memory.buffer) {
-      views();
-    }
+    fresh();
     const args = [];
     for (let i = 0, next = 0; i < count; i++) {
       const [value, after] = valueAt(argsPtr, next);
@@ -1074,7 +1134,7 @@ var cdom = (() => {
       return typeof value === "boolean" ? +value : typeof value === "number" ? value : NaN;
     }
     if (kind === 1) {
-      return textEncoder.encodeInto(value == null ? "" : String(value), bytes(destPtr, capacity)).written;
+      return encodeTo(value == null ? "" : String(value), destPtr, capacity);
     }
     if (value == null) {
       return -1;
@@ -1084,16 +1144,20 @@ var cdom = (() => {
   }
 
   // cd_seed for the app: options.seed when the page fixes one (a test, a replay: one line makes a
-  // run deterministic), else 32 bits from the browser's cryptographic generator, never from a
-  // generator nothing can seed.
+  // run deterministic), else 32 bits from the browser's cryptographic generator.
   function seed(options) {
     if (options && options.seed !== undefined) {
       return options.seed >>> 0;
     }
-    if (!globalThis.crypto || !crypto.getRandomValues) {
-      throw new Error("cdom: this page has no crypto.getRandomValues to seed cd_seed; pass start(..., { seed })");
+    if (globalThis.crypto && crypto.getRandomValues) {
+      return crypto.getRandomValues(new Uint32Array(1))[0];
     }
-    return crypto.getRandomValues(new Uint32Array(1))[0];
+    // The one exception to cdom's seed rule (no unseedable generator, no clock seeds), approved for IE 9 and 10:
+    // they have no cryptographic generator, and a static page has no server to send a seed, so every source
+    // left is one the rule bans. options.seed still overrides it, so a run stays one line from deterministic.
+    // Below IE 11, cd_seed is therefore neither secret nor unpredictable (cdom.h: never use it for secrets).
+    // tests/unit.html allows exactly this one draw from the engine's generator, here, and no other.
+    return (Math.random() * 4294967296 ^ Date.now()) >>> 0;
   }
 
   // Starts the app: url is the wasm's, or the wasm2js build of the same app (a function of the imports
@@ -1158,9 +1222,9 @@ var cdom = (() => {
     memory = exports.memory;
     views();
     const layout = exports.cd_layout() >> 2;
-    stringBytes = u32[layout];
-    stringMeta = u32[layout + 1];
-    inbox = u32[layout + 2];
+    stringBytes = load32(layout);
+    stringMeta = load32(layout + 1);
+    inbox = load32(layout + 2);
     if (exports.cd_url_changed) {
       addEventListener("popstate", urlChanged);
     }

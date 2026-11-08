@@ -218,8 +218,17 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
   }
   check('options.seed is cd_seed, so one line makes a run deterministic', () => (x.t_seed() >>> 0) === 0xdeadbeef || x.t_seed() >>> 0);
   const shimSource = await (await fetch('cdom.js')).text();
-  check('the shim draws no stray random: no Math.random, no Date.now seed', () =>
-    !/Math\.random|Date\.now\(\)\s*[^;]*seed/.test(shimSource) || 'found one');
+  // The one exception (shim/cdom.js seed()): IE 9 and 10 have no crypto, so seed() falls back on Math.random and
+  // the clock, after options.seed and crypto.getRandomValues. Exactly that one, there, and no other anywhere.
+  check('the shim draws no stray random: one Math.random, in seed() after options.seed and crypto, no other, no Date.now seed', () => {
+    const from = shimSource.indexOf('\n  function seed(options) {'), to = shimSource.indexOf('\n  }\n', from);
+    const body = shimSource.slice(from, to), rest = shimSource.slice(0, from) + shimSource.slice(to);
+    const count = (src) => (src.match(/Math\.random/g) || []).length;
+    const r = [from > 0 && to > from, count(shimSource) === 1, count(body) === 1,
+      body.indexOf('options.seed') < body.indexOf('crypto.getRandomValues') && body.indexOf('crypto.getRandomValues') < body.indexOf('Math.random'),
+      !/Date\.now\(\)\s*[^;]*seed/.test(rest)];
+    return r.every(Boolean) || JSON.stringify(r);
+  });
   check('clone inside an open element is its child', () => {
     x.t_clone_inside();
     const got = [...$('#clone').childNodes].map((n) => n.outerHTML).join('');

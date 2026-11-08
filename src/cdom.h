@@ -326,6 +326,13 @@ void cd_on_timer(uint32_t token);
 void cd_on_raf(uint32_t token, double t);
 double cd_now(void);                              /* performance.now(), for work cut into slices */
 
+/* The app's seed, set before cd_start's app code runs: the page's start(..., { seed }) when it fixes one
+ * (a test or a replay, one line from deterministic), else 32 bits from crypto.getRandomValues. For an
+ * app's own seedable generator (a shuffle, a layout, a game), never for secrets: in IE 9 and 10, which have
+ * no crypto.getRandomValues, the shim seeds it from Math.random and the clock, so below IE 11 it is neither
+ * secret nor unpredictable. Secrets come from cd_random_bytes (cdom_random.h), which fails there instead. */
+extern uint32_t cd_seed;
+
 /* ---- regions: children that come and go ----
  *   if (cd_region_show(&r, want)) { cd_at(...); ...build...; cd_region_end(&r); }
  * cd_region_show returns 1 when the region must be built now (it is hidden and want is set);
