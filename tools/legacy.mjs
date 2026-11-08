@@ -1,10 +1,11 @@
 // Drives tests/out/legacy.html with real input through CDP; exit 1 on any failure.
 // LEGACY=1 node tools/legacy.mjs runs it as a browser without WebAssembly (see cdp.mjs): the page must then
 // take the wasm2js path, on cdom.legacy.js's polyfills and PEP. Without it, the same checks run on wasm.
+// LEGACY=ie9-gaps runs them on IE 9's gaps but its two walls; LEGACY=ie9 checks that the boot refuses IE 9.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { launch, sleep, LEGACY, FETCHED } from './cdp.mjs';
+import { launch, sleep, LEGACY, IE9, FETCHED, refused } from './cdp.mjs';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
@@ -30,8 +31,17 @@ async function click(sel) {
   await sleep(50);
 }
 const since = async (n) => (await E('LOG')).slice(n);
-try {
+run: try {
   await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/legacy.html` });
+  // LEGACY=ie9 is below the floor: the boot refuses it, and that refusal is all there is to check.
+  if (IE9) {
+    for (const [c, m] of await refused(b, '#m')) ok(c, m);
+    ok(!(await E('!!window.READY')), 'never ready');
+    const errs = await E('ERRORS');
+    ok(errs.length === 1 && /^Error: cdom: this browser cannot run cdom without WebAssembly: /.test(errs[0]),
+      `the page's error listener heard the boot's error: ${JSON.stringify(errs)}`);
+    break run;
+  }
   for (let i = 0; i < 100 && !(await E('!!window.READY')); i++) await sleep(50);
   ok(await E('!!window.READY'), 'booted');
   const id = {}; for (const [k, i] of Object.entries({ PAD: 0, TEXT: 1 })) id[k] = await E(`X.id(${i})`);

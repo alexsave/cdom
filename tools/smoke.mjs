@@ -1,12 +1,14 @@
 // Clicks every button and row action and checks the DOM against what the app should show.
-import { launch, sleep, LEGACY, FETCHED } from './cdp.mjs';
+import { launch, sleep, LEGACY, IE9, FETCHED, refused } from './cdp.mjs';
 const name = process.argv[2] || 'cdom';
 const b = await launch();
 let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console.log('ok  ', m); };
-try {
+run: try {
   // BASE serves the entries from somewhere other than the harness server.
   await b.send('Page.navigate', { url: `${process.env.BASE || `http://localhost:${process.env.PORT || 8093}/frameworks/keyed`}/${name}/index.html` });
+  // LEGACY=ie9 (see cdp.mjs) is below the floor: the boot must refuse it, and nothing else is checked.
+  if (IE9) { for (const [c, m] of await refused(b, '#main')) ok(c, m); break run; }
   for (let i = 0; i < 50 && !(await b.evaluate('!!document.getElementById("run")')); i++) await sleep(100);
   const E = b.evaluate;
   // LEGACY=1 (see cdp.mjs) runs every check on the wasm2js build; either way only one path is fetched.
