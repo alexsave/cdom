@@ -18,11 +18,10 @@ build() { # name, version note, extra flags...
     -Wl,--no-entry -Wl,--strip-all "$@" -o "$out/app.wasm" \
     "$here/cdom-keyed/src/app.c" "$top/src/cdom.c" "$top/src/mini.c"
   # The shim is inlined into the page: one request fewer, and it starts the wasm before the stylesheets.
-  # It is minified first (npm install at the repo root provides terser); the source stays readable.
+  # It is the committed shim/cdom.min.js, as an app inlines it (tools/minshim.mjs makes it from cdom.js).
   rm -f "$out/cdom.js"
-  "$top/node_modules/.bin/terser" "$top/shim/cdom.js" -c passes=2 -m -o "$out/cdom.min.tmp"
-  sed -e "s/cdom-\"keyed\"/$name-\"keyed\"/" -e "/\/\*CDOM_SHIM\*\//{r $out/cdom.min.tmp" -e "d;}" "$here/cdom-keyed/index.html" > "$out/index.src.html"
-  rm -f "$out/cdom.min.tmp"
+  node "$top/tools/minshim.mjs" check
+  sed -e "s/cdom-\"keyed\"/$name-\"keyed\"/" -e "/\/\*CDOM_SHIM\*\//{r $top/shim/cdom.min.js" -e "d;}" "$here/cdom-keyed/index.html" > "$out/index.src.html"
   # The boot goes in a script of its own after the shim's; without WebAssembly it loads these two instead.
   node "$legacy" page "$out/index.src.html" "$out/index.html"
   rm "$out/index.src.html"

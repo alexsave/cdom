@@ -8,6 +8,8 @@ CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"
 legacy="$here/../tools/legacy/build.mjs"
 [ -d "$here/../tools/legacy/node_modules" ] || (cd "$here/../tools/legacy" && npm ci --no-audit --no-fund)
 mkdir -p "$here/out"
+# shim/cdom.min.js, which apps inline, must be what cdom.js makes now (tools/minshim.mjs).
+node "$here/../tools/minshim.mjs" check
 "$CC" --target=wasm32 -O2 -nostdlib -mbulk-memory -Wall -Wextra -Werror -Wl,--no-entry \
   -o "$here/out/listfuzz.wasm" "$here/listfuzz.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 "$CC" --target=wasm32 -O2 -nostdlib -mbulk-memory -Wall -Wextra -Werror -Wl,--no-entry -Wl,--export-memory \
