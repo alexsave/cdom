@@ -30,13 +30,26 @@ export const FETCHED = "performance.getEntriesByType('resource').map(r => r.name
 
 export async function launch(args = []) { // args: Chrome flags of the caller's own
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cdom-chrome-'));
-  const dbg = +(process.env.CDP_PORT || 8730 + Math.floor(Math.random() * 10)); // 8730-8739 unless CDP_PORT
+  // Port 0: the OS gives this Chrome a free port, which it writes to DevToolsActivePort in its own
+  // profile, so a run can only ever reach the Chrome it started. A picked port (a range, a guess) lets two
+  // parallel runs collide: the second Chrome fails to bind, and its run drives the first one's browser,
+  // flags and all (a unit run then saw no window.gc). CDP_PORT still fixes one, for a debugger.
+  const want = +(process.env.CDP_PORT || 0);
   const proc = spawn(process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    ['--headless=new', `--remote-debugging-port=${dbg}`, `--user-data-dir=${dir}`, '--no-first-run',
+    ['--headless=new', `--remote-debugging-port=${want}`, `--user-data-dir=${dir}`, '--no-first-run',
      '--no-default-browser-check', '--disable-extensions', '--mute-audio', '--window-size=1280,800', ...args, ...(process.env.CHROME_ARGS ? process.env.CHROME_ARGS.split(' ') : []), 'about:blank'],
     { stdio: process.env.CHROME_LOG ? ['ignore', fs.openSync(process.env.CHROME_LOG, 'w'), fs.openSync(process.env.CHROME_LOG + '.err', 'w')] : 'ignore' });
+  let exited = false;
+  proc.on('exit', () => { exited = true; });
+  const portFile = path.join(dir, 'DevToolsActivePort');
+  let dbg = 0;
+  for (let i = 0; i < 100 && !dbg && !exited; i++) {
+    try { dbg = +fs.readFileSync(portFile, 'utf8').split('\n')[0]; } catch { await sleep(100); }
+  }
+  if (!dbg) throw new Error(`cdp: Chrome ${exited ? 'exited' : 'wrote no DevToolsActivePort'} (profile ${dir})`);
   let ver;
   for (let i = 0; i < 50 && !ver; i++) { try { ver = await (await fetch(`http://127.0.0.1:${dbg}/json/version`)).json(); } catch { await sleep(200); } }
+  if (!ver) throw new Error(`cdp: no answer from Chrome on port ${dbg}`);
   const ws = new WebSocket(ver.webSocketDebuggerUrl);
   await new Promise(r => ws.onopen = r);
   let id = 0; const pend = new Map();
