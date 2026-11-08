@@ -1,11 +1,11 @@
 // Event delivery cost: ns per delegated click on a row link (listener walk, inbox, cd_event, the select's ops),
-// median of 15 samples of 20,000 clicks, for each entry named on the command line. Needs the jfb server on 8093.
+// median of 15 samples of 20,000 clicks, for each entry named on the command line. Needs the jfb server on 8093 (or PORT, or BASE as in quick.mjs).
 import { launch, sleep } from './cdp.mjs';
 const names = process.argv.slice(2);
 const b = await launch();
 try {
   for (const name of names) {
-    await b.send('Page.navigate', { url: `http://localhost:8093/frameworks/keyed/${name}/index.html` });
+    await b.send('Page.navigate', { url: `${process.env.BASE || `http://localhost:${process.env.PORT || 8093}/frameworks/keyed`}/${name}/index.html` });
     for (let i = 0; i < 50 && !(await b.evaluate('!!document.getElementById("run")')); i++) await sleep(100);
     const r = await b.evaluate(`(() => {
       document.getElementById('run').click();
