@@ -11,7 +11,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { launch, sleep } from './cdp.mjs';
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
-const PORT = +(process.env.UNIT_PORT || 8723);
+let PORT = +(process.env.UNIT_PORT || 0); // 0: a free port, so two worktrees' runs never collide (the page is told the port)
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
 const srv = http.createServer((q, r) => {
   if (q.url === '/headers') { // the request headers C sent, and a status that is not 200
@@ -52,6 +52,7 @@ srv.on('upgrade', (req, sock) => { // a minimal RFC 6455 echo: binary frames und
   });
 });
 await new Promise((r) => srv.listen(PORT, '127.0.0.1', r));
+PORT = srv.address().port;
 const b = await launch(['--autoplay-policy=document-user-activation-required', '--js-flags=--expose-gc']);
 // A real click (CDP input, so a user gesture to Chrome) at a point where the page listens for nothing.
 const click = async (x, y) => {

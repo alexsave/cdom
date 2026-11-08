@@ -7,7 +7,7 @@ import { launch, sleep, LEGACY, FETCHED } from './cdp.mjs';
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
 const srv = http.createServer((q, r) => { const f = path.join(root, q.url.split(/[?#]/)[0]);
-  fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': types[path.extname(f)] }); r.end(b); }); }).listen(+(process.env.FUZZ_PORT || 8722));
+  fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': types[path.extname(f)] }); r.end(b); }); }).listen(+(process.env.FUZZ_PORT || 0)); // 0: a free port, so two worktrees' runs never collide
 const b = await launch();
 let bad = 0;
 try {
