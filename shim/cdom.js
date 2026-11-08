@@ -1,8 +1,9 @@
-"use strict";
 // cdom shim: C calls one of these functions per DOM operation, and the shim posts events back.
 // Fixed per app. Wasm passes i32, so ids and numbers that may pass 2^31 are made unsigned (>>> 0).
 // Written to be read: the page ships it minified (terser), so names and lines cost nothing there.
+// Strict mode is declared inside the closure, so it holds when the legacy build puts polyfills in front.
 var cdom = (() => {
+  "use strict";
   const EVENTS = ["click", "dblclick", "input", "change", "keydown", "keyup", "focusin",
     "focusout", "submit", "pointerdown", "pointerup", "pointermove", "resize", "visibilitychange",
     "mousedown", "mousemove", "mouseup", "touchstart", "touchmove", "touchend", "touchcancel",
@@ -1071,7 +1072,9 @@ var cdom = (() => {
     return crypto.getRandomValues(new Uint32Array(1))[0];
   }
 
-  // Starts the app: mount is an element, or the id of one that may not be parsed yet: then the
+  // Starts the app: url is the wasm's, or the wasm2js build of the same app (a function of the imports
+  // that returns the exports, for a browser without WebAssembly; shim/boot.js picks one).
+  // mount is an element, or the id of one that may not be parsed yet: then the
   // wasm loads while the parser and the stylesheets run, and the app starts once the DOM is ready.
   // options.openStore: an app that reads its store as it starts opens it now, while the wasm is
   // fetched and compiled, so its first get finds the database open. options.seed: cd_seed (seed()).
@@ -1095,12 +1098,16 @@ var cdom = (() => {
       },
       env: env || {},
     };
-    const response = fetch(url);
     let instance;
-    if (WebAssembly.instantiateStreaming) {
-      instance = (await WebAssembly.instantiateStreaming(response, imports)).instance;
+    if (typeof url === "function") {
+      instance = { exports: url(imports) };
     } else {
-      instance = (await WebAssembly.instantiate(await (await response).arrayBuffer(), imports)).instance;
+      const response = fetch(url);
+      if (WebAssembly.instantiateStreaming) {
+        instance = (await WebAssembly.instantiateStreaming(response, imports)).instance;
+      } else {
+        instance = (await WebAssembly.instantiate(await (await response).arrayBuffer(), imports)).instance;
+      }
     }
     if (typeof mount === "string") {
       if (doc.readyState === "loading") {

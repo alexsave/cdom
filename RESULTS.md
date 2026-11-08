@@ -207,6 +207,61 @@ The op stream is gone, so every feature above became an import or a rule on an e
 - A one-off string (`cd_tmp`) used as a path is split each time, not cached by its id, because that id is reused by the next one-off string; on the op stream the cache by id was a latent bug.
 tests/host.c, tests/canvas.c and their drivers run against the merged code with the event numbers renumbered, and tools/mutate.py carries their mutants.
 
+### Without WebAssembly (branch wasm2js-fallback)
+
+A browser without WebAssembly runs the same app: binaryen's wasm2js compiles the app's .wasm to JavaScript, so C goes to wasm and then to JS, with no second source and no second build of the C.
+By caniuse's data of 2026-11-04, browsers without WebAssembly are about 0.2% of global use (IE is most of it), so this is reach at the edge, not a business case; what it shows is that cdom does not depend on wasm, only on a byte buffer shared with the shim.
+It was built on the op stream and carried over to direct calls when the two lines merged; nothing in it depends on which bridge is underneath.
+
+Each entry has two more files, and a browser with WebAssembly never fetches them:
+- `app.wasm.js`, the wasm2js output (`-all -O2`, from the very `app.wasm` the page runs otherwise), unwrapped from its ES module form so a script tag can load it; it hands its factory over as `window.cdomFactory`.
+- `cdom.legacy.js`, `tools/legacy/polyfills.js`, promise-polyfill 8.3.0 and PEP 0.5.3 (pointer events) in front of `shim/cdom.js` compiled to ES5 by Babel 8.
+Both are minified by the repo root's terser at ecma 5, as the shim is.
+`shim/boot.js` is inlined at `/*CDOM_BOOT*/`, in a `<script>` of its own after the one holding the inlined shim.
+It is ES3: a browser too old for wasm cannot parse the shim, so that script fails with a syntax error and leaves `cdom` undefined, and the boot's script still runs; with `typeof WebAssembly === "object"` it starts the wasm on the shim as before, and otherwise it loads the two files in turn and calls `cdom.start(factory, ...)`.
+The shim needed one change: `start()` also takes the wasm2js factory in place of the URL, and returns a promise of the exports either way.
+wasm2js's memory object has a `buffer` getter that returns a new ArrayBuffer after growth, which the shim's view check already handles.
+
+The polyfills are what the scan and the tests asked for, each installed only when missing: `Math.imul`, `clz32`, `fround` and `trunc` (wasm2js lowers i32 multiplies and friends to them), `Uint8Array.prototype.copyWithin` and `fill` (wasm2js lowers `memory.copy` and `memory.fill` to them), `String.prototype.startsWith` and `includes`, `Object.entries` and `globalThis` (the direct-call shim uses both), UTF-8 `TextDecoder` and `TextEncoder` with `encodeInto`, `queueMicrotask` (a MutationObserver, else a timeout), `reportError` (a throw in a timeout), `requestAnimationFrame`, and one for addEventListener: before options objects the third argument was useCapture, so the shim's `{ passive: false }` would have put every delegated listener in the capture phase, and where the options object is not read the polyfill passes its `capture` member instead.
+`imul`, `clz32`, `fround`, `startsWith`, `includes` and `Object.entries` are MDN's own polyfills, taken from the page history of mdn/content (MDN now links to core-js and es-shims instead, which are whole libraries; MDN's code samples are CC0).
+MDN never had the others, or had only `fill` borrowed from `Array.prototype`, which IE 11 lacks too, so they are written here, a few lines each; the addEventListener check is MDN's `passiveSupported` test.
+MDN's `clz32` goes through `Math.log`, so the check below includes every power of two and its neighbours, where an engine's rounding would show; in Chrome it is exact on all 96.
+`tools/legacy/build.mjs` refuses to write either file unless it parses as ES5 (acorn), before and after minifying, and names no ES2015 global or method outside a short per-file allow list, and the boot must parse as ES3.
+That scan found real gaps: PEP calls `String.prototype.includes` on touch-action values with no check, wasm2js output calls `copyWithin` and `fill`, and the direct-call shim uses `Object.entries` and `globalThis`, none of which IE 11 has.
+Its allow list also records the names it cannot judge: Babel's helpers name `Symbol` only behind a `typeof` check, and wasm2js output reads the shim's import named `at` (cd_at) off the imports object.
+The targets assumed are IE 11, Safari 9, Chrome 49, Firefox 45, Android 4.4 and iOS 9: typed arrays, nothing from ES2015.
+
+Bytes, for the keyed entry on direct calls (brotli in parentheses): `cdom.legacy.js` 46,709 (14,212), `app.wasm.js` 16,621 (6,347), against `app.wasm` 9,803 (4,662) and the page with the shim inlined, 14,314 (5,413).
+The inlined boot is the one cost every browser pays: the page grows by 654 bytes (218 brotli).
+The page no longer preloads anything, so the fallback path fetches no wasm at all, and the smoke test checks that.
+Requests, then: with WebAssembly the page, `app.wasm` (fetched from the inline script, before the stylesheet) and the stylesheets; without it the page, `cdom.legacy.js` and `app.wasm.js` fetched in parallel (the second only defines `window.cdomFactory`, so they may run in either order, and the app starts when both have), and the stylesheets.
+`tools/legacy.mjs` checks the parallel fetch: the app's file is requested before the shim's has arrived, which a boot that loads them one after the other cannot do.
+
+In Chrome the wasm2js path is about as fast as wasm, because little of the script time is C.
+`node tools/quick.mjs` (script time per click, median ms), three interleaved rounds at loads of 5.7 to 8.0 while other runs used the Mac, wasm against wasm2js: run1k 1.9 against 2.0 to 2.2, replace1k 2.0 to 2.3 against 2.0 to 2.3, append 1.6 to 1.8 against 1.8 to 2.0, create10k 16.4 to 18.2 against 16.8 to 19.0, and update 0.1 against 0.2 to 0.3, the one clear cost.
+That is V8 running the output; the browsers this path is for have far slower engines, so these numbers say the design costs nothing extra, not how fast IE 11 is.
+
+Testing without an old browser: `LEGACY=1` makes `tools/cdp.mjs` delete, before any page script runs, WebAssembly and everything the polyfills supply (TextDecoder, TextEncoder, queueMicrotask, reportError, Promise, fetch, PointerEvent, globalThis, Object.entries, the four Math functions, startsWith, includes, typed-array copyWithin and fill), stop Chrome's own pointer events at the window so only PEP's reach the page, and make addEventListener read its third argument as useCapture.
+Under it, `tools/fuzz.mjs` runs its five seeds of 40,000 list transitions and both string paths on the wasm2js build, `tools/smoke.mjs` runs every benchmark action, and `tools/legacy.mjs` with `tests/legacy.c` checks pointer events with real CDP input (one pointerdown, move and up each, with coordinates, pointer id and buttons), text typed in Latin, Cyrillic, CJK and an emoji read into C and echoed back, reads cut at every byte count never splitting a character, a failed call reported once with the batch going on, focus() in a batch delivered after it, every listener given a plain capture flag of the right phase, and each polyfill against the built-in on 142 cases.
+It reads the event numbers from cdom.h's enum, since the merge renumbered them.
+Each also checks which files the page fetched: the fallback files only on that path, and never on the wasm one.
+Without `LEGACY` the same tools run on wasm and pass unchanged, as do unit, canvas, host and link.
+Twenty-five mutants on direct calls (boot always or never falling back, no factory, the shim without its factory branch, no capture wrapper or the wrong phase, PEP left out, each UTF-8 branch, the fit check, the surrogate pair, microtasks dropped, reportError silent, startsWith always true, includes ignoring its start, Object.entries one short, no globalThis, and each Math and typed-array polyfill) were all caught, and a sequential boot fails the parallel-fetch check.
+The short fill was caught by a hang (the C looped on bytes it never cleared), so `tools/legacy.mjs` now fails any run that takes over 90 seconds.
+The first round left six alive: a two-byte decode bug that é cannot show (its lead byte reads the same under both masks, so the text now has a Cyrillic letter), and five polyfills the app cannot tell from wrong ones (a wrong imul still gives a consistent intern hash, a short fill leaves bytes that were zero anyway), which is why the built-in comparison exists; it then found that copyWithin threw where the built-in clamps.
+
+#### Cheerp, the direct C-to-JS compiler (tried 2026-11-08 on the op-stream line, not adopted)
+
+Upstream clang has no JavaScript target (clang 23 registers only wasm32 and wasm64 for the browser), and never had one: the old asm.js backend lived in Emscripten's fastcomp fork, now gone, and `emcc -sWASM=0` today is wasm plus wasm2js.
+Cheerp (Leaning Technologies, a clang 16 fork, Apache 2.0 with LLVM exceptions since 3.0) still has one: `-target cheerp-wasm -cheerp-linear-output=asmjs` compiles linear-memory code straight to an asm.js module, and `-target cheerp` (genericjs) compiles C structs to JS objects instead.
+The nightly (cheerp-core 1793953554, arm64) ran in an Ubuntu container; the macOS DMG is x86 only.
+The keyed app ran on the asm.js output and passed every app check in `tools/smoke.mjs`, and the generated code is the same as wasm2js's: the same HEAP32 loads at fixed addresses and the same `| 0` integer arithmetic.
+Script time matched wasm2js (create10k 18.8 to 20.2 ms against 19.5 to 20.3, update 0.2 against 0.3, at loads of 5 to 8), but the output was larger (14.0 KB brotli minified, against 11.2 KB for unminified wasm2js), because it carries musl's malloc and Cheerp's runtime, and it is ES2015, so it would need Babel and the polyfills anyway.
+Getting cdom through it took a C++ glue file: Cheerp ignores `import_module`, `import_name` and `export_name`, exports need `cheerp_jsexport` (which refuses `void *` parameters), calls into JS need a `[[cheerp::genericjs]]` client namespace, and `__builtin_wasm_memory_size` and `grow` do not exist, so cdom's allocator gave way to malloc through `CDOM_NO_ALLOC`; its heap is a fixed 8 MB ArrayBuffer.
+The finding that decides it: before the glue, Cheerp built the app with only unknown-attribute warnings and compiled both imports to a stub that throws "this should be unreachable", with their arguments dropped, where wasm-ld refuses to link an undefined symbol.
+genericjs also warns on the `cd_val` union and a cast in app.c, which its type punning rules forbid.
+So clang plus wasm2js stays: one compiler, one binary for both paths, and no change to the C.
+
 ## Step 0: what a call across the boundary costs
 
 Chrome 156, median ns per call over 31 samples of 100,000 calls (2,000,000 for the two cheapest rows); load 3.66 at the start and 4.25 at the end:
@@ -280,7 +335,8 @@ The first version of cdom's swap took 65 us of script, all in the generic map-an
 cd /Users/alex/Dev/cdom
 npm install                     # terser, which bench/build.sh minifies the shim with
 bench/build.sh                  # cdom, cdom-pertext, cdom-notpl, cdom-o2 into jfb/frameworks/keyed (NAME=x builds one entry as x)
-tests/build.sh && node tools/unit.mjs && node tools/fuzz.mjs && node tools/canvas.mjs && node tools/host.mjs && tests/link/run.sh
+tests/build.sh && node tools/unit.mjs && node tools/fuzz.mjs && node tools/canvas.mjs && node tools/host.mjs && tests/link/run.sh && node tools/legacy.mjs
+LEGACY=1 node tools/fuzz.mjs && LEGACY=1 node tools/legacy.mjs   # the no-WebAssembly path
 python3 tools/mutate.py         # every mutant, each against the test written for it
 (cd jfb/server && PORT=8093 npx tsx index.ts) &
 node tools/smoke.mjs cdom

@@ -1,5 +1,9 @@
 <!doctype html><html><head><meta charset="utf-8"><title>listfuzz</title></head><body><div id="m"></div>
-<script src="cdom.js"></script><script>
+<script src="cdom.js"></script>
+<script>
+/*CDOM_BOOT*/
+</script>
+<script>
 let prev = new Map(), errors = [], rounds = 0, moves = 0, prevKeys = [];
 // Count moves: an insertBefore of a node that is already a child of the list.
 const ib = Node.prototype.insertBefore;
@@ -29,7 +33,8 @@ const checker = (sel, anchored) => (p, n, round) => {
   if (errors.length > 5) throw new Error(errors.join('\n'));
 };
 const env = { check: checker('#m ul:not(.tail) > li', false), check_end: checker('#m ul.tail > li', true) };
-cdom.start('listfuzz.wasm', document.getElementById('m'), env).then(x => { window.__x = x; x.run_fuzz(+(new URLSearchParams(location.search).get('seed') || 1), 20000);
+// Through the boot, so LEGACY=1 node tools/fuzz.mjs runs the same rounds on the wasm2js build.
+cdomBoot('listfuzz.wasm', document.getElementById('m'), env, x => { try { window.__x = x; x.run_fuzz(+(new URLSearchParams(location.search).get('seed') || 1), 20000);
     prev = new Map(); prevKeys = [];
     x.run_fuzz_end(+(new URLSearchParams(location.search).get('seed') || 1), 20000);
     try {
@@ -49,6 +54,5 @@ cdom.start('listfuzz.wasm', document.getElementById('m'), env).then(x => { windo
       const got = [...document.querySelectorAll('#m > p:last-child > b')].map(b => b.textContent);
       const exp = []; for (let r = 0; r < (big ? 20 : 1); r++) for (const w of want) exp.push(w + String.fromCharCode(97 + r % 26));
       if (got.join('|') !== exp.join('|')) errors.push(`strings big=${big}: ${got.slice(0, 6).join('|')}`);
-    } })
-  .catch(e => errors.push(String(e))).finally(() => { window.RESULT = { rounds, errors }; });
+    } } catch (e) { errors.push(String(e)); } finally { window.RESULT = { rounds, errors }; } });
 </script></body></html>

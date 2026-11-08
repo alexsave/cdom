@@ -5,7 +5,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 top="$here/.."
 CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"
 OPT="${OPT:--Oz}"
-jfb="$top/jfb/frameworks/keyed"
+jfb="${JFB_KEYED:-$top/jfb/frameworks/keyed}" # JFB_KEYED builds the entries somewhere else
+legacy="$top/tools/legacy/build.mjs"
+[ -d "$top/tools/legacy/node_modules" ] || (cd "$top/tools/legacy" && npm ci --no-audit --no-fund)
 
 build() { # name, version note, extra flags...
   local name="$1" note="$2"; shift 2
@@ -19,8 +21,13 @@ build() { # name, version note, extra flags...
   # It is minified first (npm install at the repo root provides terser); the source stays readable.
   rm -f "$out/cdom.js"
   "$top/node_modules/.bin/terser" "$top/shim/cdom.js" -c passes=2 -m -o "$out/cdom.min.tmp"
-  sed -e "s/cdom-\"keyed\"/$name-\"keyed\"/" -e "/\/\*CDOM_SHIM\*\//{r $out/cdom.min.tmp" -e "d;}" "$here/cdom-keyed/index.html" > "$out/index.html"
+  sed -e "s/cdom-\"keyed\"/$name-\"keyed\"/" -e "/\/\*CDOM_SHIM\*\//{r $out/cdom.min.tmp" -e "d;}" "$here/cdom-keyed/index.html" > "$out/index.src.html"
   rm -f "$out/cdom.min.tmp"
+  # The boot goes in a script of its own after the shim's; without WebAssembly it loads these two instead.
+  node "$legacy" page "$out/index.src.html" "$out/index.html"
+  rm "$out/index.src.html"
+  node "$legacy" shim "$out/cdom.legacy.js"
+  node "$legacy" app "$out/app.wasm" "$out/app.wasm.js"
   cat > "$out/package.json" <<JSON
 {
   "name": "js-framework-benchmark-$name",

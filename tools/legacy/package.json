@@ -1,0 +1,13 @@
+{
+  "name": "cdom-legacy-build",
+  "private": true,
+  "description": "Builds the no-WebAssembly fallback: the ES5 shim with its polyfills, and wasm2js output wrapped for a script tag",
+  "type": "module",
+  "devDependencies": {
+    "@babel/core": "8.1.0",
+    "@babel/preset-env": "8.0.7",
+    "acorn": "8.19.0",
+    "pepjs": "0.5.3",
+    "promise-polyfill": "8.3.0"
+  }
+}
