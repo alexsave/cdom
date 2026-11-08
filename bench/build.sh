@@ -5,7 +5,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 top="$here/.."
 CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"
 OPT="${OPT:--O2}"
-jfb="$top/jfb/frameworks/keyed"
+jfb="${JFB_KEYED:-$top/jfb/frameworks/keyed}" # JFB_KEYED builds the entries somewhere else
 legacy="$top/tools/legacy/build.mjs"
 [ -d "$top/tools/legacy/node_modules" ] || (cd "$top/tools/legacy" && npm ci --no-audit --no-fund)
 
