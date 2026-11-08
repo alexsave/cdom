@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Mutation check of the port-fix tests: each mutant breaks one thing, the test written for it must
 fail for that reason (its message is matched), and the source is restored after every mutant, even
-on an error. Usage: python3 tools/mutate.py [name ...]"""
-import subprocess, sys, pathlib
+on an error. Mutants run in parallel, each worker in a private copy of the tracked tree (so the real
+tree is never mutated, and an interrupted run leaves nothing behind); the test drivers serve on free
+ports and Chrome takes a free debugging port, so the workers never collide.
+Usage: python3 tools/mutate.py [-j N] [name ...]   (N workers, default half the cores)"""
+import subprocess, sys, pathlib, os, shutil, tempfile, threading, queue
 
 top = pathlib.Path(__file__).resolve().parent.parent
 UNIT = ['node', 'tools/unit.mjs']
@@ -226,7 +229,7 @@ M = [
   ('seed-math-random', 'shim/cdom.js', '    return crypto.getRandomValues(new Uint32Array(1))[0];', '    return (Math.random() * 4294967296) >>> 0;', UNIT, 'FAIL the shim draws no stray random'),
   ('url-step-negated', 'shim/cdom.js', 'history.go(delta)', 'history.go(-delta)', UNIT, 'FAIL cd_url_step'),
   ('canvas-blit-offset', 'shim/cdom.js', 'new Uint8ClampedArray(memory.buffer, pixelsPtr, width * height * 4)', 'new Uint8ClampedArray(memory.buffer, pixelsPtr + 4, width * height * 4)', CANVAS, 'blit: byte'),
-  ('frames-double', 'src/cdom.c', '  if (frames_on && !frames_asked) {', '  if (frames_on) {', CANVAS, 'frame times not increasing'),
+  ('frames-double', 'src/cdom.c', '  if (frames_on && !frames_asked) {', '  if (frames_on && (frames_asked || 1)) {', CANVAS, 'frame times not increasing'),
   ('frames-no-stop', 'src/cdom.c', '  if (!frames_on) return;\n', '', CANVAS, 'frames: '),
   ('frames-token', 'src/cdom.c', '  if (token == CD_FRAMES_TOKEN) frame(t); else', '  if (0) frame(t); else', CANVAS, 'frames: '),
   ('call-noop', 'shim/cdom.js', '      const result = object[keys[keys.length - 1]](...args);', '      const result = undefined;', CANVAS, 'call: pinged'),
@@ -234,31 +237,65 @@ M = [
   ('mini-strong', 'src/mini.c', '__attribute__((weak, no_builtin)) int memcmp', '__attribute__((no_builtin)) int memcmp', LINK, "FAIL an app's own libc"),
 ]
 
-def run(cmd):
-  b = subprocess.run(['tests/build.sh'], cwd=top, capture_output=True, text=True)
+def build_and_run(root, cmd):
+  b = subprocess.run(['tests/build.sh'], cwd=root, capture_output=True, text=True)
   if b.returncode: return 1, 'BUILD FAILED ' + b.stderr[-400:]
-  r = subprocess.run(cmd, cwd=top, capture_output=True, text=True)
+  r = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
   return r.returncode, r.stdout + r.stderr
 
-only = set(sys.argv[1:])
-bad = 0
-for name, f, old, new, cmd, want in M:
-  if only and name not in only: continue
-  p = top / f
-  src = p.read_text()
-  if src.count(old) != 1:
-    print(f'SKIP {name}: the text to mutate is not in {f} once'); bad += 1; continue
-  try:
-    p.write_text(src.replace(old, new))
-    code, out = run(cmd)
-  finally:
-    p.write_text(src)
-  caught = code != 0 and want in out
-  print(('caught ' if caught else 'MISSED ') + name + ('' if caught else '\n  ' + out[-600:].replace('\n', '\n  ')))
-  bad += not caught
+def copy_tree(dst):
+  files = subprocess.run(['git', 'ls-files', '-z'], cwd=top, capture_output=True, text=True, check=True).stdout.split('\0')
+  for f in filter(None, files):
+    src = top / f
+    if not src.exists(): continue
+    (dst / f).parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst / f)
+  if (top / 'node_modules').exists(): os.symlink(top / 'node_modules', dst / 'node_modules')
+
+args = sys.argv[1:]
+jobs = max(1, (os.cpu_count() or 2) // 2)
+if args[:1] == ['-j']: jobs, args = int(args[1]), args[2:]
+only = set(args)
+todo = [m for m in M if not only or m[0] in only]
+results = {}
+lock = threading.Lock()
+work = queue.Queue()
+for k, m in enumerate(todo): work.put((k, m))
+base = pathlib.Path(tempfile.mkdtemp(prefix='cdom-mutants-'))
+
+def worker(w):
+  root = base / f'w{w}'
+  copy_tree(root)
+  while True:
+    try: k, (name, f, old, new, cmd, want) = work.get_nowait()
+    except queue.Empty: return
+    p = root / f
+    src = p.read_text()
+    if src.count(old) != 1:
+      line, ok = f'SKIP {name}: the text to mutate is not in {f} once', False
+    else:
+      try:
+        p.write_text(src.replace(old, new))
+        code, out = build_and_run(root, cmd)
+      finally:
+        p.write_text(src)
+      ok = code != 0 and want in out
+      line = ('caught ' if ok else 'MISSED ') + name + ('' if ok else '\n  ' + out[-600:].replace('\n', '\n  '))
+    with lock:
+      results[k] = ok
+      print(line, flush=True)
+
+try:
+  threads = [threading.Thread(target=worker, args=(w,)) for w in range(min(jobs, len(todo)) or 1)]
+  for t in threads: t.start()
+  for t in threads: t.join()
+finally:
+  shutil.rmtree(base, ignore_errors=True)
+bad = sum(1 for ok in results.values() if not ok)
+print(f'{len(results) - bad} of {len(todo)} caught', flush=True)
 code = 0
 for label, cmd in (('unit', UNIT), ('host', HOST), ('canvas', CANVAS)):
-  c, out = run(cmd)
-  print(f'restored: {label} ' + ('ok' if c == 0 else 'FAIL'))
+  c, out = build_and_run(top, cmd)
+  print(f'restored: {label} ' + ('ok' if c == 0 else 'FAIL'), flush=True)
   code |= c
 sys.exit(1 if bad or code else 0)

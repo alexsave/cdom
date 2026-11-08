@@ -10,7 +10,7 @@ IMPORT("ev") void ev(int32_t type, int32_t id, double a, double b);
 IMPORT("str") void str(const char *p, uint32_t len);
 
 enum { BOX, OTHER, TEXT, CHECK, FILE_IN, MEDIA, GOOD, BAD, SCROLLER, DEEP, PARA, FSBTN, ALL, ALL_CHILD,
-       DBL_ONLY, LIST, ITEM_A, ITEM_B, NIDS };
+       DBL_ONLY, LIST, ITEM_A, ITEM_B, FOCUSER, NIDS };
 static cd_id ids[NIDS];
 static char io[16384];
 static double rect[4];
@@ -60,6 +60,7 @@ void cd_main(void) {
   ids[ITEM_A] = el("li", "a", 0); cd_close();
   ids[ITEM_B] = el("li", "b", 0); cd_close();
   cd_close();
+  ids[FOCUSER] = el("button", "focuser", 0); cd_text(z("focus the text")); cd_close();
 
   /* Listen: the box for pointer capture, the menu and the wheel; the media and images through capture. */
   static const uint32_t box_evs[] = {CD_EV_POINTERDOWN, CD_EV_POINTERMOVE, CD_EV_POINTERUP, CD_EV_POINTEROVER,
@@ -80,6 +81,7 @@ void cd_main(void) {
     cd_sel(ids[ALL]); cd_listen(ids[ALL], t);
   }
   cd_sel(ids[DBL_ONLY]); cd_listen(ids[DBL_ONLY], CD_EV_DBLCLICK);
+  cd_sel(ids[FOCUSER]); cd_listen(ids[FOCUSER], CD_EV_CLICK);
   /* Host objects: no sel needed, the last node is not touched. */
   cd_listen(CD_WINDOW, CD_EV_RESIZE);
   cd_listen(CD_WINDOW, CD_EV_FOCUS);
@@ -136,6 +138,9 @@ void cd_on_event(const cd_event_rec *e) {
       cd_call_args(id, z("requestFullscreen"), 1, opt);
     }
     if (id == ids[ALL]) cd_stop_propagation(); /* the body listener must not hear it */
+    /* focus() fires focusin while this handler runs: delivered then, it would reset this click's flags
+     * and overwrite the record that e points to, so the log below would read focusin's type */
+    if (id == ids[FOCUSER]) { cd_prevent_default(); cd_call(ids[TEXT], z("focus")); }
     break;
   }
   if (id == ids[ALL]) { a = e->path; b = e->depth; }

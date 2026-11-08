@@ -3,7 +3,7 @@
 // tools/host.mjs drives real input; this page holds the probes and the checks that need no input.
 const LOG = [], STRS = [], reported = [], page = {};
 const DET = 0xffffffff, I = { BOX: 0, OTHER: 1, TEXT: 2, CHECK: 3, FILE: 4, MEDIA: 5, GOOD: 6, BAD: 7, SCROLLER: 8,
-  DEEP: 9, PARA: 10, FSBTN: 11, ALL: 12, ALL_CHILD: 13, DBL_ONLY: 14, LIST: 15, ITEM_A: 16, ITEM_B: 17 };
+  DEEP: 9, PARA: 10, FSBTN: 11, ALL: 12, ALL_CHILD: 13, DBL_ONLY: 14, LIST: 15, ITEM_A: 16, ITEM_B: 17, FOCUSER: 18 };
 const EVENTS = ["click", "dblclick", "input", "change", "keydown", "keyup", "focusin", "focusout", "submit",
   "pointerdown", "pointerup", "pointermove", "resize", "visibilitychange", "mousedown", "mousemove", "mouseup",
   "touchstart", "touchmove", "touchend", "touchcancel", "contextmenu", "wheel", "pointerover", "pointerout",
@@ -22,7 +22,7 @@ const env = {
 };
 const H = {
   id: (k) => X.id(I[k]), el: (k) => document.getElementById(['box', 'other', 'text', 'check', 'file', 'media', 'good', 'bad',
-    'scroller', 'deep', 'para', 'fs', 'all', 'allchild', 'dblonly', 'list', 'a', 'b'][I[k]]),
+    'scroller', 'deep', 'para', 'fs', 'all', 'allchild', 'dblonly', 'list', 'a', 'b', 'focuser'][I[k]]),
   num: (id, p) => X.g_num(id, w(p)), str: (id, p) => rd(X.g_str(id, w(p))), nid: (id, p) => X.g_id(id, w(p)) >>> 0,
   setS(id, p, v) { const n = w(p); X.s_str(id, n, w(v, n)); }, setN: (id, p, v) => X.s_num(id, w(p), v),
   setB: (id, p, v) => X.s_bool(id, w(p), v), setNull: (id, p) => X.s_null(id, w(p)),
@@ -151,6 +151,16 @@ async function focusCheck() {
   await Promise.resolve(); await Promise.resolve();
   eq(H.since(n).map((r) => r.slice(0, 2).join()).join('|'), `6,${H.id('TEXT')}`, 'focusin delivered after the batch');
   eq(t.dataset.focused, 'yes', 'the deferred handler ran its ops');
+  t.blur(); delete t.dataset.focused;
+  // A handler that prevents its click and then calls focus(): the focusin waits for it to return, so the
+  // click keeps its flags and its record (the handler logs e->type after the call).
+  const m = LOG.length, click = new MouseEvent('click', { bubbles: true, cancelable: true });
+  H.el('FOCUSER').dispatchEvent(click);
+  eq(click.defaultPrevented, true, 'a click prevented before focus() inside its handler stays prevented');
+  const mine = () => H.since(m).filter((r) => r[1] === H.id('FOCUSER') || r[1] === H.id('TEXT')).map((r) => r.slice(0, 2).join()).join('|');
+  eq(mine(), `0,${H.id('FOCUSER')}`, 'the handler reads its own record after focus()');
+  await Promise.resolve(); await Promise.resolve();
+  eq(mine(), `0,${H.id('FOCUSER')}|6,${H.id('TEXT')}`, 'the focusin is delivered after the click');
   t.blur(); delete t.dataset.focused;
   return errs;
 }
