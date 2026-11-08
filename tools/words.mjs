@@ -205,5 +205,78 @@ section('data segments: base64 decoded into the words, every length and offset, 
   }
 });
 
+// The pass itself, end to end: tests/memforms.c (built by tests/build.sh) as wasm2js output on typed arrays
+// (app.wasm.js) and as its words build (app.wasm.ie9.js) in a context with no typed array at all, called with the
+// same arguments: every result and every byte of memory must agree. wasm2js output is the reference, because the
+// pass must change nothing it does: where C's pointer is misaligned for its type, wasm2js truncates the address
+// (HEAPF64[p >> 3]) where wasm does not. On aligned pointers, wasm itself must agree too.
+section('tests/memforms.c: its words build agrees with wasm2js output on every result and byte, and with wasm where aligned', () => {
+  const out = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
+  let hi = 0;
+  const load = (file, strip) => {
+    const ctx = vm.createContext({ window: {} });
+    if (strip) vm.runInContext(`for (const k of ${JSON.stringify(['ArrayBuffer', 'SharedArrayBuffer', 'DataView', 'Int8Array', 'Uint8Array',
+      'Uint8ClampedArray', 'Int16Array', 'Uint16Array', 'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array', 'BigInt64Array',
+      'BigUint64Array', 'Float16Array', 'Atomics'])}) delete globalThis[k];`, ctx);
+    vm.runInContext(fs.readFileSync(path.join(out, file), 'utf8'), ctx);
+    return ctx.window.cdomFactory({ env: { setTempRet0: (v) => { hi = v; } } });
+  };
+  const js = load('memforms.wasm.ie9.js', true), ref = load('memforms.wasm.js', false);
+  const wasm = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(path.join(out, 'memforms.wasm'))), {}).exports;
+  const i64 = (lo) => (BigInt(hi) << 32n) | BigInt(lo >>> 0);
+  const join = (lo, h) => BigInt.asIntN(64, (BigInt(h) << 32n) | BigInt(lo >>> 0));
+  // Each call on all three: its result from the words build, wasm2js's and wasm's, as comparable values.
+  const call = (name, args, wasmArgs, i64Result) => {
+    const r = [js[name](...args)], h1 = hi;
+    r.push(ref[name](...args));
+    const h2 = hi;
+    r.push(wasm[name](...wasmArgs));
+    return i64Result ? [join(r[0], h1), join(r[1], h2), r[2]] : r;
+  };
+  const agree = (what, aligned, from = 0, to = 0) => {
+    const words = js.memory.words, typed = new Uint8Array(ref.memory.buffer), real = new Uint8Array(wasm.memory.buffer);
+    if (words.length * 4 !== typed.length || typed.length !== real.length) return ok(false, `${what}: memory sizes ${words.length * 4}, ${typed.length}, ${real.length}`);
+    for (let a = from; a < (to || typed.length); a++) {
+      const b = js.memory.load8_u(a);
+      if (b !== typed[a]) return ok(false, `${what}: byte ${a} is ${b}, wasm2js ${typed[a]}`);
+      if (aligned && b !== real[a]) return ok(false, `${what}: byte ${a} is ${b}, wasm ${real[a]}`);
+    }
+    ok(true);
+  };
+  const results = (what, aligned, [a, b, c]) => ok(same64(a, b) && (!aligned || same64(a, c)), `${what}: ${a}, wasm2js ${b}, wasm ${c}`);
+  agree('the data segment and the rest at start', true);
+  results('dat', true, call('dat', [], []));
+  // Aligned rounds work in one region and the others in another, since after a misaligned store wasm and wasm2js
+  // hold different bytes there for good.
+  const N = 64;
+  for (let round = 0; round < 4000; round++) {
+    const aligned = round % 2 === 0, AT = aligned ? 70000 : 71000, p = AT + (aligned ? 8 * (next() % 4) : next() % 32);
+    const k = next() % 10, [lo, h] = round < EDGES.length ? [EDGES[round] | 0, EDGES[round] < 0 ? -1 : 0] : [next() | 0, next() | 0];
+    call('st', [p, k, lo, h], [p, k, join(lo, h)]);
+    agree(`st(${p}, ${k})`, aligned, AT - 8, AT + N);
+    results(`ld(${p}, ${k})`, aligned, call('ld', [p, k], [p, k], true));
+    const x = VALUES[next() % VALUES.length], y = VALUES[next() % VALUES.length], kf = next() % 4;
+    call('stf', [p, kf, x], [p, kf, x]);
+    if (!Number.isNaN(x)) agree(`stf(${p}, ${kf}, ${x})`, aligned, AT - 8, AT + N);
+    results(`ldf(${p}, ${kf}) after ${x}`, aligned, call('ldf', [p, kf], [p, kf]));
+    for (const f of ['fadd', 'fdiv', 'fmul']) results(`${f}(${x}, ${y})`, true, call(f, [x, y], [x, y]));
+    results(`tof(${x})`, true, call('tof', [x], [x]));
+    if (!Number.isNaN(x)) {
+      results(`bits(${x})`, true, call('bits', [x], [x], true).map((v, i) => i === 2 ? BigInt.asIntN(64, v) : v));
+      results(`fbits(${x})`, true, call('fbits', [x], [x]));
+    }
+    results(`frombits(${h}:${lo})`, true, call('frombits', [lo, h], [join(lo, h)]));
+    results(`ffrombits(${lo})`, true, call('ffrombits', [lo], [lo]));
+    results(`i2d(${h}:${lo})`, true, call('i2d', [lo, h], [join(lo, h)]));
+    const d = AT + next() % N, s = AT + next() % N, n = next() % 40;
+    call('cpy', [d, s, n], [d, s, n]); agree(`cpy(${d}, ${s}, ${n})`, aligned, AT - 8, AT + 2 * N);
+    const c = next() | 0, m = next() % 40;
+    call('set', [d, c, m], [d, c, m]); agree(`set(${d}, ${c}, ${m})`, aligned, AT - 8, AT + 2 * N);
+  }
+  results('grow(3)', true, call('grow', [3], [3]));
+  results('size()', true, call('size', [], []));
+  agree('all of memory after the rounds and a grow', false);
+});
+
 console.log(fails ? `${fails} FAILED of ${checks}` : `all ok: ${checks} checks`);
 process.exit(fails ? 1 : 0);

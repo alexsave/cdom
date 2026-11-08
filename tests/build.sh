@@ -28,4 +28,9 @@ cp "$here/host.html" "$here/out/"
 "$CC" --target=wasm32 -O2 -nostdlib -mbulk-memory -Wall -Wextra -Werror -Wl,--no-entry \
   -o "$here/out/legacy.wasm" "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 node "$legacy" app "$here/out/legacy.wasm" "$here/out/legacy.wasm.js"
+# Every memory access form as wasm, as wasm2js output and through the words pass, for tools/words.mjs to run side by side.
+"$CC" --target=wasm32 -O2 -nostdlib -mbulk-memory -Wall -Wextra -Werror -Wl,--no-entry -Wl,--export-memory \
+  -o "$here/out/memforms.wasm" "$here/memforms.c"
+node "$legacy" app "$here/out/memforms.wasm" "$here/out/memforms.wasm.js"
+node "$legacy" app-ie9 "$here/out/memforms.wasm" "$here/out/memforms.wasm.ie9.js"
 node "$legacy" page "$here/legacy.html" "$here/out/legacy.html"
