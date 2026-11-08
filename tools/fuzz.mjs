@@ -2,8 +2,9 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { launch, sleep, LEGACY, FETCHED } from './cdp.mjs';
-// LEGACY=1 runs the same seeds as an old browser, on cdom.legacy.js and the wasm2js build (see cdp.mjs).
+import { launch, sleep, LEGACY, IE9, FETCHED, refused } from './cdp.mjs';
+// LEGACY=1 runs the same seeds as an old browser, on cdom.legacy.js and the wasm2js build (see cdp.mjs);
+// LEGACY=ie9 checks instead that the boot refuses IE 9 (refused, in cdp.mjs).
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
 const srv = http.createServer((q, r) => { const f = path.join(root, q.url.split(/[?#]/)[0]);
@@ -11,7 +12,11 @@ const srv = http.createServer((q, r) => { const f = path.join(root, q.url.split(
 const b = await launch();
 let bad = 0;
 try {
-  for (const seed of [1, 2, 3, 4, 5]) {
+  if (IE9) {
+    await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/listfuzz.html?seed=1` });
+    for (const [c, m] of await refused(b, '#m')) { console.log(c ? 'ok  ' : 'FAIL', m); if (!c) bad++; }
+  }
+  for (const seed of IE9 ? [] : [1, 2, 3, 4, 5]) {
     await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/listfuzz.html?seed=${seed}` });
     let r;
     for (let i = 0; i < 600 && !r; i++) { await sleep(100); r = await b.evaluate('window.RESULT'); }
