@@ -805,3 +805,34 @@ EXPORT("t_fonts_status") int32_t t_fonts_status(uint32_t token) { return fonts_s
 EXPORT("t_fonts_answers") uint32_t t_fonts_answers(uint32_t token) { return fonts_answers[token & 15]; }
 EXPORT("t_fonts_changed") uint32_t t_fonts_changed(void) { return fonts_changed; }
 EXPORT("t_fonts_changed_at") double t_fonts_changed_at(void) { return fonts_changed_at; }
+
+/* 22. Host access: properties and methods along a dotted path. A text input, a checkbox and a
+ * button; the page types into the input first, then C writes, calls and reads. */
+static cd_id host_input, host_box, host_button, host_div;
+static char host_out[64];
+EXPORT("t_host_section") void t_host_section(void) {
+  cd_id s = section("host");
+  cd_at(s, 0);
+  cd_open(L("input")); cd_attr(L("type"), L("text")); cd_name(host_input = cd_id_new()); cd_close();
+  cd_open(L("input")); cd_attr(L("type"), L("checkbox")); cd_name(host_box = cd_id_new()); cd_close();
+  cd_open(L("button")); cd_text(L("b")); cd_name_open(host_button = cd_id_new()); cd_close();
+  cd_open(L("div")); cd_name(host_div = cd_id_new()); cd_close();
+}
+EXPORT("t_host_set") void t_host_set(void) {
+  cd_set_str(host_input, L("value"), L("한국어 값"));
+  cd_set_bool(host_box, L("checked"), 1);
+  cd_set_bool(host_button, L("disabled"), 1);
+  cd_set_num(host_input, L("maxLength"), 12);
+  cd_set_str(host_div, L("style.--accent"), L("rgb(1, 2, 3)"));
+  cd_set_str(host_div, L("dataset.mark"), L("set"));
+}
+EXPORT("t_host_enable") void t_host_enable(void) { cd_set_bool(host_button, L("disabled"), 0); }
+EXPORT("t_host_focus") void t_host_focus(void) { cd_call(host_input, L("focus")); }
+EXPORT("t_host_blur") void t_host_blur(void) { cd_call(host_input, L("blur")); }
+EXPORT("t_host_checked") double t_host_checked(void) { return cd_get_num(host_box, L("checked")); }
+EXPORT("t_host_length") double t_host_length(void) { return cd_get_num(host_input, L("value.length")); }
+EXPORT("t_host_missing") double t_host_missing(void) { return cd_get_num(host_input, L("no.such.thing")); }
+EXPORT("t_host_value") uint32_t t_host_value(uint32_t cap) { return cd_get_str(host_input, L("value"), host_out, cap); }
+EXPORT("t_host_accent") uint32_t t_host_accent(void) { return cd_get_str(host_div, L("style.--accent"), host_out, sizeof host_out); }
+EXPORT("t_host_out") char *t_host_out(void) { return host_out; }
+EXPORT("t_host_bad_set") void t_host_bad_set(void) { cd_set_str(host_div, L("no.such.thing"), L("x")); }

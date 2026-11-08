@@ -37,6 +37,41 @@ indexedDB.open = (...a) => { if (storeOpenedAt < 0) storeOpenedAt = performance.
 cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).then(async (x) => {
   check('options.openStore opens the store before the module starts', () => (storeOpenedAt >= 0 && storeOpenedAt <= x.t_started()) || `opened at ${storeOpenedAt}, started at ${x.t_started()}`);
   window.__x = x;
+  {
+    // 22. Host access.
+    x.t_host_section();
+    const input = $('#host input[type=text]'), box = $('#host input[type=checkbox]'), button = $('#host button'), div = $('#host div');
+    input.value = 'typed by hand'; // the property a user's typing changes, which an attribute write never reaches
+    x.t_host_set();
+    const out = (n) => new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.t_host_out(), n));
+    check('cd_set_str, cd_set_bool and cd_set_num write properties: a typed-over value, checked, disabled, maxLength, a custom property and a dataset entry', () => {
+      const r = [input.value === '한국어 값', !input.hasAttribute('value'), box.checked, button.disabled, input.maxLength === 12,
+        div.style.getPropertyValue('--accent') === 'rgb(1, 2, 3)', div.dataset.mark === 'set'];
+      x.t_host_enable();
+      r.push(!button.disabled && !button.hasAttribute('disabled'));
+      return r.every(Boolean) || JSON.stringify(r);
+    });
+    check('cd_call: focus and blur on the input', () => {
+      x.t_host_focus();
+      const focused = document.activeElement === input;
+      x.t_host_blur();
+      return (focused && document.activeElement !== input) || `focused ${focused}, active ${document.activeElement?.tagName}`;
+    });
+    check('cd_get_num and cd_get_str: a boolean as 1, a length, NaN for a missing path, UTF-8 cut at a whole character, a custom property', () => {
+      box.checked = false;
+      const whole = x.t_host_value(64), cut = x.t_host_value(4);
+      const r = [x.t_host_checked() === 0, (box.checked = true, x.t_host_checked() === 1), x.t_host_length() === 5, Number.isNaN(x.t_host_missing()),
+        whole === 13 && out(whole) === '한국어 값', cut === 3 && out(3) === '한', out(x.t_host_accent()) === 'rgb(1, 2, 3)'];
+      return r.every(Boolean) || JSON.stringify(r);
+    });
+    check('a set along a missing path is reported, not thrown', () => {
+      let reported = 0;
+      const hear = (e) => { reported++; e.preventDefault(); };
+      addEventListener('error', hear);
+      try { x.t_host_bad_set(); } finally { removeEventListener('error', hear); }
+      return reported === 1 || `reported ${reported}`;
+    });
+  }
   check('options.seed is cd_seed, so one line makes a run deterministic', () => (x.t_seed() >>> 0) === 0xdeadbeef || x.t_seed() >>> 0);
   const shimSource = await (await fetch('cdom.js')).text();
   check('the shim draws no stray random: no Math.random, no Date.now seed', () =>

@@ -230,7 +230,9 @@ int cd_rect(cd_id id, double out[4]);
  * walked from the object one property per segment, and a segment of digits indexes an array or a
  * collection the same way. A segment that starts with "--" reads or writes a custom property through
  * getPropertyValue or setProperty on the object before it, so "style.--accent" names a CSS variable.
- * Each call is made the moment C makes it, like every other operation. */
+ * A path may be interned (its segments are split once and kept by its id) or a cd_tmp (split each time,
+ * since a one-off string's id is reused by the next one); interning is the cheap choice for a path used
+ * more than once. Each call is made the moment C makes it, like every other operation. */
 enum { CD_V_NUM, CD_V_STR, CD_V_BOOL, CD_V_ID, CD_V_NULL, CD_V_OBJ };
 /* A tagged value. CD_V_ID is the node (or reserved object) with that id. CD_V_OBJ starts a plain object of
  * u key-value pairs, which follow it in the same array as a CD_V_STR key then a value (objects may nest).
