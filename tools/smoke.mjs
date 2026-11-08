@@ -1,5 +1,5 @@
 // Clicks every button and row action and checks the DOM against what the app should show.
-import { launch, sleep, LEGACY, IE9, FETCHED, refused } from './cdp.mjs';
+import { launch, sleep, BELOW, FETCHED, refused, tierFetched } from './cdp.mjs';
 const name = process.argv[2] || 'cdom';
 const b = await launch();
 let fails = 0;
@@ -7,14 +7,13 @@ const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console
 run: try {
   // BASE serves the entries from somewhere other than the harness server.
   await b.send('Page.navigate', { url: `${process.env.BASE || `http://localhost:${process.env.PORT || 8093}/frameworks/keyed`}/${name}/index.html` });
-  // LEGACY=ie9 (see cdp.mjs) is below the floor: the boot must refuse it, and nothing else is checked.
-  if (IE9) { for (const [c, m] of await refused(b, '#main')) ok(c, m); break run; }
+  // LEGACY=ie8 (see cdp.mjs) is below the floor: the boot must refuse it, and nothing else is checked.
+  if (BELOW) { for (const [c, m] of await refused(b, '#main')) ok(c, m); break run; }
   for (let i = 0; i < 50 && !(await b.evaluate('!!document.getElementById("run")')); i++) await sleep(100);
   const E = b.evaluate;
-  // LEGACY=1 (see cdp.mjs) runs every check on the wasm2js build; either way only one path is fetched.
-  const got = await E(FETCHED), mine = ['app.wasm.js', 'cdom.legacy.js'];
-  ok(LEGACY ? mine.every(f => got.includes(f)) && !got.includes('app.wasm') : !got.some(f => mine.includes(f)) && got.includes('app.wasm'),
-    `${LEGACY ? 'wasm2js' : 'wasm'} path only: ${got.filter(f => /\.(js|wasm)$/.test(f)).join(' ')}`);
+  // LEGACY=1 (see cdp.mjs) runs every check on the wasm2js build and LEGACY=ie9 on its words build; each tier
+  // fetches its own files only.
+  ok(...tierFetched(await E(FETCHED), 'app'));
   const click = sel => E(`document.querySelector(${JSON.stringify(sel)}).click()`);
   const rows = () => E('document.querySelectorAll("tbody tr").length');
   await click('#run'); ok(await rows() === 1000, 'run -> 1000 rows');
@@ -22,7 +21,8 @@ run: try {
   ok(await E('/^\\w+ \\w+ \\w+$/.test(document.querySelector("tbody tr td:nth-child(2) a").textContent)'), 'label shape');
   // The shape alone passes when every row shows one label (a stale template slot did): 1,000 random
   // labels are about 850 distinct, so require most of them to differ.
-  const distinct = await E('new Set([...document.querySelectorAll("tbody tr td:nth-child(2) a")].map(a => a.textContent)).size');
+  // Counted in a plain object: LEGACY=ie9 and ie9-gaps delete Set (tools/cdp.mjs), and only cdom is under test.
+  const distinct = await E('(() => { const seen = {}; let n = 0; for (const a of document.querySelectorAll("tbody tr td:nth-child(2) a")) if (!(("$" + a.textContent) in seen)) { seen["$" + a.textContent] = 1; n++; } return n; })()');
   ok(distinct >= 500, `labels differ across rows: ${distinct} distinct of 1000`);
   ok(await E('document.querySelector("tbody tr").outerHTML'), 'row html: ' + await E('document.querySelector("tbody tr").outerHTML'));
   await click('#add'); ok(await rows() === 2000, 'add -> 2000');
