@@ -150,10 +150,11 @@ var cdom = (() => {
   }
   // Writes the event record into C memory and calls C; C flushes its answer on the way out, and
   // returns the flags its handler set. An event dispatched while C runs (focus() called from C fires
-  // focus events) waits for a microtask, so it never lands in the middle of a handler.
+  // focus events) waits for a microtask, so it never lands in the middle of a handler. It keeps the
+  // node its id names now: see drain.
   function post(type, id, event, path, pathDepth) {
     if (busy) {
-      if (queue.push([type, id, event, path, pathDepth]) === 1) {
+      if (queue.push([type, id, event, path, pathDepth, nodes[id]]) === 1) {
         queueMicrotask(drain);
       }
       return;
@@ -193,9 +194,16 @@ var cdom = (() => {
       event.stopPropagation();
     }
   }
+  // A waiting event goes out only if its id still names the node it named when it was queued. The batch
+  // that fired it can remove that node (removing a focused input fires its focusout) and free the id, and
+  // cd_id_new hands a freed id out first, so the id may name a new node by now that must not hear the old
+  // one's event; a node removed and not replaced is gone too. Host ids (window, document, body) are never
+  // reused, so theirs always go out.
   function drain() {
-    for (const args of queue.splice(0)) {
-      post(...args);
+    for (const [type, id, event, path, pathDepth, node] of queue.splice(0)) {
+      if (nodes[id] === node) {
+        post(type, id, event, path, pathDepth);
+      }
     }
   }
 

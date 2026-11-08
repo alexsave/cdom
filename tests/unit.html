@@ -72,6 +72,38 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
       return reported === 1 || `reported ${reported}`;
     });
   }
+  {
+    // 23. An event dispatched while C runs (here the focusout that removing a focused input fires) waits
+    // for a microtask; by then the node may be gone and its id handed to a new node, which must not hear it.
+    x.t_deferred_section();
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    // What the browser fired, seen from outside: the focusouts per input, and whether each press had focus.
+    const fired = {}, focusedAt = [];
+    document.addEventListener('focusout', (e) => { fired[e.target.className] = (fired[e.target.className] | 0) + 1; }, true);
+    const press = async (el) => {
+      el.focus(); focusedAt.push(document.activeElement === el);
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+      await tick();
+    };
+    const reuse = $('#deferred .reuse'), gone = $('#deferred .gone'), alive = $('#deferred .alive'), other = $('#deferred .other');
+    await press(reuse);
+    const fresh = $('#deferred .new');
+    check('a deferred focusout from a removed node does not reach the new node that took its id', () => {
+      const r = [focusedAt[0], fired.reuse === 1, !reuse.isConnected, !!fresh, x.t_deferred(0) === 1, x.t_deferred(1) === 0];
+      return r.every(Boolean) || JSON.stringify(r) + ' new heard ' + x.t_deferred(1);
+    });
+    check('the new node hears its own focusout', () => {
+      fresh.focus(); fresh.blur();
+      return x.t_deferred(1) === 1 || `heard ${x.t_deferred(1)}`;
+    });
+    await press(gone);
+    check('a deferred focusout from a removed node whose id stays free is dropped', () =>
+      (focusedAt[1] && fired.gone === 1 && !gone.isConnected && x.t_deferred(2) === 0) || `focused ${focusedAt[1]}, fired ${fired.gone}, connected ${gone.isConnected}, heard ${x.t_deferred(2)}`);
+    await press(alive);
+    check('a deferred focusout from a node still there is delivered, once', () =>
+      (focusedAt[2] && fired.alive === 1 && document.activeElement === other && x.t_deferred(3) === 1) || `fired ${fired.alive}, active ${document.activeElement?.className}, heard ${x.t_deferred(3)}`);
+    other.blur();
+  }
   check('options.seed is cd_seed, so one line makes a run deterministic', () => (x.t_seed() >>> 0) === 0xdeadbeef || x.t_seed() >>> 0);
   const shimSource = await (await fetch('cdom.js')).text();
   check('the shim draws no stray random: no Math.random, no Date.now seed', () =>

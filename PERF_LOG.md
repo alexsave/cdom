@@ -335,6 +335,13 @@ Bytes (bench entry, -Oz, brotli at q11): app.wasm 9,646 -> 9,803 (4,593 -> 4,662
 Shim source 943 -> 1,149 lines.
 The merged entry has not been timed in a paired pass of its own yet.
 
+### A deferred event goes only to the node it was queued for
+
+An event the browser dispatches while C runs (the focusout that removing a focused input fires) waits in the shim's queue, and by delivery the batch may have removed its node and handed the id to a new one (amgi: a rename input re-opened on Escape).
+The queue now keeps the node each id named when the event was queued, and drain drops the event when the id names anything else; host ids are never reused, so their events always go out.
+The unit page's deferred cases (a reused id, a freed id, a node still there) and five mutants (deferred-*) cover it.
+The shim grows 14,219 -> 14,249 bytes minified (5,393 -> 5,416 brotli at q11).
+
 ## Bridge designs compared (2026-11-01)
 
 One import per DOM operation stays: a generic dispatcher, a function table, natively bound imports, fused operations, the old op list and the Fast API were each measured against it on real pages and none was faster beyond the noise. Why, and what does help, is in BRIDGE.md; the benchmark is at the tag bridge-bench-2026-11-01.
