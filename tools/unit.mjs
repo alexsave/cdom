@@ -99,9 +99,16 @@ try {
     return false;
   };
   const heardFrom = await b.evaluate('__x.t_prefs_heard()');
-  const darkHeard = await prefsAfter([{ name: 'prefers-color-scheme', value: 'dark' }], 2);
-  const bothHeard = await prefsAfter([{ name: 'prefers-color-scheme', value: 'dark' }, { name: 'prefers-reduced-motion', value: 'reduce' }], 4);
-  const noneHeard = await prefsAfter([], 1);
+  // Both features named at every step: one left out follows the machine's own setting (a Mac in
+  // dark mode made the first step no change at all). The start is light and no preference,
+  // whatever the machine says, and is not itself a step.
+  const LIGHT = { name: 'prefers-color-scheme', value: 'light' }, DARK = { name: 'prefers-color-scheme', value: 'dark' };
+  const STILL = { name: 'prefers-reduced-motion', value: 'reduce' }, MOVING = { name: 'prefers-reduced-motion', value: 'no-preference' };
+  await b.send('Emulation.setEmulatedMedia', { features: [LIGHT, MOVING] });
+  await sleep(300);
+  const darkHeard = await prefsAfter([DARK, MOVING], 2);
+  const bothHeard = await prefsAfter([DARK, STILL], 4);
+  const noneHeard = await prefsAfter([LIGHT, MOVING], 1);
   const prefsHeard = await b.evaluate('__x.t_prefs_heard()');
   if (heardFrom === 0 && darkHeard && bothHeard && noneHeard && await stale() === 0) passed.push('cd_on_prefs: dark, then reduced motion too, then neither, each heard with what cd_prefs reads, and the export flushes');
   else errors.push(`cd_on_prefs: heard ${prefsHeard} (dark ${darkHeard}, both ${bothHeard}, none ${noneHeard}), stale ${await stale()}`);
