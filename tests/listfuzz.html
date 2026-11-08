@@ -5,22 +5,25 @@
 </script>
 <script>
 // The harness uses no Map or URLSearchParams: LEGACY=ie9 and ie9-gaps (tools/cdp.mjs) delete both, and
-// only cdom is under test. A key's node and a key's old position are kept in plain objects.
+// only cdom is under test. A key's node and a key's old position are kept in plain objects ({}, not
+// Object.create(null), which LEGACY=ie8 deletes: the keys are numbers, which no Object.prototype member is).
 const SEED = +((/[?&]seed=(\d+)/.exec(location.search) || [])[1] || 1);
-let prev = Object.create(null), errors = [], rounds = 0, moves = 0, prevKeys = [];
+let prev = {}, errors = [], rounds = 0, moves = 0, prevKeys = [];
 // Count moves: an insertBefore of a node that is already a child of the list.
 const ib = Node.prototype.insertBefore;
 Node.prototype.insertBefore = function (n, r) { if (n.parentNode === this && this.tagName === 'UL') moves++; return ib.call(this, n, r); };
 function lisLen(a) { const t = []; for (const v of a) { let lo = 0, hi = t.length; while (lo < hi) { const m = (lo + hi) >> 1; if (t[m] < v) lo = m + 1; else hi = m; } t[lo] = v; } return t.length; }
 const checker = (sel, anchored) => (p, n, round) => {
   rounds++;
-  const keys = new Uint32Array(window.__x.memory.buffer, p, n);
+  // C's keys: a view of its memory, or on the third tier (no typed arrays) a copy from its words.
+  const mem = window.__x.memory;
+  const keys = mem.words ? mem.words.slice(p >> 2, (p >> 2) + n).map(w => w >>> 0) : new Uint32Array(mem.buffer, p, n);
   let lis = [...document.querySelectorAll(sel)];
   if (anchored) {
     const end = lis.pop();
     if (!end || end.textContent !== 'end') errors.push(`round ${round}: the anchor is not last (${end && end.textContent})`);
   }
-  const now = Object.create(null);
+  const now = {};
   if (lis.length !== n) errors.push(`round ${round}: ${lis.length} nodes, want ${n}`);
   for (let i = 0; i < Math.min(n, lis.length); i++) {
     if (lis[i].textContent !== String(keys[i])) { errors.push(`round ${round}: [${i}] = ${lis[i].textContent}, want ${keys[i]}`); break; }
@@ -28,7 +31,7 @@ const checker = (sel, anchored) => (p, n, round) => {
     if (keys[i] in prev && prev[keys[i]] !== lis[i]) { errors.push(`round ${round}: key ${keys[i]} lost its node`); break; }
   }
   // Moves must not exceed survivors minus the longest run already in order.
-  const oldPos = Object.create(null); prevKeys.forEach((k, i) => { oldPos[k] = i; });
+  const oldPos = {}; prevKeys.forEach((k, i) => { oldPos[k] = i; });
   const surv = [...keys].filter(k => k in oldPos).map(k => oldPos[k]);
   if (moves > surv.length - lisLen(surv)) errors.push(`round ${round}: ${moves} moves, bound ${surv.length - lisLen(surv)}`);
   moves = 0; prevKeys = [...keys];
@@ -38,7 +41,7 @@ const checker = (sel, anchored) => (p, n, round) => {
 const env = { check: checker('#m ul:not(.tail) > li', false), check_end: checker('#m ul.tail > li', true) };
 // Through the boot, so LEGACY=1 node tools/fuzz.mjs runs the same rounds on the wasm2js build.
 cdomBoot('listfuzz.wasm', document.getElementById('m'), env, x => { try { window.__x = x; x.run_fuzz(SEED, 20000);
-    prev = Object.create(null); prevKeys = [];
+    prev = {}; prevKeys = [];
     x.run_fuzz_end(SEED, 20000);
     try {
       x.run_walks();

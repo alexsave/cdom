@@ -1,6 +1,8 @@
 /* What the ES5 shim and wasm2js output need from a browser that has no WebAssembly. Each is installed only
- * when it is missing. cdom.legacy.js puts this first, then promise-polyfill, then PEP for pointer events,
- * then the shim compiled to ES5 by Babel.
+ * when it is missing. cdom.legacy.js and cdom.legacy-ie9.js put this first, then promise-polyfill, then PEP for
+ * pointer events, then the shim compiled to ES5 by Babel. In a browser without typed arrays (IE 9, which runs
+ * cdom.legacy-ie9.js and app.wasm.ie9.js), the ones over typed arrays are left out: there the app keeps its
+ * memory in words.js's plain Array and rounds floats in software, and TextEncoder makes plain Arrays.
  * Where MDN once published a polyfill, it is that one (MDN's code samples are CC0), as the comment on it says;
  * the rest MDN never had (or had only for arrays), and are written here. tools/legacy.mjs checks every one
  * against the built-in on the same inputs. */
@@ -26,7 +28,7 @@
     };
   })(M.log, M.LN2);
   /* MDN's Math.fround polyfill (its typed-array form). */
-  if (!M.fround) M.fround = (function (array) {
+  if (!M.fround && w.Float32Array) M.fround = (function (array) {
     return function (x) { return array[0] = x, array[0]; };
   })(new Float32Array(1));
   if (!M.trunc) M.trunc = function (v) { return v < 0 ? M.ceil(v) : M.floor(v); };
@@ -46,7 +48,7 @@
 
   /* wasm2js lowers memory.copy and memory.fill to these, on a Uint8Array over the whole memory. set copies
    * as if through a temporary when the two ranges share a buffer, so copyWithin may overlap. */
-  var U8 = Uint8Array.prototype;
+  var U8 = w.Uint8Array ? Uint8Array.prototype : {};
   /* An index as the built-ins take it: negative counts from the end, and it is clamped to the array. */
   var at = function (v, n, d) {
     if (v === undefined) return d;
@@ -132,8 +134,15 @@
     };
     if (!w.TextEncoder) w.TextEncoder = function () {};
     w.TextEncoder.prototype.encodeInto = into;
+    /* Without typed arrays, a plain Array of the bytes. */
     if (!w.TextEncoder.prototype.encode) w.TextEncoder.prototype.encode = function (s) {
-      var d = new Uint8Array(s.length * 3);
+      var d;
+      if (!w.Uint8Array) {
+        d = new Array(s.length * 3);
+        d.length = into(s, d).written;
+        return d;
+      }
+      d = new Uint8Array(s.length * 3);
       return d.subarray(0, into(s, d).written);
     };
   }
@@ -157,6 +166,38 @@
 
   /* An uncaught error in a timeout reaches window.onerror and error listeners, as reportError's does. */
   if (typeof w.reportError !== "function") w.reportError = function (e) { setTimeout(function () { throw e; }, 0); };
+
+  /* No IE has ChildNode.remove, which the shim removes nodes with. MDN's polyfill (the CharacterData and
+   * DocumentType prototypes as well as Element's), without its Array.prototype.forEach. */
+  (function (list) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && !Object.prototype.hasOwnProperty.call(list[i], "remove")) {
+        Object.defineProperty(list[i], "remove", {
+          configurable: true, enumerable: true, writable: true,
+          value: function remove() { if (this.parentNode !== null) this.parentNode.removeChild(this); }
+        });
+      }
+    }
+  })([w.Element && Element.prototype, w.CharacterData && CharacterData.prototype, w.DocumentType && DocumentType.prototype]);
+
+  /* performance.now is IE 10's (performance is IE 9's): the ms since the page's navigation started, as the real
+   * one counts them, so cd_now and a frame's time keep one clock. */
+  if (w.performance && !w.performance.now) {
+    var start = w.performance.timing && w.performance.timing.navigationStart || new Date().getTime();
+    w.performance.now = function () { return new Date().getTime() - start; };
+  }
+
+  /* devicePixelRatio is IE 11's; IE 9 and 10 have the same ratio as screen.deviceXDPI over logicalXDPI. Read
+   * through a getter, as the real one is, since zoom changes it. Without it, the shim's viewport read throws. */
+  if (!("devicePixelRatio" in w)) {
+    Object.defineProperty(w, "devicePixelRatio", {
+      configurable: true,
+      get: function () {
+        var s = w.screen;
+        return s && s.deviceXDPI && s.logicalXDPI ? s.deviceXDPI / s.logicalXDPI : 1;
+      }
+    });
+  }
 
   if (!w.requestAnimationFrame) {
     var raf = w.webkitRequestAnimationFrame, now = function () {

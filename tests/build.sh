@@ -15,10 +15,13 @@ mkdir -p "$here/out"
 "$CC" --target=wasm32 -Oz -nostdlib -mbulk-memory -Wall -Wextra -Werror -Wl,--no-entry -Wl,--strip-all \
   -o "$here/out/click.wasm" "$here/../demo/click.c" "$here/../src/cdom.c" "$here/../src/cdom_audio.c" "$here/../src/mini.c"
 cp "$here/unit.html" "$here/../demo/click.html" "$here/../shim/cdom.js" "$here/out/"
-# The fuzz page and the legacy page go through the boot, so LEGACY=1 runs them on the wasm2js build.
+# The fuzz page and the legacy page go through the boot, so LEGACY=1 runs them on the wasm2js build, and
+# LEGACY=ie9 on its words build.
 node "$legacy" page "$here/listfuzz.html" "$here/out/listfuzz.html"
 node "$legacy" shim "$here/out/cdom.legacy.js"
+node "$legacy" shim-ie9 "$here/out/cdom.legacy-ie9.js"
 node "$legacy" app "$here/out/listfuzz.wasm" "$here/out/listfuzz.wasm.js"
+node "$legacy" app-ie9 "$here/out/listfuzz.wasm" "$here/out/listfuzz.wasm.ie9.js"
 "$CC" --target=wasm32 -O2 -nostdlib -mbulk-memory -Wall -Wextra -Werror -Wl,--no-entry \
   -o "$here/out/canvas.wasm" "$here/canvas.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 cp "$here/canvas.html" "$here/out/"
@@ -28,6 +31,7 @@ cp "$here/host.html" "$here/out/"
 "$CC" --target=wasm32 -O2 -nostdlib -mbulk-memory -Wall -Wextra -Werror -Wl,--no-entry \
   -o "$here/out/legacy.wasm" "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 node "$legacy" app "$here/out/legacy.wasm" "$here/out/legacy.wasm.js"
+node "$legacy" app-ie9 "$here/out/legacy.wasm" "$here/out/legacy.wasm.ie9.js"
 # Every memory access form as wasm, as wasm2js output and through the words pass, for tools/words.mjs to run side by side.
 "$CC" --target=wasm32 -O2 -nostdlib -mbulk-memory -Wall -Wextra -Werror -Wl,--no-entry -Wl,--export-memory \
   -o "$here/out/memforms.wasm" "$here/memforms.c"

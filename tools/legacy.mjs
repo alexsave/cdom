@@ -1,11 +1,12 @@
 // Drives tests/out/legacy.html with real input through CDP; exit 1 on any failure.
 // LEGACY=1 node tools/legacy.mjs runs it as a browser without WebAssembly (see cdp.mjs): the page must then
 // take the wasm2js path, on cdom.legacy.js's polyfills and PEP. Without it, the same checks run on wasm.
-// LEGACY=ie9-gaps runs them on IE 9's gaps but its two walls; LEGACY=ie9 checks that the boot refuses IE 9.
+// LEGACY=ie9 runs them on the third tier (cdom.legacy-ie9.js and the words build: no typed arrays, no crypto),
+// LEGACY=ie9-gaps on IE 9's other gaps on the second tier, and LEGACY=ie8 checks that the boot refuses IE 8.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { launch, sleep, LEGACY, LEVEL, IE9, FETCHED, refused } from './cdp.mjs';
+import { launch, sleep, LEGACY, LEVEL, TIER, BELOW, FETCHED, TIER_FILES, refused, tierFetched } from './cdp.mjs';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
@@ -33,12 +34,12 @@ async function click(sel) {
 const since = async (n) => (await E('LOG')).slice(n);
 run: try {
   await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/legacy.html` });
-  // LEGACY=ie9 is below the floor: the boot refuses it, and that refusal is all there is to check.
-  if (IE9) {
+  // LEGACY=ie8 is below the floor: the boot refuses it, and that refusal is all there is to check.
+  if (BELOW) {
     for (const [c, m] of await refused(b, '#m')) ok(c, m);
     ok(!(await E('!!window.READY')), 'never ready');
     const errs = await E('ERRORS');
-    ok(errs.length === 1 && /^Error: cdom: this browser cannot run cdom without WebAssembly: /.test(errs[0]),
+    ok(errs.length === 1 && /^Error: cdom: this browser cannot run cdom: it has no /.test(errs[0]),
       `the page's error listener heard the boot's error: ${JSON.stringify(errs)}`);
     break run;
   }
@@ -46,20 +47,30 @@ run: try {
   ok(await E('!!window.READY'), 'booted');
   const id = {}; for (const [k, i] of Object.entries({ PAD: 0, TEXT: 1 })) id[k] = await E(`X.id(${i})`);
 
-  // The path: the fallback files only without WebAssembly, the wasm only with it.
-  const got = await E(FETCHED), mine = ['legacy.wasm.js', 'cdom.legacy.js'];
-  ok(LEGACY ? mine.every(f => got.includes(f)) && !got.includes('legacy.wasm') : !got.some(f => mine.includes(f)) && got.includes('legacy.wasm'),
-    `${LEGACY ? 'wasm2js' : 'wasm'} path only: ${got.filter(f => /\.(js|wasm)$/.test(f)).join(' ')}`);
+  // The path: each tier's own files, and no other tier's.
+  ok(...tierFetched(await E(FETCHED), 'legacy'));
   if (LEGACY) {
     ok(await E('typeof WebAssembly === "undefined" && typeof X.memory.grow === "function"'), 'no WebAssembly; the exports are wasm2js');
     ok(await E('!/native code/.test(String(TextDecoder)) && !/native code/.test(String(TextEncoder))'), 'TextDecoder and TextEncoder are the polyfills');
     ok(await E('!/native code/.test(String(PointerEvent))'), 'PointerEvent is PEP');
-    ok(await E('__noCrypto && !!window.msCrypto && window.crypto === window.msCrypto'), 'no crypto but msCrypto, as in IE 11; the polyfill made it crypto');
+    ok(await E('!/native code/.test(String(Element.prototype.remove)) && !/native code/.test(String(CharacterData.prototype.remove))'),
+      'ChildNode.remove is the polyfill, as in every IE');
+    if (TIER === 2) ok(await E('__noCrypto && !!window.msCrypto && window.crypto === window.msCrypto'), 'no crypto but msCrypto, as in IE 11; the polyfill made it crypto');
+    else {
+      ok(await E('typeof Uint8Array === "undefined" && typeof ArrayBuffer === "undefined" && typeof crypto === "undefined" && typeof msCrypto === "undefined"'),
+        'no typed arrays and no crypto, as in IE 9');
+      ok(await E('Array.isArray(X.memory.words) && X.memory.words.length * 4 === X.memory.grow(0) * 65536 && !("buffer" in X.memory)'),
+        'the exports keep C\'s memory in one plain Array of words');
+    }
     // The two fallback files are fetched in parallel: the app's starts before the shim's has arrived.
-    const [shim, app] = await E(`['cdom.legacy.js', 'legacy.wasm.js'].map(f => performance.getEntriesByType('resource')
+    const [shimFile, appFile] = TIER_FILES('legacy')[TIER];
+    const [shim, app] = await E(`${JSON.stringify([shimFile, appFile])}.map(f => performance.getEntriesByType('resource')
       .find(r => r.name.endsWith('/' + f))).map(r => r && [r.startTime, r.responseEnd])`);
-    ok(shim && app && app[0] < shim[1], `legacy.wasm.js requested before cdom.legacy.js had arrived: ${JSON.stringify({ shim, app })}`);
+    ok(shim && app && app[0] < shim[1], `${appFile} requested before ${shimFile} had arrived: ${JSON.stringify({ shim, app })}`);
   }
+  // cd_seed: 32 bits on every tier; on the third, from the weak fallback, since there is no crypto (shim seed()).
+  const seed = await E('X.seed()');
+  ok(Number.isInteger(seed), `cd_seed is set: ${seed}`);
 
   // Pointer events: one press, a drag and a release on the pad, each delivered exactly once.
   let n = (await E('LOG')).length;
@@ -101,21 +112,47 @@ run: try {
   ok(errs.length === 1 && /^TypeError: /.test(errs[0]), `the failed call reported once: ${JSON.stringify(errs)}`);
   ok(await E('document.getElementById("err").getAttribute("data-after")') === 'yes', 'the op after it applied');
 
+  // Every other way the shim reads and writes C memory, which on the third tier is words, not views: a wheel
+  // event's two floats, a rect's four doubles, the viewport's four words, a number set on the page through a
+  // cd_val's double, and pixels blitted onto a canvas.
+  await E('window.__wheel = null; document.getElementById("pad").addEventListener("wheel", function (e) { __wheel = [e.deltaX, e.deltaY]; })');
+  await b.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 60, y: 60, deltaX: 3.3, deltaY: -125.7 }); await sleep(100);
+  const wheel = await E('__wheel'), cw = [await E('X.wheel(0)'), await E('X.wheel(1)')];
+  ok(wheel && cw[0] === Math.fround(wheel[0]) && cw[1] === Math.fround(wheel[1]) && cw[1] !== 0, `the wheel's deltas as floats: C ${cw}, page ${wheel}`);
+  const box = [0, 1, 2, 3].map(k => E(`X.rect(${k})`)), want = await E('(function (r) { return [r.left, r.top, r.width, r.height]; })(document.getElementById("pad").getBoundingClientRect())');
+  ok(JSON.stringify(await Promise.all(box)) === JSON.stringify(want), `cd_rect's doubles: ${JSON.stringify(await Promise.all(box))} against ${JSON.stringify(want)}`);
+  // IE 9 and 10 have no devicePixelRatio (the polyfill reads screen.deviceXDPI, which Chrome has not: 1).
+  const vp = [];
+  for (let k = 0; k < 4; k++) vp.push(await E(`X.viewport(${k})`));
+  ok(JSON.stringify(vp) === JSON.stringify(await E('[innerWidth, innerHeight, 0, Math.round(devicePixelRatio * 100)]')) && vp[3] === 100,
+    `cd_viewport's width, height, hidden and ratio: ${vp}`);
+  if (LEVEL.startsWith('ie9')) ok(await E('!Object.getOwnPropertyDescriptor(window, "devicePixelRatio").get.toString().includes("native code")'), 'devicePixelRatio is the polyfill');
+  await E('X.setnum()');
+  ok(await E('window.cdomNum') === -1234.5678, `a number through a cd_val: ${await E('window.cdomNum')}`);
+  await E('X.blit()');
+  const px = await E('Array.prototype.slice.call(document.getElementById("cv").getContext("2d").getImageData(0, 0, 2, 2).data)');
+  // the half-transparent pixel comes back premultiplied and unpremultiplied, so its white may round
+  ok(JSON.stringify(px.slice(0, 12)) === JSON.stringify([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255]) && px[15] === 128 && px[12] >= 254,
+    `cd_blit's pixels: ${px}`);
+
   // The polyfills against the built-ins: the app cannot tell some of them apart from a wrong one (a wrong
   // imul still gives a consistent intern hash, a short fill leaves bytes that were zero anyway), so each is
   // checked on its own, the same expressions in the page and in node.
   if (LEGACY) {
     const U = (f) => `(function () { var a = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]); a.${f}; return Array.prototype.slice.call(a); })()`;
+    // Without typed arrays (the third tier) there is no fround polyfill (the app rounds in software, words.js)
+    // and no typed array to give copyWithin and fill.
+    const typed = TIER === 2;
     const exprs = [
       ...[[3, 4], [-5, 12], [0xffffffff, 5], [0x7fffffff, 0x7fffffff], [0x12345678, 0x9abcdef0], [65536, 65536], [-1, -1]]
         .map(([a, b]) => `Math.imul(${a}, ${b})`),
       // MDN's clz32 goes through Math.log, so every power of two and its neighbours, where rounding would show.
       ...[0, -1, 0.5, 4294967297, ...Array.from({ length: 32 }, (_, k) => [2 ** k - 1, 2 ** k, 2 ** k + 1]).flat()]
         .map(v => `Math.clz32(${v})`),
-      ...['0', '1.1', '-1.1', '1e39', '5e-46', 'NaN', '16777217', '-0'].map(v => `Math.fround(${v})`),
+      ...(typed ? ['0', '1.1', '-1.1', '1e39', '5e-46', 'NaN', '16777217', '-0'].map(v => `Math.fround(${v})`) : []),
       ...['1.7', '-1.7', '0.2', '-0.2', '1e21', '-0', 'NaN', 'Infinity'].map(v => `Math.trunc(${v})`),
-      U('copyWithin(2, 0, 5)'), U('copyWithin(0, 3, 8)'), U('copyWithin(5, 1)'), U('copyWithin(-2, 0)'), U('copyWithin(1, -3, -1)'),
-      U('fill(7, 2, 5)'), U('fill(9)'), U('fill(0, 6)'), U('fill(3, -2)'), U('fill(4, 1, 99)'),
+      ...(typed ? [U('copyWithin(2, 0, 5)'), U('copyWithin(0, 3, 8)'), U('copyWithin(5, 1)'), U('copyWithin(-2, 0)'), U('copyWithin(1, -3, -1)'),
+        U('fill(7, 2, 5)'), U('fill(9)'), U('fill(0, 6)'), U('fill(3, -2)'), U('fill(4, 1, 99)')] : []),
       'Object.entries({ a: 1, b: "x", c: [2] })', 'Object.entries({})', 'Object.entries([7, 8])',
       '"--x".startsWith("--")', '"a--".startsWith("--", 1)', '"x--".startsWith("--")', '"pan-y".includes("pan-")', '"abc".includes("d")', '"abcabc".includes("a", 4)',
     ];
@@ -124,14 +161,17 @@ run: try {
     const bad = exprs.filter((x, i) => page[i] !== show(new Function('return ' + x)()));
     ok(!bad.length, `polyfills agree with the built-ins on ${exprs.length} cases: ${bad.map(x => `${x} gave ${page[exprs.indexOf(x)]}`).join('; ')}`);
     ok(await E('globalThis === window'), 'globalThis is the window');
-    ok(await E('!/native code/.test(String(Object.entries)) && !/native code/.test(String(Math.imul) + String(Math.clz32) + String(Math.fround) + String(Math.trunc) + String(Uint8Array.prototype.fill) + String(Uint8Array.prototype.copyWithin))'),
-      'those were the polyfills');
+    ok(await E(`!/native code/.test(String(Object.entries)) && !/native code/.test(String(Math.imul) + String(Math.clz32) + String(Math.trunc)${typed
+      ? ' + String(Math.fround) + String(Uint8Array.prototype.fill) + String(Uint8Array.prototype.copyWithin)' : ''})`), 'those were the polyfills');
+    // TextEncoder.encode with no Uint8Array to make: a plain Array of the bytes.
+    if (!typed) ok(await E('JSON.stringify(new TextEncoder().encode("h\u00e9\u65e5\ud83d\ude00"))') === JSON.stringify([...Buffer.from('h\u00e9\u65e5\u{1F600}')]),
+      `TextEncoder.encode without typed arrays: ${await E('JSON.stringify(new TextEncoder().encode("h\u00e9\u65e5\ud83d\ude00"))')}`);
   }
 
   // IE 9's gaps above its walls (LEGACY=ie9-gaps): no MutationObserver and no requestAnimationFrame, prefixed
   // or not, so queueMicrotask and requestAnimationFrame are the polyfills' timeout forms. The focus check
   // above ran on that queueMicrotask; requestAnimationFrame must call back once with a time.
-  if (LEVEL === 'ie9-gaps') {
+  if (LEVEL.startsWith('ie9')) {
     ok(await E('typeof MutationObserver === "undefined" && typeof WebKitMutationObserver === "undefined" && !/native code/.test(String(queueMicrotask))'),
       'queueMicrotask is the polyfill, on a timeout');
     await E('window.__raf = []; requestAnimationFrame(function (t) { __raf.push(typeof t, t > 0); })');
@@ -139,6 +179,10 @@ run: try {
     await sleep(100);
     ok(!/native code/.test(await E('String(requestAnimationFrame)')) && JSON.stringify(await E('__raf')) === '["number",true]',
       `requestAnimationFrame is the polyfill and called back once with a time: ${JSON.stringify(await E('__raf'))}`);
+    // performance.now, IE 10's: the polyfill counts from the navigation's start, as the real one does.
+    const [p0, real, p1] = await E('(function () { var a = performance.now(); var t = Date.now() - performance.timing.navigationStart; var b = performance.now(); return [a, t, b]; })()');
+    ok(!/native code/.test(await E('String(performance.now)')) && p0 > 0 && p1 >= p0 && Math.abs(real - p0) < 50,
+      `performance.now is the polyfill, on the navigation's clock: ${p0}, ${real}, ${p1}`);
   }
 
   // Without options objects, every listener the shim adds must get a plain capture flag: bubbling types
