@@ -80,8 +80,14 @@ function app(wasm, out) {
 
 // The boot is the one script every browser runs, so it must parse as ES3.
 function page(src, out) {
-  const boot = read(path.join(here, '../../shim/boot.js'));
-  try { acorn.parse(boot, { ecmaVersion: 3 }); } catch (e) { throw new Error(`shim/boot.js is not ES3: ${e.message}`); }
+  // Every page carries it, so its comments are cut.
+  const src0 = read(path.join(here, '../../shim/boot.js')), cuts = [];
+  try { acorn.parse(src0, { ecmaVersion: 3, onComment: (b, t, s, e) => cuts.push([s, e]) }); } catch (e) {
+    throw new Error(`shim/boot.js is not ES3: ${e.message}`);
+  }
+  let boot = '', at = 0;
+  for (const [s, e] of cuts) { boot += src0.slice(at, s); at = e; }
+  boot = (boot + src0.slice(at)).replace(/[ \t]+$/gm, '').replace(/\n{2,}/g, '\n').trim() + '\n';
   const html = read(src), mark = '<!-- cdom:boot -->';
   if (html.split(mark).length !== 2) throw new Error(`${src} needs exactly one ${mark}`);
   fs.writeFileSync(out, html.replace(mark, () => `<script>\n${boot}</script>`));

@@ -1,52 +1,75 @@
 /* What the ES5 shim and wasm2js output need from a browser that has no WebAssembly. Each is installed only
  * when it is missing. cdom.legacy.js puts this first, then promise-polyfill, then PEP for pointer events,
- * then the shim compiled to ES5 by Babel. */
+ * then the shim compiled to ES5 by Babel.
+ * Where MDN once published a polyfill, it is that one (MDN's code samples are CC0), as the comment on it says;
+ * the rest MDN never had (or had only for arrays), and are written here. tools/legacy.mjs checks every one
+ * against the built-in on the same inputs. */
 (function (w) {
   "use strict";
   var M = Math;
 
   /* wasm2js lowers i32 multiply, count-leading-zeros, f32 rounding and truncation to these. */
+  /* MDN's Math.imul polyfill (its first form). */
   if (!M.imul) M.imul = function (a, b) {
-    var al = a & 0xffff, bl = b & 0xffff;
-    return (al * bl + (((a >>> 16) * bl + al * (b >>> 16)) << 16)) | 0;
+    var aHi = (a >>> 16) & 0xffff;
+    var aLo = a & 0xffff;
+    var bHi = (b >>> 16) & 0xffff;
+    var bLo = b & 0xffff;
+    return ((aLo * bLo) + (((aHi * bLo + aLo * bHi) << 16) >>> 0) | 0);
   };
-  if (!M.clz32) M.clz32 = function (v) {
-    var n = 0;
-    v >>>= 0;
-    if (!v) return 32;
-    if (!(v & 0xffff0000)) { n += 16; v <<= 16; }
-    if (!(v & 0xff000000)) { n += 8; v <<= 8; }
-    if (!(v & 0xf0000000)) { n += 4; v <<= 4; }
-    if (!(v & 0xc0000000)) { n += 2; v <<= 2; }
-    if (!(v & 0x80000000)) n += 1;
-    return n;
-  };
-  if (!M.fround) {
-    var f32 = new Float32Array(1);
-    M.fround = function (v) { f32[0] = v; return f32[0]; };
-  }
+  /* MDN's Math.clz32 polyfill. */
+  if (!M.clz32) M.clz32 = (function (log, LN2) {
+    return function (x) {
+      var asUint = x >>> 0;
+      if (asUint === 0) return 32;
+      return 31 - (log(asUint) / LN2 | 0) | 0;
+    };
+  })(M.log, M.LN2);
+  /* MDN's Math.fround polyfill (its typed-array form). */
+  if (!M.fround) M.fround = (function (array) {
+    return function (x) { return array[0] = x, array[0]; };
+  })(new Float32Array(1));
   if (!M.trunc) M.trunc = function (v) { return v < 0 ? M.ceil(v) : M.floor(v); };
 
   /* wasm2js lowers memory.copy and memory.fill to these, on a Uint8Array over the whole memory. set copies
    * as if through a temporary when the two ranges share a buffer, so copyWithin may overlap. */
   var U8 = Uint8Array.prototype;
+  /* An index as the built-ins take it: negative counts from the end, and it is clamped to the array. */
+  var at = function (v, n, d) {
+    if (v === undefined) return d;
+    v = M.trunc(+v) || 0;
+    return v < 0 ? M.max(n + v, 0) : M.min(v, n);
+  };
   if (!U8.copyWithin) U8.copyWithin = function (to, from, end) {
-    this.set(this.subarray(from, end === undefined ? this.length : end), to);
+    var n = this.length, count;
+    to = at(to, n, 0); from = at(from, n, 0); end = at(end, n, n);
+    count = M.min(end - from, n - to);
+    if (count > 0) this.set(this.subarray(from, from + count), to);
     return this;
   };
   if (!U8.fill) U8.fill = function (v, from, end) {
-    for (var i = from | 0, e = end === undefined ? this.length : end; i < e; i++) this[i] = v;
+    var n = this.length, i = at(from, n, 0), e = at(end, n, n);
+    for (; i < e; i++) this[i] = v;
     return this;
   };
 
-  /* The shim tests path segments for a "--" prefix; PEP reads touch-action values with includes. */
-  if (!String.prototype.startsWith) String.prototype.startsWith = function (s, at) {
-    at = at > 0 ? at | 0 : 0;
-    return this.substring(at, at + s.length) === s;
-  };
-  if (!String.prototype.includes) String.prototype.includes = function (s, at) {
-    return this.indexOf(s, at) !== -1;
-  };
+  /* The shim tests path segments for a "--" prefix; PEP reads touch-action values with includes.
+   * MDN's String.prototype.startsWith and String.prototype.includes polyfills. */
+  if (!String.prototype.startsWith) {
+    Object.defineProperty(String.prototype, "startsWith", {
+      value: function (search, rawPos) {
+        var pos = rawPos > 0 ? rawPos | 0 : 0;
+        return this.substring(pos, pos + search.length) === search;
+      }
+    });
+  }
+  if (!String.prototype.includes) {
+    String.prototype.includes = function (search, start) {
+      if (search instanceof RegExp) throw TypeError("first argument must not be a RegExp");
+      if (start === undefined) start = 0;
+      return this.indexOf(search, start) !== -1;
+    };
+  }
 
   /* UTF-8 only, which is all the shim asks of them. Invalid bytes decode as U+FFFD one at a time, and a
    * lone surrogate encodes as U+FFFD, as the real ones do. encodeInto never writes part of a character. */
@@ -133,7 +156,7 @@
 
   /* Before options objects, addEventListener's third argument was useCapture, so the shim's
    * { passive: false } would register every listener in the capture phase. Where the options object is not
-   * read, pass its capture member instead. */
+   * read (MDN's passiveSupported test), pass its capture member instead. */
   var options = false, probe;
   try {
     probe = Object.defineProperty({}, "passive", { get: function () { options = true; return false; } });

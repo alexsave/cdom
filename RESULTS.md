@@ -178,6 +178,30 @@ Series 1 ran before the pointer fields were limited to their types, which does n
 run1k read 3 to 5% slower in the first two series and 3% faster in the third, and series 3 also carried a variant with the old 16-bit LISTEN case (2.25 ms), so the LISTEN change is not a cost and the spread is noise; swap, update and select stay at the 10 us timer floor for both.
 Other agents were building on the Mac throughout, which is why the loads are higher than in the runs above.
 
+### Without WebAssembly (branch wasm2js-fallback)
+
+A browser without WebAssembly runs the same app: binaryen's wasm2js compiles the app's .wasm to JavaScript, so C goes to wasm and then to JS, with no second source and no second build of the C.
+By caniuse's data of 2026-11-04, browsers without WebAssembly are about 0.2% of global use (IE is most of it), so this is reach at the edge, not a business case; what it shows is that the op-stream design does not depend on wasm, only on a byte buffer shared with the shim.
+
+Each entry now has two more files, and a browser with WebAssembly never fetches them:
+- `app.wasm.js`, the wasm2js output (`-all -O2`, from the very `app.wasm` the page runs otherwise), unwrapped from its ES module form so a script tag can load it; it hands its factory over as `window.cdomFactory`.
+- `cdom.legacy.js`, `tools/legacy/polyfills.js`, promise-polyfill 8.3.0 and PEP 0.5.3 (pointer events) in front of `shim/cdom.js` compiled to ES5 by Babel 8.
+`shim/boot.js` is inlined into the page after `<script src="cdom.js">` and picks the path.
+It is ES3, because a browser too old for wasm cannot parse cdom.js, which then fails with a syntax error and leaves `cdom` undefined; with `typeof WebAssembly === "object"` the boot starts the wasm on cdom.js as before, and otherwise it loads the two files in turn and calls `cdom.start(factory, ...)`, which returns the exports at once instead of a promise.
+The shim needed only that one change: wasm2js's memory object has a `buffer` getter that returns a new ArrayBuffer after growth, which the shim's `buf !== mem.buffer` check already handles.
+
+The polyfills are what the scan and the tests asked for, each installed only when missing: `Math.imul`, `clz32`, `fround` and `trunc` (wasm2js lowers i32 multiplies and friends to them), `Uint8Array.prototype.copyWithin` and `fill` (wasm2js lowers `memory.copy` and `memory.fill` to them), `String.prototype.startsWith` and `includes`, UTF-8 `TextDecoder` and `TextEncoder` with `encodeInto`, `queueMicrotask` (a MutationObserver, else a timeout), `reportError` (a throw in a timeout), `requestAnimationFrame`, and one for addEventListener: before options objects the third argument was useCapture, so the shim's `{ passive: false }` would have put every delegated listener in the capture phase, and where the options object is not read the polyfill passes its `capture` member instead.
+`imul`, `clz32`, `fround`, `startsWith` and `includes` are MDN's own polyfills, taken from the page history of mdn/content (MDN now links to core-js and es-shims instead, which are whole libraries; MDN's code samples are CC0).
+MDN never had the others, or had only `fill` borrowed from `Array.prototype`, which IE 11 lacks too, so they are written here, a few lines each; the addEventListener check is MDN's `passiveSupported` test.
+MDN's `clz32` goes through `Math.log`, so the check below includes every power of two and its neighbours, where an engine's rounding would show; in Chrome it is exact on all 96.
+`tools/legacy/build.mjs` refuses to write either file unless it parses as ES5 (acorn) and names no ES2015 global or method outside a short per-file allow list, and the boot must parse as ES3.
+That scan found two real gaps on its first run: PEP calls `String.prototype.includes` on touch-action values with no check, and wasm2js output calls `copyWithin` and `fill`, none of which IE 11 has.
+The targets assumed are IE 11, Safari 9, Chrome 49, Firefox 45, Android 4.4 and iOS 9: typed arrays, nothing from ES2015.
+
+Bytes, for the keyed entry (brotli in parentheses): `cdom.legacy.js` 73,754 (16,860), `app.wasm.js` 101,582 (11,213), against `cdom.js` 11,356 (3,811) and `app.wasm` 20,677 (5,605).
+The inlined boot is the one cost every browser pays: the page grows from 398 to 1,571 bytes (151 to 591 brotli).
+The page still preloads `app.wasm`, which helps first paint; a browser with preload and no wasm (Chrome 50 to 56) downloads it for nothing, while IE and the old Edge ignore preload.
+
 ## Step 0: what a call across the boundary costs
 
 Chrome 156, median ns per call over 31 samples of 100,000 calls (2,000,000 for the two cheapest rows); load 3.66 at the start and 4.25 at the end:

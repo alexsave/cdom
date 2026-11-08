@@ -64,12 +64,13 @@ try {
     `focus delivered once, after the click: ${JSON.stringify(f)}`);
 
   // Text: typed into the input, read into C (encodeInto), sent back as the echo (the decoder).
-  const word = 'héllo 日本 \u{1F600}';
+  // Latin, Cyrillic (a lead byte whose fourth bit is set), CJK and an astral character.
+  const word = 'héllo ж 日本 \u{1F600}';
   await b.send('Input.insertText', { text: word }); await sleep(50);
   ok(await E('document.getElementById("echo").textContent') === word, `echo of ${word}: ${await E('document.getElementById("echo").textContent')}`);
-  // The value is 18 bytes: h é l l o (6), space (7), 日 本 (13), space (14), 😀 (18).
-  const cuts = {}; for (const c of [6, 7, 8, 9, 10, 13, 14, 15, 17, 18, 40]) cuts[c] = await E(`X.cut(${c})`);
-  ok(JSON.stringify(cuts) === JSON.stringify({ 6: 6, 7: 7, 8: 7, 9: 7, 10: 10, 13: 13, 14: 14, 15: 14, 17: 14, 18: 18, 40: 18 }),
+  // The value is 21 bytes: h é l l o (6), space (7), ж (9), space (10), 日 本 (16), space (17), 😀 (21).
+  const cuts = {}; for (const c of [6, 7, 8, 9, 10, 11, 12, 13, 16, 17, 18, 20, 21, 40]) cuts[c] = await E(`X.cut(${c})`);
+  ok(JSON.stringify(cuts) === JSON.stringify({ 6: 6, 7: 7, 8: 7, 9: 9, 10: 10, 11: 10, 12: 10, 13: 13, 16: 16, 17: 17, 18: 17, 20: 17, 21: 21, 40: 21 }),
     `a read never splits a character: ${JSON.stringify(cuts)}`);
 
   // A failing call is reported and the batch goes on.
@@ -79,6 +80,31 @@ try {
   // A TypeError, whose wording differs: Babel calls the missing method through .apply.
   ok(errs.length === 1 && /^TypeError: /.test(errs[0]), `the failed call reported once: ${JSON.stringify(errs)}`);
   ok(await E('document.getElementById("err").getAttribute("data-after")') === 'yes', 'the op after it applied');
+
+  // The polyfills against the built-ins: the app cannot tell some of them apart from a wrong one (a wrong
+  // imul still gives a consistent intern hash, a short fill leaves bytes that were zero anyway), so each is
+  // checked on its own, the same expressions in the page and in node.
+  if (LEGACY) {
+    const U = (f) => `(function () { var a = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]); a.${f}; return Array.prototype.slice.call(a); })()`;
+    const exprs = [
+      ...[[3, 4], [-5, 12], [0xffffffff, 5], [0x7fffffff, 0x7fffffff], [0x12345678, 0x9abcdef0], [65536, 65536], [-1, -1]]
+        .map(([a, b]) => `Math.imul(${a}, ${b})`),
+      // MDN's clz32 goes through Math.log, so every power of two and its neighbours, where rounding would show.
+      ...[0, -1, 0.5, 4294967297, ...Array.from({ length: 32 }, (_, k) => [2 ** k - 1, 2 ** k, 2 ** k + 1]).flat()]
+        .map(v => `Math.clz32(${v})`),
+      ...['0', '1.1', '-1.1', '1e39', '5e-46', 'NaN', '16777217', '-0'].map(v => `Math.fround(${v})`),
+      ...['1.7', '-1.7', '0.2', '-0.2', '1e21', '-0', 'NaN', 'Infinity'].map(v => `Math.trunc(${v})`),
+      U('copyWithin(2, 0, 5)'), U('copyWithin(0, 3, 8)'), U('copyWithin(5, 1)'), U('copyWithin(-2, 0)'), U('copyWithin(1, -3, -1)'),
+      U('fill(7, 2, 5)'), U('fill(9)'), U('fill(0, 6)'), U('fill(3, -2)'), U('fill(4, 1, 99)'),
+      '"--x".startsWith("--")', '"a--".startsWith("--", 1)', '"x--".startsWith("--")', '"pan-y".includes("pan-")', '"abc".includes("d")', '"abcabc".includes("a", 4)',
+    ];
+    const show = (v) => Object.is(v, -0) ? '-0' : JSON.stringify(v) ?? String(v);
+    const page = await E(`[${exprs.join(', ')}].map(function (v) { return 1 / v === -Infinity ? '-0' : JSON.stringify(v) || String(v); })`);
+    const bad = exprs.filter((x, i) => page[i] !== show(new Function('return ' + x)()));
+    ok(!bad.length, `polyfills agree with the built-ins on ${exprs.length} cases: ${bad.map(x => `${x} gave ${page[exprs.indexOf(x)]}`).join('; ')}`);
+    ok(await E('!/native code/.test(String(Math.imul) + String(Math.clz32) + String(Math.fround) + String(Math.trunc) + String(Uint8Array.prototype.fill) + String(Uint8Array.prototype.copyWithin))'),
+      'those were the polyfills');
+  }
 
   // Without options objects, every listener the shim adds must get a plain capture flag: bubbling types
   // false, the non-bubbling ones (focus) true. An object would mean capture for all of them.
