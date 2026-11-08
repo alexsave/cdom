@@ -43,7 +43,7 @@ M = [
   ('ws-buffered-zero', 'shim/cdom.js', '    return sockets[id].bufferedAmount;', '    return 0;', UNIT, 'FAIL buffered'),
   ('ws-send-late', 'shim/cdom.js', '    sockets[id].send(bytes(bytesPtr, length));', '    setTimeout(() => sockets[id].send(bytes(bytesPtr, length)));', UNIT, 'FAIL net'),
   ('epoch-page-clock', 'shim/cdom.js', '    return Date.now();', '    return performance.now();', UNIT, 'FAIL cd_epoch_ms'),
-  ('net-no-flush', 'src/cdom_net.c', '  cd_on_http(token, status, p, len);\n  cd_flush();', '  cd_on_http(token, status, p, len);', UNIT, 'FAIL net'),
+  ('net-no-flush', 'src/cdom_net.c', '((cd_http_fn)fn)(ctx, status, p, len);\n  cd_flush();', '((cd_http_fn)fn)(ctx, status, p, len);', UNIT, 'FAIL net'),
   ('no-end-anchor', 'src/cdom.c', 'cd_id end = L->end; /*', 'cd_id end = 0; /*', UNIT, 'FAIL a keyed list with a fixed sibling'),
   ('no-end-anchor-fuzz', 'src/cdom.c', 'cd_id end = L->end; /*', 'cd_id end = 0; /*', FUZZ, 'the anchor is not last'),
   ('end-anchor-moves', 'src/cdom.c', 'cd_move(old[os].node, ne < n ? nw[ne].node : end);\n      nw[--ne]', 'cd_move(old[os].node, ne < n ? nw[ne].node : 0);\n      nw[--ne]', FUZZ, 'the anchor is not last'),
@@ -266,6 +266,12 @@ M = [
   ('timer-cb-to-app', 'src/cdom.c', '  if (token < CD_TOKEN_CDOM) cd_on_timer(token);', '  if (1) cd_on_timer(token);', UNIT, 'FAIL cd_timer_stop and cd_timer_cb'),
   ('timer-app-unchecked', 'src/cdom.c', '  if (token >= CD_TOKEN_CDOM) __builtin_trap(); /* cdom\'s range */\n', '', UNIT, 'FAIL cd_timer_stop and cd_timer_cb'),
   ('timer-stale-token-live', 'src/cdom.c', '  return c->live && c->gen == ((token >> 16) & 0x7fffu) ? c : 0;', '  return c->live ? c : 0;', UNIT, 'FAIL cd_timer_stop and cd_timer_cb'),
+  # app helpers: cd_http_cb
+  ('httpcb-to-app', 'src/cdom_net.c', '  if (token < CD_TOKEN_CDOM) cd_on_http(token, status, p, len);', '  if (1) cd_on_http(token, status, p, len);', UNIT, 'FAIL cd_http_cb'),
+  ('httpcb-no-ctx', 'src/cdom_net.c', '((cd_http_fn)fn)(ctx, status, p, len);', '((cd_http_fn)fn)(0, status, p, len);', UNIT, 'FAIL cd_http_cb'),
+  ('httpcb-status', 'src/cdom_net.c', '((cd_http_fn)fn)(ctx, status, p, len);', '((cd_http_fn)fn)(ctx, 200, p, len);', UNIT, 'FAIL cd_http_cb'),
+  ('httpcb-app-token', 'src/cdom_net.c', '  http(cd_cb_new((cd_cb_fn)fn, ctx), method', '  http(cd_cb_new((cd_cb_fn)fn, ctx) & 0x7fffffffu, method', UNIT, 'FAIL cd_http_cb'),
+  ('httpcb-unchecked', 'src/cdom_net.c', '  if (token >= CD_TOKEN_CDOM) __builtin_trap(); /* cdom\'s range: its answer', '  /* cdom\'s range: its answer', UNIT, 'FAIL cd_http_cb'),
   ('mini-strong', 'src/mini.c', '__attribute__((weak, no_builtin)) int memcmp', '__attribute__((no_builtin)) int memcmp', LINK, "FAIL an app's own libc"),
 ]
 

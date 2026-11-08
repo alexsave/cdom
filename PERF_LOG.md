@@ -342,6 +342,19 @@ The queue now keeps the node each id named when the event was queued, and drain 
 The unit page's deferred cases (a reused id, a freed id, a node still there) and five mutants (deferred-*) cover it.
 The shim grows 14,219 -> 14,249 bytes minified (5,393 -> 5,416 brotli at q11).
 
+### App helpers: cd_open_id, cd_on, cd_timer_stop and cd_timer_cb, cd_http_cb (branch app-helpers)
+
+Four helpers an app moving from React (amgi) asked for, each built on what cdom already had, and each its own commit with a unit case and mutants.
+- `cd_open_id(tag)` is cd_open, cd_id_new and cd_name_open in one call, so a building region records the id (mutants open-id-*).
+- `cd_on(id, ev, fn, ctx)` calls fn(e, ctx) for the record's (id, type) in place of cd_on_event, which keeps every other event and now has an empty weak default, so an app that uses cd_on alone links (tests/link/on_only.c).
+  The handlers live in one pair table in C (open addressing on the id, deletion by shifting the run back), with a byte per id, so freeing one of a list's 10,000 ids that has no handler costs one load.
+  It found a real bug in the shim: forget left a freed node's id mark on the node, so a node left in place after its id was freed was delivered under that id once it was handed out again; forget now clears it (mutants on-*, on-forget-keeps-mark among them).
+- `cd_timer_stop(token)` is a real clearTimeout.
+  The shim's `timer` now returns its setTimeout handle, `timer_stop(handle)` is a new import, and `cd_timer(token, handle)` tells C which one fired, so C keeps every pending (token, handle) in the same pair table and the shim keeps nothing.
+  Stopping a token that fired, was stopped or was never started does nothing.
+- `cd_timer_cb(ms, fn, ctx)` and `cd_http_cb(fn, ctx, ...)` take their tokens from one slot table (src/cdom_cb.h, owned by cdom.c): a token is `CD_TOKEN_CDOM` (0x80000000) with a 15-bit generation and a 16-bit slot, so it never meets an app's token (those stay below `CD_TOKEN_CDOM`, and cd_timer_start and cd_http trap above it) or CD_FRAMES_TOKEN, and an old token never stops the timer that took its slot (mutants timer-* and httpcb-*).
+The shim grows 14,249 -> 14,386 bytes minified (5,416 -> 5,444 brotli at q11, 6,012 -> 6,059 gzip at -9): the forget fix and the timer handle and `timer_stop`.
+
 ## Bridge designs compared (2026-11-01)
 
 One import per DOM operation stays: a generic dispatcher, a function table, natively bound imports, fused operations, the old op list and the Fast API were each measured against it on real pages and none was faster beyond the noise. Why, and what does help, is in BRIDGE.md; the benchmark is at the tag bridge-bench-2026-11-01.

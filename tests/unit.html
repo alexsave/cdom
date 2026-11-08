@@ -201,6 +201,21 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
       return r.every(Boolean) || JSON.stringify({ r, app, calls, ctx, early, late, threw, bad });
     });
   }
+  {
+    // 28. cd_http_cb, against tools/unit.mjs's server (the page's own origin).
+    const seen = (k) => [0, 1, 2, 3, 4, 5, 6].map((f) => x.t_http_cb_seen(k, f)).join();
+    x.t_http_cb();
+    const t0 = performance.now();
+    await until(() => [0, 1, 2].every((k) => x.t_http_cb_seen(k, 0) !== -1), 4000);
+    const at = performance.now() - t0;
+    await new Promise((r) => setTimeout(r, 100));
+    let bad = '';
+    try { x.t_http_cb_bad(); } catch (e) { bad = e instanceof WebAssembly.RuntimeError ? 'trap' : String(e); }
+    check('cd_http_cb: the answer goes to the callback with its ctx (200 and the echo, TIMEOUT past the deadline, FAILED from nobody), once each, not to cd_on_http; cd_http traps on a token of cdom\'s', () => {
+      const r = [seen(0) === '200,1,4,4,3,2,1', seen(1) === '1,1,0,0,0,0,0', seen(2) === '0,1,0,0,0,0,0', x.t_http_cb_seen(3, 0) === 0, at < 1500, bad === 'trap', x.t_stale() === 0];
+      return r.every(Boolean) || JSON.stringify({ r, a: seen(0), b: seen(1), c: seen(2), cdom: x.t_http_cb_seen(3, 0), at, bad });
+    });
+  }
   check('options.seed is cd_seed, so one line makes a run deterministic', () => (x.t_seed() >>> 0) === 0xdeadbeef || x.t_seed() >>> 0);
   const shimSource = await (await fetch('cdom.js')).text();
   check('the shim draws no stray random: no Math.random, no Date.now seed', () =>

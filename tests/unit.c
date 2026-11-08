@@ -548,8 +548,10 @@ EXPORT("t_http_cases") void t_http_cases(void) {
   ask(11, "GET", "/headers", "X-Last: no newline", 0);
 }
 
+static uint32_t http_cdom_heard; /* answers cd_on_http got for a token in cdom's range */
 void cd_on_http(uint32_t token, uint32_t status, const uint8_t *p, uint32_t len) {
   enter();
+  if (token >= CD_TOKEN_CDOM) { http_cdom_heard++; return; }
   if (token != 7) {
     http_status[token & 15] = (int32_t)status;
     http_len[token & 15] = len;
@@ -1057,4 +1059,33 @@ EXPORT("t_timer_seen") uint32_t t_timer_seen(uint32_t k) {
   if (k >= 20 && k < 26) return tm_tok[k - 20];
   if (k >= 30 && k < 40) return app_timer_heard[k - 30];
   return cdom_token_heard;
+}
+
+/* 28. cd_http_cb: a POST to /echo answered reversed, a GET past its deadline, a port nobody listens on,
+ * each to its own ctx; cd_on_http hears none of them. */
+typedef struct { int32_t status; uint32_t calls, len; uint8_t body[8]; } hc_ctx;
+static hc_ctx hc[3];
+static void hc_answer(void *ctx, uint32_t status, const uint8_t *p, uint32_t len) {
+  enter();
+  hc_ctx *c = ctx;
+  c->status = (int32_t)status;
+  c->calls++;
+  c->len = len;
+  for (uint32_t i = 0; i < len && i < 8; i++) c->body[i] = p[i];
+  hold(net_txt); /* no cd_flush: the export does it */
+}
+EXPORT("t_http_cb") void t_http_cb(void) {
+  static const uint8_t body[4] = {1, 2, 3, 4};
+  for (int k = 0; k < 3; k++) hc[k].status = -1;
+  cd_http_cb(hc_answer, &hc[0], "POST", 4, "/echo", 5, "", 0, body, 4, 5000);
+  cd_http_cb(hc_answer, &hc[1], "GET", 3, "/slow", 5, "", 0, 0, 0, 50);
+  cd_http_cb(hc_answer, &hc[2], "GET", 3, "http://127.0.0.1:1/x", 20, "", 0, 0, 0, 5000);
+}
+EXPORT("t_http_cb_bad") void t_http_cb_bad(void) { cd_http(CD_TOKEN_CDOM | 7, "GET", 3, "/x", 2, "", 0, 0, 0, 0); }
+/* k < 3: hc[k]'s status, calls, len and first 4 body bytes as one string the page splits; 3: cd_on_http's
+ * answers for cdom tokens. */
+EXPORT("t_http_cb_seen") int32_t t_http_cb_seen(uint32_t k, uint32_t f) {
+  if (k == 3) return (int32_t)http_cdom_heard;
+  const hc_ctx *c = &hc[k];
+  return f == 0 ? c->status : f == 1 ? (int32_t)c->calls : f == 2 ? (int32_t)c->len : c->body[f - 3];
 }
