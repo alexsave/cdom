@@ -78,8 +78,11 @@ EXPORT("t_time") void t_time(void) {
   cd_raf_request(42);
   cd_flush();
 }
+static uint32_t app_timer_heard[10], cdom_token_heard; /* tokens 50 to 59 (section 27); any in cdom's range */
 void cd_on_timer(uint32_t token) {
   enter();
+  if (token >= CD_TOKEN_CDOM) cdom_token_heard++;
+  if (token >= 50 && token < 60) { app_timer_heard[token - 50]++; return; }
   cd_set_text_num(timer_txt, token);
   cd_intern("timer-flushed", 13);
   hold(timer_txt);
@@ -1004,3 +1007,54 @@ EXPORT("t_on_many_free") uint32_t t_on_many_free(void) {
   return same; /* how many of the new ids are freed ones */
 }
 EXPORT("t_on_many_calls") uint32_t t_on_many_calls(uint32_t i) { return on_many_calls[i]; }
+
+/* 27. Timers stopped, and timers with a callback. App tokens: 50 started and stopped; 51 started twice
+ * (fires twice); 52 started twice and stopped (neither fires). Callbacks (tm[k], each counting into its
+ * own ctx): 0 fires; 1 stopped before firing; 2 stopped, then 3 takes its slot under another token, and
+ * stopping 2 again leaves 3 alone; 4 re-arms itself until it has fired 5 times. Later (t_timer_late),
+ * once 0 has fired: 0 stopped (a no-op), 5 started in 0's freed slot, 0 stopped again, 5 still fires;
+ * and tokens never started, or already stopped, stopped too. */
+typedef struct { uint32_t calls; void *self; } tm_ctx;
+static tm_ctx tm[6];
+static uint32_t tm_tok[6];
+static void tm_fire(void *ctx) {
+  enter();
+  tm_ctx *c = ctx;
+  c->calls++;
+  c->self = ctx;
+  if (c == &tm[4] && c->calls < 5) tm_tok[4] = cd_timer_cb(5, tm_fire, ctx);
+  hold(timer_txt); /* no cd_flush: the timer export does it */
+}
+EXPORT("t_timers") void t_timers(void) {
+  cd_timer_start(10, 50); cd_timer_stop(50);
+  cd_timer_start(10, 51); cd_timer_start(20, 51);
+  cd_timer_start(10, 52); cd_timer_start(20, 52); cd_timer_stop(52);
+  tm_tok[0] = cd_timer_cb(10, tm_fire, &tm[0]);
+  tm_tok[1] = cd_timer_cb(10, tm_fire, &tm[1]); cd_timer_stop(tm_tok[1]);
+  tm_tok[2] = cd_timer_cb(10, tm_fire, &tm[2]); cd_timer_stop(tm_tok[2]);
+  tm_tok[3] = cd_timer_cb(30, tm_fire, &tm[3]); cd_timer_stop(tm_tok[2]);
+  tm_tok[4] = cd_timer_cb(5, tm_fire, &tm[4]);
+}
+EXPORT("t_timer_late") void t_timer_late(void) {
+  static tm_ctx extra; /* timers that took the other free slots first (they fire, into extra) */
+  cd_timer_stop(tm_tok[0]);
+  for (int i = 0; i < 8; i++) {
+    uint32_t t = cd_timer_cb(10, tm_fire, &extra);
+    if ((t & 0xffffu) != (tm_tok[0] & 0xffffu)) continue;
+    cd_timer_stop(t); /* frees the slot again, for tm[5] */
+    break;
+  }
+  tm_tok[5] = cd_timer_cb(10, tm_fire, &tm[5]);
+  cd_timer_stop(tm_tok[0]);
+  cd_timer_stop(50); cd_timer_stop(52); cd_timer_stop(57); cd_timer_stop(tm_tok[1]);
+}
+EXPORT("t_timer_bad") void t_timer_bad(void) { cd_timer_start(10, CD_TOKEN_CDOM); }
+/* k < 6: callback k's calls (k + 10: did it get its own ctx; k + 20: its token); 30 + i: app token 50 + i heard;
+ * 40: cdom tokens heard by cd_on_timer. */
+EXPORT("t_timer_seen") uint32_t t_timer_seen(uint32_t k) {
+  if (k < 6) return tm[k].calls;
+  if (k >= 10 && k < 16) return tm[k - 10].self == &tm[k - 10];
+  if (k >= 20 && k < 26) return tm_tok[k - 20];
+  if (k >= 30 && k < 40) return app_timer_heard[k - 30];
+  return cdom_token_heard;
+}

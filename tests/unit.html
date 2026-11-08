@@ -177,6 +177,30 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
         `same ${same}, ${spans.length} spans, ${bs.length} b, ${bad} wrong counts (${many.slice(0, 8)}), fallback ${x.t_ev(7) - ev2} ${threw}`;
     });
   }
+  {
+    // 27. Timers stopped, and timers with a callback.
+    const seen = (k) => x.t_timer_seen(k) >>> 0;
+    x.t_timers();
+    const tok = () => [0, 1, 2, 3, 4, 5].map((k) => seen(20 + k));
+    const early = tok();
+    await until(() => seen(0) === 1 && seen(4) === 5 && seen(3) === 1, 2000);
+    await new Promise((r) => setTimeout(r, 60));
+    let threw = '';
+    try { x.t_timer_late(); } catch (e) { threw = String(e); }
+    const late = tok();
+    await until(() => seen(5) === 1, 2000);
+    await new Promise((r) => setTimeout(r, 60));
+    let bad = '';
+    try { x.t_timer_bad(); } catch (e) { bad = e instanceof WebAssembly.RuntimeError ? 'trap' : String(e); }
+    const calls = [0, 1, 2, 3, 4, 5].map(seen), ctx = [0, 1, 2, 3, 4, 5].map((k) => seen(10 + k)), app = [0, 1, 2].map((i) => seen(30 + i));
+    check('cd_timer_stop and cd_timer_cb: a stop before firing prevents it, a stop after is a no-op, an old token never stops its slot\'s new timer; callbacks get their ctx and repeat; app tokens reach cd_on_timer as before', () => {
+      const slot = (t) => t & 0xffff, CDOM = 0x80000000;
+      const r = [app.join() === '0,2,0', calls.join() === '1,0,0,1,5,1', ctx.join() === '1,0,0,1,1,1', seen(40) === 0,
+        early.slice(0, 4).every((t) => t >= CDOM), slot(early[3]) === slot(early[2]) && early[3] !== early[2],
+        slot(late[5]) === slot(early[0]) && late[5] !== early[0], !threw, bad === 'trap', x.t_stale() === 0];
+      return r.every(Boolean) || JSON.stringify({ r, app, calls, ctx, early, late, threw, bad });
+    });
+  }
   check('options.seed is cd_seed, so one line makes a run deterministic', () => (x.t_seed() >>> 0) === 0xdeadbeef || x.t_seed() >>> 0);
   const shimSource = await (await fetch('cdom.js')).text();
   check('the shim draws no stray random: no Math.random, no Date.now seed', () =>
