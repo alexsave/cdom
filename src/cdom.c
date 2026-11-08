@@ -536,6 +536,15 @@ static void release(cd_id id) {
   free_ids[nfree++] = id;
 }
 
+/* cd_open, cd_id_new and cd_name_open, in that order: the id is made once the element is open, so a
+ * region that is building records it, and it names the open element, not the last node. */
+cd_id cd_open_id(cd_str tag) {
+  cd_open(tag);
+  cd_id id = cd_id_new();
+  cd_name_open(id);
+  return id;
+}
+
 uint32_t cd_ids_live(void) { return next_id - CD_FIRST_ID - nfree; }
 uint32_t cd_ids_high(void) { return next_id - 1; }
 

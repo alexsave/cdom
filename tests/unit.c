@@ -900,3 +900,34 @@ EXPORT("t_dialog_section") cd_id t_dialog_section(void) {
 EXPORT("t_dialog_show") void t_dialog_show(void) { cd_call(dialog_node, L("showModal")); }
 EXPORT("t_dialog_close") void t_dialog_close(void) { cd_call(dialog_node, L("close")); }
 EXPORT("t_ev_close") int32_t t_ev_close(void) { return CD_EV_CLOSE; }
+
+/* 25. cd_open_id: an element opened and named in one call, the id naming it after children were built
+ * inside; inside a region, the id is the region's and goes with it. */
+static cd_id open_outer, open_inner;
+static cd_region open_region;
+static uint32_t open_live[3];
+EXPORT("t_open_id") void t_open_id(void) {
+  cd_id s = section("openid");
+  cd_at(s, 0);
+  open_outer = cd_open_id(L("ul"));
+  open_inner = cd_open_id(L("li")); cd_text(L("a")); cd_close();
+  cd_open(L("li")); cd_text(L("b")); cd_close();
+  cd_close();
+  cd_set_class(open_outer, L("outer"));
+  cd_set_class(open_inner, L("inner"));
+  open_live[0] = cd_ids_live();
+  if (cd_region_show(&open_region, 1)) {
+    cd_at(s, 0);
+    cd_open(L("p")); cd_name_open(open_region.root);
+    cd_id in = cd_open_id(L("b")); cd_text(L("c")); cd_close();
+    cd_close();
+    cd_region_end(&open_region);
+    cd_set_class(in, L("in-region"));
+  }
+  open_live[1] = cd_ids_live();
+}
+EXPORT("t_open_hide") void t_open_hide(void) {
+  cd_region_hide(&open_region);
+  open_live[2] = cd_ids_live();
+}
+EXPORT("t_open_live") uint32_t t_open_live(uint32_t k) { return open_live[k]; }
