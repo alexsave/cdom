@@ -2,6 +2,8 @@
  * Incoming bytes are copied into a buffer cdom owns and handed to the app's hook as (p, len),
  * valid until the hook returns: no strings and no JSON cross. Every answer arrives from the
  * event loop through an export that flushes on its way out. */
+/* cd_ws_open_cb, cd_ws_send, cd_ws_close, cd_ws_buffered, cd_http_cb and cd_epoch_ms are part of the I/O
+ * contract (cdom.h, top): they change only additively. */
 #ifndef CDOM_NET_H
 #define CDOM_NET_H
 #include <stdint.h>
