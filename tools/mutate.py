@@ -304,7 +304,7 @@ M = [
   ('storecb-del-unchecked', 'src/cdom_store.c', 'void cd_store_del(uint32_t token, const char *key, uint32_t klen) {\n  if (token >= CD_TOKEN_CDOM) __builtin_trap();\n', 'void cd_store_del(uint32_t token, const char *key, uint32_t klen) {\n', UNIT, 'FAIL cd_store_put_cb'),
   ('storecb-app-token', 'src/cdom_store.c', '  j_store_get(cd_cb_new((cd_cb_fn)fn, ctx), key', '  j_store_get(cd_cb_new((cd_cb_fn)fn, ctx) & 0x7fffffffu, key', UNIT, 'FAIL cd_store_put_cb'),
   # the program's string.h (src/libc) and mini.c's copy and fill
-  ('libc-no-builtin', 'src/libc/string.h', '#define memcpy(dst, src, n) __builtin_memcpy((dst), (src), (n))\n', '', LINK, 'FAIL string.h (cbase flags): undefined memcpy'),
+  ('libc-no-builtin', 'src/libc/string.h', '#define memcpy(dst, src, n) __builtin_memcpy((dst), (src), (n))\n', '', LINK, 'FAIL string.h (freestanding flags): undefined memcpy'),
   ('libc-no-real-copy', 'src/mini.c', '__attribute__((weak)) void *memcpy(void *restrict d, const void *restrict s, size_t n) { return __builtin_memcpy(d, s, n); }\n', '', LINK, "FAIL string.h (cdom flags): taking memcpy's address"),
   ('mini-fill-strong', 'src/mini.c', '__attribute__((weak)) void *memset', 'void *memset', LINK, "FAIL an app's own libc"),
 ]

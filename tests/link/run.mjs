@@ -18,7 +18,7 @@ try { x.free_one(); } catch (e) { trapped = e instanceof WebAssembly.RuntimeErro
 ok(trapped, 'an app that replaces malloc alone traps at the first free, not silently');
 x = await load(`${dir}/own_libc.wasm`);
 ok(x.own_libc() === 1, "an app's own memcmp, strlen, memcpy, memmove and memset link next to mini.c");
-for (const f of ['cdom', 'cbase']) {
+for (const f of ['cdom', 'freestanding']) {
   x = await load(`${dir}/libc_header_${f}.wasm`);
   ok(x.libc_header() === 1, `string.h (${f} flags): memcpy, memmove (overlapping), memset, memcmp and strlen give the right bytes`);
   x = await load(`${dir}/libc_addr_${f}.wasm`);
