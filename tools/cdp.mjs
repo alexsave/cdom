@@ -63,6 +63,9 @@ export async function launch(args = []) { // args: Chrome flags of the caller's 
   const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true });
   const s = (m, p) => send(m, p, sessionId);
   await s('Page.enable'); await s('Runtime.enable');
+  // The page behaves as focused whatever the OS window does: with several Chromes at once (tools/mutate.py -j N)
+  // a window can lose focus, and the browser then fires no focus or blur events (a removed input's focusout).
+  await s('Emulation.setFocusEmulationEnabled', { enabled: true });
   if (LEGACY) await s('Page.addScriptToEvaluateOnNewDocument', { source: OLD });
   const evaluate = async (expr) => {
     const r = await s('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
