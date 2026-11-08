@@ -315,6 +315,12 @@ M = [
   ('offsets-event-order', 'src/cdom.c', 'X(offsetof(cd_event_rec, pointer)) \\\n  X(offsetof(cd_event_rec, buttons))', 'X(offsetof(cd_event_rec, buttons)) \\\n  X(offsetof(cd_event_rec, pointer))', UNIT, "FAIL the shim's view of C's structs"),
   ('offsets-val-order', 'src/cdom.c', 'X(offsetof(cd_val, tag)) X(offsetof(cd_val, num))', 'X(offsetof(cd_val, num)) X(offsetof(cd_val, tag))', UNIT, "FAIL the shim's view of C's structs"),
   ('offsets-count', 'shim/cdom.js', '    valU = word();\n', '', UNIT, 'lay out C memory differently'),
+  # the I/O contract (cdom.h, top; tests/link/contract.c). A signature edited in one place is the build's
+  # to catch (the definition, the callers and clang's own libc types disagree); contract.c holds what the
+  # build does not: a code or a constant given a new value, and a signature edited consistently everywhere
+  ('contract-token', 'src/cdom.h', '#define CD_TOKEN_CDOM 0x80000000u', '#define CD_TOKEN_CDOM 0x40000000u', LINK, 'FAIL the I/O contract changed in place'),
+  ('contract-ws-close', 'src/cdom_net.h', '#define CD_WS_CLOSE 2', '#define CD_WS_CLOSE 3', LINK, 'FAIL the I/O contract changed in place'),
+  ('contract-http-timeout', 'src/cdom_net.h', '#define CD_HTTP_TIMEOUT 1 ', '#define CD_HTTP_TIMEOUT 2 ', LINK, 'FAIL the I/O contract changed in place'),
   # the name gate (tools/edges.mjs): the other repo's name, spelled in pieces here so this file does not carry it
   ('edges-name', 'src/cdom.h', '#ifndef CDOM_H\n', '/* built beside ' + 'c' + 'base */\n#ifndef CDOM_H\n', LINK, 'FAIL src/cdom.h:8: names the other repo'),
   ('edges-old-name', 'tools/fuzz.mjs', 'import http from', '// from C_' + 'BASE\nimport http from', LINK, 'FAIL tools/fuzz.mjs:2: names the other repo'),

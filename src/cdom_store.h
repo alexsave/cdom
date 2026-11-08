@@ -2,6 +2,7 @@
  * src/cdom_store.c to use it. Keys are the app's: put a version, and whatever the bytes depend on,
  * in the key, and a changed app reads a miss rather than old bytes. Nothing is parsed: the value
  * comes back as the bytes put. */
+/* The _cb forms are part of the I/O contract (cdom.h, top): they change only additively. */
 #ifndef CDOM_STORE_H
 #define CDOM_STORE_H
 #include <stdint.h>

@@ -1,7 +1,8 @@
 #!/bin/bash
 # The link-level tests: one heap whoever brings it, mini.c next to an app's libc, the program's
-# string.h (src/libc) under cdom's flags and freestanding ones, and CD_LIT refusing a variable. Builds into
-# tests/out/link and runs tests/link/run.mjs, then the name gate (tools/edges.mjs).
+# string.h (src/libc) under cdom's flags and freestanding ones, CD_LIT refusing a variable, and the I/O
+# contract (contract.c). Builds into tests/out/link and runs tests/link/run.mjs, then the name gate
+# (tools/edges.mjs).
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 src="$here/../../src"
@@ -52,6 +53,10 @@ elif "$CC" "${C[@]}" -o "$out/lit_var.o" "$here/lit_var.c" 2> "$out/lit_var.log"
   echo "FAIL CD_LIT accepted a variable"; fail=1
 elif grep -q "lit_var.c:3:.*error: expected ')'" "$out/lit_var.log"; then echo "ok   CD_LIT given a variable does not compile, a literal does"
 else echo "FAIL CD_LIT given a variable failed for another reason:"; cat "$out/lit_var.log"; fail=1; fi
+# The I/O contract (cdom.h, top): contract.c compiles only while every declaration it names is unchanged.
+if "$CC" "${LIBC_CDOM[@]}" -isystem "$src/libc" -fsyntax-only "$here/contract.c" 2> "$out/contract.log"; then
+  echo "ok   the I/O contract: every declaration external adapters build on has its type, and every code its value"
+else echo "FAIL the I/O contract changed in place:"; cat "$out/contract.log"; fail=1; fi
 node "$here/run.mjs" "$out" || fail=1
 node "$here/../../tools/edges.mjs" || fail=1
 exit $fail
