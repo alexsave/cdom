@@ -325,10 +325,15 @@ An app on main's op stream recompiles against the new event numbers (resize is 1
 The merged entry (cdom-merged, the default build) passes every gate: the harness's keyed check, smoke, DOM identity against both cdom-pf and cdom-main over 22 snapshots, listfuzz (5 seeds of 40,000 rounds), the unit page (86 cases), the link tests, tests/host (38 checks, real fullscreen and visibilitychange included) and tests/canvas.
 tools/domcheck.mjs now pins `crypto.getRandomValues` through its pinned `Math.random`, because the shim seeds from crypto (cherry-picked from amgi 4a31c08) where the older entries seed from `Math.random`.
 The unit page's prefs case names both media features at every step (amgi b0a3853): it had left one unset, so on a Mac in dark mode it failed on port-fixes itself.
-tools/mutate.py now has 216 mutants (main's host and canvas features, the unit page's host cases, the seed and cd_url_step added); a first run was stopped after 54 to land the merge: 50 caught, 3 that no longer compiled under clang 23's -Werror (svg-off, visibility-target, foreign-free; their texts are fixed) and lit-one-slot, which now fails the page at start because cd_input_value's path is a CD_LIT. The full run follows the merge.
+tools/mutate.py has 216 mutants (main's host and canvas features, the unit page's host cases, the seed and cd_url_step added), and all 216 are caught.
+It now runs them in parallel (`-j`, default half the cores; 6 workers took about 9 minutes, the serial run over an hour), each worker in a private copy of the tree, so the real tree is never mutated.
+Getting there found two real gaps and three kinds of false miss.
+The gaps: with direct calls, an event delivered inside a handler no longer re-applies a batch, so the old focus() case could not see the queue go (host-no-queue survived); a new host case prevents a click, calls focus() and then reads its own record, and fails three ways without the queue.
+And the canvas test only stopped the loop from inside a frame, so dropping the pending frame's check survived (frames-no-stop); a stop from outside a frame is now tested.
+The false misses: four mutants did not compile under clang 23's -Werror (unused variables; their texts now keep the variable read); tools/fuzz.mjs and tools/unit.mjs listened on fixed ports, so a second worktree running the suites at the same time made them fail to bind or load the other tree's page (they take a free port now, and tools/cdp.mjs a free debugging port in place of a random one from 8730-8739); and two mutants fail the page at start, before the case written for them, so they now expect that.
 Bytes (bench entry, -Oz, brotli at q11): app.wasm 9,646 -> 9,803 (4,593 -> 4,662), index.html with the inlined minified shim 11,899 -> 14,269 (4,524 -> 5,404), so host access, canvas and the wider event set cost the page 949 bytes brotli; main's entry was 20,677 bytes of wasm (5,604) and a 10,853-byte shim (3,649) beside a 403-byte page.
 Shim source 943 -> 1,149 lines.
-The merged entry has not been timed in a paired pass yet; that follows the merge.
+The merged entry has not been timed in a paired pass of its own yet.
 
 ## Bridge designs compared (2026-11-01)
 

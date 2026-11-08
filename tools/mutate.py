@@ -212,7 +212,7 @@ M = [
   ('host-flags-kept', 'src/cdom.c', '  inbox.flags = 0;\n  cd_on_event(&inbox);', '  cd_on_event(&inbox);', HOST, 'FAIL the next click is not prevented'),
   ('host-reserved-free', 'src/cdom.c', '  if (id < CD_FIRST_ID) return;\n  ready(); j_free(id);', '  ready(); j_free(id);', HOST, 'unreachable'),
   ('host-first-id', 'src/cdom.c', 'static cd_id next_id = CD_FIRST_ID;', 'static cd_id next_id = 1;', HOST, 'FAIL node(CD_WINDOW)'),
-  ('host-window-unbound', 'shim/cdom.js', '    nodes[WINDOW] = window;\n', '', HOST, 'FAIL node(CD_WINDOW)'),
+  ('host-window-unbound', 'shim/cdom.js', '    nodes[WINDOW] = window;\n', '', HOST, 'page did not start'), # cd_main listens on CD_WINDOW, so the page fails at start
   ('host-set-custom', 'shim/cdom.js', '        object.setProperty(property, value);', '        object[property] = value;', HOST, 'FAIL set custom property'),
   ('host-call-result', 'shim/cdom.js', '      nodes[RESULT] = result;\n', '', HOST, 'FAIL contains(node) read back'),
   ('host-val-obj', 'shim/cdom.js', '          object[key] = value;', '', HOST, 'FAIL scrollIntoView'),
@@ -230,7 +230,7 @@ M = [
   ('url-step-negated', 'shim/cdom.js', 'history.go(delta)', 'history.go(-delta)', UNIT, 'FAIL cd_url_step'),
   ('canvas-blit-offset', 'shim/cdom.js', 'new Uint8ClampedArray(memory.buffer, pixelsPtr, width * height * 4)', 'new Uint8ClampedArray(memory.buffer, pixelsPtr + 4, width * height * 4)', CANVAS, 'blit: byte'),
   ('frames-double', 'src/cdom.c', '  if (frames_on && !frames_asked) {', '  if (frames_on && (frames_asked || 1)) {', CANVAS, 'frame times not increasing'),
-  ('frames-no-stop', 'src/cdom.c', '  if (!frames_on) return;\n', '', CANVAS, 'frames: '),
+  ('frames-no-stop', 'src/cdom.c', '  if (!frames_on) return;\n', '', CANVAS, 'frames after a stop from outside a frame'),
   ('frames-token', 'src/cdom.c', '  if (token == CD_FRAMES_TOKEN) frame(t); else', '  if (0) frame(t); else', CANVAS, 'frames: '),
   ('call-noop', 'shim/cdom.js', '      const result = object[keys[keys.length - 1]](...args);', '      const result = undefined;', CANVAS, 'call: pinged'),
   ('node-export', 'shim/cdom.js', 'node: (id) => nodes[id]', 'node: () => null', CANVAS, 'node(id) is not'),
