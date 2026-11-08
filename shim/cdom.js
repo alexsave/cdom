@@ -54,9 +54,38 @@ var cdom = (() => {
   let i32;
   let f32;
   let f64;
+  // Where C's records are and how they are laid out, read once at start from cd_layout (src/cdom.c,
+  // CD_LAYOUT, filled with offsetof and sizeof): the shim hardcodes no offset into C memory
+  // (tools/offsets.mjs). Field offsets are in words (4 bytes), as u32, i32 and f32 index them.
   let stringBytes;          // where C writes a batch of string bytes
-  let stringMeta;           // where C writes (id, bytes, chars) per string in the batch
-  let inbox;                // where the event record goes
+  let stringMeta;           // where C writes a str_meta (id, bytes, chars) per string in the batch
+  let metaWords;            // a str_meta's size
+  let metaId;               // and its fields
+  let metaBytes;
+  let metaChars;
+  let evType;               // the event record's fields, as indexes into i32 and f32 (the record stays put)
+  let evId;
+  let evX;
+  let evY;
+  let evButton;
+  let evKey;
+  let evMods;
+  let evPath;
+  let evDepth;
+  let evCh;
+  let evMs;
+  let evPointer;
+  let evButtons;
+  let evDx;
+  let evDy;
+  let viewportW;            // cd_viewport_rec's fields
+  let viewportH;
+  let viewportHidden;
+  let viewportDpr;
+  let valWords;             // a cd_val's size
+  let valTag;               // and its fields; num is a double, so it is read through f64 at half the word index
+  let valNum;
+  let valU;
   let depth = 0;            // how many elements are open
   let last = null;          // the node made or walked to last
   let root = null;          // the outermost element closed last
@@ -104,18 +133,18 @@ var cdom = (() => {
     if (byteCount > SMALL) {
       const all = textDecoder.decode(u8.subarray(stringBytes, stringBytes + byteCount));
       let offset = 0;
-      for (let i = 0; i < count; i++, meta += 3) {
-        const chars = u32[meta + 2];
-        keep(u32[meta], all.substring(offset, offset + chars));
+      for (let i = 0; i < count; i++, meta += metaWords) {
+        const chars = u32[meta + metaChars];
+        keep(u32[meta + metaId], all.substring(offset, offset + chars));
         offset += chars;
       }
       return;
     }
     let at = stringBytes;
-    for (let i = 0; i < count; i++, meta += 3) {
-      const bytes = u32[meta + 1];
+    for (let i = 0; i < count; i++, meta += metaWords) {
+      const bytes = u32[meta + metaBytes];
       let value;
-      if (bytes === u32[meta + 2]) { // ASCII: one char per byte
+      if (bytes === u32[meta + metaChars]) { // ASCII: one char per byte
         value = "";
         for (let k = 0; k < bytes; k++) {
           value += String.fromCharCode(u8[at + k]);
@@ -123,7 +152,7 @@ var cdom = (() => {
       } else {
         value = textDecoder.decode(u8.subarray(at, at + bytes));
       }
-      keep(u32[meta], value);
+      keep(u32[meta + metaId], value);
       at += bytes;
     }
   }
@@ -164,28 +193,27 @@ var cdom = (() => {
     if (buffer !== memory.buffer) {
       views();
     }
-    const record = inbox >> 2;
     const key = event.key;
     const viewport = type === RESIZE || type === VISIBILITY;
     const point = pointOf(event);
     const pointer = fillsPointer[type] === 1; // other types skip the getters and read 0
     const wheel = type === WHEEL;
-    i32[record] = type;
-    i32[record + 1] = id;
-    i32[record + 2] = viewport ? innerWidth : point.clientX | 0;
-    i32[record + 3] = viewport ? innerHeight : point.clientY | 0;
-    i32[record + 4] = event.button | 0;
-    i32[record + 5] = viewport ? +doc.hidden : event.keyCode | 0;
-    i32[record + 6] = event.shiftKey | (event.ctrlKey << 1) | (event.altKey << 2) | (event.metaKey << 3)
+    i32[evType] = type;
+    i32[evId] = id;
+    i32[evX] = viewport ? innerWidth : point.clientX | 0;
+    i32[evY] = viewport ? innerHeight : point.clientY | 0;
+    i32[evButton] = event.button | 0;
+    i32[evKey] = viewport ? +doc.hidden : event.keyCode | 0;
+    i32[evMods] = event.shiftKey | (event.ctrlKey << 1) | (event.altKey << 2) | (event.metaKey << 3)
       | (editing(event.target) << 4);
-    i32[record + 7] = path;
-    i32[record + 8] = pathDepth;
-    i32[record + 9] = typeof key === "string" && key.length === 1 ? key.charCodeAt(0) : 0;
-    i32[record + 11] = Math.round(event.timeStamp || 0);
-    i32[record + 12] = pointer ? event.pointerId : 0;
-    i32[record + 13] = pointer ? event.buttons : 0;
-    f32[record + 14] = wheel ? event.deltaX : 0;
-    f32[record + 15] = wheel ? event.deltaY : 0;
+    i32[evPath] = path;
+    i32[evDepth] = pathDepth;
+    i32[evCh] = typeof key === "string" && key.length === 1 ? key.charCodeAt(0) : 0;
+    i32[evMs] = Math.round(event.timeStamp || 0);
+    i32[evPointer] = pointer ? event.pointerId : 0;
+    i32[evButtons] = pointer ? event.buttons : 0;
+    f32[evDx] = wheel ? event.deltaX : 0;
+    f32[evDy] = wheel ? event.deltaY : 0;
     nodes[EVENT] = event;
     const flags = exports.cd_event();
     nodes[EVENT] = undefined;
@@ -504,7 +532,11 @@ var cdom = (() => {
     if (buffer !== memory.buffer) {
       views();
     }
-    i32.set([innerWidth, innerHeight, +doc.hidden, Math.round(devicePixelRatio * 100)], recordPtr >> 2);
+    const record = recordPtr >> 2;
+    i32[record + viewportW] = innerWidth;
+    i32[record + viewportH] = innerHeight;
+    i32[record + viewportHidden] = +doc.hidden;
+    i32[record + viewportDpr] = Math.round(devicePixelRatio * 100);
   }
   // A node's box on screen into C memory as four doubles: left, top, width, height; 0 when id names
   // nothing with a box.
@@ -991,14 +1023,14 @@ var cdom = (() => {
     }
     return object;
   }
-  // One cd_val at entry index of the array at ptr (16 bytes each: tag at +0, payload at +8); an
-  // object's pairs follow it. Returns [value, index of the next entry].
+  // One cd_val at entry index of the array at ptr (a tag and a number or a payload, where cd_layout
+  // says); an object's pairs follow it. Returns [value, index of the next entry].
   function valueAt(ptr, index) {
-    const at = (ptr >> 2) + index * 4;
-    const tag = u32[at];
-    const payload = u32[at + 2];
+    const at = (ptr >> 2) + index * valWords;
+    const tag = u32[at + valTag];
+    const payload = u32[at + valU];
     switch (tag) {
-      case 0: return [f64[(at + 2) >> 1], index + 1];
+      case 0: return [f64[(at + valNum) >> 1], index + 1];
       case 1: return [stringOf(payload), index + 1];
       case 2: return [payload === 1, index + 1];
       case 3: return [nodes[payload], index + 1];
@@ -1157,10 +1189,7 @@ var cdom = (() => {
     }
     memory = exports.memory;
     views();
-    const layout = exports.cd_layout() >> 2;
-    stringBytes = u32[layout];
-    stringMeta = u32[layout + 1];
-    inbox = u32[layout + 2];
+    readLayout(exports.cd_layout() >> 2);
     if (exports.cd_url_changed) {
       addEventListener("popstate", urlChanged);
     }
@@ -1172,6 +1201,49 @@ var cdom = (() => {
     }
     exports.cd_start(seed(options));
     return exports;
+  }
+  // Reads cd_layout's block at word at: its entry count, then the entries in CD_LAYOUT's order (src/cdom.c).
+  // Byte offsets become word offsets, and the event record's fields indexes of their own, since the
+  // record never moves. A count that is not the number read here is a shim from another cdom: it throws.
+  function readLayout(at) {
+    const next = () => u32[at++];
+    const word = () => u32[at++] >> 2;
+    const count = next();
+    const end = at + count;
+    stringBytes = next();
+    stringMeta = next();
+    metaWords = word();
+    metaId = word();
+    metaBytes = word();
+    metaChars = word();
+    const record = next();
+    const field = () => (record + u32[at++]) >> 2;
+    evType = field();
+    evId = field();
+    evX = field();
+    evY = field();
+    evButton = field();
+    evKey = field();
+    evMods = field();
+    evPath = field();
+    evDepth = field();
+    evCh = field();
+    evMs = field();
+    evPointer = field();
+    evButtons = field();
+    evDx = field();
+    evDy = field();
+    viewportW = word();
+    viewportH = word();
+    viewportHidden = word();
+    viewportDpr = word();
+    valWords = word();
+    valTag = word();
+    valNum = word();
+    valU = word();
+    if (at !== end) {
+      throw new Error("cdom: this shim and the module's cdom.c lay out C memory differently");
+    }
   }
   // node(id): the DOM node (or host object) named id, for page glue around the app.
   return { start, node: (id) => nodes[id] };
