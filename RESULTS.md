@@ -231,6 +231,8 @@ MDN's `clz32` goes through `Math.log`, so the check below includes every power o
 That scan found real gaps: PEP calls `String.prototype.includes` on touch-action values with no check, wasm2js output calls `copyWithin` and `fill`, and the direct-call shim uses `Object.entries` and `globalThis`, none of which IE 11 has.
 Its allow list also records the names it cannot judge: Babel's helpers name `Symbol` only behind a `typeof` check, and wasm2js output reads the shim's import named `at` (cd_at) off the imports object.
 The targets assumed are IE 11, Safari 9, Chrome 49, Firefox 45, Android 4.4 and iOS 9: typed arrays, nothing from ES2015.
+Each output is rebuilt only when it is missing, differs from what the script last wrote there, or an input it names in `inputs()` (the files by content, wasm2js and node by version) changed since; a build that reads a file `inputs()` does not name throws before writing.
+So `tests/build.sh` with nothing of the fallback changed spends about 0.3 s on it instead of about 2 s, which every unit run and every mutant paid; `tools/legacyfresh.mjs` changes each input in turn and checks that exactly the outputs naming it are rebuilt.
 
 Bytes, for the keyed entry on direct calls (brotli in parentheses): `cdom.legacy.js` 46,709 (14,212), `app.wasm.js` 16,621 (6,347), against `app.wasm` 9,803 (4,662) and the page with the shim inlined, 14,314 (5,413).
 The inlined boot is the one cost every browser pays: the page grows by 654 bytes (218 brotli).
@@ -338,6 +340,7 @@ npm install                     # terser, which bench/build.sh minifies the shim
 bench/build.sh                  # cdom, cdom-pertext, cdom-notpl, cdom-o2 into jfb/frameworks/keyed (NAME=x builds one entry as x)
 tests/build.sh && node tools/unit.mjs && node tools/fuzz.mjs && node tools/canvas.mjs && node tools/host.mjs && tests/link/run.sh && node tools/legacy.mjs
 LEGACY=1 node tools/fuzz.mjs && LEGACY=1 node tools/legacy.mjs   # the no-WebAssembly path
+node tools/legacyfresh.mjs      # after tests/build.sh: the fallback rebuilds exactly when an input changed
 python3 tools/mutate.py         # every mutant, each against the test written for it
 (cd jfb/server && PORT=8093 npx tsx index.ts) &
 node tools/smoke.mjs cdom
