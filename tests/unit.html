@@ -506,6 +506,22 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
   const fragment = await popped(3) && urlHeard();
   check('back, forward and a link to a #fragment reach cd_on_url with the new path, answered without a cd_flush', () =>
     (back === '/route/b?x=1' && forward === '/route/c#d' && fragment === '/route/c#here' && x.t_stale() === 0) || `back ${back}, forward ${forward}, fragment ${fragment}, stale ${x.t_stale()}`);
+  check('cd_url_encode is encodeURIComponent on UTF-8, and cd_url_decode undoes it, a stray % left as it is', () => {
+    const cases = ['/Users/me/Anki2/사용자 1/collection.anki2', "A-Z_a.z!~*'()0 9", '100% %zz', '', 'é#?&=+/'];
+    const bad = [];
+    for (const s of cases) {
+      const n = x.t_url_encode(putPath(s));
+      const enc = urlOut(n);
+      if (enc !== encodeURIComponent(s)) bad.push(`encode ${s}: ${enc}`);
+      const m = x.t_url_decode(putPath(enc));
+      if (urlOut(m) !== s) bad.push(`decode ${enc}: ${urlOut(m)}`);
+    }
+    for (const [s, want] of [['%41%4a%7E', 'AJ~'], ['a%4', 'a%4'], ['%G1', '%G1'], ['%4Z', '%4Z'], ['%', '%']]) {
+      const got = urlOut(x.t_url_decode(putPath(s)));
+      if (got !== want) bad.push(`decode ${s}: ${got}`);
+    }
+    return !bad.length || bad.join('; ');
+  });
   x.t_url_step(-1);
   const steppedBack = await popped(4) && urlHeard();
   x.t_url_step(1);

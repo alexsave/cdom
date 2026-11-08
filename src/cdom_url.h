@@ -30,6 +30,14 @@ uint32_t cd_url_replace(const char *path, uint32_t len);
  * it does for the browser's buttons; a step past either end of the history does nothing. */
 void cd_url_step(int32_t delta);
 
+/* Percent-encoding, as cd_url_read hands a path back and as an HTTP header must carry UTF-8 (it
+ * takes Latin-1 only). cd_url_encode writes len bytes at src as encodeURIComponent does: every byte
+ * but A-Z a-z 0-9 - _ . ! ~ * ' ( ) as %XX (upper-case hex); dst needs room for 3 * len. It returns
+ * the bytes written. cd_url_decode turns each %XX back into its byte, leaving a % without two hex
+ * digits after it as it is (decodeURIComponent would throw); dst needs room for len, and may be src. */
+uint32_t cd_url_encode(char *dst, const char *src, uint32_t len);
+uint32_t cd_url_decode(char *dst, const char *src, uint32_t len);
+
 /* The document's title (the tab's and the history entry's name), len bytes of UTF-8. Set it after
  * a push, so the new entry gets it. */
 void cd_set_title(const char *text, uint32_t len);
