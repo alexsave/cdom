@@ -28,6 +28,14 @@ void cd_http(uint32_t token, const char *method, uint32_t mlen, const char *url,
              const char *headers, uint32_t hlen, const void *body, uint32_t blen, uint32_t deadline_ms);
 #define CD_HTTP_FAILED  0
 #define CD_HTTP_TIMEOUT 1   /* not an HTTP status (those are 100 to 599) */
+/* The same request, answered to a callback: fn(ctx, status, p, len) once, with what cd_on_http would
+ * get (the status or CD_HTTP_FAILED or CD_HTTP_TIMEOUT; p valid until fn returns), and cd_on_http does
+ * not hear it. cdom picks the token, from its own range (cdom.h, CD_TOKEN_CDOM), so it never meets an
+ * app's. A request with a callback cannot be cancelled; at most 65,535 cd_http_cb requests and cd_timer_cb
+ * timers are pending at once (traps past that). cd_http traps on a token in cdom's range. */
+typedef void (*cd_http_fn)(void *ctx, uint32_t status, const uint8_t *p, uint32_t len);
+void cd_http_cb(cd_http_fn fn, void *ctx, const char *method, uint32_t mlen, const char *url, uint32_t ulen,
+                const char *headers, uint32_t hlen, const void *body, uint32_t blen, uint32_t deadline_ms);
 
 /* Wall-clock time in epoch ms (Date.now()): what a server's expiry times are written in.
  * cd_now() is the page's own clock, for intervals. */
