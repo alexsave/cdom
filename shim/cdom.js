@@ -1057,10 +1057,20 @@ var cdom = (() => {
     return index === RESULT ? nodes.indexOf(value, RESULT + 1) : index; // CD_RESULT is no name
   }
 
+  // cd_seed for the app: options.seed when the page fixes one (a test, a replay: one line makes a
+  // run deterministic), else 32 bits from the browser's cryptographic generator, never from a
+  // generator nothing can seed.
+  function seed(options) {
+    if (options && options.seed !== undefined) {
+      return options.seed >>> 0;
+    }
+    return crypto.getRandomValues(new Uint32Array(1))[0];
+  }
+
   // Starts the app: mount is an element, or the id of one that may not be parsed yet: then the
   // wasm loads while the parser and the stylesheets run, and the app starts once the DOM is ready.
   // options.openStore: an app that reads its store as it starts opens it now, while the wasm is
-  // fetched and compiled, so its first get finds the database open.
+  // fetched and compiled, so its first get finds the database open. options.seed: cd_seed (seed()).
   async function start(url, mount, env, options) {
     if (options && options.openStore) {
       openDatabase().catch(() => {}); // a failure shows again, as a miss, at the first get
@@ -1125,7 +1135,7 @@ var cdom = (() => {
     if (exports.cd_fonts_changed && doc.fonts) {
       doc.fonts.addEventListener("loadingdone", fontsChanged);
     }
-    exports.cd_start((Math.random() * 4294967296) >>> 0);
+    exports.cd_start(seed(options));
     return exports;
   }
   // node(id): the DOM node (or host object) named id, for page glue around the app.

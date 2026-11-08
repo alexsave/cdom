@@ -701,6 +701,8 @@ EXPORT("t_url_read") uint32_t t_url_read(uint32_t part, uint32_t cap) {
 EXPORT("t_url_push") uint32_t t_url_push(uint32_t len) { return cd_url_push(url_in, len); }
 EXPORT("t_url_replace") uint32_t t_url_replace(uint32_t len) { return cd_url_replace(url_in, len); }
 EXPORT("t_title") void t_title(uint32_t len) { cd_set_title(url_in, len); }
+extern uint32_t cd_seed;
+EXPORT("t_seed") uint32_t t_seed(void) { return cd_seed; }
 void cd_on_url(const uint8_t *path, uint32_t len) {
   enter();
   url_heard_count++;
