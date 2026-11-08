@@ -529,10 +529,15 @@ cd_id cd_id_new(void) {
   return id;
 }
 
+static void on_drop(cd_id id);
+static uint8_t *on_ids; /* by id: 1 while the id has a cd_on handler, so freeing the others costs one load */
+static uint32_t on_cap;
+
 static void release(cd_id id) {
   if (id >= next_id || !alive[id]) __builtin_trap();
   alive[id] = 0;
   tags[id] = 0;
+  if (id < on_cap && on_ids[id]) on_drop(id); /* a reused id must not inherit the handlers */
   free_ids[nfree++] = id;
 }
 
@@ -595,6 +600,97 @@ void cd_region_end(cd_region *r) {
 }
 void cd_region_hide(cd_region *r) { cd_region_show(r, 0); }
 
+/* ---- pairs: a hash of (a, b) entries, open addressing on a alone ----
+ * The one table type for cdom's own maps from a pair: cd_on's handlers by (id, event type). Every entry
+ * with the same a lies in the probe run from a's home slot, so one walk to the first empty slot finds
+ * all of them (pair_any), and a delete shifts the run back instead of leaving a tombstone. */
+typedef struct { uint32_t a, b, used; void *p, *q; } pair_ent;
+typedef struct { pair_ent *e; uint32_t cap, n; } pair_tab;
+static uint32_t pair_home(const pair_tab *t, uint32_t a) { a *= 0x9e3779b1u; return (a ^ (a >> 15)) & (t->cap - 1); }
+static pair_ent *pair_find(pair_tab *t, uint32_t a, uint32_t b) {
+  if (!t->n) return 0;
+  for (uint32_t m = t->cap - 1, i = pair_home(t, a); t->e[i].used; i = (i + 1) & m)
+    if (t->e[i].a == a && t->e[i].b == b) return &t->e[i];
+  return 0;
+}
+static pair_ent *pair_any(pair_tab *t, uint32_t a) {
+  if (!t->n) return 0;
+  for (uint32_t m = t->cap - 1, i = pair_home(t, a); t->e[i].used; i = (i + 1) & m)
+    if (t->e[i].a == a) return &t->e[i];
+  return 0;
+}
+static void pair_insert(pair_tab *t, pair_ent v) {
+  uint32_t m = t->cap - 1, i = pair_home(t, v.a);
+  while (t->e[i].used) i = (i + 1) & m;
+  t->e[i] = v;
+  t->n++;
+}
+/* Sets (a, b) to (p, q), replacing what it held. */
+static void pair_put(pair_tab *t, uint32_t a, uint32_t b, void *p, void *q) {
+  pair_ent *e = pair_find(t, a, b);
+  if (e) { e->p = p; e->q = q; return; }
+  if ((t->n + 1) * 2 > t->cap) { /* grow and rehash: at most half full */
+    pair_ent *old = t->e;
+    uint32_t ocap = t->cap;
+    t->cap = ocap ? ocap * 2 : 64;
+    t->e = cd_alloc(t->cap * sizeof(pair_ent));
+    __builtin_memset(t->e, 0, t->cap * sizeof(pair_ent));
+    t->n = 0;
+    for (uint32_t i = 0; i < ocap; i++) if (old[i].used) pair_insert(t, old[i]);
+    cd_free(old);
+  }
+  pair_insert(t, (pair_ent){a, b, 1, p, q});
+}
+/* Deletes e, then moves back each later entry of the run that its home allows to fill the hole. */
+static void pair_del(pair_tab *t, pair_ent *e) {
+  uint32_t m = t->cap - 1, i = (uint32_t)(e - t->e);
+  t->n--;
+  for (uint32_t j = i;;) {
+    t->e[i].used = 0;
+    for (;;) {
+      j = (j + 1) & m;
+      if (!t->e[j].used) return;
+      uint32_t k = pair_home(t, t->e[j].a); /* it may move to i unless its home lies in (i, j] */
+      if (i <= j ? (k <= i || k > j) : (k <= i && k > j)) break;
+    }
+    t->e[i] = t->e[j];
+    i = j;
+  }
+}
+
+/* ---- handlers: cd_on ----
+ * handlers owns every (id, type) -> (fn, ctx); on_ids[id] says the id has at least one, so release()
+ * looks in the table only for those. cd_event calls the handler for (record id, type) when there is
+ * one, else cd_on_event. */
+static pair_tab handlers;
+static void on_drop(cd_id id) {
+  for (pair_ent *e; (e = pair_any(&handlers, id));) pair_del(&handlers, e);
+  on_ids[id] = 0;
+}
+void cd_on(cd_id id, uint32_t ev, cd_event_fn fn, void *ctx) {
+  if (ev >= CD_EV_TYPES) __builtin_trap();
+  int host = id >= CD_WINDOW && id <= CD_BODY;
+  if (!host && (id < CD_FIRST_ID || id >= next_id || !alive[id])) __builtin_trap(); /* the mount, a reserved or a free id */
+  if (!fn) {
+    pair_ent *e = pair_find(&handlers, id, ev);
+    if (!e) return;
+    pair_del(&handlers, e);
+    if (!pair_any(&handlers, id)) on_ids[id] = 0;
+    cd_unlisten(id, ev);
+    return;
+  }
+  if (id >= on_cap) {
+    uint32_t old = on_cap;
+    on_cap = id < 2048 ? 4096 : id * 2;
+    on_ids = cd_realloc(on_ids, on_cap);
+    __builtin_memset(on_ids + old, 0, on_cap - old);
+  }
+  on_ids[id] = 1;
+  pair_put(&handlers, id, ev, (void *)fn, ctx);
+  if (!host) cd_sel(id); /* cd_listen names the last node: make it id's own */
+  cd_listen(id, ev);
+}
+
 /* ---- window and time ---- */
 static cd_id window_target(uint32_t ev) { return ev == CD_EV_RESIZE ? CD_WINDOW : CD_DOCUMENT; }
 void cd_listen_window(uint32_t ev) { cd_listen(window_target(ev), ev); }
@@ -641,9 +737,13 @@ EXPORT("cd_start") void cd_start(uint32_t seed) {
 
 /* Every entry from JS ends in a flush, here and in cdom_net.c: an app never calls cd_flush.
  * cd_event returns the flags the handler set, which the shim acts on once C has returned. */
+__attribute__((weak)) void cd_on_event(const cd_event_rec *e) { (void)e; }
 EXPORT("cd_event") uint32_t cd_event(void) {
   inbox.flags = 0;
-  cd_on_event(&inbox);
+  uint32_t id = (uint32_t)inbox.id;
+  pair_ent *h = id < on_cap && on_ids[id] ? pair_find(&handlers, id, (uint32_t)inbox.type) : 0;
+  if (h) ((cd_event_fn)h->p)(&inbox, h->q);
+  else cd_on_event(&inbox);
   cd_flush();
   return (uint32_t)inbox.flags;
 }

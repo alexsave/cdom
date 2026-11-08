@@ -21,7 +21,7 @@ typedef uint32_t cd_str; /* interned string id */
 #define CD_WINDOW 1u
 #define CD_DOCUMENT 2u
 #define CD_BODY 3u     /* document.body when the app started */
-#define CD_EVENT 4u    /* the DOM event being delivered; valid inside cd_on_event only */
+#define CD_EVENT 4u    /* the DOM event being delivered; valid inside cd_on_event or a cd_on handler only */
 #define CD_RESULT 5u   /* what the last cd_call_args returned (undefined if it threw) */
 #define CD_FIRST_ID 6u
 #define CD_DETACHED 0xffffffffu
@@ -175,7 +175,7 @@ void cd_attach(cd_id id);            /* put it back where it was */
 void cd_flush(void);
 uint32_t cd_pending(void);           /* nonzero while strings or a walk wait to cross (for tests) */
 
-/* ---- events: the app implements cd_on_event; the shim fills the record ----
+/* ---- events: delivered to a cd_on handler, else to cd_on_event; the shim fills the record ----
  * id is the nearest listening ancestor-or-self of the target, or the host object listened on.
  * path holds the element-child indices from that node down toward the target, one byte per
  * level (byte 0 = which child of the listener), for depth levels (max 4).
@@ -197,7 +197,22 @@ typedef struct {
 } cd_event_rec;
 #define CD_PREVENT 1
 #define CD_STOP 2
+/* The app's hook for every event with no cd_on handler (cdom has an empty weak default, so an app that
+ * uses cd_on alone need not define it). */
 void cd_on_event(const cd_event_rec *e);
+/* A handler for one event type on one node or host object: fn(e, ctx) is called in place of cd_on_event
+ * for the events whose record has that id and type, and cd_prevent_default and cd_stop_propagation work
+ * inside it as they do in cd_on_event. Events with no handler still go to cd_on_event, unchanged.
+ * id is a live node id or CD_WINDOW, CD_DOCUMENT or CD_BODY; cd_on also makes the shim deliver ev for id,
+ * as cd_listen does: for a node it selects id's node first (cd_sel), so the last node is id's node after
+ * the call, and it may be called any time after the node was named. Registering again for the same
+ * (id, ev) replaces fn and ctx. fn 0 removes the handler and stops delivery of ev for id (cd_unlisten),
+ * also when the app had listened for the pair itself, since cdom cannot tell; removing a pair with no
+ * handler does nothing. A node's handlers go when its id is freed (cd_id_free, cd_remove, a region or a
+ * list), so an id handed out again starts with none. Traps on ev >= CD_EV_TYPES, on CD_MOUNT, CD_EVENT,
+ * CD_RESULT and a free id. Freeing an id with no handler costs one byte read. */
+typedef void (*cd_event_fn)(const cd_event_rec *e, void *ctx);
+void cd_on(cd_id id, uint32_t ev, cd_event_fn fn, void *ctx);
 void cd_main(void);                  /* the app's entry, called once at start */
 uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap); /* cd_get_str of "value": an input's value now */
 /* Whole-page delivery, as cd_listen on the host object that has the event: CD_EV_RESIZE on CD_WINDOW,

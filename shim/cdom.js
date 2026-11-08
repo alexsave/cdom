@@ -423,7 +423,13 @@ var cdom = (() => {
       exports.cd_image(token, 0);
     });
   }
+  // The id's node no longer answers to it: a node left in place after its id was freed must not be
+  // delivered under the id once it is handed out again.
   function forget(id) {
+    const node = nodes[id];
+    if (node && node.$i === id) {
+      node.$i = undefined;
+    }
     nodes[id] = undefined;
     listenMask[id * 2] = 0;
     listenMask[id * 2 + 1] = 0;
