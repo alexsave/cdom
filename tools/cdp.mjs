@@ -31,7 +31,7 @@ export async function launch() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cdom-chrome-'));
   const dbg = 9300 + Math.floor(Math.random() * 500);
   const proc = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    ['--headless=new', `--remote-debugging-port=${dbg}`, `--user-data-dir=${dir}`, '--no-first-run',
+    ['--headless=new', '--mute-audio', `--remote-debugging-port=${dbg}`, `--user-data-dir=${dir}`, '--no-first-run',
      '--no-default-browser-check', '--disable-extensions', '--window-size=1280,800', 'about:blank'], { stdio: 'ignore' });
   let ver;
   for (let i = 0; i < 50 && !ver; i++) { try { ver = await (await fetch(`http://127.0.0.1:${dbg}/json/version`)).json(); } catch { await sleep(200); } }
