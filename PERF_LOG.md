@@ -279,6 +279,57 @@ First paint (40_) was not rerun: the page is 684 bytes more brotli (the network 
 platform rewrote the shim's event path (named events through `delegate(kind, h)`, a `post` with a key argument), indexes `strs` directly (no transient strings), and adds its own cdom.c work (cdom_html.c, httpd.c, ssr_page.c).
 To take these fixes it would need: the clone append and `open_svg` (and the SVG namespace in cdom_html.c's server-side output); `name_open`; `style`, `style_num` and `image` (and style ops in the HTML renderer); the window, load, timer, frame and clock imports mapped onto its named-event delegate; transient strings back in its string path (`cd_tmp`); the network module; the auto-flush in every export it adds (cd_start_state among them); and, unchanged C it can take as is: regions, the list end anchor, `cd_list_forget`, the alive check, `CD_LIT`, `cd_fmt`, the weak allocator and the weak mini.c.
 
+## The two lines merged (2026-11-08)
+
+main had kept the batched op stream and added canvas-blit and host access on it; port-fixes had replaced the stream with direct calls and added the modules above.
+The two had never been measured against each other: RESULTS.md's 1.04 is a factor against the fastest of seven entries in one pass, and this log's ratios are paired against vanillajs, so they do not compare.
+
+### Head to head
+
+Both lines' keyed entries were built side by side into jfb as their own defaults (cdom-main: main b8fbd1d at -O2 with the shim as a file; cdom-pf: port-fixes 4a5fc00 at -Oz with the shim minified and inlined) and run with tools/pair.sh, interleaved benchmark by benchmark with vanillajs, every start gated on the 1-minute load being under 4.
+Pass h2hA ran vanillajs, cdom-main, cdom-pf; pass h2hB ran vanillajs, cdom-pf, cdom-main, so neither entry always went second.
+Another agent ran short browser tests on the Mac meanwhile, so the gate waited up to 9 minutes before some starts; no start timed out.
+
+| benchmark | vanillajs A / B | cdom-main A / B | cdom-pf A / B |
+| --- | ---: | ---: | ---: |
+| 01_run1k | 29.5 @3.60 / 28.8 @2.65 | 29.6 @3.90 / 29.4 @2.78 | 29.7 @3.72 / 28.8 @2.87 |
+| 02_replace1k | 32.5 @3.48 / 31.1 @2.85 | 33.2 @3.20 / 32.2 @2.58 | 32.3 @3.52 / 31.2 @2.38 |
+| 03_update10th1k_x16 | 21.2 @3.66 / 15.8 @2.54 | 17.8 @3.81 / 16.9 @2.17 | 17.1 @3.50 / 17.5 @2.63 |
+| 04_select1k | 5.10 @3.54 / 4.70 @1.85 | 4.80 @2.84 / 5.80 @1.84 | 4.60 @3.72 / 5.20 @2.20 |
+| 05_swap1k | 18.7 @3.18 / 22.0 @2.94 | 20.7 @3.83 / 20.2 @3.83 | 19.8 @3.81 / 21.4 @3.50 |
+| 06_remove-one-1k | 15.7 @3.80 / 18.3 @3.55 | 15.4 @3.28 / 15.5 @2.85 | 15.4 @2.81 / 15.4 @3.51 |
+| 07_create10k | 310.1 @2.39 / 310.3 @2.59 | 316.5 @2.31 / 319.4 @3.05 | 308.6 @2.38 / 314.4 @3.47 |
+| 08_create1k-after1k_x2 | 34.3 @2.42 / 34.2 @3.69 | 35.9 @3.06 / 35.5 @2.82 | 35.2 @3.34 / 34.9 @2.99 |
+| 09_clear1k_x8 | 13.8 @3.66 / 13.1 @3.60 | 14.0 @3.71 / 13.5 @2.71 | 13.7 @2.99 / 13.3 @2.98 |
+| weighted geomean vs vanillajs | 1.000 / 1.000 | 0.988 / 1.015 | 0.968 / 1.002 |
+
+Each cell is the median total in ms of that pass, with the load at the start of the run.
+tools/ci.mjs, cdom-pf over cdom-main: h2hA 0.980 (95% interval 0.960-0.989), h2hB 0.987 (0.970-1.013).
+Both passes pooled (each benchmark's iterations from the two passes resampled together): 0.983 (0.971-0.988); the same bootstrap of cdom-main against itself gives 1.000 (0.986-1.013), which is the width noise alone makes.
+Script time tells the same story with less noise: cdom-pf against cdom-main, run1k 2.4 against 3.0 ms in both passes, replace1k 4.9 and 4.8 against 5.4, create10k 19.3 and 19.2 against 26.3 and 26.2, create1k-after1k 2.5 and 2.6 against 3.2 and 3.3.
+tools/quick.mjs (script time per click, unthrottled, two complete interleaved runs at loads 3.66 and 3.85): run1k 1.79 and 1.74 ms against 2.30 and 2.20, replace1k 1.85 and 1.84 against 2.37 and 2.18, append 1.52 and 1.50 against 1.87 and 1.89, create10k 15.78 and 15.67 against 17.90 and 17.99; swap, update, select and clear sit at the timer floor for both (a third run lost vanillajs to a navigation race and is left out).
+First paint (tools/fpruns.sh, 11 rounds, loads 3.28-3.90): vanillajs 68.1 ms, cdom-main 91.1 ms (1.34x), cdom-pf 75.5 ms (1.11x); the harness's compressed size 2.5, 9.4 and 8.9 KB.
+So the direct calls are faster: about 1.7% on the weighted geomean, a fifth less script on the creating benchmarks, and 16 ms less to first paint, the last mostly from the inlined shim and -Oz.
+-O2 against -Oz is part of the difference between the two entries, but this log measured -Oz no slower than -O2 on this app, and the script time gap is in the shim's DOM calls, not in C.
+
+### What was ported, and what was dropped
+
+The merge keeps port-fixes's direct calls and brings main's canvas-blit and host-access features onto them; RESULTS.md ("On direct calls") lists each one.
+Where the two lines did the same thing twice, one was kept: `cd_rect` (not `cd_get_rect`), `cd_listen` on a host id (with `cd_listen_window` a mapping onto it), `get` behind `cd_input_value` (not `input`), `cd_call` as `cd_call_args` with no arguments, `cd_frames` over `cd_raf_request`, and the weak allocator (not `CDOM_NO_ALLOC`).
+`cd_viewport` stays beside `cd_get_num(CD_WINDOW, "innerWidth")`: it reads the four values an app needs together in one call, where the paths are the general case.
+API changes for an app on port-fixes: a whole-page event's record id is `CD_WINDOW` or `CD_DOCUMENT` (it was `CD_MOUNT`); the record's `prevent` is `flags`; node ids start at `CD_FIRST_ID` (6); `cd_rect` returns int; the event types past `CD_EV_TOUCHCANCEL` are new.
+An app on main's op stream recompiles against the new event numbers (resize is 12, visibilitychange is `CD_EV_VISIBILITY`, 13) and uses `cd_rect` for `cd_get_rect`.
+
+### Tests, mutants and bytes after the merge
+
+The merged entry (cdom-merged, the default build) passes every gate: the harness's keyed check, smoke, DOM identity against both cdom-pf and cdom-main over 22 snapshots, listfuzz (5 seeds of 40,000 rounds), the unit page (86 cases), the link tests, tests/host (38 checks, real fullscreen and visibilitychange included) and tests/canvas.
+tools/domcheck.mjs now pins `crypto.getRandomValues` through its pinned `Math.random`, because the shim seeds from crypto (cherry-picked from amgi 4a31c08) where the older entries seed from `Math.random`.
+The unit page's prefs case names both media features at every step (amgi b0a3853): it had left one unset, so on a Mac in dark mode it failed on port-fixes itself.
+MUTANTS
+Bytes (bench entry, -Oz, brotli at q11): app.wasm 9,646 -> 9,803 (4,593 -> 4,662), index.html with the inlined minified shim 11,899 -> 14,269 (4,524 -> 5,404), so host access, canvas and the wider event set cost the page 949 bytes brotli; main's entry was 20,677 bytes of wasm (5,604) and a 10,853-byte shim (3,649) beside a 403-byte page.
+Shim source 943 -> 1,149 lines.
+MERGED_RUN
+
 ## Bridge designs compared (2026-11-01)
 
 One import per DOM operation stays: a generic dispatcher, a function table, natively bound imports, fused operations, the old op list and the Fast API were each measured against it on real pages and none was faster beyond the noise. Why, and what does help, is in BRIDGE.md; the benchmark is at the tag bridge-bench-2026-11-01.

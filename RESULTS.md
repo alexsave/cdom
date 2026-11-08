@@ -11,6 +11,13 @@ A second full pass gave the same order: vanillajs 1.00, cdom 1.06, wasm-bindgen 
 It ships 7.7 KB brotli in total (shim plus wasm plus HTML), against React's 51.4 KB.
 Its first paint is 87 ms against vanillajs's 63 ms and React's 308 ms.
 
+## Head to head: this op stream against direct calls (2026-11-08)
+
+The numbers in this file are for the batched op stream, measured as a factor against the fastest of seven entries in one pass.
+port-fixes replaced the stream with one import per DOM operation and measured it paired against vanillajs, so the two lines' numbers did not compare; they were then run against each other, paired and interleaved under the same load gate.
+Direct calls won: cdom-pf over cdom-main 0.980 (95% interval 0.960-0.989) and 0.987 (0.970-1.013) in two passes, 0.983 (0.971-0.988) pooled, with a fifth less script time on the creating benchmarks and first paint 75.5 ms against 91.1 ms (vanillajs 68.1).
+main now carries port-fixes's design, with this branch's canvas and host access ported onto it ("On direct calls", below); PERF_LOG.md has the full table and the merged entry's numbers.
+
 ## Alex's three predictions
 
 1. **React faster on "create 10,000 rows": wrong.**
