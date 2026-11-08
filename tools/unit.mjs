@@ -156,6 +156,26 @@ try {
   let cyc = [];
   for (let i = 0; i < 400; i++) { await sleep(20); cyc = await b.evaluate('[0, 1, 2].map((k) => __x.t_ws_cycle(k))'); if (cyc[0] === 40) break; }
   if (cyc[0] === 40 && cyc[1] === cyc[2]) passed.push('sockets opened and closed 40 times reuse their id'); else errors.push(`sockets: ${cyc[0]} cycles, ids ${cyc[1]} to ${cyc[2]}`);
+  // cd_ws_open_cb next to cd_ws_open (30 in unit.c): two sockets of each kind, the second of each
+  // taking the id the other kind just closed; each sink hears only its own sockets.
+  await b.evaluate('__x.t_ws_pair()');
+  const wp = (k) => b.evaluate(`[0, 1, 2, 3, 4, 5, 6].map((f) => __x.t_ws_pair_seen(${k}, f))`);
+  let wg = [], wc1 = [], wc2 = [], ids = [];
+  for (let i = 0; i < 300; i++) { await sleep(20); [wg, wc1, wc2, ids] = await Promise.all([0, 1, 2, 3].map(wp)); if (wg[2] === 2 && wc2[2] === 1) break; }
+  await sleep(100);
+  [wg, wc1, wc2, ids] = await Promise.all([0, 1, 2, 3].map(wp));
+  const code = wg[4];
+  const wpOk = [wg.slice(0, 4).join() === '2,2,2,2', code > 0, wc1.join() === `1,1,1,1,${code},${ids[1]},3`, wc2.join() === `1,1,1,1,${code},${ids[2]},3`,
+    ids[0] !== ids[1], ids[2] === ids[0], ids[3] === ids[1], await stale() === 0];
+  if (wpOk.every(Boolean)) passed.push('cd_ws_open_cb: a callback socket and a cd_ws_open socket open at once, and two more taking the other kind\'s freed id: each kind\'s events (open, its own echoed bytes, close and its code) reach only its own sink, the callback with its ctx and id; the hooks hear none of the callback\'s');
+  else errors.push(`cd_ws_open_cb: ${JSON.stringify({ wpOk, wg, wc1, wc2, ids })}`);
+  // 40 callback sockets opened and closed one after another: one id, and every slot freed.
+  await b.evaluate('__x.t_ws_cb_cycles(40)');
+  const wcy = () => b.evaluate('[0, 1, 2, 3, 4, 5].map((f) => __x.t_ws_cb_cycle(f))');
+  let cy = [];
+  for (let i = 0; i < 400; i++) { await sleep(20); cy = await wcy(); if (cy[0] === 40) break; }
+  if (cy[0] === 40 && cy[1] === cy[2] && cy[3] === cy[4] && cy[5] === 80) passed.push('cd_ws_open_cb: 40 sockets opened and closed reuse their id, and each closed socket\'s callback slot is freed');
+  else errors.push(`cd_ws_open_cb cycles: ${cy[0]} cycles, ids ${cy[1]} to ${cy[2]}, slot probes ${cy[3]} and ${cy[4]}, right ctx ${cy[5]} of 80`);
   // bufferedAmount: the 4 MiB just sent, then 0 once it drained.
   await b.evaluate('__x.t_ws_big()');
   let after = 0, buffered = -1;

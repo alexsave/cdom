@@ -310,7 +310,11 @@ void cd_on_frame(double ms);         /* the app's hook (empty weak default); ms 
 
 /* ---- time: answered through the app's hooks (cdom has empty weak defaults) ----
  * Tokens: an app's tokens for cd_timer_start and cd_http stay below CD_TOKEN_CDOM. The tokens from
- * CD_TOKEN_CDOM up are cdom's own: those cd_timer_cb and cd_http_cb hand out, and CD_FRAMES_TOKEN. */
+ * CD_TOKEN_CDOM up are cdom's own: those the _cb forms hand out (cd_timer_cb, cd_http_cb, cd_ws_open_cb),
+ * and CD_FRAMES_TOKEN.
+ * The hooks (cd_on_timer, cd_on_http, cd_on_ws_*, cd_on_event) are app-wide, so they are
+ * the app's own: a library linked inside an app (an SDK, a client) never defines one, and uses the _cb
+ * forms (and cd_on for events), whose answers reach only the callback that asked. */
 #define CD_TOKEN_CDOM 0x80000000u
 /* cd_on_timer(token) after ms. A token started again before it fired fires once per start. Traps on a
  * token in cdom's range (token >= CD_TOKEN_CDOM). */
@@ -322,8 +326,8 @@ void cd_timer_stop(uint32_t token);
 /* fn(ctx) once, after ms; returns the timer's token (in cdom's range), for cd_timer_stop. To repeat, fn
  * starts another (it may reuse the slot, under a new token). A token is not reused: it carries its slot's
  * generation, so stopping a token that fired or was stopped never stops the timer that took its slot
- * since (until the slot has been reused 32,768 times). At most 65,535 cd_timer_cb timers and cd_http_cb
- * requests are pending at once (traps past that). */
+ * since (until the slot has been reused 32,768 times). At most 65,535 cd_timer_cb timers, cd_http_cb
+ * requests and cd_ws_open_cb sockets are pending at once (traps past that). */
 typedef void (*cd_timer_fn)(void *ctx);
 uint32_t cd_timer_cb(uint32_t ms, cd_timer_fn fn, void *ctx);
 void cd_raf_request(uint32_t token);              /* cd_on_raf(token, t) before the next frame */
