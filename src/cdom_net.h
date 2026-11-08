@@ -22,8 +22,8 @@ uint32_t cd_ws_buffered(uint32_t id);
  * cd_on_ws_msg and cd_on_ws_close. The hooks hear nothing of it, and fn nothing of another socket.
  * cd_ws_send, cd_ws_close and cd_ws_buffered take its id as any; the id is good until the close
  * answer, as cd_ws_open's (and may come back from either form then). Its callback slot is freed at the
- * close, before fn hears it; it counts against the 65,535 cd_timer_cb timers and cd_http_cb requests
- * pending at once (traps past that) while the socket lives. */
+ * close, before fn hears it; it counts against the 65,535 cd_timer_cb timers, cd_http_cb requests and
+ * store answers pending at once (traps past that) while the socket lives. */
 #define CD_WS_OPEN  0
 #define CD_WS_MSG   1
 #define CD_WS_CLOSE 2
@@ -45,7 +45,7 @@ void cd_http(uint32_t token, const char *method, uint32_t mlen, const char *url,
  * get (the status or CD_HTTP_FAILED or CD_HTTP_TIMEOUT; p valid until fn returns), and cd_on_http does
  * not hear it. cdom picks the token, from its own range (cdom.h, CD_TOKEN_CDOM), so it never meets an
  * app's. A request with a callback cannot be cancelled; at most 65,535 cd_http_cb requests, cd_timer_cb
- * timers and cd_ws_open_cb sockets are pending at once (traps past that). cd_http traps on a token in cdom's range. */
+ * timers, cd_ws_open_cb sockets and store _cb answers are pending at once (traps past that). cd_http traps on a token in cdom's range. */
 typedef void (*cd_http_fn)(void *ctx, uint32_t status, const uint8_t *p, uint32_t len);
 void cd_http_cb(cd_http_fn fn, void *ctx, const char *method, uint32_t mlen, const char *url, uint32_t ulen,
                 const char *headers, uint32_t hlen, const void *body, uint32_t blen, uint32_t deadline_ms);
