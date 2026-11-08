@@ -1260,3 +1260,49 @@ EXPORT("t_ws_cb_cycle") uint32_t t_ws_cb_cycle(uint32_t f) {
   const uint32_t v[6] = {wcy_done, wcy_lo, wcy_hi, wcy_probe[0], wcy_probe[1], wcy_ctx_ok};
   return v[f];
 }
+
+/* 31. The shim's view of C's structs is C's: every offset it uses comes from cd_layout. A box listens
+ * for pointerdown, wheel and keydown with cd_on, and the page fires each at a grandchild (the p is
+ * the box's child 1, the b the p's child 2: path 0x201, depth 2) with a known value in every field;
+ * the handler keeps the record, and C hands back each field by its name. The other way, C passes
+ * every kind of cd_val (an object's pairs among them) to a page function, and reads the viewport. */
+static cd_event_rec layout_rec;
+static cd_id layout_box;
+static void layout_heard(const cd_event_rec *e, void *ctx) {
+  (void)ctx;
+  __builtin_memcpy(&layout_rec, e, sizeof layout_rec);
+}
+EXPORT("t_layout") cd_id t_layout(void) {
+  cd_id s = section("layout");
+  cd_at(s, 0);
+  cd_open(L("div")); cd_name_open(layout_box = cd_id_new());
+  cd_open(L("i")); cd_close();
+  cd_open(L("p"));
+  cd_open(L("b")); cd_close(); cd_open(L("b")); cd_close();
+  cd_open(L("b")); cd_text(L("target")); cd_close();
+  cd_close();
+  cd_close();
+  cd_on(layout_box, CD_EV_POINTERDOWN, layout_heard, 0);
+  cd_on(layout_box, CD_EV_WHEEL, layout_heard, 0);
+  cd_on(layout_box, CD_EV_KEYDOWN, layout_heard, 0);
+  return layout_box;
+}
+/* The last record's fields by name, in cd_event_rec's order; dx and dy times 100. */
+EXPORT("t_layout_field") int32_t t_layout_field(int32_t k) {
+  const cd_event_rec *e = &layout_rec;
+  const int32_t v[15] = {e->type, e->id, e->x, e->y, e->button, e->key, e->mods, e->path, e->depth,
+                         e->ch, e->ms, e->pointer, e->buttons, (int32_t)(e->dx * 100), (int32_t)(e->dy * 100)};
+  return v[k];
+}
+EXPORT("t_layout_vals") void t_layout_vals(void) {
+  const cd_val v[] = {cd_v_num(2.5), cd_v_str(L("two")), cd_v_bool(1), cd_v_id(layout_box), cd_v_null(),
+                      cd_v_obj(2), cd_v_str(L("a")), cd_v_num(-1.25), cd_v_str(L("b")), cd_v_bool(0),
+                      cd_v_num(1e300)};
+  cd_call_args(CD_WINDOW, L("layoutVals"), 7, v);
+}
+EXPORT("t_layout_viewport") int32_t t_layout_viewport(int32_t k) {
+  cd_viewport_rec v;
+  cd_viewport(&v);
+  const int32_t f[4] = {v.w, v.h, v.hidden, v.dpr100};
+  return f[k];
+}

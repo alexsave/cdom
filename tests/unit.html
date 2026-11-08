@@ -220,6 +220,30 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
   const shimSource = await (await fetch('cdom.js')).text();
   check('the shim draws no stray random: no Math.random, no Date.now seed', () =>
     !/Math\.random|Date\.now\(\)\s*[^;]*seed/.test(shimSource) || 'found one');
+  // The shim's view of C's structs (unit.c 31): each field of the event record, C's cd_val and viewport.
+  {
+    const box = x.t_layout();
+    const target = document.querySelector('#layout p b:nth-child(3)');
+    const fields = () => [...Array(15).keys()].map((k) => x.t_layout_field(k)).join();
+    const got = [], want = [];
+    const fire = (event, fieldsWanted) => { target.dispatchEvent(event); got.push(fields()); want.push(fieldsWanted(Math.round(event.timeStamp)).join()); };
+    fire(new PointerEvent('pointerdown', { bubbles: true, clientX: 11, clientY: 22, button: 2, buttons: 5, pointerId: 7, shiftKey: true, metaKey: true }),
+      (ms) => [9, box, 11, 22, 2, 0, 9, 0x201, 2, 0, ms, 7, 5, 0, 0]);
+    fire(new WheelEvent('wheel', { bubbles: true, clientX: 33, clientY: 44, buttons: 3, deltaX: 1.5, deltaY: -2.25, ctrlKey: true }),
+      (ms) => [22, box, 33, 44, 0, 0, 2, 0x201, 2, 0, ms, 0, 3, 150, -225]);
+    fire(new KeyboardEvent('keydown', { bubbles: true, key: 'q', keyCode: 81, altKey: true }),
+      (ms) => [4, box, 0, 0, 0, 81, 4, 0x201, 2, 113, ms, 0, 0, 0, 0]);
+    let vals = null;
+    window.layoutVals = (...a) => { vals = a; };
+    x.t_layout_vals();
+    const valsOk = vals && vals.length === 7 && vals[3] === document.querySelector('#layout div')
+      && JSON.stringify([vals[0], vals[1], vals[2], vals[4], vals[5], vals[6]]) === JSON.stringify([2.5, 'two', true, null, { a: -1.25, b: false }, 1e300]);
+    const viewport = [0, 1, 2, 3].map((k) => x.t_layout_viewport(k)).join();
+    const viewportWant = [innerWidth, innerHeight, +document.hidden, Math.round(devicePixelRatio * 100)].join();
+    check('the shim\'s view of C\'s structs is C\'s (cd_layout): every event record field by name, for a pointer, a wheel and a key; every cd_val kind; the viewport', () =>
+      (got.join('|') === want.join('|') && valsOk && viewport === viewportWant)
+      || JSON.stringify({ got, want, vals: vals && vals.map(String), viewport, viewportWant }));
+  }
   check('clone inside an open element is its child', () => {
     x.t_clone_inside();
     const got = [...$('#clone').childNodes].map((n) => n.outerHTML).join('');
