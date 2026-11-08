@@ -123,6 +123,20 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
       (opened && afterCancel.join() === `2,${x.t_ev_close()},${id}` && afterClose.join() === `1,${x.t_ev_close()},${id}` && !dialog.open)
       || JSON.stringify({ opened, afterCancel, afterClose }));
   }
+  {
+    // 25. cd_open_id.
+    let threw = '';
+    try { x.t_open_id(); } catch (e) { threw = String(e); }
+    const ul = $('#openid ul'), lis = ul ? [...ul.children] : [];
+    const inRegion = $('#openid p > b.in-region') !== null;
+    try { x.t_open_hide(); } catch (e) { threw += String(e); }
+    const live = [0, 1, 2].map((k) => x.t_open_live(k));
+    check('cd_open_id: the id names the element it opened, after children were built inside; in a region it is the region\'s and goes with it', () => {
+      const r = [ul && ul.className === 'outer', lis.length === 2 && lis[0].className === 'inner' && lis[1].className === '',
+        inRegion, live[1] === live[0] + 2, live[2] === live[0], !$('#openid p')];
+      return (!threw && r.every(Boolean)) || JSON.stringify(r) + ' ' + $('#openid').innerHTML + ' live ' + live + ' ' + threw;
+    });
+  }
   check('options.seed is cd_seed, so one line makes a run deterministic', () => (x.t_seed() >>> 0) === 0xdeadbeef || x.t_seed() >>> 0);
   const shimSource = await (await fetch('cdom.js')).text();
   check('the shim draws no stray random: no Math.random, no Date.now seed', () =>

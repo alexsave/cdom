@@ -111,6 +111,10 @@ void cd_class(cd_str value);
  * cd_name_open names the innermost open element, whatever has been built inside it so far. */
 void cd_name(cd_id id);
 void cd_name_open(cd_id id);
+/* Open an element and name it with a new id, in one call: cd_open(tag), cd_id_new(), cd_name_open(id).
+ * The id names the element whatever is built inside it before its cd_close. It is an id like any other:
+ * recorded by a region that is building, and freed with cd_id_free or cd_remove. */
+cd_id cd_open_id(cd_str tag);
 /* Name the last node and deliver ev for it. On CD_WINDOW, CD_DOCUMENT or CD_BODY it listens on that
  * object instead (once however often it is asked) and does not touch the last node; such a listener is not
  * passive, so cd_prevent_default works on a touchmove (it stops the page scrolling). */

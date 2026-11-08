@@ -240,6 +240,10 @@ M = [
   ('frames-token', 'src/cdom.c', '  if (token == CD_FRAMES_TOKEN) frame(t); else', '  if (0) frame(t); else', CANVAS, 'frames: '),
   ('call-noop', 'shim/cdom.js', '      const result = object[keys[keys.length - 1]](...args);', '      const result = undefined;', CANVAS, 'call: pinged'),
   ('node-export', 'shim/cdom.js', 'node: (id) => nodes[id]', 'node: () => null', CANVAS, 'node(id) is not'),
+  # app helpers: cd_open_id
+  ('open-id-before', 'src/cdom.c', '  cd_open(tag);\n  cd_id id = cd_id_new();\n  cd_name_open(id);', '  cd_id id = cd_id_new();\n  cd_name_open(id);\n  cd_open(tag);', UNIT, 'FAIL cd_open_id'),
+  ('open-id-unnamed', 'src/cdom.c', '  cd_name_open(id);\n  return id;', '  return id;', UNIT, 'FAIL cd_open_id'),
+  ('open-id-unrecorded', 'src/cdom.c', '  cd_open(tag);\n  cd_id id = cd_id_new();', '  cd_open(tag);\n  cd_region *r = recording;\n  recording = 0;\n  cd_id id = cd_id_new();\n  recording = r;', UNIT, 'FAIL cd_open_id'),
   ('mini-strong', 'src/mini.c', '__attribute__((weak, no_builtin)) int memcmp', '__attribute__((no_builtin)) int memcmp', LINK, "FAIL an app's own libc"),
 ]
 
