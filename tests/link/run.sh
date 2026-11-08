@@ -1,7 +1,7 @@
 #!/bin/bash
 # The link-level tests: one heap whoever brings it, mini.c next to an app's libc, the program's
 # string.h (src/libc) under cdom's flags and freestanding ones, and CD_LIT refusing a variable. Builds into
-# tests/out/link and runs tests/link/run.mjs.
+# tests/out/link and runs tests/link/run.mjs, then the name gate (tools/edges.mjs).
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 src="$here/../../src"
@@ -53,4 +53,5 @@ elif "$CC" "${C[@]}" -o "$out/lit_var.o" "$here/lit_var.c" 2> "$out/lit_var.log"
 elif grep -q "lit_var.c:3:.*error: expected ')'" "$out/lit_var.log"; then echo "ok   CD_LIT given a variable does not compile, a literal does"
 else echo "FAIL CD_LIT given a variable failed for another reason:"; cat "$out/lit_var.log"; fail=1; fi
 node "$here/run.mjs" "$out" || fail=1
+node "$here/../../tools/edges.mjs" || fail=1
 exit $fail

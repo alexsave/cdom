@@ -306,6 +306,9 @@ M = [
   # the program's string.h (src/libc) and mini.c's copy and fill
   ('libc-no-builtin', 'src/libc/string.h', '#define memcpy(dst, src, n) __builtin_memcpy((dst), (src), (n))\n', '', LINK, 'FAIL string.h (freestanding flags): undefined memcpy'),
   ('libc-no-real-copy', 'src/mini.c', '__attribute__((weak)) void *memcpy(void *restrict d, const void *restrict s, size_t n) { return __builtin_memcpy(d, s, n); }\n', '', LINK, "FAIL string.h (cdom flags): taking memcpy's address"),
+  # the name gate (tools/edges.mjs): the other repo's name, spelled in pieces here so this file does not carry it
+  ('edges-name', 'src/cdom.h', '#ifndef CDOM_H\n', '/* built beside ' + 'c' + 'base */\n#ifndef CDOM_H\n', LINK, 'FAIL src/cdom.h:8: names the other repo'),
+  ('edges-old-name', 'tools/fuzz.mjs', 'import http from', '// from C_' + 'BASE\nimport http from', LINK, 'FAIL tools/fuzz.mjs:2: names the other repo'),
   ('mini-fill-strong', 'src/mini.c', '__attribute__((weak)) void *memset', 'void *memset', LINK, "FAIL an app's own libc"),
 ]
 
@@ -322,6 +325,9 @@ def copy_tree(dst):
     if not src.exists(): continue
     (dst / f).parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst / f)
+  # A repo of its own, tracking what the real tree tracks, for the gates that read git ls-files (tools/edges.mjs).
+  subprocess.run(['git', 'init', '-q'], cwd=dst, check=True)
+  subprocess.run(['git', 'add', '-A'], cwd=dst, check=True)
   if (top / 'node_modules').exists(): os.symlink(top / 'node_modules', dst / 'node_modules')
 
 args = sys.argv[1:]
