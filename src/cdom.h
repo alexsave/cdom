@@ -1,5 +1,10 @@
 /* cdom: C owns the tree, state and diffing; a fixed JS shim makes one DOM call per
  * operation (each its own wasm import) and feeds events back. */
+/* The program's libc: a libc belongs to the final program, never to a library, and in a cdom app the
+ * program is the app's wasm build, so cdom provides what it needs: the heap (malloc, calloc, realloc and
+ * free, weak, in cdom.c; below), and memcpy, memmove, memset, memcmp and strlen (src/mini.c, link it;
+ * declared by src/libc/string.h, so build every file with -isystem cdom/src/libc). No other function or
+ * header of libc is offered. */
 #ifndef CDOM_H
 #define CDOM_H
 #include <stdint.h>

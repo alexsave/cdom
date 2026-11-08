@@ -17,7 +17,13 @@ let trapped = false;
 try { x.free_one(); } catch (e) { trapped = e instanceof WebAssembly.RuntimeError; }
 ok(trapped, 'an app that replaces malloc alone traps at the first free, not silently');
 x = await load(`${dir}/own_libc.wasm`);
-ok(x.own_libc() === 1, "an app's own memcmp and strlen link next to mini.c");
+ok(x.own_libc() === 1, "an app's own memcmp, strlen, memcpy, memmove and memset link next to mini.c");
+for (const f of ['cdom', 'cbase']) {
+  x = await load(`${dir}/libc_header_${f}.wasm`);
+  ok(x.libc_header() === 1, `string.h (${f} flags): memcpy, memmove (overlapping), memset, memcmp and strlen give the right bytes`);
+  x = await load(`${dir}/libc_addr_${f}.wasm`);
+  ok(x.libc_addr() === 1, `string.h (${f} flags): memcpy, memmove and memset called through their address give the right bytes`);
+}
 x = await load(`${dir}/on_only.wasm`);
 x.cd_start(0);
 const inbox = new Uint32Array(x.memory.buffer, x.cd_layout(), 3)[2] >> 2, rec = new Int32Array(x.memory.buffer);
