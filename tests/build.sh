@@ -59,3 +59,8 @@ wasm -O2 "$here/out/legacy.wasm" "$here/legacy.c" "$here/../src/cdom.c" "$here/.
 node "$legacy" app "$here/out/legacy.wasm" "$here/out/legacy.wasm.js"
 page "$here/legacy.html" "$here/out/legacy.shim.html" "$here/out/legacy.wasm"
 node "$legacy" page "$here/out/legacy.shim.html" "$here/out/legacy.html"
+# Every memory access form as wasm, as wasm2js output and through the words pass, for tools/words.mjs to run side
+# by side: no cdom in it, so no string table either (no cdlits).
+"$CC" -O2 "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -o "$here/out/memforms.wasm" "$here/memforms.c"
+node "$legacy" app "$here/out/memforms.wasm" "$here/out/memforms.wasm.js"
+node "$legacy" app-ie9 "$here/out/memforms.wasm" "$here/out/memforms.wasm.ie9.js"
