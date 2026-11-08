@@ -33,6 +33,8 @@
 
   /* The shim checks globalThis.crypto; in a page the global object is the window. */
   if (typeof globalThis === "undefined") w.globalThis = w;
+  /* IE 11 has getRandomValues only as msCrypto; the shim seeds cd_seed from crypto.getRandomValues. */
+  if (!w.crypto && w.msCrypto) w.crypto = w.msCrypto;
   /* MDN's Object.entries polyfill: the shim wraps each export it gets from C. */
   if (!Object.entries) {
     Object.entries = function (obj) {

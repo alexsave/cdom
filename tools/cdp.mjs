@@ -6,14 +6,17 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
 // LEGACY=1 makes every page an old browser before its first script runs: no WebAssembly, and none of the
-// APIs tools/legacy/polyfills.js supplies, so those polyfills and PEP are what the page runs on. Chrome
-// still fires its own pointer events, so trusted ones are stopped at the window and only PEP's, made from
-// mouse events, get through. addEventListener reads its third argument as useCapture, as before options
-// objects; __adds logs what each call passed (type, typeof, capture) for tools/legacy.mjs.
+// APIs tools/legacy/polyfills.js supplies, so those polyfills and PEP are what the page runs on; crypto is
+// only msCrypto, as in IE 11 (__noCrypto records that it was gone). Chrome still fires its own pointer
+// events, so trusted ones are stopped at the window and only PEP's, made from mouse events, get through.
+// addEventListener reads its third argument as useCapture, as before options objects; __adds logs what
+// each call passed (type, typeof, capture) for tools/legacy.mjs.
 export const LEGACY = process.env.LEGACY === '1';
 const OLD = `(() => {
   for (const k of ['WebAssembly', 'TextDecoder', 'TextEncoder', 'queueMicrotask', 'reportError', 'Promise', 'fetch',
     'PointerEvent', 'globalThis']) delete window[k];
+  window.msCrypto = window.crypto; delete window.crypto; // an own accessor on the window in Chrome
+  window.__noCrypto = typeof crypto === 'undefined';
   for (const k of ['imul', 'clz32', 'fround', 'trunc']) delete Math[k];
   delete Object.entries; delete String.prototype.startsWith; delete String.prototype.includes;
   const ta = Object.getPrototypeOf(Uint8Array.prototype); delete ta.copyWithin; delete ta.fill;
