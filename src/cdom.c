@@ -180,7 +180,9 @@ static cd_event_rec inbox;
   X(offsetof(cd_viewport_rec, dpr100)) \
   X(sizeof(cd_val)) X(offsetof(cd_val, tag)) X(offsetof(cd_val, num)) X(offsetof(cd_val, u))
 #define CD_LAYOUT_ONE(v) +1
-static uint32_t layout[1 CD_LAYOUT(CD_LAYOUT_ONE)];
+#define CD_LAYOUT_ENTRY(v) (uint32_t)(v),
+/* Data, not code: the linker writes the addresses in, so cd_layout only hands the block over. */
+static const uint32_t layout[] = {0 CD_LAYOUT(CD_LAYOUT_ONE), CD_LAYOUT(CD_LAYOUT_ENTRY)};
 /* The shim indexes 32-bit fields as words and cd_val's number as a double. */
 _Static_assert(sizeof(str_meta) % 4 == 0 && sizeof(cd_event_rec) % 4 == 0, "word-sized records");
 _Static_assert(offsetof(cd_event_rec, dx) % 4 == 0 && offsetof(cd_event_rec, dy) % 4 == 0, "word-aligned floats");
@@ -825,13 +827,7 @@ static void frame(double t) {
 }
 
 /* ---- entry points ---- */
-EXPORT("cd_layout") uint32_t *cd_layout(void) {
-  uint32_t n = 0;
-  layout[n++] = sizeof layout / sizeof layout[0] - 1;
-#define CD_LAYOUT_FILL(v) layout[n++] = (uint32_t)(v);
-  CD_LAYOUT(CD_LAYOUT_FILL)
-  return layout;
-}
+EXPORT("cd_layout") const uint32_t *cd_layout(void) { return layout; }
 
 uint32_t cd_seed;
 EXPORT("cd_start") void cd_start(uint32_t seed) {
