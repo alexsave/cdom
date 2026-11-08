@@ -355,6 +355,17 @@ Four helpers an app moving from React (amgi) asked for, each built on what cdom 
 - `cd_timer_cb(ms, fn, ctx)` and `cd_http_cb(fn, ctx, ...)` take their tokens from one slot table (src/cdom_cb.h, owned by cdom.c): a token is `CD_TOKEN_CDOM` (0x80000000) with a 15-bit generation and a 16-bit slot, so it never meets an app's token (those stay below `CD_TOKEN_CDOM`, and cd_timer_start and cd_http trap above it) or CD_FRAMES_TOKEN, and an old token never stops the timer that took its slot (mutants timer-* and httpcb-*).
 The shim grows 14,249 -> 14,386 bytes minified (5,416 -> 5,444 brotli at q11, 6,012 -> 6,059 gzip at -9): the forget fix and the timer handle and `timer_stop`.
 
+### A program's libc and a library's I/O (branch program-libc-and-io-cb)
+
+Two collisions found by putting amgi's UI, cdom and the c_base C client in one wasm, under one rule: a libc belongs to the final program, never to a library, and a library linked inside an app never takes an app-wide hook.
+- src/libc/string.h (on the include path with -isystem) declares memcpy, memmove, memset, memcmp and strlen and nothing else of libc; copy and fill go to the builtins, so even under -ffreestanding they are memory.copy and memory.fill in place.
+  mini.c adds weak real memcpy, memmove and memset for an address taken or a file built without the header; the linker drops them when nothing reaches them.
+  The c_base client core (client/src/client.c) compiles against it with c_base's flags and links with mini.c alone: 9,737 bytes, no imports, no c_base libc.
+- `cd_ws_open_cb(fn, ctx, url, len)` sends a socket's open, messages and close to fn(ctx, id, ev, p, len) instead of cd_on_ws_*, routed by socket id in C; the slot (src/cdom_cb.h) is freed at the close.
+- `cd_store_get_cb`, `cd_store_put_cb` and `cd_store_del_cb` answer to a callback with ctx instead of cd_on_store*, and the token forms now trap on a token in cdom's range, as cd_http and cd_timer_start do.
+The shim is unchanged: 14,386 bytes minified (5,444 brotli at q11, 6,059 gzip at -9).
+In C, at -Oz, cdom_net.c's code grows 322 -> 909 bytes and cdom_store.c's 120 -> 497.
+
 ## Bridge designs compared (2026-11-01)
 
 One import per DOM operation stays: a generic dispatcher, a function table, natively bound imports, fused operations, the old op list and the Fast API were each measured against it on real pages and none was faster beyond the noise. Why, and what does help, is in BRIDGE.md; the benchmark is at the tag bridge-bench-2026-11-01.

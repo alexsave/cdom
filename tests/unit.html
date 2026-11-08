@@ -453,6 +453,25 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
   IDBObjectStore.prototype.delete = realDelete;
   check('cd_store_del: the key misses after a delete', () => (x.t_del_ok(1) === 1 && x.t_store(6, 0) === -1) || `deleted ${x.t_del_ok(1)}, then get ${x.t_store(6, 0)}`);
   check('cd_store_del: a delete that fails answers 0', () => x.t_del_ok(2) === 0 || `answered ${x.t_del_ok(2)}`);
+  {
+    // 29. The store's _cb forms: put, get, delete, get, each from the last one's callback; then a put
+    // that fails (put made to throw for its key). The hooks above hear none of them.
+    const sc = (k) => [0, 1, 2, 3].map((f) => x.t_store_cb_seen(k, f)).join();
+    x.t_store_cb();
+    await until(() => x.t_store_cb_seen(3, 0) !== -2, 4000);
+    IDBObjectStore.prototype.put = function (value, key) { if (key === 'unit-fail') throw new DOMException('refused', 'QuotaExceededError'); return realPut.call(this, value, key); };
+    x.t_store_cb_fail();
+    await until(() => x.t_store_cb_seen(4, 0) !== -2);
+    IDBObjectStore.prototype.put = realPut;
+    await new Promise((r) => setTimeout(r, 50));
+    const bad = [0, 1, 2].map((w) => { try { x.t_store_cb_bad(w); return 'none'; } catch (e) { return e instanceof WebAssembly.RuntimeError ? 'trap' : String(e); } });
+    const sum = [5, 6, 250].reduce((s, b) => (Math.imul(s, 31) + b) >>> 0, 0) | 0;
+    check('cd_store_put_cb, cd_store_get_cb and cd_store_del_cb: each answer goes to its callback with its ctx, once (kept 1, the bytes, deleted 1, a miss -1, a failed put 0), not to cd_on_store*; their slots are freed; the token forms trap on a token of cdom\'s', () => {
+      const r = [sc(0) === '1,1,0,1', sc(1) === `3,1,${sum},1`, sc(2) === '1,1,0,1', sc(3) === '-1,1,0,1', sc(4) === '0,1,0,1',
+        x.t_store_cb_seen(5, 0) === 0, x.t_store_cb_seen(6, 0) === x.t_store_cb_seen(7, 0), bad.join() === 'trap,trap,trap', x.t_stale() === 0];
+      return r.every(Boolean) || JSON.stringify({ r, s: [0, 1, 2, 3, 4].map(sc), hooks: x.t_store_cb_seen(5, 0), probes: [x.t_store_cb_seen(6, 0), x.t_store_cb_seen(7, 0)], bad });
+    });
+  }
   const d = await new Promise((r, j) => { const q = indexedDB.open('cdom', 1); q.onsuccess = () => r(q.result); q.onerror = j; });
   const tx = d.transaction('kv', 'readwrite'), os = tx.objectStore('kv'), t0 = performance.now();
   const busy = () => { if (performance.now() - t0 < 400) os.put(new Uint8Array(1), 'unit-busy').onsuccess = busy; };

@@ -367,6 +367,7 @@ void cd_on_image(uint32_t token, uint32_t ok) {
 EXPORT("t_image_answer") int32_t t_image_answer(int32_t k) { return image_answer[k]; }
 
 /* The store: a put, then gets that hit, miss, and miss by the deadline. */
+static uint32_t store_cdom_heard; /* answers the store's hooks got for a token in cdom's range */
 static int32_t store_len[8] = {-2, -2, -2, -2, -2, -2, -2, -2};
 static uint32_t store_sum[8];
 EXPORT("t_store_put") void t_store_put(void) {
@@ -379,7 +380,11 @@ EXPORT("t_store_put_fail") void t_store_put_fail(void) {
   static const uint8_t v[1] = {1};
   cd_store_put(2, "unit-fail", 9, v, 1);
 }
-void cd_on_store_put(uint32_t token, uint32_t ok) { enter(); put_ok[token & 3] = (int32_t)ok; }
+void cd_on_store_put(uint32_t token, uint32_t ok) {
+  enter();
+  if (token >= CD_TOKEN_CDOM) { store_cdom_heard++; return; }
+  put_ok[token & 3] = (int32_t)ok;
+}
 /* A put whose key lies in a buffer C writes over as soon as the call returns. */
 static char tmp_key[8];
 EXPORT("t_store_put_tmp") void t_store_put_tmp(void) {
@@ -395,7 +400,11 @@ EXPORT("t_store_del") void t_store_del(uint32_t token) {
   __builtin_memcpy(key, token == 2 ? "unit-dfail" : "unit-tmp", token == 2 ? 10 : 8);
   cd_store_del(token, key, token == 2 ? 10 : 8);
 }
-void cd_on_store_del(uint32_t token, uint32_t ok) { enter(); del_ok[token & 3] = (int32_t)ok; }
+void cd_on_store_del(uint32_t token, uint32_t ok) {
+  enter();
+  if (token >= CD_TOKEN_CDOM) { store_cdom_heard++; return; }
+  del_ok[token & 3] = (int32_t)ok;
+}
 EXPORT("t_del_ok") int32_t t_del_ok(uint32_t token) { return del_ok[token & 3]; }
 EXPORT("t_put_ok") int32_t t_put_ok(uint32_t token) { return put_ok[token & 3]; }
 EXPORT("t_store_get") void t_store_get(uint32_t token, int32_t present, uint32_t ms) {
@@ -406,6 +415,7 @@ EXPORT("t_store_get") void t_store_get(uint32_t token, int32_t present, uint32_t
 }
 void cd_on_store(uint32_t token, const uint8_t *p, int32_t len) {
   enter();
+  if (token >= CD_TOKEN_CDOM) { store_cdom_heard++; return; }
   store_len[token & 7] = len;
   uint32_t sum = 0;
   for (int32_t i = 0; i < len; i++) sum = sum * 31 + p[i];
@@ -1101,6 +1111,59 @@ static uint32_t slot_probe(void) {
   uint32_t t = cd_timer_cb(1000, slot_probe_fire, 0);
   cd_timer_stop(t);
   return t & 0xffffu;
+}
+
+/* 29. The store's _cb forms, one after another from each callback: a put, a get of it, a delete, a get
+ * that misses; and (t_store_cb_fail, while the page makes put throw for "unit-fail") a put that fails.
+ * Each answer to its own ctx, once; the store's hooks hear none of them. */
+typedef struct { int32_t v; uint32_t calls, sum; void *self; } sc_ctx;
+static sc_ctx sc[5];
+static uint32_t sc_probe[2];
+static void sc_got(void *ctx, const uint8_t *p, int32_t len);
+static void sc_done(void *ctx, uint32_t ok) {
+  enter();
+  sc_ctx *c = ctx;
+  c->v = (int32_t)ok;
+  c->calls++;
+  c->self = ctx;
+  if (c == &sc[0]) cd_store_get_cb(sc_got, &sc[1], "unit-cb", 7, 1500);
+  else if (c == &sc[2]) cd_store_get_cb(sc_got, &sc[3], "unit-cb", 7, 1500);
+  hold(imaged); /* no cd_flush: the export does it */
+}
+static void sc_got(void *ctx, const uint8_t *p, int32_t len) {
+  enter();
+  sc_ctx *c = ctx;
+  c->v = len;
+  c->calls++;
+  c->self = ctx;
+  for (int32_t i = 0; i < len; i++) c->sum = c->sum * 31 + p[i];
+  if (c == &sc[1]) cd_store_del_cb(sc_done, &sc[2], "unit-cb", 7);
+  else sc_probe[1] = slot_probe(); /* the last answer: every slot of the chain freed */
+  hold(imaged);
+}
+EXPORT("t_store_cb") void t_store_cb(void) {
+  static const uint8_t v[3] = {5, 6, 250};
+  for (int k = 0; k < 5; k++) sc[k].v = -2;
+  sc_probe[0] = slot_probe();
+  cd_store_put_cb(sc_done, &sc[0], "unit-cb", 7, v, 3);
+}
+EXPORT("t_store_cb_fail") void t_store_cb_fail(void) {
+  static const uint8_t v[1] = {1};
+  cd_store_put_cb(sc_done, &sc[4], "unit-fail", 9, v, 1);
+}
+/* The token forms refuse a token of cdom's: 0 a get, 1 a put, 2 a delete. */
+EXPORT("t_store_cb_bad") void t_store_cb_bad(uint32_t which) {
+  if (which == 0) cd_store_get(CD_TOKEN_CDOM | 7, "unit-x", 6, 100);
+  else if (which == 1) cd_store_put(CD_TOKEN_CDOM | 7, "unit-x", 6, "", 0);
+  else cd_store_del(CD_TOKEN_CDOM | 7, "unit-x", 6);
+}
+/* k < 5: sc[k]'s value, calls, sum and whether it got its own ctx; 5: the store hooks' answers for cdom
+ * tokens; 6, 7: the slot probes before and after the chain. */
+EXPORT("t_store_cb_seen") int32_t t_store_cb_seen(uint32_t k, uint32_t f) {
+  if (k == 5) return (int32_t)store_cdom_heard;
+  if (k == 6 || k == 7) return (int32_t)sc_probe[k - 6];
+  const sc_ctx *c = &sc[k];
+  return f == 0 ? c->v : f == 1 ? (int32_t)c->calls : f == 2 ? (int32_t)c->sum : c->self == c;
 }
 
 /* 30. cd_ws_open_cb next to cd_ws_open, against the page server's echo. The hooks' sockets send WA, the

@@ -1,6 +1,7 @@
 /* cdom_cb: cdom's own callback tokens, internal (not part of the app's API). One slot table, owned by
  * cdom.c, for every answer cdom routes to a callback instead of an app hook: cd_timer_cb's timers
- * (cdom.c), cd_http_cb's requests and cd_ws_open_cb's sockets (cdom_net.c). A slot holds fn, ctx and a generation; its token is
+ * (cdom.c), cd_http_cb's requests and cd_ws_open_cb's sockets (cdom_net.c), and the store's _cb forms
+ * (cdom_store.c). A slot holds fn, ctx and a generation; its token is
  * CD_TOKEN_CDOM | generation << 16 | slot, so a token is never an app's (those stay below
  * CD_TOKEN_CDOM), never CD_FRAMES_TOKEN (slot 0xffff is never handed out), and an old token stops
  * naming its slot once the slot is freed (the generation moves on; it wraps after 32,768 reuses). */
