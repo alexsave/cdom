@@ -1,8 +1,8 @@
 /* string.h for a cdom app's program. A libc belongs to the final program, never to a library: in a
  * cdom app the program is the app's wasm build, and clang's wasm32 target has no sysroot, so cdom
  * provides what the program needs. Put this directory on the include path of every file the program
- * builds (-isystem path/to/cdom/src/libc), and a library that includes <string.h> (the c_base client)
- * compiles as it is.
+ * builds (-isystem path/to/cdom/src/libc), and a library that includes <string.h> (a client
+ * written for any C target) compiles as it is.
  *
  * It offers these five and size_t and NULL, nothing more; no other function or header of libc.
  *   memcpy, memmove, memset: sent to the compiler's builtins, so a call is a memory.copy or a

@@ -1,5 +1,5 @@
 /* A library's file as it is written for any C target: <string.h> (cdom's, src/libc) and the five it
- * offers. run.sh builds it under cdom's flags and c_base's (-ffreestanding), with mini.c and no
+ * offers. run.sh builds it under cdom's flags and freestanding ones (-ffreestanding), with mini.c and no
  * other libc; copy and fill must be instructions here, never calls. The string is behind a volatile
  * so the sizes are known only at run time, as a library's are (the compiler keeps the operations). */
 #include <string.h>
