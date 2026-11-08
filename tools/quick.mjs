@@ -4,7 +4,7 @@ const names = process.argv.slice(2);
 const b = await launch();
 try {
   for (const name of names) {
-    await b.send('Page.navigate', { url: `http://localhost:8093/frameworks/keyed/${name}/index.html` });
+    await b.send('Page.navigate', { url: `http://localhost:${process.env.PORT || 8093}/frameworks/keyed/${name}/index.html` });
     for (let i = 0; i < 50 && !(await b.evaluate('!!document.getElementById("run")')); i++) await sleep(100);
     const r = await b.evaluate(`(() => {
       const c = s => document.querySelector(s).click();

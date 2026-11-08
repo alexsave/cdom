@@ -1,21 +1,26 @@
-/* cdom core: allocator, string intern, op stream, node ids, events, keyed diff. */
+/* cdom core: allocator, strings, DOM calls, node ids, regions, events, keyed diff. */
 #include "cdom.h"
+#include <stddef.h>
+
+void *malloc(size_t n);
+void free(void *p);
+void *realloc(void *p, size_t n);
+void *calloc(size_t n, size_t sz);
 
 #define IMPORT(n) __attribute__((import_module("cdom"), import_name(n)))
 #define EXPORT(n) __attribute__((export_name(n)))
 
-IMPORT("apply") void js_apply(uint32_t nops, uint32_t nargs, uint32_t nstrs, uint32_t nbytes);
-IMPORT("get") double js_get(cd_id id, cd_str path, uint32_t kind, void *dst, uint32_t cap);
 
 /* ---- memory: power-of-two size classes over memory.grow ----
- * An app that links its own malloc defines CDOM_NO_ALLOC and supplies cd_alloc, cd_realloc and cd_free,
- * so one allocator owns memory.grow; two that each start at __heap_base would hand out the same bytes. */
-#ifndef CDOM_NO_ALLOC
+ * These are malloc, realloc, free and calloc for an app that has none (weak: an app's own, all
+ * four strong, replaces them), and cd_alloc goes through malloc either way, so cdom and the app
+ * share one heap. free and realloc trap on a pointer this heap did not hand out: an app that
+ * replaced malloc alone would otherwise feed its pointers to this free list. */
 extern unsigned char __heap_base;
-static uintptr_t heap_ptr, heap_end;
+static uintptr_t heap_lo, heap_ptr, heap_end;
 static void *free_lists[32];
 
-void *cd_alloc(uint32_t n) {
+static void *heap_alloc(uint32_t n) {
   uint32_t c = 4;
   while ((1u << c) < n + 8) c++;
   void *p = free_lists[c];
@@ -24,7 +29,7 @@ void *cd_alloc(uint32_t n) {
     return p;
   }
   if (!heap_ptr) {
-    heap_ptr = ((uintptr_t)&__heap_base + 15) & ~(uintptr_t)15;
+    heap_lo = heap_ptr = ((uintptr_t)&__heap_base + 15) & ~(uintptr_t)15;
     heap_end = (uintptr_t)__builtin_wasm_memory_size(0) << 16;
   }
   uintptr_t need = heap_ptr + (1u << c);
@@ -39,56 +44,123 @@ void *cd_alloc(uint32_t n) {
   return h + 2;
 }
 
-static uint32_t cap_of(void *p) { return (1u << ((uint32_t *)p)[-2]) - 8; }
+static uint32_t heap_class(void *p) {
+  if ((uintptr_t)p < heap_lo + 8 || (uintptr_t)p >= heap_ptr) __builtin_trap(); /* not from this heap */
+  return ((uint32_t *)p)[-2];
+}
 
-void cd_free(void *p) {
+__attribute__((weak)) void *malloc(size_t n) { return n >> 31 ? 0 : heap_alloc((uint32_t)n); }
+
+__attribute__((weak)) void free(void *p) {
   if (!p) return;
-  uint32_t c = ((uint32_t *)p)[-2];
+  uint32_t c = heap_class(p);
   *(void **)p = free_lists[c];
   free_lists[c] = p;
 }
 
-void *cd_realloc(void *p, uint32_t n) {
-  if (p && cap_of(p) >= n) return p;
-  void *q = cd_alloc(n);
-  if (p) {
-    __builtin_memcpy(q, p, cap_of(p));
-    cd_free(p);
+__attribute__((weak)) void *realloc(void *p, size_t n) {
+  uint32_t cap = p ? (1u << heap_class(p)) - 8 : 0;
+  if (p && cap >= n) return p;
+  void *q = malloc(n);
+  if (p && q) {
+    __builtin_memcpy(q, p, cap);
+    free(p);
   }
   return q;
 }
-#endif
 
-/* ---- op stream ---- */
-enum {
-  OP_AT = 1, OP_OPEN, OP_CLOSE, OP_TEXT, OP_TEXT_NUM, OP_ATTR, OP_CLASS, OP_NAME, OP_LISTEN,
-  OP_VALUE, OP_VALUE_NUM, OP_TPL_SAVE, OP_CLONE, OP_DOWN, OP_NEXT, OP_UP, OP_SET_TEXT,
-  OP_SET_TEXT_NUM, OP_SET_ATTR, OP_SET_CLASS, OP_REMOVE, OP_FREE, OP_MOVE, OP_CLEAR, OP_DETACH,
-  OP_ATTACH, OP_SEL, OP_BLIT, OP_FRAMES, OP_CALL, OP_SET, OP_CALLA
-};
+__attribute__((weak)) void *calloc(size_t n, size_t sz) {
+  size_t t = n * sz;
+  if (sz && t / sz != n) return 0;
+  void *p = malloc(t);
+  if (p) __builtin_memset(p, 0, t);
+  return p;
+}
 
-#define OPS_CAP (1u << 16)
-#define ARGS_CAP (1u << 15)
+void *cd_alloc(uint32_t n) {
+  void *p = malloc(n);
+  if (!p) __builtin_trap();
+  return p;
+}
+
+void cd_free(void *p) { free(p); }
+
+void *cd_realloc(void *p, uint32_t n) {
+  void *q = realloc(p, n);
+  if (!q) __builtin_trap();
+  return q;
+}
+
+/* ---- calls ----
+ * Every DOM operation is its own import, called the moment C emits it. Only strings are
+ * batched: a string crosses once (an id thereafter), and new strings are decoded together
+ * right before the call that first needs them. Paired harness runs measured this against a
+ * batched op list that the shim interpreted: the calls won on creates and clears
+ * (PERF_LOG.md, the direct-call experiment), except for walks, which travel as one call. */
+#define IMPORTS(n) __attribute__((import_module("cdom"), import_name(n)))
+IMPORTS("strings") void j_strings(uint32_t n, uint32_t nbytes);
+IMPORTS("at") void j_at(cd_id parent, cd_id before);
+IMPORTS("open") void j_open(uint32_t tag);
+IMPORTS("open_svg") void j_open_svg(uint32_t tag);
+IMPORTS("close") void j_close(void);
+IMPORTS("text") void j_text(uint32_t s);
+IMPORTS("text_num") void j_text_num(uint32_t n);
+IMPORTS("attr") void j_attr(uint32_t name, uint32_t v);
+IMPORTS("class") void j_class(uint32_t v);
+IMPORTS("name") void j_name(cd_id id);
+IMPORTS("name_open") void j_name_open(cd_id id);
+IMPORTS("listen") void j_listen(cd_id id, uint32_t ev);
+IMPORTS("value") void j_value(uint32_t s);
+IMPORTS("value_num") void j_value_num(uint32_t n);
+IMPORTS("tpl_save") void j_tpl_save(uint32_t t);
+IMPORTS("clone") void j_clone(uint32_t t);
+IMPORTS("slot") void j_slot(uint32_t k);
+IMPORTS("tpl_text") void j_tpl_text(uint32_t t, uint32_t k, uint32_t s);
+IMPORTS("tpl_text_num") void j_tpl_text_num(uint32_t t, uint32_t k, uint32_t n);
+IMPORTS("walk") void j_walk(cd_id from, uint32_t steps, uint32_t n);
+IMPORTS("walk_value") void j_walk_value(cd_id from, uint32_t steps, uint32_t n, uint32_t s);
+IMPORTS("walk_value_num") void j_walk_value_num(cd_id from, uint32_t steps, uint32_t n, uint32_t v);
+IMPORTS("set_text") void j_set_text(cd_id id, uint32_t s);
+IMPORTS("set_text_num") void j_set_text_num(cd_id id, uint32_t n);
+IMPORTS("set_attr") void j_set_attr(cd_id id, uint32_t name, uint32_t v);
+IMPORTS("set_class") void j_set_class(cd_id id, uint32_t v);
+IMPORTS("style") void j_style(cd_id id, uint32_t prop, uint32_t v);
+IMPORTS("style_num") void j_style_num(cd_id id, uint32_t prop, double v, uint32_t unit);
+IMPORTS("encode") void j_encode(const uint8_t *px, uint32_t w, uint32_t h, uint32_t n, uint32_t W, uint32_t H, uint32_t x, uint32_t y,
+                             uint32_t mime, uint32_t token);
+IMPORTS("image_bytes") void j_image_bytes(cd_id id, uint32_t prop, const uint8_t *p, uint32_t len, uint32_t mime, uint32_t token);
+IMPORTS("remove") void j_remove(cd_id id);
+IMPORTS("free") void j_free(cd_id id);
+IMPORTS("move") void j_move(cd_id id, cd_id before);
+IMPORTS("clear") void j_clear(cd_id id);
+IMPORTS("detach") void j_detach(cd_id id);
+IMPORTS("attach") void j_attach(cd_id id);
+IMPORTS("unlisten") void j_unlisten(cd_id id, uint32_t ev);
+IMPORTS("hit") cd_id j_hit(int32_t x, int32_t y);
+IMPORTS("viewport") void j_viewport(cd_viewport_rec *v);
+IMPORTS("rect") uint32_t j_rect(cd_id id, double *out);
+IMPORTS("blit") void j_blit(cd_id id, const void *rgba, uint32_t w, uint32_t h);
+IMPORTS("set") void j_set(cd_id id, uint32_t path, const cd_val *v);
+IMPORTS("call") void j_call(cd_id id, uint32_t method, uint32_t n, const cd_val *a);
+IMPORTS("get") double j_get(cd_id id, uint32_t path, uint32_t kind, void *dst, uint32_t cap);
+IMPORTS("timer") void j_timer(uint32_t ms, uint32_t token);
+IMPORTS("raf") void j_raf(uint32_t token);
+IMPORTS("now") double j_now(void);
+
 #define SB_CAP (1u << 18)
 #define SM_CAP (1u << 12)
 #define TRANSIENT 0x40000000u
 
-static uint8_t ops[OPS_CAP];
-static uint32_t args[ARGS_CAP];
 static uint8_t sbytes[SB_CAP];
 static uint32_t smeta[SM_CAP * 3];
-static uint32_t nops, nargs, nsb, nstrs, ntmp;
+static uint32_t nsb, nstrs, ntmp;
 static cd_event_rec inbox;
-static uint32_t layout[5];
+static uint32_t layout[3];
 
-void cd_flush(void) {
-  if (nops || nstrs) js_apply(nops, nargs, nstrs, nsb);
-  nops = nargs = nsb = nstrs = ntmp = 0;
-}
-
-static inline void reserve(uint32_t o, uint32_t a, uint32_t bytes, uint32_t ns) {
-  if (nops + o > OPS_CAP || nargs + a > ARGS_CAP || nsb + bytes > SB_CAP || nstrs + ns > SM_CAP)
-    cd_flush();
+/* Decodes the pending strings in JS. */
+static void send_strings(void) {
+  if (nstrs) j_strings(nstrs, nsb);
+  nsb = nstrs = ntmp = 0;
 }
 
 /* ---- strings ---- */
@@ -112,6 +184,18 @@ static void htab_put(uint32_t h, uint32_t id) {
   htab[i] = id;
 }
 
+static uint32_t utf16_len(const char *s, uint32_t len) {
+  uint32_t u16 = 0;
+  for (uint32_t i = 0; i < len; i++) {
+    uint8_t c = (uint8_t)s[i];
+    u16 += (c & 0xc0) != 0x80;
+    u16 += c >= 0xf0; /* astral: a surrogate pair */
+  }
+  return u16;
+}
+
+static uint32_t push_str(cd_str s, uint32_t dest);
+static cd_str svg_tag; /* "svg", once interned: cd_open compares ids, not bytes */
 cd_str cd_intern(const char *s, uint32_t len) {
   uint32_t h = hash_bytes(s, len);
   if (hcap) {
@@ -135,15 +219,17 @@ cd_str cd_intern(const char *s, uint32_t len) {
   sent[id] = 0;
   pool = cd_realloc(pool, pool_len + len);
   __builtin_memcpy(pool + pool_len, s, len);
-  uint32_t u16 = 0;
-  for (uint32_t i = 0; i < len; i++) {
-    uint8_t c = (uint8_t)s[i];
-    u16 += (c & 0xc0) != 0x80;
-    u16 += c >= 0xf0; /* astral: a surrogate pair */
-  }
+  uint32_t u16 = utf16_len(s, len);
   strs[id] = (str_ent){pool_len, len, u16, h};
   pool_len += len;
   htab_put(h, id);
+  if (len == 3 && s[0] == 's' && s[1] == 'v' && s[2] == 'g') svg_tag = id;
+#if CDOM_INTERN_TEXT
+  /* Queued now, not at first use: strings are interned in bursts (a list's labels) and then
+   * used one call each, so they decode together in the call before the first use. */
+  sent[id] = 1;
+  push_str(id, id);
+#endif
   return id;
 }
 
@@ -158,20 +244,73 @@ const char *cd_bytes(cd_str s, uint32_t *len) {
   return (const char *)pool + strs[s].off;
 }
 
-static uint32_t push_str(cd_str s, uint32_t dest) {
-  str_ent *e = &strs[s];
-  if (e->len > SB_CAP) __builtin_trap();
+static void push_raw(const uint8_t *b, uint32_t len, uint32_t u16, uint32_t dest) {
+  if (len > SB_CAP) __builtin_trap();
+  if (nsb + len > SB_CAP || nstrs + 1 > SM_CAP) send_strings();
   uint32_t *m = &smeta[nstrs++ * 3];
   m[0] = dest;
-  m[1] = e->len;
-  m[2] = e->u16;
-  __builtin_memcpy(sbytes + nsb, pool + e->off, e->len);
-  nsb += e->len;
+  m[1] = len;
+  m[2] = u16;
+  __builtin_memcpy(sbytes + nsb, b, len);
+  nsb += len;
+}
+
+static uint32_t push_str(cd_str s, uint32_t dest) {
+  str_ent *e = &strs[s];
+  push_raw(pool + e->off, e->len, e->u16, dest);
   return dest;
 }
 
-/* A name (tag, attribute): always cached in JS. Call after reserve(). */
+/* A transient crosses in the batch that is pending when it is made, and JS keeps it only until
+ * the next batch reuses its slot: so it must be used before any op sends that batch. */
+cd_str cd_tmp(const char *s, uint32_t len) {
+  if (nstrs + 1 > SM_CAP || nsb + len > SB_CAP) send_strings();
+  uint32_t dest = TRANSIENT + ntmp++;
+  push_raw((const uint8_t *)s, len, utf16_len(s, len), dest);
+  return dest;
+}
+cd_str cd_tmpz(const char *s) {
+  uint32_t n = 0;
+  while (s[n]) n++;
+  return cd_tmp(s, n);
+}
+static uint32_t tmp_check(cd_str s) {
+  if (s - TRANSIENT >= ntmp) __builtin_trap(); /* its batch already went: the slot may hold another string */
+  return s;
+}
+
+cd_str cd_lit_(cd_str *slot, const char *lit, uint32_t len) { return *slot ? *slot : (*slot = cd_intern(lit, len)); }
+uint32_t cd_str_count(void) { return nstr_ids - 1; }
+uint32_t cd_str_bytes(void) { return pool_len; }
+
+/* ---- numbers ---- */
+static const char UNIT_STR[CD_UNITS][4] = {"", "px", "%", "deg", "em", "rem", "vw", "vh", "ms", "s", "rad"};
+
+uint32_t cd_fmt(char *d, int32_t v, uint32_t dec, uint32_t unit) {
+  char t[12]; /* digits, least significant first */
+  uint32_t k = 0, n = 0, u = v < 0 ? 0u - (uint32_t)v : (uint32_t)v;
+  if (dec > 9 || unit >= CD_UNITS) __builtin_trap();
+  do t[k++] = (char)('0' + u % 10); while ((u /= 10));
+  while (k <= dec) t[k++] = '0';
+  uint32_t lo = 0; /* fraction digits below lo are trailing zeros */
+  while (lo < dec && t[lo] == '0') lo++;
+  if (v < 0) d[n++] = '-';
+  for (uint32_t i = k; i-- > dec;) d[n++] = t[i];
+  if (lo < dec) {
+    d[n++] = '.';
+    for (uint32_t i = dec; i-- > lo;) d[n++] = t[i];
+  }
+  for (const char *c = UNIT_STR[unit]; *c; c++) d[n++] = *c;
+  return n;
+}
+
+uint32_t cd_fmt_len(char *d, double v, uint32_t unit) {
+  return cd_fmt(d, (int32_t)(v * 10000.0 + (v < 0 ? -0.5 : 0.5)), 4, unit);
+}
+
+/* A name (tag, attribute): always cached in JS. */
 static uint32_t ref_name(cd_str s) {
+  if (s >= TRANSIENT) return tmp_check(s);
   if (!sent[s]) {
     sent[s] = 1;
     push_str(s, s);
@@ -179,118 +318,174 @@ static uint32_t ref_name(cd_str s) {
   return s;
 }
 
-/* Content: cached or per-op, by build flag. Call after reserve(). */
+/* Content: cached or per-op, by build flag. */
 static uint32_t ref_text(cd_str s) {
 #if CDOM_INTERN_TEXT
   return ref_name(s);
 #else
+  if (s >= TRANSIENT) return tmp_check(s);
   return push_str(s, TRANSIENT + ntmp++);
 #endif
 }
 
-static inline uint32_t slen(cd_str s) { return strs[s].len; }
 
 /* ---- emitters ---- */
-#define O(o) (ops[nops++] = (o))
-#define A(v) (args[nargs++] = (v))
+/* A walk (cd_sel, cd_down, cd_next, cd_up) is held here and crosses as one call: with the value
+ * it leads to, or before the next op that reads the node it reached. Steps are 2 bits each:
+ * 1 down, 2 next, 3 up. */
+#define WALK_LAST 0xffffffffu /* walk from the last node rather than a named one */
+static cd_id walk_from;
+static uint32_t walk_steps, walk_n, walking;
+static void walk_done(void) {
+  if (walking) { walking = 0; j_walk(walk_from, walk_steps, walk_n); }
+}
+static void walk_step(uint32_t s) {
+  if (walking && walk_n == 16) walk_done();
+  if (!walking) { walking = 1; walk_from = WALK_LAST; walk_steps = walk_n = 0; }
+  walk_steps |= s << (2 * walk_n++);
+}
+/* Strings an op takes are queued by ref_*; this sends them, and any held walk, before the call. */
+static inline void ready(void) { walk_done(); send_strings(); }
+
+void cd_flush(void) { ready(); }
+uint32_t cd_pending(void) { return walking | nstrs; }
 
 static cd_id at_parent = CD_DETACHED - 1, at_before = CD_DETACHED - 1;
 
 void cd_at(cd_id parent, cd_id before) {
   if (parent == at_parent && before == at_before) return;
-  reserve(1, 2, 0, 0);
-  O(OP_AT); A(parent); A(before);
+  ready(); j_at(parent, before);
   at_parent = parent;
   at_before = before;
 }
-void cd_open(cd_str tag) { reserve(1, 1, slen(tag), 1); O(OP_OPEN); A(ref_name(tag)); }
-void cd_close(void) { reserve(1, 0, 0, 0); O(OP_CLOSE); }
-void cd_text(cd_str s) { reserve(1, 1, slen(s), 1); O(OP_TEXT); A(ref_text(s)); }
-void cd_text_num(uint32_t n) { reserve(1, 1, 0, 0); O(OP_TEXT_NUM); A(n); }
-void cd_attr(cd_str name, cd_str v) {
-  reserve(1, 2, slen(name) + slen(v), 2);
-  O(OP_ATTR); A(ref_name(name)); A(ref_text(v));
+/* Open elements inside an <svg>, the <svg> itself included: an id compare here rather than a
+ * tag compare per open in JS (PERF_LOG.md, SVG). */
+static uint32_t svg_depth;
+void cd_open(cd_str tag) {
+  uint32_t t = ref_name(tag);
+  ready();
+  if (svg_depth || tag == svg_tag) { svg_depth++; j_open_svg(t); } else j_open(t);
 }
-void cd_class(cd_str v) { reserve(1, 1, slen(v), 1); O(OP_CLASS); A(ref_text(v)); }
-void cd_name(cd_id id) { reserve(1, 1, 0, 0); O(OP_NAME); A(id); }
-void cd_listen(cd_id id, uint32_t ev) { reserve(1, 2, 0, 0); O(OP_LISTEN); A(id); A(ev); }
-void cd_value(cd_str s) { reserve(1, 1, slen(s), 1); O(OP_VALUE); A(ref_text(s)); }
-void cd_value_num(uint32_t n) { reserve(1, 1, 0, 0); O(OP_VALUE_NUM); A(n); }
-void cd_tpl_save(uint32_t t) { reserve(1, 1, 0, 0); O(OP_TPL_SAVE); A(t); }
-void cd_clone(uint32_t t) { reserve(1, 1, 0, 0); O(OP_CLONE); A(t); }
-void cd_down(void) { reserve(1, 0, 0, 0); O(OP_DOWN); }
-void cd_next(void) { reserve(1, 0, 0, 0); O(OP_NEXT); }
-void cd_up(void) { reserve(1, 0, 0, 0); O(OP_UP); }
-void cd_sel(cd_id id) { reserve(1, 1, 0, 0); O(OP_SEL); A(id); }
-void cd_set_text(cd_id id, cd_str s) { reserve(1, 2, slen(s), 1); O(OP_SET_TEXT); A(id); A(ref_text(s)); }
-void cd_set_text_num(cd_id id, uint32_t n) { reserve(1, 2, 0, 0); O(OP_SET_TEXT_NUM); A(id); A(n); }
-void cd_set_attr(cd_id id, cd_str name, cd_str v) {
-  reserve(1, 3, slen(name) + slen(v), 2);
-  O(OP_SET_ATTR); A(id); A(ref_name(name)); A(ref_text(v));
+void cd_close(void) { if (svg_depth) svg_depth--; ready(); j_close(); }
+void cd_text(cd_str s) { uint32_t v = ref_text(s); ready(); j_text(v); }
+void cd_text_num(uint32_t n) { ready(); j_text_num(n); }
+void cd_attr(cd_str name, cd_str v) { uint32_t b = ref_text(v), a = ref_name(name); ready(); j_attr(a, b); }
+void cd_class(cd_str v) { uint32_t a = ref_text(v); ready(); j_class(a); }
+void cd_name(cd_id id) { ready(); j_name(id); }
+void cd_name_open(cd_id id) { ready(); j_name_open(id); }
+/* One import for both: the shim tells a host object (it listens on it) from a node (it names the last
+ * node and marks it in the mount's delegation). */
+void cd_listen(cd_id id, uint32_t ev) {
+  if (ev >= CD_EV_TYPES) __builtin_trap();
+  ready(); j_listen(id, ev);
 }
-void cd_set_class(cd_id id, cd_str v) { reserve(1, 2, slen(v), 1); O(OP_SET_CLASS); A(id); A(ref_text(v)); }
-void cd_move(cd_id id, cd_id before) { reserve(1, 2, 0, 0); O(OP_MOVE); A(id); A(before); }
-void cd_clear(cd_id id) { reserve(1, 1, 0, 0); O(OP_CLEAR); A(id); }
-void cd_detach(cd_id id) { reserve(1, 1, 0, 0); O(OP_DETACH); A(id); }
-void cd_attach(cd_id id) { reserve(1, 1, 0, 0); O(OP_ATTACH); A(id); }
-void cd_blit(cd_id canvas, const void *rgba, uint32_t w, uint32_t h) {
-  reserve(1, 4, 0, 0);
-  O(OP_BLIT); A(canvas); A((uint32_t)(uintptr_t)rgba); A(w); A(h);
+void cd_unlisten(cd_id id, uint32_t ev) {
+  if (ev >= CD_EV_TYPES) __builtin_trap();
+  ready(); j_unlisten(id, ev);
 }
-void cd_frames(int on) { reserve(1, 1, 0, 0); O(OP_FRAMES); A(on != 0); }
-void cd_call(cd_id id, cd_str method) { reserve(1, 2, slen(method), 1); O(OP_CALL); A(id); A(ref_name(method)); }
+void cd_value(cd_str s) {
+  uint32_t v = ref_text(s);
+  send_strings();
+  if (walking) { walking = 0; j_walk_value(walk_from, walk_steps, walk_n, v); } else j_value(v);
+}
+void cd_value_num(uint32_t n) {
+  send_strings();
+  if (walking) { walking = 0; j_walk_value_num(walk_from, walk_steps, walk_n, n); } else j_value_num(n);
+}
+/* What each template slot holds now (kind 0 unknown, 1 string id, 2 number), so an unchanged
+ * value is not written again. */
+static uint32_t slot_val[CD_TPLS][CD_SLOTS];
+static uint8_t slot_kind[CD_TPLS][CD_SLOTS];
+void cd_tpl_save(uint32_t t) {
+  if (t < CD_TPLS) __builtin_memset(slot_kind[t], 0, CD_SLOTS);
+  ready(); j_tpl_save(t);
+}
+void cd_clone(uint32_t t) { if (svg_depth) svg_depth++; ready(); j_clone(t); }
+void cd_slot(uint32_t k) {
+  if (k >= CD_SLOTS) __builtin_trap();
+  ready(); j_slot(k);
+}
+static int slot_same(uint32_t t, uint32_t k, uint8_t kind, uint32_t v) {
+  if (t >= CD_TPLS || k >= CD_SLOTS) __builtin_trap();
+  if (slot_kind[t][k] == kind && slot_val[t][k] == v) return 1;
+  slot_kind[t][k] = kind;
+  slot_val[t][k] = v;
+  return 0;
+}
+void cd_tpl_text(uint32_t t, uint32_t k, cd_str s) {
+  if (slot_same(t, k, 1, s)) return;
+  uint32_t v = ref_text(s); ready(); j_tpl_text(t, k, v);
+}
+void cd_tpl_text_num(uint32_t t, uint32_t k, uint32_t n) {
+  if (slot_same(t, k, 2, n)) return;
+  ready(); j_tpl_text_num(t, k, n);
+}
+void cd_down(void) { walk_step(1); }
+void cd_next(void) { walk_step(2); }
+void cd_up(void) { walk_step(3); }
+void cd_sel(cd_id id) { walk_done(); walking = 1; walk_from = id; walk_steps = walk_n = 0; }
+void cd_set_text(cd_id id, cd_str s) { uint32_t v = ref_text(s); ready(); j_set_text(id, v); }
+void cd_set_text_num(cd_id id, uint32_t n) { ready(); j_set_text_num(id, n); }
+void cd_set_attr(cd_id id, cd_str name, cd_str v) { uint32_t b = ref_text(v), a = ref_name(name); ready(); j_set_attr(id, a, b); }
+void cd_set_class(cd_id id, cd_str v) { uint32_t a = ref_text(v); ready(); j_set_class(id, a); }
+void cd_set_style(cd_id id, cd_str prop, cd_str v) { uint32_t b = ref_text(v), a = ref_name(prop); ready(); j_style(id, a, b); }
+static cd_str unit_ids[CD_UNITS];
+void cd_set_style_num(cd_id id, cd_str prop, double v, uint32_t unit) {
+  if (unit >= CD_UNITS) __builtin_trap();
+  if (!unit_ids[unit]) unit_ids[unit] = cd_internz(UNIT_STR[unit]);
+  uint32_t a = ref_name(prop), u = ref_name(unit_ids[unit]);
+  ready(); j_style_num(id, a, v, u);
+}
+void cd_encode_image_in(const uint8_t *px, uint32_t w, uint32_t h, uint32_t n, uint32_t W, uint32_t H, uint32_t x,
+                        uint32_t y, cd_str mime, uint32_t token) {
+  if ((n != 3 && n != 4) || x + w > W || y + h > H) __builtin_trap();
+  uint32_t m = ref_name(mime);
+  ready(); j_encode(px, w, h, n, W, H, x, y, m, token);
+}
+void cd_encode_image(const uint8_t *px, uint32_t w, uint32_t h, uint32_t n, cd_str mime, uint32_t token) {
+  cd_encode_image_in(px, w, h, n, w, h, 0, 0, mime, token);
+}
+void cd_set_image_bytes(cd_id id, cd_str prop, const uint8_t *p, uint32_t len, cd_str mime, uint32_t token) {
+  uint32_t a = ref_name(prop), m = ref_name(mime);
+  ready(); j_image_bytes(id, a, p, len, m, token);
+}
+void cd_move(cd_id id, cd_id before) { ready(); j_move(id, before); }
+void cd_clear(cd_id id) { ready(); j_clear(id); }
+void cd_detach(cd_id id) { ready(); j_detach(id); }
+void cd_attach(cd_id id) { ready(); j_attach(id); }
+void cd_blit(cd_id canvas, const void *rgba, uint32_t w, uint32_t h) { ready(); j_blit(canvas, rgba, w, h); }
 
-/* ---- host access ---- */
-/* Values cross as a tag word and a payload: a number as two words (the f64's low then high half), a string
- * id, a 0 or 1, a node id, nothing for null, and for an object its pair count followed by the pairs as
- * values. measure() counts the array entries n top-level values take, with their string bytes and count. */
-static uint32_t measure(const cd_val *a, uint32_t n, uint32_t *bytes, uint32_t *ns) {
+/* ---- host access ----
+ * The values stay in C memory: the shim reads the cd_val array during the call (tag at +0, payload at +8),
+ * so only their strings have to cross first. vals_ref queues the strings of n top-level values (an
+ * object's pairs follow it) and returns how many array entries they take. */
+static uint32_t vals_ref(const cd_val *a, uint32_t n) {
   uint32_t used = 0;
   for (; n; n--) {
     const cd_val *v = &a[used++];
-    if (v->tag == CD_V_STR) { *bytes += slen(v->u); ++*ns; }
-    else if (v->tag == CD_V_OBJ) used += measure(a + used, v->u * 2, bytes, ns);
+    if (v->tag == CD_V_STR) ref_name(v->u); /* by id: the shim reads the id from the array */
+    else if (v->tag == CD_V_OBJ) used += vals_ref(a + used, v->u * 2);
   }
   return used;
 }
-
-/* Call after reserve(). */
-static void put_vals(const cd_val *a, uint32_t entries) {
-  for (uint32_t i = 0; i < entries; i++) {
-    const cd_val *v = &a[i];
-    A(v->tag);
-    if (v->tag == CD_V_NUM) {
-      uint64_t b;
-      __builtin_memcpy(&b, &v->num, 8);
-      A((uint32_t)b); A((uint32_t)(b >> 32));
-    } else if (v->tag == CD_V_STR) A(ref_text(v->u));
-    else if (v->tag == CD_V_BOOL) A(v->u != 0);
-    else if (v->tag != CD_V_NULL) A(v->u); /* an id, or an object's pair count */
-  }
-}
-
 void cd_set(cd_id id, cd_str path, cd_val v) {
-  uint32_t bytes = slen(path), ns = 1, e = measure(&v, 1, &bytes, &ns);
-  if (3 + 3 * e > ARGS_CAP || ns > SM_CAP) __builtin_trap();
-  reserve(1, 3 + 3 * e, bytes, ns);
-  O(OP_SET); A(id); A(ref_name(path));
-  put_vals(&v, e);
+  if (v.tag == CD_V_OBJ) __builtin_trap(); /* its pairs cannot follow a value passed alone */
+  uint32_t p = ref_name(path);
+  vals_ref(&v, 1);
+  ready(); j_set(id, p, &v);
 }
-
 void cd_call_args(cd_id id, cd_str method, uint32_t n, const cd_val *a) {
-  uint32_t bytes = slen(method), ns = 1, e = measure(a, n, &bytes, &ns);
-  if (4 + 3 * e > ARGS_CAP || ns > SM_CAP) __builtin_trap();
-  reserve(1, 3 + 3 * e, bytes, ns);
-  O(OP_CALLA); A(id); A(ref_name(method)); A(n);
-  put_vals(a, e);
+  uint32_t m = ref_name(method);
+  vals_ref(a, n);
+  ready(); j_call(id, m, n, a);
 }
+void cd_call(cd_id id, cd_str method) { cd_call_args(id, method, 0, 0); }
 
-enum { GET_NUM, GET_STR, GET_ID, GET_RECT };
-/* A read sees the DOM after every op emitted so far, so the batch goes first; the path rides with it. */
+enum { GET_NUM, GET_STR, GET_ID };
 static double get(cd_id id, cd_str path, uint32_t kind, void *dst, uint32_t cap) {
-  if (path) { reserve(0, 0, slen(path), 1); ref_name(path); }
-  cd_flush();
-  return js_get(id, path, kind, dst, cap);
+  uint32_t p = path ? ref_name(path) : 0;
+  ready();
+  return j_get(id, p, kind, dst, cap);
 }
 double cd_get_num(cd_id id, cd_str path) { return get(id, path, GET_NUM, 0, 0); }
 uint32_t cd_get_str(cd_id id, cd_str path, char *dst, uint32_t cap) { return (uint32_t)get(id, path, GET_STR, dst, cap); }
@@ -298,63 +493,133 @@ cd_id cd_get_id(cd_id id, cd_str path) {
   double r = get(id, path, GET_ID, 0, 0);
   return r < 0 ? CD_DETACHED : (cd_id)r;
 }
-int cd_get_rect(cd_id id, double out[4]) { return get(id, 0, GET_RECT, out, 4) != 0; }
 
 /* ---- node ids ---- */
 static cd_id next_id = CD_FIRST_ID;
 static cd_id *free_ids;
 static uint32_t nfree;
 static uint32_t *tags, tags_cap;
+static uint8_t *alive; /* a freed id freed again would be handed out twice */
+static cd_region *recording;
+
+static void record(cd_region *r, cd_id id) {
+  if (r->n == r->cap) {
+    r->cap = r->cap ? r->cap * 2 : 8;
+    r->ids = cd_realloc(r->ids, r->cap * 4);
+  }
+  r->ids[r->n++] = id;
+}
 
 cd_id cd_id_new(void) {
-  if (nfree) return free_ids[--nfree];
-  cd_id id = next_id++;
-  if (id >= tags_cap) {
-    uint32_t old = tags_cap;
-    tags_cap = tags_cap ? tags_cap * 2 : 4096;
-    tags = cd_realloc(tags, tags_cap * 4);
-    __builtin_memset(tags + old, 0, (tags_cap - old) * 4); /* cd_tag of a fresh id reads 0 */
-    free_ids = cd_realloc(free_ids, tags_cap * 4);
+  cd_id id;
+  if (nfree) id = free_ids[--nfree];
+  else {
+    id = next_id++;
+    if (id >= tags_cap) {
+      uint32_t old = tags_cap;
+      tags_cap = tags_cap ? tags_cap * 2 : 4096;
+      tags = cd_realloc(tags, tags_cap * 4);
+      __builtin_memset(tags + old, 0, (tags_cap - old) * 4); /* cd_tag of a fresh id reads 0 */
+      free_ids = cd_realloc(free_ids, tags_cap * 4);
+      alive = cd_realloc(alive, tags_cap);
+    }
   }
+  alive[id] = 1;
+  if (recording) record(recording, id);
   return id;
 }
 
 static void release(cd_id id) {
+  if (id >= next_id || !alive[id]) __builtin_trap();
+  alive[id] = 0;
   tags[id] = 0;
   free_ids[nfree++] = id;
 }
 
+uint32_t cd_ids_live(void) { return next_id - CD_FIRST_ID - nfree; }
+uint32_t cd_ids_high(void) { return next_id - 1; }
+
 /* The mount and the reserved ids are never freed, so they stay bound and cd_id_new never returns them. */
 void cd_id_free(cd_id id) {
   if (id < CD_FIRST_ID) return;
-  reserve(1, 1, 0, 0);
-  O(OP_FREE); A(id);
+  ready(); j_free(id);
   release(id);
 }
 
 void cd_remove(cd_id id) {
   if (id < CD_FIRST_ID) return;
-  reserve(1, 1, 0, 0);
-  O(OP_REMOVE); A(id);
+  ready(); j_remove(id);
   release(id);
 }
 
 void cd_tag_set(cd_id id, uint32_t tag) { tags[id] = tag; }
 uint32_t cd_tag(cd_id id) { return id < tags_cap ? tags[id] : 0; }
 
-static cd_str s_value;
-uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap) {
-  if (!s_value) s_value = cd_internz("value");
-  return cd_get_str(id, s_value, dst, cap);
+uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap) { return cd_get_str(id, CD_LIT("value"), dst, cap); }
+
+/* ---- regions ---- */
+int cd_region_show(cd_region *r, int want) {
+  if (!want == !r->shown) return 0;
+  if (!want) {
+    if (r->parent) {
+      cd_clear(r->parent);
+      for (uint32_t i = 0; i < r->n; i++) cd_id_free(r->ids[i]);
+    } else {
+      cd_remove(r->root); /* ids[0] */
+      for (uint32_t i = 1; i < r->n; i++) cd_id_free(r->ids[i]);
+    }
+    r->n = 0;
+    r->root = 0;
+    r->shown = 0;
+    return 0;
+  }
+  if (recording) __builtin_trap(); /* regions do not nest */
+  r->shown = 1;
+  r->n = 0;
+  recording = r;
+  if (!r->parent) r->root = cd_id_new();
+  return 1;
+}
+void cd_region_end(cd_region *r) {
+  if (recording != r) __builtin_trap();
+  recording = 0;
+}
+void cd_region_hide(cd_region *r) { cd_region_show(r, 0); }
+
+/* ---- window and time ---- */
+static cd_id window_target(uint32_t ev) { return ev == CD_EV_RESIZE ? CD_WINDOW : CD_DOCUMENT; }
+void cd_listen_window(uint32_t ev) { cd_listen(window_target(ev), ev); }
+void cd_unlisten_window(uint32_t ev) { cd_unlisten(window_target(ev), ev); }
+void cd_prevent_default(void) { inbox.flags |= CD_PREVENT; }
+void cd_stop_propagation(void) { inbox.flags |= CD_STOP; }
+cd_id cd_hit(int32_t x, int32_t y) { return j_hit(x, y); }
+void cd_viewport(cd_viewport_rec *v) { j_viewport(v); }
+int cd_rect(cd_id id, double out[4]) { return (int)j_rect(id, out); }
+void cd_timer_start(uint32_t ms, uint32_t token) { j_timer(ms, token); }
+void cd_raf_request(uint32_t token) { j_raf(token); }
+double cd_now(void) { return j_now(); }
+__attribute__((weak)) void cd_on_timer(uint32_t token) { (void)token; }
+__attribute__((weak)) void cd_on_raf(uint32_t token, double t) { (void)token; (void)t; }
+__attribute__((weak)) void cd_on_frame(double ms) { (void)ms; }
+/* cd_frames' loop: frames_on is what the app asked for, frames_asked that a frame is requested, so a
+ * second start (or a stop and start inside one frame) never requests a second one. */
+static int frames_on, frames_asked;
+void cd_frames(int on) {
+  frames_on = on != 0;
+  if (frames_on && !frames_asked) { frames_asked = 1; j_raf(CD_FRAMES_TOKEN); }
+}
+static void frame(double t) {
+  frames_asked = 0;
+  if (!frames_on) return;
+  cd_on_frame(t);
+  cd_frames(frames_on);
 }
 
 /* ---- entry points ---- */
 EXPORT("cd_layout") uint32_t *cd_layout(void) {
-  layout[0] = (uint32_t)(uintptr_t)ops;
-  layout[1] = (uint32_t)(uintptr_t)args;
-  layout[2] = (uint32_t)(uintptr_t)sbytes;
-  layout[3] = (uint32_t)(uintptr_t)smeta;
-  layout[4] = (uint32_t)(uintptr_t)&inbox;
+  layout[0] = (uint32_t)(uintptr_t)sbytes;
+  layout[1] = (uint32_t)(uintptr_t)smeta;
+  layout[2] = (uint32_t)(uintptr_t)&inbox;
   return layout;
 }
 
@@ -365,22 +630,35 @@ EXPORT("cd_start") void cd_start(uint32_t seed) {
   cd_flush();
 }
 
-/* Returns the flags the handler set, read before the flush, so an event the flush itself dispatches cannot
- * overwrite them. */
+/* Every entry from JS ends in a flush, here and in cdom_net.c: an app never calls cd_flush.
+ * cd_event returns the flags the handler set, which the shim acts on once C has returned. */
 EXPORT("cd_event") uint32_t cd_event(void) {
   inbox.flags = 0;
   cd_on_event(&inbox);
-  uint32_t f = (uint32_t)inbox.flags;
   cd_flush();
-  return f;
+  return (uint32_t)inbox.flags;
 }
-void cd_prevent_default(void) { inbox.flags |= CD_PREVENT; }
-void cd_stop_propagation(void) { inbox.flags |= CD_STOP; }
+EXPORT("cd_timer") void cd_timer(uint32_t token) {
+  cd_on_timer(token);
+  cd_flush();
+}
+EXPORT("cd_raf") void cd_raf(uint32_t token, double t) {
+  if (token == CD_FRAMES_TOKEN) frame(t); else cd_on_raf(token, t);
+  cd_flush();
+}
 
-/* Apps that never call cd_frames(1) need not define a frame handler. */
-__attribute__((weak)) void cd_on_frame(double ms) { (void)ms; }
-EXPORT("cd_frame") void cd_frame(double ms) {
-  cd_on_frame(ms);
+/* Bytes from JS (an encoded image, a network message, a stored value): the shim asks for room
+ * here, copies them in, then calls the export that hands them to the app. */
+static uint8_t *inbytes;
+EXPORT("cd_bytes_buf") void *cd_bytes_buf(uint32_t n) { return inbytes = cd_realloc(inbytes, n ? n : 1); }
+__attribute__((weak)) void cd_on_encoded(uint32_t token, const uint8_t *p, uint32_t len) { (void)token; (void)p; (void)len; }
+EXPORT("cd_encoded") void cd_encoded(uint32_t token, const uint8_t *p, uint32_t len) {
+  cd_on_encoded(token, p, len);
+  cd_flush();
+}
+__attribute__((weak)) void cd_on_image(uint32_t token, uint32_t ok) { (void)token; (void)ok; }
+EXPORT("cd_image") void cd_image(uint32_t token, uint32_t ok) {
+  cd_on_image(token, ok);
   cd_flush();
 }
 
@@ -460,7 +738,18 @@ static void drop(cd_list *L, cd_item *it, const cd_list_fns *f, int dom) {
   (void)L;
 }
 
+void cd_list_forget(cd_list *L, const cd_list_fns *f) {
+  for (uint32_t i = 0; i < L->n; i++) {
+    cd_id_free(L->items[i].node);
+    f->destroy(f->ctx, &L->items[i]);
+  }
+  L->n = 0;
+}
+
 void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_fns *f) {
+  cd_region *rec = recording; /* the items' ids are the list's, not a region's */
+  recording = 0;
+  cd_id end = L->end; /* where the tail is: before the first fixed sibling, or the parent's end */
   cd_item *old = L->items;
   uint32_t on = L->n;
   cd_item *nw = cd_alloc((n ? n : 1) * sizeof(cd_item));
@@ -484,7 +773,7 @@ void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_
     int head_to_tail = old[os].key == keys[ne - 1];
     int tail_to_head = old[oe - 1].key == keys[ns];
     if (head_to_tail && tail_to_head && oe - os > 2 && ne - ns > 2 && old[os + 1].key == keys[ns + 1]) {
-      cd_move(old[os].node, ne < n ? nw[ne].node : 0); /* a swap of the two ends */
+      cd_move(old[os].node, ne < n ? nw[ne].node : end); /* a swap of the two ends */
       cd_move(old[oe - 1].node, old[os + 1].node);
       nw[--ne] = old[os++];
       f->patch(f->ctx, ne, &nw[ne]);
@@ -494,7 +783,7 @@ void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_
       continue;
     }
     if (head_to_tail && old[os + 1].key == keys[ns]) {
-      cd_move(old[os].node, ne < n ? nw[ne].node : 0);
+      cd_move(old[os].node, ne < n ? nw[ne].node : end);
       nw[--ne] = old[os++];
       f->patch(f->ctx, ne, &nw[ne]);
       continue;
@@ -510,7 +799,7 @@ void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_
   }
 
   if (os == oe) { /* only inserts */
-    cd_id before = ne < n ? nw[ne].node : 0;
+    cd_id before = ne < n ? nw[ne].node : end;
     int off = L->owns_parent && on == 0 && n >= CD_DETACH_MIN;
     if (off) cd_detach(L->parent);
     for (uint32_t i = ns; i < ne; i++) {
@@ -543,7 +832,7 @@ void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_
       int off = n >= CD_DETACH_MIN;
       if (off) cd_detach(L->parent);
       for (uint32_t i = 0; i < n; i++) {
-        cd_at(L->parent, 0);
+        cd_at(L->parent, end);
         nw[i].key = keys[i];
         nw[i].node = f->create(f->ctx, i, &nw[i].data);
       }
@@ -565,7 +854,7 @@ void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_
       if (moved) lis_mark(scr_src, m, scr_tails, scr_pred);
       for (uint32_t k = m; k-- > 0;) {
         uint32_t pos = ns + k;
-        cd_id before = pos + 1 < n ? nw[pos + 1].node : 0;
+        cd_id before = pos + 1 < n ? nw[pos + 1].node : end;
         if (scr_src[k] < 0) {
           cd_at(L->parent, before);
           nw[pos].key = keys[pos];
@@ -580,4 +869,5 @@ void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_
   L->items = nw;
   L->n = n;
   L->cap = n;
+  recording = rec;
 }

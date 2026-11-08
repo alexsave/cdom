@@ -3,18 +3,20 @@
 #include "../src/cdom.h"
 
 __attribute__((import_module("env"), import_name("check"))) void check(const uint32_t *keys, uint32_t n, uint32_t round);
+__attribute__((import_module("env"), import_name("check_end"))) void check_end(const uint32_t *keys, uint32_t n, uint32_t round);
 
 static uint32_t rng = 12345;
 static uint32_t rnd(uint32_t m) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; return rng % m; }
 
 static uint32_t keys[64], nkeys;
-static cd_list list;
+static const uint32_t *cur = keys; /* the key array create() reads */
+static cd_list list, tlist; /* tlist shares its <ul> with a fixed last <li>: its end anchor */
 static cd_str S_LI;
 
 static cd_id create(void *ctx, uint32_t i, uint32_t *data) {
   (void)ctx;
   cd_id id = cd_id_new();
-  cd_open(S_LI); cd_name(id); cd_text_num(keys[i]); cd_close();
+  cd_open(S_LI); cd_name(id); cd_text_num(cur[i]); cd_close();
   *data = 0;
   return id;
 }
@@ -68,6 +70,25 @@ __attribute__((export_name("run_fuzz"))) void run_fuzz(uint32_t seed, uint32_t r
   }
 }
 
+/* The same transitions on a list followed by a fixed sibling: every insert, move and fill must
+ * land before it. */
+__attribute__((export_name("run_fuzz_end"))) void run_fuzz_end(uint32_t seed, uint32_t rounds) {
+  rng = seed | 1;
+  nkeys = 0;
+  cd_at(CD_MOUNT, 0);
+  cd_open(cd_internz("ul"));
+  cd_class(cd_internz("tail"));
+  cd_name_open(tlist.parent = cd_id_new());
+  cd_open(S_LI); cd_name_open(tlist.end = cd_id_new()); cd_text(cd_internz("end")); cd_close();
+  cd_close();
+  for (uint32_t round = 0; round < rounds; round++) {
+    next_keys();
+    cd_list_update(&tlist, keys, nkeys, &FNS);
+    cd_flush();
+    check_end(keys, nkeys, round);
+  }
+}
+
 /* Strings: ASCII and not, in a tiny batch (char loop) and a large one (one
  * TextDecoder call sliced by UTF-16 length). The page reads them back. */
 static const char *STRS[] = {"plain", "h\xc3\xa9llo", "\xe6\x97\xa5\xe6\x9c\xac", "\xf0\x9f\x98\x80x", ""};
@@ -85,4 +106,75 @@ __attribute__((export_name("run_strings"))) void run_strings(uint32_t big) {
     }
   cd_close();
   cd_flush();
+}
+
+/* Freed ids travel as runs. Two lists take ids in a random interleave, so runs of one list's
+ * ids sit next to the other list's live ids; after a list is cleared, every node of the other
+ * list must still be reachable by id (a run that over-reaches would drop it and the class
+ * write below would throw). */
+__attribute__((export_name("run_freeruns"))) void run_freeruns(uint32_t seed, uint32_t rounds) {
+  static cd_list L[2];
+  static uint32_t K[2][64], nk[2];
+  rng = seed | 1;
+  cd_str S_UL = cd_internz("ul"), S_X = cd_internz("x");
+  /* A flush closes the open run: after it, op 0 is a new op whose args must not be taken for
+   * the run's (first id, count). Needs a freed id y right below a live id z. */
+  cd_flush();
+  cd_id ids[64], y = 0, z = 0, w;
+  for (uint32_t i = 0; i < 64 && !z; i++) {
+    ids[i] = cd_id_new();
+    for (uint32_t k = 0; k < i && !z; k++)
+      if (ids[k] + 1 == ids[i]) { y = ids[k]; z = ids[i]; } else if (ids[i] + 1 == ids[k]) { y = ids[i]; z = ids[k]; }
+  }
+  w = cd_id_new();
+  cd_at(CD_MOUNT, 0);
+  cd_open(S_LI); cd_name(z); cd_close();
+  cd_flush();
+  cd_id_free(w);         /* op 0: a run (w, 1) */
+  cd_flush();
+  cd_set_class(z, S_X);  /* op 0 again: (z, S_X) */
+  cd_id_free(y);         /* must be its own run, not an edit of op 0 (y names no node) */
+  cd_set_class(z, S_X);
+  cd_flush();
+  for (int j = 0; j < 2; j++) {
+    cd_at(CD_MOUNT, 0);
+    cd_open(S_UL); L[j].parent = cd_id_new(); L[j].owns_parent = 1; cd_name(L[j].parent); cd_close();
+  }
+  for (uint32_t round = 0; round < rounds; round++) {
+    /* grow both lists a few items at a time, alternating, so their ids interleave in runs */
+    for (uint32_t step = rnd(8); step-- > 0;) {
+      int j = (int)rnd(2);
+      for (uint32_t a = 1 + rnd(4); a-- > 0 && nk[j] < 60;) { K[j][nk[j]] = round * 64 + nk[j]; nk[j]++; }
+      cur = K[j];
+      cd_list_update(&L[j], K[j], nk[j], &FNS);
+    }
+    int c = (int)rnd(2); /* clear one list: its ids are freed as runs */
+    nk[c] = 0;
+    cur = K[c];
+    cd_list_update(&L[c], K[c], 0, &FNS);
+    for (uint32_t i = 0; i < L[1 - c].n; i++) cd_set_class(L[1 - c].items[i].node, S_X);
+    cd_flush();
+  }
+  for (int j = 0; j < 2; j++) { nk[j] = 0; cd_list_update(&L[j], K[j], 0, &FNS); }
+  cd_flush();
+}
+
+/* Walks cross as one call, split every 16 steps, and must land before any op that reads the
+ * node they reach: a class after a walk, a walk from the last node, a 20-step walk. The page
+ * checks where each class landed. */
+__attribute__((export_name("run_walks"))) void run_walks(void) {
+  cd_str S_DIV = cd_internz("div"), S_I = cd_internz("i"), S_W = cd_internz("w");
+  cd_id root = cd_id_new();
+  cd_at(CD_MOUNT, 0);
+  cd_open(S_DIV); cd_name(root);
+  for (int d = 0; d < 20; d++) cd_open(S_DIV);
+  cd_text(cd_internz("deep"));
+  cd_up(); cd_class(cd_internz("w20"));          /* from the last node (the text) up to its div */
+  for (int d = 0; d < 20; d++) cd_close();
+  cd_open(S_I); cd_text(cd_internz("a")); cd_close();
+  cd_open(S_I); cd_open(S_I); cd_text(cd_internz("b")); cd_close(); cd_close();
+  cd_close();
+  cd_sel(root); cd_down(); cd_next(); cd_next(); cd_down(); cd_class(S_W);   /* the inner i */
+  cd_sel(root); for (int d = 0; d < 19; d++) cd_down(); cd_class(cd_internz("w19")); /* 19 steps: one split */
+    cd_flush();
 }
