@@ -5,7 +5,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { launch, sleep, LEGACY, IE9, FETCHED, refused } from './cdp.mjs';
+import { launch, sleep, LEGACY, LEVEL, IE9, FETCHED, refused } from './cdp.mjs';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
@@ -126,6 +126,19 @@ run: try {
     ok(await E('globalThis === window'), 'globalThis is the window');
     ok(await E('!/native code/.test(String(Object.entries)) && !/native code/.test(String(Math.imul) + String(Math.clz32) + String(Math.fround) + String(Math.trunc) + String(Uint8Array.prototype.fill) + String(Uint8Array.prototype.copyWithin))'),
       'those were the polyfills');
+  }
+
+  // IE 9's gaps above its walls (LEGACY=ie9-gaps): no MutationObserver and no requestAnimationFrame, prefixed
+  // or not, so queueMicrotask and requestAnimationFrame are the polyfills' timeout forms. The focus check
+  // above ran on that queueMicrotask; requestAnimationFrame must call back once with a time.
+  if (LEVEL === 'ie9-gaps') {
+    ok(await E('typeof MutationObserver === "undefined" && typeof WebKitMutationObserver === "undefined" && !/native code/.test(String(queueMicrotask))'),
+      'queueMicrotask is the polyfill, on a timeout');
+    await E('window.__raf = []; requestAnimationFrame(function (t) { __raf.push(typeof t, t > 0); })');
+    for (let i = 0; i < 20 && !(await E('__raf.length')); i++) await sleep(20);
+    await sleep(100);
+    ok(!/native code/.test(await E('String(requestAnimationFrame)')) && JSON.stringify(await E('__raf')) === '["number",true]',
+      `requestAnimationFrame is the polyfill and called back once with a time: ${JSON.stringify(await E('__raf'))}`);
   }
 
   // Without options objects, every listener the shim adds must get a plain capture flag: bubbling types
