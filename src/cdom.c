@@ -153,11 +153,38 @@ IMPORTS("now") double j_now(void);
 #define SM_CAP (1u << 12)
 #define TRANSIENT 0x40000000u
 
+/* One string of a batch, as the shim decodes it: the id it goes under, its bytes in sbytes, and its
+ * length in UTF-16 units (equal to bytes when it is ASCII). */
+typedef struct { uint32_t id, bytes, chars; } str_meta;
 static uint8_t sbytes[SB_CAP];
-static uint32_t smeta[SM_CAP * 3];
+static str_meta smeta[SM_CAP];
 static uint32_t nsb, nstrs, ntmp;
 static cd_event_rec inbox;
-static uint32_t layout[3];
+
+/* The shim's map of C memory, which cd_layout hands it once at start: where the string batch and the
+ * event record live, and the offset of every field and the size of every struct the shim reads or
+ * writes, from offsetof and sizeof, so the shim hardcodes no offset (tools/offsets.mjs checks it does
+ * not). The block is its entry count, then the entries in this order, which shim/cdom.js (start) reads
+ * in the same order; an entry is only ever appended. rect's out-parameter is a double[4] in the order
+ * cdom.h documents, and the byte buffers are (pointer, length): neither has fields to map. */
+#define CD_LAYOUT(X) \
+  X((uintptr_t)sbytes) X((uintptr_t)smeta) X(sizeof(str_meta)) \
+  X(offsetof(str_meta, id)) X(offsetof(str_meta, bytes)) X(offsetof(str_meta, chars)) \
+  X((uintptr_t)&inbox) \
+  X(offsetof(cd_event_rec, type)) X(offsetof(cd_event_rec, id)) X(offsetof(cd_event_rec, x)) \
+  X(offsetof(cd_event_rec, y)) X(offsetof(cd_event_rec, button)) X(offsetof(cd_event_rec, key)) \
+  X(offsetof(cd_event_rec, mods)) X(offsetof(cd_event_rec, path)) X(offsetof(cd_event_rec, depth)) \
+  X(offsetof(cd_event_rec, ch)) X(offsetof(cd_event_rec, ms)) X(offsetof(cd_event_rec, pointer)) \
+  X(offsetof(cd_event_rec, buttons)) X(offsetof(cd_event_rec, dx)) X(offsetof(cd_event_rec, dy)) \
+  X(offsetof(cd_viewport_rec, w)) X(offsetof(cd_viewport_rec, h)) X(offsetof(cd_viewport_rec, hidden)) \
+  X(offsetof(cd_viewport_rec, dpr100)) \
+  X(sizeof(cd_val)) X(offsetof(cd_val, tag)) X(offsetof(cd_val, num)) X(offsetof(cd_val, u))
+#define CD_LAYOUT_ONE(v) +1
+static uint32_t layout[1 CD_LAYOUT(CD_LAYOUT_ONE)];
+/* The shim indexes 32-bit fields as words and cd_val's number as a double. */
+_Static_assert(sizeof(str_meta) % 4 == 0 && sizeof(cd_event_rec) % 4 == 0, "word-sized records");
+_Static_assert(offsetof(cd_event_rec, dx) % 4 == 0 && offsetof(cd_event_rec, dy) % 4 == 0, "word-aligned floats");
+_Static_assert(sizeof(cd_val) % 8 == 0 && offsetof(cd_val, num) % 8 == 0 && offsetof(cd_val, u) % 4 == 0, "aligned cd_val");
 
 /* Decodes the pending strings in JS. */
 static void send_strings(void) {
@@ -249,10 +276,10 @@ const char *cd_bytes(cd_str s, uint32_t *len) {
 static void push_raw(const uint8_t *b, uint32_t len, uint32_t u16, uint32_t dest) {
   if (len > SB_CAP) __builtin_trap();
   if (nsb + len > SB_CAP || nstrs + 1 > SM_CAP) send_strings();
-  uint32_t *m = &smeta[nstrs++ * 3];
-  m[0] = dest;
-  m[1] = len;
-  m[2] = u16;
+  str_meta *m = &smeta[nstrs++];
+  m->id = dest;
+  m->bytes = len;
+  m->chars = u16;
   __builtin_memcpy(sbytes + nsb, b, len);
   nsb += len;
 }
@@ -799,9 +826,10 @@ static void frame(double t) {
 
 /* ---- entry points ---- */
 EXPORT("cd_layout") uint32_t *cd_layout(void) {
-  layout[0] = (uint32_t)(uintptr_t)sbytes;
-  layout[1] = (uint32_t)(uintptr_t)smeta;
-  layout[2] = (uint32_t)(uintptr_t)&inbox;
+  uint32_t n = 0;
+  layout[n++] = sizeof layout / sizeof layout[0] - 1;
+#define CD_LAYOUT_FILL(v) layout[n++] = (uint32_t)(v);
+  CD_LAYOUT(CD_LAYOUT_FILL)
   return layout;
 }
 
