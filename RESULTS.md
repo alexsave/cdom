@@ -110,6 +110,9 @@ The design estimated 300-400 lines once history, fetch, storage, clipboard, focu
 
 ### Canvas, frames and method calls (branch canvas-blit)
 
+This section and the next describe the features as first built on the op stream.
+Since the merge of the two lines (see the head-to-head above) they run on direct calls, one import per operation; what changed is listed at the end of the host-access section.
+
 Three ops were added for apps that draw pixels, taking the shim from 126 to 132 lines and 27 to 30 ops.
 `cd_blit(canvas, rgba, w, h)` is BLIT: `putImageData` of an `ImageData` that views linear memory directly, so the pixels are not copied into the op stream.
 The pixels are RGBA bytes, the canvas's own format, so the shim never touches a pixel; converting from another layout is the app's job in C, where it can be fused with whatever pass already writes the frame.
@@ -177,6 +180,25 @@ Earlier runs at loads of 5 to 14 put the difference at 70 to 90 ns (about 1%); r
 Series 1 ran before the pointer fields were limited to their types, which does not touch these paths.
 run1k read 3 to 5% slower in the first two series and 3% faster in the third, and series 3 also carried a variant with the old 16-bit LISTEN case (2.25 ms), so the LISTEN change is not a cost and the spread is noise; swap, update and select stay at the 10 us timer floor for both.
 Other agents were building on the Mac throughout, which is why the loads are higher than in the runs above.
+
+### On direct calls (the merge of the two lines)
+
+The op stream is gone, so every feature above became an import or a rule on an existing one, and where the two lines had built the same thing twice one of them was kept.
+- BLIT is the import `blit`, read during the call, so the pixels need to live only until it returns.
+- FRAMES is gone: `cd_frames(1)` asks `cd_raf_request` with a token of cdom's own (`CD_FRAMES_TOKEN`) and asks again each frame while the loop is on, so one import owns frames and a second start is one loop.
+- CALL is gone: `cd_call(id, m)` is `cd_call_args(id, m, 0, 0)`, so a no-argument call also keeps its result as `CD_RESULT` and reports a throw.
+- SET and CALLA are the imports `set` and `call`; the shim reads the `cd_val` array where it lies in C memory (16 bytes each, tag at 0, payload at 8), so nothing is copied, and C sends only the values' strings first.
+- `get` is the same import; `cd_input_value` is still `cd_get_str` of "value", which replaced port-fixes's `input` import too.
+  A read no longer flushes a batch, because there is none: every operation before it has already been made.
+- `cd_get_rect` and port-fixes's `cd_rect` were the same read; `cd_rect` is kept and now returns 0 when the id names nothing with a box.
+- `CDOM_NO_ALLOC` is gone: port-fixes's weak malloc, free, realloc and calloc already let an app bring its own allocator as one heap.
+- Window events: port-fixes's `cd_listen_window` is now `cd_listen` on `CD_WINDOW` (resize) or `CD_DOCUMENT` (everything else), so its records carry that id where they carried `CD_MOUNT`; `cd_unlisten` removes a host listener or clears a node's bit.
+  Resize and visibilitychange records still carry the viewport (x and y its size, key 1 when hidden), whichever way they were listened for.
+- The event types are port-fixes's twenty-one (with the mouse and touch types) followed by this branch's eighteen others, 39 in all, so the listen mask is two 32-bit words per id.
+- The record keeps port-fixes's fields (ch, flags, ms) and appends pointer, buttons, dx and dy; `cd_event` returns the flags, and `cd_stop_propagation` joins `cd_prevent_default`.
+- An event the browser dispatches while C runs (focus() through `cd_call_args`) is queued and delivered in a microtask: the shim counts every call into C, since with direct calls any import, not only a batch, can dispatch one.
+- A one-off string (`cd_tmp`) used as a path is split each time, not cached by its id, because that id is reused by the next one-off string; on the op stream the cache by id was a latent bug.
+tests/host.c, tests/canvas.c and their drivers run against the merged code with the event numbers renumbered, and tools/mutate.py carries their mutants.
 
 ## Step 0: what a call across the boundary costs
 
@@ -249,8 +271,10 @@ The first version of cdom's swap took 65 us of script, all in the generic map-an
 
 ```
 cd /Users/alex/Dev/cdom
-bench/build.sh                  # cdom, cdom-pertext, cdom-notpl, cdom-oz into jfb/frameworks/keyed
-tests/build.sh && node tools/fuzz.mjs && node tools/canvas.mjs && node tools/host.mjs
+npm install                     # terser, which bench/build.sh minifies the shim with
+bench/build.sh                  # cdom, cdom-pertext, cdom-notpl, cdom-o2 into jfb/frameworks/keyed (NAME=x builds one entry as x)
+tests/build.sh && node tools/unit.mjs && node tools/fuzz.mjs && node tools/canvas.mjs && node tools/host.mjs && tests/link/run.sh
+python3 tools/mutate.py         # every mutant, each against the test written for it
 (cd jfb/server && PORT=8093 npx tsx index.ts) &
 node tools/smoke.mjs cdom
 TAG=p2 KEEP=pass2 tools/final.sh 01_ 02_ 03_ 04_ 05_ 06_ 07_ 08_ 09_

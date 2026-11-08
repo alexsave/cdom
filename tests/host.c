@@ -75,14 +75,17 @@ void cd_main(void) {
   cd_sel(ids[BAD]); cd_listen(ids[BAD], CD_EV_ERROR);
   cd_sel(ids[SCROLLER]); cd_listen(ids[SCROLLER], CD_EV_SCROLL);
   cd_sel(ids[FSBTN]); cd_listen(ids[FSBTN], CD_EV_CLICK);
-  for (uint32_t t = 0; t <= CD_EV_PAUSE; t++) { cd_sel(ids[ALL]); cd_listen(ids[ALL], t); }
+  for (uint32_t t = 0; t <= CD_EV_PAUSE; t++) {
+    if (t == CD_EV_RESIZE || t == CD_EV_VISIBILITY) continue; /* the window's and the document's */
+    cd_sel(ids[ALL]); cd_listen(ids[ALL], t);
+  }
   cd_sel(ids[DBL_ONLY]); cd_listen(ids[DBL_ONLY], CD_EV_DBLCLICK);
   /* Host objects: no sel needed, the last node is not touched. */
   cd_listen(CD_WINDOW, CD_EV_RESIZE);
   cd_listen(CD_WINDOW, CD_EV_FOCUS);
   cd_listen(CD_WINDOW, CD_EV_BLUR);
   cd_listen(CD_DOCUMENT, CD_EV_FULLSCREENCHANGE);
-  cd_listen(CD_DOCUMENT, CD_EV_VISIBILITYCHANGE);
+  cd_listen(CD_DOCUMENT, CD_EV_VISIBILITY);
   cd_listen(CD_DOCUMENT, CD_EV_KEYDOWN);
   cd_listen(CD_DOCUMENT, CD_EV_KEYUP);
   cd_listen(CD_BODY, CD_EV_CLICK);
@@ -111,7 +114,7 @@ void cd_on_event(const cd_event_rec *e) {
     if (f != CD_DETACHED) cd_call(CD_DOCUMENT, z("exitFullscreen"));
     break;
   }
-  case CD_EV_VISIBILITYCHANGE: pass_str(CD_DOCUMENT, s_vis); break;
+  case CD_EV_VISIBILITY: pass_str(CD_DOCUMENT, s_vis); break;
   case CD_EV_KEYDOWN: case CD_EV_KEYUP: a = e->key; pass_str(CD_EVENT, s_key); break;
   case CD_EV_CONTEXTMENU: if (id == ids[BOX]) cd_prevent_default(); break;
   case CD_EV_WHEEL:
@@ -148,7 +151,7 @@ EXPORT("g_num") double g_num(cd_id id, uint32_t len) { return cd_get_num(id, P(l
 EXPORT("g_str") uint32_t g_str(cd_id id, uint32_t len) { return cd_get_str(id, P(len), io, sizeof io); }
 EXPORT("g_strcap") uint32_t g_strcap(cd_id id, uint32_t len, uint32_t cap) { return cd_get_str(id, P(len), io, cap); }
 EXPORT("g_id") cd_id g_id(cd_id id, uint32_t len) { return cd_get_id(id, P(len)); }
-EXPORT("g_rect") int g_rect(cd_id id) { return cd_get_rect(id, rect); }
+EXPORT("g_rect") int g_rect(cd_id id) { return cd_rect(id, rect); }
 EXPORT("g_value") uint32_t g_value(cd_id id) { return cd_input_value(id, io, sizeof io); }
 /* Sets take the path at io[0, len) and a string value at io[len, len + vlen). */
 EXPORT("s_num") void s_num(cd_id id, uint32_t len, double v) { cd_set_num(id, P(len), v); cd_flush(); }
@@ -243,4 +246,18 @@ EXPORT("c_ids") uint32_t c_ids(void) {
   for (uint32_t i = 0; i < 1000; i++) if (cd_id_new() < CD_FIRST_ID) bad++;
   cd_flush();
   return bad;
+}
+/* A one-off path (cd_tmp) reuses its id from one crossing to the next, so the shim must not keep its
+ * segments by id: the second read names a different property under the same id. Returns the two lengths
+ * read, the second's bytes left in io. */
+EXPORT("c_tmp_paths") uint32_t c_tmp_paths(void) {
+  uint32_t a = cd_get_str(ids[BOX], cd_tmpz("id"), io, sizeof io);
+  uint32_t b = cd_get_str(ids[BOX], cd_tmpz("tagName"), io, sizeof io);
+  return a << 16 | b;
+}
+/* cd_unlisten on a node: it stops hearing dblclick, and starts again when listened for anew. */
+EXPORT("c_unlisten") void c_unlisten(int on) {
+  if (on) { cd_sel(ids[DBL_ONLY]); cd_listen(ids[DBL_ONLY], CD_EV_DBLCLICK); }
+  else cd_unlisten(ids[DBL_ONLY], CD_EV_DBLCLICK);
+  cd_flush();
 }

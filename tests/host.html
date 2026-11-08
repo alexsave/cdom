@@ -5,9 +5,11 @@ const LOG = [], STRS = [], reported = [], page = {};
 const DET = 0xffffffff, I = { BOX: 0, OTHER: 1, TEXT: 2, CHECK: 3, FILE: 4, MEDIA: 5, GOOD: 6, BAD: 7, SCROLLER: 8,
   DEEP: 9, PARA: 10, FSBTN: 11, ALL: 12, ALL_CHILD: 13, DBL_ONLY: 14, LIST: 15, ITEM_A: 16, ITEM_B: 17 };
 const EVENTS = ["click", "dblclick", "input", "change", "keydown", "keyup", "focusin", "focusout", "submit",
-  "pointerdown", "pointerup", "pointermove", "contextmenu", "wheel", "pointerover", "pointerout", "pointercancel",
-  "dragover", "drop", "focus", "blur", "scroll", "load", "error", "loadedmetadata", "timeupdate", "ended", "play",
-  "pause", "resize", "fullscreenchange", "visibilitychange"];
+  "pointerdown", "pointerup", "pointermove", "resize", "visibilitychange", "mousedown", "mousemove", "mouseup",
+  "touchstart", "touchmove", "touchend", "touchcancel", "contextmenu", "wheel", "pointerover", "pointerout",
+  "pointercancel", "dragover", "drop", "focus", "blur", "scroll", "load", "error", "loadedmetadata", "timeupdate",
+  "ended", "play", "pause", "fullscreenchange"];
+const RESIZE = 12, VISIBILITY = 13, FOCUS = 28, PAUSE = 37;
 window.addEventListener('error', (e) => reported.push(e.error ? e.error.name : e.message));
 for (const t of ['contextmenu', 'wheel', 'click', 'drop']) window.addEventListener(t, (e) => { page[t] = e.defaultPrevented; });
 let X;
@@ -106,12 +108,18 @@ function syncChecks() {
   // a read in the same batch as a set, with a path never sent before
   eq(rd(X.c_rw()), 'fresh title', 'read after write in one batch');
   eq(X.c_ids(), 0, 'cd_id_new never returns a reserved id');
+  const tp = X.c_tmp_paths(); eq([tp >> 16, tp & 0xffff, rd(tp & 0xffff)].join(), '3,3,DIV', 'a one-off path read twice under one id');
+  const dblEl = H.el('DBL_ONLY'), heard = () => { const k = LOG.length; dblEl.dispatchEvent(new Event('dblclick', { bubbles: true }));
+    return H.since(k).filter((r) => r[1] === H.id('DBL_ONLY')).length; };
+  X.c_unlisten(0); eq(heard(), 0, 'cd_unlisten: the node no longer hears dblclick');
+  X.c_unlisten(1); eq(heard(), 1, 'cd_unlisten: listened for again, it hears it');
   eq(cdom.node(1), window, 'window still bound after free'); eq(cdom.node(2), document, 'document still bound after remove');
   eq(H.num(2, 'body.childElementCount') > 0, true, 'document still reachable');
   // every mount-delivered type reaches the listening ancestor with its own number, and nothing else
   const child = H.el('ALL_CHILD'), dbl = H.el('DBL_ONLY'), all = H.id('ALL'), dblid = H.id('DBL_ONLY');
-  for (let ty = 0; ty <= 28; ty++) {
-    const n = LOG.length, bubbles = ty < 19;
+  for (let ty = 0; ty <= PAUSE; ty++) {
+    if (ty === RESIZE || ty === VISIBILITY) continue; // heard on the window and the document only
+    const n = LOG.length, bubbles = ty < FOCUS;
     child.dispatchEvent(new Event(EVENTS[ty], { bubbles, cancelable: true }));
     const got = H.since(n).filter((r) => r[1] === all);
     eq(got.map((r) => r.join()).join('|'), `${ty},${all},0,1`, `synthetic ${EVENTS[ty]} at a child of the listener`);
@@ -125,11 +133,11 @@ function syncChecks() {
   // drop reads the event's files through CD_EVENT and prevents the default
   const ddt = new DataTransfer(); ddt.items.add(new File(['x'], 'drop.txt'));
   n = LOG.length; H.el('BOX').dispatchEvent(new DragEvent('drop', { dataTransfer: ddt, bubbles: true, cancelable: true }));
-  eq(H.since(n).map((r) => r.slice(0, 2).join()).join('|'), `18,${box}`, 'drop delivered'); eq(STRS.at(-1), 'drop.txt', 'CD_EVENT dataTransfer.files.0.name');
+  eq(H.since(n).map((r) => r.slice(0, 2).join()).join('|'), `27,${box}`, 'drop delivered'); eq(STRS.at(-1), 'drop.txt', 'CD_EVENT dataTransfer.files.0.name');
   eq(page.drop, true, 'drop default prevented');
   // window blur and focus (synthetic: headless windows do not change focus)
   n = LOG.length; window.dispatchEvent(new FocusEvent('blur')); window.dispatchEvent(new FocusEvent('focus'));
-  eq(H.since(n).map((r) => r.slice(0, 2).join()).join('|'), '20,1|19,1', 'window blur and focus on CD_WINDOW');
+  eq(H.since(n).map((r) => r.slice(0, 2).join()).join('|'), '29,1|28,1', 'window blur and focus on CD_WINDOW');
   return errs;
 }
 
