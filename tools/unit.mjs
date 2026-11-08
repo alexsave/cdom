@@ -65,7 +65,9 @@ try {
   await b.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/unit.html` });
   let r;
   let clicked = false;
-  for (let i = 0; i < 400 && !r; i++) {
+  // Up to 60 s: a passing page takes about 5, and one a mutant broke runs many waits to their
+  // deadline (now-zero takes 22), and must still report its own failures, not just that it never finished.
+  for (let i = 0; i < 1200 && !r; i++) {
     await sleep(50);
     if (!clicked && await b.evaluate('window.WANT_GESTURE === true')) { await click(990, 690); clicked = true; }
     r = await b.evaluate('window.RESULT');
