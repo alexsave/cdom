@@ -168,6 +168,7 @@ EXPORT("t_ev") int32_t t_ev(int32_t k) { return k == 7 ? ev_count : ev_rec[k]; }
 EXPORT("t_hit") int32_t t_hit(int32_t x, int32_t y) { return (int32_t)cd_hit(x, y); }
 
 static int32_t loaded_id = -1, loaded_key = -1;
+static void deferred_event(const cd_event_rec *e);
 void cd_on_event(const cd_event_rec *e) {
   enter();
   if (e->type == CD_EV_RESIZE && e->id == CD_WINDOW) { /* heard on the window, named so */
@@ -180,6 +181,7 @@ void cd_on_event(const cd_event_rec *e) {
     for (int k = 0; k < 9; k++) ev_rec[k] = rec[k];
     ev_count++;
     if (prevent_next) cd_prevent_default();
+    deferred_event(e);
   }
 }
 
@@ -839,3 +841,45 @@ EXPORT("t_host_value") uint32_t t_host_value(uint32_t cap) { return cd_get_str(h
 EXPORT("t_host_accent") uint32_t t_host_accent(void) { return cd_get_str(host_div, L("style.--accent"), host_out, sizeof host_out); }
 EXPORT("t_host_out") char *t_host_out(void) { return host_out; }
 EXPORT("t_host_bad_set") void t_host_bad_set(void) { cd_set_str(host_div, L("no.such.thing"), L("x")); }
+
+/* 23. An event the browser dispatches while C runs waits for a microtask, and must not then reach a node
+ * that is gone. Each input listens for keydown and focusout; the page focuses one and presses a key on it.
+ * The reuse input's handler removes it and makes a new input in the same handler, which takes the freed
+ * id (cd_id_new hands freed ids out first) and listens for focusout too: the focusout the removal fires
+ * was the old node's, so the new one must not hear it. The gone input is removed and its id left free.
+ * The alive input's handler moves focus to another input: its focusout is still its own, heard once. */
+static cd_id def_sec, def_reuse, def_new, def_gone, def_alive, def_other;
+static int32_t def_heard[4]; /* focusouts on: the new input, the gone id, the alive input, the other input */
+EXPORT("t_deferred_section") void t_deferred_section(void) {
+  def_sec = section("deferred");
+  cd_at(def_sec, 0);
+  cd_open(L("input")); cd_attr(L("class"), L("reuse"));
+  cd_listen(def_reuse = cd_id_new(), CD_EV_KEYDOWN); cd_listen(def_reuse, CD_EV_FOCUSOUT); cd_close();
+  cd_open(L("input")); cd_attr(L("class"), L("gone"));
+  cd_listen(def_gone = cd_id_new(), CD_EV_KEYDOWN); cd_listen(def_gone, CD_EV_FOCUSOUT); cd_close();
+  cd_open(L("input")); cd_attr(L("class"), L("alive"));
+  cd_listen(def_alive = cd_id_new(), CD_EV_KEYDOWN); cd_listen(def_alive, CD_EV_FOCUSOUT); cd_close();
+  cd_open(L("input")); cd_attr(L("class"), L("other"));
+  cd_listen(def_other = cd_id_new(), CD_EV_FOCUSOUT); cd_close();
+  def_new = CD_DETACHED;
+}
+/* 0: did the new input take the reuse input's id; 1-4: def_heard. */
+EXPORT("t_deferred") int32_t t_deferred(uint32_t k) { return k ? def_heard[k - 1] : def_new == def_reuse; }
+static void deferred_event(const cd_event_rec *e) {
+  const cd_id id = (cd_id)e->id;
+  if (e->type == CD_EV_KEYDOWN && id == def_reuse) {
+    cd_remove(def_reuse);
+    def_new = cd_id_new();
+    cd_at(def_sec, 0);
+    cd_open(L("input")); cd_attr(L("class"), L("new")); cd_listen(def_new, CD_EV_FOCUSOUT); cd_close();
+  } else if (e->type == CD_EV_KEYDOWN && id == def_gone) {
+    cd_remove(def_gone);
+  } else if (e->type == CD_EV_KEYDOWN && id == def_alive) {
+    cd_call(def_other, L("focus"));
+  } else if (e->type == CD_EV_FOCUSOUT) {
+    def_heard[0] += id == def_new;
+    def_heard[1] += id == def_gone;
+    def_heard[2] += id == def_alive;
+    def_heard[3] += id == def_other;
+  }
+}

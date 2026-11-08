@@ -201,6 +201,12 @@ M = [
   ('fonts-unavailable-falls-through', 'shim/cdom.js', '      Promise.resolve().then(() => answer(FONTS_UNAVAILABLE));\n      return;', '      Promise.resolve().then(() => answer(FONTS_UNAVAILABLE));', UNIT, 'FAIL no document.fonts'),
   # host access, canvas and frames (main's line, ported onto the direct calls)
   ('host-no-queue', 'shim/cdom.js', '    if (busy) {\n      if (queue.push', '    if (false) {\n      if (queue.push', HOST, 'FAIL focus() inside a batch'),
+  # a waiting event goes out only while its id names the node it was queued for (drain)
+  ('deferred-no-check', 'shim/cdom.js', '      if (nodes[id] === node) {', '      if (true) {', UNIT, 'FAIL a deferred focusout from a removed node does not reach the new node'),
+  ('deferred-only-gone', 'shim/cdom.js', '      if (nodes[id] === node) {', '      if (nodes[id] !== undefined) {', UNIT, 'FAIL a deferred focusout from a removed node does not reach the new node'),
+  ('deferred-only-reused', 'shim/cdom.js', '      if (nodes[id] === node) {', '      if (nodes[id] === node || nodes[id] === undefined) {', UNIT, 'FAIL a deferred focusout from a removed node whose id stays free'),
+  ('deferred-drop-all', 'shim/cdom.js', '      if (nodes[id] === node) {', '      if (false) {', UNIT, 'FAIL a deferred focusout from a node still there'),
+  ('deferred-drop-all-host', 'shim/cdom.js', '      if (nodes[id] === node) {', '      if (false) {', HOST, 'FAIL focusin delivered after the batch'),
   ('host-record-id', 'shim/cdom.js', '    const listener = (event) => post(type, id, event, 0, 0);', '    const listener = (event) => post(type, 0, event, 0, 0);', HOST, 'FAIL window blur and focus on CD_WINDOW'),
   ('host-record-id-unit', 'shim/cdom.js', '    const listener = (event) => post(type, id, event, 0, 0);', '    const listener = (event) => post(type, 0, event, 0, 0);', UNIT, 'FAIL the document'),
   ('host-capture-off', 'shim/cdom.js', '{ capture: type >= FOCUS && type <= PAUSE, passive: false }', '{ capture: false, passive: false }', HOST, 'FAIL img load delivered'),
