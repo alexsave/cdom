@@ -16,6 +16,8 @@ const EV = Object.fromEntries(header.match(/enum \{ (CD_EV_CLICK[^}]*)\}/)[1].sp
   .map((n, i) => [n.trim().replace(/^CD_EV_/, ''), i]));
 const b = await launch();
 let fails = 0;
+// A hang is a failure: a broken polyfill can leave the C looping on bytes it never cleared.
+setTimeout(() => { console.log('FAIL no result within 90 s'); process.exit(1); }, 90000).unref();
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console.log('ok  ', m); };
 const E = b.evaluate;
 const mouse = (type, x, y, buttons = 0, button = 'none') =>
@@ -42,6 +44,10 @@ try {
     ok(await E('typeof WebAssembly === "undefined" && typeof X.memory.grow === "function"'), 'no WebAssembly; the exports are wasm2js');
     ok(await E('!/native code/.test(String(TextDecoder)) && !/native code/.test(String(TextEncoder))'), 'TextDecoder and TextEncoder are the polyfills');
     ok(await E('!/native code/.test(String(PointerEvent))'), 'PointerEvent is PEP');
+    // The two fallback files are fetched in parallel: the app's starts before the shim's has arrived.
+    const [shim, app] = await E(`['cdom.legacy.js', 'legacy.wasm.js'].map(f => performance.getEntriesByType('resource')
+      .find(r => r.name.endsWith('/' + f))).map(r => r && [r.startTime, r.responseEnd])`);
+    ok(shim && app && app[0] < shim[1], `legacy.wasm.js requested before cdom.legacy.js had arrived: ${JSON.stringify({ shim, app })}`);
   }
 
   // Pointer events: one press, a drag and a release on the pad, each delivered exactly once.

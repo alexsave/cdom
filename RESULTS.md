@@ -234,6 +234,8 @@ The targets assumed are IE 11, Safari 9, Chrome 49, Firefox 45, Android 4.4 and 
 Bytes, for the keyed entry on direct calls (brotli in parentheses): `cdom.legacy.js` 46,709 (14,212), `app.wasm.js` 16,621 (6,347), against `app.wasm` 9,803 (4,662) and the page with the shim inlined, 14,314 (5,413).
 The inlined boot is the one cost every browser pays: the page grows by 654 bytes (218 brotli).
 The page no longer preloads anything, so the fallback path fetches no wasm at all, and the smoke test checks that.
+Requests, then: with WebAssembly the page, `app.wasm` (fetched from the inline script, before the stylesheet) and the stylesheets; without it the page, `cdom.legacy.js` and `app.wasm.js` fetched in parallel (the second only defines `window.cdomFactory`, so they may run in either order, and the app starts when both have), and the stylesheets.
+`tools/legacy.mjs` checks the parallel fetch: the app's file is requested before the shim's has arrived, which a boot that loads them one after the other cannot do.
 
 In Chrome the wasm2js path is about as fast as wasm, because little of the script time is C.
 `node tools/quick.mjs` (script time per click, median ms), three interleaved rounds at loads of 5.7 to 8.0 while other runs used the Mac, wasm against wasm2js: run1k 1.9 against 2.0 to 2.2, replace1k 2.0 to 2.3 against 2.0 to 2.3, append 1.6 to 1.8 against 1.8 to 2.0, create10k 16.4 to 18.2 against 16.8 to 19.0, and update 0.1 against 0.2 to 0.3, the one clear cost.
@@ -244,6 +246,8 @@ Under it, `tools/fuzz.mjs` runs its five seeds of 40,000 list transitions and bo
 It reads the event numbers from cdom.h's enum, since the merge renumbered them.
 Each also checks which files the page fetched: the fallback files only on that path, and never on the wasm one.
 Without `LEGACY` the same tools run on wasm and pass unchanged, as do unit, canvas, host and link.
+Twenty-five mutants on direct calls (boot always or never falling back, no factory, the shim without its factory branch, no capture wrapper or the wrong phase, PEP left out, each UTF-8 branch, the fit check, the surrogate pair, microtasks dropped, reportError silent, startsWith always true, includes ignoring its start, Object.entries one short, no globalThis, and each Math and typed-array polyfill) were all caught, and a sequential boot fails the parallel-fetch check.
+The short fill was caught by a hang (the C looped on bytes it never cleared), so `tools/legacy.mjs` now fails any run that takes over 90 seconds.
 The first round left six alive: a two-byte decode bug that é cannot show (its lead byte reads the same under both masks, so the text now has a Cyrillic letter), and five polyfills the app cannot tell from wrong ones (a wrong imul still gives a consistent intern hash, a short fill leaves bytes that were zero anyway), which is why the built-in comparison exists; it then found that copyWithin threw where the built-in clamps.
 
 #### Cheerp, the direct C-to-JS compiler (tried 2026-11-08 on the op-stream line, not adopted)
