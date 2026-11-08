@@ -13,6 +13,7 @@ FUZZ = ['node', 'tools/fuzz.mjs']
 LINK = ['tests/link/run.sh']
 HOST = ['node', 'tools/host.mjs']
 CANVAS = ['node', 'tools/canvas.mjs']
+FRESH = ['node', 'tools/legacyfresh.mjs']
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -272,6 +273,10 @@ M = [
   ('httpcb-status', 'src/cdom_net.c', '((cd_http_fn)fn)(ctx, status, p, len);', '((cd_http_fn)fn)(ctx, 200, p, len);', UNIT, 'FAIL cd_http_cb'),
   ('httpcb-app-token', 'src/cdom_net.c', '  http(cd_cb_new((cd_cb_fn)fn, ctx), method', '  http(cd_cb_new((cd_cb_fn)fn, ctx) & 0x7fffffffu, method', UNIT, 'FAIL cd_http_cb'),
   ('httpcb-unchecked', 'src/cdom_net.c', '  if (token >= CD_TOKEN_CDOM) __builtin_trap(); /* cdom\'s range: its answer', '  /* cdom\'s range: its answer', UNIT, 'FAIL cd_http_cb'),
+  # the fallback's rebuild rule (tools/legacy/build.mjs)
+  ('fresh-input-dropped', 'tools/legacy/build.mjs', "path.join(here, 'polyfills.js'),\n", '\n', FRESH, 'FAIL shim does not name tools/legacy/polyfills.js'),
+  ('fresh-output-unchecked', 'tools/legacy/build.mjs', 'return got === want && made === sha(fs.readFileSync(out));', 'return got === want;', FRESH, 'FAIL shim: an edited output was not rebuilt'),
+  ('fresh-by-path', 'tools/legacy/build.mjs', "try { c = sha(fs.readFileSync(f)); } catch { c = 'missing'; }", "c = 'x';", FRESH, 'FAIL changing tools/legacy/build.mjs rebuilt []'),
   ('mini-strong', 'src/mini.c', '__attribute__((weak, no_builtin)) int memcmp', '__attribute__((no_builtin)) int memcmp', LINK, "FAIL an app's own libc"),
   # a library's I/O: cd_ws_open_cb
   ('wscb-open-to-hooks', 'src/cdom_net.c', '  if (!t) cd_on_ws_open(id);\n', '  if (1) cd_on_ws_open(id);\n', UNIT, 'FAIL cd_ws_open_cb'),
