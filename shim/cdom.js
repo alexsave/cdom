@@ -1069,6 +1069,9 @@ var cdom = (() => {
     if (options && options.seed !== undefined) {
       return options.seed >>> 0;
     }
+    if (!globalThis.crypto || !crypto.getRandomValues) {
+      throw new Error("cdom: this page has no crypto.getRandomValues to seed cd_seed; pass start(..., { seed })");
+    }
     return crypto.getRandomValues(new Uint32Array(1))[0];
   }
 
