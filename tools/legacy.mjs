@@ -44,6 +44,7 @@ try {
     ok(await E('typeof WebAssembly === "undefined" && typeof X.memory.grow === "function"'), 'no WebAssembly; the exports are wasm2js');
     ok(await E('!/native code/.test(String(TextDecoder)) && !/native code/.test(String(TextEncoder))'), 'TextDecoder and TextEncoder are the polyfills');
     ok(await E('!/native code/.test(String(PointerEvent))'), 'PointerEvent is PEP');
+    ok(await E('__noCrypto && !!window.msCrypto && window.crypto === window.msCrypto'), 'no crypto but msCrypto, as in IE 11; the polyfill made it crypto');
     // The two fallback files are fetched in parallel: the app's starts before the shim's has arrived.
     const [shim, app] = await E(`['cdom.legacy.js', 'legacy.wasm.js'].map(f => performance.getEntriesByType('resource')
       .find(r => r.name.endsWith('/' + f))).map(r => r && [r.startTime, r.responseEnd])`);
