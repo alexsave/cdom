@@ -213,6 +213,18 @@ Without `LEGACY` the same tools run on wasm and pass unchanged, as do canvas and
 Twenty-four mutants (boot always or never falling back, no factory, the shim without its factory branch, no capture wrapper or the wrong phase, PEP left out, each UTF-8 branch, the fit check, the surrogate pair, microtasks dropped, reportError silent, startsWith always true, includes ignoring its start, and each Math and typed-array polyfill) were all caught.
 The first round left six alive: a two-byte decode bug that é cannot show (its lead byte reads the same under both masks, so the text now has a Cyrillic letter), and five polyfills the app cannot tell from wrong ones (a wrong imul still gives a consistent intern hash, a short fill leaves bytes that were zero anyway), which is why the built-in comparison exists; it then found that copyWithin threw where the built-in clamps.
 
+#### Cheerp, the direct C-to-JS compiler (tried 2026-11-08, not adopted)
+
+Upstream clang has no JavaScript target (clang 23 registers only wasm32 and wasm64 for the browser), and never had one: the old asm.js backend lived in Emscripten's fastcomp fork, now gone, and `emcc -sWASM=0` today is wasm plus wasm2js.
+Cheerp (Leaning Technologies, a clang 16 fork, Apache 2.0 with LLVM exceptions since 3.0) still has one: `-target cheerp-wasm -cheerp-linear-output=asmjs` compiles linear-memory code straight to an asm.js module, and `-target cheerp` (genericjs) compiles C structs to JS objects instead.
+The nightly (cheerp-core 1793953554, arm64) ran in an Ubuntu container; the macOS DMG is x86 only.
+The keyed app ran on the asm.js output and passed every app check in `tools/smoke.mjs`, and the generated code is the same as wasm2js's: the same HEAP32 loads at fixed addresses and the same `| 0` integer arithmetic.
+Script time matched wasm2js (create10k 18.8 to 20.2 ms against 19.5 to 20.3, update 0.2 against 0.3, at loads of 5 to 8), but the output was larger (14.0 KB brotli minified, against 11.2 KB for unminified wasm2js), because it carries musl's malloc and Cheerp's runtime, and it is ES2015, so it would need Babel and the polyfills anyway.
+Getting cdom through it took a C++ glue file: Cheerp ignores `import_module`, `import_name` and `export_name`, exports need `cheerp_jsexport` (which refuses `void *` parameters), calls into JS need a `[[cheerp::genericjs]]` client namespace, and `__builtin_wasm_memory_size` and `grow` do not exist, so cdom's allocator gave way to malloc through `CDOM_NO_ALLOC`; its heap is a fixed 8 MB ArrayBuffer.
+The finding that decides it: before the glue, Cheerp built the app with only unknown-attribute warnings and compiled both imports to a stub that throws "this should be unreachable", with their arguments dropped, where wasm-ld refuses to link an undefined symbol.
+genericjs also warns on the `cd_val` union and a cast in app.c, which its type punning rules forbid.
+So clang plus wasm2js stays: one compiler, one binary for both paths, and no change to the C.
+
 ## Step 0: what a call across the boundary costs
 
 Chrome 156, median ns per call over 31 samples of 100,000 calls (2,000,000 for the two cheapest rows); load 3.66 at the start and 4.25 at the end:
