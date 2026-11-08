@@ -8,6 +8,7 @@ A browser without WebAssembly runs the same app through wasm2js on an ES5 shim (
 - A program's libc comes from cdom: `src/libc/string.h` (add `-isystem cdom/src/libc`) and `src/mini.c`.
 - Measurements, design notes and how to reproduce them are in RESULTS.md, PERF_LOG.md and BRIDGE.md.
 - Tests: `tests/build.sh`, then `node tools/unit.mjs`, `node tools/fuzz.mjs`, `node tools/canvas.mjs`, `node tools/host.mjs`, `tests/link/run.sh` and `node tools/legacy.mjs`.
+- cdom and its sibling C library have zero edges, neither depends on the other: `tools/edges.mjs` (run by `tests/link/run.sh`) fails if a tracked file other than the docs (`*.md`, LICENSE) names the C library it once sat beside.
 
 ## License
 
