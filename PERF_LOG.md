@@ -325,10 +325,10 @@ An app on main's op stream recompiles against the new event numbers (resize is 1
 The merged entry (cdom-merged, the default build) passes every gate: the harness's keyed check, smoke, DOM identity against both cdom-pf and cdom-main over 22 snapshots, listfuzz (5 seeds of 40,000 rounds), the unit page (86 cases), the link tests, tests/host (38 checks, real fullscreen and visibilitychange included) and tests/canvas.
 tools/domcheck.mjs now pins `crypto.getRandomValues` through its pinned `Math.random`, because the shim seeds from crypto (cherry-picked from amgi 4a31c08) where the older entries seed from `Math.random`.
 The unit page's prefs case names both media features at every step (amgi b0a3853): it had left one unset, so on a Mac in dark mode it failed on port-fixes itself.
-MUTANTS
+tools/mutate.py now has 216 mutants (main's host and canvas features, the unit page's host cases, the seed and cd_url_step added); a first run was stopped after 54 to land the merge: 50 caught, 3 that no longer compiled under clang 23's -Werror (svg-off, visibility-target, foreign-free; their texts are fixed) and lit-one-slot, which now fails the page at start because cd_input_value's path is a CD_LIT. The full run follows the merge.
 Bytes (bench entry, -Oz, brotli at q11): app.wasm 9,646 -> 9,803 (4,593 -> 4,662), index.html with the inlined minified shim 11,899 -> 14,269 (4,524 -> 5,404), so host access, canvas and the wider event set cost the page 949 bytes brotli; main's entry was 20,677 bytes of wasm (5,604) and a 10,853-byte shim (3,649) beside a 403-byte page.
 Shim source 943 -> 1,149 lines.
-MERGED_RUN
+The merged entry has not been timed in a paired pass yet; that follows the merge.
 
 ## Bridge designs compared (2026-11-01)
 
