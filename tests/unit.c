@@ -131,7 +131,7 @@ EXPORT("t_rect_at") double t_rect_at(int32_t k) { return rect_at[k]; }
 /* 5c. A drag's and a key's events: a press delegated to a listening box (mouse and touch) with
  * its point, the document's moves and keys while C listens on it, the default action stopped when
  * C asks, and the node under a point (cd_hit) through an overlay that takes no pointer events. */
-static cd_id input_box, input_other;
+static cd_id input_box, input_other, input_layer;
 static int32_t ev_rec[9], ev_count, prevent_next;
 EXPORT("t_input") void t_input(void) {
   cd_id s = section("input");
@@ -149,9 +149,11 @@ EXPORT("t_input") void t_input(void) {
   cd_attr(L("style"), L("position: fixed; left: 300px; top: 100px; width: 40px; height: 40px;"));
   cd_listen(input_other = cd_id_new(), CD_EV_CLICK);
   cd_close();
-  cd_open(L("div")); /* over input_other's left half, taking pointer events but listening nowhere */
+  cd_open(L("div")); /* over input_other's left half, taking pointer events; it listened, and listens no more */
   cd_attr(L("style"), L("position: fixed; left: 300px; top: 100px; width: 20px; height: 40px;"));
+  cd_listen(input_layer = cd_id_new(), CD_EV_CLICK);
   cd_close();
+  cd_unlisten(input_layer, CD_EV_CLICK);
   cd_open(L("input")); cd_close();
   cd_id freed = cd_id_new(); /* listened, then its id freed with the node left in place: no longer a target */
   cd_open(L("div"));
@@ -160,7 +162,7 @@ EXPORT("t_input") void t_input(void) {
   cd_close();
   cd_id_free(freed);
 }
-EXPORT("t_input_id") int32_t t_input_id(int32_t which) { return (int32_t)(which ? input_other : input_box); }
+EXPORT("t_input_id") int32_t t_input_id(int32_t which) { return (int32_t)(which == 2 ? input_layer : which ? input_other : input_box); }
 EXPORT("t_listen_win") void t_listen_win(int32_t type, int32_t on) {
   if (on) cd_listen_window((uint32_t)type);
   else cd_unlisten_window((uint32_t)type);
