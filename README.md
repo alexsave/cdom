@@ -7,7 +7,7 @@ A browser without WebAssembly runs the same app through wasm2js on an ES5 shim (
 
 - The API is `src/cdom.h`, with the network in `src/cdom_net.h`, the store in `src/cdom_store.h`, and the other platform modules beside them.
 - URL helpers are in `src/cdom_url.h` (module `url`): `cd_url_encode` percent-encodes bytes as `encodeURIComponent` does (for a query value), and `cd_url_decode` reverses it; both are plain C, with no shim call.
-- A program's libc comes from cdom: `src/libc/string.h` (add `-isystem cdom/src/libc`) and `src/mini.c`.
+- A program's libc comes from cdom: `src/libc/string.h`, `src/libc/stdio.h` (`snprintf` and `vsnprintf`, integers and strings, no floats) and `src/mini.c` (add `-isystem cdom/src/libc`).
 - Measurements, design notes and how to reproduce them are in RESULTS.md, PERF_LOG.md and BRIDGE.md.
 - Starting and building an app: below (`make -C path/to/cdom new DIR=myapp` makes one), and `src/cdom.h` at its top.
 - Tests: `tests/build.sh`, then `node tools/unit.mjs`, `node tools/fuzz.mjs`, `node tools/canvas.mjs`, `node tools/host.mjs`, `tests/link/run.sh` and `node tools/legacy.mjs`.

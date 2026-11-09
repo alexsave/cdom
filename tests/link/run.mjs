@@ -23,6 +23,9 @@ for (const f of ['cdom', 'freestanding']) {
   ok(x.libc_header() === 1, `string.h (${f} flags): memcpy, memmove (overlapping), memset, memcmp and strlen give the right bytes`);
   x = await load(`${dir}/libc_addr_${f}.wasm`);
   ok(x.libc_addr() === 1, `string.h (${f} flags): memcpy, memmove and memset called through their address give the right bytes`);
+  x = await load(`${dir}/libc_printf_${f}.wasm`);
+  const line = x.libc_printf();
+  ok(line === 0, `stdio.h (${f} flags): snprintf and vsnprintf write every case of tests/link/libc_printf.c${line ? ` (wrong at line ${line})` : ''}`);
 }
 x = await load(`${dir}/on_only.wasm`);
 x.cd_start(0);
