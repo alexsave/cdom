@@ -10,7 +10,8 @@
 #define SAMPLES (RATE * 30 / 1000)
 
 static uint8_t click_wav[44 + 2 * SAMPLES];
-static uint32_t rng = 0x9e3779b9u;
+/* xorshift32 from cd_seed (cdom.h): the page fixes the seed in one line (cdom.start's options.seed). */
+static uint32_t rng;
 static uint32_t next_random(void) {
   rng ^= rng << 13;
   rng ^= rng >> 17;
@@ -45,6 +46,7 @@ static void show_state(void) {
 }
 
 void cd_main(void) {
+  rng = cd_seed | 1; /* xorshift32 stays at 0 from 0 */
   make_click();
   cd_audio_load(1, click_wav, sizeof click_wav);
   cd_at(CD_MOUNT, 0);

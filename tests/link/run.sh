@@ -2,7 +2,7 @@
 # The link-level tests: one heap whoever brings it, mini.c next to an app's libc, the program's
 # string.h (src/libc) under cdom's flags and freestanding ones, CD_LIT refusing a variable, the I/O
 # contract (contract.c), and cdom.mk's rules (app.mk). Builds into tests/out/link and runs tests/link/run.mjs, then the name gate
-# (tools/edges.mjs).
+# (tools/edges.mjs) and the seed gate (tools/seeds.mjs).
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 src="$here/../../src"
@@ -95,4 +95,5 @@ for bad in inline:'must be alone on its line' none:'no /\*CDOM_SHIM\*/ line' two
 done
 node "$here/run.mjs" "$out" || fail=1
 node "$here/../../tools/edges.mjs" || fail=1
+node "$here/../../tools/seeds.mjs" || fail=1
 exit $fail
