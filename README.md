@@ -15,10 +15,11 @@ A browser without WebAssembly runs the same app through wasm2js on an ES5 shim (
 
 ## Building an app
 
-An app's Makefile includes `cdom.mk`, which gives it the one flag set cdom itself builds with, the sources to link, and two rules:
+An app's Makefile includes `cdom.mk` once, which gives it the one flag set cdom itself builds with, the sources to link, and two rules:
 
 ```make
 CDOM := path/to/cdom
+include $(CDOM)/cdom.mk
 APP_WASM := out/app.wasm
 APP_SRC := src/app.c
 APP_MODULES := net random
@@ -26,7 +27,6 @@ APP_CFLAGS := -Wall -Wextra -Werror
 APP_LDFLAGS := -Wl,--strip-all
 APP_PAGE := out/index.html
 APP_PAGE_SRC := src/index.html
-include $(CDOM)/cdom.mk
 
 build: $(APP_WASM) $(APP_PAGE)
 ```
@@ -36,7 +36,10 @@ build: $(APP_WASM) $(APP_PAGE)
 - `APP_MODULES` names the optional modules the app uses (`net`, `store`, `random`, `audio`, `url`, `locale`, `share`, `fonts`, each `src/cdom_<name>.h`), and the rule links them; a name that is not a module stops make.
 - Each module's source is also a variable (`CDOM_NET_SRC`, `CDOM_STORE_SRC` and so on) for an app that writes its own rule.
 - The APP_WASM rule compiles with `$(CDOM_OPT)` (`-Oz` unless the app sets it), `CDOM_CFLAGS`, `APP_CFLAGS`, `CDOM_LDFLAGS` and `APP_LDFLAGS`; `WASM_CC` is the clang (Homebrew's llvm by default, since Apple's clang has no wasm32 target).
-- Set the `APP_*` variables before the include, since the rules read them there; cdom.mk never takes the default goal from the app's first rule.
+- The include may come before or after the `APP_*` variables are set, so a fragment that needs cdom.mk's variables first (to name `CDOM_CFLAGS` or a module's source in its own) is included after it, and `APP_*` after both.
+- The rules read `APP_*` when make builds, not at the include: they are pattern rules (`%.wasm`, `%.html`) that apply only to the files `APP_WASM` and `APP_PAGE` name, so `APP_WASM` ends in `.wasm` and `APP_PAGE` in `.html`.
+- They turn on `.SECONDEXPANSION` for the rest of the app's Makefile, so a `$$` in a later rule's prerequisites is expanded twice.
+- An unknown `APP_MODULES` name, or a source that is not there, stops make when it builds `APP_WASM`, naming it; cdom.mk never takes the default goal from the app's first rule.
 - The page marker is API: the app's HTML has a `<script>` with a line that holds only `/*CDOM_SHIM*/`, and the APP_PAGE rule writes the page with `shim/cdom.min.js` in place of that line.
 - The rule fails, and writes nothing, when the page has no such line, has two, or has the marker beside other text; `$(call cdom_page,in.html,out.html)` does the same inside an app's own recipe.
 - Nothing on this path needs Node: it is make, awk (`tools/page.awk`) and clang.

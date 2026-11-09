@@ -3,8 +3,9 @@
 #   CDOM := path/to/cdom
 #   include $(CDOM)/cdom.mk
 #
-# It defines variables and, only when the app sets APP_WASM or APP_PAGE (before the include, as the
-# rules read them there), the rule for that file. It never changes the app's default goal. Plain make, awk and clang: no Node on this path.
+# Included once, before or after the app sets APP_*: it defines variables and the rules for the files
+# APP_WASM and APP_PAGE name, which read APP_* when make builds, not where cdom.mk is included (see the
+# rules below). It never changes the app's default goal. Plain make, awk and clang: no Node on this path.
 #
 #   CDOM_CFLAGS   the compile flags every file of a cdom module needs
 #   CDOM_LDFLAGS  the link flags of a cdom module
@@ -33,8 +34,6 @@
 # the data, so an overflow traps instead of overwriting globals. -ffreestanding is not in the set (it
 # turns off clang's builtins and costs cdom code size); string.h works under it, so an app may add it.
 # Optimization, warnings and -Wl,--strip-all are the app's choice (APP_CFLAGS, APP_LDFLAGS, CDOM_OPT).
-cdom_mk_goal := $(.DEFAULT_GOAL)
-
 CDOM ?= $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
 WASM_CC ?= /opt/homebrew/opt/llvm/bin/clang
 CDOM_OPT ?= -Oz
@@ -59,21 +58,31 @@ CDOM_SHIM       := $(CDOM)/shim/cdom.min.js
 cdom_page = awk -v shim='$(CDOM_SHIM)' -f '$(CDOM)/tools/page.awk' '$(1)' > '$(2).tmp' && mv '$(2).tmp' '$(2)' || { rm -f '$(2).tmp'; exit 1; }
 
 CDOM_MODULES := net store random audio url locale share fonts
-ifdef APP_WASM
-cdom_mk_unknown := $(filter-out $(CDOM_MODULES),$(APP_MODULES))
-ifneq ($(cdom_mk_unknown),)
-$(error cdom.mk: APP_MODULES names $(cdom_mk_unknown), not a cdom module ($(CDOM_MODULES)))
-endif
-cdom_mk_app_src := $(APP_SRC) $(CDOM_SRC) $(addprefix $(CDOM)/src/cdom_,$(addsuffix .c,$(APP_MODULES)))
-$(APP_WASM): $(cdom_mk_app_src) $(CDOM_HEADERS)
+
+# The APP_WASM and APP_PAGE rules. Their targets are the names APP_WASM and APP_PAGE hold, which an app
+# may set after this include, so they are pattern rules (%.wasm and %.html: APP_WASM ends in .wasm,
+# APP_PAGE in .html) whose prerequisites take a second expansion (.SECONDEXPANSION, on from here for the
+# app's later rules too, so a $$ in a prerequisite is expanded twice). That expansion runs once every
+# makefile is read, so it sees APP_* wherever they were set: for the file APP_WASM (APP_PAGE) names, the
+# prerequisites are its sources, and the APP_MODULES check runs there; for any other .wasm (.html) it is
+# a file nothing makes, so the rule does not apply and the app's own rules, or none, do.
+cdom_mk_app_src = $(APP_SRC) $(CDOM_SRC) $(addprefix $(CDOM)/src/cdom_,$(addsuffix .c,$(APP_MODULES)))
+cdom_mk_unknown = $(filter-out $(CDOM_MODULES),$(APP_MODULES))
+cdom_mk_known = $(if $(cdom_mk_unknown),$(error cdom.mk: APP_MODULES names $(cdom_mk_unknown), not a cdom module ($(CDOM_MODULES))))
+# $(call cdom_mk_for,name,target,prerequisites): the prerequisites when target is the file name holds,
+# else one that nothing makes.
+cdom_mk_for = $(if $(filter $(2),$(1)),$(3),$(2).cdom-mk-none)
+.SECONDEXPANSION:
+%.wasm: $$(call cdom_mk_for,$$(APP_WASM),$$@,$$(cdom_mk_known)$$(cdom_mk_app_src) $$(CDOM_HEADERS))
 	@mkdir -p $(@D)
 	$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS) $(APP_LDFLAGS) -o $@ $(cdom_mk_app_src)
-endif
 
-ifdef APP_PAGE
-$(APP_PAGE): $(APP_PAGE_SRC) $(CDOM_SHIM) $(CDOM)/tools/page.awk
+%.html: $$(call cdom_mk_for,$$(APP_PAGE),$$@,$$(APP_PAGE_SRC) $$(CDOM_SHIM) $$(CDOM)/tools/page.awk)
 	@mkdir -p $(@D)
 	$(call cdom_page,$(APP_PAGE_SRC),$@)
-endif
 
-.DEFAULT_GOAL := $(cdom_mk_goal)
+# Only for make's message when a source is missing. A pattern rule whose prerequisite neither exists nor
+# is named by any rule does not apply, and make would say "No rule to make target <the app's .wasm>";
+# named here (as an explicit rule's prerequisites, expanded as late), the missing source is what make
+# names. Nothing builds this target, and one that starts with a dot is never the default goal.
+.cdom-mk-sources: $$(if $$(APP_WASM),$$(cdom_mk_app_src)) $$(if $$(APP_PAGE),$$(APP_PAGE_SRC))

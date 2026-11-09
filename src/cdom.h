@@ -1,8 +1,9 @@
 /* cdom: C owns the tree, state and diffing; a fixed JS shim makes one DOM call per
  * operation (each its own wasm import) and feeds events back. */
 /* Building and starting an app (README.md, "Building an app" and "Starting an app"). An app's Makefile
- * includes cdom.mk, whose CDOM_CFLAGS, CDOM_LDFLAGS and CDOM_SRC build its module and whose page rule puts
- * shim/cdom.min.js in place of the page's line that holds only the marker CDOM_SHIM in a block comment.
+ * includes cdom.mk once (before or after it sets APP_WASM and the rest), whose CDOM_CFLAGS, CDOM_LDFLAGS
+ * and CDOM_SRC build its module and whose page rule puts shim/cdom.min.js in place of the page's line that
+ * holds only the marker CDOM_SHIM in a block comment.
  * The page then calls cdom.start(url, mount, env, options) exactly once: url is the module (or its wasm2js
  * build, through shim/boot.js), mount the element CD_MOUNT is (or its id), env the module's own imports
  * (or nothing), options.seed fixes cd_seed and options.openStore opens the store while the module loads.

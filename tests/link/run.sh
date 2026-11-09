@@ -60,39 +60,55 @@ else echo "FAIL CD_LIT given a variable failed for another reason:"; cat "$out/l
 if "$CC" "${LIBC_CDOM[@]}" -fsyntax-only "$here/contract.c" 2> "$out/contract.log"; then
   echo "ok   the I/O contract: every declaration external adapters build on has its type, and every code its value"
 else echo "FAIL the I/O contract changed in place:"; cat "$out/contract.log"; fail=1; fi
-# cdom.mk as an app uses it (tests/link/app.mk): the APP_WASM rule builds a module that exports its memory
-# and cd_main's entry, with the modules APP_MODULES names; the APP_PAGE rule (tools/page.awk) puts the shim where the page's one /*CDOM_SHIM*/
-# line was, and refuses a page with the marker beside other text, without it, or with it twice, leaving no
-# output.
-mk() { make -s --no-print-directory -f "$here/app.mk" OUT="$out/mk" "$@"; }
-rm -rf "$out/mk"; mkdir -p "$out/mk"
-if ! mk "$out/mk/mk_app.wasm" PAGE= 2> "$out/mk_app.log"; then
-  echo "FAIL cdom.mk's APP_WASM rule does not build an app:"; cat "$out/mk_app.log"; fail=1
-elif exports="$(wasm-dis "$out/mk/mk_app.wasm" | grep -oE '\(export "(memory|cd_start)"' | sort | tr -d '\n')"
+# cdom.mk as an app uses it (tests/link/app.mk), with its one include before APP_* are set (first), after
+# them (last), and the old two includes (twice): the APP_WASM rule builds a module that exports its memory
+# and cd_main's entry, with the modules APP_MODULES names, and a second make finds it up to date; the
+# APP_PAGE rule (tools/page.awk) puts the shim where the page's one /*CDOM_SHIM*/ line was, and refuses a
+# page with the marker beside other text, without it, or with it twice, leaving no output.
+for inc in first last twice; do
+mo="$out/mk-$inc"
+mk() { make -s --no-print-directory -f "$here/app.mk" INCLUDE="$inc" OUT="$mo" "$@"; }
+rm -rf "$mo"; mkdir -p "$mo"
+if ! mk "$mo/mk_app.wasm" PAGE= 2> "$mo/mk_app.log"; then
+  echo "FAIL cdom.mk's APP_WASM rule ($inc) does not build an app:"; cat "$mo/mk_app.log"; fail=1
+elif exports="$(wasm-dis "$mo/mk_app.wasm" | grep -oE '\(export "(memory|cd_start)"' | sort | tr -d '\n')"
   [ "$exports" != '(export "cd_start"(export "memory"' ]; then
-  echo "FAIL cdom.mk's APP_WASM rule: the module exports no memory or no cd_start"; fail=1
-else echo "ok   cdom.mk's APP_WASM rule builds an app from APP_SRC, CDOM_SRC and APP_MODULES, memory and entries exported"; fi
-if [ "$(mk PAGE= 2>&1)" != app-goal ]; then echo "FAIL cdom.mk took the default goal from the app's first rule"; fail=1
-else echo "ok   cdom.mk leaves the app's first rule its default goal"; fi
-if mk "$out/mk/bogus.wasm" PAGE= APP_MODULES='random bogus' > "$out/mk_bogus.log" 2>&1; then echo "FAIL cdom.mk took APP_MODULES naming no module"; fail=1
-elif ! grep -q 'APP_MODULES names bogus, not a cdom module' "$out/mk_bogus.log"; then echo "FAIL cdom.mk refused APP_MODULES for another reason:"; cat "$out/mk_bogus.log"; fail=1
-else echo "ok   cdom.mk stops at an APP_MODULES name that is no module"; fi
-want="$out/mk/ok.want"
+  echo "FAIL cdom.mk's APP_WASM rule ($inc): the module exports no memory or no cd_start"; fail=1
+elif ! mk -q "$mo/mk_app.wasm" PAGE=; then echo "FAIL cdom.mk's APP_WASM rule ($inc): a second make builds the module again"; fail=1
+else echo "ok   cdom.mk's APP_WASM rule ($inc) builds an app from APP_SRC, CDOM_SRC and APP_MODULES, memory and entries exported, then finds it up to date"; fi
+if [ "$(mk PAGE= 2>&1)" != app-goal ]; then echo "FAIL cdom.mk ($inc) took the default goal from the app's first rule"; fail=1
+else echo "ok   cdom.mk ($inc) leaves the app's first rule its default goal"; fi
+if mk "$mo/mk_app.wasm" PAGE= APP_MODULES='random bogus' -B > "$mo/mk_bogus.log" 2>&1; then echo "FAIL cdom.mk ($inc) took APP_MODULES naming no module"; fail=1
+elif ! grep -q 'APP_MODULES names bogus, not a cdom module' "$mo/mk_bogus.log"; then echo "FAIL cdom.mk ($inc) refused APP_MODULES for another reason:"; cat "$mo/mk_bogus.log"; fail=1
+else echo "ok   cdom.mk ($inc) stops at an APP_MODULES name that is no module"; fi
+want="$mo/ok.want"
 { sed -n '1,3p' "$here/page/ok.html"; cat "$src/../shim/cdom.min.js"; sed -n '5,$p' "$here/page/ok.html"; } > "$want"
-if ! mk "$out/mk/ok.html" PAGE="$here/page/ok.html" 2> "$out/mk_page.log"; then
-  echo "FAIL cdom_page refused a page whose marker is alone on its line:"; cat "$out/mk_page.log"; fail=1
-elif ! cmp -s "$want" "$out/mk/ok.html"; then echo "FAIL cdom_page: the page is not itself with the shim at its marker line"; fail=1
-else echo "ok   cdom_page inlines shim/cdom.min.js at the page's /*CDOM_SHIM*/ line, every other line kept"; fi
+if ! mk "$mo/ok.html" PAGE="$here/page/ok.html" 2> "$mo/mk_page.log"; then
+  echo "FAIL cdom_page ($inc) refused a page whose marker is alone on its line:"; cat "$mo/mk_page.log"; fail=1
+elif ! cmp -s "$want" "$mo/ok.html"; then echo "FAIL cdom_page ($inc): the page is not itself with the shim at its marker line"; fail=1
+else echo "ok   cdom_page ($inc) inlines shim/cdom.min.js at the page's /*CDOM_SHIM*/ line, every other line kept"; fi
 for bad in inline:'must be alone on its line' none:'no /\*CDOM_SHIM\*/ line' two:'a second /\*CDOM_SHIM\*/'; do
   name="${bad%%:*}" why="${bad#*:}"
-  if mk "$out/mk/$name.html" PAGE="$here/page/$name.html" 2> "$out/mk_$name.log"; then
-    echo "FAIL cdom_page took the $name page"; fail=1
-  elif [ -e "$out/mk/$name.html" ] || [ -e "$out/mk/$name.html.tmp" ]; then
-    echo "FAIL cdom_page refused the $name page but left a file"; fail=1
-  elif ! grep -q "$name.html.*$why" "$out/mk_$name.log"; then
-    echo "FAIL cdom_page refused the $name page for another reason:"; cat "$out/mk_$name.log"; fail=1
-  else echo "ok   cdom_page refuses the $name page ($(sed 's/.*: //' "$out/mk_$name.log" | head -1)) and writes nothing"; fi
+  if mk "$mo/$name.html" PAGE="$here/page/$name.html" 2> "$mo/mk_$name.log"; then
+    echo "FAIL cdom_page ($inc) took the $name page"; fail=1
+  elif [ -e "$mo/$name.html" ] || [ -e "$mo/$name.html.tmp" ]; then
+    echo "FAIL cdom_page ($inc) refused the $name page but left a file"; fail=1
+  elif ! grep -q "$name.html.*$why" "$mo/mk_$name.log"; then
+    echo "FAIL cdom_page ($inc) refused the $name page for another reason:"; cat "$mo/mk_$name.log"; fail=1
+  else echo "ok   cdom_page ($inc) refuses the $name page ($(sed 's/.*: //' "$mo/mk_$name.log" | head -1)) and writes nothing"; fi
 done
+done
+# With the include first: a source APP_SRC names that is not there is what make names (not "no rule to
+# make" the module), and a .wasm or .html that is not APP_WASM or APP_PAGE is not cdom.mk's to build.
+mo="$out/mk-first"
+mk() { make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$mo" "$@"; }
+if mk "$mo/mk_app.wasm" PAGE= EXTRA_SRC="$here/no_such_source.c" -B > "$mo/mk_missing.log" 2>&1; then echo "FAIL cdom.mk built an app whose APP_SRC names a file that is not there"; fail=1
+elif ! grep -q "no_such_source.c.*needed by .*mk_app.wasm" "$mo/mk_missing.log"; then echo "FAIL cdom.mk: make does not name the missing source:"; cat "$mo/mk_missing.log"; fail=1
+else echo "ok   cdom.mk: make names a missing APP_SRC file ($(sed 's/.*No rule to make target //' "$mo/mk_missing.log" | head -1))"; fi
+if mk "$mo/other.wasm" "$mo/other.html" PAGE="$here/page/ok.html" > "$mo/mk_other.log" 2>&1 || [ -e "$mo/other.wasm" ] || [ -e "$mo/other.html" ]; then
+  echo "FAIL cdom.mk's rules built a .wasm or .html that is not APP_WASM or APP_PAGE"; cat "$mo/mk_other.log"; fail=1
+elif ! grep -q "No rule to make target .*other.wasm" "$mo/mk_other.log"; then echo "FAIL cdom.mk: other.wasm refused for another reason:"; cat "$mo/mk_other.log"; fail=1
+else echo "ok   cdom.mk's rules leave a .wasm or .html that is not APP_WASM or APP_PAGE alone"; fi
 node "$here/run.mjs" "$out" || fail=1
 node "$here/../../tools/edges.mjs" || fail=1
 node "$here/../../tools/seeds.mjs" || fail=1
