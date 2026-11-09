@@ -346,6 +346,18 @@ M = [
   # the name gate (tools/edges.mjs): the other repo's name, spelled in pieces here so this file does not carry it
   ('edges-name', 'src/cdom.h', '#ifndef CDOM_H\n', '/* built beside ' + 'c' + 'base */\n#ifndef CDOM_H\n', LINK, 'names the other repo: /* built beside'),
   ('edges-old-name', 'tools/fuzz.mjs', 'import http from', '// from C_' + 'BASE\nimport http from', LINK, 'FAIL tools/fuzz.mjs:2: names the other repo'),
+  # cdom.mk (tests/link/app.mk): the page rule (tools/page.awk), the module rule, and the flag gate (tools/cdomflags.sh)
+  ('page-no-shim', 'tools/page.awk', 'while ((got = getline shimline < shim) > 0) print shimline', 'got = 0', LINK, 'FAIL cdom_page: the page is not itself'),
+  ('page-mark-kept', 'tools/page.awk', '  close(shim)\n  next\n', '  close(shim)\n', LINK, 'FAIL cdom_page: the page is not itself'),
+  ('page-inline-taken', 'tools/page.awk', '  if (line != "/*CDOM_SHIM*/") {', '  if (0) {', LINK, 'FAIL cdom_page took the inline page'),
+  ('page-two-taken', 'tools/page.awk', '  if (++marks > 1) {', '  if (++marks > 2) {', LINK, 'FAIL cdom_page took the two page'),
+  ('page-none-taken', 'tools/page.awk', '  if (!bad && marks != 1) {', '  if (!bad && marks > 1) {', LINK, 'FAIL cdom_page took the none page'),
+  ('page-partial-kept', 'cdom.mk', "> '$(2).tmp' && mv '$(2).tmp' '$(2)' ||", "> '$(2)' ||", LINK, 'FAIL cdom_page refused the inline page but left a file'),
+  ('mk-wasm-no-libc', 'cdom.mk', 'CDOM_CFLAGS := --target=wasm32 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src', 'CDOM_CFLAGS := --target=wasm32 -nostdlib -mbulk-memory -I$(CDOM)/src', LINK, "FAIL cdom.mk's APP_WASM rule does not build an app"),
+  ('mk-wasm-no-cdom', 'cdom.mk', ' -o $@ $(APP_SRC) $(CDOM_SRC)', ' -o $@ $(APP_SRC)', LINK, "FAIL cdom.mk's APP_WASM rule does not build an app"),
+  ('mk-goal-taken', 'cdom.mk', '.DEFAULT_GOAL := $(cdom_mk_goal)', '', LINK, 'FAIL cdom.mk took the default goal'),
+  ('flags-hardcoded', 'tests/build.sh', 'W=(-Wall -Wextra -Werror)', 'W=(-Wall -Wextra -Werror -mbulk-memory)', LINK, 'FAIL tests/build.sh:15 hardcodes -mbulk-memory'),
+  ('flags-hardcoded-link', 'tests/link/run.sh', 'C=(-O2 "${CDOM_CFLAGS[@]}"', 'C=(--target=wasm32 -O2 "${CDOM_CFLAGS[@]}"', LINK, 'FAIL tests/link/run.sh:'),
   ('mini-fill-strong', 'src/mini.c', '__attribute__((weak)) void *memset', 'void *memset', LINK, "FAIL an app's own libc"),
 ]
 
