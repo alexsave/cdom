@@ -9,11 +9,48 @@ A browser without WebAssembly runs the same app through wasm2js on an ES5 shim (
 - URL helpers are in `src/cdom_url.h` (module `url`): `cd_url_encode` percent-encodes bytes as `encodeURIComponent` does (for a query value), and `cd_url_decode` reverses it; both are plain C, with no shim call.
 - A program's libc comes from cdom: `src/libc/string.h` (add `-isystem cdom/src/libc`) and `src/mini.c`.
 - Measurements, design notes and how to reproduce them are in RESULTS.md, PERF_LOG.md and BRIDGE.md.
-- Building and starting an app: below, and `src/cdom.h` at its top.
+- Starting and building an app: below (`make -C path/to/cdom new DIR=myapp` makes one), and `src/cdom.h` at its top.
 - Tests: `tests/build.sh`, then `node tools/unit.mjs`, `node tools/fuzz.mjs`, `node tools/canvas.mjs`, `node tools/host.mjs`, `tests/link/run.sh` and `node tools/legacy.mjs`.
 - The I/O calls external adapters build on (the `_cb` forms, the socket calls, `cd_page_origin`, `cd_random_bytes`, `cd_timer_stop`, `cd_epoch_ms`, `cd_now` and the program's libc) are a stable contract, written at the top of `src/cdom.h`: they change only additively, and `tests/link/contract.c` fails to compile if one changes in place.
 - cdom and its sibling C library have no cycle: the library may depend on cdom (only its browser adapter does, built against cdom's I/O contract), and cdom never depends on the library.
   `tools/edges.mjs` (run by `tests/link/run.sh`) keeps cdom's side: it fails if a tracked file other than the docs (`*.md`, LICENSE) names the C library it once sat beside.
+
+## Starting an app
+
+One command makes a new app, with no Node:
+
+```sh
+make -C path/to/cdom new DIR=path/to/myapp
+make -C path/to/myapp
+```
+
+- `make new` (`tools/new.sh`) writes three files into `DIR`, which must be new or empty: a `Makefile` (`CDOM`, `APP_WASM := build/app.wasm`, `APP_SRC := src/app.c`, `APP_PAGE := build/index.html`, the include of `cdom.mk`, and `all: $(APP_PAGE)`), `src/app.c` (about ten lines that put "cdom" in the middle of the page), and a `.gitignore` of `build/`.
+- `make` in `DIR` builds `build/index.html`: one file, with the shim and the module inside it, that opens from disk (double-click it; no server).
+- Edit `src/app.c` and run `make` again; the page says so at its foot.
+- The generator writes nothing `cdom.mk` could own: the page is cdom.mk's default page and every rule is cdom.mk's, so updating cdom updates the app's build.
+- `CDOM` is this checkout's absolute path: `make new` runs no git, and works offline at any commit.
+  To vendor cdom with the app instead, run `git init && git submodule add https://github.com/alexsave/cdom cdom` in `DIR` and set `CDOM := cdom` (and clone with `--recurse-submodules`).
+- Without a clang that targets wasm32 and a `wasm-ld`, `make` stops before compiling and prints the command that installs them (`brew install llvm lld` on macOS).
+- `tests/link/run.sh` generates the starter, builds it and opens its page from `file://` in headless Chrome (`tools/starter.mjs`), so the template cannot rot unseen.
+
+The page starts the app with one call, after the shim, exactly once per page:
+
+```html
+<script>
+/*CDOM_SHIM*/
+cdom.start(/*CDOM_WASM*/, "app");
+</script>
+```
+
+- `cdom.start(url, mount, env, options)` fetches and instantiates the module, then calls the app's `cd_main` through the module's `cd_start`, and returns a promise of the module's exports.
+- `url` is the wasm's URL (a bundled page's `/*CDOM_WASM*/` becomes a `data:application/wasm;base64,` URL, which `fetch` takes from `file://` too, and `instantiateStreaming` still sees as `application/wasm`), or, for a browser without WebAssembly, the wasm2js build of the same module (a function that takes the imports and returns the exports).
+- `mount` is the element the app's `CD_MOUNT` is, or its id; given an id that the parser has not reached yet, the wasm loads while the page parses and the app starts once the DOM is ready.
+- `env` is an object of the app's own imports, the wasm's `env` module (functions its C declares with `__attribute__((import_module("env"), import_name("...")))`), and may be left out.
+- `options.openStore`, when true, opens the store (`src/cdom_store.h`) while the wasm is fetched and compiled, so an app that reads its store as it starts finds it open at its first get.
+- `options.seed` fixes `cd_seed` (`src/cdom.h`), the app's one seed for its random draws, so one line makes a run deterministic; without it the seed is 32 bits from `crypto.getRandomValues`, and a page without that fails at start.
+- The shim's state (the node table, the memory, the module's exports) is one per page, so a second call would replace the first app's; a page runs one cdom app.
+- A page that must run without WebAssembly starts through `shim/boot.js` instead: `cdomBoot(url, mount, env, ready)` calls `cdom.start` itself when WebAssembly exists, and otherwise loads the ES5 shim and the wasm2js build (`url + ".js"`) and starts those; `tools/legacy/build.mjs` makes both, and that build needs Node.
+  Both are files beside the page, so a page with this fallback takes `APP_WASM_SEPARATE := 1` (a bundled module has no `url + ".js"` to load).
 
 ## Building an app
 
@@ -28,7 +65,6 @@ APP_MODULES := net random
 APP_CFLAGS := -Wall -Wextra -Werror
 APP_LDFLAGS := -Wl,--strip-all
 APP_PAGE := out/index.html
-APP_PAGE_SRC := src/index.html
 
 build: $(APP_WASM) $(APP_PAGE)
 ```
@@ -42,30 +78,18 @@ build: $(APP_WASM) $(APP_PAGE)
 - The rules read `APP_*` when make builds, not at the include: they are pattern rules (`%.wasm`, `%.html`) that apply only to the files `APP_WASM` and `APP_PAGE` name, so `APP_WASM` ends in `.wasm` and `APP_PAGE` in `.html`.
 - They turn on `.SECONDEXPANSION` for the rest of the app's Makefile, so a `$$` in a later rule's prerequisites is expanded twice.
 - An unknown `APP_MODULES` name, or a source that is not there, stops make when it builds `APP_WASM`, naming it; cdom.mk never takes the default goal from the app's first rule.
-- The page marker is API: the app's HTML has a `<script>` with a line that holds only `/*CDOM_SHIM*/`, and the APP_PAGE rule writes the page with `shim/cdom.min.js` in place of that line.
-- The rule fails, and writes nothing, when the page has no such line, has two, or has the marker beside other text; `$(call cdom_page,in.html,out.html)` does the same inside an app's own recipe.
-- Nothing on this path needs Node: it is make, awk (`tools/page.awk`) and clang.
+- The APP_PAGE rule writes the page from cdom's default page (`shim/page.html`), or from the app's own, `APP_PAGE_SRC`.
+  The default page is a contract, stated in cdom.mk's header: a doctype, the charset and viewport metas, a `<title>` of `APP_TITLE` (the base name of `APP_WASM` unless set), `<div id="app"></div>` as the mount, and one `<script>` that holds the shim and `cdom.start(<the module>, "app")`.
+  An app that needs its own `<head>`, `env` or `options` brings its own page.
+- The page markers are API: the page has a `<script>` with a line that holds only `/*CDOM_SHIM*/`, which becomes `shim/cdom.min.js`, and `/*CDOM_WASM*/` stands for `cdom.start`'s first argument.
+- By default the module is bundled: `/*CDOM_WASM*/` becomes `"data:application/wasm;base64,..."` of `APP_WASM`, so an app is one html file.
+  It costs about 30% more bytes after compression (a hello world 9.5 to 12.3 KB brotli, amgi 29.9 to 39.2 KB), and in exchange the page is one request, the page and its module are never from two builds, and it opens from disk (`file://`).
+  A bundled page under a Content-Security-Policy needs `data:` in `connect-src`, besides `'wasm-unsafe-eval'`; what needs a real origin (IndexedDB, so the store module, in some browsers) needs the page served over HTTP.
+- `APP_WASM_SEPARATE := 1` keeps the module a file of its own, for large apps, hosts that cache a hashed `.wasm`, or the no-WebAssembly fallback: `/*CDOM_WASM*/` becomes its URL, `APP_WASM_URL` (the base name of `APP_WASM`, beside the page, unless set), or the page names it itself (`cdom.start("app.wasm", "app")`).
+- Bundling, an app's own page must start the bundled module: a page that names its module by URL fails the build with `this page loads app.wasm; set APP_WASM_SEPARATE := 1, or start with the bundled module (the /*CDOM_WASM*/ marker)`, and cdom never rewrites the app's call.
+- The rule fails, and writes nothing, when the page has no `/*CDOM_SHIM*/` line, has two, or has the marker beside other text, or has two `/*CDOM_WASM*/`; `$(call cdom_page,in.html,out.html)` does the same inside an app's own recipe, and `$(call cdom_page,in.html,out.html,module.wasm)` bundles that module too.
+- Nothing on this path needs Node: it is make, awk (`tools/page.awk`), `base64` and clang.
 - cdom's own builds (`tests/build.sh`, `tests/link/run.sh`, `bench/build.sh`, `micro/svg/run.sh`) read the same set through `tools/cdomflags.sh`, which fails when one of them spells a flag of the set itself.
-
-## Starting an app
-
-The page starts the app with one call, after the shim, exactly once per page:
-
-```html
-<script>
-/*CDOM_SHIM*/
-cdom.start("app.wasm", "app");
-</script>
-```
-
-- `cdom.start(url, mount, env, options)` fetches and instantiates the module, then calls the app's `cd_main` through the module's `cd_start`, and returns a promise of the module's exports.
-- `url` is the wasm's URL, or, for a browser without WebAssembly, the wasm2js build of the same module (a function that takes the imports and returns the exports).
-- `mount` is the element the app's `CD_MOUNT` is, or its id; given an id that the parser has not reached yet, the wasm loads while the page parses and the app starts once the DOM is ready.
-- `env` is an object of the app's own imports, the wasm's `env` module (functions its C declares with `__attribute__((import_module("env"), import_name("...")))`), and may be left out.
-- `options.openStore`, when true, opens the store (`src/cdom_store.h`) while the wasm is fetched and compiled, so an app that reads its store as it starts finds it open at its first get.
-- `options.seed` fixes `cd_seed` (`src/cdom.h`), the app's one seed for its random draws, so one line makes a run deterministic; without it the seed is 32 bits from `crypto.getRandomValues`, and a page without that fails at start.
-- The shim's state (the node table, the memory, the module's exports) is one per page, so a second call would replace the first app's; a page runs one cdom app.
-- A page that must run without WebAssembly starts through `shim/boot.js` instead: `cdomBoot(url, mount, env, ready)` calls `cdom.start` itself when WebAssembly exists, and otherwise loads the ES5 shim and the wasm2js build (`url + ".js"`) and starts those; `tools/legacy/build.mjs` makes both, and that build needs Node.
 
 ## License
 

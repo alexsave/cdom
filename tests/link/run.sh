@@ -87,9 +87,12 @@ if ! mk "$mo/ok.html" PAGE="$here/page/ok.html" APP_WASM_SEPARATE=1 2> "$mo/mk_p
   echo "FAIL cdom_page ($inc) refused a page whose marker is alone on its line:"; cat "$mo/mk_page.log"; fail=1
 elif ! cmp -s "$want" "$mo/ok.html"; then echo "FAIL cdom_page ($inc): the page is not itself with the shim at its marker line"; fail=1
 else echo "ok   cdom_page ($inc) inlines shim/cdom.min.js at the page's /*CDOM_SHIM*/ line, every other line kept (APP_WASM_SEPARATE: the page's own URL)"; fi
+# The refused pages, with the module separate: each is refused for its own fault, which bundling would
+# otherwise mask (a page whose start call went with its shim line, or that takes a second module, has no
+# bundled module to start either).
 for bad in inline:'must be alone on its line' none:'no /\*CDOM_SHIM\*/ line' two:'a second /\*CDOM_SHIM\*/' two_wasm:'a second /\*CDOM_WASM\*/'; do
   name="${bad%%:*}" why="${bad#*:}"
-  if mk "$mo/$name.html" PAGE="$here/page/$name.html" 2> "$mo/mk_$name.log"; then
+  if mk "$mo/$name.html" PAGE="$here/page/$name.html" APP_WASM_SEPARATE=1 2> "$mo/mk_$name.log"; then
     echo "FAIL cdom_page ($inc) took the $name page"; fail=1
   elif [ -e "$mo/$name.html" ] || [ -e "$mo/$name.html.tmp" ]; then
     echo "FAIL cdom_page ($inc) refused the $name page but left a file"; fail=1
