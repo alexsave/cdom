@@ -7,6 +7,7 @@ CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"
 OPT="${OPT:--Oz}"
 jfb="${JFB_KEYED:-$top/jfb/frameworks/keyed}" # JFB_KEYED builds the entries somewhere else
 legacy="$top/tools/legacy/build.mjs"
+. "$top/tools/cdomflags.sh" # CDOM_CFLAGS and CDOM_LDFLAGS, cdom.mk's set for apps
 [ -d "$top/tools/legacy/node_modules" ] || (cd "$top/tools/legacy" && npm ci --no-audit --no-fund)
 
 build() { # name, version note, extra flags...
@@ -14,14 +15,17 @@ build() { # name, version note, extra flags...
   local OPT="$OPT"; case "$name" in *-o2) OPT=-O2;; esac
   local out="$jfb/$name"
   mkdir -p "$out"
-  "$CC" --target=wasm32 $OPT -nostdlib -mbulk-memory -Wall -Wextra -Werror \
-    -Wl,--no-entry -Wl,--strip-all "$@" -o "$out/app.wasm" \
+  "$CC" $OPT "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror \
+    "${CDOM_LDFLAGS[@]}" -Wl,--strip-all "$@" -o "$out/app.wasm" \
     "$here/cdom-keyed/src/app.c" "$top/src/cdom.c" "$top/src/mini.c"
   # The shim is inlined into the page: one request fewer, and it starts the wasm before the stylesheets.
   # It is the committed shim/cdom.min.js, as an app inlines it (tools/minshim.mjs makes it from cdom.js).
   rm -f "$out/cdom.js"
   node "$top/tools/minshim.mjs" check
-  sed -e "s/cdom-\"keyed\"/$name-\"keyed\"/" -e "/\/\*CDOM_SHIM\*\//{r $top/shim/cdom.min.js" -e "d;}" "$here/cdom-keyed/index.html" > "$out/index.src.html"
+  # Inlined as cdom.mk's cdom_page does it (tools/page.awk), after the entry's name goes in.
+  sed -e "s/cdom-\"keyed\"/$name-\"keyed\"/" "$here/cdom-keyed/index.html" > "$out/index.named.html"
+  awk -v shim="$top/shim/cdom.min.js" -f "$top/tools/page.awk" "$out/index.named.html" > "$out/index.src.html"
+  rm "$out/index.named.html"
   # The boot goes in a script of its own after the shim's; without WebAssembly it loads these two instead.
   node "$legacy" page "$out/index.src.html" "$out/index.html"
   rm "$out/index.src.html"

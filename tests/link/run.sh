@@ -9,7 +9,8 @@ src="$here/../../src"
 out="$here/../out/link"
 CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"
 mkdir -p "$out"
-F=(--target=wasm32 -O2 -nostdlib -mbulk-memory -Wall -Wextra -Werror -Wl,--no-entry)
+. "$here/../../tools/cdomflags.sh" # CDOM_CFLAGS and CDOM_LDFLAGS, cdom.mk's set for apps
+F=(-O2 "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror "${CDOM_LDFLAGS[@]}")
 fail=0
 "$CC" "${F[@]}" -o "$out/alloc_cdom.wasm" "$here/alloc.c" "$src/cdom.c" "$src/mini.c" || fail=1
 "$CC" "${F[@]}" -o "$out/alloc_app.wasm" "$here/alloc.c" "$here/app_alloc.c" "$src/cdom.c" "$src/mini.c" || fail=1
@@ -24,29 +25,31 @@ if "$CC" "${F[@]}" -o "$out/on_only.wasm" "$here/on_only.c" "$src/cdom.c" "$src/
 # address, and links to mini.c's real ones.
 NM="$(dirname "$CC")/llvm-nm"
 OD="$(dirname "$CC")/llvm-objdump"
-LIBC_CDOM=(--target=wasm32 -O2 -nostdlib -mbulk-memory -Wall -Wextra -Werror)
-LIBC_FREESTANDING=(--target=wasm32 -Oz -nostdlib -ffreestanding -mbulk-memory -mno-nontrapping-fptoint -std=c11 -Wall -Wextra -Werror -Wshadow -Wvla -Wstrict-prototypes)
+# cdom flags: cdom.mk's set, as apps compile. Freestanding ones: that set with what a strict external library
+# adds to it for its own files (no builtins, no saturating float conversions, plain C11).
+LIBC_CDOM=(-O2 "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror)
+LIBC_FREESTANDING=(-Oz "${CDOM_CFLAGS[@]}" -ffreestanding -mno-nontrapping-fptoint -std=c11 -Wall -Wextra -Werror -Wshadow -Wvla -Wstrict-prototypes)
 libc_case() { # name, then the flags
   local name="$1"; shift
   local o="$out/libc_header_$name.o" w="$out/libc_header_$name.wasm" a="$out/libc_addr_$name.wasm" log="$out/libc_$name.log"
   rm -f "$o" "$w" "$a"
-  if ! "$CC" "$@" -isystem "$src/libc" -c -o "$o" "$here/libc_header.c" 2> "$log"; then
+  if ! "$CC" "$@" -c -o "$o" "$here/libc_header.c" 2> "$log"; then
     echo "FAIL string.h ($name flags): a file that includes it does not compile:"; cat "$log"; fail=1; return; fi
   local undef; undef="$("$NM" -u "$o" | awk '{print $NF}' | grep -E '^(memcpy|memmove|memset)$' | tr '\n' ' ')"
   if [ -n "$undef" ]; then echo "FAIL string.h ($name flags): undefined $undef(a call, not an instruction)"; fail=1; return; fi
   local ins; ins="$("$OD" -d "$o" | grep -oE 'memory\.(copy|fill)' | sort -u | tr '\n' ' ')"
   if [ "$ins" != "memory.copy memory.fill " ]; then echo "FAIL string.h ($name flags): the code has [$ins], not memory.copy and memory.fill"; fail=1; return; fi
-  if ! "$CC" "$@" -Wl,--no-entry -o "$w" "$o" "$src/mini.c" 2> "$log"; then
+  if ! "$CC" "$@" "${CDOM_LDFLAGS[@]}" -o "$w" "$o" "$src/mini.c" 2> "$log"; then
     echo "FAIL string.h ($name flags): does not link with mini.c alone:"; cat "$log"; fail=1; return; fi
   ins="$(wasm-dis "$w" | grep -oE 'memory\.(copy|fill)' | sort -u | tr '\n' ' ')"
   if [ "$ins" != "memory.copy memory.fill " ]; then echo "FAIL string.h ($name flags): the linked program has [$ins], not memory.copy and memory.fill"; fail=1; return; fi
-  if ! "$CC" "$@" -isystem "$src/libc" -Wl,--no-entry -o "$a" "$here/libc_addr.c" "$src/mini.c" 2> "$log"; then
+  if ! "$CC" "$@" "${CDOM_LDFLAGS[@]}" -o "$a" "$here/libc_addr.c" "$src/mini.c" 2> "$log"; then
     echo "FAIL string.h ($name flags): taking memcpy's address does not link with mini.c:"; cat "$log"; fail=1; return; fi
   echo "ok   string.h ($name flags): compiles, links with mini.c alone, copy and fill are memory.copy and memory.fill"
 }
 libc_case cdom "${LIBC_CDOM[@]}"
 libc_case freestanding "${LIBC_FREESTANDING[@]}"
-C=(--target=wasm32 -O2 -Wall -Wextra -Werror -c)
+C=(-O2 "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror -c)
 if ! "$CC" "${C[@]}" -o "$out/lit_ok.o" "$here/lit_ok.c" 2> "$out/lit_ok.log"; then
   echo "FAIL CD_LIT given a literal does not compile:"; cat "$out/lit_ok.log"; fail=1
 elif "$CC" "${C[@]}" -o "$out/lit_var.o" "$here/lit_var.c" 2> "$out/lit_var.log"; then
@@ -54,7 +57,7 @@ elif "$CC" "${C[@]}" -o "$out/lit_var.o" "$here/lit_var.c" 2> "$out/lit_var.log"
 elif grep -q "lit_var.c:3:.*error: expected ')'" "$out/lit_var.log"; then echo "ok   CD_LIT given a variable does not compile, a literal does"
 else echo "FAIL CD_LIT given a variable failed for another reason:"; cat "$out/lit_var.log"; fail=1; fi
 # The I/O contract (cdom.h, top): contract.c compiles only while every declaration it names is unchanged.
-if "$CC" "${LIBC_CDOM[@]}" -isystem "$src/libc" -fsyntax-only "$here/contract.c" 2> "$out/contract.log"; then
+if "$CC" "${LIBC_CDOM[@]}" -fsyntax-only "$here/contract.c" 2> "$out/contract.log"; then
   echo "ok   the I/O contract: every declaration external adapters build on has its type, and every code its value"
 else echo "FAIL the I/O contract changed in place:"; cat "$out/contract.log"; fail=1; fi
 node "$here/run.mjs" "$out" || fail=1
