@@ -453,6 +453,7 @@ static void say(const char *s) { cd_set_text(net_txt, cd_internz(s)); }
 /* What the sockets are doing: the echo, the open-and-close cycles, the large send. */
 enum { WS_ECHO, WS_CYCLE, WS_BIG, WS_PAIR };
 static int ws_mode;
+static uint32_t ws_hook_heard; /* every hook call, of any socket: a refused cd_ws_open's must add none */
 static uint32_t ws_url(char *url) {
   uint32_t n = 0;
   for (const char *c = "ws://127.0.0.1:"; *c; c++) url[n++] = *c;
@@ -496,6 +497,7 @@ EXPORT("t_ws_big_close") void t_ws_big_close(void) { cd_ws_close(big_id); }
 static void wp_hook(uint32_t ev, uint32_t id, const uint8_t *p, uint32_t len);
 void cd_on_ws_open(uint32_t id) {
   enter();
+  ws_hook_heard++;
   if (ws_mode == WS_PAIR) { wp_hook(CD_WS_OPEN, id, 0, 0); return; }
   if (ws_mode == WS_CYCLE) {
     if (id < cycle_lo) cycle_lo = id;
@@ -519,6 +521,7 @@ void cd_on_ws_open(uint32_t id) {
 }
 void cd_on_ws_close(uint32_t id, uint32_t code) {
   enter();
+  ws_hook_heard++;
   if (ws_mode == WS_PAIR) { wp_hook(CD_WS_CLOSE, id, 0, code); return; }
   (void)id; (void)code;
   if (ws_mode == WS_ECHO) echo_closed = 1;
@@ -528,6 +531,7 @@ void cd_on_ws_close(uint32_t id, uint32_t code) {
 }
 void cd_on_ws_msg(uint32_t id, const uint8_t *p, uint32_t len) {
   enter();
+  ws_hook_heard++;
   if (ws_mode == WS_PAIR) { wp_hook(CD_WS_MSG, id, p, len); return; }
   ws_ok = len == sizeof MSG;
   for (uint32_t i = 0; ws_ok && i < len; i++) ws_ok = p[i] == MSG[i];
@@ -1306,3 +1310,69 @@ EXPORT("t_layout_viewport") int32_t t_layout_viewport(int32_t k) {
   const int32_t f[4] = {v.w, v.h, v.hidden, v.dpr100};
   return f[k];
 }
+
+/* 32. Sockets the browser refuses to make. cd_ws_open_cb on a URL its WebSocket constructor throws on: a
+ * scheme it opens no socket on (a real SyntaxError), and a host the page makes it refuse with a
+ * SecurityError (as Firefox does for ws: from an https: page). Each socket's callback hears REFUSED, then
+ * CLOSE with CD_WS_REFUSED_CODE, never OPEN, and nothing while cd_ws_open_cb runs; until then its id takes
+ * a send, a close and a buffered query, and is no other socket's; at the close its id is handed out
+ * again, and its slot freed (probes around a third socket, alone, name one slot). The hooks' cd_ws_open on such a URL throws, and the hooks hear nothing. Then
+ * cd_page_origin, whole and cut short. */
+typedef struct { uint32_t seq, n, code, id, inside, own, buffered; } rf_sink;
+static rf_sink rf[3];
+static uint32_t rf_ids[3], rf_probe[2], rf_opening, rf_left;
+static void rf_cb(void *ctx, uint32_t id, uint32_t ev, const uint8_t *p, uint32_t len) {
+  enter();
+  (void)p;
+  rf_sink *s = ctx;
+  s->own += s == &rf[0] || s == &rf[1] || s == &rf[2];
+  s->inside += rf_opening;
+  s->seq = s->seq * 10 + ev + 1; /* the events in order, one digit each: REFUSED then CLOSE is 43 */
+  s->n++;
+  s->id = id;
+  if (ev == CD_WS_CLOSE) {
+    s->code = len;
+    if (!--rf_left && s == &rf[2]) rf_probe[1] = slot_probe();
+  }
+}
+static uint32_t rf_open(uint32_t k, const char *url) {
+  uint32_t n = 0;
+  while (url[n]) n++;
+  rf_opening = 1;
+  uint32_t id = cd_ws_open_cb(rf_cb, &rf[k], url, n);
+  cd_ws_send(id, MSG, sizeof MSG);
+  rf[k].buffered = cd_ws_buffered(id) + 1;
+  cd_ws_close(id);
+  rf_opening = 0;
+  return id;
+}
+EXPORT("t_ws_refused") void t_ws_refused(void) {
+  rf_left = 2;
+  rf_ids[0] = rf_open(0, "ftp://127.0.0.1/ws");
+  rf_ids[1] = rf_open(1, "ws://blocked.example/ws");
+}
+/* Once both have closed: a third, alone, which takes one of their ids, with slot probes around it. */
+EXPORT("t_ws_refused_again") void t_ws_refused_again(void) {
+  rf_probe[0] = slot_probe();
+  rf_left = 1;
+  rf_ids[2] = rf_open(2, "ftp://127.0.0.1/again");
+}
+/* k 0 to 2 the sockets: events in order, how many, the close code, the id heard, calls inside the open,
+ * calls with its own ctx, buffered + 1 during the open, the id cd_ws_open_cb returned; k 3: the probes. */
+EXPORT("t_ws_refused_seen") uint32_t t_ws_refused_seen(uint32_t k, uint32_t f) {
+  if (k == 3) return rf_probe[f];
+  const rf_sink *s = &rf[k];
+  const uint32_t v[8] = {s->seq, s->n, s->code, s->id, s->inside, s->own, s->buffered, rf_ids[k]};
+  return v[f];
+}
+EXPORT("t_ws_hook_refused") uint32_t t_ws_hook_refused(void) {
+  static const char url[] = "ftp://127.0.0.1/hook";
+  return cd_ws_open(url, sizeof url - 1);
+}
+EXPORT("t_ws_hook_heard") uint32_t t_ws_hook_heard(void) { return ws_hook_heard; }
+static char origin_buf[128];
+EXPORT("t_page_origin") uint32_t t_page_origin(uint32_t cap) {
+  __builtin_memset(origin_buf, '*', sizeof origin_buf);
+  return cd_page_origin(origin_buf, cap);
+}
+EXPORT("t_origin_buf") char *t_origin_buf(void) { return origin_buf; }

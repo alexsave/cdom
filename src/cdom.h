@@ -6,14 +6,15 @@
  * declared by src/libc/string.h, so build every file with -isystem cdom/src/libc). No other function or
  * header of libc is offered. */
 /* The I/O contract. External adapters (a library's browser layer, built against cdom from outside it)
- * depend on these, so they are stable: cd_http_cb, cd_ws_open_cb, cd_ws_send, cd_ws_close and
- * cd_ws_buffered (cdom_net.h), cd_timer_cb and cd_timer_stop (below), cd_store_get_cb, cd_store_put_cb and
- * cd_store_del_cb (cdom_store.h), cd_epoch_ms and cd_now, and the program's libc (src/libc/string.h,
- * src/mini.c). Their signatures, their callbacks' shapes (cd_http_fn, cd_ws_fn, cd_timer_fn, cd_store_fn,
- * cd_store_done_fn), their status and event codes (CD_HTTP_*, CD_WS_*, a store answer's -1 and ok) and the
- * token range from CD_TOKEN_CDOM (0x80000000) up change only additively: a breaking change takes a new
- * name and a deprecation of the old one, never an edit in place. cdom depends on no adapter; the
- * dependency runs one way. tests/link/contract.c fails to compile if any of these declarations changes. */
+ * depend on these, so they are stable: cd_http_cb, cd_ws_open_cb, cd_ws_send, cd_ws_close, cd_ws_buffered
+ * and cd_page_origin (cdom_net.h), cd_timer_cb and cd_timer_stop (below), cd_store_get_cb, cd_store_put_cb
+ * and cd_store_del_cb (cdom_store.h), cd_random_bytes (cdom_random.h), cd_epoch_ms and cd_now, and the
+ * program's libc (src/libc/string.h, src/mini.c). Their signatures, their callbacks' shapes (cd_http_fn,
+ * cd_ws_fn, cd_timer_fn, cd_store_fn, cd_store_done_fn), their status and event codes (CD_HTTP_*, CD_WS_*,
+ * CD_RANDOM_*, a store answer's -1 and ok) and the token range from CD_TOKEN_CDOM (0x80000000) up change
+ * only additively: a breaking change takes a new name and a deprecation of the old one, never an edit in
+ * place. cdom depends on no adapter; the dependency runs one way. tests/link/contract.c fails to compile if
+ * any of these declarations changes. */
 #ifndef CDOM_H
 #define CDOM_H
 #include <stdint.h>
