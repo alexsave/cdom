@@ -68,6 +68,36 @@ Why direct wins although each crossing costs more: in the harness's measured cli
 The hybrids do not beat all-direct beyond noise. What the hybrid taught was where direct loses: the update walk (one crossing per step) and strings decoded one at a time. The shipped design fixes both inside the direct model: a walk crosses as one call, and strings are queued at intern time so a burst decodes in one call. That made update 1.03 / 1.01 instead of 1.05-1.06.
 Every configuration passed the keyed check, smoke, DOM identity and listfuzz built with its own mask. One DOM-identity failure on the fit-best hybrid did not reproduce in 11 reruns; its log had been overwritten, so gate logs are now per entry.
 
+## Proof: why direct calls win (2026-10-28)
+
+The scripts, arms and drivers for this are on branch `direct-calls` at 7d89337 (exp/, tools/clickprobe.mjs, tools/hbreak.mjs, tools/ffbench.mjs); the raw logs were not kept, and the numbers below are their summary.
+Verdict: tiering of the op list's one big `apply()`, not GC and not allocation.
+Splitting `apply()` into one small function per op (same op encoding, same batching, dispatch through a table) closes the gap completely; putting the switch back reopens it.
+Arms (exp/cfg.sh; jfb entries kept for these numbers): `pf-list` (op list, mask 0), `pf-direct` (all ops direct, 0x7ffffffe), `pf-split` (op list, `apply` dispatching through a table of per-op functions, exp/gen_split.py), `pf-dswitch` (all ops direct, but every import routed into one big switch function, exp/gen_dswitch.py).
+Sessions: exp/proof.sh, tools/pair.sh with LOADMAX=3 on port 8703, COUNT=15, order alternated per session; CIs over sessions with a t interval (exp/ci.mjs, results/proof/base_ci.txt).
+Harness total, ratio of medians per session, 8 sessions (n=8), loads at start 1.40-2.93 (72 starts):
+| ratio | 01_run1k | 07_create10k | 09_clear1k_x8 | weighted geomean |
+| --- | ---: | ---: | ---: | ---: |
+| list / direct | 1.035 [1.023, 1.047] | 1.007 [1.004, 1.011] | 1.050 [1.040, 1.060] | 1.029 [1.023, 1.035] |
+| split / direct | 0.998 [0.993, 1.003] | 0.998 [0.994, 1.001] | 1.001 [0.989, 1.013] | 0.999 [0.996, 1.001] |
+| list / split | 1.037 [1.025, 1.049] | 1.010 [1.006, 1.013] | 1.049 [1.034, 1.064] | 1.031 [1.025, 1.036] |
+Harness script time, same sessions:
+| ratio | 01_run1k | 07_create10k | 09_clear1k_x8 | weighted geomean |
+| --- | ---: | ---: | ---: | ---: |
+| list / direct | 1.049 [1.019, 1.079] | 1.111 [1.096, 1.126] | 1.058 [1.049, 1.067] | 1.072 [1.056, 1.089] |
+| split / direct | 0.937 [0.905, 0.970] | 0.983 [0.974, 0.993] | 1.001 [0.989, 1.014] | 0.969 [0.957, 0.982] |
+| list / split | 1.119 [1.090, 1.149] | 1.130 [1.116, 1.144] | 1.056 [1.040, 1.073] | 1.106 [1.092, 1.121] |
+The gap is real (the list arm's CI excludes 1 on every benchmark) and the split arm removes all of it; the split op list is even a little faster than direct calls in script (0.969), as the micro said a list record is cheaper than a crossing.
+Mechanism (V8 code log, `--log-code --log-deopt`, tools/clickprobe.mjs with marks around the measured click, 3 probes per arm on run1k):
+- list: `apply` (minified W) is entered once per flush with a loop over thousands of ops, so it tiers up by OSR: Ignition, Sparkplug, Maglev, a wrong-map deopt, Maglev OSR, Maglev, and a TurboFan OSR compile that lands inside the measured click in 3 of 3 probes. The measured click runs its first part in Maglev code.
+- direct: the per-op imports are called thousands of times and reach Maglev during the first warm-up click; nothing big is compiled during the measured click.
+- split: the per-op functions reach Maglev during the first warm-up like direct; only the 3-line dispatch loop is OSR'd.
+- Bytecode budget interrupts (the tiering checks) inside the measured click, 20 clicks per arm (tools/clickprobe.mjs, harness steps including its forced GC): create10k list 73.4 per click against direct 3.0, split 6.6, dswitch 4.1; run1k list 4.0, direct 1.05, dswitch 1.0. These are the "interrupts" the earlier note saw; they are tiering, not GC.
+GC (same 20-click probes, events on the renderer main thread between the click and its frame's Commit): run1k and clear: no MinorGC, MajorGC or incremental marking in any arm. create10k: one MajorGC (1.6-2.0 ms) and about 124 incremental marking steps (1.8 ms) per click in every arm alike, none inside the click's script. The harness's own traces of the 8 sessions agree (tools/hbreak.mjs: 0 GC on run1k for every arm; create10k 3.5-3.7 ms in both list and direct). The earlier "incremental marking in the measured click" came from tools/onetrace.mjs, which does not force a GC before the click as the harness does.
+Allocation per run1k click (HeapProfiler sampling at 16 bytes, both GC kinds included, 8 clicks each): list 93.0 KB (apply 35.5 KB, substring 2.6 KB), direct 111.2 KB (d13 clone 20.8 KB, d9 listen 14.3 KB). Direct allocates more, so allocation is not why it wins.
+What was ruled out on the way: string representation (TextDecoder strings are external one-byte in both arms, %DebugPrint); decoding every string with the char loop in the list arm or with TextDecoder in the direct arm moved nothing in an exploratory pass (n=10, one session).
+Not run (stopped early to report): the Chrome flag arms (exp/chrome/*.sh wrappers for --no-incremental-marking, --no-opt --no-maglev, --max-lazy, --min/max-semi-space-size 64 and 128 are written and verified to take effect: --no-opt makes a numeric loop 10x slower, semi64 takes MinorGC from 20 to 0 on a 40 MB allocation probe; Chrome 156 has no --always-turbofan), the dswitch harness sessions (exp/proof_rest.sh runs both), and Firefox (tools/ffbench.mjs is written, not run).
+
 ## Final (results/pairs/last1, last2; every start at load < 3, range 1.82-2.99)
 
 Weighted geomean vs vanillajs: first build (cdomb) 1.036 / 1.033, last build 1.007 / 0.998, react-hooks 1.466 / 1.457.
