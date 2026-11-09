@@ -354,10 +354,10 @@ M = [
   # cdom.mk (tests/link/app.mk): the page rule (tools/page.awk), the module rule, and the flag gate (tools/cdomflags.sh)
   ('page-no-shim', 'tools/page.awk', 'while ((got = getline shimline < shim) > 0) print shimline', 'got = 0', LINK, 'FAIL cdom_page (first): the page is not itself'),
   ('page-mark-kept', 'tools/page.awk', '  close(shim)\n  next\n', '  close(shim)\n', LINK, 'FAIL cdom_page (first): the page is not itself'),
-  ('page-inline-taken', 'tools/page.awk', '  if (line != "/*CDOM_SHIM*/") {', '  if (0) {', LINK, 'FAIL cdom_page (first) took the inline page'),
-  ('page-two-taken', 'tools/page.awk', '  if (++marks > 1) {', '  if (++marks > 2) {', LINK, 'FAIL cdom_page (first) refused the two page for another reason'),
-  ('page-none-taken', 'tools/page.awk', '  if (!bad && marks != 1) {', '  if (!bad && marks > 1) {', LINK, 'FAIL cdom_page (first) took the none page'),
-  ('page-partial-kept', 'cdom.mk', "> '$(2).tmp' && mv '$(2).tmp' '$(2)' ||", "> '$(2)' ||", LINK, 'FAIL cdom_page (first) refused the inline page but left a file'),
+  ('page-inline-taken', 'tools/page.awk', '  if (line != "/*CDOM_SHIM*/") fail(', '  if (0) fail(', LINK, 'FAIL cdom_page (first) took the inline page'),
+  ('page-two-taken', 'tools/page.awk', '  if (++marks > 1) fail(', '  if (++marks > 2) fail(', LINK, 'FAIL cdom_page (first) refused the two page for another reason'),
+  ('page-none-taken', 'tools/page.awk', '  if (marks != 1)\n', '  if (marks > 1)\n', LINK, 'FAIL cdom_page (first) took the none page'),
+  ('page-partial-kept', 'cdom.mk', '> $(call cdom_mk_q,$(2).tmp) \\\n  && mv $(call cdom_mk_q,$(2).tmp) $(call cdom_mk_q,$(2)) ||', '> $(call cdom_mk_q,$(2)) ||', LINK, 'FAIL cdom_page (first) refused the inline page but left a file'),
   ('mk-wasm-no-libc', 'cdom.mk', 'CDOM_CFLAGS := --target=wasm32 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src', 'CDOM_CFLAGS := --target=wasm32 -nostdlib -mbulk-memory -I$(CDOM)/src', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   ('mk-wasm-no-cdom', 'cdom.mk', 'cdom_mk_app_src = $(APP_SRC) $(CDOM_SRC)', 'cdom_mk_app_src = $(APP_SRC)', LINK, "FAIL cdom.mk's APP_WASM rule (first): the module exports no memory or no cd_start"),
   ('mk-modules-dropped', 'cdom.mk', ' $(addprefix $(CDOM)/src/cdom_,$(addsuffix .c,$(APP_MODULES)))', '', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
@@ -367,8 +367,29 @@ M = [
   ('mk-target-early', 'cdom.mk', '%.wasm: $$(call cdom_mk_for,$$(APP_WASM),', '$(APP_WASM): $$(call cdom_mk_for,$$(APP_WASM),', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   ('mk-page-early', 'cdom.mk', '%.html: $$(call cdom_mk_for,$$(APP_PAGE),', '$(APP_PAGE): $$(call cdom_mk_for,$$(APP_PAGE),', LINK, 'FAIL cdom_page (first) refused a page whose marker is alone'),
   ('mk-any-wasm', 'cdom.mk', 'cdom_mk_for = $(if $(filter $(2),$(1)),$(3),$(2).cdom-mk-none)', 'cdom_mk_for = $(3)', LINK, "FAIL cdom.mk's rules built a .wasm or .html that is not APP_WASM or APP_PAGE"),
-  ('mk-missing-unnamed', 'cdom.mk', '\n.cdom-mk-sources: $$(if $$(APP_WASM),$$(cdom_mk_app_src)) $$(if $$(APP_PAGE),$$(APP_PAGE_SRC))\n', '\n', LINK, 'FAIL cdom.mk built an app whose APP_SRC names a file that is not there'),  # the rule no longer applies, and the module built before is kept
+  ('mk-missing-unnamed', 'cdom.mk', '\n.cdom-mk-sources: $$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src)) $$(if $$(APP_PAGE),$$(cdom_mk_page_src))\n', '\n', LINK, 'FAIL cdom.mk built an app whose APP_SRC names a file that is not there'),  # the rule no longer applies, and the module built before is kept
   ('mk-rebuilt', 'cdom.mk', '$$(cdom_mk_known)$$(cdom_mk_app_src) $$(CDOM_HEADERS))', '$$(cdom_mk_known)$$(cdom_mk_app_src) $$(CDOM_HEADERS) .cdom-mk-sources)', LINK, "FAIL cdom.mk's APP_WASM rule (first): a second make builds the module again"),
+  # The page's module (cdom.mk's APP_PAGE rule, tools/page.awk): bundled by default, or named (APP_WASM_SEPARATE)
+  ('mk-bundle-off', 'cdom.mk', 'cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))', 'cdom_mk_bundled =', LINK, 'FAIL APP_PAGE (first) bundled into a page that loads its module by URL'),
+  ('mk-separate-ignored', 'cdom.mk', 'cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))', 'cdom_mk_bundled = $(APP_WASM)', LINK, 'FAIL cdom_page (first) refused a page whose marker is alone'),
+  ('mk-b64-wrapped', 'cdom.mk', "| tr -d '\\n\\r' | ", '| fold -w 76 | ', LINK, 'FAIL the default page (first), bundled, is not shim/page.html'),  # GNU base64's lines, not joined
+  ('mk-page-no-wasm-dep', 'cdom.mk', '$$(CDOM)/tools/page.awk $$(cdom_mk_bundled))', '$$(CDOM)/tools/page.awk)', LINK, 'FAIL the default page (first), bundled, is up to date with a newer module'),
+  ('mk-no-default-page', 'cdom.mk', 'cdom_mk_page_src = $(or $(APP_PAGE_SRC),$(CDOM_PAGE))', 'cdom_mk_page_src = $(APP_PAGE_SRC)', LINK, 'FAIL the default page (first) does not build'),
+  ('mk-title-full-name', 'cdom.mk', '$(or $(APP_TITLE),$(basename $(notdir $(APP_WASM))))', '$(or $(APP_TITLE),$(notdir $(APP_WASM)))', LINK, 'FAIL the default page (first), bundled, is not shim/page.html'),
+  ('mk-wasm-intermediate', 'cdom.mk', '$$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src))', '$$(if $$(APP_WASM),$$(cdom_mk_app_src))', LINK, "FAIL the starter's page does not start its bundled module"),  # make deletes the module after the page
+  ('mk-toolchain-unchecked', 'cdom.mk', '\t@$(cdom_mk_toolchain)\n', '', LINK, 'FAIL cdom.mk with WASM_CC=/usr/bin/clang, which cannot build wasm32, did not stop'),
+  ('page-url-unchecked', 'tools/page.awk', '  if (wasm == "bundle" && !wasms) {', '  if (0) {', LINK, 'FAIL APP_PAGE (first) bundled into a page that loads its module by URL'),
+  ('page-url-unnamed', 'tools/page.awk', '    if (loads != "")\n', '    if (0)\n', LINK, 'FAIL APP_PAGE (first) refused a page that loads its module by URL with another message'),
+  ('page-two-wasm-taken', 'tools/page.awk', '    if (++wasms > 1 || index(rest, "/*CDOM_WASM*/"))', '    if (0)', LINK, 'FAIL cdom_page (first) took the two_wasm page'),
+  ('page-url-mode-off', 'tools/page.awk', '  if (wasm == "url") return', '  if (0) return', LINK, 'FAIL the default page (first), APP_WASM_SEPARATE, does not build'),
+  ('page-url-unescaped', 'tools/page.awk', '  gsub(/"/, "\\\\\\"", s)\n', '', LINK, 'FAIL the default page (first), APP_WASM_SEPARATE: APP_WASM_URL'),
+  ('page-title-unescaped', 'tools/page.awk', '  gsub(/</, "\\\\&lt;", s)\n', '', LINK, 'FAIL the default page (first), APP_WASM_SEPARATE: not shim/page.html'),
+  # The starter (make new, tools/new.sh), built and opened from disk (tests/link/run.sh, tools/starter.mjs)
+  ('new-not-centered', 'tools/new.sh', ' justify-content: center; }', ' }', LINK, 'FAIL "cdom" is centered'),
+  ('new-separate', 'tools/new.sh', 'APP_PAGE := build/index.html\n', 'APP_PAGE := build/index.html\nAPP_WASM_SEPARATE := 1\n', LINK, "FAIL the starter's page does not start its bundled module"),
+  ('new-into-full-dir', 'tools/new.sh', 'if [ -e "$dir" ] && [ -n "$(ls -A "$dir")" ]; then', 'if false; then', LINK, 'FAIL make new wrote into a directory that is not empty'),
+  ('new-relative-to-cdom', 'tools/new.sh', '    dir="$from/$dir" ;;', '    ;;', LINK, 'FAIL make new wrote other files than'),
+  ('new-hint-off-center', 'tools/new.sh', '.hint { position: fixed; left: 0; right: 0;', '.hint { position: fixed; width: 100%;', LINK, 'FAIL the hint "edit src/app.c" is on screen, centered'),
   ('flags-hardcoded', 'tests/build.sh', 'W=(-Wall -Wextra -Werror)', 'W=(-Wall -Wextra -Werror -mbulk-memory)', LINK, 'FAIL tests/build.sh:15 hardcodes -mbulk-memory'),
   ('flags-hardcoded-link', 'tests/link/run.sh', 'C=(-O2 "${CDOM_CFLAGS[@]}"', 'C=(--target=wasm32 -O2 "${CDOM_CFLAGS[@]}"', LINK, 'FAIL tests/link/run.sh:'),
   ('mini-fill-strong', 'src/mini.c', '__attribute__((weak)) void *memset', 'void *memset', LINK, "FAIL an app's own libc"),
