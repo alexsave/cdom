@@ -14,12 +14,15 @@ const srv = http.createServer((q, r) => {
 }).listen(0);
 const port = srv.address().port;
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cdom-chrome-'));
-const dbg = 9300 + Math.floor(Math.random() * 500);
+// Debugging port 0: Chrome takes a free one and writes it to DevToolsActivePort (as tools/cdp.mjs reads it).
+// --use-mock-keychain and --password-store=basic: under a temporary HOME, Chrome would ask macOS for a keychain in a dialog.
 const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  ['--headless=new', `--remote-debugging-port=${dbg}`, `--user-data-dir=${dir}`, '--no-first-run',
+  ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${dir}`, '--no-first-run', '--use-mock-keychain', '--password-store=basic',
    '--no-default-browser-check', '--disable-extensions', 'about:blank'], { stdio: 'ignore' });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 try {
+  let dbg = 0;
+  for (let i = 0; i < 100 && !dbg; i++) { try { dbg = +fs.readFileSync(path.join(dir, 'DevToolsActivePort'), 'utf8').split('\n')[0]; } catch { await sleep(100); } }
   let ver;
   for (let i = 0; i < 50 && !ver; i++) { try { ver = await (await fetch(`http://127.0.0.1:${dbg}/json/version`)).json(); } catch { await sleep(200); } }
   const ws = new WebSocket(ver.webSocketDebuggerUrl);
