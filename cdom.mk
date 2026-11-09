@@ -81,8 +81,9 @@ cdom_mk_for = $(if $(filter $(2),$(1)),$(3),$(2).cdom-mk-none)
 	@mkdir -p $(@D)
 	$(call cdom_page,$(APP_PAGE_SRC),$@)
 
-# Only for make's message when a source is missing. A pattern rule whose prerequisite neither exists nor
-# is named by any rule does not apply, and make would say "No rule to make target <the app's .wasm>";
-# named here (as an explicit rule's prerequisites, expanded as late), the missing source is what make
-# names. Nothing builds this target, and one that starts with a dot is never the default goal.
+# The sources, named. A pattern rule whose prerequisite neither exists nor is named by any rule does not
+# apply: with a source missing, make would keep a module built before ("Nothing to be done") or say "No
+# rule to make target <the app's .wasm>". Named here (an explicit rule's prerequisites, expanded as
+# late), the rule still applies and make stops at the missing source, naming it. Nothing builds this
+# target, and one that starts with a dot is never the default goal.
 .cdom-mk-sources: $$(if $$(APP_WASM),$$(cdom_mk_app_src)) $$(if $$(APP_PAGE),$$(APP_PAGE_SRC))

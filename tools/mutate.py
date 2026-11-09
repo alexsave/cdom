@@ -240,7 +240,7 @@ M = [
   ('input-text-written', 'shim/cdom.js', 'return kind === 1 || read === text.length ? written : written + textEncoder.encode(text.slice(read)).length;', 'return written;', UNIT, 'FAIL cd_input_text: the whole length'),
   ('input-text-kind', 'src/cdom.c', 'get(id, CD_LIT("value"), GET_STR_LEN, dst, cap)', 'get(id, CD_LIT("value"), GET_STR, dst, cap)', UNIT, 'FAIL cd_input_text: the whole length'),
   ('seed-demo-literal', 'demo/click.c', 'static uint32_t rng;', 'static uint32_t rng = 0x9e3779b9u;', LINK, 'FAIL demo/click.c:14: seeds a generator with a literal'),
-  ('seed-call-literal', 'tests/listfuzz.c', '  rng = seed | 1;\n  for (uint32_t round = 0; round < rounds; round++) {', '  rng = seed | 1;\n  rng_seed(42);\n  for (uint32_t round = 0; round < rounds; round++) {', LINK, 'seeds a generator with a literal, not cd_seed: rng_seed(42);'),
+  ('seed-call-literal', 'tests/listfuzz.c', 'static uint32_t rnd(uint32_t m) { rng ^=', 'static void rng_seed(uint32_t s) { rng = s; }\nstatic uint32_t rnd(uint32_t m) { if (!rng) rng_seed(42); rng ^=', LINK, 'seeds a generator with a literal, not cd_seed: static uint32_t rnd(uint32_t m) { if (!rng) rng_seed(42);'),
   ('seed-allow-stale', 'tests/link/alloc.c', 'uint32_t rng = 99;', 'uint32_t rng = 98;', LINK, 'FAIL tests/link/alloc.c:'),
   ('unit-host-by-attribute', 'shim/cdom.js', '        object[property] = value;', '        object.setAttribute(property, String(value));', UNIT, 'FAIL cd_set_str, cd_set_bool and cd_set_num'),
   ('unit-host-bool-nan', 'shim/cdom.js', 'return typeof value === "boolean" ? +value : typeof value === "number" ? value : NaN;', 'return typeof value === "number" ? value : NaN;', UNIT, 'FAIL cd_get_num and cd_get_str'),
@@ -367,7 +367,7 @@ M = [
   ('mk-target-early', 'cdom.mk', '%.wasm: $$(call cdom_mk_for,$$(APP_WASM),', '$(APP_WASM): $$(call cdom_mk_for,$$(APP_WASM),', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   ('mk-page-early', 'cdom.mk', '%.html: $$(call cdom_mk_for,$$(APP_PAGE),', '$(APP_PAGE): $$(call cdom_mk_for,$$(APP_PAGE),', LINK, 'FAIL cdom_page (first) refused a page whose marker is alone'),
   ('mk-any-wasm', 'cdom.mk', 'cdom_mk_for = $(if $(filter $(2),$(1)),$(3),$(2).cdom-mk-none)', 'cdom_mk_for = $(3)', LINK, "FAIL cdom.mk's rules built a .wasm or .html that is not APP_WASM or APP_PAGE"),
-  ('mk-missing-unnamed', 'cdom.mk', '\n.cdom-mk-sources: $$(if $$(APP_WASM),$$(cdom_mk_app_src)) $$(if $$(APP_PAGE),$$(APP_PAGE_SRC))\n', '\n', LINK, 'FAIL cdom.mk: make does not name the missing source'),
+  ('mk-missing-unnamed', 'cdom.mk', '\n.cdom-mk-sources: $$(if $$(APP_WASM),$$(cdom_mk_app_src)) $$(if $$(APP_PAGE),$$(APP_PAGE_SRC))\n', '\n', LINK, 'FAIL cdom.mk built an app whose APP_SRC names a file that is not there'),  # the rule no longer applies, and the module built before is kept
   ('mk-rebuilt', 'cdom.mk', '$$(cdom_mk_known)$$(cdom_mk_app_src) $$(CDOM_HEADERS))', '$$(cdom_mk_known)$$(cdom_mk_app_src) $$(CDOM_HEADERS) .cdom-mk-sources)', LINK, "FAIL cdom.mk's APP_WASM rule (first): a second make builds the module again"),
   ('flags-hardcoded', 'tests/build.sh', 'W=(-Wall -Wextra -Werror)', 'W=(-Wall -Wextra -Werror -mbulk-memory)', LINK, 'FAIL tests/build.sh:15 hardcodes -mbulk-memory'),
   ('flags-hardcoded-link', 'tests/link/run.sh', 'C=(-O2 "${CDOM_CFLAGS[@]}"', 'C=(--target=wasm32 -O2 "${CDOM_CFLAGS[@]}"', LINK, 'FAIL tests/link/run.sh:'),
