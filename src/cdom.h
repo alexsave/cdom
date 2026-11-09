@@ -1,5 +1,12 @@
 /* cdom: C owns the tree, state and diffing; a fixed JS shim makes one DOM call per
  * operation (each its own wasm import) and feeds events back. */
+/* Building and starting an app (README.md, "Building an app" and "Starting an app"). An app's Makefile
+ * includes cdom.mk, whose CDOM_CFLAGS, CDOM_LDFLAGS and CDOM_SRC build its module and whose page rule puts
+ * shim/cdom.min.js in place of the page's line that holds only the marker CDOM_SHIM in a block comment.
+ * The page then calls cdom.start(url, mount, env, options) exactly once: url is the module (or its wasm2js
+ * build, through shim/boot.js), mount the element CD_MOUNT is (or its id), env the module's own imports
+ * (or nothing), options.seed fixes cd_seed and options.openStore opens the store while the module loads.
+ * It calls cd_main once, and returns a promise of the module's exports. */
 /* The program's libc: a libc belongs to the final program, never to a library, and in a cdom app the
  * program is the app's wasm build, so cdom provides what it needs: the heap (malloc, calloc, realloc and
  * free, weak, in cdom.c; below), and memcpy, memmove, memset, memcmp and strlen (src/mini.c, link it;
@@ -232,6 +239,9 @@ void cd_on_event(const cd_event_rec *e);
 typedef void (*cd_event_fn)(const cd_event_rec *e, void *ctx);
 void cd_on(cd_id id, uint32_t ev, cd_event_fn fn, void *ctx);
 void cd_main(void);                  /* the app's entry, called once at start */
+/* The seed for the app's random draws, set before cd_main: cdom.start's options.seed when the page fixes
+ * one (one line makes a run deterministic), else 32 bits from crypto.getRandomValues. */
+extern uint32_t cd_seed;
 uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap); /* cd_get_str of "value": an input's value now */
 /* Whole-page delivery, as cd_listen on the host object that has the event: CD_EV_RESIZE on CD_WINDOW,
  * every other type on CD_DOCUMENT (keys, and the moves and release of a drag). */

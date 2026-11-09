@@ -14,7 +14,6 @@ static const char *COL[] = {"red", "yellow", "blue", "green", "pink", "brown", "
 static const char *NOUN[] = {"table", "chair", "house", "bbq", "desk", "car", "pony", "cookie",
   "sandwich", "burger", "pizza", "mouse", "keyboard"};
 
-extern uint32_t cd_seed;
 static uint32_t rng;
 static uint32_t rnd(uint32_t max) { /* xorshift32, like Math.round(Math.random()*1000) % max */
   rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;

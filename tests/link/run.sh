@@ -61,7 +61,7 @@ if "$CC" "${LIBC_CDOM[@]}" -fsyntax-only "$here/contract.c" 2> "$out/contract.lo
   echo "ok   the I/O contract: every declaration external adapters build on has its type, and every code its value"
 else echo "FAIL the I/O contract changed in place:"; cat "$out/contract.log"; fail=1; fi
 # cdom.mk as an app uses it (tests/link/app.mk): the APP_WASM rule builds a module that exports its memory
-# and cd_main's entry; the APP_PAGE rule (tools/page.awk) puts the shim where the page's one /*CDOM_SHIM*/
+# and cd_main's entry, with the modules APP_MODULES names; the APP_PAGE rule (tools/page.awk) puts the shim where the page's one /*CDOM_SHIM*/
 # line was, and refuses a page with the marker beside other text, without it, or with it twice, leaving no
 # output.
 mk() { make -s --no-print-directory -f "$here/app.mk" OUT="$out/mk" "$@"; }
@@ -71,9 +71,12 @@ if ! mk "$out/mk/mk_app.wasm" PAGE= 2> "$out/mk_app.log"; then
 elif exports="$(wasm-dis "$out/mk/mk_app.wasm" | grep -oE '\(export "(memory|cd_start)"' | sort | tr -d '\n')"
   [ "$exports" != '(export "cd_start"(export "memory"' ]; then
   echo "FAIL cdom.mk's APP_WASM rule: the module exports no memory or no cd_start"; fail=1
-else echo "ok   cdom.mk's APP_WASM rule builds an app from APP_SRC and CDOM_SRC, memory and entries exported"; fi
+else echo "ok   cdom.mk's APP_WASM rule builds an app from APP_SRC, CDOM_SRC and APP_MODULES, memory and entries exported"; fi
 if [ "$(mk PAGE= 2>&1)" != app-goal ]; then echo "FAIL cdom.mk took the default goal from the app's first rule"; fail=1
 else echo "ok   cdom.mk leaves the app's first rule its default goal"; fi
+if mk "$out/mk/bogus.wasm" PAGE= APP_MODULES='random bogus' > "$out/mk_bogus.log" 2>&1; then echo "FAIL cdom.mk took APP_MODULES naming no module"; fail=1
+elif ! grep -q 'APP_MODULES names bogus, not a cdom module' "$out/mk_bogus.log"; then echo "FAIL cdom.mk refused APP_MODULES for another reason:"; cat "$out/mk_bogus.log"; fail=1
+else echo "ok   cdom.mk stops at an APP_MODULES name that is no module"; fi
 want="$out/mk/ok.want"
 { sed -n '1,3p' "$here/page/ok.html"; cat "$src/../shim/cdom.min.js"; sed -n '5,$p' "$here/page/ok.html"; } > "$want"
 if ! mk "$out/mk/ok.html" PAGE="$here/page/ok.html" 2> "$out/mk_page.log"; then
