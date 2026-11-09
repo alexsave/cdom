@@ -458,7 +458,7 @@ void cd_next(void) { walk_step(2); }
 void cd_up(void) { walk_step(3); }
 void cd_sel(cd_id id) { walk_done(); walking = 1; walk_from = id; walk_steps = walk_n = 0; }
 void cd_set_text_node(cd_id id, cd_str s) { uint32_t v = ref_text(s); ready(); j_set_text(id, v); }
-void cd_set_text_num(cd_id id, uint32_t n) { ready(); j_set_text_num(id, n); }
+void cd_set_text_node_num(cd_id id, uint32_t n) { ready(); j_set_text_num(id, n); }
 void cd_set_attr(cd_id id, cd_str name, cd_str v) { uint32_t b = ref_text(v), a = ref_name(name); ready(); j_set_attr(id, a, b); }
 void cd_set_class(cd_id id, cd_str v) { uint32_t a = ref_text(v); ready(); j_set_class(id, a); }
 void cd_set_style(cd_id id, cd_str prop, cd_str v) { uint32_t b = ref_text(v), a = ref_name(prop); ready(); j_style(id, a, b); }

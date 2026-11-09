@@ -174,9 +174,9 @@ void cd_sel(cd_id id);               /* last = the node named id; then walk with
 /* A text node's value: id names a text node (cd_name_text, after cd_text or cd_text_num), never the element
  * the text is in. An id that names an element, or no node, throws out of the call (a JS Error naming the
  * call and the id, which stops the C code that made it) and changes nothing, rather than the silent no-op
- * that setting an element's nodeValue is. cd_set_text_num is the same for a number. */
+ * that setting an element's nodeValue is. cd_set_text_node_num is the same for a number. */
 void cd_set_text_node(cd_id id, cd_str s);
-void cd_set_text_num(cd_id id, uint32_t n);
+void cd_set_text_node_num(cd_id id, uint32_t n);
 void cd_set_attr(cd_id id, cd_str name, cd_str value);
 void cd_set_class(cd_id id, cd_str value);
 /* One style property: element.style.setProperty(prop, value). value may be a cd_tmp; "" removes it. */
