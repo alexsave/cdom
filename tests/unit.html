@@ -516,6 +516,49 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     });
   }
   const d = await new Promise((r, j) => { const q = indexedDB.open('cdom', 1); q.onsuccess = () => r(q.result); q.onerror = j; });
+  {
+    // 29b. A put or a delete is answered when its transaction commits (its complete event), not when its
+    // request succeeds: one whose transaction the page aborts after the request succeeded answers 0 and
+    // changes nothing; a plain one answers 1, and C had not been answered when complete fired. A put whose
+    // request fails later (an add of a key that is there: its ConstraintError aborts the transaction) answers 0.
+    const realTx = IDBDatabase.prototype.transaction;
+    let k = -1, abortDel = false;
+    const atComplete = [];
+    IDBDatabase.prototype.transaction = function (...a) {
+      const t = realTx.apply(this, a), kk = k;
+      if (a[1] === 'readwrite') t.addEventListener('complete', () => { atComplete[kk] = x.t_store_commit_ok(kk); });
+      return t;
+    };
+    const abortAfter = (q, os) => { q.addEventListener('success', () => os.transaction.abort()); return q; };
+    IDBObjectStore.prototype.put = function (v, key) {
+      if (key === 'unit-dup') return this.add(v, 'unit-keep');
+      const q = realPut.call(this, v, key);
+      return key === 'unit-abort' ? abortAfter(q, this) : q;
+    };
+    IDBObjectStore.prototype.delete = function (key) { const q = realDelete.call(this, key); return abortDel && key === 'unit-keep' ? abortAfter(q, this) : q; };
+    const raw = (key) => new Promise((r) => { const q = realTx.call(d, 'kv', 'readonly').objectStore('kv').get(key); q.onsuccess = () => r(q.result); q.onerror = () => r('error'); });
+    const step = async (kk) => { k = kk; x.t_store_commit(kk); await until(() => x.t_store_commit_ok(kk) !== -2); };
+    await step(2);
+    const kept = await raw('unit-keep');
+    await step(0);
+    const aborted = await raw('unit-abort');
+    abortDel = true;
+    await step(1);
+    const keptStill = await raw('unit-keep');
+    abortDel = false;
+    await step(4);
+    await step(3);
+    const gone = await raw('unit-keep');
+    IDBDatabase.prototype.transaction = realTx;
+    IDBObjectStore.prototype.put = realPut;
+    IDBObjectStore.prototype.delete = realDelete;
+    check('cd_store_put_cb and cd_store_del_cb answer when the transaction commits: 1 only after its complete event, 0 when it aborts after the request succeeded (and nothing changes) or its request fails late', () => {
+      const ok = [0, 1, 2, 3, 4].map((kk) => x.t_store_commit_ok(kk));
+      const r = [ok.join() === '0,0,1,1,0', atComplete[2] === -2, atComplete[3] === -2, !(0 in atComplete), !(1 in atComplete), !(4 in atComplete),
+        kept instanceof Uint8Array && kept.length === 2, aborted === undefined, keptStill instanceof Uint8Array, gone === undefined];
+      return r.every(Boolean) || JSON.stringify({ r, ok, atComplete, kept: String(kept), aborted: String(aborted), keptStill: String(keptStill), gone: String(gone) });
+    });
+  }
   const tx = d.transaction('kv', 'readwrite'), os = tx.objectStore('kv'), t0 = performance.now();
   const busy = () => { if (performance.now() - t0 < 400) os.put(new Uint8Array(1), 'unit-busy').onsuccess = busy; };
   busy();
