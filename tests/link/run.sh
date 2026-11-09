@@ -19,7 +19,7 @@ if "$CC" "${F[@]}" -o "$out/own_libc.wasm" "$here/alloc.c" "$here/own_libc.c" "$
   echo "FAIL an app's own libc does not link next to mini.c:"; cat "$out/own_libc.log"; fail=1; fi
 if "$CC" "${F[@]}" -o "$out/on_only.wasm" "$here/on_only.c" "$src/cdom.c" "$src/mini.c" 2> "$out/on_only.log"; then :; else
   echo "FAIL an app that uses cd_on alone, with no cd_on_event, does not link:"; cat "$out/on_only.log"; fail=1; fi
-# string.h: a file that includes it builds under cdom's flags and under freestanding ones (-ffreestanding, where
+# string.h (and stdio.h, below): a file that includes it builds under cdom's flags and under freestanding ones (-ffreestanding, where
 # clang emits a call for a memcpy it does not know), and links with mini.c alone; memcpy, memmove and
 # memset are memory.copy and memory.fill in place, never an undefined symbol. libc_addr takes their
 # address, and links to mini.c's real ones.
@@ -46,6 +46,19 @@ libc_case() { # name, then the flags
   if ! "$CC" "$@" "${CDOM_LDFLAGS[@]}" -o "$a" "$here/libc_addr.c" "$src/mini.c" 2> "$log"; then
     echo "FAIL string.h ($name flags): taking memcpy's address does not link with mini.c:"; cat "$log"; fail=1; return; fi
   echo "ok   string.h ($name flags): compiles, links with mini.c alone, copy and fill are memory.copy and memory.fill"
+  # stdio.h: snprintf and vsnprintf compile and link with mini.c alone (run.mjs runs their cases), and a
+  # program that does not call them carries none of their code (the string.h one above links mini.c too).
+  local p="$out/libc_printf_$name.wasm"; rm -f "$p"
+  if ! "$CC" "$@" "${CDOM_LDFLAGS[@]}" -o "$p" "$here/libc_printf.c" "$src/mini.c" 2> "$log"; then
+    echo "FAIL stdio.h ($name flags): snprintf does not compile or link with mini.c alone:"; cat "$log"; fail=1; return; fi
+  # The string.h program again, against mini.c cut before its snprintf: the two modules are the same bytes.
+  local cut="$out/mini_no_printf.c" w0="$out/libc_header_${name}_no_printf.wasm"
+  sed '/^\/\* snprintf and vsnprintf/,$d' "$src/mini.c" > "$cut"
+  if cmp -s "$cut" "$src/mini.c" || grep -q "int v*snprintf" "$cut"; then echo "FAIL stdio.h: mini.c has no '/* snprintf and vsnprintf' block to cut"; fail=1; return; fi
+  if ! "$CC" "$@" "${CDOM_LDFLAGS[@]}" -o "$w0" "$o" "$cut" 2> "$log"; then echo "FAIL stdio.h ($name flags): mini.c without snprintf does not build:"; cat "$log"; fail=1; return; fi
+  if ! cmp -s "$w" "$w0"; then
+    echo "FAIL stdio.h ($name flags): a program that never calls snprintf is $(wc -c < "$w" | tr -d ' ') bytes, $(wc -c < "$w0" | tr -d ' ') without it in mini.c"; fail=1; return; fi
+  echo "ok   stdio.h ($name flags): snprintf links with mini.c alone, and a program that does not call it carries none of it"
 }
 libc_case cdom "${LIBC_CDOM[@]}"
 libc_case freestanding "${LIBC_FREESTANDING[@]}"

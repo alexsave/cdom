@@ -1,6 +1,7 @@
 /* The I/O contract (src/cdom.h, top): each declaration external adapters build on, with its exact type,
  * and each code and constant with its value. A declaration edited in place fails to compile here, so a
  * breaking change has to come as a new name. run.sh compiles it under cdom's flags. */
+#include <stdio.h>
 #include <string.h>
 #include "../../src/cdom.h"
 #include "../../src/cdom_net.h"
@@ -34,8 +35,10 @@ SAME(memmove, void *(void *, const void *, size_t));
 SAME(memset, void *(void *, int, size_t));
 SAME(memcmp, int (const void *, const void *, size_t));
 SAME(strlen, size_t (const char *));
+SAME(snprintf, int (char *restrict, size_t, const char *restrict, ...));
+SAME(vsnprintf, int (char *restrict, size_t, const char *restrict, va_list));
 
-/* mini.c's definitions against string.h's declarations: one that drifts is a conflicting type. The
+/* mini.c's definitions against string.h's and stdio.h's declarations: one that drifts is a conflicting type. The
  * macros go first, since a definition is a name followed by "(". */
 #undef memcpy
 #undef memmove

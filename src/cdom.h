@@ -12,14 +12,14 @@
  * It calls cd_main once, and returns a promise of the module's exports. */
 /* The program's libc: a libc belongs to the final program, never to a library, and in a cdom app the
  * program is the app's wasm build, so cdom provides what it needs: the heap (malloc, calloc, realloc and
- * free, weak, in cdom.c; below), and memcpy, memmove, memset, memcmp and strlen (src/mini.c, link it;
- * declared by src/libc/string.h, so build every file with -isystem cdom/src/libc). No other function or
- * header of libc is offered. */
+ * free, weak, in cdom.c; below), memcpy, memmove, memset, memcmp and strlen (declared by src/libc/string.h),
+ * and snprintf and vsnprintf (src/libc/stdio.h; integers and strings, no floats), all in src/mini.c (link
+ * it; build every file with -isystem cdom/src/libc). No other function or header of libc is offered. */
 /* The I/O contract. External adapters (a library's browser layer, built against cdom from outside it)
  * depend on these, so they are stable: cd_http_cb, cd_ws_open_cb, cd_ws_send, cd_ws_close, cd_ws_buffered
  * and cd_page_origin (cdom_net.h), cd_timer_cb and cd_timer_stop (below), cd_store_get_cb, cd_store_put_cb
  * and cd_store_del_cb (cdom_store.h), cd_random_bytes (cdom_random.h), cd_epoch_ms and cd_now, and the
- * program's libc (src/libc/string.h, src/mini.c). Their signatures, their callbacks' shapes (cd_http_fn,
+ * program's libc (src/libc/string.h, src/libc/stdio.h, src/mini.c). Their signatures, their callbacks' shapes (cd_http_fn,
  * cd_ws_fn, cd_timer_fn, cd_store_fn, cd_store_done_fn), their status and event codes (CD_HTTP_*, CD_WS_*,
  * CD_RANDOM_*, a store answer's -1 and ok) and the token range from CD_TOKEN_CDOM (0x80000000) up change
  * only additively: a breaking change takes a new name and a deprecation of the old one, never an edit in
