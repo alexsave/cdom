@@ -96,7 +96,7 @@ cdom_page = $(call cdom_mk_page,$(1),$(2),$(3))
 # GNU's wraps at 76 columns). cdom_mk_q quotes a value for the shell.
 cdom_mk_q = '$(subst ','\'',$(1))'
 cdom_mk_page = $(if $(3),base64 < $(call cdom_mk_q,$(3)) | tr -d '\n\r' | )CDOM_WASM_URL=$(call cdom_mk_q,$(4)) \
-  CDOM_TITLE=$(call cdom_mk_q,$(5)) awk -v shim=$(call cdom_mk_q,$(CDOM_SHIM)) -v wasm=$(if $(3),bundle,$(if $(4),url)) \
+  CDOM_TITLE=$(call cdom_mk_q,$(5)) awk -v shim=$(call cdom_mk_q,$(or $(6),$(CDOM_SHIM))) -v wasm=$(if $(3),bundle,$(if $(4),url)) \
   $(if $(5),-v title=1 )-f $(call cdom_mk_q,$(CDOM)/tools/page.awk) $(call cdom_mk_q,$(1)) > $(call cdom_mk_q,$(2).tmp) \
   && mv $(call cdom_mk_q,$(2).tmp) $(call cdom_mk_q,$(2)) || { rm -f $(call cdom_mk_q,$(2).tmp); exit 1; }
 
@@ -127,10 +127,22 @@ cdom_mk_page_src = $(or $(APP_PAGE_SRC),$(CDOM_PAGE))
 cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))
 cdom_mk_wasm_url = $(if $(APP_WASM_SEPARATE),$(or $(APP_WASM_URL),$(notdir $(APP_WASM))))
 cdom_mk_title = $(if $(APP_PAGE_SRC),,$(or $(APP_TITLE),$(basename $(notdir $(APP_WASM)))))
-%.html: $$(call cdom_mk_for,$$(APP_PAGE),$$@,$$(cdom_mk_page_src) $$(CDOM_SHIM) $$(CDOM)/tools/page.awk $$(cdom_mk_bundled))
+%.html: $$(call cdom_mk_for,$$(APP_PAGE),$$@,$$(cdom_mk_page_src) $$(CDOM_SHIM) $$(CDOM_STRIP) $$(CDOM)/tools/shimstrip.c $$(CDOM)/tools/page.awk $$(cdom_mk_bundled))
 	$(if $(APP_PAGE_SRC)$(APP_WASM),,$(error cdom.mk: the default page starts APP_WASM, and APP_WASM is unset))
 	@mkdir -p $(@D)
-	$(call cdom_mk_page,$(cdom_mk_page_src),$@,$(cdom_mk_bundled),$(cdom_mk_wasm_url),$(cdom_mk_title))
+	$(if $(cdom_mk_stripping),$(cdom_mk_strip))
+	$(call cdom_mk_page,$(cdom_mk_page_src),$@,$(cdom_mk_bundled),$(cdom_mk_wasm_url),$(cdom_mk_title),$(if $(cdom_mk_stripping),$(cdom_mk_strip_js)))
+
+# EXPERIMENT (shim-strip-exp): a bundled page inlines only the shim its module imports: tools/shimstrip.c,
+# built with the host's C compiler (CDOM_HOST_CC), cuts shim/cdom.min.js by shim/cdom.strip to the
+# cdom.<name> imports the module has (and what they need). APP_SHIM_FULL := 1 inlines the whole shim.
+CDOM_HOST_CC ?= cc
+CDOM_STRIP := $(CDOM)/shim/cdom.strip
+cdom_mk_stripping = $(if $(APP_SHIM_FULL),,$(cdom_mk_bundled))
+cdom_mk_strip_js = $(@D)/.cdom-shim.js
+cdom_mk_strip = $(CDOM_HOST_CC) -std=c99 -O2 -o $(call cdom_mk_q,$(@D)/.cdom-shimstrip) $(call cdom_mk_q,$(CDOM)/tools/shimstrip.c) \
+  && $(call cdom_mk_q,$(@D)/.cdom-shimstrip) $(call cdom_mk_q,$(cdom_mk_bundled)) $(call cdom_mk_q,$(CDOM_SHIM)) $(call cdom_mk_q,$(CDOM_STRIP)) \
+  > $(call cdom_mk_q,$(cdom_mk_strip_js)) || { rm -f $(call cdom_mk_q,$(cdom_mk_strip_js)); exit 1; }
 
 # The toolchain check before the APP_WASM rule compiles: a one-function module through WASM_CC, its
 # wasm32 target and wasm-ld. When that fails (Apple's clang finds no wasm-ld; WASM_CC is not there), make
