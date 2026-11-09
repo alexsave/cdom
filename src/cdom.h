@@ -242,7 +242,10 @@ void cd_main(void);                  /* the app's entry, called once at start */
 /* The seed for the app's random draws, set before cd_main: cdom.start's options.seed when the page fixes
  * one (one line makes a run deterministic), else 32 bits from crypto.getRandomValues. */
 extern uint32_t cd_seed;
-uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap); /* cd_get_str of "value": an input's value now */
+/* An input's value now, as UTF-8 into dst: returns its whole length in bytes. When that is more than
+ * cap the value did not fit, and dst holds only the whole characters that fit in cap bytes (cd_get_str
+ * of "value" returns how many bytes those are). */
+uint32_t cd_input_text(cd_id id, char *dst, uint32_t cap);
 /* Whole-page delivery, as cd_listen on the host object that has the event: CD_EV_RESIZE on CD_WINDOW,
  * every other type on CD_DOCUMENT (keys, and the moves and release of a drag). */
 void cd_listen_window(uint32_t ev);

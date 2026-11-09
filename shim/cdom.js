@@ -1123,7 +1123,8 @@ var cdom = (() => {
       reportError(error);
     }
   }
-  // The import behind cd_get_*: kind 0 a number, 1 a string into C memory, 2 a node id. Never throws.
+  // The import behind cd_get_* and cd_input_text: kind 0 a number, 1 a string into C memory (its
+  // bytes written), 2 a node id, 3 a string into C memory (its whole length, cut or not). Never throws.
   function get(id, path, kind, destPtr, capacity) {
     let value;
     try {
@@ -1135,8 +1136,10 @@ var cdom = (() => {
     if (kind === 0) {
       return typeof value === "boolean" ? +value : typeof value === "number" ? value : NaN;
     }
-    if (kind === 1) {
-      return textEncoder.encodeInto(value == null ? "" : String(value), bytes(destPtr, capacity)).written;
+    if (kind === 1 || kind === 3) {
+      const text = value == null ? "" : String(value);
+      const { read, written } = textEncoder.encodeInto(text, bytes(destPtr, capacity));
+      return kind === 1 || read === text.length ? written : written + textEncoder.encode(text.slice(read)).length;
     }
     if (value == null) {
       return -1;

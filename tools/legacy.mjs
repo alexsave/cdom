@@ -82,6 +82,8 @@ try {
   const cuts = {}; for (const c of [6, 7, 8, 9, 10, 11, 12, 13, 16, 17, 18, 20, 21, 40]) cuts[c] = await E(`X.cut(${c})`);
   ok(JSON.stringify(cuts) === JSON.stringify({ 6: 6, 7: 7, 8: 7, 9: 9, 10: 10, 11: 10, 12: 10, 13: 13, 16: 16, 17: 17, 18: 17, 20: 17, 21: 21, 40: 21 }),
     `a read never splits a character: ${JSON.stringify(cuts)}`);
+  const wholes = []; for (const c of [0, 6, 8, 20, 21, 40]) wholes.push(await E(`X.whole(${c})`));
+  ok(wholes.join() === '21,21,21,21,21,21', `cd_input_text says the whole length, cut or not: ${wholes.join()}`);
 
   // A failing call is reported and the batch goes on.
   await E('ERRORS.length = 0');

@@ -514,7 +514,7 @@ void cd_call_args(cd_id id, cd_str method, uint32_t n, const cd_val *a) {
 }
 void cd_call(cd_id id, cd_str method) { cd_call_args(id, method, 0, 0); }
 
-enum { GET_NUM, GET_STR, GET_ID };
+enum { GET_NUM, GET_STR, GET_ID, GET_STR_LEN };
 static double get(cd_id id, cd_str path, uint32_t kind, void *dst, uint32_t cap) {
   uint32_t p = path ? ref_name(path) : 0;
   ready();
@@ -602,7 +602,7 @@ void cd_remove(cd_id id) {
 void cd_tag_set(cd_id id, uint32_t tag) { tags[id] = tag; }
 uint32_t cd_tag(cd_id id) { return id < tags_cap ? tags[id] : 0; }
 
-uint32_t cd_input_value(cd_id id, char *dst, uint32_t cap) { return cd_get_str(id, CD_LIT("value"), dst, cap); }
+uint32_t cd_input_text(cd_id id, char *dst, uint32_t cap) { return (uint32_t)get(id, CD_LIT("value"), GET_STR_LEN, dst, cap); }
 
 /* ---- regions ---- */
 int cd_region_show(cd_region *r, int want) {

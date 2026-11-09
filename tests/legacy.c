@@ -47,7 +47,8 @@ void cd_on_event(const cd_event_rec *e) {
   ev(e->type, e->id, e->x, e->y, e->pointer, e->buttons);
   if (e->type == CD_EV_INPUT && id == ids[TEXT]) {
     /* The value comes in through encodeInto and goes back out through the decoder, as the echo's text. */
-    uint32_t n = cd_input_value(id, io, sizeof io);
+    uint32_t n = cd_input_text(id, io, sizeof io);
+    if (n > sizeof io) n = cd_get_str(id, z("value"), io, sizeof io);
     cd_set_text(ids[ECHO], cd_intern(io, n));
   } else if (e->type == CD_EV_CLICK && id == ids[ERR]) {
     /* A method that does not exist: reported, and the text set after it still applies. */
@@ -60,5 +61,7 @@ void cd_on_event(const cd_event_rec *e) {
 }
 
 EXPORT("id") cd_id id_of(uint32_t k) { return k < NIDS ? ids[k] : CD_DETACHED; }
-/* The input's value read into cap bytes: encodeInto must stop before a character that does not fit. */
-EXPORT("cut") uint32_t cut(uint32_t cap) { return cd_input_value(ids[TEXT], io, cap < sizeof io ? cap : sizeof io); }
+/* The input's value read into cap bytes: encodeInto must stop before a character that does not fit
+ * (cut: the bytes written), and cd_input_text says the whole length however much fits (whole). */
+EXPORT("cut") uint32_t cut(uint32_t cap) { return cd_get_str(ids[TEXT], z("value"), io, cap < sizeof io ? cap : sizeof io); }
+EXPORT("whole") uint32_t whole(uint32_t cap) { return cd_input_text(ids[TEXT], io, cap < sizeof io ? cap : sizeof io); }

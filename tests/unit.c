@@ -885,6 +885,7 @@ EXPORT("t_host_checked") double t_host_checked(void) { return cd_get_num(host_bo
 EXPORT("t_host_length") double t_host_length(void) { return cd_get_num(host_input, L("value.length")); }
 EXPORT("t_host_missing") double t_host_missing(void) { return cd_get_num(host_input, L("no.such.thing")); }
 EXPORT("t_host_value") uint32_t t_host_value(uint32_t cap) { return cd_get_str(host_input, L("value"), host_out, cap); }
+EXPORT("t_host_text") uint32_t t_host_text(uint32_t cap) { return cd_input_text(host_input, host_out, cap); }
 EXPORT("t_host_accent") uint32_t t_host_accent(void) { return cd_get_str(host_div, L("style.--accent"), host_out, sizeof host_out); }
 EXPORT("t_host_out") char *t_host_out(void) { return host_out; }
 EXPORT("t_host_bad_set") void t_host_bad_set(void) { cd_set_str(host_div, L("no.such.thing"), L("x")); }
