@@ -2,6 +2,7 @@
 # CDOM found from the include's own path. OUT is where they go, PAGE the page to inline the shim into.
 APP_WASM := $(OUT)/mk_app.wasm
 APP_SRC := $(dir $(lastword $(MAKEFILE_LIST)))mk_app.c
+APP_MODULES ?= random
 APP_CFLAGS := -Wall -Wextra -Werror
 APP_PAGE := $(OUT)/$(notdir $(PAGE))
 APP_PAGE_SRC := $(PAGE)

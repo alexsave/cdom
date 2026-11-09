@@ -755,7 +755,6 @@ EXPORT("t_url_step") void t_url_step(int32_t delta) { cd_url_step(delta); }
 /* Percent-encoding: url_in's len bytes encoded (or decoded) into url_out. */
 EXPORT("t_url_encode") uint32_t t_url_encode(uint32_t len) { return cd_url_encode(url_out, url_in, len); }
 EXPORT("t_url_decode") uint32_t t_url_decode(uint32_t len) { return cd_url_decode(url_out, url_in, len); }
-extern uint32_t cd_seed;
 EXPORT("t_seed") uint32_t t_seed(void) { return cd_seed; }
 void cd_on_url(const uint8_t *path, uint32_t len) {
   enter();

@@ -11,14 +11,16 @@
 #   CDOM_SRC      the core sources every app links (cdom.c, and mini.c, the program's libc)
 #   CDOM_NET_SRC, CDOM_STORE_SRC, CDOM_RANDOM_SRC, CDOM_AUDIO_SRC, CDOM_URL_SRC, CDOM_LOCALE_SRC,
 #   CDOM_SHARE_SRC, CDOM_FONTS_SRC
-#                 one optional module each (src/cdom_<name>.h), added to APP_SRC by an app that uses it
+#                 one optional module each (src/cdom_<name>.h), for an app's own rules (APP_MODULES below
+#                 adds them to the APP_WASM rule)
 #   CDOM_SHIM     the minified shim (shim/cdom.min.js) a page inlines
 #   CDOM_OPT      the optimization level of the APP_WASM rule (-Oz unless the app sets it)
 #   WASM_CC       a clang that targets wasm32 (Homebrew's llvm unless set; Apple's clang does not)
 #
-#   APP_WASM, APP_SRC, APP_CFLAGS, APP_LDFLAGS
-#                 the app's module: $(APP_WASM) is built from $(APP_SRC) and $(CDOM_SRC) with
-#                 $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS) $(APP_LDFLAGS)
+#   APP_WASM, APP_SRC, APP_MODULES, APP_CFLAGS, APP_LDFLAGS
+#                 the app's module: $(APP_WASM) is built from $(APP_SRC), $(CDOM_SRC) and the optional
+#                 modules APP_MODULES names (net store random audio url locale share fonts: their
+#                 CDOM_<NAME>_SRC) with $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS) $(APP_LDFLAGS)
 #   APP_PAGE, APP_PAGE_SRC
 #                 the app's page: $(APP_PAGE) is $(APP_PAGE_SRC) with the shim inlined at the line that
 #                 holds only the marker /*CDOM_SHIM*/ (inside a <script>); it fails unless exactly one
@@ -56,10 +58,16 @@ CDOM_SHIM       := $(CDOM)/shim/cdom.min.js
 # (tools/page.awk); out.html is written only when the page holds that line exactly once.
 cdom_page = awk -v shim='$(CDOM_SHIM)' -f '$(CDOM)/tools/page.awk' '$(1)' > '$(2).tmp' && mv '$(2).tmp' '$(2)' || { rm -f '$(2).tmp'; exit 1; }
 
+CDOM_MODULES := net store random audio url locale share fonts
 ifdef APP_WASM
-$(APP_WASM): $(APP_SRC) $(CDOM_SRC) $(CDOM_HEADERS)
+cdom_mk_unknown := $(filter-out $(CDOM_MODULES),$(APP_MODULES))
+ifneq ($(cdom_mk_unknown),)
+$(error cdom.mk: APP_MODULES names $(cdom_mk_unknown), not a cdom module ($(CDOM_MODULES)))
+endif
+cdom_mk_app_src := $(APP_SRC) $(CDOM_SRC) $(addprefix $(CDOM)/src/cdom_,$(addsuffix .c,$(APP_MODULES)))
+$(APP_WASM): $(cdom_mk_app_src) $(CDOM_HEADERS)
 	@mkdir -p $(@D)
-	$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS) $(APP_LDFLAGS) -o $@ $(APP_SRC) $(CDOM_SRC)
+	$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS) $(APP_LDFLAGS) -o $@ $(cdom_mk_app_src)
 endif
 
 ifdef APP_PAGE
