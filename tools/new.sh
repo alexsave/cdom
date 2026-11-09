@@ -70,4 +70,5 @@ printf 'build/\n' > "$dir/.gitignore"
 
 echo "cdom new: wrote $dir/Makefile, $dir/src/app.c and $dir/.gitignore"
 echo "cdom new: now run make -C $dir, and open $dir/build/index.html"
+echo "cdom new: a page that calls a server (fetch, sockets, the store) needs http: serve build/ from that server instead of opening the file"
 echo "cdom new: to vendor cdom with the app: cd $dir && git init && git submodule add https://github.com/alexsave/cdom cdom, then CDOM ?= cdom in the Makefile"

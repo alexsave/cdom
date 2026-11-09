@@ -32,6 +32,7 @@ make -C path/to/myapp
   To vendor cdom with the app instead (`make new` prints this), run `git init && git submodule add https://github.com/alexsave/cdom cdom` in `DIR` and set `CDOM ?= cdom` (and clone with `--recurse-submodules`).
 - Without a clang that targets wasm32 and a `wasm-ld`, `make` stops before compiling and prints the command that installs them (`brew install llvm lld` on macOS).
 - `tests/link/run.sh` generates the starter, builds it and opens its page from `file://` in headless Chrome (`tools/starter.mjs`), so the template cannot rot unseen.
+- A page that calls a server (`cd_http_cb`, sockets, the store) needs an http origin, not `file://`: serve `build/` from that server instead of opening the file (`make new` says so).
 
 The page starts the app with one call, after the shim, exactly once per page:
 
@@ -51,6 +52,22 @@ cdom.start(/*CDOM_WASM*/, "app");
 - The shim's state (the node table, the memory, the module's exports) is one per page, so a second call would replace the first app's; a page runs one cdom app.
 - A page that must run without WebAssembly starts through `shim/boot.js` instead: `cdomBoot(url, mount, env, ready)` calls `cdom.start` itself when WebAssembly exists, and otherwise loads the ES5 shim and the wasm2js build (`url + ".js"`) and starts those; `tools/legacy/build.mjs` makes both, and that build needs Node.
   Both are files beside the page, so a page with this fallback takes `APP_WASM_SEPARATE := 1` (a bundled module has no `url + ".js"` to load).
+
+## Testing an app's page
+
+`tools/cdp.mjs` is a small driver for headless Chrome that an app's own end-to-end test can import (Node, as a test-only tool; the app's build and start need none).
+
+```js
+import { launch, sleep } from 'path/to/cdom/tools/cdp.mjs';
+const b = await launch();                        // one headless Chrome, its own temp profile, killed by its own PID
+await b.send('Page.navigate', { url: 'http://127.0.0.1:PORT/' });
+const text = await b.evaluate('document.body.innerText');   // any expression, its value returned
+await b.close();                                 // stops Chrome and removes the profile
+```
+
+- `launch(args)` starts Chrome on a free debugging port, with `--use-mock-keychain` and `--password-store=basic` (no macOS keychain dialog), and returns `{ send(method, params), evaluate(expr), close(), onEvent }`.
+- `send` is any DevTools Protocol command on the page; `onEvent`, when set, hears the page's events (e.g. `Runtime.exceptionThrown`, to fail a test on a page error).
+- `tools/starter.mjs` is a complete example: it opens the starter's page, waits for "cdom", and checks it is centered.
 
 ## Building an app
 
