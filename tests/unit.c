@@ -295,6 +295,7 @@ EXPORT("t_name_open") void t_name_open(void) {
 /* 10b. cd_name_el names the element opened last though a text came after it (in its parent), and
  * cd_name_text the text node made last (by cd_text, then by cd_text_num) though an element was opened
  * and closed after it: the two cases where the last node made is the other kind. */
+static cd_id name_kinds_el;
 EXPORT("t_name_kinds") void t_name_kinds(void) {
   cd_id s = section("namekinds"), el = cd_id_new(), txt = cd_id_new(), num = cd_id_new();
   cd_at(s, 0);
@@ -310,9 +311,21 @@ EXPORT("t_name_kinds") void t_name_kinds(void) {
   cd_name_text(num);
   cd_close();
   cd_set_class(el, L("named"));
-  cd_set_text(txt, L("renamed"));
+  cd_set_text_node(txt, L("renamed"));
   cd_set_text_num(num, 8);
   cd_flush();
+  name_kinds_el = el;
+}
+/* 10c. The same calls given the element (which: 0 cd_set_text_node, 1 cd_set_text_num) or an id that
+ * names nothing (2): each throws, and the page is as it was. */
+EXPORT("t_set_text_el") void t_set_text_el(uint32_t which) {
+  if (which == 0) cd_set_text_node(name_kinds_el, L("lost"));
+  else if (which == 1) cd_set_text_num(name_kinds_el, 9);
+  else {
+    cd_id unbound = cd_id_new(); /* handed back first, so the throw leaks no id */
+    cd_id_free(unbound);
+    cd_set_text_node(unbound, L("lost"));
+  }
 }
 
 /* 11. One style property at a time, by string (transient or interned) and by number; transient
@@ -473,7 +486,7 @@ static uint8_t out_msg[sizeof MSG];
 static cd_id net_txt;
 static int ws_ok;
 static uint32_t net_port;
-static void say(const char *s) { cd_set_text(net_txt, cd_internz(s)); }
+static void say(const char *s) { cd_set_text_node(net_txt, cd_internz(s)); }
 /* What the sockets are doing: the echo, the open-and-close cycles, the large send. */
 enum { WS_ECHO, WS_CYCLE, WS_BIG, WS_PAIR };
 static int ws_mode;
