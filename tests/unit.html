@@ -271,9 +271,9 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     const got = $('#namekinds').innerHTML;
     return got === '<div><b class="named"></b>after the brenamed<i></i>8<u></u></div>' || got;
   });
-  check('cd_set_text_node and cd_set_text_num given an element, or an id that names nothing, throw and change nothing', () => {
+  check('cd_set_text_node and cd_set_text_node_num given an element, or an id that names nothing, throw and change nothing', () => {
     const before = $('#namekinds').innerHTML, r = [];
-    for (const [which, want] of [[0, /^cdom: cd_set_text_node\(\d+, \.\.\.\): not a text node/], [1, /^cdom: cd_set_text_num\(\d+, \.\.\.\): not a text node/],
+    for (const [which, want] of [[0, /^cdom: cd_set_text_node\(\d+, \.\.\.\): not a text node/], [1, /^cdom: cd_set_text_node_num\(\d+, \.\.\.\): not a text node/],
       [2, /^cdom: cd_set_text_node\(\d+, \.\.\.\): no node has this id/]]) {
       try { x.t_set_text_el(which); r.push(`${which}: no throw`); } catch (e) { if (!want.test(e.message)) r.push(`${which}: ${e.message}`); }
     }

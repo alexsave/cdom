@@ -80,5 +80,5 @@ void cd_on_event(const cd_event_rec *e) {
 void cd_on_audio_ended(uint32_t voice) {
   (void)voice;
   played++;
-  cd_set_text_num(played_txt, played);
+  cd_set_text_node_num(played_txt, played);
 }

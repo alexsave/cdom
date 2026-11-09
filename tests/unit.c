@@ -83,7 +83,7 @@ void cd_on_timer(uint32_t token) {
   enter();
   if (token >= CD_TOKEN_CDOM) cdom_token_heard++;
   if (token >= 50 && token < 60) { app_timer_heard[token - 50]++; return; }
-  cd_set_text_num(timer_txt, token);
+  cd_set_text_node_num(timer_txt, token);
   cd_intern("timer-flushed", 13);
   hold(timer_txt);
 }
@@ -93,7 +93,7 @@ EXPORT("t_now") double t_now(void) { return cd_now(); }
 void cd_on_raf(uint32_t token, double t) {
   enter();
   raf_t = t;
-  cd_set_text_num(raf_txt, t > 0 ? token : 0);
+  cd_set_text_node_num(raf_txt, t > 0 ? token : 0);
   hold(raf_txt);
 }
 
@@ -178,7 +178,7 @@ void cd_on_event(const cd_event_rec *e) {
   enter();
   if (e->type == CD_EV_RESIZE && e->id == CD_WINDOW) { /* heard on the window, named so */
     resized_w = e->x; resized_h = e->y;
-    cd_set_text_num(vw_txt, (uint32_t)e->x); /* no cd_flush: the event export does it */
+    cd_set_text_node_num(vw_txt, (uint32_t)e->x); /* no cd_flush: the event export does it */
     hold(vw_txt);
   } else if (e->type == CD_EV_VISIBILITY) hidden = e->key;
   else {
@@ -312,15 +312,15 @@ EXPORT("t_name_kinds") void t_name_kinds(void) {
   cd_close();
   cd_set_class(el, L("named"));
   cd_set_text_node(txt, L("renamed"));
-  cd_set_text_num(num, 8);
+  cd_set_text_node_num(num, 8);
   cd_flush();
   name_kinds_el = el;
 }
-/* 10c. The same calls given the element (which: 0 cd_set_text_node, 1 cd_set_text_num) or an id that
+/* 10c. The same calls given the element (which: 0 cd_set_text_node, 1 cd_set_text_node_num) or an id that
  * names nothing (2): each throws, and the page is as it was. */
 EXPORT("t_set_text_el") void t_set_text_el(uint32_t which) {
   if (which == 0) cd_set_text_node(name_kinds_el, L("lost"));
-  else if (which == 1) cd_set_text_num(name_kinds_el, 9);
+  else if (which == 1) cd_set_text_node_num(name_kinds_el, 9);
   else {
     cd_id unbound = cd_id_new(); /* handed back first, so the throw leaks no id */
     cd_id_free(unbound);
