@@ -1,5 +1,6 @@
-// The name gate: cdom and its sibling C library are two repos with zero edges between them (neither
-// depends on the other), so no tracked file of cdom's names that library, docs aside. A doc is prose
+// The name gate: cdom and its sibling C library are two repos with no cycle between them. The library
+// may depend on cdom (its browser adapter builds against cdom's I/O contract), cdom never depends on it,
+// and this gate keeps cdom's side: no tracked file of cdom's names that library, docs aside. A doc is prose
 // kept as history (RESULTS.md, PERF_LOG.md, BRIDGE.md and README.md: every *.md) and the LICENSE;
 // everything else git tracks is scanned, code, scripts, pages, test inputs and measurement records
 // alike, case-insensitively. Fails naming each file and line.
