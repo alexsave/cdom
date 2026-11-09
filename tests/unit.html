@@ -64,6 +64,11 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
         whole === 13 && out(whole) === '한국어 값', cut === 3 && out(3) === '한', out(x.t_host_accent()) === 'rgb(1, 2, 3)'];
       return r.every(Boolean) || JSON.stringify(r);
     });
+    check('cd_input_text: the whole length in bytes, so a cut value is known (13 bytes, read into 13, 12, 4 and 0)', () => {
+      const r = [x.t_host_text(13) === 13 && out(13) === '한국어 값', x.t_host_text(12) === 13 && out(10) === '한국어 ',
+        x.t_host_text(4) === 13 && out(3) === '한', x.t_host_text(0) === 13];
+      return r.every(Boolean) || JSON.stringify(r);
+    });
     check('a set along a missing path is reported, not thrown', () => {
       let reported = 0;
       const hear = (e) => { reported++; e.preventDefault(); };

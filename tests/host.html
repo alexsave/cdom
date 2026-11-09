@@ -104,7 +104,8 @@ function syncChecks() {
   const nrep = reported.length; X.c_bad();
   eq(reported.slice(nrep).join(), 'NotFoundError,TypeError,TypeError', 'failed calls and sets are reported');
   eq(H.el('BOX').dataset.after, 'bad', 'the batch goes on after a failed call');
-  eq(X.g_value(H.id('TEXT')), 6, 'cd_input_value'); eq(rd(6), 'abcdef', 'cd_input_value bytes');
+  eq(X.g_value(H.id('TEXT'), 64), 6, 'cd_input_text'); eq(rd(6), 'abcdef', 'cd_input_text bytes');
+  eq(X.g_value(H.id('TEXT'), 4), 6, 'cd_input_text cut: the whole length'); eq(rd(4), 'abcd', 'cd_input_text cut: the bytes that fit');
   // a read in the same batch as a set, with a path never sent before
   eq(rd(X.c_rw()), 'fresh title', 'read after write in one batch');
   eq(X.c_ids(), 0, 'cd_id_new never returns a reserved id');
