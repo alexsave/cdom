@@ -125,6 +125,8 @@ void cd_at(cd_id parent, cd_id before); /* before 0 = append; parent CD_DETACHED
 /* An <svg>, and everything opened inside it, is made in the SVG namespace (C keeps the depth). */
 void cd_open(cd_str tag);
 void cd_close(void);
+/* cd_text with an empty string still makes a text node, so a value that is empty at first and filled
+ * in later (cd_set_text) is made with cd_text(CD_LIT("")) and named with cd_name_text. */
 void cd_text(cd_str s);
 void cd_text_num(uint32_t n);
 void cd_attr(cd_str name, cd_str value);
