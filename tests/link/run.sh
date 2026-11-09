@@ -83,11 +83,11 @@ elif ! grep -q 'APP_MODULES names bogus, not a cdom module' "$mo/mk_bogus.log"; 
 else echo "ok   cdom.mk ($inc) stops at an APP_MODULES name that is no module"; fi
 want="$mo/ok.want"
 { sed -n '1,3p' "$here/page/ok.html"; cat "$src/../shim/cdom.min.js"; sed -n '5,$p' "$here/page/ok.html"; } > "$want"
-if ! mk "$mo/ok.html" PAGE="$here/page/ok.html" 2> "$mo/mk_page.log"; then
+if ! mk "$mo/ok.html" PAGE="$here/page/ok.html" APP_WASM_SEPARATE=1 2> "$mo/mk_page.log"; then
   echo "FAIL cdom_page ($inc) refused a page whose marker is alone on its line:"; cat "$mo/mk_page.log"; fail=1
 elif ! cmp -s "$want" "$mo/ok.html"; then echo "FAIL cdom_page ($inc): the page is not itself with the shim at its marker line"; fail=1
-else echo "ok   cdom_page ($inc) inlines shim/cdom.min.js at the page's /*CDOM_SHIM*/ line, every other line kept"; fi
-for bad in inline:'must be alone on its line' none:'no /\*CDOM_SHIM\*/ line' two:'a second /\*CDOM_SHIM\*/'; do
+else echo "ok   cdom_page ($inc) inlines shim/cdom.min.js at the page's /*CDOM_SHIM*/ line, every other line kept (APP_WASM_SEPARATE: the page's own URL)"; fi
+for bad in inline:'must be alone on its line' none:'no /\*CDOM_SHIM\*/ line' two:'a second /\*CDOM_SHIM\*/' two_wasm:'a second /\*CDOM_WASM\*/'; do
   name="${bad%%:*}" why="${bad#*:}"
   if mk "$mo/$name.html" PAGE="$here/page/$name.html" 2> "$mo/mk_$name.log"; then
     echo "FAIL cdom_page ($inc) took the $name page"; fail=1
@@ -96,6 +96,50 @@ for bad in inline:'must be alone on its line' none:'no /\*CDOM_SHIM\*/ line' two
   elif ! grep -q "$name.html.*$why" "$mo/mk_$name.log"; then
     echo "FAIL cdom_page ($inc) refused the $name page for another reason:"; cat "$mo/mk_$name.log"; fail=1
   else echo "ok   cdom_page ($inc) refuses the $name page ($(sed 's/.*: //' "$mo/mk_$name.log" | head -1)) and writes nothing"; fi
+done
+# Bundling, the default: an app's own page that names its module by URL is refused with the one line that
+# says what to do, and nothing is written (never a rewrite of the app's own call).
+rm -f "$mo/ok.html"
+line="$here/page/ok.html: this page loads mk_app.wasm; set APP_WASM_SEPARATE := 1, or start with the bundled module (the /*CDOM_WASM*/ marker)"
+if mk "$mo/ok.html" PAGE="$here/page/ok.html" 2> "$mo/mk_url.log"; then echo "FAIL APP_PAGE ($inc) bundled into a page that loads its module by URL"; fail=1
+elif [ -e "$mo/ok.html" ] || [ -e "$mo/ok.html.tmp" ]; then echo "FAIL APP_PAGE ($inc) refused a page that loads its module by URL but left a file"; fail=1
+elif ! grep -qxF "$line" "$mo/mk_url.log"; then echo "FAIL APP_PAGE ($inc) refused a page that loads its module by URL with another message:"; cat "$mo/mk_url.log"; fail=1
+else echo "ok   APP_PAGE ($inc), bundling, refuses a page of the app's own that loads mk_app.wasm, with the line that says what to do"; fi
+# The default page (no APP_PAGE_SRC), bundled: shim/page.html with the title, the shim, and the module as
+# a data: URL whose bytes are mk_app.wasm's; the page is made again when the module is newer. With
+# APP_WASM_SEPARATE the start call names the module beside the page (or APP_WASM_URL) and the page does
+# not depend on it. APP_TITLE is escaped for HTML.
+tpl="$src/../shim/page.html"
+want_page() { # title, then the start call's first argument
+  { sed -n '1,5p' "$tpl"; echo "<title>$1</title>"; sed -n '7,10p' "$tpl"; cat "$src/../shim/cdom.min.js"
+    echo "cdom.start($2, \"app\");"; sed -n '13,$p' "$tpl"; } > "$mo/index.want"
+}
+b64() { base64 < "$1" | tr -d '\n\r'; }
+if ! mk "$mo/index.html" PAGE= 2> "$mo/mk_default.log"; then echo "FAIL the default page ($inc) does not build:"; cat "$mo/mk_default.log"; fail=1
+elif want_page mk_app "\"data:application/wasm;base64,$(b64 "$mo/mk_app.wasm")\""; ! cmp -s "$mo/index.want" "$mo/index.html"; then
+  echo "FAIL the default page ($inc), bundled, is not shim/page.html with the title, the shim and the module:"; diff "$mo/index.want" "$mo/index.html" | cut -c1-200 | head; fail=1
+elif ! node -e 'const [p, w] = process.argv.slice(1), fs = require("fs");
+    const m = /cdom\.start\("data:application\/wasm;base64,([A-Za-z0-9+\/=]+)", "app"\)/.exec(fs.readFileSync(p, "utf8"));
+    process.exit(m && Buffer.from(m[1], "base64").equals(fs.readFileSync(w)) ? 0 : 1)' "$mo/index.html" "$mo/mk_app.wasm"; then
+  echo "FAIL the default page ($inc): its data: URL does not decode to mk_app.wasm"; fail=1
+elif touch -t 203001010000 "$mo/mk_app.wasm"; mk -q "$mo/index.html" PAGE=; then echo "FAIL the default page ($inc), bundled, is up to date with a newer module"; fail=1
+else echo "ok   the default page ($inc), bundled: shim/page.html titled mk_app, the shim inlined, mk_app.wasm's bytes as its data: URL, made again with the module"; fi
+touch "$mo/mk_app.wasm"
+if ! mk "$mo/index.html" PAGE= APP_WASM_SEPARATE=1 APP_TITLE='a<b & c>' -B 2> "$mo/mk_sep.log"; then echo "FAIL the default page ($inc), APP_WASM_SEPARATE, does not build:"; cat "$mo/mk_sep.log"; fail=1
+elif want_page 'a&lt;b &amp; c&gt;' '"mk_app.wasm"'; ! cmp -s "$mo/index.want" "$mo/index.html"; then
+  echo "FAIL the default page ($inc), APP_WASM_SEPARATE: not shim/page.html naming mk_app.wasm, titled from APP_TITLE:"; diff "$mo/index.want" "$mo/index.html" | cut -c1-200 | head; fail=1
+elif touch -t 203001010000 "$mo/mk_app.wasm"; ! mk -q "$mo/index.html" PAGE= APP_WASM_SEPARATE=1; then echo "FAIL the default page ($inc), APP_WASM_SEPARATE, depends on the module"; fail=1
+elif ! mk "$mo/index.html" PAGE= APP_WASM_SEPARATE=1 APP_WASM_URL='/w/"x".wasm' -B 2> "$mo/mk_sep.log" || ! grep -qxF 'cdom.start("/w/\"x\".wasm", "app");' "$mo/index.html"; then
+  echo "FAIL the default page ($inc), APP_WASM_SEPARATE: APP_WASM_URL is not its start call's URL"; fail=1
+else echo "ok   the default page ($inc), APP_WASM_SEPARATE: names mk_app.wasm (or APP_WASM_URL, as a JS string), no dependency on it, <title> APP_TITLE escaped"; fi
+# An app's own page with the /*CDOM_WASM*/ marker: the module bundled there, or, separate, its URL.
+for sep in '' 1; do
+  if [ -n "$sep" ]; then arg='"mk_app.wasm"'; else arg="\"data:application/wasm;base64,$(b64 "$mo/mk_app.wasm")\""; fi
+  if ! mk "$mo/marker.html" PAGE="$here/page/marker.html" APP_WASM_SEPARATE=$sep -B 2> "$mo/mk_marker.log"; then
+    echo "FAIL APP_PAGE ($inc) refused a page with /*CDOM_WASM*/ (separate: ${sep:-no}):"; cat "$mo/mk_marker.log"; fail=1
+  elif ! grep -qxF "cdom.start($arg, \"app\", null, { seed: 1 });" "$mo/marker.html"; then
+    echo "FAIL APP_PAGE ($inc): the page's /*CDOM_WASM*/ is not the module (separate: ${sep:-no})"; fail=1
+  else echo "ok   APP_PAGE ($inc) fills an app's own /*CDOM_WASM*/ with $([ -n "$sep" ] && echo 'the URL (APP_WASM_SEPARATE)' || echo 'the bundled module'), the rest of the call kept"; fi
 done
 done
 # With the include first: a source APP_SRC names that is not there is what make names (not "no rule to
@@ -109,6 +153,42 @@ if mk "$mo/other.wasm" "$mo/other.html" PAGE="$here/page/ok.html" > "$mo/mk_othe
   echo "FAIL cdom.mk's rules built a .wasm or .html that is not APP_WASM or APP_PAGE"; cat "$mo/mk_other.log"; fail=1
 elif ! grep -q "No rule to make target .*other.wasm" "$mo/mk_other.log"; then echo "FAIL cdom.mk: other.wasm refused for another reason:"; cat "$mo/mk_other.log"; fail=1
 else echo "ok   cdom.mk's rules leave a .wasm or .html that is not APP_WASM or APP_PAGE alone"; fi
+# The toolchain check: a WASM_CC that cannot build a wasm32 module (Apple's clang, which finds no wasm-ld
+# on a PATH without Homebrew's; a clang that is not there) stops make with the install command, before
+# the compiler runs, and leaves no module.
+for cc in /usr/bin/clang "$out/no-such-clang"; do
+  [ -x "$cc" ] || [ "$cc" = "$out/no-such-clang" ] || continue
+  rm -rf "$out/mk-cc"
+  if env PATH=/usr/bin:/bin make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$out/mk-cc" PAGE= WASM_CC="$cc" "$out/mk-cc/mk_app.wasm" > "$out/mk_cc.log" 2>&1; then
+    echo "FAIL cdom.mk built a module with WASM_CC=$cc, which cannot build wasm32"; fail=1
+  elif ! grep -qxF "cdom.mk: install them with: brew install llvm lld   (Debian or Ubuntu: apt install clang lld, and set WASM_CC := clang)" "$out/mk_cc.log" \
+    || grep -q "linker command failed\|error:" "$out/mk_cc.log" || [ -e "$out/mk-cc/mk_app.wasm" ]; then
+    echo "FAIL cdom.mk with WASM_CC=$cc, which cannot build wasm32, did not stop at the toolchain check:"; cat "$out/mk_cc.log"; fail=1
+  else echo "ok   cdom.mk with WASM_CC=$cc, which cannot build wasm32, stops before compiling: $(grep 'install them' "$out/mk_cc.log")"; fi
+done
+# The starter (make new, tools/new.sh), against rot: generated into a fresh directory (relative to where
+# make was run, as a user types it), it is three files; make builds build/index.html, one file with the
+# shim and the bundled module and no URL of a module, and a second make finds it up to date; opened from
+# disk in headless Chrome it shows "cdom" centered (tools/starter.mjs). make new refuses a directory
+# that is not empty.
+st="$out/starter"
+rm -rf "$st"; mkdir -p "$st"
+if ! (cd "$st" && make -s --no-print-directory -C "$here/../.." new DIR=app > "$st/new.log" 2>&1); then
+  echo "FAIL make new did not write the starter:"; cat "$st/new.log"; fail=1
+elif [ "$(cd "$st/app" && find . -type f | sort | tr '\n' ' ')" != "./.gitignore ./Makefile ./src/app.c " ]; then
+  echo "FAIL make new wrote other files than Makefile, src/app.c and .gitignore: $(cd "$st/app" && find . -type f | sort | tr '\n' ' ')"; fail=1
+elif ! nice -n 10 make -s --no-print-directory -C "$st/app" > "$st/make.log" 2>&1; then
+  echo "FAIL the starter does not build:"; cat "$st/make.log"; fail=1
+elif ! grep -qF "$(head -1 "$src/../shim/cdom.min.js")" "$st/app/build/index.html"; then echo "FAIL the starter's page has no shim"; fail=1
+elif ! grep -qxF "cdom.start(\"data:application/wasm;base64,$(base64 < "$st/app/build/app.wasm" | tr -d '\n\r')\", \"app\");" "$st/app/build/index.html"; then
+  echo "FAIL the starter's page does not start its bundled module"; fail=1
+elif grep -qE "\.wasm['\"\`]" "$st/app/build/index.html"; then echo "FAIL the starter's page names a .wasm by URL: $(grep -oE ".{20}\.wasm['\"\`]" "$st/app/build/index.html" | head -1)"; fail=1
+elif ! make -q -C "$st/app"; then echo "FAIL a second make in the starter builds again"; fail=1
+else echo "ok   make new writes Makefile, src/app.c and .gitignore; make builds one page with the shim and the module bundled, then finds it up to date"; fi
+node "$here/../../tools/starter.mjs" "$st/app/build/index.html" || fail=1
+if make -s --no-print-directory -C "$here/../.." new DIR="$st/app" > "$st/again.log" 2>&1; then echo "FAIL make new wrote into a directory that is not empty"; fail=1
+elif ! grep -q "app is not empty" "$st/again.log"; then echo "FAIL make new refused a directory for another reason:"; cat "$st/again.log"; fail=1
+else echo "ok   make new refuses a directory that is not empty"; fi
 node "$here/run.mjs" "$out" || fail=1
 node "$here/../../tools/edges.mjs" || fail=1
 node "$here/../../tools/seeds.mjs" || fail=1
