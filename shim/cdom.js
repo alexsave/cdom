@@ -1158,7 +1158,7 @@ var cdom = (() => {
     return crypto.getRandomValues(new Uint32Array(1))[0];
   }
 
-  // Starts the app: url is the wasm's, or the wasm2js build of the same app (a function of the imports
+  // Starts the app (README.md, "Starting an app"; a page calls it once): url is the wasm's, or the wasm2js build of the same app (a function of the imports
   // that returns the exports, for a browser without WebAssembly; shim/boot.js picks one).
   // mount is an element, or the id of one that may not be parsed yet: then the
   // wasm loads while the parser and the stylesheets run, and the app starts once the DOM is ready.
