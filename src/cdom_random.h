@@ -1,6 +1,7 @@
 /* cdom_random: bytes from the browser's cryptographic generator (crypto.getRandomValues), written
  * straight into C memory. Link src/cdom_random.c to use it. Synchronous: the bytes are there when
  * the call returns, so no answer comes back. */
+/* cd_random_bytes and its codes are part of the I/O contract (cdom.h, top): they change only additively. */
 #ifndef CDOM_RANDOM_H
 #define CDOM_RANDOM_H
 #include <stdint.h>

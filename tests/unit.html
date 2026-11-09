@@ -864,5 +864,41 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
   await sleep(150);
   check('no document.fonts: cd_fonts_wait answers UNAVAILABLE once, from the event loop', () =>
     (noFontsNow === -1 && fontsHeard(5) === `${FONTS_UNAVAILABLE},1`) || `${noFontsNow} then ${fontsHeard(5)}`);
+
+  // Sockets the browser refuses to make (32 in unit.c): a scheme it opens no socket on (Chrome's own
+  // SyntaxError), and a host the page has it refuse with a SecurityError, as Firefox does for ws: from an
+  // https: page (Chrome now fails those later, as a close).
+  const RealWebSocket = WebSocket;
+  window.WebSocket = function (url) {
+    if (String(url).includes('blocked')) throw new DOMException('refused', 'SecurityError');
+    return new RealWebSocket(url);
+  };
+  const hookHeard = x.t_ws_hook_heard();
+  let refusedNow;
+  try { x.t_ws_refused(); refusedNow = [0, 1].map((k) => x.t_ws_refused_seen(k, 1)).join(); } catch (e) { refusedNow = 'threw ' + e; } finally { window.WebSocket = RealWebSocket; }
+  const rf = (k) => [0, 1, 2, 3, 4, 5, 6, 7].map((f) => x.t_ws_refused_seen(k, f));
+  await until(() => x.t_ws_refused_seen(0, 1) >= 2 && x.t_ws_refused_seen(1, 1) >= 2, 2000);
+  const [rf0, rf1] = [rf(0), rf(1)];
+  x.t_ws_refused_again();
+  await until(() => x.t_ws_refused_seen(2, 1) >= 2, 2000);
+  await sleep(100);
+  const rf2 = rf(2), probes = [x.t_ws_refused_seen(3, 0), x.t_ws_refused_seen(3, 1)];
+  check('cd_ws_open_cb refused by the browser (a scheme it opens no socket on, a SecurityError): each callback hears REFUSED (3), then CLOSE with 1006, never OPEN, nothing inside the call; until then its id takes a send, a close and buffered 0, and is no other socket\'s; at the close its slot is freed and the id handed out again', () => {
+    const r = [refusedNow === '0,0', ...[rf0, rf1, rf2].map((v) => v.slice(0, 7).join() === `43,2,1006,${v[7]},0,2,1`),
+      rf0[7] !== rf1[7], rf2[7] === rf0[7] || rf2[7] === rf1[7], probes[0] === probes[1], x.t_stale() === 0];
+    return r.every(Boolean) || JSON.stringify({ r, refusedNow, rf0, rf1, rf2, probes });
+  });
+  let hookThrew;
+  try { x.t_ws_hook_refused(); hookThrew = 'no throw'; } catch (e) { hookThrew = e.name; }
+  await sleep(100);
+  check('cd_ws_open refused by the browser: the constructor\'s SyntaxError goes out of the call, as before, and the hooks hear nothing', () =>
+    (hookThrew === 'SyntaxError' && x.t_ws_hook_heard() === hookHeard) || `${hookThrew}, hooks heard ${x.t_ws_hook_heard() - hookHeard}`);
+  check('cd_page_origin: location.protocol + "//" + location.host, whole, and cut short to the room with its whole length returned', () => {
+    const want = location.protocol + '//' + location.host;
+    const whole = x.t_page_origin(128), wholeOut = new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.t_origin_buf(), whole));
+    const cut = x.t_page_origin(4), cutOut = new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.t_origin_buf(), 6));
+    const r = [whole === want.length, wholeOut === want, /^http:\/\/127\.0\.0\.1:\d+$/.test(wholeOut), cut === want.length, cutOut === 'http**'];
+    return r.every(Boolean) || JSON.stringify(r) + ` ${wholeOut} ${cutOut}`;
+  });
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>

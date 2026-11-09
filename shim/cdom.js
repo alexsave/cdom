@@ -586,11 +586,32 @@ var cdom = (() => {
   // The network (src/cdom_net.c).
   const sockets = [];     // the open sockets by id
   const freeSockets = []; // ids whose sockets closed, handed out again first
+  // A refused socket's stand-in until its close: a send is dropped, a close does nothing.
+  const refusedSocket = { send() {}, close() {}, bufferedAmount: 0 };
   // Opens a WebSocket to the url in C memory; its events come back by socket id. The id is free
   // once the socket closed (before C hears it), so the table holds only the sockets open at once.
-  function ws_open(urlPtr, urlLen) {
+  // A constructor that throws (the browser refuses the URL) throws out of the call, or, refusable,
+  // gets an id all the same, and from the event loop C hears the refusal, then the close.
+  function ws_open(urlPtr, urlLen, refusable) {
+    let socket;
+    try {
+      socket = new WebSocket(utf8(urlPtr, urlLen));
+    } catch (error) {
+      if (!refusable) {
+        throw error;
+      }
+    }
     const id = freeSockets.length ? freeSockets.pop() : sockets.length;
-    const socket = new WebSocket(utf8(urlPtr, urlLen));
+    if (!socket) {
+      sockets[id] = refusedSocket;
+      setTimeout(() => {
+        exports.cd_net_refused(id);
+        sockets[id] = undefined;
+        freeSockets.push(id);
+        exports.cd_net_close(id, 1006); // CD_WS_REFUSED_CODE (src/cdom_net.h)
+      });
+      return id;
+    }
     sockets[id] = socket;
     socket.binaryType = "arraybuffer";
     socket.onopen = () => exports.cd_net_open(id);
@@ -655,6 +676,10 @@ var cdom = (() => {
   }
   function epoch() {
     return Date.now();
+  }
+  // The page's scheme and host into C memory (cd_page_origin).
+  function origin(destPtr, capacity) {
+    return writeString(location.protocol + "//" + location.host, destPtr, capacity);
   }
 
   // A key/value store over IndexedDB (src/cdom_store.c): bytes in, bytes out, under keys C chooses.
@@ -1143,7 +1168,7 @@ var cdom = (() => {
         strings, at, open, open_svg, close, text, text_num, attr, class: setClass, name, name_open,
         listen, value, value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num,
         set_text, set_text_num, set_attr, set_class, style, style_num, encode, image_bytes, remove, free, move, clear,
-        detach, attach, unlisten, hit, viewport, rect, blit, set, call, get, timer, timer_stop, raf, now, ws_open, ws_send, ws_close, ws_buffered, http, epoch,
+        detach, attach, unlisten, hit, viewport, rect, blit, set, call, get, timer, timer_stop, raf, now, ws_open, ws_send, ws_close, ws_buffered, http, epoch, origin,
         store_put, store_get, store_del,
         audio_load, audio_free, audio_play, audio_stop, audio_gain, audio_master, audio_state,
         random,

@@ -2,8 +2,8 @@
  * Incoming bytes are copied into a buffer cdom owns and handed to the app's hook as (p, len),
  * valid until the hook returns: no strings and no JSON cross. Every answer arrives from the
  * event loop through an export that flushes on its way out. */
-/* cd_ws_open_cb, cd_ws_send, cd_ws_close, cd_ws_buffered, cd_http_cb and cd_epoch_ms are part of the I/O
- * contract (cdom.h, top): they change only additively. */
+/* cd_ws_open_cb, cd_ws_send, cd_ws_close, cd_ws_buffered, cd_http_cb, cd_page_origin and cd_epoch_ms are part
+ * of the I/O contract (cdom.h, top): they change only additively. */
 #ifndef CDOM_NET_H
 #define CDOM_NET_H
 #include <stdint.h>
@@ -25,10 +25,21 @@ uint32_t cd_ws_buffered(uint32_t id);
  * cd_ws_send, cd_ws_close and cd_ws_buffered take its id as any; the id is good until the close
  * answer, as cd_ws_open's (and may come back from either form then). Its callback slot is freed at the
  * close, before fn hears it; it counts against the 65,535 cd_timer_cb timers, cd_http_cb requests and
- * store answers pending at once (traps past that) while the socket lives. */
-#define CD_WS_OPEN  0
-#define CD_WS_MSG   1
-#define CD_WS_CLOSE 2
+ * store answers pending at once (traps past that) while the socket lives.
+ * A socket the browser refuses to make (its WebSocket constructor throws: a SyntaxError for a URL it
+ * does not take, such as one of a scheme it opens no socket on or one with a fragment, a SecurityError where a browser refuses on
+ * the spot, as Firefox does for ws: from an https: page) still gets its id: fn hears (ctx, id,
+ * CD_WS_REFUSED, 0, 0), then (ctx, id, CD_WS_CLOSE, 0, CD_WS_REFUSED_CODE), each from the event loop
+ * (never inside cd_ws_open_cb), and never CD_WS_OPEN. A caller that knows only OPEN, MSG and CLOSE sees
+ * a close before an open, as for a server that never answered. Until that close, cd_ws_send drops the
+ * bytes, cd_ws_close does nothing and cd_ws_buffered is 0. What a browser refuses later (a blocked
+ * port, a Content-Security-Policy rule in Chrome) is a socket that failed: a close before an open. The
+ * hooks' socket (cd_ws_open) has no refusal: the constructor's throw goes out of the call. */
+#define CD_WS_OPEN    0
+#define CD_WS_MSG     1
+#define CD_WS_CLOSE   2
+#define CD_WS_REFUSED 3
+#define CD_WS_REFUSED_CODE 1006 /* the close code a refused socket's close carries: abnormal closure */
 typedef void (*cd_ws_fn)(void *ctx, uint32_t id, uint32_t ev, const uint8_t *p, uint32_t len);
 uint32_t cd_ws_open_cb(cd_ws_fn fn, void *ctx, const char *url, uint32_t len);
 
@@ -51,6 +62,12 @@ void cd_http(uint32_t token, const char *method, uint32_t mlen, const char *url,
 typedef void (*cd_http_fn)(void *ctx, uint32_t status, const uint8_t *p, uint32_t len);
 void cd_http_cb(cd_http_fn fn, void *ctx, const char *method, uint32_t mlen, const char *url, uint32_t ulen,
                 const char *headers, uint32_t hlen, const void *body, uint32_t blen, uint32_t deadline_ms);
+
+/* The page's scheme and host, as location.protocol + "//" + location.host ("https://app.example:8443",
+ * "http://127.0.0.1:5173"; "file://" for a page with no host), written to dst (at most cap bytes):
+ * what a socket or a request on the page's own server is addressed by. Returns its length, which may be
+ * more than cap (then only cap bytes were written). */
+uint32_t cd_page_origin(char *dst, uint32_t cap);
 
 /* Wall-clock time in epoch ms (Date.now()): what a server's expiry times are written in.
  * cd_now() is the page's own clock, for intervals. */

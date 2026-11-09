@@ -7,21 +7,23 @@
 #define IMPORT(n) __attribute__((import_module("cdom"), import_name(n)))
 #define EXPORT(n) __attribute__((export_name(n)))
 
-IMPORT("ws_open") uint32_t j_ws_open(const char *url, uint32_t len);
+/* refusable 1: a constructor that throws is answered (cd_net_refused, then cd_net_close) instead of thrown. */
+IMPORT("ws_open") uint32_t j_ws_open(const char *url, uint32_t len, uint32_t refusable);
 IMPORT("ws_send") void j_ws_send(uint32_t id, const void *p, uint32_t len);
 IMPORT("ws_close") void j_ws_close(uint32_t id);
 IMPORT("ws_buffered") uint32_t j_ws_buffered(uint32_t id);
 IMPORT("http") void j_http(uint32_t token, const char *m, uint32_t mlen, const char *url, uint32_t ulen,
                            const char *headers, uint32_t hlen, const void *body, uint32_t blen, uint32_t deadline_ms);
 IMPORT("epoch") double j_epoch(void);
+IMPORT("origin") uint32_t j_origin(char *dst, uint32_t cap);
 
-uint32_t cd_ws_open(const char *url, uint32_t len) { return j_ws_open(url, len); }
+uint32_t cd_ws_open(const char *url, uint32_t len) { return j_ws_open(url, len, 0); }
 /* ws_cb[id]: the callback token of the socket cd_ws_open_cb gave id, from its open to its close
  * answer; 0 for a socket of cd_ws_open's (the hooks). The table grows with the ids the shim hands
  * out, which are the sockets open at once. */
 static uint32_t *ws_cb, ws_cb_n;
 uint32_t cd_ws_open_cb(cd_ws_fn fn, void *ctx, const char *url, uint32_t len) {
-  uint32_t token = cd_cb_new((cd_cb_fn)fn, ctx), id = j_ws_open(url, len);
+  uint32_t token = cd_cb_new((cd_cb_fn)fn, ctx), id = j_ws_open(url, len, 1);
   if (id >= ws_cb_n) {
     uint32_t n = id < 8 ? 16 : id * 2;
     ws_cb = cd_realloc(ws_cb, n * sizeof *ws_cb);
@@ -50,6 +52,7 @@ void cd_http_cb(cd_http_fn fn, void *ctx, const char *method, uint32_t mlen, con
   http(cd_cb_new((cd_cb_fn)fn, ctx), method, mlen, url, ulen, headers, hlen, body, blen, deadline_ms);
 }
 double cd_epoch_ms(void) { return j_epoch(); }
+uint32_t cd_page_origin(char *dst, uint32_t cap) { return j_origin(dst, cap); }
 
 __attribute__((weak)) void cd_on_ws_open(uint32_t id) { (void)id; }
 __attribute__((weak)) void cd_on_ws_msg(uint32_t id, const uint8_t *p, uint32_t len) { (void)id; (void)p; (void)len; }
@@ -87,6 +90,15 @@ EXPORT("cd_net_close") void cd_net_close(uint32_t id, uint32_t code) {
     ws_cb[id] = 0;
     if (cd_cb_take(t, &fn, &ctx)) ((cd_ws_fn)fn)(ctx, id, CD_WS_CLOSE, 0, code);
   }
+  cd_flush();
+}
+/* A socket of cd_ws_open_cb's the browser refused to make, from the event loop: the callback hears
+ * CD_WS_REFUSED while the id is still the socket's; the shim then frees the id and calls cd_net_close. */
+EXPORT("cd_net_refused") void cd_net_refused(uint32_t id) {
+  cd_cb_fn fn;
+  void *ctx;
+  uint32_t t = ws_token(id);
+  if (t && cd_cb_get(t, &fn, &ctx)) ((cd_ws_fn)fn)(ctx, id, CD_WS_REFUSED, 0, 0);
   cd_flush();
 }
 /* An app's token goes to cd_on_http, cdom's to the callback that asked. */

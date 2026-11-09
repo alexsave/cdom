@@ -315,11 +315,25 @@ M = [
   ('offsets-event-order', 'src/cdom.c', 'X(offsetof(cd_event_rec, pointer)) \\\n  X(offsetof(cd_event_rec, buttons))', 'X(offsetof(cd_event_rec, buttons)) \\\n  X(offsetof(cd_event_rec, pointer))', UNIT, "FAIL the shim's view of C's structs"),
   ('offsets-val-order', 'src/cdom.c', 'X(offsetof(cd_val, tag)) X(offsetof(cd_val, num))', 'X(offsetof(cd_val, num)) X(offsetof(cd_val, tag))', UNIT, "FAIL the shim's view of C's structs"),
   ('offsets-count', 'shim/cdom.js', '    valU = word();\n', '', UNIT, 'lay out C memory differently'),
+  # a socket the browser refuses to make (unit.c 32): REFUSED then CLOSE from the event loop, the id held till then
+  ('wsref-sync', 'shim/cdom.js', '      setTimeout(() => {\n        exports.cd_net_refused(id);', '      ((f) => f())(() => {\n        exports.cd_net_refused(id);', UNIT, 'FAIL cd_ws_open_cb refused'),
+  ('wsref-no-event', 'src/cdom_net.c', '  if (t && cd_cb_get(t, &fn, &ctx)) ((cd_ws_fn)fn)(ctx, id, CD_WS_REFUSED, 0, 0);', '  if (0 && t && cd_cb_get(t, &fn, &ctx)) ((cd_ws_fn)fn)(ctx, id, CD_WS_REFUSED, 0, 0);', UNIT, 'FAIL cd_ws_open_cb refused'),
+  ('wsref-no-close', 'shim/cdom.js', '        exports.cd_net_close(id, 1006); // CD_WS_REFUSED_CODE', '        // CD_WS_REFUSED_CODE', UNIT, 'FAIL cd_ws_open_cb refused'),
+  ('wsref-close-code', 'shim/cdom.js', '        exports.cd_net_close(id, 1006); // CD_WS_REFUSED_CODE', '        exports.cd_net_close(id, 1000); // CD_WS_REFUSED_CODE', UNIT, 'FAIL cd_ws_open_cb refused'),
+  ('wsref-thrown', 'shim/cdom.js', '      if (!refusable) {\n        throw error;', '      if (1) {\n        throw error;', UNIT, 'FAIL cd_ws_open_cb refused'),
+  ('wsref-cb-not-refusable', 'src/cdom_net.c', 'id = j_ws_open(url, len, 1);', 'id = j_ws_open(url, len, 0);', UNIT, 'FAIL cd_ws_open_cb refused'),
+  ('wsref-hook-refusable', 'src/cdom_net.c', '{ return j_ws_open(url, len, 0); }', '{ return j_ws_open(url, len, 1); }', UNIT, 'FAIL cd_ws_open refused'),
+  ('wsref-no-stand-in', 'shim/cdom.js', '      sockets[id] = refusedSocket;\n', '      sockets[id] = undefined;\n', UNIT, 'FAIL cd_ws_open_cb refused'),
+  ('wsref-id-freed-early', 'shim/cdom.js', '      sockets[id] = refusedSocket;\n', '      sockets[id] = refusedSocket;\n      freeSockets.push(id);\n', UNIT, 'FAIL cd_ws_open_cb refused'),
+  ('page-origin-host', 'shim/cdom.js', 'writeString(location.protocol + "//" + location.host,', 'writeString(location.host,', UNIT, 'FAIL cd_page_origin'),
   # the I/O contract (cdom.h, top; tests/link/contract.c). A signature edited in one place is the build's
   # to catch (the definition, the callers and clang's own libc types disagree); contract.c holds what the
   # build does not: a code or a constant given a new value, and a signature edited consistently everywhere
   ('contract-token', 'src/cdom.h', '#define CD_TOKEN_CDOM 0x80000000u', '#define CD_TOKEN_CDOM 0x40000000u', LINK, 'FAIL the I/O contract changed in place'),
   ('contract-ws-close', 'src/cdom_net.h', '#define CD_WS_CLOSE 2', '#define CD_WS_CLOSE 3', LINK, 'FAIL the I/O contract changed in place'),
+  ('contract-ws-refused', 'src/cdom_net.h', '#define CD_WS_REFUSED 3', '#define CD_WS_REFUSED 4', LINK, 'FAIL the I/O contract changed in place'),
+  ('contract-ws-refused-code', 'src/cdom_net.h', '#define CD_WS_REFUSED_CODE 1006', '#define CD_WS_REFUSED_CODE 1000', LINK, 'FAIL the I/O contract changed in place'),
+  ('contract-random-ok', 'src/cdom_random.h', '#define CD_RANDOM_OK 1', '#define CD_RANDOM_OK 2', LINK, 'FAIL the I/O contract changed in place'),
   ('contract-http-timeout', 'src/cdom_net.h', '#define CD_HTTP_TIMEOUT 1 ', '#define CD_HTTP_TIMEOUT 2 ', LINK, 'FAIL the I/O contract changed in place'),
   # the name gate (tools/edges.mjs): the other repo's name, spelled in pieces here so this file does not carry it
   ('edges-name', 'src/cdom.h', '#ifndef CDOM_H\n', '/* built beside ' + 'c' + 'base */\n#ifndef CDOM_H\n', LINK, 'FAIL src/cdom.h:8: names the other repo'),
