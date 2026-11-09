@@ -714,24 +714,39 @@ var cdom = (() => {
     }
     return database;
   }
-  // One request on the store in a transaction of its own; a promise of its result.
-  async function storeRequest(mode, makeRequest) {
+  // One read on the store in a transaction of its own; a promise of its result.
+  async function storeRequest(makeRequest) {
     const db = await openDatabase();
-    return promised(makeRequest(db.transaction("kv", mode).objectStore("kv")));
+    return promised(makeRequest(db.transaction("kv", "readonly").objectStore("kv")));
   }
-  // Keeps a copy of the bytes under the key, then answers with token: 1 kept, 0 failed. The key
-  // and the bytes are read now: C's memory may hold something else once the database is open.
+  // One write in a transaction of its own; a promise that resolves when the transaction commits (its
+  // complete event) and rejects when it aborts. The request's success is not the write
+  // kept: the transaction can still abort after it, and a reload before complete loses the write.
+  async function storeWrite(makeRequest) {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction("kv", "readwrite");
+      transaction.oncomplete = () => resolve();
+      // A request that fails fires error, which bubbles to the transaction and aborts it, so abort
+      // is the one failure event (abort() and a forced close fire it too).
+      transaction.onabort = () => reject(transaction.error);
+      makeRequest(transaction.objectStore("kv"));
+    });
+  }
+  // Keeps a copy of the bytes under the key, then answers with token: 1 kept (committed), 0
+  // failed. The key and the bytes are read now: C's memory may hold something else once the
+  // database is open.
   function store_put(token, keyPtr, keyLen, bytesPtr, length) {
     const key = utf8(keyPtr, keyLen);
     const data = copyBytes(bytesPtr, length);
-    storeRequest("readwrite", (store) => store.put(data, key)).then(
+    storeWrite((store) => store.put(data, key)).then(
       () => exports.cd_store_put_done(token, 1),
       () => exports.cd_store_put_done(token, 0));
   }
-  // Forgets the key, then answers with token: 1 done, 0 failed.
+  // Forgets the key, then answers with token: 1 done (committed), 0 failed.
   function store_del(token, keyPtr, keyLen) {
     const key = utf8(keyPtr, keyLen);
-    storeRequest("readwrite", (store) => store.delete(key)).then(
+    storeWrite((store) => store.delete(key)).then(
       () => exports.cd_store_del_done(token, 1),
       () => exports.cd_store_del_done(token, 0));
   }
@@ -753,7 +768,7 @@ var cdom = (() => {
     };
     setTimeout(answer, ms);
     // the error must not reach answer: only a miss may follow a failure
-    storeRequest("readonly", (store) => store.get(key)).then(answer, () => answer());
+    storeRequest((store) => store.get(key)).then(answer, () => answer());
   }
 
   // Sound over Web Audio (src/cdom_audio.c): C chooses what plays, when and how loud, and hands

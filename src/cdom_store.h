@@ -8,15 +8,18 @@
 #include <stdint.h>
 
 /* Keep len bytes at p (read during the call) under key; the answer is cd_on_store_put(token, ok),
- * ok 1 when they are kept and 0 when the put failed (a quota, a closed database): an app that keeps
- * something it must not lose (a saved game) checks it; one that keeps a cache may ignore it. */
+ * ok 1 when they are kept and 0 when the put failed (a quota, a closed database, a transaction that
+ * aborted): an app that keeps something it must not lose (a saved game) checks it; one that keeps a
+ * cache may ignore it. 1 comes only once the write has committed (the IndexedDB transaction's
+ * complete event, not its request's success), so a page reloaded after it still has the bytes. */
 void cd_store_put(uint32_t token, const char *key, uint32_t klen, const void *p, uint32_t len);
 /* Ask for the bytes under key; the answer is cd_on_store(token, p, len), p valid until it returns,
  * or len -1 for a miss, an error, or no answer within deadline_ms (indexedDB.open can hang). */
 void cd_store_get(uint32_t token, const char *key, uint32_t klen, uint32_t deadline_ms);
 #define CD_STORE_DEADLINE_MS 1500
 /* Forget whatever is under key; the answer is cd_on_store_del(token, ok), as a put's: 1 when the
- * key holds nothing now (deleting a missing key is kept too), 0 when the delete failed. */
+ * key holds nothing now (deleting a missing key is kept too), committed as a put's 1 is, 0 when the
+ * delete failed. */
 void cd_store_del(uint32_t token, const char *key, uint32_t klen);
 /* The token forms trap on a token in cdom's range (cdom.h, CD_TOKEN_CDOM). */
 

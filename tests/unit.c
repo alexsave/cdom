@@ -1194,6 +1194,23 @@ EXPORT("t_store_cb_fail") void t_store_cb_fail(void) {
   static const uint8_t v[1] = {1};
   cd_store_put_cb(sc_done, &sc[4], "unit-fail", 9, v, 1);
 }
+/* 29b. A write is answered when its transaction commits. k 0: a put of "unit-abort", 1: a delete of
+ * "unit-keep", each of which the page aborts after its request succeeded (answered 0); 2: a put of
+ * "unit-keep", 3: its delete (answered 1, and the page checks no answer came before the transaction's
+ * complete event); 4: a put of "unit-dup", whose request the page makes fail after the call (answered 0). */
+static int32_t commit_ok[5] = {-2, -2, -2, -2, -2};
+static void commit_done(void *ctx, uint32_t ok) {
+  enter();
+  *(int32_t *)ctx = (int32_t)ok;
+}
+EXPORT("t_store_commit") void t_store_commit(uint32_t k) {
+  static const uint8_t v[2] = {8, 1};
+  const char *key = k == 0 ? "unit-abort" : k == 4 ? "unit-dup" : "unit-keep";
+  uint32_t klen = k == 0 ? 10 : k == 4 ? 8 : 9;
+  if (k == 0 || k == 2 || k == 4) cd_store_put_cb(commit_done, &commit_ok[k], key, klen, v, 2);
+  else cd_store_del_cb(commit_done, &commit_ok[k], key, klen);
+}
+EXPORT("t_store_commit_ok") int32_t t_store_commit_ok(uint32_t k) { return k < 5 ? commit_ok[k] : -3; }
 /* The token forms refuse a token of cdom's: 0 a get, 1 a put, 2 a delete. */
 EXPORT("t_store_cb_bad") void t_store_cb_bad(uint32_t which) {
   if (which == 0) cd_store_get(CD_TOKEN_CDOM | 7, "unit-x", 6, 100);
