@@ -24,12 +24,12 @@ make -C path/to/cdom new DIR=path/to/myapp
 make -C path/to/myapp
 ```
 
-- `make new` (`tools/new.sh`) writes three files into `DIR`, which must be new or empty: a `Makefile` (`CDOM`, `APP_WASM := build/app.wasm`, `APP_SRC := src/app.c`, `APP_PAGE := build/index.html`, the include of `cdom.mk`, and `all: $(APP_PAGE)`), `src/app.c` (about ten lines that put "cdom" in the middle of the page), and a `.gitignore` of `build/`.
+- `make new` (`tools/new.sh`) writes three files into `DIR`, which must be new or empty: a `Makefile` (`CDOM ?=`, `APP_WASM := build/app.wasm`, `APP_SRC := src/app.c`, `APP_PAGE := build/index.html`, the include of `cdom.mk`, and `all: $(APP_PAGE)`), `src/app.c` (about ten lines that put "cdom" in the middle of the page), and a `.gitignore` of `build/`.
 - `make` in `DIR` builds `build/index.html`: one file, with the shim and the module inside it, that opens from disk (double-click it; no server).
 - Edit `src/app.c` and run `make` again; the page says so at its foot.
 - The generator writes nothing `cdom.mk` could own: the page is cdom.mk's default page and every rule is cdom.mk's, so updating cdom updates the app's build.
-- `CDOM` is this checkout's absolute path: `make new` runs no git, and works offline at any commit.
-  To vendor cdom with the app instead, run `git init && git submodule add https://github.com/alexsave/cdom cdom` in `DIR` and set `CDOM := cdom` (and clone with `--recurse-submodules`).
+- `CDOM ?=` defaults to this checkout's absolute path, and `make CDOM=...` or a `CDOM` environment variable overrides it, for another clone, CI or a moved folder: `make new` runs no git, and works offline at any commit.
+  To vendor cdom with the app instead (`make new` prints this), run `git init && git submodule add https://github.com/alexsave/cdom cdom` in `DIR` and set `CDOM ?= cdom` (and clone with `--recurse-submodules`).
 - Without a clang that targets wasm32 and a `wasm-ld`, `make` stops before compiling and prints the command that installs them (`brew install llvm lld` on macOS).
 - `tests/link/run.sh` generates the starter, builds it and opens its page from `file://` in headless Chrome (`tools/starter.mjs`), so the template cannot rot unseen.
 
