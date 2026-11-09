@@ -5,7 +5,7 @@
 __attribute__((import_module("env"), import_name("check"))) void check(const uint32_t *keys, uint32_t n, uint32_t round);
 __attribute__((import_module("env"), import_name("check_end"))) void check_end(const uint32_t *keys, uint32_t n, uint32_t round);
 
-static uint32_t rng = 12345;
+static uint32_t rng; /* every run_* that draws sets it from the seed the page passes (tools/fuzz.mjs) */
 static uint32_t rnd(uint32_t m) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; return rng % m; }
 
 static uint32_t keys[64], nkeys;

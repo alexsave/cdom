@@ -238,8 +238,9 @@ static cd_region opt[2]; /* opt[0] parent mode, opt[1] root mode */
 static cd_id root_box;
 
 EXPORT("t_leak") void t_leak(uint32_t rounds) {
-  static uint32_t rng = 7;
+  static uint32_t rng;
   if (!root_box) {
+    rng = cd_seed | 1; /* unit.html fixes cd_seed, so the rounds are the same every run */
     cd_id s = section("leak");
     cd_at(s, 0);
     cd_open(L("ul")); cd_name_open(leak_list.parent = cd_id_new()); leak_list.owns_parent = 1; cd_close();
