@@ -16,7 +16,7 @@ static cd_str S_LI;
 static cd_id create(void *ctx, uint32_t i, uint32_t *data) {
   (void)ctx;
   cd_id id = cd_id_new();
-  cd_open(S_LI); cd_name(id); cd_text_num(cur[i]); cd_close();
+  cd_open(S_LI); cd_name_el(id); cd_text_num(cur[i]); cd_close();
   *data = 0;
   return id;
 }
@@ -56,7 +56,7 @@ void cd_main(void) {
   cd_open(cd_internz("ul"));
   list.parent = cd_id_new();
   list.owns_parent = 1;
-  cd_name(list.parent);
+  cd_name_el(list.parent);
   cd_close();
 }
 
@@ -128,7 +128,7 @@ __attribute__((export_name("run_freeruns"))) void run_freeruns(uint32_t seed, ui
   }
   w = cd_id_new();
   cd_at(CD_MOUNT, 0);
-  cd_open(S_LI); cd_name(z); cd_close();
+  cd_open(S_LI); cd_name_el(z); cd_close();
   cd_flush();
   cd_id_free(w);         /* op 0: a run (w, 1) */
   cd_flush();
@@ -138,7 +138,7 @@ __attribute__((export_name("run_freeruns"))) void run_freeruns(uint32_t seed, ui
   cd_flush();
   for (int j = 0; j < 2; j++) {
     cd_at(CD_MOUNT, 0);
-    cd_open(S_UL); L[j].parent = cd_id_new(); L[j].owns_parent = 1; cd_name(L[j].parent); cd_close();
+    cd_open(S_UL); L[j].parent = cd_id_new(); L[j].owns_parent = 1; cd_name_el(L[j].parent); cd_close();
   }
   for (uint32_t round = 0; round < rounds; round++) {
     /* grow both lists a few items at a time, alternating, so their ids interleave in runs */
@@ -166,7 +166,7 @@ __attribute__((export_name("run_walks"))) void run_walks(void) {
   cd_str S_DIV = cd_internz("div"), S_I = cd_internz("i"), S_W = cd_internz("w");
   cd_id root = cd_id_new();
   cd_at(CD_MOUNT, 0);
-  cd_open(S_DIV); cd_name(root);
+  cd_open(S_DIV); cd_name_el(root);
   for (int d = 0; d < 20; d++) cd_open(S_DIV);
   cd_text(cd_internz("deep"));
   cd_up(); cd_class(cd_internz("w20"));          /* from the last node (the text) up to its div */

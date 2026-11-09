@@ -241,7 +241,7 @@ void cd_main(void) {
   cd_open(z("tbody"));
   list.parent = cd_id_new();
   list.owns_parent = 1;
-  cd_name(list.parent);
+  cd_name_el(list.parent);
   cd_close();
   cd_close();
   cd_open(S_SPAN); cd_class(z("preloadicon glyphicon glyphicon-remove")); cd_attr(S_ARIA, S_TRUE);

@@ -20,7 +20,7 @@ static cd_id el(const char *tag, const char *idattr, const char *style) {
   cd_attr(z("id"), z(idattr));
   if (style) cd_attr(z("style"), z(style));
   cd_id id = cd_id_new();
-  cd_name(id);
+  cd_name_el(id);
   return id;
 }
 
@@ -30,7 +30,7 @@ void cd_main(void) {
   cd_close();
   ids[TEXT] = el("input", "text", "position:fixed;left:10px;top:150px;width:200px"); cd_close();
   el("p", "echo", "position:fixed;left:10px;top:200px");
-  cd_text(z("")); ids[ECHO] = cd_id_new(); cd_name(ids[ECHO]); /* the echo is the paragraph's text node */
+  cd_text(z("")); ids[ECHO] = cd_id_new(); cd_name_text(ids[ECHO]); /* the echo is the paragraph's text node */
   cd_close();
   ids[ERR] = el("button", "err", "position:fixed;left:10px;top:250px"); cd_text(z("err")); cd_close();
   ids[FOCUS] = el("button", "focus", "position:fixed;left:100px;top:250px"); cd_text(z("focus")); cd_close();

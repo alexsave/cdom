@@ -72,8 +72,8 @@ static cd_id timer_txt, raf_txt;
 EXPORT("t_time") void t_time(void) {
   cd_id s = section("time");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text(L("waiting")); cd_name(timer_txt = cd_id_new()); cd_close();
-  cd_open(L("i")); cd_text(L("waiting")); cd_name(raf_txt = cd_id_new()); cd_close();
+  cd_open(L("i")); cd_text(L("waiting")); cd_name_text(timer_txt = cd_id_new()); cd_close();
+  cd_open(L("i")); cd_text(L("waiting")); cd_name_text(raf_txt = cd_id_new()); cd_close();
   cd_timer_start(5, 41);
   cd_raf_request(42);
   cd_flush();
@@ -103,7 +103,7 @@ static int32_t resized_w = -1, resized_h = -1, hidden = -1;
 EXPORT("t_window") void t_window(void) {
   cd_id s = section("window");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text_num(0); cd_name(vw_txt = cd_id_new()); cd_close();
+  cd_open(L("i")); cd_text_num(0); cd_name_text(vw_txt = cd_id_new()); cd_close();
   cd_listen_window(CD_EV_RESIZE);
   cd_listen_window(CD_EV_VISIBILITY);
   cd_flush();
@@ -259,7 +259,7 @@ EXPORT("t_leak") void t_leak(uint32_t rounds) {
         cd_at(k ? root_box : o->parent, 0);
         cd_open(L("div"));
         if (k) cd_name_open(o->root);
-        cd_open(L("i")); cd_name_open(cd_id_new()); cd_text(L("x")); cd_name(cd_id_new()); cd_close();
+        cd_open(L("i")); cd_name_open(cd_id_new()); cd_text(L("x")); cd_name_text(cd_id_new()); cd_close();
         cd_open(L("ol")); cd_name_open(inner[k].parent = cd_id_new()); cd_close();
         cd_close();
         if (!k) { cd_open(L("hr")); cd_name_open(cd_id_new()); cd_close(); } /* parent mode: a second root */
@@ -288,6 +288,29 @@ EXPORT("t_name_open") void t_name_open(void) {
   cd_name_open(el);
   cd_close();
   cd_set_class(el, L("named"));
+  cd_flush();
+}
+
+/* 10b. cd_name_el names the element opened last though a text came after it (in its parent), and
+ * cd_name_text the text node made last (by cd_text, then by cd_text_num) though an element was opened
+ * and closed after it: the two cases where the last node made is the other kind. */
+EXPORT("t_name_kinds") void t_name_kinds(void) {
+  cd_id s = section("namekinds"), el = cd_id_new(), txt = cd_id_new(), num = cd_id_new();
+  cd_at(s, 0);
+  cd_open(L("div"));
+  cd_open(L("b")); cd_close();
+  cd_text(L("after the b"));
+  cd_name_el(el);
+  cd_text(L("text"));
+  cd_open(L("i")); cd_close();
+  cd_name_text(txt);
+  cd_text_num(7);
+  cd_open(L("u")); cd_close();
+  cd_name_text(num);
+  cd_close();
+  cd_set_class(el, L("named"));
+  cd_set_text(txt, L("renamed"));
+  cd_set_text_num(num, 8);
   cd_flush();
 }
 
@@ -468,7 +491,7 @@ static uint32_t ws_open_here(void) {
 EXPORT("t_net") void t_net(uint32_t port) {
   cd_id s = section("net");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text(L("waiting")); cd_name(net_txt = cd_id_new()); cd_close();
+  cd_open(L("i")); cd_text(L("waiting")); cd_name_text(net_txt = cd_id_new()); cd_close();
   net_port = port;
   ws_mode = WS_ECHO;
   ws_open_here();
@@ -592,7 +615,7 @@ static cd_id audio_txt;
 EXPORT("t_audio_section") void t_audio_section(void) {
   cd_id s = section("audio");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text(L("audio")); cd_name(audio_txt = cd_id_new()); cd_close();
+  cd_open(L("i")); cd_text(L("audio")); cd_name_text(audio_txt = cd_id_new()); cd_close();
 }
 /* A WAV file of ms milliseconds (ms <= 1000): 8 kHz, 16-bit mono, +0.25 for the first half and
  * -0.25 for the second. ms 0: eight bytes that are no sound. */
@@ -717,7 +740,7 @@ static cd_id url_txt;
 EXPORT("t_url_section") void t_url_section(void) {
   cd_id s = section("url");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text(L("url")); cd_name(url_txt = cd_id_new()); cd_close();
+  cd_open(L("i")); cd_text(L("url")); cd_name_text(url_txt = cd_id_new()); cd_close();
 }
 EXPORT("t_url_in") char *t_url_in(void) { return url_in; }
 EXPORT("t_url_out") char *t_url_out(void) { return url_out; }
@@ -752,7 +775,7 @@ static cd_id prefs_txt;
 EXPORT("t_locale_section") void t_locale_section(void) {
   cd_id s = section("locale");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text(L("prefs")); cd_name(prefs_txt = cd_id_new()); cd_close();
+  cd_open(L("i")); cd_text(L("prefs")); cd_name_text(prefs_txt = cd_id_new()); cd_close();
 }
 EXPORT("t_lang_out") char *t_lang_out(void) { return lang_out; }
 EXPORT("t_language") uint32_t t_language(uint32_t i, uint32_t cap) {
@@ -782,7 +805,7 @@ static cd_id share_txt;
 EXPORT("t_share_section") void t_share_section(void) {
   cd_id s = section("share");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text(L("share")); cd_name(share_txt = cd_id_new()); cd_close();
+  cd_open(L("i")); cd_text(L("share")); cd_name_text(share_txt = cd_id_new()); cd_close();
   for (int i = 0; i < 16; i++) clipboard_status[i] = share_status[i] = -1;
 }
 EXPORT("t_share_text") char *t_share_text(void) { return share_text; }
@@ -815,7 +838,7 @@ static cd_id fonts_txt;
 EXPORT("t_fonts_section") void t_fonts_section(void) {
   cd_id s = section("fonts");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text(L("fonts")); cd_name(fonts_txt = cd_id_new()); cd_close();
+  cd_open(L("i")); cd_text(L("fonts")); cd_name_text(fonts_txt = cd_id_new()); cd_close();
   for (int i = 0; i < 16; i++) fonts_status[i] = -1;
 }
 EXPORT("t_fonts_wait") void t_fonts_wait(uint32_t token, uint32_t deadline_ms) { cd_fonts_wait(token, deadline_ms); }
@@ -843,10 +866,10 @@ static char host_out[64];
 EXPORT("t_host_section") void t_host_section(void) {
   cd_id s = section("host");
   cd_at(s, 0);
-  cd_open(L("input")); cd_attr(L("type"), L("text")); cd_name(host_input = cd_id_new()); cd_close();
-  cd_open(L("input")); cd_attr(L("type"), L("checkbox")); cd_name(host_box = cd_id_new()); cd_close();
+  cd_open(L("input")); cd_attr(L("type"), L("text")); cd_name_el(host_input = cd_id_new()); cd_close();
+  cd_open(L("input")); cd_attr(L("type"), L("checkbox")); cd_name_el(host_box = cd_id_new()); cd_close();
   cd_open(L("button")); cd_text(L("b")); cd_name_open(host_button = cd_id_new()); cd_close();
-  cd_open(L("div")); cd_name(host_div = cd_id_new()); cd_close();
+  cd_open(L("div")); cd_name_el(host_div = cd_id_new()); cd_close();
 }
 EXPORT("t_host_set") void t_host_set(void) {
   cd_set_str(host_input, L("value"), L("한국어 값"));
