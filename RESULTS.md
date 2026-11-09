@@ -332,6 +332,20 @@ React's swap cost is its keyed algorithm on this shape: one left-to-right pass t
 The memory benchmark is blind to wasm linear memory, so it cannot be used to judge the linear-memory floor the research worried about.
 The first version of cdom's swap took 65 us of script, all in the generic map-and-LIS path; the head/tail check took it to 10 us.
 
+## Stripping the shim per app (an experiment, not shipped)
+
+A bundled page could carry only the shim functions its module imports: the wasm's import section names them, so a build step can cut the rest.
+A prototype did it (branch `shim-strip-exp`, commits 999ff05 and ea36d7d): cdom's own build writes a table of byte ranges in `cdom.min.js` with their dependencies (`tools/striptable.mjs`, scope-resolved with acorn), and a small C tool on the app's build (`tools/shimstrip.c`) reads the module's imports and exports and cuts the unused ranges.
+A missing import still fails loudly, at build time and as a `LinkError` at start, and a check over 5,632 import and export combinations found no broken shim.
+
+| Page, brotli -q 11 | Full shim | Stripped |
+|---|---|---|
+| The starter (9 imports) | 8,660 B | 4,284 B (-51%) |
+| hello-world-4 (27 imports) | 18,683 B | 16,667 B (-11%) |
+
+Not shipped: a real app uses most of the shim (hello-world-4 already imports 27 of its functions), so the saving shrinks as the app grows, and it would cost a generated table, a host C compiler on the app's build and a convention in `start`.
+The branch stays as the record, should a size-bound page ever want it.
+
 ## Reproduce
 
 ```
