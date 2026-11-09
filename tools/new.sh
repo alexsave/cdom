@@ -54,7 +54,9 @@ void cd_main(void) {
   cd_open(CD_LIT("style"));
   cd_text(CD_LIT(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
                  ".page { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }"
-                 ".page h1 { margin: 0; font-size: 64px; }"
+                 ".page h1 { margin: 0; font-size: 64px; animation: spin 20s linear infinite; }"
+                 "@keyframes spin { to { transform: rotate(360deg); } }"
+                 "@media (prefers-reduced-motion: reduce) { .page h1 { animation: none; } }"
                  ".hint { position: fixed; left: 0; right: 0; bottom: 24px; margin: 0; text-align: center; opacity: 0.6; }"));
   cd_close();
   cd_open(CD_LIT("div")); cd_class(CD_LIT("page"));
