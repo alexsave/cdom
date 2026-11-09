@@ -35,9 +35,9 @@ uint32_t cd_ws_buffered(uint32_t id);
  * bytes, cd_ws_close does nothing and cd_ws_buffered is 0. What a browser refuses later (a blocked
  * port, a Content-Security-Policy rule in Chrome) is a socket that failed: a close before an open. The
  * hooks' socket (cd_ws_open) has no refusal: the constructor's throw goes out of the call. */
-#define CD_WS_OPEN    0
-#define CD_WS_MSG     1
-#define CD_WS_CLOSE   2
+#define CD_WS_OPEN  0
+#define CD_WS_MSG   1
+#define CD_WS_CLOSE 2
 #define CD_WS_REFUSED 3
 #define CD_WS_REFUSED_CODE 1006 /* the close code a refused socket's close carries: abnormal closure */
 typedef void (*cd_ws_fn)(void *ctx, uint32_t id, uint32_t ev, const uint8_t *p, uint32_t len);

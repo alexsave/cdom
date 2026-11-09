@@ -341,7 +341,12 @@ M = [
   ('mini-fill-strong', 'src/mini.c', '__attribute__((weak)) void *memset', 'void *memset', LINK, "FAIL an app's own libc"),
 ]
 
-def build_and_run(root, cmd):
+def build_and_run(root, cmd, minify=False):
+  # In a worker's copy, a mutant of shim/cdom.js is a mutant of the minified shim too (tests/build.sh fails
+  # when they disagree); the real tree's restored runs check the committed one as it is.
+  if minify:
+    m = subprocess.run(['node', 'tools/minshim.mjs'], cwd=root, capture_output=True, text=True)
+    if m.returncode: return 1, 'MINSHIM FAILED ' + m.stderr[-400:]
   b = subprocess.run(['tests/build.sh'], cwd=root, capture_output=True, text=True)
   if b.returncode: return 1, 'BUILD FAILED ' + b.stderr[-400:]
   r = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
@@ -383,7 +388,7 @@ def worker(w):
     else:
       try:
         p.write_text(src.replace(old, new))
-        code, out = build_and_run(root, cmd)
+        code, out = build_and_run(root, cmd, minify=True)
       finally:
         p.write_text(src)
       ok = code != 0 and want in out

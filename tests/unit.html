@@ -879,7 +879,7 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
   const rf = (k) => [0, 1, 2, 3, 4, 5, 6, 7].map((f) => x.t_ws_refused_seen(k, f));
   await until(() => x.t_ws_refused_seen(0, 1) >= 2 && x.t_ws_refused_seen(1, 1) >= 2, 2000);
   const [rf0, rf1] = [rf(0), rf(1)];
-  x.t_ws_refused_again();
+  try { x.t_ws_refused_again(); } catch (e) { refusedNow = 'threw ' + e; }
   await until(() => x.t_ws_refused_seen(2, 1) >= 2, 2000);
   await sleep(100);
   const rf2 = rf(2), probes = [x.t_ws_refused_seen(3, 0), x.t_ws_refused_seen(3, 1)];
