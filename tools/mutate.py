@@ -356,7 +356,7 @@ M = [
   ('mk-wasm-no-libc', 'cdom.mk', 'CDOM_CFLAGS := --target=wasm32 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src', 'CDOM_CFLAGS := --target=wasm32 -nostdlib -mbulk-memory -I$(CDOM)/src', LINK, "FAIL cdom.mk's APP_WASM rule does not build an app"),
   ('mk-wasm-no-cdom', 'cdom.mk', 'cdom_mk_app_src := $(APP_SRC) $(CDOM_SRC)', 'cdom_mk_app_src := $(APP_SRC)', LINK, "FAIL cdom.mk's APP_WASM rule: the module exports no memory or no cd_start"),
   ('mk-modules-dropped', 'cdom.mk', ' $(addprefix $(CDOM)/src/cdom_,$(addsuffix .c,$(APP_MODULES)))', '', LINK, "FAIL cdom.mk's APP_WASM rule does not build an app"),
-  ('mk-modules-unchecked', 'cdom.mk', 'ifneq ($(cdom_mk_unknown),)', 'ifneq (,)', LINK, 'FAIL cdom.mk took APP_MODULES naming no module'),
+  ('mk-modules-unchecked', 'cdom.mk', 'ifneq ($(cdom_mk_unknown),)', 'ifneq (,)', LINK, 'FAIL cdom.mk refused APP_MODULES for another reason'),  # make still stops, at the missing file, without saying why
   ('mk-goal-taken', 'cdom.mk', '.DEFAULT_GOAL := $(cdom_mk_goal)', '', LINK, 'FAIL cdom.mk took the default goal'),
   ('flags-hardcoded', 'tests/build.sh', 'W=(-Wall -Wextra -Werror)', 'W=(-Wall -Wextra -Werror -mbulk-memory)', LINK, 'FAIL tests/build.sh:15 hardcodes -mbulk-memory'),
   ('flags-hardcoded-link', 'tests/link/run.sh', 'C=(-O2 "${CDOM_CFLAGS[@]}"', 'C=(--target=wasm32 -O2 "${CDOM_CFLAGS[@]}"', LINK, 'FAIL tests/link/run.sh:'),
