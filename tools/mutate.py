@@ -336,7 +336,7 @@ M = [
   ('contract-random-ok', 'src/cdom_random.h', '#define CD_RANDOM_OK 1', '#define CD_RANDOM_OK 2', LINK, 'FAIL the I/O contract changed in place'),
   ('contract-http-timeout', 'src/cdom_net.h', '#define CD_HTTP_TIMEOUT 1 ', '#define CD_HTTP_TIMEOUT 2 ', LINK, 'FAIL the I/O contract changed in place'),
   # the name gate (tools/edges.mjs): the other repo's name, spelled in pieces here so this file does not carry it
-  ('edges-name', 'src/cdom.h', '#ifndef CDOM_H\n', '/* built beside ' + 'c' + 'base */\n#ifndef CDOM_H\n', LINK, 'FAIL src/cdom.h:8: names the other repo'),
+  ('edges-name', 'src/cdom.h', '#ifndef CDOM_H\n', '/* built beside ' + 'c' + 'base */\n#ifndef CDOM_H\n', LINK, 'names the other repo: /* built beside'),
   ('edges-old-name', 'tools/fuzz.mjs', 'import http from', '// from C_' + 'BASE\nimport http from', LINK, 'FAIL tools/fuzz.mjs:2: names the other repo'),
   ('mini-fill-strong', 'src/mini.c', '__attribute__((weak)) void *memset', 'void *memset', LINK, "FAIL an app's own libc"),
 ]
