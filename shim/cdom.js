@@ -1168,9 +1168,32 @@ var cdom = (() => {
   // wasm loads while the parser and the stylesheets run, and the app starts once the DOM is ready.
   // options.openStore: an app that reads its store as it starts opens it now, while the wasm is
   // fetched and compiled, so its first get finds the database open. options.seed: cd_seed (seed()).
+  // What start does for a module by the exports it has, keyed by the export (a module that links an
+  // optional cdom module has its export). A bundled page's shim keeps only the entries whose export its
+  // module has (tools/shimstrip.c), so every key starts cd_ and names an export. Before the module runs:
+  const beforeStart = {
+    cd_store_got(options) {
+      if (options && options.openStore) {
+        openDatabase().catch(() => {}); // a failure shows again, as a miss, at the first get
+      }
+    },
+  };
+  // and once its exports are there, for those it has:
+  const atStart = {
+    cd_url_changed() {
+      addEventListener("popstate", urlChanged);
+    },
+    cd_prefs_changed: listenPrefs,
+    cd_fonts_changed() {
+      if (doc.fonts) {
+        doc.fonts.addEventListener("loadingdone", fontsChanged);
+      }
+    },
+  };
+
   async function start(url, mount, env, options) {
-    if (options && options.openStore) {
-      openDatabase().catch(() => {}); // a failure shows again, as a miss, at the first get
+    for (const name in beforeStart) {
+      beforeStart[name](options);
     }
     const imports = {
       cdom: {
@@ -1224,14 +1247,10 @@ var cdom = (() => {
     memory = exports.memory;
     views();
     readLayout(exports.cd_layout() >> 2);
-    if (exports.cd_url_changed) {
-      addEventListener("popstate", urlChanged);
-    }
-    if (exports.cd_prefs_changed) {
-      listenPrefs();
-    }
-    if (exports.cd_fonts_changed && doc.fonts) {
-      doc.fonts.addEventListener("loadingdone", fontsChanged);
+    for (const name in atStart) {
+      if (exports[name]) {
+        atStart[name]();
+      }
     }
     exports.cd_start(seed(options));
     return exports;

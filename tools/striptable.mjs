@@ -8,8 +8,10 @@
 //                                     initializer may do something, not a literal or new X(literals), is in R)
 //   G <start> <end>                   a const or let statement: cut once every declarator of it is a cut V
 //   I <start> <end> <name> <deps...>  one property of start's imports.cdom
+//   X <start> <end> <list> <name> <deps...> one property of an object keyed by exports (cd_<name>),
+//                                     kept when the module exports <name>
 //
-// The V of a group, and the I, are lists in source order joined by single commas: the cutter drops a
+// The V of a group, the I, and the X of a list are lists in source order joined by single commas: the cutter drops a
 // cut entry with the comma after it, or, after the last entry kept, with the comma before it.
 //   R <deps...>                       what the rest of the shim names: always kept
 //
@@ -147,6 +149,19 @@ export function stripTable(code) {
   if (found !== 1) {
     throw new Error(`striptable: ${found} imports objects (an object under the key cdom) in the shim, not one`);
   }
+  // The objects keyed by exports (start's beforeStart and atStart): every key starts cd_.
+  let lists = 0;
+  const keyOf = (p) => p.type === 'Property' && !p.computed ? p.key.name ?? p.key.value : null;
+  (function find(node) {
+    if (node.type === 'ObjectExpression' && node.properties.length
+      && node.properties.every((p) => typeof keyOf(p) === 'string' && keyOf(p).startsWith('cd_'))) {
+      const list = lists++;
+      for (const p of node.properties) {
+        units.push({ kind: 'X', start: p.start, end: p.end, list, name: keyOf(p), own: [p.value.start, p.value.end] });
+      }
+    }
+    children(node, find);
+  })(closure.body);
   // A unit owns the references in its range (an I and a V: in the value, the name and comma are no
   // reference); the innermost owner wins.
   const owners = units.map((u, i) => [u.own ?? [u.start, u.end], i]).filter(([, i]) => units[i].kind !== 'G');
@@ -190,6 +205,7 @@ export function stripTable(code) {
     if (u.kind === 'V') lines.push(`V ${u.start} ${u.end} ${u.group}${d}`);
     if (u.kind === 'G') lines.push(`G ${u.start} ${u.end}`);
     if (u.kind === 'I') lines.push(`I ${u.start} ${u.end} ${u.name}${d}`);
+    if (u.kind === 'X') lines.push(`X ${u.start} ${u.end} ${u.list} ${u.name}${d}`);
   });
   lines.push(`R${[...roots].sort((a, b) => a - b).map((r) => ' ' + r).join('')}`);
   return lines.join('\n') + '\n';

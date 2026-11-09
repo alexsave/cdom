@@ -62,12 +62,12 @@ static void limits(void) {
 }
 
 /* The table: units, their ranges and deps. */
-enum { F, V, G, I };
+enum { F, V, G, I, X };
 typedef struct {
   int kind;
   long start, end;
-  int group;      /* a V's G */
-  char name[64];  /* an I's import name */
+  int group;      /* a V's G, an X's list */
+  char name[64];  /* an I's import name, an X's export name */
   int *deps;
   int ndeps;
   int keep;
@@ -109,13 +109,13 @@ static void read_table(char *text, long shim_bytes) {
     } else {
       if (u >= nunits) die("a malformed table", "more units than its header says");
       unit *x = &units[u++];
-      x->kind = line[0] == 'F' ? F : line[0] == 'V' ? V : line[0] == 'G' ? G : line[0] == 'I' ? I : -1;
+      x->kind = line[0] == 'F' ? F : line[0] == 'V' ? V : line[0] == 'G' ? G : line[0] == 'I' ? I : line[0] == 'X' ? X : -1;
       if (x->kind < 0) die("a malformed table", line);
       x->start = strtol(p, &p, 10);
       x->end = strtol(p, &p, 10);
       if (x->start < 0 || x->end < x->start || x->end > shim_bytes) die("a malformed table", "a range outside the shim");
-      if (x->kind == V) x->group = (int)strtol(p, &p, 10);
-      if (x->kind == I) {
+      if (x->kind == V || x->kind == X) x->group = (int)strtol(p, &p, 10);
+      if (x->kind == I || x->kind == X) {
         while (*p == ' ') p++;
         int n = 0;
         while (*p && *p != ' ' && n < (int)sizeof x->name - 1) x->name[n++] = *p++;
@@ -144,6 +144,22 @@ static void read_imports(const unsigned char *wasm, long size) {
     unsigned long length = leb();
     const unsigned char *section_end = at + length;
     if (length > (unsigned long)(end - at)) die("a malformed module", "a section past the end");
+    if (id == 7) {
+      unsigned long count = leb();
+      for (unsigned long k = 0; k < count; k++) {
+        unsigned long name_len = leb();
+        const unsigned char *name = at;
+        if (name_len > (unsigned long)(end - at)) die("a malformed module", "a name past the end");
+        at += name_len;
+        byte();
+        leb();
+        for (int u = 0; u < nunits; u++) {
+          if (units[u].kind == X && strlen(units[u].name) == name_len && !memcmp(units[u].name, name, name_len)) keep(u);
+        }
+      }
+      at = section_end;
+      continue;
+    }
     if (id != 2) {
       at = section_end;
       continue;
@@ -180,7 +196,7 @@ static void read_imports(const unsigned char *wasm, long size) {
         die("the module imports a function this shim does not have (a cdom.c and a shim from two cdoms?)", name);
       }
     }
-    return;
+    at = section_end;
   }
 }
 
@@ -208,12 +224,13 @@ int main(int argc, char **argv) {
     if (units[u].kind == F && !units[u].keep) memset(cut + units[u].start, 1, units[u].end - units[u].start);
     if (units[u].kind == G && !units[u].keep) memset(cut + units[u].start, 1, units[u].end - units[u].start);
   }
-  /* The lists: each G's V, and the I. */
-  for (int g = -1; g < nunits; g++) {
+  /* The lists: each G's V, the I, and each list of X (g below -1: X list -2 - g). */
+  for (int g = -2 - nunits; g < nunits; g++) {
     if (g >= 0 && units[g].kind != G) continue;
     int *list = malloc(nunits * sizeof *list), n = 0, last_kept = -1;
     for (int u = 0; u < nunits; u++) {
-      if (g >= 0 ? units[u].kind == V && units[u].group == g : units[u].kind == I) {
+      if (g >= 0 ? units[u].kind == V && units[u].group == g
+          : g == -1 ? units[u].kind == I : units[u].kind == X && units[u].group == -2 - g) {
         if (n && (units[u].start != units[list[n - 1]].end + 1 || shim[units[list[n - 1]].end] != ','))
           die("a malformed table", "two entries of a list not joined by one comma");
         if (units[u].keep) last_kept = n;

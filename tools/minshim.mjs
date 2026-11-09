@@ -23,7 +23,7 @@ const HEADER = '// GENERATED from shim/cdom.js by tools/minshim.mjs - do not edi
 const made = await minify(fs.readFileSync(src, 'utf8'), { compress: { passes: 2 }, mangle: true });
 const text = HEADER + made.code + '\n';
 const table = stripTable(text.slice(HEADER.length)).replace(/^(cdomstrip 1 )\d+/, (_, head) => head + text.length)
-  .replace(/^([FVGI]) (\d+) (\d+)/gm, (_, kind, start, end) => `${kind} ${+start ? +start + HEADER.length : 0} ${+end ? +end + HEADER.length : 0}`);
+  .replace(/^([FVGIX]) (\d+) (\d+)/gm, (_, kind, start, end) => `${kind} ${+start ? +start + HEADER.length : 0} ${+end ? +end + HEADER.length : 0}`);
 
 if (process.argv[2] === 'check') {
   const have = fs.existsSync(out) ? fs.readFileSync(out, 'utf8') : '';
