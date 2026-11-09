@@ -108,7 +108,8 @@ IMPORTS("text") void j_text(uint32_t s);
 IMPORTS("text_num") void j_text_num(uint32_t n);
 IMPORTS("attr") void j_attr(uint32_t name, uint32_t v);
 IMPORTS("class") void j_class(uint32_t v);
-IMPORTS("name") void j_name(cd_id id);
+IMPORTS("name_el") void j_name_el(cd_id id);
+IMPORTS("name_text") void j_name_text(cd_id id);
 IMPORTS("name_open") void j_name_open(cd_id id);
 IMPORTS("listen") void j_listen(cd_id id, uint32_t ev);
 IMPORTS("value") void j_value(uint32_t s);
@@ -402,7 +403,8 @@ void cd_text(cd_str s) { uint32_t v = ref_text(s); ready(); j_text(v); }
 void cd_text_num(uint32_t n) { ready(); j_text_num(n); }
 void cd_attr(cd_str name, cd_str v) { uint32_t b = ref_text(v), a = ref_name(name); ready(); j_attr(a, b); }
 void cd_class(cd_str v) { uint32_t a = ref_text(v); ready(); j_class(a); }
-void cd_name(cd_id id) { ready(); j_name(id); }
+void cd_name_el(cd_id id) { ready(); j_name_el(id); }
+void cd_name_text(cd_id id) { ready(); j_name_text(id); }
 void cd_name_open(cd_id id) { ready(); j_name_open(id); }
 /* One import for both: the shim tells a host object (it listens on it) from a node (it names the last
  * node and marks it in the mount's delegation). */

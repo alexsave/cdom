@@ -121,10 +121,13 @@ void cd_text(cd_str s);
 void cd_text_num(uint32_t n);
 void cd_attr(cd_str name, cd_str value);
 void cd_class(cd_str value);
-/* cd_name names the LAST NODE MADE: after cd_open that is the element, after cd_text the text
- * node, but after a cd_close it is the deepest node built inside, not the element closed.
- * cd_name_open names the innermost open element, whatever has been built inside it so far. */
-void cd_name(cd_id id);
+/* Naming what was just built, so later calls (cd_set_text, cd_set_class, cd_remove...) reach it by id.
+ * cd_name_el names the element opened last (by cd_open, cd_open_id or cd_clone), whatever came after it:
+ * its text, or a child opened and closed inside it. cd_name_text names the text node made last (by cd_text
+ * or cd_text_num), whatever element came after it. cd_name_open names the innermost element still open,
+ * whatever has been built inside it so far. A node reached by a walk (cd_down, cd_next, cd_up, cd_sel) is none of these. */
+void cd_name_el(cd_id id);
+void cd_name_text(cd_id id);
 void cd_name_open(cd_id id);
 /* Open an element and name it with a new id, in one call: cd_open(tag), cd_id_new(), cd_name_open(id).
  * The id names the element whatever is built inside it before its cd_close. It is an id like any other:

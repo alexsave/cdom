@@ -24,7 +24,7 @@ static cd_id el(const char *tag, const char *idattr, const char *style) {
   cd_attr(z("id"), z(idattr));
   if (style) cd_attr(z("style"), z(style));
   cd_id id = cd_id_new();
-  cd_name(id);
+  cd_name_el(id);
   return id;
 }
 

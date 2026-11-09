@@ -88,6 +88,8 @@ var cdom = (() => {
   let valU;
   let depth = 0;            // how many elements are open
   let last = null;          // the node made or walked to last
+  let lastElement = null;   // the element opened or cloned last (cd_name_el)
+  let lastText = null;      // the text node made last (cd_name_text)
   let root = null;          // the outermost element closed last
   let base = DETACHED;      // the parent new top-level nodes go into
   let before = 0;           // the node they go before (0: at the end)
@@ -281,7 +283,7 @@ var cdom = (() => {
       stack[depth - 1].appendChild(element);
     }
     stack[depth++] = element;
-    last = element;
+    last = lastElement = element;
   }
   // Opens an element; C says which tags are SVG.
   function open(tag) {
@@ -299,11 +301,11 @@ var cdom = (() => {
     }
   }
   function text(id) {
-    last = doc.createTextNode(stringOf(id));
+    last = lastText = doc.createTextNode(stringOf(id));
     placeNew(last);
   }
   function text_num(number) {
-    last = doc.createTextNode(number >>> 0);
+    last = lastText = doc.createTextNode(number >>> 0);
     placeNew(last);
   }
   function attr(name, value) {
@@ -312,9 +314,12 @@ var cdom = (() => {
   function setClass(value) {
     last.className = stringOf(value);
   }
-  // Names the last node, or the open element, with a node id.
-  function name(id) {
-    nodes[id] = last;
+  // Names the element opened last, the text node made last, or the open element, with a node id.
+  function name_el(id) {
+    nodes[id] = lastElement;
+  }
+  function name_text(id) {
+    nodes[id] = lastText;
   }
   function name_open(id) {
     nodes[id] = stack[depth - 1];
@@ -1165,7 +1170,7 @@ var cdom = (() => {
     }
     const imports = {
       cdom: {
-        strings, at, open, open_svg, close, text, text_num, attr, class: setClass, name, name_open,
+        strings, at, open, open_svg, close, text, text_num, attr, class: setClass, name_el, name_text, name_open,
         listen, value, value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num,
         set_text, set_text_num, set_attr, set_class, style, style_num, encode, image_bytes, remove, free, move, clear,
         detach, attach, unlisten, hit, viewport, rect, blit, set, call, get, timer, timer_stop, raf, now, ws_open, ws_send, ws_close, ws_buffered, http, epoch, origin,

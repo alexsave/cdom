@@ -261,6 +261,11 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     x.t_name_open();
     return $('#nameopen > div').className === 'named' || $('#nameopen').innerHTML;
   });
+  check('cd_name_el names the element opened last, cd_name_text the text made last', () => {
+    x.t_name_kinds();
+    const got = $('#namekinds').innerHTML;
+    return got === '<div><b class="named"></b>after the brenamed<i></i>8<u></u></div>' || got;
+  });
   check('cd_set_style and cd_set_style_num; 400 transient values leave the string table alone', () => {
     const grew = x.t_style(400);
     const st = $('#style > div').style;

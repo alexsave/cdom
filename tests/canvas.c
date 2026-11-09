@@ -24,9 +24,9 @@ static void fill(uint8_t *p, uint32_t w, uint32_t h, uint32_t salt) {
 void cd_main(void) {
   cd_at(CD_MOUNT, 0);
   cd_open(z("canvas")); cd_attr(z("width"), z("7")); cd_attr(z("height"), z("5"));
-  canvas = cd_id_new(); cd_name(canvas); cd_close();
+  canvas = cd_id_new(); cd_name_el(canvas); cd_close();
   cd_open(z("div")); cd_attr(z("id"), z("target"));
-  target = cd_id_new(); cd_name(target); cd_close();
+  target = cd_id_new(); cd_name_el(target); cd_close();
 }
 
 void cd_on_event(const cd_event_rec *e) { (void)e; }
