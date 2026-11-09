@@ -192,6 +192,17 @@ node "$here/../../tools/starter.mjs" "$st/app/build/index.html" || fail=1
 if make -s --no-print-directory -C "$here/../.." new DIR="$st/app" > "$st/again.log" 2>&1; then echo "FAIL make new wrote into a directory that is not empty"; fail=1
 elif ! grep -q "app is not empty" "$st/again.log"; then echo "FAIL make new refused a directory for another reason:"; cat "$st/again.log"; fail=1
 else echo "ok   make new refuses a directory that is not empty"; fi
+# The generated CDOM is a default (?=): the app copied elsewhere builds against the cdom the environment
+# names (here a link to this checkout, so the path in the build is the override's), as a second clone,
+# CI or a moved folder does.
+rm -rf "$st/moved" "$st/cdom-link"; ln -s "$here/../.." "$st/cdom-link"; mkdir -p "$st/moved"
+cp -R "$st/app/Makefile" "$st/app/src" "$st/moved/"
+if ! env CDOM="$st/cdom-link" make --no-print-directory -C "$st/moved" > "$st/moved.log" 2>&1; then
+  echo "FAIL the starter copied elsewhere does not build with CDOM from the environment:"; cat "$st/moved.log"; fail=1
+elif ! grep -qF "$st/cdom-link/src/cdom.c" "$st/moved.log" || ! grep -qF "$st/cdom-link/shim/page.html" "$st/moved.log"; then
+  echo "FAIL the starter copied elsewhere ignored CDOM from the environment (built with the path make new wrote)"; fail=1
+elif [ ! -s "$st/moved/build/index.html" ]; then echo "FAIL the starter copied elsewhere wrote no page"; fail=1
+else echo "ok   the starter copied elsewhere builds with CDOM from the environment overriding the generated default"; fi
 node "$here/run.mjs" "$out" || fail=1
 node "$here/../../tools/edges.mjs" || fail=1
 node "$here/../../tools/seeds.mjs" || fail=1

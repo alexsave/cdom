@@ -2,8 +2,9 @@
 # make -C path/to/cdom new DIR=path/to/app (cdom's Makefile): a new app in DIR, whose make builds
 # build/index.html, one file that shows "cdom" centered and opens from disk. It writes three files and
 # nothing cdom.mk could own: a Makefile (CDOM, the four APP_* lines, the include, a default goal),
-# src/app.c and a .gitignore. CDOM is this checkout's absolute path: no git init and no submodule, so it
-# works offline and at a commit not pushed anywhere; README.md, "Starting an app", says how to vendor cdom.
+# src/app.c and a .gitignore. CDOM defaults (?=) to this checkout's absolute path, and make CDOM=... or
+# the environment's CDOM overrides it (another clone, CI, a moved folder). No git init and no submodule,
+# so it works offline and at a commit not pushed anywhere; it prints how to vendor cdom as a submodule.
 # Usage: sh tools/new.sh DIR [the directory DIR is relative to]
 set -eu
 dir="${1:-}"
@@ -34,7 +35,7 @@ mkdir -p "$dir/src"
 dir="$(cd "$dir" && pwd -P)"
 
 cat > "$dir/Makefile" <<EOF
-CDOM := $cdom
+CDOM ?= $cdom
 APP_WASM := build/app.wasm
 APP_SRC := src/app.c
 APP_PAGE := build/index.html
@@ -67,3 +68,4 @@ printf 'build/\n' > "$dir/.gitignore"
 
 echo "cdom new: wrote $dir/Makefile, $dir/src/app.c and $dir/.gitignore"
 echo "cdom new: now run make -C $dir, and open $dir/build/index.html"
+echo "cdom new: to vendor cdom with the app: cd $dir && git init && git submodule add https://github.com/alexsave/cdom cdom, then CDOM ?= cdom in the Makefile"

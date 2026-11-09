@@ -390,6 +390,7 @@ M = [
   ('new-into-full-dir', 'tools/new.sh', 'if [ -e "$dir" ] && [ -n "$(ls -A "$dir")" ]; then', 'if false; then', LINK, 'FAIL make new wrote into a directory that is not empty'),
   ('new-relative-to-cdom', 'tools/new.sh', '    dir="$from/$dir" ;;', '    ;;', LINK, 'FAIL make new wrote other files than'),
   ('new-hint-off-center', 'tools/new.sh', '.hint { position: fixed; left: 0; right: 0;', '.hint { position: fixed; width: 100%;', LINK, 'FAIL the hint "edit src/app.c" is on screen, centered'),
+  ('new-cdom-fixed', 'tools/new.sh', 'CDOM ?= $cdom\n', 'CDOM := $cdom\n', LINK, 'FAIL the starter copied elsewhere ignored CDOM from the environment'),
   ('flags-hardcoded', 'tests/build.sh', 'W=(-Wall -Wextra -Werror)', 'W=(-Wall -Wextra -Werror -mbulk-memory)', LINK, 'FAIL tests/build.sh:15 hardcodes -mbulk-memory'),
   ('flags-hardcoded-link', 'tests/link/run.sh', 'C=(-O2 "${CDOM_CFLAGS[@]}"', 'C=(--target=wasm32 -O2 "${CDOM_CFLAGS[@]}"', LINK, 'FAIL tests/link/run.sh:'),
   ('mini-fill-strong', 'src/mini.c', '__attribute__((weak)) void *memset', 'void *memset', LINK, "FAIL an app's own libc"),
