@@ -128,12 +128,12 @@ void cd_at(cd_id parent, cd_id before); /* before 0 = append; parent CD_DETACHED
 void cd_open(cd_str tag);
 void cd_close(void);
 /* cd_text with an empty string still makes a text node, so a value that is empty at first and filled
- * in later (cd_set_text) is made with cd_text(CD_LIT("")) and named with cd_name_text. */
+ * in later (cd_set_text_node) is made with cd_text(CD_LIT("")) and named with cd_name_text. */
 void cd_text(cd_str s);
 void cd_text_num(uint32_t n);
 void cd_attr(cd_str name, cd_str value);
 void cd_class(cd_str value);
-/* Naming what was just built, so later calls (cd_set_text, cd_set_class, cd_remove...) reach it by id.
+/* Naming what was just built, so later calls (cd_set_text_node, cd_set_class, cd_remove...) reach it by id.
  * cd_name_el names the element opened last (by cd_open, cd_open_id or cd_clone), whatever came after it:
  * its text, or a child opened and closed inside it. cd_name_text names the text node made last (by cd_text
  * or cd_text_num), whatever element came after it. cd_name_open names the innermost element still open,
@@ -171,7 +171,11 @@ void cd_up(void);                    /* last = last.parentNode */
 void cd_sel(cd_id id);               /* last = the node named id; then walk with down/next/up */
 
 /* ---- updating ---- */
-void cd_set_text(cd_id id, cd_str s); /* id is a text node */
+/* A text node's value: id names a text node (cd_name_text, after cd_text or cd_text_num), never the element
+ * the text is in. An id that names an element, or no node, throws out of the call (a JS Error naming the
+ * call and the id, which stops the C code that made it) and changes nothing, rather than the silent no-op
+ * that setting an element's nodeValue is. cd_set_text_num is the same for a number. */
+void cd_set_text_node(cd_id id, cd_str s);
 void cd_set_text_num(cd_id id, uint32_t n);
 void cd_set_attr(cd_id id, cd_str name, cd_str value);
 void cd_set_class(cd_id id, cd_str value);

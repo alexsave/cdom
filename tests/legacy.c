@@ -49,7 +49,7 @@ void cd_on_event(const cd_event_rec *e) {
     /* The value comes in through encodeInto and goes back out through the decoder, as the echo's text. */
     uint32_t n = cd_input_text(id, io, sizeof io);
     if (n > sizeof io) n = cd_get_str(id, z("value"), io, sizeof io);
-    cd_set_text(ids[ECHO], cd_intern(io, n));
+    cd_set_text_node(ids[ECHO], cd_intern(io, n));
   } else if (e->type == CD_EV_CLICK && id == ids[ERR]) {
     /* A method that does not exist: reported, and the text set after it still applies. */
     cd_call_args(CD_BODY, z("noSuchMethod"), 0, 0);

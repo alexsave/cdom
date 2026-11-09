@@ -399,11 +399,21 @@ var cdom = (() => {
     walk(from, steps, count);
     last.nodeValue = number >>> 0;
   }
+  // cd_set_text_node and cd_set_text_num set a text node's value. An element's nodeValue is null and
+  // setting it does nothing, so an element id (the trap: the element whose text it is) throws here,
+  // out of the C call, instead of leaving the page as it was.
+  function textNode(id, call) {
+    const node = nodes[id];
+    if (node && node.nodeType === 3) {
+      return node;
+    }
+    throw new Error(`cdom: ${call}(${id}, ...): ${node ? 'not a text node; name the text inside it with cd_name_text and pass that id' : 'no node has this id'}`);
+  }
   function set_text(id, textId) {
-    nodes[id].nodeValue = stringOf(textId);
+    textNode(id, 'cd_set_text_node').nodeValue = stringOf(textId);
   }
   function set_text_num(id, number) {
-    nodes[id].nodeValue = number >>> 0;
+    textNode(id, 'cd_set_text_num').nodeValue = number >>> 0;
   }
   function set_attr(id, name, value) {
     nodes[id].setAttribute(stringOf(name), stringOf(value));
