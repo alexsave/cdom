@@ -407,7 +407,7 @@ var cdom = (() => {
     if (node && node.nodeType === 3) {
       return node;
     }
-    throw new Error(`cdom: ${call}(${id}, ...): ${node ? 'not a text node; name the text inside it with cd_name_text and pass that id' : 'no node has this id'}`);
+    throw new Error(`cdom: ${call}(${id}, ...): ${node ? 'not a text node' : 'no node has this id'}`);
   }
   function set_text(id, textId) {
     textNode(id, 'cd_set_text_node').nodeValue = stringOf(textId);
