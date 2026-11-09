@@ -38,8 +38,9 @@ export async function launch(args = []) { // args: Chrome flags of the caller's 
   // parallel runs collide: the second Chrome fails to bind, and its run drives the first one's browser,
   // flags and all (a unit run then saw no window.gc). CDP_PORT still fixes one, for a debugger.
   const want = +(process.env.CDP_PORT || 0);
+  // --use-mock-keychain and --password-store=basic: under a temporary HOME, Chrome would ask macOS for a keychain in a dialog.
   const proc = spawn(process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    ['--headless=new', `--remote-debugging-port=${want}`, `--user-data-dir=${dir}`, '--no-first-run',
+    ['--headless=new', `--remote-debugging-port=${want}`, `--user-data-dir=${dir}`, '--no-first-run', '--use-mock-keychain', '--password-store=basic',
      '--no-default-browser-check', '--disable-extensions', '--mute-audio', '--window-size=1280,800', ...args, ...(process.env.CHROME_ARGS ? process.env.CHROME_ARGS.split(' ') : []), 'about:blank'],
     { stdio: process.env.CHROME_LOG ? ['ignore', fs.openSync(process.env.CHROME_LOG, 'w'), fs.openSync(process.env.CHROME_LOG + '.err', 'w')] : 'ignore' });
   let exited = false;
