@@ -22,7 +22,7 @@ Edit `myapp/src/app.c` and run `make -C myapp` again.
 ## Why cdom
 
 cdom runs as fast as hand-written vanilla JS, and much faster than React, while shipping far fewer bytes.
-Every number below comes from [RESULTS.md](RESULTS.md), measured on 2026-10-27 with [krausest/js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) (at ca8715d, keyed, its default puppeteer runner, headless) on an Apple M1 (16 GB), macOS 27.0.1, Chrome 156.
+The four charts come from [RESULTS.md](RESULTS.md), measured on 2026-10-27 with [krausest/js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) (at ca8715d, keyed, its default puppeteer runner, headless) on an Apple M1 (16 GB), macOS 27.0.1, Chrome 156.
 The entries are vanillajs, cdom (its default: interned strings and templates) and react-hooks (React 19.2.0).
 Lower is better on every chart.
 
