@@ -495,9 +495,13 @@ double cd_now(void);                              /* performance.now(), for work
  *      before the cleanup that frees that state;
  *   3. its one DOM op: a clear of r->parent, or a remove of its root;
  *   4. its ids are freed.
- * So cleanups run children first, and before any id of their region goes. Cleanups release C
- * state only: an operation that changes the DOM or calls host code inside one traps (reads,
- * cd_id_free, cd_list_forget, cd_region_forget and cd_timer_stop work). */
+ * So cleanups run children first, and before any id of their region goes. Cleanups release what
+ * the region held, and change no DOM: inside one, every call that changes the DOM traps (building,
+ * updating, cd_remove, cd_move, cd_clear, the regions' shows and hides, cd_set and cd_call_args).
+ * What a cleanup is for works: reads, stops and frees, such as cd_timer_stop,
+ * cd_audio_stop, cd_undirty, cd_id_free, cd_unbind, cd_list_forget and cd_region_forget.
+ * A region taken away owns no heap memory (its id and cleanup lists are freed with it), so the
+ * struct it lives in may be freed or reused once it is hidden; showing it again allocates again. */
 typedef void (*cd_cleanup_fn)(void *ctx);
 typedef struct { cd_cleanup_fn fn; void *ctx; } cd_cleanup;
 typedef struct cd_region {
