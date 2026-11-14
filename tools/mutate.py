@@ -16,6 +16,7 @@ LINK = ['tests/link/run.sh']
 HOST = ['node', 'tools/host.mjs']
 CANVAS = ['node', 'tools/canvas.mjs']
 FRESH = ['node', 'tools/legacyfresh.mjs']
+ALLOC = ['node', 'tools/alloc.mjs']
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -458,6 +459,11 @@ M = [
   ('regbuf-all-kept', 'src/cdom.c', '  cd_free(r->ids);\n  cd_free(r->fns);\n  r->ids = 0;\n  r->fns = 0;\n  r->n = r->cap = r->nfns = r->fcap = 0;', '  r->n = 0;', UNIT, 'FAIL a region taken away frees'),
   ('regbuf-fns-kept', 'src/cdom.c', '  cd_free(r->ids);\n  cd_free(r->fns);\n  r->ids = 0;\n  r->fns = 0;\n  r->n = r->cap = r->nfns = r->fcap = 0;', '  cd_free(r->ids);\n  r->ids = 0;\n  r->n = r->cap = 0;', UNIT, 'FAIL a region taken away frees'),
   ('cleanup-stop-traps', 'src/cdom.c', 'void cd_timer_stop(uint32_t token) {\n', 'void cd_timer_stop(uint32_t token) {\n  if (releasing) __builtin_trap();\n', UNIT, 'FAIL t_region_handoff'),  # the handoff case stops B's timer from a cleanup first; the stop case after it pins the header's words
+  ('try-traps', 'src/cdom.c', '      if (may_fail) return 0;\n', '      (void)may_fail;\n', ALLOC, 'FAIL cd_alloc_try: blocks'),
+  ('malloc-null', 'src/cdom.c', '      __builtin_trap(); /* out of memory */', '      return 0;', ALLOC, 'FAIL malloc still traps'),
+  ('realloc-try-frees', 'src/cdom.c', '  if (!q) return 0; /* p is kept, as it was */', '  if (!q) { free(p); return 0; }', ALLOC, 'FAIL cd_realloc_try'),
+  ('heap-cap-loose', 'src/cdom.c', '  if ((uint32_t)__builtin_wasm_memory_size(0) + pages > (uint32_t)(CDOM_HEAP_PAGES_MAX)) return 0;', '  if ((uint32_t)__builtin_wasm_memory_size(0) + pages > (uint32_t)(CDOM_HEAP_PAGES_MAX) + 8) return 0;', ALLOC, 'FAIL cd_alloc_try: blocks'),
+  ('own-alloc-bypassed', 'src/cdom.c', 'static int heap_is_cdoms(void) { return malloc == cdom_heap_malloc; }', 'static int heap_is_cdoms(void) { return 1; }', ALLOC, 'FAIL cd_alloc_try and cd_realloc_try on an app'),
 ]
 
 def build_and_run(root, cmd, minify=False):
