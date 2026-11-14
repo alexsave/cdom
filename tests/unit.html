@@ -47,10 +47,11 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
       cleanupDom: ['a cleanup that changes the DOM (and the change is not made)', () => x.t_trap_cleanup_dom(), () => $('#trapdom') && $('#trapdom').className === ''],
       depth: ['a build nested 9 deep (8 open)', () => x.t_trap_depth(), () => x.t_trap_depth_shown() === 8],
       otherUp: ['a region whose up is another region than the one building', () => x.t_trap_up_other(), () => true],
+      renderLoop: ['renders that keep asking for renders (16 rounds)', () => x.t_dirty_loop(), () => x.t_dirty_n() === 16],
     };
     const [what, run, after] = cases[trapCase];
     const got = traps(run);
-    check(`regions trap: ${what}`, () => (got === 'trap' && after()) || `${got}, after ${after()}`);
+    check(`traps: ${what}`, () => (got === 'trap' && after()) || `${got}, after ${after()}`);
     return;
   }
   check('options.openStore opens the store before the module starts', () => (storeOpenedAt >= 0 && storeOpenedAt <= x.t_started()) || `opened at ${storeOpenedAt}, started at ${x.t_started()}`);
@@ -1059,6 +1060,21 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
         s2.dom === '4,3,1' && s2.n === 1, s3.dom === '5,6' && l3 === '4@0,3@3,1@6' && s3.live === 7, s4.dom === '' && l4 === '5@0,6@3' && s4.live === 0];
       return (!threw && r.every(Boolean)) || JSON.stringify({ r, s0, s1, l1, s2, s3, l3, s4, l4, threw });
     });
+  }
+  {
+    // 22. cd_dirty.
+    let threw = '';
+    x.t_dirty_section();
+    const btn = $('#dirty button'), txt = $('#dirty b');
+    const run = (m) => { x.t_dirty_mode(m); btn.dispatchEvent(new MouseEvent('click', { bubbles: true })); return new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.t_dirty_log(), x.t_dirty_n())); };
+    let one, rounds, undirty, now, shown;
+    try { one = run(1); shown = txt.textContent; rounds = run(2); undirty = run(3); now = run(4); } catch (e) { threw = String(e); }
+    check('cd_dirty: each (fn, ctx) runs once however often asked, in the order first asked, before the click returns', () =>
+      (!threw && one === 'ABC' && shown === '2') || JSON.stringify({ one, shown, threw }));
+    check('cd_dirty: a render that asks for renders runs them in the same pass, one asked again after it ran runs again, and cd_render_now inside a render does nothing', () =>
+      (!threw && rounds === 'DdEDdE') || JSON.stringify({ rounds, threw }));
+    check('cd_undirty: drops a pending render, and one later in the round running now', () => (!threw && undirty === 'AX') || JSON.stringify({ undirty, threw }));
+    check('cd_render_now: what is pending runs at the call, and not again at the flush', () => (!threw && now === 'AH') || JSON.stringify({ now, threw }));
   }
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>

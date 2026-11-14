@@ -209,6 +209,23 @@ void cd_attach(cd_id id);            /* put it back where it was */
 void cd_flush(void);
 uint32_t cd_pending(void);           /* nonzero while strings or a walk wait to cross (for tests) */
 
+/* ---- renders: the setter half of state ----
+ * State stays plain C. A setter changes it and asks for the view that shows it to be drawn again:
+ *   static void count_view(void *ctx) { cd_set_text_node_num(count_txt, count); }
+ *   static void add(void) { count++; cd_dirty(count_view, 0); }
+ * fn(ctx) then runs once before this entry from JS returns (the event, the timer, the frame, the
+ * answer: every one ends in cd_flush), however often it was asked, in the order first asked. A render
+ * that asks for renders runs them in the same pass, as another round, and one asked again after it
+ * ran runs again; past 16 rounds it traps (renders that keep asking for each other). It is for views
+ * (a handful per entry: the queue is scanned to dedup), not for rows: a list's rows are cd_list_update's.
+ * cd_undirty drops a pending (fn, ctx), even one later in the round running now: a cleanup of the
+ * region a view drew calls it, so a render never runs on state that went. cd_render_now runs what is
+ * pending now (inside a render, or a cleanup, it does nothing: the pass takes it). */
+typedef void (*cd_render_fn)(void *ctx);
+void cd_dirty(cd_render_fn fn, void *ctx);
+void cd_undirty(cd_render_fn fn, void *ctx);
+void cd_render_now(void);
+
 /* ---- events: delivered to a cd_on handler, else to cd_on_event; the shim fills the record ----
  * id is the nearest listening ancestor-or-self of the target, or the host object listened on.
  * path holds the element-child indices from that node down toward the target, one byte per
