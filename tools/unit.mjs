@@ -95,14 +95,6 @@ try {
   const key = await b.evaluate(`[__x.t_ev(0), __x.t_ev(5), __x.t_ev(6), __kd[0]].join(' ')`);
   await b.evaluate(`__x.t_prevent(0); __x.t_listen_win(4, 0)`);
   if (key === '4 37 0 true') passed.push('a real ArrowLeft: keyCode 37, no character, the default stopped'); else errors.push('real key: ' + key);
-  // A real Escape (CDP) closes a cd_dialog: the browser's cancel, then close, reach on_close, the dialog
-  // goes and the focus is back on what had it.
-  const esc0 = await b.evaluate(`document.querySelector('#ui button.go').focus(); [__x.t_ui_dialog(0), __x.t_ui_dialog_open()].join()`);
-  await b.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
-  await b.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
-  let esc = '';
-  for (let i = 0; i < 50 && !esc.startsWith('2'); i++) { await sleep(20); esc = await b.evaluate(`[__x.t_ui_dialog(0), __x.t_ui_dialog(2), !document.querySelector('dialog.ask'), document.activeElement === document.querySelector('#ui button.go')].join()`); }
-  if (esc0 === '1,1' && esc === '2,0,true,true') passed.push('a real Escape closes a cd_dialog: on_close, the dialog gone, the focus back'); else errors.push(`escape: ${esc0} then ${esc}`);
   // The display preferences change (CDP emulates the media queries): dark, then dark with reduced
   // motion, then neither; cd_on_prefs hears each with what cd_prefs reads (heard: prefs + 1 a digit).
   const prefsAfter = async (features, last) => {

@@ -1172,21 +1172,6 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     check('cd_buf: 64-bit numbers in decimal (the largest u64, the least i64, 0), and a piece that does not fit writes nothing and stops the rest', () =>
       (wholeText === 'u18446744073709551615 i-9223372036854775808 0!' && (whole >> 16) === 0 && cutText === 'u18446744073709551615 i' && (cut >> 16) === 1) ||
       JSON.stringify({ whole, wholeText, cut, cutText }));
-    // the dialog: the focus goes back to what had it, every way out reaches on_close, the region goes
-    const opener = go;
-    opener.focus();
-    let opened = 0, again = -1;
-    try { opened = x.t_ui_dialog_open(); again = x.t_ui_dialog_open(); } catch (e) { threw += String(e); }
-    const dlg = document.querySelector('dialog.ask');
-    const modal = !!dlg && dlg.matches(':modal') && dlg.querySelector('h3').textContent === 'Sure?' && dlg.contains(document.activeElement);
-    try { x.t_ui_dialog_close(); } catch (e) { threw += String(e); }
-    const sync = x.t_ui_dialog(0);
-    await new Promise((r) => setTimeout(r, 0));
-    const after = { closed: x.t_ui_dialog(0), ctx: x.t_ui_dialog(1), shown: x.t_ui_dialog(2), live: x.t_ui_dialog(3), gone: !document.querySelector('dialog.ask'), back: document.activeElement === opener };
-    check('cd_dialog_open: a modal <dialog> built by its fn, the focus inside it; a second open while shown does nothing; cd_dialog_close reaches on_close from the event loop with its ctx, the dialog and its ids gone, and the focus back on what had it', () => {
-      const r = [opened === 1, again === 0, modal, sync === 0, after.closed === 1, after.ctx === 9, after.shown === 0, after.live === 0, after.gone, after.back];
-      return (!threw && r.every(Boolean)) || JSON.stringify({ r, after, threw });
-    });
   }
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>

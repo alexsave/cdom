@@ -1,8 +1,8 @@
 /* cdom_ui: the shorthand cdom apps otherwise write for themselves: elements with a class, a button,
- * a modal dialog, event handler macros and a small string builder. Link src/cdom_ui.c to use it
+ * event handler macros and a small string builder. Link src/cdom_ui.c to use it
  * (APP_MODULES ui). It is plain C over cdom.h, with no import of its own: an app that does not link
  * it pays nothing, and one that does pays only for the calls it makes (the linker drops the rest).
- * Nothing here holds state of its own: what lives on (a dialog, a buffer) is the caller's struct. */
+ * Nothing here holds state of its own: what lives on (a buffer) is the caller's. */
 #ifndef CDOM_UI_H
 #define CDOM_UI_H
 #include "cdom.h"
@@ -25,25 +25,6 @@ cd_id cd_button(cd_str cls, cd_str label, cd_event_fn fn, void *ctx, cd_id *labe
 /* A small index carried in a ctx (a row, a slot), and back: no allocation, no pointer to keep alive. */
 #define CD_CTX_OF(i) ((void *)(uintptr_t)(i))
 #define CD_CTX_INDEX(ctx) ((uint32_t)(uintptr_t)(ctx))
-
-/* ---- a modal dialog ----
- * A <dialog> opened with showModal: the browser makes the rest of the page inert and keeps the focus
- * inside it, closes it on Escape, and when it closes gives the focus back to what had it before. The
- * dialog is a region of its own (a child of the region building, if any), built at the end of parent:
- * build(ctx, dialog) fills it; class cls (0: none). Every way it closes (Escape, cd_dialog_close, a
- * form method="dialog" inside, the page calling close()) ends in on_close(ctx), after the dialog and
- * everything built in it are gone. On_close comes from the event loop, never inside cd_dialog_open
- * or cd_dialog_close. One dialog per cd_dialog at a time: opening one that is shown does nothing and
- * answers 0. on_close may be 0. The struct is the caller's, zeroed before first use, and must stay
- * where it is while the dialog is shown. */
-typedef void (*cd_dialog_build_fn)(void *ctx, cd_id dialog);
-typedef void (*cd_dialog_close_fn)(void *ctx);
-typedef struct { cd_region r; cd_dialog_close_fn on_close; void *ctx; } cd_dialog;
-int cd_dialog_open(cd_dialog *d, cd_id parent, cd_str cls, cd_dialog_build_fn build, cd_dialog_close_fn on_close,
-                   void *ctx);
-void cd_dialog_close(cd_dialog *d);
-static inline int cd_dialog_shown(const cd_dialog *d) { return d->r.shown; }
-static inline cd_id cd_dialog_node(const cd_dialog *d) { return d->r.root; } /* 0 when not shown */
 
 /* ---- a string builder over the caller's buffer ----
  *   char room[64]; cd_buf b = cd_buf_in(room, sizeof room);

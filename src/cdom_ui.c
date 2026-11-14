@@ -27,37 +27,6 @@ cd_id cd_button(cd_str cls, cd_str label, cd_event_fn fn, void *ctx, cd_id *labe
   return b;
 }
 
-/* Every way out ends here: the dialog goes (its region, so what was built in it), then on_close. */
-static void dialog_closed(const cd_event_rec *e, void *ctx) {
-  (void)e;
-  cd_dialog *d = ctx;
-  cd_dialog_close_fn fn = d->on_close;
-  void *c = d->ctx;
-  cd_region_hide(&d->r);
-  if (fn) fn(c);
-}
-int cd_dialog_open(cd_dialog *d, cd_id parent, cd_str cls, cd_dialog_build_fn build, cd_dialog_close_fn on_close,
-                   void *ctx) {
-  if (d->r.shown) return 0;
-  d->r.parent = 0; /* one element, the <dialog>: taking it away is one remove */
-  d->on_close = on_close;
-  d->ctx = ctx;
-  cd_region_show(&d->r, 1);
-  cd_at(parent, 0);
-  cd_open(CD_LIT("dialog"));
-  cd_name_open(d->r.root);
-  if (cls) cd_class(cls);
-  if (build) build(ctx, d->r.root);
-  cd_close();
-  cd_region_end(&d->r);
-  cd_on(d->r.root, CD_EV_CLOSE, dialog_closed, d);
-  cd_call(d->r.root, CD_LIT("showModal"));
-  return 1;
-}
-void cd_dialog_close(cd_dialog *d) {
-  if (d->r.shown) cd_call(d->r.root, CD_LIT("close"));
-}
-
 void cd_buf_put(cd_buf *b, const char *s, uint32_t n) {
   if (b->over || n > b->cap - b->len) { b->over = 1; return; }
   __builtin_memcpy(b->p + b->len, s, n);
