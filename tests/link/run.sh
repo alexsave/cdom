@@ -19,6 +19,17 @@ if "$CC" "${F[@]}" -o "$out/own_libc.wasm" "$here/alloc.c" "$here/own_libc.c" "$
   echo "FAIL an app's own libc does not link next to mini.c:"; cat "$out/own_libc.log"; fail=1; fi
 if "$CC" "${F[@]}" -o "$out/on_only.wasm" "$here/on_only.c" "$src/cdom.c" "$src/mini.c" 2> "$out/on_only.log"; then :; else
   echo "FAIL an app that uses cd_on alone, with no cd_on_event, does not link:"; cat "$out/on_only.log"; fail=1; fi
+# The render pass is linked only into an app that asks for a render (cdom.c, renders: the volatile
+# pointer). dirty_pass.c built without and with a cd_dirty call: at -Oz the second is 437 bytes larger
+# (the pass, the queue and cd_dirty); with the pass linked into every app the gap is 219. 330 splits them.
+Z=(-Oz "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror "${CDOM_LDFLAGS[@]}" -Wl,--strip-all)
+if "$CC" "${Z[@]}" -o "$out/dirty_none.wasm" "$here/dirty_pass.c" "$src/cdom.c" "$src/mini.c" &&
+   "$CC" "${Z[@]}" -DASKS -o "$out/dirty_asks.wasm" "$here/dirty_pass.c" "$src/cdom.c" "$src/mini.c"; then
+  none=$(wc -c < "$out/dirty_none.wasm"); asks=$(wc -c < "$out/dirty_asks.wasm")
+  if [ $((asks - none)) -lt 330 ]; then
+    echo "FAIL an app that never calls cd_dirty carries the render pass: $none bytes without cd_dirty, $asks with (a gap under 330)"; fail=1
+  fi
+else echo "FAIL dirty_pass.c does not build"; fail=1; fi
 # string.h (and stdio.h, below): a file that includes it builds under cdom's flags and under freestanding ones (-ffreestanding, where
 # clang emits a call for a memcpy it does not know), and links with mini.c alone; memcpy, memmove and
 # memset are memory.copy and memory.fill in place, never an undefined symbol. libc_addr takes their

@@ -419,6 +419,7 @@ M = [
   ('undirty-noop', 'src/cdom.c', '  for (uint32_t i = render_at; i < nrenders; i++)\n    if (renders[i].fn == fn && renders[i].ctx == ctx) renders[i].fn = 0;', '  (void)fn; (void)ctx;', UNIT, 'FAIL cd_undirty'),
   ('render-now-noop', 'src/cdom.c', 'void cd_render_now(void) { renders_now(); }', 'void cd_render_now(void) {}', UNIT, 'FAIL cd_render_now'),
   ('render-rounds-unbounded', 'src/cdom.c', '#define CD_RENDER_ROUNDS 16', '#define CD_RENDER_ROUNDS 1000', UNIT, 'FAIL traps: renders that keep'),
+  ('render-pass-everywhere', 'src/cdom.c', 'static void (*volatile render_pass)(void);', 'static void (*render_pass)(void);', LINK, 'FAIL an app that never calls cd_dirty carries the render pass'),
 ]
 
 def build_and_run(root, cmd, minify=False):
