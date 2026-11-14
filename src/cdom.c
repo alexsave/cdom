@@ -928,6 +928,23 @@ void cd_timer_stop(uint32_t token) {
   cd_cb_drop(token);
 }
 
+/* A slot's timer: the slot is emptied before fn runs, so fn may set it again. */
+static void timer_slot_fired(void *ctx) {
+  cd_timer_slot *t = ctx;
+  t->token = 0;
+  t->fn(t->ctx);
+}
+void cd_timer_set(cd_timer_slot *t, uint32_t ms, cd_timer_fn fn, void *ctx) {
+  cd_timer_clear(t);
+  t->fn = fn;
+  t->ctx = ctx;
+  t->token = cd_timer_cb(ms, timer_slot_fired, t);
+}
+void cd_timer_clear(cd_timer_slot *t) {
+  if (t->token) cd_timer_stop(t->token);
+  t->token = 0;
+}
+
 /* ---- window and time ---- */
 static cd_id window_target(uint32_t ev) { return ev == CD_EV_RESIZE ? CD_WINDOW : CD_DOCUMENT; }
 void cd_listen_window(uint32_t ev) { cd_listen(window_target(ev), ev); }

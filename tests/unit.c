@@ -1839,3 +1839,38 @@ EXPORT("t_bound_shows") void t_bound_shows(uint32_t step) {
     cd_bound_shows(&bshow, L("a"));
   } else cd_bound_set(&bshow, step == 1 ? L("a") : L("b"));
 }
+
+/* 26. Timer slots: a set replaces the pending timer (a debounce); a fired slot is empty before its fn
+ * runs, which may set it again; a clear, from a region's cleanup too, stops what is pending. */
+static cd_timer_slot ts[4];
+static uint32_t ts_heard[8], ts_pending_inside;
+static void ts_fn(void *ctx) {
+  uint32_t k = (uint32_t)(uintptr_t)ctx;
+  ts_heard[k]++;
+  if (k == 2) { if (!ts_pending_inside) ts_pending_inside = cd_timer_pending(&ts[1]) + 1; /* at the first fire */ if (ts_heard[2] == 1) cd_timer_set(&ts[1], 5, ts_fn, (void *)2); }
+}
+static cd_region ts_r;
+static void ts_clear(void *ctx) { cd_timer_clear(ctx); }
+EXPORT("t_tslot") uint32_t t_tslot(void) {
+  uint32_t pend = 0;
+  cd_timer_set(&ts[0], 20, ts_fn, (void *)0); /* replaced before it fires */
+  cd_timer_set(&ts[0], 20, ts_fn, (void *)1);
+  pend |= (uint32_t)cd_timer_pending(&ts[0]);
+  cd_timer_set(&ts[1], 5, ts_fn, (void *)2);  /* fires, and sets itself once more */
+  cd_timer_set(&ts[2], 5, ts_fn, (void *)3);  /* cleared before it fires */
+  cd_timer_clear(&ts[2]);
+  pend |= (uint32_t)!cd_timer_pending(&ts[2]) << 1;
+  cd_timer_clear(&ts[3]);                       /* a slot that never ran */
+  cd_id s = section("tslot");
+  ts_r.parent = s;
+  if (cd_region_show(&ts_r, 1)) { cd_on_free(0, ts_clear, &ts[3]); cd_region_end(&ts_r); }
+  cd_timer_set(&ts[3], 5, ts_fn, (void *)4);  /* its region goes first */
+  cd_region_hide(&ts_r);
+  pend |= (uint32_t)!cd_timer_pending(&ts[3]) << 2;
+  return pend;
+}
+EXPORT("t_tslot_heard") uint32_t t_tslot_heard(uint32_t k) { return k == 7 ? ts_pending_inside : ts_heard[k]; }
+EXPORT("t_tslot_after") uint32_t t_tslot_after(void) { /* every slot empty, and clearing one that fired is nothing */
+  cd_timer_clear(&ts[0]);
+  return (uint32_t)(cd_timer_pending(&ts[0]) | cd_timer_pending(&ts[1]) | cd_timer_pending(&ts[2]) | cd_timer_pending(&ts[3]));
+}

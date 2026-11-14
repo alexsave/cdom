@@ -1140,5 +1140,14 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     check('cd_bound_shows: the value a node was built with is recorded, so setting it again writes nothing, and a new one writes', () =>
       (!threw && counts.join() === '0,1' && $('#boundshows').textContent === 'b') || JSON.stringify({ counts, threw }));
   }
+  {
+    // 26. Timer slots.
+    let threw = '', pend = 0;
+    try { pend = x.t_tslot(); } catch (e) { threw = String(e); }
+    await sleep(120);
+    const heard = [0, 1, 2, 3, 4].map((k) => x.t_tslot_heard(k)).join(), inside = x.t_tslot_heard(7), after = x.t_tslot_after();
+    check('cd_timer_set replaces the slot\'s pending timer (a debounce), a fired slot is empty before its fn runs and may be set again, and cd_timer_clear stops what is pending, from a region\'s cleanup too', () =>
+      (!threw && pend === 7 && heard === '0,1,2,0,0' && inside === 1 && after === 0) || JSON.stringify({ pend, heard, inside, after, threw }));
+  }
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>

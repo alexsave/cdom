@@ -150,6 +150,7 @@ flowchart LR
 ```
 
 - The API is `src/cdom.h`, with the network in `src/cdom_net.h`, the store in `src/cdom_store.h`, and the other platform modules beside them.
+- A timer slot (`cd_timer_slot`, `cd_timer_set`, `cd_timer_clear`) holds at most one pending timer: setting it again replaces the one that waits (a debounce), and clearing it from a region's cleanup stops it. `cd_input_whole(id, dst, cap, &len)` reads an input's whole value or none of it, with its whole length either way.
 - URL helpers are in `src/cdom_url.h` (module `url`): `cd_url_encode` percent-encodes bytes as `encodeURIComponent` does (for a query value), and `cd_url_decode` reverses it; both are plain C, with no shim call.
 - A program's libc comes from cdom: `src/libc/string.h`, `src/libc/stdio.h` (`snprintf` and `vsnprintf`, integers and strings, no floats) and `src/mini.c` (add `-isystem cdom/src/libc`).
 - The I/O calls external adapters build on (the `_cb` forms, the socket calls, `cd_page_origin`, `cd_random_bytes`, `cd_timer_stop`, `cd_epoch_ms`, `cd_now` and the program's libc) are a stable contract, written at the top of `src/cdom.h`: they change only additively, and `tests/link/contract.c` fails to compile if one changes in place.
