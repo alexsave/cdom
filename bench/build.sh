@@ -44,9 +44,11 @@ JSON
   printf '%s %s: %s bytes, %s gz\n' "$name" "$OPT" "$(wc -c < "$out/app.wasm" | tr -d ' ')" "$(gzip -9c "$out/app.wasm" | wc -c | tr -d ' ')"
 }
 
-# NAME=x builds only the default entry, as jfb/frameworks/keyed/x (for side-by-side work).
-if [ -n "${NAME:-}" ]; then build "$NAME" "interned strings, templates"; exit 0; fi
+# NAME=x builds only the default entry, as jfb/frameworks/keyed/x (for side-by-side work); FLAGS adds
+# compile flags to it (FLAGS=-DCDOM_BOUND=1 NAME=x builds cdom-bound's variant as x).
+if [ -n "${NAME:-}" ]; then build "$NAME" "interned strings, templates" ${FLAGS:-}; exit 0; fi
 build cdom "interned strings, templates"
 build cdom-pertext "per-op strings, templates" -DCDOM_INTERN_TEXT=0
 build cdom-notpl "interned strings, no templates" -DCDOM_TEMPLATES=0
 build cdom-o2 "interned strings, templates, -O2"
+build cdom-bound "interned strings, templates, the row class through cd_bound" -DCDOM_BOUND=1
