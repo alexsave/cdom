@@ -463,6 +463,16 @@ def build_and_run(root, cmd, minify=False):
     return HUNG, f'HUNG: killed after {TEST_TIMEOUT} s\n' + (out or '')
   return t.returncode, out
 
+# A mutant's test may write into the tree it runs in (mk-any-wasm makes cdom.mk's page rule apply to every
+# .html, so make rebuilds shim/page.html and tests/link/page/marker.html in place). Restoring only the
+# mutated file left those for every later mutant of that worker, whose pages then failed for that
+# reason, not their own (seven link mutants missed). So after each mutant every tracked file goes back
+# to the copy's index, which holds the real tree's files; the generated minified shim is among them.
+def restore_tree(root):
+  changed = subprocess.run(['git', 'diff', '--name-only'], cwd=root, capture_output=True, text=True, check=True).stdout.split()
+  if changed: subprocess.run(['git', 'checkout', '--', *changed], cwd=root, check=True)
+  return [f for f in changed if f != 'shim/cdom.min.js'] # the min shim is rebuilt by every shim mutant: not news
+
 def copy_tree(dst):
   files = subprocess.run(['git', 'ls-files', '-z'], cwd=top, capture_output=True, text=True, check=True).stdout.split('\0')
   for f in filter(None, files):
@@ -479,12 +489,15 @@ args = sys.argv[1:]
 jobs = max(1, (os.cpu_count() or 2) // 2)
 if args[:1] == ['-j']: jobs, args = int(args[1]), args[2:]
 only = set(args)
+unknown = sorted(only - {m[0] for m in M})
+if unknown: sys.exit('mutate.py: no mutant named ' + ', '.join(unknown)) # else a mistyped list runs nothing and passes
 todo = [m for m in M if not only or m[0] in only]
 results = {}
 lock = threading.Lock()
 work = queue.Queue()
 for k, m in enumerate(todo): work.put((k, m))
 base = pathlib.Path(tempfile.mkdtemp(prefix='cdom-mutants-'))
+missed_dir = pathlib.Path(tempfile.mkdtemp(prefix='cdom-missed-'))
 
 def worker(w):
   root = base / f'w{w}'
@@ -502,8 +515,15 @@ def worker(w):
         code, out = build_and_run(root, cmd, minify=True)
       finally:
         p.write_text(src)
+        touched = restore_tree(root)
       ok = code == HUNG or (code != 0 and want in out)
-      line = ('caught (HUNG, killed) ' if code == HUNG else 'caught ' if ok else 'MISSED ') + name + ('' if ok else '\n  ' + out[-600:].replace('\n', '\n  '))
+      why = '' if ok else f' (exit {code}; ' + ('the FAIL text is there' if want in out else 'no ' + repr(want)) + ')'
+      if not ok: # the whole output, kept past the run, since the tail shown here may not hold the cause
+        (missed_dir / f'{name}.log').write_text(out)
+        why += f' full output: {missed_dir / (name + ".log")}'
+      if touched: # a mutant whose test rewrote tracked files: they are back, so the next mutant runs on the real tree
+        why += ' (its test changed ' + ', '.join(touched) + '; restored)'
+      line = ('caught (HUNG, killed) ' if code == HUNG else 'caught ' if ok else 'MISSED ') + name + why + ('' if ok else '\n  ' + out[-600:].replace('\n', '\n  '))
     with lock:
       results[k] = ok
       print(line, flush=True)
@@ -519,6 +539,6 @@ print(f'{len(results) - bad} of {len(todo)} caught', flush=True)
 code = 0
 for label, cmd in (('unit', UNIT), ('host', HOST), ('canvas', CANVAS)):
   c, out = build_and_run(top, cmd)
-  print(f'restored: {label} ' + ('ok' if c == 0 else 'FAIL'), flush=True)
+  print(f'restored: {label} ' + ('ok' if c == 0 else 'FAIL\n  ' + out[-1500:].replace('\n', '\n  ')), flush=True)
   code |= c
 sys.exit(1 if bad or code else 0)
