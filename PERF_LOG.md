@@ -455,7 +455,7 @@ Time, tools/evcost.mjs (ns per delegated click on a row link, the select's cd_li
 | base | 7,510-7,675 |
 | branch | 7,580-7,720 |
 | cdom-bound (the row class bound) | 7,945-8,310 |
-The branch is within noise of the base. cdom-bound is about 6% slower per click: the select patches 1,000 rows, and each row's view grew from 8 bytes to 44 with its cd_bound. Inlining cd_bound_set's unchanged case in cdom.h took about 300 ns of it (a call per row); the rest is the footprint. So cd_bound is for views, and the header says a list's rows keep a hand-written last value.
+The branch is within noise of the base. cdom-bound is about 6% slower per click: the select patches 1,000 rows, and each row's view grew from 8 bytes to 40 with its 36-byte cd_bound. Inlining cd_bound_set's unchanged case in cdom.h took about 300 ns of it (a call per row); the rest is the footprint. So cd_bound is for views, and the header says a list's rows keep a hand-written last value.
 tools/quick.mjs (script ms per click, two interleaved runs): base, branch and cdom-bound within each other's spread (run1k 1.8-2.3, replace1k 2.1-2.4, append 1.7-1.9, create10k 16.9-18.6; the rest at the timer floor).
 tools/pair.sh was not run: the bench app's path differs from the base only by the region stack's push and pop in cd_list_update and one load per flush, and domcount and evcost show nothing.
 
