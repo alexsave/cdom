@@ -39,12 +39,12 @@ if "$CC" "${Z[@]}" -o "$out/ui_off.wasm" "$here/dirty_pass.c" "$src/cdom.c" "$sr
 else echo "FAIL dirty_pass.c does not build with cdom_ui.c"; fail=1; fi
 # The callbacks-only profile (src/cdom_callbacks_only.h): cd_on and the _cb forms compile under it, and a
 # token form or the listening it replaces does not.
-PC=(-O2 "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror)
-if "$CC" "${PC[@]}" -c -o "$out/callbacks_only.o" "$here/callbacks_only.c" 2> "$out/callbacks_only.log"; then
+PROF=(-O2 "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror)
+if "$CC" "${PROF[@]}" -c -o "$out/callbacks_only.o" "$here/callbacks_only.c" 2> "$out/callbacks_only.log"; then
   echo "ok   the callbacks-only profile takes cd_on, cd_timer_cb, cd_http_cb and cd_store_get_cb"
 else echo "FAIL the callbacks-only profile refused cd_on or a _cb form:"; cat "$out/callbacks_only.log"; fail=1; fi
 for u in LISTEN HTTP TIMER STORE; do
-  if "$CC" "${PC[@]}" -DUSE_$u -c -o "$out/callbacks_only_$u.o" "$here/callbacks_only.c" 2> "$out/callbacks_only_$u.log"; then
+  if "$CC" "${PROF[@]}" -DUSE_$u -c -o "$out/callbacks_only_$u.o" "$here/callbacks_only.c" 2> "$out/callbacks_only_$u.log"; then
     echo "FAIL the callbacks-only profile let a poisoned call through (USE_$u)"; fail=1
   elif ! grep -q 'poisoned' "$out/callbacks_only_$u.log"; then
     echo "FAIL the callbacks-only profile refused USE_$u for another reason:"; cat "$out/callbacks_only_$u.log"; fail=1
