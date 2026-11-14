@@ -556,13 +556,17 @@ static uint32_t vals_ref(const cd_val *a, uint32_t n) {
   }
   return used;
 }
+/* Host code sees the DOM, so the renders asked for so far run first: the reads, cd_set and the calls
+ * (focus, scrollIntoView, a measure through call) see what the state says, not what it said. */
 void cd_set(cd_id id, cd_str path, cd_val v) {
   if (v.tag == CD_V_OBJ) __builtin_trap(); /* its pairs cannot follow a value passed alone */
+  renders_now();
   uint32_t p = ref_name(path);
   vals_ref(&v, 1);
   ready(); j_set(id, p, &v);
 }
 void cd_call_args(cd_id id, cd_str method, uint32_t n, const cd_val *a) {
+  renders_now();
   uint32_t m = ref_name(method);
   vals_ref(a, n);
   ready(); j_call(id, m, n, a);
@@ -571,6 +575,7 @@ void cd_call(cd_id id, cd_str method) { cd_call_args(id, method, 0, 0); }
 
 enum { GET_NUM, GET_STR, GET_ID, GET_STR_LEN };
 static double get(cd_id id, cd_str path, uint32_t kind, void *dst, uint32_t cap) {
+  renders_now();
   uint32_t p = path ? ref_name(path) : 0;
   send_held(); /* a read: a cleanup may read */
   return j_get(id, p, kind, dst, cap);
@@ -925,9 +930,10 @@ void cd_listen_window(uint32_t ev) { cd_listen(window_target(ev), ev); }
 void cd_unlisten_window(uint32_t ev) { cd_unlisten(window_target(ev), ev); }
 void cd_prevent_default(void) { inbox.flags |= CD_PREVENT; }
 void cd_stop_propagation(void) { inbox.flags |= CD_STOP; }
-cd_id cd_hit(int32_t x, int32_t y) { return j_hit(x, y); }
-void cd_viewport(cd_viewport_rec *v) { j_viewport(v); }
-int cd_rect(cd_id id, double out[4]) { return (int)j_rect(id, out); }
+/* Layout reads: the renders asked for so far run first, so the layout read is the state's. */
+cd_id cd_hit(int32_t x, int32_t y) { renders_now(); return j_hit(x, y); }
+void cd_viewport(cd_viewport_rec *v) { renders_now(); j_viewport(v); }
+int cd_rect(cd_id id, double out[4]) { renders_now(); return (int)j_rect(id, out); }
 void cd_raf_request(uint32_t token) { j_raf(token); }
 double cd_now(void) { return j_now(); }
 __attribute__((weak)) void cd_on_timer(uint32_t token) { (void)token; }

@@ -220,7 +220,12 @@ uint32_t cd_pending(void);           /* nonzero while strings or a walk wait to 
  * (a handful per entry: the queue is scanned to dedup), not for rows: a list's rows are cd_list_update's.
  * cd_undirty drops a pending (fn, ctx), even one later in the round running now: a cleanup of the
  * region a view drew calls it, so a render never runs on state that went. cd_render_now runs what is
- * pending now (inside a render, or a cleanup, it does nothing: the pass takes it). */
+ * pending now (inside a render, or a cleanup, it does nothing: the pass takes it).
+ * Every call that hands host code the DOM runs what is pending first, as cd_render_now does: the reads
+ * (cd_get_num, cd_get_str, cd_get_id, cd_input_text), the layout reads (cd_rect, cd_hit, cd_viewport),
+ * cd_set and cd_call_args. So a handler that sets state and then measures, focuses or scrolls sees the
+ * DOM the state draws. The building and updating calls do not: they are made as issued. A cleanup
+ * that reads sees the DOM as it is (the pending renders run in the flush after it). */
 typedef void (*cd_render_fn)(void *ctx);
 void cd_dirty(cd_render_fn fn, void *ctx);
 void cd_undirty(cd_render_fn fn, void *ctx);

@@ -420,6 +420,13 @@ M = [
   ('render-now-noop', 'src/cdom.c', 'void cd_render_now(void) { renders_now(); }', 'void cd_render_now(void) {}', UNIT, 'FAIL cd_render_now'),
   ('render-rounds-unbounded', 'src/cdom.c', '#define CD_RENDER_ROUNDS 16', '#define CD_RENDER_ROUNDS 1000', UNIT, 'FAIL traps: renders that keep'),
   ('render-pass-everywhere', 'src/cdom.c', 'static void (*volatile render_pass)(void);', 'static void (*render_pass)(void);', LINK, 'FAIL an app that never calls cd_dirty carries the render pass'),
+  ('sync-get', 'src/cdom.c', 'static double get(cd_id id, cd_str path, uint32_t kind, void *dst, uint32_t cap) {\n  renders_now();\n', 'static double get(cd_id id, cd_str path, uint32_t kind, void *dst, uint32_t cap) {\n', UNIT, 'FAIL the reads, the layout reads'),
+  ('sync-set', 'src/cdom.c', '  if (v.tag == CD_V_OBJ) __builtin_trap(); /* its pairs cannot follow a value passed alone */\n  renders_now();\n', '  if (v.tag == CD_V_OBJ) __builtin_trap(); /* its pairs cannot follow a value passed alone */\n', UNIT, 'FAIL the reads, the layout reads'),
+  ('sync-call', 'src/cdom.c', 'void cd_call_args(cd_id id, cd_str method, uint32_t n, const cd_val *a) {\n  renders_now();\n', 'void cd_call_args(cd_id id, cd_str method, uint32_t n, const cd_val *a) {\n', UNIT, 'FAIL the reads, the layout reads'),
+  ('sync-hit', 'src/cdom.c', 'cd_id cd_hit(int32_t x, int32_t y) { renders_now(); return', 'cd_id cd_hit(int32_t x, int32_t y) { return', UNIT, 'FAIL the reads, the layout reads'),
+  ('sync-viewport', 'src/cdom.c', 'void cd_viewport(cd_viewport_rec *v) { renders_now(); j_viewport', 'void cd_viewport(cd_viewport_rec *v) { j_viewport', UNIT, 'FAIL the reads, the layout reads'),
+  ('sync-rect', 'src/cdom.c', 'int cd_rect(cd_id id, double out[4]) { renders_now(); return', 'int cd_rect(cd_id id, double out[4]) { return', UNIT, 'FAIL the reads, the layout reads'),
+  ('sync-in-cleanup', 'src/cdom.c', '  if (render_at == nrenders || rendering || releasing) return;', '  if (render_at == nrenders || rendering || (releasing && 0)) return;', UNIT, 'FAIL a cleanup that reads'),
 ]
 
 def build_and_run(root, cmd, minify=False):
