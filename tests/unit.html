@@ -35,6 +35,24 @@ let storeOpenedAt = -1;
 const realOpen = indexedDB.open.bind(indexedDB);
 indexedDB.open = (...a) => { if (storeOpenedAt < 0) storeOpenedAt = performance.now(); return realOpen(...a); };
 cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).then(async (x) => {
+  const trapCase = new URLSearchParams(location.search).get('trap');
+  if (trapCase) {
+    // 20d. What traps, one case per page load (tools/unit.mjs opens unit.html?trap=NAME for each): a
+    // trap leaves cdom as it was in the middle of the call, so a second case on the same page could
+    // trap for the first one's reason.
+    const traps = (f) => { try { f(); return 'no trap'; } catch (e) { return e instanceof WebAssembly.RuntimeError ? 'trap' : String(e); } };
+    const cases = {
+      idle: ['cd_on_free with no region building', () => x.t_trap_on_free_idle(), () => true],
+      hiddenUp: ['a region whose up is not shown', () => x.t_trap_up_hidden(), () => true],
+      cleanupDom: ['a cleanup that changes the DOM (and the change is not made)', () => x.t_trap_cleanup_dom(), () => $('#trapdom') && $('#trapdom').className === ''],
+      depth: ['a build nested 9 deep (8 open)', () => x.t_trap_depth(), () => x.t_trap_depth_shown() === 8],
+      otherUp: ['a region whose up is another region than the one building', () => x.t_trap_up_other(), () => true],
+    };
+    const [what, run, after] = cases[trapCase];
+    const got = traps(run);
+    check(`regions trap: ${what}`, () => (got === 'trap' && after()) || `${got}, after ${after()}`);
+    return;
+  }
   check('options.openStore opens the store before the module starts', () => (storeOpenedAt >= 0 && storeOpenedAt <= x.t_started()) || `opened at ${storeOpenedAt}, started at ${x.t_started()}`);
   window.__x = x;
   {
@@ -962,5 +980,71 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     const r = [whole === want.length, wholeOut === want, /^http:\/\/127\.0\.0\.1:\d+$/.test(wholeOut), cut === want.length, cutOut === 'http**'];
     return r.every(Boolean) || JSON.stringify(r) + ` ${wholeOut} ${cutOut}`;
   });
+  {
+    // 20. Nested regions and cd_on_free.
+    let threw = '';
+    const log = (n) => Array.from({ length: n }, (_, i) => x.t_nest_log(i, 0));
+    const at = (n) => Array.from({ length: n }, (_, i) => x.t_nest_log(i, 1));
+    x.t_nest_section();
+    const live0 = x.t_ids_live();
+    try { x.t_nest_build(); } catch (e) { threw = String(e); }
+    const live1 = x.t_ids_live(), built = !!$('#nest div.a > p.b > span > i'), box = $('#nest > div');
+    const seen = new MutationObserver(() => {});
+    seen.observe(box, { childList: true, subtree: true });
+    try { x.t_nest_hide(0); } catch (e) { threw += String(e); }
+    const removals = seen.takeRecords().filter((m) => m.removedNodes.length).length;
+    seen.disconnect();
+    const first = { log: log(5).join(), at: at(4).join(), live: x.t_ids_live() - live0, shown: x.t_nest_shown(), empty: box.childNodes.length };
+    check('nested regions: taking a region away takes its children first, newest first, then its own cleanups newest first, each before any id of its region is freed; one DOM op for the whole tree', () => {
+      const r = [built, first.log === '4,3,2,1,0', first.at === [live1, live1 - 1, live1 - 3, live1 - 3].join(), first.live === 0, first.shown === 0, first.empty === 0, removals === 1];
+      return (!threw && r.every(Boolean)) || JSON.stringify({ r, first, live1, removals, threw });
+    });
+    try { x.t_nest_build(); x.t_nest_hide(1); } catch (e) { threw += String(e); }
+    const alone = { log: log(3).join(), a: !!$('#nest div.a'), b: !!$('#nest p.b'), kids: x.t_nest_kids(), shown: x.t_nest_shown() };
+    check('nested regions: a child hidden alone takes its own children and its nodes, and leaves its parent\'s list of children', () => {
+      const r = [alone.log === '4,3,0', alone.a, !alone.b, alone.kids === 0, alone.shown === 1];
+      return (!threw && r.every(Boolean)) || JSON.stringify({ r, alone, threw });
+    });
+    try { x.t_nest_show_b(); } catch (e) { threw += String(e); }
+    const again = { b: !!$('#nest div.a > p.b > span > i'), kids: x.t_nest_kids(), shown: x.t_nest_shown() };
+    try { x.t_nest_hide(0); } catch (e) { threw += String(e); }
+    const last = { log: log(7).join(), live: x.t_ids_live() - live0, shown: x.t_nest_shown() };
+    check('nested regions: a child shown again with none building goes back into its parent (up), which takes it away once', () => {
+      const r = [again.b, again.kids === 1, again.shown === 7,
+        last.log === '4,3,4,3,2,1,0', last.live === 0, last.shown === 0];
+      return (!threw && r.every(Boolean)) || JSON.stringify({ r, alone, again, last, threw });
+    });
+  }
+  {
+    // 20b. A region handed to another module, filled later from a timer, released with its parent.
+    let threw = '';
+    x.t_handoff_section();
+    const live0 = x.t_ids_live(), st = (k) => x.t_handoff_state(k);
+    try { x.t_handoff(0, 20); } catch (e) { threw = String(e); }
+    const before = st(0);
+    const filled = await until(() => $('#handoff .a0 > section > span') !== null, 2000);
+    const during = st(0);
+    try { x.t_handoff_hide(0); } catch (e) { threw += String(e); }
+    const after = { s: st(0), gone: !$('#handoff .a0'), live: x.t_ids_live() - live0 };
+    try { x.t_handoff(1, 50); x.t_handoff_hide(1); } catch (e) { threw += String(e); }
+    await sleep(120);
+    const early = { s: st(1), loaded: !!$('#handoff span'), live: x.t_ids_live() - live0 };
+    check('t_region_handoff: module A hands its region and a box to module B, B fills it later from a timer in a region whose up is A\'s, and hiding A releases B\'s state through cd_on_free (or stops B\'s timer when A goes first)', () => {
+      const r = [before === (0b100 | 0 << 4), filled, during === (0b011 | 0 << 4), after.s === (0 | 1 << 4), after.gone, after.live === 0,
+        early.s === (0 | 1 << 4 | 1 << 8), !early.loaded, early.live === 0];
+      return (!threw && r.every(Boolean)) || JSON.stringify({ r, before, during, after, early, threw });
+    });
+  }
+  {
+    // 20c. cd_region_forget.
+    let threw = '', got = -1;
+    try { x.t_forget_build(); } catch (e) { threw = String(e); }
+    const live = x.t_ids_live();
+    try { got = x.t_forget(); } catch (e) { threw += String(e); }
+    check('cd_region_forget: the cleanups run and the ids go as a hide, with no DOM op (the nodes stay)', () => {
+      const r = [got === 1, $('#forget > b') && $('#forget > b').textContent === 'kept', x.t_ids_live() === live - 1];
+      return (!threw && r.every(Boolean)) || JSON.stringify({ r, got, threw });
+    });
+  }
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>

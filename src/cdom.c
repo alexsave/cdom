@@ -377,9 +377,17 @@ static void walk_step(uint32_t s) {
   walk_steps |= s << (2 * walk_n++);
 }
 /* Strings an op takes are queued by ref_*; this sends them, and any held walk, before the call. */
-static inline void ready(void) { walk_done(); send_strings(); }
+static inline void send_held(void) { walk_done(); send_strings(); }
+/* While a region's cleanups run (cd_on_free) the DOM must not change: they release C state only, and
+ * the region's nodes are about to go. Every operation that changes the DOM or calls host code passes
+ * here; reads (get) and frees use send_held, so a cleanup may read a field or forget a list. */
+static uint32_t releasing;
+static inline void ready(void) {
+  if (releasing) __builtin_trap(); /* a cleanup changed the DOM */
+  send_held();
+}
 
-void cd_flush(void) { ready(); }
+void cd_flush(void) { send_held(); }
 uint32_t cd_pending(void) { return walking | nstrs; }
 
 static cd_id at_parent = CD_DETACHED - 1, at_before = CD_DETACHED - 1;
@@ -517,7 +525,7 @@ void cd_call(cd_id id, cd_str method) { cd_call_args(id, method, 0, 0); }
 enum { GET_NUM, GET_STR, GET_ID, GET_STR_LEN };
 static double get(cd_id id, cd_str path, uint32_t kind, void *dst, uint32_t cap) {
   uint32_t p = path ? ref_name(path) : 0;
-  ready();
+  send_held(); /* a read: a cleanup may read */
   return j_get(id, p, kind, dst, cap);
 }
 double cd_get_num(cd_id id, cd_str path) { return get(id, path, GET_NUM, 0, 0); }
@@ -589,7 +597,7 @@ uint32_t cd_ids_high(void) { return next_id - 1; }
 /* The mount and the reserved ids are never freed, so they stay bound and cd_id_new never returns them. */
 void cd_id_free(cd_id id) {
   if (id < CD_FIRST_ID) return;
-  ready(); j_free(id);
+  send_held(); j_free(id); /* no DOM change: a cleanup may free (cd_list_forget) */
   release(id);
 }
 
@@ -604,32 +612,96 @@ uint32_t cd_tag(cd_id id) { return id < tags_cap ? tags[id] : 0; }
 
 uint32_t cd_input_text(cd_id id, char *dst, uint32_t cap) { return (uint32_t)get(id, CD_LIT("value"), GET_STR_LEN, dst, cap); }
 
-/* ---- regions ---- */
+/* ---- regions ----
+ * building is the stack of regions whose builds are open, innermost last; recording mirrors its top
+ * (0 when nothing builds, or inside cd_list_update, which pushes 0 so a list's ids stay the list's). */
+#define CD_REGION_DEPTH 8
+static cd_region *building[CD_REGION_DEPTH];
+static uint32_t nbuilding;
+static void build_push(cd_region *r) {
+  if (nbuilding == CD_REGION_DEPTH) __builtin_trap(); /* nested deeper than CD_REGION_DEPTH */
+  building[nbuilding++] = r;
+  recording = r;
+}
+static void build_pop(void) {
+  nbuilding--;
+  recording = nbuilding ? building[nbuilding - 1] : 0;
+}
+
+/* Takes r away: its child regions first, newest first, each forgotten (r's own DOM op takes their nodes
+ * with it); then r's cleanups, newest first, while the DOM may not change; then, when dom, r's one DOM
+ * op (a clear, or a remove of its root); then its ids. It does not unlink r from its parent. */
+static void take(cd_region *r, int dom) {
+  for (uint32_t i = 0; i < nbuilding; i++)
+    if (building[i] == r) __builtin_trap(); /* taken away while it builds */
+  for (cd_region *k = r->kids, *next; k; k = next) {
+    next = k->next;
+    take(k, 0);
+  }
+  r->kids = 0;
+  while (r->nfns) {
+    cd_cleanup c = r->fns[--r->nfns];
+    releasing++;
+    c.fn(c.ctx);
+    releasing--;
+  }
+  uint32_t i = 0;
+  if (dom && r->parent) cd_clear(r->parent);
+  else if (dom) { cd_remove(r->root); i = 1; } /* the root is ids[0] */
+  for (; i < r->n; i++) cd_id_free(r->ids[i]);
+  r->n = 0;
+  r->root = 0;
+  r->shown = 0;
+}
+
+/* Out of its parent's list of children, when it goes alone. */
+static void region_unlink(cd_region *r) {
+  if (!r->up) return;
+  for (cd_region **k = &r->up->kids; *k; k = &(*k)->next)
+    if (*k == r) { *k = r->next; break; }
+  r->next = 0;
+}
+
 int cd_region_show(cd_region *r, int want) {
   if (!want == !r->shown) return 0;
   if (!want) {
-    if (r->parent) {
-      cd_clear(r->parent);
-      for (uint32_t i = 0; i < r->n; i++) cd_id_free(r->ids[i]);
-    } else {
-      cd_remove(r->root); /* ids[0] */
-      for (uint32_t i = 1; i < r->n; i++) cd_id_free(r->ids[i]);
-    }
-    r->n = 0;
-    r->root = 0;
-    r->shown = 0;
+    region_unlink(r);
+    take(r, 1);
     return 0;
   }
-  if (recording) __builtin_trap(); /* regions do not nest */
+  cd_region *in = recording; /* the region building now, if any, is its parent */
+  if (in) {
+    if (r->up && r->up != in) __builtin_trap(); /* r lives in another region */
+    r->up = in;
+  }
+  if (r->up) {
+    if (!r->up->shown) __builtin_trap(); /* its parent is not shown */
+    r->next = r->up->kids;
+    r->up->kids = r;
+  }
   r->shown = 1;
   r->n = 0;
-  recording = r;
+  build_push(r);
   if (!r->parent) r->root = cd_id_new();
   return 1;
 }
 void cd_region_end(cd_region *r) {
   if (recording != r) __builtin_trap();
-  recording = 0;
+  build_pop();
+}
+void cd_region_forget(cd_region *r) {
+  if (!r->shown) return;
+  region_unlink(r);
+  take(r, 0);
+}
+void cd_on_free(cd_region *r, cd_cleanup_fn fn, void *ctx) {
+  if (!r) r = recording;
+  if (!r || !r->shown || releasing) __builtin_trap(); /* no region building, or one not shown, or inside a cleanup */
+  if (r->nfns == r->fcap) {
+    r->fcap = r->fcap ? r->fcap * 2 : 4;
+    r->fns = cd_realloc(r->fns, r->fcap * sizeof(cd_cleanup));
+  }
+  r->fns[r->nfns++] = (cd_cleanup){fn, ctx};
 }
 void cd_region_hide(cd_region *r) { cd_region_show(r, 0); }
 
@@ -966,8 +1038,7 @@ void cd_list_forget(cd_list *L, const cd_list_fns *f) {
 }
 
 void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_fns *f) {
-  cd_region *rec = recording; /* the items' ids are the list's, not a region's */
-  recording = 0;
+  build_push(0); /* the items' ids are the list's, not a region's */
   cd_id end = L->end; /* where the tail is: before the first fixed sibling, or the parent's end */
   cd_item *old = L->items;
   uint32_t on = L->n;
@@ -1088,5 +1159,5 @@ void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_
   L->items = nw;
   L->n = n;
   L->cap = n;
-  recording = rec;
+  build_pop();
 }

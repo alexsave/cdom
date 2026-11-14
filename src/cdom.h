@@ -382,11 +382,42 @@ double cd_now(void);                              /* performance.now(), for work
  * - r->parent == 0: the region is one element, which the builder names cd_name_open(r->root)
  *   (cd_region_show makes r->root); taking it away is one remove.
  * Lists updated while a region builds keep their own ids (cd_list_update does not record);
- * drop a list that lived inside a region with cd_list_forget. Regions do not nest (traps). */
-typedef struct cd_region { cd_id parent, root; cd_id *ids; uint32_t n, cap; int shown; } cd_region;
+ * drop a list that lived inside a region with cd_list_forget (from a cd_on_free cleanup, say).
+ *
+ * Regions nest. A region shown while another builds is that region's child; a region shown when
+ * none builds (from a timer or an answer, filled in later) is the child of r->up when the app set
+ * it, so one module can hand its region to another module's view, which shows its own region in it
+ * whenever its data comes. r->up, once set or taken from the region building, stays: a child lives
+ * in one parent (traps if shown while another region builds), and its parent must be shown (traps).
+ * A child's nodes are inside its parent's nodes. Builds nest at most 8 deep (traps past that).
+ * Taking a region away, by cd_region_hide or as an ancestor goes, is in this order:
+ *   1. its child regions, newest first, each taken away the same way, but with no DOM op of its own
+ *      (the parent's one clear or remove takes their nodes);
+ *   2. its cleanups (cd_on_free), newest first: one registered after the state it releases runs
+ *      before the cleanup that frees that state;
+ *   3. its one DOM op: a clear of r->parent, or a remove of its root;
+ *   4. its ids are freed.
+ * So cleanups run children first, and before any id of their region goes. Cleanups release C
+ * state only: an operation that changes the DOM or calls host code inside one traps (reads,
+ * cd_id_free, cd_list_forget, cd_region_forget and cd_timer_stop work). */
+typedef void (*cd_cleanup_fn)(void *ctx);
+typedef struct { cd_cleanup_fn fn; void *ctx; } cd_cleanup;
+typedef struct cd_region {
+  cd_id parent, root; cd_id *ids; uint32_t n, cap; int shown;
+  struct cd_region *up;                 /* the parent region (set by the app, or by showing inside one) */
+  struct cd_region *kids, *next;        /* cdom's: the child regions shown now, newest first */
+  cd_cleanup *fns; uint32_t nfns, fcap; /* cdom's: the cleanups */
+} cd_region;
 int cd_region_show(cd_region *r, int want);
 void cd_region_end(cd_region *r);
 void cd_region_hide(cd_region *r);   /* = cd_region_show(r, 0) */
+/* fn(ctx) runs when r is taken away (step 2 above); r 0 is the region building now. Traps when no
+ * region builds, on a region not shown, and inside a cleanup. */
+void cd_on_free(cd_region *r, cd_cleanup_fn fn, void *ctx);
+/* The region's DOM already went (a list row it lived in was removed, an ancestor node was cleared):
+ * take it away as an ancestor would, children and cleanups included, with no DOM op. A region not
+ * shown is left as it is. */
+void cd_region_forget(cd_region *r);
 
 /* ---- keyed list ---- */
 typedef struct { uint32_t key; cd_id node; uint32_t data; } cd_item;
