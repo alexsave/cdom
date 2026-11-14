@@ -1023,16 +1023,18 @@ static void lis_mark(const int32_t *src, uint32_t m, int32_t *tails, int32_t *pr
   }
 }
 
+/* destroy runs first, while the item's root id still names its node: what the item holds (a region it
+ * opened, cleanups and all) goes before any of its ids, as a region's does. */
 static void drop(cd_list *L, cd_item *it, const cd_list_fns *f, int dom) {
-  if (dom) cd_remove(it->node); else cd_id_free(it->node);
   f->destroy(f->ctx, it);
+  if (dom) cd_remove(it->node); else cd_id_free(it->node);
   (void)L;
 }
 
 void cd_list_forget(cd_list *L, const cd_list_fns *f) {
   for (uint32_t i = 0; i < L->n; i++) {
-    cd_id_free(L->items[i].node);
     f->destroy(f->ctx, &L->items[i]);
+    cd_id_free(L->items[i].node);
   }
   L->n = 0;
 }
