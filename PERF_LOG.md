@@ -423,3 +423,42 @@ Two decisions of 2026-11-08: cdom and its sibling C library have zero edges betw
 ## Bridge designs compared (2026-11-01)
 
 One import per DOM operation stays: a generic dispatcher, a function table, natively bound imports, fused operations, the old op list and the Fast API were each measured against it on real pages and none was faster beyond the noise. Why, and what does help, is in BRIDGE.md; the benchmark is at the tag bridge-bench-2026-11-01.
+
+## State helpers: nested regions, cd_dirty, read sync, cd_bound, cd_req (branch region-state-helpers, 2026-11-14)
+
+What amgi's UI and two other consumers (cbase's adapter, a LaTeX page) repeat by hand, lifted into cdom.h as pure C: no import, no shim change, no cd_layout change, and the I/O contract and tests/link/contract.c untouched.
+- Regions nest: a child is taken away first, then the region's `cd_on_free` cleanups (newest first, before any id goes), then its one clear or remove, then its ids; `r->up` lets one module fill another module's region later; `cd_region_forget` takes a region whose DOM already went; a cleanup that changes the DOM traps.
+- `cd_list`'s destroy runs before the row's root id is freed, so a row's region goes before the row's ids.
+- `cd_dirty(fn, ctx)`, `cd_undirty`, `cd_render_now`: renders run once each, in order, in the cd_flush that ends every entry from JS; past 16 rounds they trap.
+- The reads (`cd_get_*`, `cd_input_text`), the layout reads (`cd_rect`, `cd_hit`, `cd_viewport`), `cd_set` and `cd_call_args` run pending renders first.
+- `cd_bound`: text, attr, class, style and bool values that write only when they change (interned by id, bytes exactly, numbers by value, bools by truth), unbound with the region they were bound in; `cd_bound_shows` records what a node was built with.
+- `cd_req`: a request slot that stamps a generation at begin and drops answers of an older one, as cbase's adapter does by hand.
+
+Bytes: the keyed bench app.wasm (-Oz, its own source unchanged), each commit's cdom.c built the same way (brotli -q 11).
+| commit | app.wasm | brotli |
+| --- | ---: | ---: |
+| base (3eacf21) | 10,730 | 5,082 |
+| nested regions (cb2ccb0) | 10,818 | 5,106 |
+| list destroy order (5e41ba8) | 10,812 | 5,082 |
+| cd_dirty, first build (574f7fb) | 11,064 | 5,167 |
+| cd_dirty, pass linked only when asked (cc04a22) | 10,838 | 5,117 |
+| read sync, cd_bound, cd_req (to the branch's head) | 10,838 | 5,117 |
+The first cd_dirty build put about 250 bytes into every app: clang saw the one value the static pass pointer could take, called the pass directly and inlined it into every export. The pointer is volatile now, so the pass is linked only into an app that calls cd_dirty, and tests/link/run.sh holds it: dirty_pass.c built with and without a cd_dirty call differ by 437 bytes, 219 with the pass everywhere, and the gate is 330 (mutant render-pass-everywhere).
+An app that uses none of the helpers pays 108 bytes (the region stack in cd_list_update, the cleanup trap in every DOM op, one load per flush and per read).
+The first cd_bound cost 803 bytes in a bench variant that binds the row class (cdom-bound, below); finding and popping a cd_tmp in the string batch and one switch over every kind's writer were most of it, so bytes now go through `cd_bound_set_bytes` (compared, and made a cd_tmp only when changed) and each binder stores its kind's writer: 407 bytes.
+
+DOM calls per operation (tools/domcount.mjs, the nine harness operations): every set, insert and clone count is the same for the base, the branch and cdom-bound; the ±3 nodeValue counts move with each load's random labels (the template slots skip a repeated one), on the base too.
+
+Time, tools/evcost.mjs (ns per delegated click on a row link, the select's cd_list_update over 1,000 rows), interleaved, three rounds each way at loads 6-8:
+| entry | ns per click |
+| --- | ---: |
+| base | 7,510-7,675 |
+| branch | 7,580-7,720 |
+| cdom-bound (the row class bound) | 7,945-8,310 |
+The branch is within noise of the base. cdom-bound is about 6% slower per click: the select patches 1,000 rows, and each row's view grew from 8 bytes to 44 with its cd_bound. Inlining cd_bound_set's unchanged case in cdom.h took about 300 ns of it (a call per row); the rest is the footprint. So cd_bound is for views, and the header says a list's rows keep a hand-written last value.
+tools/quick.mjs (script ms per click, two interleaved runs): base, branch and cdom-bound within each other's spread (run1k 1.8-2.3, replace1k 2.1-2.4, append 1.7-1.9, create10k 16.9-18.6; the rest at the timer floor).
+tools/pair.sh was not run: the bench app's path differs from the base only by the region stack's push and pop in cd_list_update and one load per flush, and domcount and evcost show nothing.
+
+Tests: the unit page 135 cases (109 before), the trap cases each on a page load of its own (unit.html?trap=NAME, since a trap leaves cdom mid-call), listfuzz 5 seeds of 40,000 rounds on wasm and on wasm2js, link, host, canvas and legacy all green.
+tools/mutate.py now kills a test that hangs (a mutant can make C loop forever) after 150 s with its Chrome, and counts it caught as HUNG.
+cbase's cdom adapter (client/hosts/cdom, cbase 2575a2d) compiles with its own wasm32 flags and links with cdom's net, store and random modules against this branch, as against main.
