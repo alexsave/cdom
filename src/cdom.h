@@ -267,7 +267,9 @@ void cd_req_drop(cd_req *r);
  * Node ids carry no generation, so a binding must not outlive its node: one bound while a region
  * builds is unbound when the region goes (a cleanup cdom registers), and one bound elsewhere (a list
  * row's create) is the app's to cd_unbind. Setting an unbound value traps; cd_bound_live tells.
- * A cd_bound starts zeroed (static, or cleared memory), and is zeroed again by cd_unbind. */
+ * A cd_bound starts zeroed (static, or cleared memory), and is zeroed again by cd_unbind.
+ * It is 36 bytes: for a list's rows a hand-written last value is smaller and faster (the keyed bench
+ * with its row class bound selects about 6% slower per click, PERF_LOG.md); it is meant for views. */
 typedef void (*cd_bound_write)(cd_id id, cd_str name, cd_str value);
 typedef struct {
   cd_id id; cd_str name; uint32_t kind, seen, last; /* cdom's: the node, and what it last sent */
@@ -279,7 +281,12 @@ void cd_bind_attr(cd_bound *b, cd_id el, cd_str name);
 void cd_bind_class(cd_bound *b, cd_id el);
 void cd_bind_style(cd_bound *b, cd_id el, cd_str prop);
 void cd_bind_bool(cd_bound *b, cd_id el, cd_str prop);
-void cd_bound_set(cd_bound *b, cd_str value);   /* interned; a cd_tmp traps */
+/* interned; a cd_tmp traps. The unchanged case is inline (two compares, no call): a list patching a
+ * thousand bound rows per event skips as fast as a hand-written last-value check. */
+void cd_bound_set_(cd_bound *b, cd_str value);
+static inline void cd_bound_set(cd_bound *b, cd_str value) {
+  if (b->seen != 1 || b->last != value) cd_bound_set_(b, value); /* 1: an interned id was sent */
+}
 void cd_bound_set_bytes(cd_bound *b, const char *p, uint32_t len);
 void cd_bound_set_num(cd_bound *b, uint32_t n);
 /* The node already shows value (it was built with it): the binding records it without writing, so

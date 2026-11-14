@@ -427,7 +427,7 @@ M = [
   ('sync-viewport', 'src/cdom.c', 'void cd_viewport(cd_viewport_rec *v) { renders_now(); j_viewport', 'void cd_viewport(cd_viewport_rec *v) { j_viewport', UNIT, 'FAIL the reads, the layout reads'),
   ('sync-rect', 'src/cdom.c', 'int cd_rect(cd_id id, double out[4]) { renders_now(); return', 'int cd_rect(cd_id id, double out[4]) { return', UNIT, 'FAIL the reads, the layout reads'),
   ('sync-in-cleanup', 'src/cdom.c', '  if (render_at == nrenders || rendering || releasing) return;', '  if (render_at == nrenders || rendering || (releasing && 0)) return;', UNIT, 'FAIL a cleanup that reads'),
-  ('bound-no-skip-id', 'src/cdom.c', '  if (b->seen == SEEN_ID && b->last == s) return;\n', '', UNIT, 'FAIL cd_bound: a set writes'),
+  ('bound-no-skip-id', 'src/cdom.h', '  if (b->seen != 1 || b->last != value) cd_bound_set_(b, value);', '  cd_bound_set_(b, value);', UNIT, 'FAIL cd_bound: a set writes'),
   ('bound-bytes-no-skip', 'src/cdom.c', '  if (b->seen == SEEN_BYTES && b->blen == len', '  if (0 && b->seen == SEEN_BYTES && b->blen == len', UNIT, 'FAIL cd_bound: a set writes'),
   ('bound-bytes-made-anyway', 'src/cdom.c', '  if (!b->id || b->kind == BOUND_BOOL) __builtin_trap();\n  if (b->seen == SEEN_BYTES', '  if (!b->id || b->kind == BOUND_BOOL) __builtin_trap();\n  cd_tmp(p, len);\n  if (b->seen == SEEN_BYTES', UNIT, 'FAIL cd_bound: unchanged bytes'),
   ('bound-num-no-skip', 'src/cdom.c', '  if (b->seen == SEEN_NUM && b->last == n) return;\n', '', UNIT, 'FAIL cd_bound: a set writes'),
