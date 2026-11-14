@@ -435,6 +435,11 @@ M = [
   ('bound-no-auto-unbind', 'src/cdom.c', '  if (recording) cd_on_free(0, unbind_cleanup, b);', '  if (0 && recording) cd_on_free(0, unbind_cleanup, b);', UNIT, 'FAIL cd_bound: values bound while'),
   ('bound-unbound-ok', 'src/cdom.c', '  if (!b->id || b->kind == BOUND_BOOL) __builtin_trap();', '  if (b->kind == BOUND_BOOL) __builtin_trap();', UNIT, 'FAIL traps: a set on an unbound'),
   ('bound-tmp-any', 'src/cdom.c', '  if (s != TRANSIENT + ntmp - 1 || smeta[nstrs - 1].id != s) __builtin_trap(); /* not the last cd_tmp */\n', '', UNIT, 'FAIL traps: a bound set given'),
+  ('req-no-gen-check', 'src/cdom.c', '  if (r->state != CD_REQ_LOADING || (v >> 16) != r->gen) return 0;', '  if (r->state != CD_REQ_LOADING) return 0;', UNIT, 'FAIL cd_req: the latest'),
+  ('req-no-state-check', 'src/cdom.c', '  if (r->state != CD_REQ_LOADING || (v >> 16) != r->gen) return 0;', '  if ((v >> 16) != r->gen) return 0;', UNIT, 'FAIL cd_req: the latest'),
+  ('req-index-lost', 'src/cdom.c', '  if (index) *index = (uint16_t)v;', '  if (index) *index = 0;', UNIT, 'FAIL cd_req: the latest'),
+  ('req-begin-no-bump', 'src/cdom.c', 'void *cd_req_begin(cd_req *r, uint16_t index) {\n  r->gen++;\n', 'void *cd_req_begin(cd_req *r, uint16_t index) {\n', UNIT, 'FAIL cd_req: the latest'),
+  ('req-drop-noop', 'src/cdom.c', 'void cd_req_drop(cd_req *r) { r->state = CD_REQ_IDLE; }', 'void cd_req_drop(cd_req *r) { (void)r; }', UNIT, 'FAIL cd_req: the latest'),
 ]
 
 def build_and_run(root, cmd, minify=False):

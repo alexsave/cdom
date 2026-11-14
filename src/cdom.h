@@ -231,6 +231,25 @@ void cd_dirty(cd_render_fn fn, void *ctx);
 void cd_undirty(cd_render_fn fn, void *ctx);
 void cd_render_now(void);
 
+/* ---- request slots: one request's life ----
+ * An answer comes from the event loop, maybe after the app moved on (a run restarted, the region that
+ * asked went), so it is checked before it is used. cd_req_begin starts a new generation (LOADING)
+ * and returns the ctx to hand a _cb form (cd_http_cb, cd_store_get_cb, ...): the generation and an
+ * index of the app's (a line of a run, a row), as plain bits. The answer passes that ctx back to
+ * cd_req_current, which says whether it is still this slot's latest request and gives the index
+ * back. Several requests of one generation may be out at once (a run of lines). An answer to an
+ * older generation is dropped, and so is every answer once cd_req_end (OK or FAILED) said the
+ * generation is over, or once cd_req_drop (IDLE: nothing is current until the next begin) did.
+ * A region's cleanup calls cd_req_drop, so an answer that comes after its view went is never
+ * applied. The slot is the app's memory: the callback reaches it by a static or by the index, never
+ * by a pointer the answer carries. The generation is 16 bits, so it wraps after 65,536 begins. */
+typedef struct { uint16_t gen; uint8_t state; } cd_req;
+enum { CD_REQ_IDLE, CD_REQ_LOADING, CD_REQ_OK, CD_REQ_FAILED };
+void *cd_req_begin(cd_req *r, uint16_t index);
+int cd_req_current(const cd_req *r, void *ctx, uint16_t *index);
+void cd_req_end(cd_req *r, int ok);
+void cd_req_drop(cd_req *r);
+
 /* ---- bound values: skip-if-same ----
  * A node property that remembers what it last sent, so setting it writes to the DOM only when the
  * value changed: a view can set every bound value it shows each time it runs, and only the changes
@@ -247,7 +266,10 @@ void cd_render_now(void);
  * Node ids carry no generation, so a binding must not outlive its node: one bound while a region
  * builds is unbound when the region goes (a cleanup cdom registers), and one bound elsewhere (a list
  * row's create) is the app's to cd_unbind. Setting an unbound value traps; cd_bound_live tells. */
-typedef struct { cd_id id; cd_str name; uint32_t kind, seen, last; uint8_t *bytes; uint32_t blen, bcap; } cd_bound;
+typedef struct {
+  cd_id id; cd_str name; uint32_t kind, seen, last; /* cdom's: the node, and what it last sent */
+  uint8_t *bytes; uint32_t blen, bcap;               /* cdom's: a cd_tmp value's bytes */
+} cd_bound;
 void cd_bind_text(cd_bound *b, cd_id text_node);
 void cd_bind_attr(cd_bound *b, cd_id el, cd_str name);
 void cd_bind_class(cd_bound *b, cd_id el);
