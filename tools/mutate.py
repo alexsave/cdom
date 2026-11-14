@@ -441,6 +441,9 @@ M = [
   ('req-begin-no-bump', 'src/cdom.c', 'void *cd_req_begin(cd_req *r, uint16_t index) {\n  r->gen++;\n', 'void *cd_req_begin(cd_req *r, uint16_t index) {\n', UNIT, 'FAIL cd_req: the latest'),
   ('req-drop-noop', 'src/cdom.c', 'void cd_req_drop(cd_req *r) { r->state = CD_REQ_IDLE; }', 'void cd_req_drop(cd_req *r) { (void)r; }', UNIT, 'FAIL cd_req: the latest'),
   ('bound-shows-noop', 'src/cdom.c', '  b->seen = SEEN_ID;\n  b->last = s;\n}\nvoid cd_bound_shows_num', '  (void)s;\n}\nvoid cd_bound_shows_num', UNIT, 'FAIL cd_bound_shows'),
+  ('regbuf-all-kept', 'src/cdom.c', '  cd_free(r->ids);\n  cd_free(r->fns);\n  r->ids = 0;\n  r->fns = 0;\n  r->n = r->cap = r->nfns = r->fcap = 0;', '  r->n = 0;', UNIT, 'FAIL a region taken away frees'),
+  ('regbuf-fns-kept', 'src/cdom.c', '  cd_free(r->ids);\n  cd_free(r->fns);\n  r->ids = 0;\n  r->fns = 0;\n  r->n = r->cap = r->nfns = r->fcap = 0;', '  cd_free(r->ids);\n  r->ids = 0;\n  r->n = r->cap = 0;', UNIT, 'FAIL a region taken away frees'),
+  ('cleanup-stop-traps', 'src/cdom.c', 'void cd_timer_stop(uint32_t token) {\n', 'void cd_timer_stop(uint32_t token) {\n  if (releasing) __builtin_trap();\n', UNIT, 'FAIL t_region_handoff'),  # the handoff case stops B's timer from a cleanup first; the stop case after it pins the header's words
 ]
 
 def build_and_run(root, cmd, minify=False):

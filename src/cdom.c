@@ -701,7 +701,13 @@ static void take(cd_region *r, int dom) {
   if (dom && r->parent) cd_clear(r->parent);
   else if (dom) { cd_remove(r->root); i = 1; } /* the root is ids[0] */
   for (; i < r->n; i++) cd_id_free(r->ids[i]);
-  r->n = 0;
+  /* A region taken away owns no heap memory, so the struct it lives in may be freed after it (a row of
+   * an array the app frees); the next show allocates again. */
+  cd_free(r->ids);
+  cd_free(r->fns);
+  r->ids = 0;
+  r->fns = 0;
+  r->n = r->cap = r->nfns = r->fcap = 0;
   r->root = 0;
   r->shown = 0;
 }

@@ -1836,3 +1836,40 @@ EXPORT("t_bound_shows") void t_bound_shows(uint32_t step) {
     cd_bound_shows(&bshow, L("a"));
   } else cd_bound_set(&bshow, step == 1 ? L("a") : L("b"));
 }
+
+/* 28. A region taken away owns no heap memory: an array of regions, each shown with ids and cleanups,
+ * hidden and the array freed, round after round, keeps the ids live and the memory where they were.
+ * And a stop inside a cleanup works (amgi's chip stops its voice as its region goes). */
+static uint32_t rb_cleaned;
+static void rb_cleanup(void *ctx) { (void)ctx; rb_cleaned++; }
+EXPORT("t_regbuf") void t_regbuf(uint32_t rounds) {
+  static cd_id sec;
+  if (!sec) sec = section("regbuf");
+  for (uint32_t k = 0; k < rounds; k++) {
+    cd_region *rs = cd_alloc(8 * sizeof(cd_region));
+    __builtin_memset(rs, 0, 8 * sizeof(cd_region));
+    for (int i = 0; i < 8; i++) {
+      if (!cd_region_show(&rs[i], 1)) continue;
+      cd_at(sec, 0);
+      cd_open(L("i")); cd_name_open(rs[i].root);
+      for (int j = 0; j < 10; j++) { cd_open(L("b")); cd_name_open(cd_id_new()); cd_close(); }
+      cd_close();
+      for (int j = 0; j < 6; j++) cd_on_free(0, rb_cleanup, 0);
+      cd_region_end(&rs[i]);
+    }
+    for (int i = 0; i < 8; i++) cd_region_hide(&rs[i]);
+    cd_free(rs);
+  }
+}
+EXPORT("t_regbuf_cleaned") uint32_t t_regbuf_cleaned(void) { return rb_cleaned; }
+static cd_region rb_stop_r;
+static uint32_t rb_timer, rb_fired;
+static void rb_fire(void *ctx) { (void)ctx; rb_fired++; }
+static void rb_stop(void *ctx) { (void)ctx; cd_timer_stop(rb_timer); }
+EXPORT("t_regbuf_stop") void t_regbuf_stop(void) {
+  if (!rb_stop_r.parent) rb_stop_r.parent = section("regbufstop");
+  if (cd_region_show(&rb_stop_r, 1)) { cd_on_free(0, rb_stop, 0); cd_region_end(&rb_stop_r); }
+  rb_timer = cd_timer_cb(10, rb_fire, 0);
+  cd_region_hide(&rb_stop_r);
+}
+EXPORT("t_regbuf_fired") uint32_t t_regbuf_fired(void) { return rb_fired; }

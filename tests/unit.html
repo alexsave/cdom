@@ -1140,5 +1140,19 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     check('cd_bound_shows: the value a node was built with is recorded, so setting it again writes nothing, and a new one writes', () =>
       (!threw && counts.join() === '0,1' && $('#boundshows').textContent === 'b') || JSON.stringify({ counts, threw }));
   }
+  {
+    // 28. A hidden region owns no heap memory; a stop inside a cleanup works.
+    let threw = '';
+    try { x.t_regbuf(50); } catch (e) { threw = String(e); }
+    const live = x.t_ids_live(), bytes = x.memory.buffer.byteLength;
+    try { x.t_regbuf(3000); } catch (e) { threw += String(e); }
+    const grew = x.memory.buffer.byteLength - bytes, liveAfter = x.t_ids_live() - live;
+    check('a region taken away frees its id and cleanup lists: 3,000 rounds of 8 regions (10 ids and 6 cleanups each) shown, hidden and their array freed keep the ids live and the memory as they were', () =>
+      (!threw && grew === 0 && liveAfter === 0 && x.t_regbuf_cleaned() === 3050 * 8 * 6) || JSON.stringify({ grew, liveAfter, cleaned: x.t_regbuf_cleaned(), threw }));
+    try { x.t_regbuf_stop(); } catch (e) { threw += String(e); }
+    await sleep(60);
+    check('a stop inside a cleanup works: cd_timer_stop from the cleanup of a region that goes, and the timer never fires', () =>
+      (!threw && x.t_regbuf_fired() === 0) || JSON.stringify({ fired: x.t_regbuf_fired(), threw }));
+  }
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>
