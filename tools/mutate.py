@@ -51,8 +51,8 @@ M = [
   ('no-end-anchor-fuzz', 'src/cdom.c', 'cd_id end = L->end; /*', 'cd_id end = 0; /*', FUZZ, 'the anchor is not last'),
   ('end-anchor-moves', 'src/cdom.c', 'cd_move(old[os].node, ne < n ? nw[ne].node : end);\n      nw[--ne]', 'cd_move(old[os].node, ne < n ? nw[ne].node : 0);\n      nw[--ne]', FUZZ, 'the anchor is not last'),
   ('forget-keeps-ids', 'src/cdom.c', '    cd_id_free(L->items[i].node);\n    f->destroy', '    f->destroy', UNIT, 'FAIL lists and regions'),
-  ('region-keeps-ids', 'src/cdom.c', '      for (uint32_t i = 1; i < r->n; i++) cd_id_free(r->ids[i]);', '', UNIT, 'FAIL lists and regions'),
-  ('region-records-list', 'src/cdom.c', '  recording = 0;\n  cd_id end = L->end;', '  cd_id end = L->end;', UNIT, 'FAIL lists and regions'),
+  ('region-keeps-ids', 'src/cdom.c', '  for (; i < r->n; i++) cd_id_free(r->ids[i]);', '', UNIT, 'FAIL lists and regions'),
+  ('region-records-list', 'src/cdom.c', '  build_push(0); /* the items', '  build_push(recording); /* the items', UNIT, 'FAIL lists and regions'),
   ('double-free-silent', 'src/cdom.c', '  if (id >= next_id || !alive[id]) __builtin_trap();', '', UNIT, 'FAIL freeing a free id traps'),
   ('name-open-is-last', 'shim/cdom.js', '    nodes[id] = stack[depth - 1];', '    nodes[id] = last;', UNIT, 'FAIL cd_name_open'),
   # cd_name_el and cd_name_text (unit.c 10b): each names its own kind, never the last node made
@@ -228,7 +228,7 @@ M = [
   ('host-no-stop', 'shim/cdom.js', '      event.stopPropagation();', '', HOST, 'FAIL click stopped at the mount'),
   ('host-stop-c', 'src/cdom.c', 'void cd_stop_propagation(void) { inbox.flags |= CD_STOP; }', 'void cd_stop_propagation(void) { }', HOST, 'FAIL click stopped at the mount'),
   ('host-flags-kept', 'src/cdom.c', '  inbox.flags = 0;\n  uint32_t id = (uint32_t)inbox.id;', '  uint32_t id = (uint32_t)inbox.id;', HOST, 'FAIL the next click is not prevented'),
-  ('host-reserved-free', 'src/cdom.c', '  if (id < CD_FIRST_ID) return;\n  ready(); j_free(id);', '  ready(); j_free(id);', HOST, 'unreachable'),
+  ('host-reserved-free', 'src/cdom.c', '  if (id < CD_FIRST_ID) return;\n  send_held(); j_free(id);', '  send_held(); j_free(id);', HOST, 'unreachable'),
   ('host-first-id', 'src/cdom.c', 'static cd_id next_id = CD_FIRST_ID;', 'static cd_id next_id = 1;', HOST, 'FAIL node(CD_WINDOW)'),
   ('host-window-unbound', 'shim/cdom.js', '    nodes[WINDOW] = window;\n', '', HOST, 'page did not start'), # cd_main listens on CD_WINDOW, so the page fails at start
   ('host-set-custom', 'shim/cdom.js', '        object.setProperty(property, value);', '        object[property] = value;', HOST, 'FAIL set custom property'),
@@ -396,6 +396,19 @@ M = [
   ('flags-hardcoded', 'tests/build.sh', 'W=(-Wall -Wextra -Werror)', 'W=(-Wall -Wextra -Werror -mbulk-memory)', LINK, 'FAIL tests/build.sh:15 hardcodes -mbulk-memory'),
   ('flags-hardcoded-link', 'tests/link/run.sh', 'C=(-O2 "${CDOM_CFLAGS[@]}"', 'C=(--target=wasm32 -O2 "${CDOM_CFLAGS[@]}"', LINK, 'FAIL tests/link/run.sh:'),
   ('mini-fill-strong', 'src/mini.c', '__attribute__((weak)) void *memset', 'void *memset', LINK, "FAIL an app's own libc"),
+  ('region-kids-after', 'src/cdom.c', '  for (cd_region *k = r->kids, *next; k; k = next) {\n    next = k->next;\n    take(k, 0);\n  }\n  r->kids = 0;\n  while (r->nfns) {\n    cd_cleanup c = r->fns[--r->nfns];\n    releasing++;\n    c.fn(c.ctx);\n    releasing--;\n  }\n', '  while (r->nfns) {\n    cd_cleanup c = r->fns[--r->nfns];\n    releasing++;\n    c.fn(c.ctx);\n    releasing--;\n  }\n  for (cd_region *k = r->kids, *next; k; k = next) {\n    next = k->next;\n    take(k, 0);\n  }\n  r->kids = 0;\n', UNIT, 'FAIL nested regions: taking'),
+  ('region-cleanups-oldest-first', 'src/cdom.c', '  while (r->nfns) {\n    cd_cleanup c = r->fns[--r->nfns];', '  for (uint32_t f = 0; f < r->nfns || (r->nfns = 0); f++) {\n    cd_cleanup c = r->fns[f];', UNIT, 'FAIL nested regions: taking'),
+  ('region-no-cleanup', 'src/cdom.c', '    c.fn(c.ctx);\n', '    (void)c;\n', UNIT, 'FAIL nested regions: taking'),
+  ('region-cleanups-after-free', 'src/cdom.c', '  while (r->nfns) {\n    cd_cleanup c = r->fns[--r->nfns];\n    releasing++;\n    c.fn(c.ctx);\n    releasing--;\n  }\n  uint32_t i = 0;\n  if (dom && r->parent) cd_clear(r->parent);\n  else if (dom) { cd_remove(r->root); i = 1; } /* the root is ids[0] */\n  for (; i < r->n; i++) cd_id_free(r->ids[i]);\n', '  uint32_t i = 0;\n  if (dom && r->parent) cd_clear(r->parent);\n  else if (dom) { cd_remove(r->root); i = 1; } /* the root is ids[0] */\n  for (; i < r->n; i++) cd_id_free(r->ids[i]);\n  while (r->nfns) {\n    cd_cleanup c = r->fns[--r->nfns];\n    releasing++;\n    c.fn(c.ctx);\n    releasing--;\n  }\n', UNIT, 'FAIL nested regions: taking'),
+  ('region-kid-dom', 'src/cdom.c', '    take(k, 0);\n', '    take(k, 1);\n', UNIT, 'FAIL nested regions: taking'),
+  ('region-no-unlink', 'src/cdom.c', '    region_unlink(r);\n    take(r, 1);', '    take(r, 1);', UNIT, 'FAIL nested regions: a child hidden alone'),
+  ('region-up-ignored', 'src/cdom.c', '  if (r->up) {\n    if (!r->up->shown)', '  if (in) {\n    if (!r->up->shown)', UNIT, 'FAIL t_region_handoff'),
+  ('region-forget-dom', 'src/cdom.c', '  region_unlink(r);\n  take(r, 0);\n}', '  region_unlink(r);\n  take(r, 1);\n}', UNIT, 'FAIL cd_region_forget'),
+  ('region-cleanup-dom-ok', 'src/cdom.c', '  if (releasing) __builtin_trap(); /* a cleanup changed the DOM */\n', '', UNIT, 'FAIL regions trap'),
+  ('region-depth-unchecked', 'src/cdom.c', '  if (nbuilding == CD_REGION_DEPTH) __builtin_trap(); /* nested deeper than CD_REGION_DEPTH */\n', '', UNIT, 'FAIL regions trap'),
+  ('region-on-free-idle', 'src/cdom.c', '  if (!r || !r->shown || releasing) __builtin_trap();', '  if (!r) return;\n  if (!r->shown || releasing) __builtin_trap();', UNIT, 'FAIL regions trap'),
+  ('region-up-other-ok', 'src/cdom.c', '    if (r->up && r->up != in) __builtin_trap(); /* r lives in another region */\n', '', UNIT, 'FAIL regions trap'),
+  ('region-up-hidden-ok', 'src/cdom.c', '    if (!r->up->shown) __builtin_trap(); /* its parent is not shown */\n', '', UNIT, 'FAIL regions trap'),
 ]
 
 def build_and_run(root, cmd, minify=False):

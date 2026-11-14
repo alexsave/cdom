@@ -1430,3 +1430,145 @@ EXPORT("t_page_origin") uint32_t t_page_origin(uint32_t cap) {
   return cd_page_origin(origin_buf, cap);
 }
 EXPORT("t_origin_buf") char *t_origin_buf(void) { return origin_buf; }
+
+/* 20. Nested regions and cd_on_free (cdom.h, regions). A parent-mode region A holds a root-mode
+ * child B, built inside A's build, and B a parent-mode grandchild C. Each cleanup logs its name and
+ * how many ids were live when it ran, so the order (children first, newest first) and the time
+ * (before any id of its region goes) are both visible. */
+static cd_region nest_a, nest_b, nest_c;
+static cd_id nest_box, nest_c_box;
+static uint32_t nest_log[8], nest_live[8], nest_n;
+enum { NEST_A1 = 1, NEST_A2, NEST_B1, NEST_C1 };
+static void nest_cleanup(void *ctx) {
+  if (nest_n < 8) { nest_log[nest_n] = (uint32_t)(uintptr_t)ctx; nest_live[nest_n++] = cd_ids_live(); }
+}
+static void nest_show_b(void) { /* B inside the region that builds now (A), or in nest_b.up when none builds */
+  if (!cd_region_show(&nest_b, 1)) return;
+  cd_at(nest_box, 0);
+  cd_open(L("p")); cd_name_open(nest_b.root); cd_attr(L("class"), L("b"));
+  cd_open(L("span")); cd_name_open(nest_c_box = cd_id_new()); cd_close();
+  cd_close();
+  cd_on_free(0, nest_cleanup, (void *)NEST_B1);
+  nest_c.parent = nest_c_box;
+  if (cd_region_show(&nest_c, 1)) {
+    cd_at(nest_c_box, 0);
+    cd_open(L("i")); cd_name_open(cd_id_new()); cd_text(L("c")); cd_close();
+    cd_on_free(&nest_c, nest_cleanup, (void *)NEST_C1);
+    cd_region_end(&nest_c);
+  }
+  cd_region_end(&nest_b);
+}
+EXPORT("t_nest_section") void t_nest_section(void) {
+  cd_id s = section("nest");
+  cd_at(s, 0); cd_open(L("div")); cd_name_open(nest_a.parent = cd_id_new()); cd_close();
+}
+EXPORT("t_nest_build") void t_nest_build(void) {
+  nest_n = 0;
+  if (!cd_region_show(&nest_a, 1)) return;
+  cd_at(nest_a.parent, 0);
+  cd_open(L("div")); cd_name_open(nest_box = cd_id_new()); cd_attr(L("class"), L("a")); cd_close();
+  cd_on_free(0, nest_cleanup, (void *)NEST_A1);
+  nest_show_b();
+  cd_on_free(0, nest_cleanup, (void *)NEST_A2);
+  cd_region_end(&nest_a);
+}
+EXPORT("t_nest_hide") void t_nest_hide(uint32_t k) { cd_region_hide(k == 0 ? &nest_a : k == 1 ? &nest_b : &nest_c); }
+EXPORT("t_nest_show_b") void t_nest_show_b(void) { nest_show_b(); }
+EXPORT("t_nest_log") uint32_t t_nest_log(uint32_t i, uint32_t live) { return live ? nest_live[i] : i < nest_n ? nest_log[i] : 0; }
+EXPORT("t_nest_shown") uint32_t t_nest_shown(void) { return nest_a.shown | nest_b.shown << 1 | nest_c.shown << 2; }
+EXPORT("t_nest_kids") uint32_t t_nest_kids(void) { /* A's children, a cycle capped at 9 */
+  uint32_t n = 0;
+  for (cd_region *k = nest_a.kids; k && n < 9; k = k->next) n++;
+  return n;
+}
+
+/* 20b. Handing a region to another module (Alex's case): module A builds its region with an empty
+ * box and hands the region and the box to module B's view, which fills the box later, from a timer,
+ * in a region of its own whose up is A's. B's C state (a slot it holds) goes when A's region goes,
+ * through cd_on_free, as does B's timer when A goes before it fired. */
+typedef struct { cd_region r; uint32_t timer, holding; } b_view;  /* module B's state */
+static b_view b_views[2];
+static uint32_t b_released, b_stopped;
+static void b_release(void *ctx) { b_view *v = ctx; v->holding = 0; b_released++; }
+static void b_stop(void *ctx) { b_view *v = ctx; if (v->timer) { cd_timer_stop(v->timer); v->timer = 0; b_stopped++; } }
+static void b_fill(void *ctx) { /* the timer: no region builds now */
+  b_view *v = ctx;
+  v->timer = 0;
+  if (!cd_region_show(&v->r, 1)) return;
+  cd_at(v->r.parent, 0);
+  cd_open(L("span")); cd_name_open(cd_id_new()); cd_text(L("loaded")); cd_close();
+  v->holding = 1;
+  cd_on_free(0, b_release, v);
+  cd_region_end(&v->r);
+}
+static void b_mount(b_view *v, cd_region *up, cd_id box, uint32_t ms) { /* module B's entry */
+  v->r.up = up;
+  v->r.parent = box;
+  v->timer = cd_timer_cb(ms, b_fill, v);
+  cd_on_free(up, b_stop, v);
+}
+static cd_region hand_a[2];
+static cd_id hand_sec;
+EXPORT("t_handoff_section") void t_handoff_section(void) { hand_sec = section("handoff"); }
+EXPORT("t_handoff") void t_handoff(uint32_t k, uint32_t ms) { /* module A */
+  cd_id sec = hand_sec;
+  cd_region *a = &hand_a[k];
+  if (!cd_region_show(a, 1)) return;
+  cd_at(sec, 0);
+  cd_open(L("div")); cd_name_open(a->root); cd_attr(L("class"), k ? L("a1") : L("a0"));
+  cd_id box = cd_open_id(L("section")); cd_close();
+  cd_close();
+  cd_region_end(a);
+  b_mount(&b_views[k], a, box, ms);
+}
+EXPORT("t_handoff_hide") void t_handoff_hide(uint32_t k) { cd_region_hide(&hand_a[k]); }
+EXPORT("t_handoff_state") uint32_t t_handoff_state(uint32_t k) {
+  return b_views[k].holding | b_views[k].r.shown << 1 | (b_views[k].timer != 0) << 2 | b_released << 4 | b_stopped << 8;
+}
+
+/* 20c. cd_region_forget: no DOM op, cleanups and ids as a hide. */
+static cd_region forget_r;
+static uint32_t forget_ran;
+static void forget_cleanup(void *ctx) { (void)ctx; forget_ran++; }
+EXPORT("t_forget_build") void t_forget_build(void) {
+  cd_id s = section("forget");
+  forget_r.parent = s;
+  if (cd_region_show(&forget_r, 1)) {
+    cd_at(s, 0);
+    cd_open(L("b")); cd_name_open(cd_id_new()); cd_text(L("kept")); cd_close();
+    cd_on_free(0, forget_cleanup, 0);
+    cd_region_end(&forget_r);
+  }
+}
+EXPORT("t_forget") uint32_t t_forget(void) { cd_region_forget(&forget_r); return forget_ran | forget_r.shown << 8; }
+
+/* 20d. What traps (unit.html runs these last: a trap leaves cdom's state as it was mid-call). */
+static cd_region trap_r[10], trap_other;
+static void trap_dom_cleanup(void *ctx) { (void)ctx; cd_set_class((cd_id)(uintptr_t)ctx, L("late")); }
+EXPORT("t_trap_on_free_idle") void t_trap_on_free_idle(void) { cd_on_free(0, forget_cleanup, 0); }
+EXPORT("t_trap_up_other") void t_trap_up_other(void) { /* r->up names A, but B builds */
+  static cd_region in, other, r;
+  cd_id s = section("trapup");
+  in.parent = other.parent = r.parent = s;
+  if (cd_region_show(&other, 1)) cd_region_end(&other);
+  r.up = &other;
+  if (cd_region_show(&in, 1)) { cd_region_show(&r, 1); }
+}
+EXPORT("t_trap_up_hidden") void t_trap_up_hidden(void) {
+  static cd_region r;
+  r.up = &trap_other; /* never shown */
+  r.parent = CD_BODY;
+  cd_region_show(&r, 1);
+}
+EXPORT("t_trap_cleanup_dom") void t_trap_cleanup_dom(void) {
+  cd_id s = section("trapdom");
+  static cd_region r;
+  r.parent = s;
+  if (cd_region_show(&r, 1)) { cd_on_free(0, trap_dom_cleanup, (void *)(uintptr_t)s); cd_region_end(&r); }
+  cd_region_hide(&r);
+}
+static uint32_t trap_depth_shown;
+EXPORT("t_trap_depth") void t_trap_depth(void) { /* nested builds: the 9th traps */
+  for (uint32_t n = 0; n < 10; n++) { trap_r[n].parent = CD_BODY; cd_region_show(&trap_r[n], 1); trap_depth_shown++; }
+}
+EXPORT("t_trap_depth_shown") uint32_t t_trap_depth_shown(void) { return trap_depth_shown; }
