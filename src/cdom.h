@@ -222,7 +222,7 @@ uint32_t cd_pending(void);           /* nonzero while strings or a walk wait to 
  * region a view drew calls it, so a render never runs on state that went. cd_render_now runs what is
  * pending now (inside a render, or a cleanup, it does nothing: the pass takes it).
  * Every call that hands host code the DOM runs what is pending first, as cd_render_now does: the reads
- * (cd_get_num, cd_get_str, cd_get_id, cd_input_text), the layout reads (cd_rect, cd_hit, cd_viewport),
+ * (cd_get_num, cd_get_str, cd_get_id, cd_input_whole), the layout reads (cd_rect, cd_hit, cd_viewport),
  * cd_set and cd_call_args. So a handler that sets state and then measures, focuses or scrolls sees the
  * DOM the state draws. The building and updating calls do not: they are made as issued. A cleanup
  * that reads sees the DOM as it is (the pending renders run in the flush after it). */
@@ -338,10 +338,11 @@ void cd_main(void);                  /* the app's entry, called once at start */
 /* The seed for the app's random draws, set before cd_main: cdom.start's options.seed when the page fixes
  * one (one line makes a run deterministic), else 32 bits from crypto.getRandomValues. */
 extern uint32_t cd_seed;
-/* An input's value now, as UTF-8 into dst: returns its whole length in bytes. When that is more than
- * cap the value did not fit, and dst holds only the whole characters that fit in cap bytes (cd_get_str
- * of "value" returns how many bytes those are). */
-uint32_t cd_input_text(cd_id id, char *dst, uint32_t cap);
+/* An input's whole value now, as UTF-8 into dst, or none of it. When it fits in cap bytes: 1, and *len
+ * its length. When it does not: 0, *len the whole length (so the caller can make that much room and
+ * ask again), and dst holds nothing to use. A part of a value (a search box read into a fixed buffer)
+ * is cd_get_str(id, CD_LIT("value"), dst, cap), which returns the bytes it wrote, whole characters. */
+int cd_input_whole(cd_id id, char *dst, uint32_t cap, uint32_t *len);
 /* Whole-page delivery, as cd_listen on the host object that has the event: CD_EV_RESIZE on CD_WINDOW,
  * every other type on CD_DOCUMENT (keys, and the moves and release of a drag). */
 void cd_listen_window(uint32_t ev);

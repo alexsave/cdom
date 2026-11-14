@@ -85,9 +85,9 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
         whole === 13 && out(whole) === '한국어 값', cut === 3 && out(3) === '한', out(x.t_host_accent()) === 'rgb(1, 2, 3)'];
       return r.every(Boolean) || JSON.stringify(r);
     });
-    check('cd_input_text: the whole length in bytes, so a cut value is known (13 bytes, read into 13, 12, 4 and 0)', () => {
-      const r = [x.t_host_text(13) === 13 && out(13) === '한국어 값', x.t_host_text(12) === 13 && out(10) === '한국어 ',
-        x.t_host_text(4) === 13 && out(3) === '한', x.t_host_text(0) === 13];
+    check('cd_input_whole: the whole value when it fits (13 bytes into 13), else none of it and the whole length (into 12, 4 and 0)', () => {
+      const W = 1 << 16;
+      const r = [x.t_host_text(13) === (W | 13) && out(13) === '한국어 값', x.t_host_text(12) === 13, x.t_host_text(4) === 13, x.t_host_text(0) === 13];
       return r.every(Boolean) || JSON.stringify(r);
     });
     check('a set along a missing path is reported, not thrown', () => {
@@ -1083,7 +1083,7 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     let threw = '';
     x.t_sync_section();
     const str = (p) => new TextDecoder().decode(new Uint8Array(x.memory.buffer, p, 7)).replace(/\0.*$/, '');
-    const kinds = ['cd_get_num', 'cd_get_str', 'cd_get_id', 'cd_input_text', 'cd_rect', 'cd_hit', 'cd_viewport', 'cd_set', 'cd_call'];
+    const kinds = ['cd_get_num', 'cd_get_str', 'cd_get_id', 'cd_input_whole', 'cd_rect', 'cd_hit', 'cd_viewport', 'cd_set', 'cd_call'];
     const got = {};
     try { kinds.forEach((k, i) => { got[k] = str(x.t_sync(i)); if (i === 0 || i === 4) got[k] += x.t_sync_w(); }); } catch (e) { threw = String(e); }
     check('the reads, the layout reads, cd_set and cd_call run the pending renders first, so they see the DOM the state draws', () =>
