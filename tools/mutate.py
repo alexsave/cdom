@@ -50,7 +50,7 @@ M = [
   ('no-end-anchor', 'src/cdom.c', 'cd_id end = L->end; /*', 'cd_id end = 0; /*', UNIT, 'FAIL a keyed list with a fixed sibling'),
   ('no-end-anchor-fuzz', 'src/cdom.c', 'cd_id end = L->end; /*', 'cd_id end = 0; /*', FUZZ, 'the anchor is not last'),
   ('end-anchor-moves', 'src/cdom.c', 'cd_move(old[os].node, ne < n ? nw[ne].node : end);\n      nw[--ne]', 'cd_move(old[os].node, ne < n ? nw[ne].node : 0);\n      nw[--ne]', FUZZ, 'the anchor is not last'),
-  ('forget-keeps-ids', 'src/cdom.c', '    cd_id_free(L->items[i].node);\n    f->destroy', '    f->destroy', UNIT, 'FAIL lists and regions'),
+  ('forget-keeps-ids', 'src/cdom.c', '    f->destroy(f->ctx, &L->items[i]);\n    cd_id_free(L->items[i].node);', '    f->destroy(f->ctx, &L->items[i]);', UNIT, 'FAIL lists and regions'),
   ('region-keeps-ids', 'src/cdom.c', '  for (; i < r->n; i++) cd_id_free(r->ids[i]);', '', UNIT, 'FAIL lists and regions'),
   ('region-records-list', 'src/cdom.c', '  build_push(0); /* the items', '  build_push(recording); /* the items', UNIT, 'FAIL lists and regions'),
   ('double-free-silent', 'src/cdom.c', '  if (id >= next_id || !alive[id]) __builtin_trap();', '', UNIT, 'FAIL freeing a free id traps'),
@@ -409,6 +409,8 @@ M = [
   ('region-on-free-idle', 'src/cdom.c', '  if (!r || !r->shown || releasing) __builtin_trap();', '  if (!r) return;\n  if (!r->shown || releasing) __builtin_trap();', UNIT, 'FAIL regions trap'),
   ('region-up-other-ok', 'src/cdom.c', '    if (r->up && r->up != in) __builtin_trap(); /* r lives in another region */\n', '', UNIT, 'FAIL regions trap'),
   ('region-up-hidden-ok', 'src/cdom.c', '    if (!r->up->shown) __builtin_trap(); /* its parent is not shown */\n', '', UNIT, 'FAIL regions trap'),
+  ('list-destroy-after-free', 'src/cdom.c', '  f->destroy(f->ctx, it);\n  if (dom) cd_remove(it->node); else cd_id_free(it->node);', '  if (dom) cd_remove(it->node); else cd_id_free(it->node);\n  f->destroy(f->ctx, it);', UNIT, 'FAIL regions in list rows'),
+  ('list-forget-destroy-after-free', 'src/cdom.c', '    f->destroy(f->ctx, &L->items[i]);\n    cd_id_free(L->items[i].node);', '    cd_id_free(L->items[i].node);\n    f->destroy(f->ctx, &L->items[i]);', UNIT, 'FAIL regions in list rows'),
 ]
 
 def build_and_run(root, cmd, minify=False):

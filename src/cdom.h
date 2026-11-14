@@ -432,7 +432,10 @@ typedef struct {
   cd_id (*create)(void *ctx, uint32_t i, uint32_t *data);
   /* item i survived: emit only what changed */
   void (*patch)(void *ctx, uint32_t i, cd_item *it);
-  /* item is gone (its root id is already freed): free the sub ids it named */
+  /* item is going: free the sub ids it named, and cd_region_forget a region its create opened (which
+   * runs that region's cleanups). It runs before the item's root id is freed and its node removed, so
+   * what the item holds goes before its ids, as in a region. A region opened in create is no outer
+   * region's child (the list's ids are the list's), so the item owns it. */
   void (*destroy)(void *ctx, cd_item *it);
 } cd_list_fns;
 void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_fns *f);

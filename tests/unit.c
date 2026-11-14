@@ -1572,3 +1572,58 @@ EXPORT("t_trap_depth") void t_trap_depth(void) { /* nested builds: the 9th traps
   for (uint32_t n = 0; n < 10; n++) { trap_r[n].parent = CD_BODY; cd_region_show(&trap_r[n], 1); trap_depth_shown++; }
 }
 EXPORT("t_trap_depth_shown") uint32_t t_trap_depth_shown(void) { return trap_depth_shown; }
+
+/* 21. Regions inside list rows: each row's create opens a region of its own in the row (no outer
+ * region's child), with a cleanup; destroy forgets it. The list lives in an outer region, which
+ * forgets the list from a cleanup when it goes. Each cleanup logs its key and the ids live when it
+ * ran, so "before any of the row's ids" is visible. */
+static cd_list rows_list;
+static cd_region rows_outer, rows_r[16];
+static cd_id rows_box[16];
+static uint32_t rows_log[32], rows_live_at[32], rows_n, rows_before;
+static void rows_cleanup(void *ctx) {
+  if (rows_n < 32) { rows_log[rows_n] = (uint32_t)(uintptr_t)ctx; rows_live_at[rows_n++] = cd_ids_live(); }
+}
+static cd_id rows_create(void *ctx, uint32_t i, uint32_t *data) {
+  uint32_t k = ((const uint32_t *)ctx)[i];
+  cd_id li = cd_open_id(L("li"));
+  cd_open(L("span")); cd_name_open(rows_box[k] = cd_id_new()); cd_close();
+  cd_close();
+  cd_region *r = &rows_r[k];
+  r->parent = rows_box[k];
+  if (cd_region_show(r, 1)) {
+    cd_at(rows_box[k], 0);
+    cd_open(L("b")); cd_name_open(cd_id_new()); cd_text_num(k); cd_close();
+    cd_on_free(0, rows_cleanup, (void *)(uintptr_t)k);
+    cd_region_end(r);
+  }
+  *data = k;
+  return li;
+}
+static void rows_destroy(void *ctx, cd_item *it) {
+  (void)ctx;
+  cd_region_forget(&rows_r[it->data]);
+  cd_id_free(rows_box[it->data]);
+}
+static uint32_t rows_keys[8];
+static const cd_list_fns ROWS = {rows_keys, rows_create, nop_patch, rows_destroy};
+static void rows_forget_list(void *ctx) { cd_list_forget(ctx, &ROWS); }
+static cd_id rows_sec;
+EXPORT("t_rows_section") void t_rows_section(void) { rows_sec = section("rows"); rows_outer.parent = rows_sec; }
+EXPORT("t_rows") void t_rows(uint32_t step) {
+  static const uint32_t K[4][5] = {{4, 1, 2, 3, 4}, {3, 1, 3, 4}, {3, 4, 3, 1}, {2, 5, 6}};
+  rows_before = cd_ids_live();
+  if (step == 4) { cd_region_hide(&rows_outer); return; }
+  if (step == 0 && cd_region_show(&rows_outer, 1)) {
+    cd_at(rows_sec, 0);
+    cd_open(L("ul")); cd_name_open(rows_list.parent = cd_id_new()); cd_close();
+    rows_list.owns_parent = 1;
+    cd_on_free(0, rows_forget_list, &rows_list);
+    cd_region_end(&rows_outer);
+  }
+  for (uint32_t i = 0; i < K[step][0]; i++) rows_keys[i] = K[step][i + 1];
+  cd_list_update(&rows_list, rows_keys, K[step][0], &ROWS);
+}
+EXPORT("t_rows_log") uint32_t t_rows_log(uint32_t i, uint32_t live) { return live ? rows_live_at[i] : rows_log[i]; }
+EXPORT("t_rows_n") uint32_t t_rows_n(void) { return rows_n; }
+EXPORT("t_rows_before") uint32_t t_rows_before(void) { return rows_before; }

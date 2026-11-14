@@ -1046,5 +1046,19 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
       return (!threw && r.every(Boolean)) || JSON.stringify({ r, got, threw });
     });
   }
+  {
+    // 21. Regions inside list rows.
+    let threw = '';
+    x.t_rows_section();
+    const live0 = x.t_ids_live(), lis = () => [...document.querySelectorAll('#rows li')].map((li) => li.querySelector('span > b') ? li.textContent : 'no b:' + li.innerHTML).join();
+    const log = (a, b) => { const v = []; for (let i = a; i < b; i++) v.push(x.t_rows_log(i, 0) + '@' + (x.t_rows_before() - x.t_rows_log(i, 1))); return v.join(); };
+    const step = (k) => { try { x.t_rows(k); } catch (e) { threw += k + ': ' + e; } return { dom: lis(), n: x.t_rows_n(), live: x.t_ids_live() - live0 }; };
+    const s0 = step(0), s1 = step(1), l1 = log(0, s1.n), s2 = step(2), s3 = step(3), l3 = log(s2.n, s3.n), s4 = step(4), l4 = log(s3.n, s4.n);
+    check('regions in list rows: a row\'s region and its cleanup go with the row (removed, or all replaced), before any of the row\'s ids; a move keeps them; the list\'s outer region forgets it, and every row\'s cleanup runs', () => {
+      const r = [s0.dom === '1,2,3,4' && s0.n === 0 && s0.live === 13, s1.dom === '1,3,4' && l1 === '2@0' && s1.live === 10,
+        s2.dom === '4,3,1' && s2.n === 1, s3.dom === '5,6' && l3 === '4@0,3@3,1@6' && s3.live === 7, s4.dom === '' && l4 === '5@0,6@3' && s4.live === 0];
+      return (!threw && r.every(Boolean)) || JSON.stringify({ r, s0, s1, l1, s2, s3, l3, s4, l4, threw });
+    });
+  }
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>
