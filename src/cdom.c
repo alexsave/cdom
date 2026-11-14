@@ -1223,6 +1223,7 @@ void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_
  * wrong). */
 enum { BOUND_TEXT, BOUND_ATTR, BOUND_CLASS, BOUND_STYLE, BOUND_BOOL };
 enum { SEEN_NONE, SEEN_ID, SEEN_NUM, SEEN_BYTES };
+_Static_assert(SEEN_ID == 1, "cdom.h's inline cd_bound_set reads seen 1 as an id");
 void cd_unbind(cd_bound *b) {
   cd_free(b->bytes);
   __builtin_memset(b, 0, sizeof *b);
@@ -1251,10 +1252,10 @@ void cd_bind_bool(cd_bound *b, cd_id el, cd_str prop) { bind(b, el, prop, BOUND_
 int cd_bound_live(const cd_bound *b) { return b->id != 0; }
 
 static void bound_write(cd_bound *b, cd_str s) { b->write(b->id, b->name, s); }
-void cd_bound_set(cd_bound *b, cd_str s) {
+void cd_bound_set_(cd_bound *b, cd_str s) {
   if (!b->id || b->kind == BOUND_BOOL) __builtin_trap(); /* unbound, or a bool (cd_bound_set_num) */
   if (s >= TRANSIENT) __builtin_trap(); /* a cd_tmp: its id says nothing of its bytes (cd_bound_set_bytes) */
-  if (b->seen == SEEN_ID && b->last == s) return;
+  /* the unchanged case returned in cdom.h's inline cd_bound_set */
   bound_write(b, s);
   b->seen = SEEN_ID;
   b->last = s;
