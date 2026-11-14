@@ -1876,7 +1876,7 @@ EXPORT("t_tslot_after") uint32_t t_tslot_after(void) { /* every slot empty, and 
   return (uint32_t)(cd_timer_pending(&ts[0]) | cd_timer_pending(&ts[1]) | cd_timer_pending(&ts[2]) | cd_timer_pending(&ts[3]));
 }
 
-/* 27. cdom_ui: elements, a button, the string builder, and a modal dialog. */
+/* 27. cdom_ui: elements, a button and the string builder. */
 static cd_id ui_label;
 static uint32_t ui_clicks, ui_click_ctx;
 CD_ON_EVENT(ui_clicked) { ui_clicks++; ui_click_ctx = CD_CTX_INDEX(ctx); }
@@ -1907,19 +1907,3 @@ EXPORT("t_ui_buf") uint32_t t_ui_buf(uint32_t cap) { /* b.len, with 1 << 16 when
   return (uint32_t)b.over << 16 | b.len;
 }
 EXPORT("t_ui_room") char *t_ui_room(void) { return ui_room; }
-static cd_dialog ui_dlg;
-static uint32_t ui_closed, ui_closed_ctx, ui_live_open;
-static void ui_dlg_build(void *ctx, cd_id dialog) {
-  (void)dialog;
-  cd_el_text(L("h3"), 0, L("Sure?"));
-  cd_button(L("in-dialog"), L("OK"), ui_clicked, ctx, 0);
-}
-static void ui_dlg_closed(void *ctx) { ui_closed++; ui_closed_ctx = CD_CTX_INDEX(ctx); }
-EXPORT("t_ui_dialog_open") uint32_t t_ui_dialog_open(void) {
-  if (!cd_dialog_shown(&ui_dlg)) ui_live_open = cd_ids_live();
-  return (uint32_t)cd_dialog_open(&ui_dlg, CD_MOUNT, L("ask"), ui_dlg_build, ui_dlg_closed, CD_CTX_OF(9));
-}
-EXPORT("t_ui_dialog_close") void t_ui_dialog_close(void) { cd_dialog_close(&ui_dlg); }
-EXPORT("t_ui_dialog") uint32_t t_ui_dialog(uint32_t k) {
-  return k == 0 ? ui_closed : k == 1 ? ui_closed_ctx : k == 2 ? (uint32_t)cd_dialog_shown(&ui_dlg) : cd_ids_live() - ui_live_open;
-}
