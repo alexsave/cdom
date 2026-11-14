@@ -455,6 +455,9 @@ M = [
   ('ui-i64-sign', 'src/cdom_ui.c', "  if (v < 0) t[--k] = '-';\n", '', UNIT, 'FAIL cd_buf'),
   ('ui-linked-always', 'src/cdom_ui.c', 'void cd_el(cd_str tag, cd_str cls) {', '__attribute__((export_name("cd_el"))) void cd_el(cd_str tag, cd_str cls) {', LINK, 'FAIL cdom_ui linked and not called'),
   ('callbacks-only-http', 'src/cdom_callbacks_only.h', '#pragma GCC poison cd_http cd_on_http', '#pragma GCC poison cd_on_http', LINK, 'FAIL the callbacks-only profile let a poisoned call through (USE_HTTP)'),
+  ('regbuf-all-kept', 'src/cdom.c', '  cd_free(r->ids);\n  cd_free(r->fns);\n  r->ids = 0;\n  r->fns = 0;\n  r->n = r->cap = r->nfns = r->fcap = 0;', '  r->n = 0;', UNIT, 'FAIL a region taken away frees'),
+  ('regbuf-fns-kept', 'src/cdom.c', '  cd_free(r->ids);\n  cd_free(r->fns);\n  r->ids = 0;\n  r->fns = 0;\n  r->n = r->cap = r->nfns = r->fcap = 0;', '  cd_free(r->ids);\n  r->ids = 0;\n  r->n = r->cap = 0;', UNIT, 'FAIL a region taken away frees'),
+  ('cleanup-stop-traps', 'src/cdom.c', 'void cd_timer_stop(uint32_t token) {\n', 'void cd_timer_stop(uint32_t token) {\n  if (releasing) __builtin_trap();\n', UNIT, 'FAIL t_region_handoff'),  # the handoff case stops B's timer from a cleanup first; the stop case after it pins the header's words
 ]
 
 def build_and_run(root, cmd, minify=False):
