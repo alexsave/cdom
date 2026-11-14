@@ -1742,7 +1742,7 @@ EXPORT("t_bound_section") void t_bound_section(void) {
   cd_bind_bool(&bb, in, L("disabled"));
   cd_region_end(&bound_r);
 }
-static void bset_tmp(cd_bound *b, const char *s) { cd_bound_set(b, cd_tmpz(s)); }
+static void bset_tmp(cd_bound *b, const char *s) { uint32_t n = 0; while (s[n]) n++; cd_bound_set_bytes(b, s, n); }
 EXPORT("t_bound") void t_bound(uint32_t step) {
   switch (step) {
   case 0: cd_bound_set(&bt, L("a")); break;          /* 1 */
@@ -1764,15 +1764,13 @@ EXPORT("t_bound_live") uint32_t t_bound_live(void) {
   return cd_bound_live(&bt) | cd_bound_live(&ba) << 1 | cd_bound_live(&bc) << 2 | cd_bound_live(&bs) << 3 | cd_bound_live(&bb) << 4;
 }
 static cd_bound trap_b;
-EXPORT("t_trap_bound_unbound") void t_trap_bound_unbound(void) { cd_bound_set(&trap_b, L("x")); }
-EXPORT("t_trap_bound_tmp") void t_trap_bound_tmp(void) { /* a cd_tmp that is not the last one made */
+EXPORT("t_trap_bound_unbound") void t_trap_bound_unbound(void) { cd_bound_set_num(&trap_b, 1); } /* the node would be id 0 */
+EXPORT("t_trap_bound_tmp") void t_trap_bound_tmp(void) { /* cd_bound_set given a cd_tmp */
   cd_id s = section("trapbound"), t;
   cd_at(s, 0);
   cd_text(L("")); cd_name_text(t = cd_id_new());
   cd_bind_text(&trap_b, t);
-  cd_str a = cd_tmpz("a");
-  cd_tmpz("b");
-  cd_bound_set(&trap_b, a);
+  cd_bound_set(&trap_b, cd_tmpz("a"));
 }
 
 /* 25. Request slots. The answers here are timers (cd_timer_cb), which carry the ctx as cd_http_cb's
@@ -1827,3 +1825,14 @@ EXPORT("t_req_async") void t_req_async(void) {
 }
 EXPORT("t_req_hide") void t_req_hide(void) { cd_region_hide(&rq_r); }
 EXPORT("t_req_seen") uint32_t t_req_seen(uint32_t i, uint32_t applied) { return applied ? rq_applied[i] : rq_heard[i]; }
+/* 24b. cd_bound_shows: what a node was built with is recorded, so the first set of it writes nothing. */
+static cd_bound bshow;
+EXPORT("t_bound_shows") void t_bound_shows(uint32_t step) {
+  if (step == 0) {
+    cd_id s = section("boundshows"), t;
+    cd_at(s, 0);
+    cd_text(L("a")); cd_name_text(t = cd_id_new());
+    cd_bind_text(&bshow, t);
+    cd_bound_shows(&bshow, L("a"));
+  } else cd_bound_set(&bshow, step == 1 ? L("a") : L("b"));
+}

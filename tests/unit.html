@@ -49,7 +49,7 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
       otherUp: ['a region whose up is another region than the one building', () => x.t_trap_up_other(), () => true],
       renderLoop: ['renders that keep asking for renders (16 rounds)', () => x.t_dirty_loop(), () => x.t_dirty_n() === 16],
       boundUnbound: ['a set on an unbound value', () => x.t_trap_bound_unbound(), () => true],
-      boundTmp: ['a bound set given a cd_tmp that is not the last one made', () => x.t_trap_bound_tmp(), () => true],
+      boundTmp: ['cd_bound_set given a cd_tmp (its id says nothing of its bytes)', () => x.t_trap_bound_tmp(), () => true],
     };
     const [what, run, after] = cases[trapCase];
     const got = traps(run);
@@ -1105,11 +1105,11 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     const liveBefore = x.t_bound_live();
     try { x.t_bound(11); } catch (e) { threw += String(e); }
     seen.disconnect();
-    check('cd_bound: a set writes only when the value changed (an interned value by its id, a cd_tmp one by its bytes, a number by its value), for text, attr, class, style and bool', () => {
+    check('cd_bound: a set writes only when the value changed (an interned value by its id, bytes by the bytes, a number by its value), for text, attr, class, style and bool', () => {
       const r = [counts.join() === '1,0,1,1,0,1,1,2,1,1,2', dom.text === '7', dom.b === '<b data-x="3" class="k" style="width: 10px;"></b>', dom.disabled === false];
       return (!threw && r.every(Boolean)) || JSON.stringify({ r, counts, dom, threw });
     });
-    check('cd_bound: an unchanged cd_tmp value is taken back off the batch and never crosses', () => (!threw && pend[4] === 0) || JSON.stringify({ pend, threw }));
+    check('cd_bound: unchanged bytes make no string, so nothing crosses', () => (!threw && pend[4] === 0) || JSON.stringify({ pend, threw }));
     check('cd_bound: values bound while a region builds are unbound when it goes', () => (!threw && liveBefore === 31 && x.t_bound_live() === 0) || JSON.stringify({ liveBefore, after: x.t_bound_live(), threw }));
   }
   {
@@ -1125,6 +1125,20 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     const seen = [0, 1, 2, 3].map((i) => x.t_req_seen(i, 0) + '/' + x.t_req_seen(i, 1)).join();
     check('cd_req: answers carry their ctx through a _cb form: an older run\'s answer is dropped, every line of the current run is applied, and one after the region that asked went (its cleanup dropped the slot) is dropped', () =>
       (!threw && arrived && late && seen === '1/0,1/1,1/1,1/0') || JSON.stringify({ arrived, late, seen, threw }));
+  }
+  {
+    // 24b. cd_bound_shows.
+    let threw = '';
+    const counts = [];
+    try {
+      x.t_bound_shows(0);
+      const seen = new MutationObserver(() => {});
+      seen.observe($('#boundshows'), { subtree: true, characterData: true, childList: true });
+      for (const k of [1, 2]) { x.t_bound_shows(k); counts.push(seen.takeRecords().length); }
+      seen.disconnect();
+    } catch (e) { threw = String(e); }
+    check('cd_bound_shows: the value a node was built with is recorded, so setting it again writes nothing, and a new one writes', () =>
+      (!threw && counts.join() === '0,1' && $('#boundshows').textContent === 'b') || JSON.stringify({ counts, threw }));
   }
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>
