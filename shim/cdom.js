@@ -1148,7 +1148,7 @@ var cdom = (() => {
       reportError(error);
     }
   }
-  // The import behind cd_get_* and cd_input_text: kind 0 a number, 1 a string into C memory (its
+  // The import behind cd_get_* and cd_input_whole: kind 0 a number, 1 a string into C memory (its
   // bytes written), 2 a node id, 3 a string into C memory (its whole length, cut or not). Never throws.
   function get(id, path, kind, destPtr, capacity) {
     let value;

@@ -899,7 +899,10 @@ EXPORT("t_host_checked") double t_host_checked(void) { return cd_get_num(host_bo
 EXPORT("t_host_length") double t_host_length(void) { return cd_get_num(host_input, L("value.length")); }
 EXPORT("t_host_missing") double t_host_missing(void) { return cd_get_num(host_input, L("no.such.thing")); }
 EXPORT("t_host_value") uint32_t t_host_value(uint32_t cap) { return cd_get_str(host_input, L("value"), host_out, cap); }
-EXPORT("t_host_text") uint32_t t_host_text(uint32_t cap) { return cd_input_text(host_input, host_out, cap); }
+EXPORT("t_host_text") uint32_t t_host_text(uint32_t cap) { /* 1 << 16 when it fitted, and the length */
+  uint32_t n, fits = (uint32_t)cd_input_whole(host_input, host_out, cap, &n);
+  return fits << 16 | n;
+}
 EXPORT("t_host_accent") uint32_t t_host_accent(void) { return cd_get_str(host_div, L("style.--accent"), host_out, sizeof host_out); }
 EXPORT("t_host_out") char *t_host_out(void) { return host_out; }
 EXPORT("t_host_bad_set") void t_host_bad_set(void) { cd_set_str(host_div, L("no.such.thing"), L("x")); }
@@ -1695,7 +1698,7 @@ EXPORT("t_sync") const char *t_sync(uint32_t k) {
   case 0: sync_w = cd_get_num(sync_box, L("offsetWidth")); break;
   case 1: cd_get_str(sync_box, L("style.width"), buf, sizeof buf); break;
   case 2: cd_get_id(CD_DOCUMENT, L("activeElement")); break;
-  case 3: cd_input_text(sync_input, buf, sizeof buf); break;
+  case 3: { uint32_t n; cd_input_whole(sync_input, buf, sizeof buf, &n); } break;
   case 4: cd_rect(sync_box, r); sync_w = r[2]; break;
   case 5: cd_hit(1, 1); break;
   case 6: cd_viewport(&v); break;

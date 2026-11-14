@@ -67,7 +67,7 @@ M = [
   ('tmp-interned', 'src/cdom.c', '  uint32_t dest = TRANSIENT + ntmp++;\n  push_raw((const uint8_t *)s, len, utf16_len(s, len), dest);\n  return dest;',
    '  return cd_intern(s, len);', UNIT, 'FAIL cd_set_style'),
   ('tmp-unchecked', 'src/cdom.c', '  if (s - TRANSIENT >= ntmp) __builtin_trap();', '', UNIT, 'FAIL a transient used after'),
-  ('lit-one-slot', 'src/cdom.h', '#define CD_LIT(lit) ({ static cd_str cd_lit_slot_;', '__attribute__((unused)) static cd_str cd_lit_slot_;\n#define CD_LIT(lit) ({', UNIT, 'FAIL'), # one slot for every CD_LIT breaks cd_input_text's "value" too, so the page fails before the CD_LIT case
+  ('lit-one-slot', 'src/cdom.h', '#define CD_LIT(lit) ({ static cd_str cd_lit_slot_;', '__attribute__((unused)) static cd_str cd_lit_slot_;\n#define CD_LIT(lit) ({', UNIT, 'FAIL'), # one slot for every CD_LIT breaks cd_input_whole's "value" too, so the page fails before the CD_LIT case
   ('lit-any-expr', 'src/cdom.h', 'cd_lit_(&cd_lit_slot_, "" lit, sizeof(lit) - 1)', 'cd_lit_(&cd_lit_slot_, lit, sizeof(lit) - 1)', LINK, 'FAIL CD_LIT accepted a variable'),
   ('fmt-zeros', 'src/cdom.c', '  while (lo < dec && t[lo] == \'0\') lo++;', '', UNIT, 'FAIL cd_fmt'),
   ('fmt-round', 'src/cdom.c', '(v < 0 ? -0.5 : 0.5)', '0.5', UNIT, 'FAIL cd_fmt'),
@@ -238,9 +238,9 @@ M = [
   ('host-get-id-result', 'shim/cdom.js', '    return index === RESULT ? nodes.indexOf(value, RESULT + 1) : index;', '    return index;', HOST, 'FAIL id of a node CD_RESULT also holds'),
   ('host-tmp-path-cached', 'shim/cdom.js', '    if (path >= TRANSIENT) {\n      return stringOf(path).split(".");\n    }\n', '', HOST, 'FAIL a one-off path read twice'),
   ('host-unlisten-node', 'shim/cdom.js', '      listenMask[id * 2 + (type >> 5)] &= ~(1 << (type & 31));', '', HOST, 'FAIL cd_unlisten: the node no longer hears'),
-  ('host-input-value', 'src/cdom.c', 'get(id, CD_LIT("value"), GET_STR_LEN, dst, cap)', 'get(id, CD_LIT("valu"), GET_STR_LEN, dst, cap)', HOST, 'FAIL cd_input_text'),
-  ('input-text-written', 'shim/cdom.js', 'return kind === 1 || read === text.length ? written : written + textEncoder.encode(text.slice(read)).length;', 'return written;', UNIT, 'FAIL cd_input_text: the whole length'),
-  ('input-text-kind', 'src/cdom.c', 'get(id, CD_LIT("value"), GET_STR_LEN, dst, cap)', 'get(id, CD_LIT("value"), GET_STR, dst, cap)', UNIT, 'FAIL cd_input_text: the whole length'),
+  ('host-input-value', 'src/cdom.c', 'get(id, CD_LIT("value"), GET_STR_LEN, dst, cap)', 'get(id, CD_LIT("valu"), GET_STR_LEN, dst, cap)', HOST, 'FAIL cd_input_whole'),
+  ('input-text-written', 'shim/cdom.js', 'return kind === 1 || read === text.length ? written : written + textEncoder.encode(text.slice(read)).length;', 'return written;', UNIT, 'FAIL cd_input_whole: the whole value'),
+  ('input-text-kind', 'src/cdom.c', 'get(id, CD_LIT("value"), GET_STR_LEN, dst, cap)', 'get(id, CD_LIT("value"), GET_STR, dst, cap)', UNIT, 'FAIL cd_input_whole: the whole value'),
   ('seed-demo-literal', 'demo/click.c', 'static uint32_t rng;', 'static uint32_t rng = 0x9e3779b9u;', LINK, 'FAIL demo/click.c:14: seeds a generator with a literal'),
   ('seed-call-literal', 'tests/listfuzz.c', 'static uint32_t rnd(uint32_t m) { rng ^=', 'static void rng_seed(uint32_t s) { rng = s; }\nstatic uint32_t rnd(uint32_t m) { if (!rng) rng_seed(42); rng ^=', LINK, 'seeds a generator with a literal, not cd_seed: static uint32_t rnd(uint32_t m) { if (!rng) rng_seed(42);'),
   ('seed-allow-stale', 'tests/link/alloc.c', 'uint32_t rng = 99;', 'uint32_t rng = 98;', LINK, 'FAIL tests/link/alloc.c:'),
@@ -441,6 +441,8 @@ M = [
   ('req-begin-no-bump', 'src/cdom.c', 'void *cd_req_begin(cd_req *r, uint16_t index) {\n  r->gen++;\n', 'void *cd_req_begin(cd_req *r, uint16_t index) {\n', UNIT, 'FAIL cd_req: the latest'),
   ('req-drop-noop', 'src/cdom.c', 'void cd_req_drop(cd_req *r) { r->state = CD_REQ_IDLE; }', 'void cd_req_drop(cd_req *r) { (void)r; }', UNIT, 'FAIL cd_req: the latest'),
   ('bound-shows-noop', 'src/cdom.c', '  b->seen = SEEN_ID;\n  b->last = s;\n}\nvoid cd_bound_shows_num', '  (void)s;\n}\nvoid cd_bound_shows_num', UNIT, 'FAIL cd_bound_shows'),
+  ('input-whole-fits', 'src/cdom.c', '  return n <= cap;\n}', '  return n < cap;\n}', UNIT, 'FAIL cd_input_whole: the whole value'),
+  ('input-whole-len', 'src/cdom.c', '  *len = n;\n  return n <= cap;', '  *len = n <= cap ? n : 0;\n  return n <= cap;', UNIT, 'FAIL cd_input_whole: the whole value'),
 ]
 
 def build_and_run(root, cmd, minify=False):
