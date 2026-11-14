@@ -454,6 +454,16 @@ void cd_timer_stop(uint32_t token);
  * requests, cd_ws_open_cb sockets and store _cb answers are pending at once (traps past that). */
 typedef void (*cd_timer_fn)(void *ctx);
 uint32_t cd_timer_cb(uint32_t ms, cd_timer_fn fn, void *ctx);
+/* A timer slot: at most one timer pending in it. cd_timer_set stops the slot's pending timer, if any,
+ * and starts fn(ctx) after ms, so setting it on every keystroke is a debounce. When it fires the slot
+ * is empty again before fn runs (fn may set it again: a repeat). cd_timer_clear stops what is pending
+ * and may be called any time, from a cd_on_free cleanup too, on a slot that fired or never ran. The
+ * slot is the app's memory and must stay where it is while a timer is pending in it (cdom holds its
+ * address until then); a zeroed slot is empty. cd_timer_pending says whether one waits. */
+typedef struct { uint32_t token; cd_timer_fn fn; void *ctx; } cd_timer_slot;
+void cd_timer_set(cd_timer_slot *t, uint32_t ms, cd_timer_fn fn, void *ctx);
+void cd_timer_clear(cd_timer_slot *t);
+static inline int cd_timer_pending(const cd_timer_slot *t) { return t->token != 0; }
 void cd_raf_request(uint32_t token);              /* cd_on_raf(token, t) before the next frame */
 void cd_on_timer(uint32_t token);
 void cd_on_raf(uint32_t token, double t);

@@ -441,6 +441,9 @@ M = [
   ('req-begin-no-bump', 'src/cdom.c', 'void *cd_req_begin(cd_req *r, uint16_t index) {\n  r->gen++;\n', 'void *cd_req_begin(cd_req *r, uint16_t index) {\n', UNIT, 'FAIL cd_req: the latest'),
   ('req-drop-noop', 'src/cdom.c', 'void cd_req_drop(cd_req *r) { r->state = CD_REQ_IDLE; }', 'void cd_req_drop(cd_req *r) { (void)r; }', UNIT, 'FAIL cd_req: the latest'),
   ('bound-shows-noop', 'src/cdom.c', '  b->seen = SEEN_ID;\n  b->last = s;\n}\nvoid cd_bound_shows_num', '  (void)s;\n}\nvoid cd_bound_shows_num', UNIT, 'FAIL cd_bound_shows'),
+  ('tslot-no-stop', 'src/cdom.c', '  cd_timer_clear(t);\n  t->fn = fn;', '  t->fn = fn;', UNIT, 'FAIL cd_timer_set'),
+  ('tslot-cleared-after', 'src/cdom.c', '  t->token = 0;\n  t->fn(t->ctx);', '  t->fn(t->ctx);\n  t->token = 0;', UNIT, 'FAIL cd_timer_set'),
+  ('tslot-clear-noop', 'src/cdom.c', '  if (t->token) cd_timer_stop(t->token);\n', '', UNIT, 'FAIL cd_timer_set'),
   ('input-whole-fits', 'src/cdom.c', '  return n <= cap;\n}', '  return n < cap;\n}', UNIT, 'FAIL cd_input_whole: the whole value'),
   ('input-whole-len', 'src/cdom.c', '  *len = n;\n  return n <= cap;', '  *len = n <= cap ? n : 0;\n  return n <= cap;', UNIT, 'FAIL cd_input_whole: the whole value'),
 ]
