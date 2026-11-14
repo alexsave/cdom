@@ -1112,5 +1112,19 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     check('cd_bound: an unchanged cd_tmp value is taken back off the batch and never crosses', () => (!threw && pend[4] === 0) || JSON.stringify({ pend, threw }));
     check('cd_bound: values bound while a region builds are unbound when it goes', () => (!threw && liveBefore === 31 && x.t_bound_live() === 0) || JSON.stringify({ liveBefore, after: x.t_bound_live(), threw }));
   }
+  {
+    // 25. Request slots.
+    let threw = '', sync = 0;
+    try { sync = x.t_req_sync(); } catch (e) { threw = String(e); }
+    check('cd_req: the latest request is current and gives its index back; an older generation, one ended OK or FAILED, and one dropped are not; it begins again after a drop', () =>
+      (!threw && sync === 1) || `facts ${sync.toString(2)} ${threw}`);
+    try { x.t_req_async(); } catch (e) { threw += String(e); }
+    const arrived = await until(() => x.t_req_seen(1, 0) === 1 && x.t_req_seen(2, 0) === 1, 1000);
+    try { x.t_req_hide(); } catch (e) { threw += String(e); }
+    const late = await until(() => x.t_req_seen(3, 0) === 1, 1000);
+    const seen = [0, 1, 2, 3].map((i) => x.t_req_seen(i, 0) + '/' + x.t_req_seen(i, 1)).join();
+    check('cd_req: answers carry their ctx through a _cb form: an older run\'s answer is dropped, every line of the current run is applied, and one after the region that asked went (its cleanup dropped the slot) is dropped', () =>
+      (!threw && arrived && late && seen === '1/0,1/1,1/1,1/0') || JSON.stringify({ arrived, late, seen, threw }));
+  }
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>

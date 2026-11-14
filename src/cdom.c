@@ -1293,3 +1293,19 @@ void cd_bound_set_num(cd_bound *b, uint32_t n) {
     bound_write(b, cd_tmp(t, cd_fmt(t, (int32_t)n, 0, CD_UNIT_NONE)));
   }
 }
+
+/* ---- request slots ----
+ * ctx is the generation in the high 16 bits and the index in the low 16: plain bits, never a pointer. */
+void *cd_req_begin(cd_req *r, uint16_t index) {
+  r->gen++;
+  r->state = CD_REQ_LOADING;
+  return (void *)(uintptr_t)((uint32_t)r->gen << 16 | index);
+}
+int cd_req_current(const cd_req *r, void *ctx, uint16_t *index) {
+  uint32_t v = (uint32_t)(uintptr_t)ctx;
+  if (r->state != CD_REQ_LOADING || (v >> 16) != r->gen) return 0;
+  if (index) *index = (uint16_t)v;
+  return 1;
+}
+void cd_req_end(cd_req *r, int ok) { r->state = ok ? CD_REQ_OK : CD_REQ_FAILED; }
+void cd_req_drop(cd_req *r) { r->state = CD_REQ_IDLE; } /* the next begin moves the generation on */

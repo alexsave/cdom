@@ -1774,3 +1774,56 @@ EXPORT("t_trap_bound_tmp") void t_trap_bound_tmp(void) { /* a cd_tmp that is not
   cd_tmpz("b");
   cd_bound_set(&trap_b, a);
 }
+
+/* 25. Request slots. The answers here are timers (cd_timer_cb), which carry the ctx as cd_http_cb's
+ * would; a region's cleanup drops the slot, so an answer after the region went is not applied. */
+static cd_req rq;
+static uint32_t rq_heard[4], rq_applied[4];
+static uint32_t rq_check(uint32_t k, void *ctx) { /* one synchronous check: 1 current, plus the index */
+  uint16_t i = 0xffff;
+  (void)k;
+  return cd_req_current(&rq, ctx, &i) ? 0x10000u | i : 0;
+}
+EXPORT("t_req_sync") uint32_t t_req_sync(void) {
+  /* each bit one fact, all must be 1 */
+  uint32_t ok = 0, b = 0;
+  void *a = cd_req_begin(&rq, 3);
+  ok |= (rq_check(0, a) == (0x10000u | 3)) << b++;        /* the latest, its index back */
+  ok |= (rq.state == CD_REQ_LOADING) << b++;
+  void *c = cd_req_begin(&rq, 4);
+  ok |= (rq_check(0, a) == 0) << b++;                      /* an older generation */
+  ok |= (rq_check(0, c) == (0x10000u | 4)) << b++;
+  cd_req_end(&rq, 1);
+  ok |= (rq.state == CD_REQ_OK && rq_check(0, c) == 0) << b++; /* over: its answers are dropped */
+  void *d = cd_req_begin(&rq, 5);
+  cd_req_end(&rq, 0);
+  ok |= (rq.state == CD_REQ_FAILED && rq_check(0, d) == 0) << b++;
+  void *e = cd_req_begin(&rq, 6);
+  cd_req_drop(&rq);
+  ok |= (rq.state == CD_REQ_IDLE && rq_check(0, e) == 0) << b++;
+  void *f = cd_req_begin(&rq, 7);
+  ok |= (rq_check(0, f) == (0x10000u | 7)) << b++;        /* begins again after a drop */
+  cd_req_drop(&rq);
+  return ok == (1u << b) - 1 ? 1 : ok;
+}
+static cd_req rq_run;
+static cd_region rq_r;
+static void rq_answer(void *ctx) {
+  uint16_t i;
+  uint32_t v = (uint32_t)(uintptr_t)ctx & 0xffff;
+  rq_heard[v]++;
+  if (cd_req_current(&rq_run, ctx, &i)) rq_applied[i]++;
+}
+static void rq_drop(void *ctx) { cd_req_drop(ctx); }
+EXPORT("t_req_async") void t_req_async(void) {
+  cd_id s = section("req");
+  rq_r.parent = s;
+  if (cd_region_show(&rq_r, 1)) { cd_on_free(0, rq_drop, &rq_run); cd_region_end(&rq_r); }
+  cd_timer_cb(10, rq_answer, cd_req_begin(&rq_run, 0)); /* an older run: dropped by the next begin */
+  void *run = cd_req_begin(&rq_run, 1);
+  cd_timer_cb(10, rq_answer, run);
+  cd_timer_cb(10, rq_answer, (void *)((uintptr_t)run + 1)); /* two lines of one run, both current */
+  cd_timer_cb(60, rq_answer, (void *)((uintptr_t)run + 2)); /* after the region went: dropped */
+}
+EXPORT("t_req_hide") void t_req_hide(void) { cd_region_hide(&rq_r); }
+EXPORT("t_req_seen") uint32_t t_req_seen(uint32_t i, uint32_t applied) { return applied ? rq_applied[i] : rq_heard[i]; }
