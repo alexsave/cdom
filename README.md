@@ -69,7 +69,7 @@ xychart-beta
 
 These runs were of cdom's first design, a batched op stream.
 cdom now makes one import call per DOM operation, which measured about 1.7% faster on the same weighted geometric mean and 16 ms sooner to first paint, paired against the op stream ([PERF_LOG.md, "The two lines merged"](PERF_LOG.md#the-two-lines-merged-2026-11-08), line 342); the current design has not had a full pass against React of its own.
-The shim alone is 14,891 bytes minified and 5,626 brotli ([PERF_LOG.md](PERF_LOG.md), line 421), and the per-operation tables, script times and the other entries (wasm-bindgen, dioxus) are in RESULTS.md.
+The shim alone is 15,718 bytes minified and 5,930 brotli (`shim/cdom.min.js` as of 386cc82, brotli -q 11; [PERF_LOG.md](PERF_LOG.md), line 421, has how it grew to 14,891), and the per-operation tables, script times and the other entries (wasm-bindgen, dioxus) are in RESULTS.md.
 
 A hello world against a modern stack, measured on 2026-11-09: the same small app (a page with a name field that greets you through a one-route server) was built once on cdom, with its server also in C, and once on Next.js with create-next-app's defaults.
 
