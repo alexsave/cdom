@@ -20,7 +20,7 @@ wasm() { # wasm <opt> <out.wasm> <sources and extra flags...>: a cdom module, as
 # shim/cdom.min.js, which apps inline, must be what cdom.js makes now (tools/minshim.mjs).
 node "$here/../tools/minshim.mjs" check
 wasm -O2 "$here/out/listfuzz.wasm" "$here/listfuzz.c" "$here/../src/cdom.c" "$here/../src/mini.c"
-wasm -O2 "$here/out/unit.wasm" "$here/unit.c" "$here/../src/cdom.c" "$here/../src/cdom_net.c" "$here/../src/cdom_store.c" "$here/../src/cdom_audio.c" "$here/../src/cdom_random.c" "$here/../src/cdom_url.c" "$here/../src/cdom_locale.c" "$here/../src/cdom_share.c" "$here/../src/cdom_fonts.c" "$here/../src/mini.c"
+wasm -O2 "$here/out/unit.wasm" "$here/unit.c" "$here/../src/cdom.c" "$here/../src/cdom_net.c" "$here/../src/cdom_store.c" "$here/../src/cdom_audio.c" "$here/../src/cdom_random.c" "$here/../src/cdom_url.c" "$here/../src/cdom_locale.c" "$here/../src/cdom_share.c" "$here/../src/cdom_fonts.c" "$here/../src/cdom_ui.c" "$here/../src/mini.c"
 wasm -Oz "$here/out/click.wasm" -Wl,--strip-all "$here/../demo/click.c" "$here/../src/cdom.c" "$here/../src/cdom_audio.c" "$here/../src/mini.c"
 cp "$here/unit.html" "$here/../demo/click.html" "$here/../shim/cdom.js" "$here/out/"
 # The fuzz page and the legacy page go through the boot, so LEGACY=1 runs them on the wasm2js build.

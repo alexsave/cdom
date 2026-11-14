@@ -30,6 +30,26 @@ if "$CC" "${Z[@]}" -o "$out/dirty_none.wasm" "$here/dirty_pass.c" "$src/cdom.c" 
     echo "FAIL an app that never calls cd_dirty carries the render pass: $none bytes without cd_dirty, $asks with (a gap under 330)"; fail=1
   fi
 else echo "FAIL dirty_pass.c does not build"; fail=1; fi
+# cdom_ui (src/cdom_ui.c) costs an app that links it and calls none of it nothing: dirty_pass.c built with
+# and without it is the same bytes.
+if "$CC" "${Z[@]}" -o "$out/ui_off.wasm" "$here/dirty_pass.c" "$src/cdom.c" "$src/mini.c" &&
+   "$CC" "${Z[@]}" -o "$out/ui_on.wasm" "$here/dirty_pass.c" "$src/cdom.c" "$src/cdom_ui.c" "$src/mini.c"; then
+  if cmp -s "$out/ui_off.wasm" "$out/ui_on.wasm"; then echo "ok   cdom_ui linked and not called adds no byte ($(wc -c < "$out/ui_off.wasm" | tr -d ' ') bytes either way)"
+  else echo "FAIL cdom_ui linked and not called changes the module: $(wc -c < "$out/ui_off.wasm" | tr -d ' ') bytes without it, $(wc -c < "$out/ui_on.wasm" | tr -d ' ') with"; fail=1; fi
+else echo "FAIL dirty_pass.c does not build with cdom_ui.c"; fail=1; fi
+# The callbacks-only profile (src/cdom_callbacks_only.h): cd_on and the _cb forms compile under it, and a
+# token form or the listening it replaces does not.
+PC=(-O2 "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror)
+if "$CC" "${PC[@]}" -c -o "$out/callbacks_only.o" "$here/callbacks_only.c" 2> "$out/callbacks_only.log"; then
+  echo "ok   the callbacks-only profile takes cd_on, cd_timer_cb, cd_http_cb and cd_store_get_cb"
+else echo "FAIL the callbacks-only profile refused cd_on or a _cb form:"; cat "$out/callbacks_only.log"; fail=1; fi
+for u in LISTEN HTTP TIMER STORE; do
+  if "$CC" "${PC[@]}" -DUSE_$u -c -o "$out/callbacks_only_$u.o" "$here/callbacks_only.c" 2> "$out/callbacks_only_$u.log"; then
+    echo "FAIL the callbacks-only profile let a poisoned call through (USE_$u)"; fail=1
+  elif ! grep -q 'poisoned' "$out/callbacks_only_$u.log"; then
+    echo "FAIL the callbacks-only profile refused USE_$u for another reason:"; cat "$out/callbacks_only_$u.log"; fail=1
+  else echo "ok   the callbacks-only profile refuses USE_$u ($(grep -o "attempt to use a poisoned identifier" "$out/callbacks_only_$u.log" | head -1))"; fi
+done
 # string.h (and stdio.h, below): a file that includes it builds under cdom's flags and under freestanding ones (-ffreestanding, where
 # clang emits a call for a memcpy it does not know), and links with mini.c alone; memcpy, memmove and
 # memset are memory.copy and memory.fill in place, never an undefined symbol. libc_addr takes their
