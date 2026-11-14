@@ -387,7 +387,55 @@ static inline void ready(void) {
   send_held();
 }
 
-void cd_flush(void) { send_held(); }
+/* ---- renders: cd_dirty ----
+ * pending holds the (fn, ctx) asked for since the last pass, in the order asked, each once; a pass
+ * takes them all into running and calls each, and a render that asks for more queues the next round.
+ * They run in cd_flush, which ends every entry from JS, so one pass per event, timer, frame or answer. */
+#define CD_RENDER_ROUNDS 16
+typedef struct { cd_render_fn fn; void *ctx; } render_ent;
+static render_ent *pending, *running;
+static uint32_t npending, nrunning, render_cap, render_at, rendering;
+void cd_dirty(cd_render_fn fn, void *ctx) {
+  for (uint32_t i = 0; i < npending; i++)
+    if (pending[i].fn == fn && pending[i].ctx == ctx) return;
+  if (npending == render_cap) {
+    render_cap = render_cap ? render_cap * 2 : 16;
+    pending = cd_realloc(pending, render_cap * sizeof(render_ent));
+    running = cd_realloc(running, render_cap * sizeof(render_ent));
+  }
+  pending[npending++] = (render_ent){fn, ctx};
+}
+void cd_undirty(cd_render_fn fn, void *ctx) {
+  for (uint32_t i = 0; i < npending; i++)
+    if (pending[i].fn == fn && pending[i].ctx == ctx) {
+      __builtin_memmove(pending + i, pending + i + 1, (npending - i - 1) * sizeof(render_ent));
+      npending--;
+      break;
+    }
+  for (uint32_t i = render_at + 1; i < nrunning; i++) /* later in the round running now */
+    if (running[i].fn == fn && running[i].ctx == ctx) running[i].fn = 0;
+}
+/* Runs what is pending; nothing while a pass runs (the next round takes it) or while a region's
+ * cleanups run (they may not change the DOM: the flush after them does it). */
+static void run_renders(void) {
+  if (!npending || rendering || releasing) return;
+  rendering = 1;
+  for (uint32_t round = 0; npending; round++) {
+    if (round == CD_RENDER_ROUNDS) __builtin_trap(); /* renders that keep asking for renders */
+    render_ent *t = running;
+    running = pending;
+    pending = t;
+    nrunning = npending;
+    npending = 0;
+    for (render_at = 0; render_at < nrunning; render_at++)
+      if (running[render_at].fn) running[render_at].fn(running[render_at].ctx);
+  }
+  nrunning = render_at = 0;
+  rendering = 0;
+}
+void cd_render_now(void) { run_renders(); }
+
+void cd_flush(void) { run_renders(); send_held(); }
 uint32_t cd_pending(void) { return walking | nstrs; }
 
 static cd_id at_parent = CD_DETACHED - 1, at_before = CD_DETACHED - 1;

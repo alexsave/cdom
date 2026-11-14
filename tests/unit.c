@@ -1627,3 +1627,40 @@ EXPORT("t_rows") void t_rows(uint32_t step) {
 EXPORT("t_rows_log") uint32_t t_rows_log(uint32_t i, uint32_t live) { return live ? rows_live_at[i] : rows_log[i]; }
 EXPORT("t_rows_n") uint32_t t_rows_n(void) { return rows_n; }
 EXPORT("t_rows_before") uint32_t t_rows_before(void) { return rows_before; }
+
+/* 22. cd_dirty: renders run once each, in the order asked, before the entry from JS returns (here a
+ * click through cd_on, so cd_event's flush runs them); rounds, cd_undirty, cd_render_now. Each render
+ * logs one letter. */
+static char dlog[32];
+static uint32_t dlog_n, dmode, dcount, d_e;
+static cd_id dtext, dbtn;
+static void dput(char c) { if (dlog_n < 31) dlog[dlog_n++] = c; }
+static void dv(void *ctx) { /* A and C draw the count */
+  char c = (char)(uintptr_t)ctx;
+  dput(c);
+  if (c == 'A' || c == 'C') cd_set_text_node_num(dtext, ++dcount);
+}
+static void d_r2(void *ctx);
+static void d_r1(void *ctx) { (void)ctx; dput('D'); cd_dirty(d_r2, 0); cd_render_now(); dput('d'); }
+static void d_r2(void *ctx) { (void)ctx; dput('E'); if (++d_e == 1) cd_dirty(d_r1, 0); }
+static void d_x(void *ctx) { (void)ctx; dput('X'); cd_undirty(dv, (void *)'Y'); }
+static void d_loop(void *ctx) { (void)ctx; dput('L'); cd_dirty(d_loop, 0); }
+#define DV(c) cd_dirty(dv, (void *)(uintptr_t)(c))
+static void dirty_click(const cd_event_rec *e, void *ctx) {
+  (void)e; (void)ctx;
+  if (dmode == 1) { DV('A'); DV('A'); DV('B'); DV('A'); DV('C'); DV('B'); }
+  if (dmode == 2) cd_dirty(d_r1, 0);
+  if (dmode == 3) { DV('A'); DV('B'); cd_undirty(dv, (void *)'B'); cd_dirty(d_x, 0); DV('Y'); }
+  if (dmode == 4) { DV('A'); cd_render_now(); dput('H'); }
+}
+EXPORT("t_dirty_section") void t_dirty_section(void) {
+  cd_id s = section("dirty");
+  cd_at(s, 0);
+  dbtn = cd_open_id(L("button")); cd_close();
+  cd_open(L("b")); cd_text_num(0); cd_name_text(dtext = cd_id_new()); cd_close();
+  cd_on(dbtn, CD_EV_CLICK, dirty_click, 0);
+}
+EXPORT("t_dirty_mode") void t_dirty_mode(uint32_t m) { dmode = m; dlog_n = 0; d_e = 0; __builtin_memset(dlog, 0, sizeof dlog); }
+EXPORT("t_dirty_log") const char *t_dirty_log(void) { return dlog; }
+EXPORT("t_dirty_loop") void t_dirty_loop(void) { cd_dirty(d_loop, 0); cd_render_now(); }
+EXPORT("t_dirty_n") uint32_t t_dirty_n(void) { return dlog_n; }
