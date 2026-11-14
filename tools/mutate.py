@@ -427,6 +427,14 @@ M = [
   ('sync-viewport', 'src/cdom.c', 'void cd_viewport(cd_viewport_rec *v) { renders_now(); j_viewport', 'void cd_viewport(cd_viewport_rec *v) { j_viewport', UNIT, 'FAIL the reads, the layout reads'),
   ('sync-rect', 'src/cdom.c', 'int cd_rect(cd_id id, double out[4]) { renders_now(); return', 'int cd_rect(cd_id id, double out[4]) { return', UNIT, 'FAIL the reads, the layout reads'),
   ('sync-in-cleanup', 'src/cdom.c', '  if (render_at == nrenders || rendering || releasing) return;', '  if (render_at == nrenders || rendering || (releasing && 0)) return;', UNIT, 'FAIL a cleanup that reads'),
+  ('bound-no-skip-id', 'src/cdom.c', '    if (b->seen == SEEN_ID && b->last == s) return;\n', '', UNIT, 'FAIL cd_bound: a set writes'),
+  ('bound-tmp-no-skip', 'src/cdom.c', '  if (b->seen == SEEN_BYTES && b->blen == len', '  if (0 && b->seen == SEEN_BYTES && b->blen == len', UNIT, 'FAIL cd_bound: a set writes'),
+  ('bound-tmp-no-pop', 'src/cdom.c', '    nstrs--; /* unchanged: it need not cross at all */\n    nsb -= len;\n    ntmp--;\n', '', UNIT, 'FAIL cd_bound: an unchanged cd_tmp'),
+  ('bound-num-no-skip', 'src/cdom.c', '  if (b->seen == SEEN_NUM && b->last == n) return;\n', '', UNIT, 'FAIL cd_bound: a set writes'),
+  ('bound-bool-not-truth', 'src/cdom.c', '  if (b->kind == BOUND_BOOL) n = n != 0; /* 1 and 5 are the same true */\n', '', UNIT, 'FAIL cd_bound: a set writes'),
+  ('bound-no-auto-unbind', 'src/cdom.c', '  if (recording) cd_on_free(0, unbind_cleanup, b);', '  if (0 && recording) cd_on_free(0, unbind_cleanup, b);', UNIT, 'FAIL cd_bound: values bound while'),
+  ('bound-unbound-ok', 'src/cdom.c', '  if (!b->id || b->kind == BOUND_BOOL) __builtin_trap();', '  if (b->kind == BOUND_BOOL) __builtin_trap();', UNIT, 'FAIL traps: a set on an unbound'),
+  ('bound-tmp-any', 'src/cdom.c', '  if (s != TRANSIENT + ntmp - 1 || smeta[nstrs - 1].id != s) __builtin_trap(); /* not the last cd_tmp */\n', '', UNIT, 'FAIL traps: a bound set given'),
 ]
 
 def build_and_run(root, cmd, minify=False):

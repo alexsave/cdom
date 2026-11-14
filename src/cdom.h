@@ -231,6 +231,33 @@ void cd_dirty(cd_render_fn fn, void *ctx);
 void cd_undirty(cd_render_fn fn, void *ctx);
 void cd_render_now(void);
 
+/* ---- bound values: skip-if-same ----
+ * A node property that remembers what it last sent, so setting it writes to the DOM only when the
+ * value changed: a view can set every bound value it shows each time it runs, and only the changes
+ * cross. Bind once the node is named, then set:
+ *   cd_text(CD_LIT("")); cd_name_text(t = cd_id_new()); cd_bind_text(&label, t);
+ *   cd_bound_set(&label, busy ? CD_LIT("Saving") : CD_LIT("Save"));
+ * text sets a text node's value (cd_set_text_node), attr an attribute, class the class, style one
+ * style property, and bool a boolean property such as "disabled" or "checked" (cd_set_bool, the
+ * property, not the attribute, so it holds after the user changed it). name and prop are interned.
+ * An interned value is the same when its id is; a cd_tmp value when its bytes are, so a label made
+ * with cd_fmt and cd_tmp each time is compared by what it says. Such a value must be the last cd_tmp
+ * made; unchanged, it is taken back off the batch and never crosses. cd_bound_set_num takes a number
+ * (for a bool, 0 or not: 1 and 5 are the same true). The first set after a bind always writes.
+ * Node ids carry no generation, so a binding must not outlive its node: one bound while a region
+ * builds is unbound when the region goes (a cleanup cdom registers), and one bound elsewhere (a list
+ * row's create) is the app's to cd_unbind. Setting an unbound value traps; cd_bound_live tells. */
+typedef struct { cd_id id; cd_str name; uint32_t kind, seen, last; uint8_t *bytes; uint32_t blen, bcap; } cd_bound;
+void cd_bind_text(cd_bound *b, cd_id text_node);
+void cd_bind_attr(cd_bound *b, cd_id el, cd_str name);
+void cd_bind_class(cd_bound *b, cd_id el);
+void cd_bind_style(cd_bound *b, cd_id el, cd_str prop);
+void cd_bind_bool(cd_bound *b, cd_id el, cd_str prop);
+void cd_bound_set(cd_bound *b, cd_str value);
+void cd_bound_set_num(cd_bound *b, uint32_t n);
+void cd_unbind(cd_bound *b);
+int cd_bound_live(const cd_bound *b);
+
 /* ---- events: delivered to a cd_on handler, else to cd_on_event; the shim fills the record ----
  * id is the nearest listening ancestor-or-self of the target, or the host object listened on.
  * path holds the element-child indices from that node down toward the target, one byte per
