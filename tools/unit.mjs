@@ -187,7 +187,7 @@ try {
   await b.evaluate('__x.t_ws_big_close()');
   if (after >= 4 << 20 && buffered === 0) passed.push('cd_ws_buffered: the bytes just sent, then 0 once drained'); else errors.push(`buffered: ${after} after the send, ${buffered} later`);
   // What traps, each case on a page of its own: a trap leaves cdom's state as it was in the middle of the call.
-  for (const name of ['idle', 'hiddenUp', 'cleanupDom', 'depth', 'otherUp', 'renderLoop']) {
+  for (const name of ['idle', 'hiddenUp', 'cleanupDom', 'depth', 'otherUp', 'renderLoop', 'boundUnbound', 'boundTmp']) {
     await b.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/unit.html?trap=${name}` });
     let traps;
     for (let i = 0; i < 200 && !traps; i++) { await sleep(20); traps = await b.evaluate('window.RESULT'); }

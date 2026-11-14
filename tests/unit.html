@@ -48,6 +48,8 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
       depth: ['a build nested 9 deep (8 open)', () => x.t_trap_depth(), () => x.t_trap_depth_shown() === 8],
       otherUp: ['a region whose up is another region than the one building', () => x.t_trap_up_other(), () => true],
       renderLoop: ['renders that keep asking for renders (16 rounds)', () => x.t_dirty_loop(), () => x.t_dirty_n() === 16],
+      boundUnbound: ['a set on an unbound value', () => x.t_trap_bound_unbound(), () => true],
+      boundTmp: ['a bound set given a cd_tmp that is not the last one made', () => x.t_trap_bound_tmp(), () => true],
     };
     const [what, run, after] = cases[trapCase];
     const got = traps(run);
@@ -1090,6 +1092,25 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     try { cl = str(x.t_sync_cleanup()) + x.t_sync_w(); } catch (e) { threw += String(e); }
     check('a cleanup that reads does not run the pending renders (they would change the DOM inside it): they run after, and it reads the DOM as it is', () =>
       (!threw && cl === 'chR50') || JSON.stringify({ cl, threw }));
+  }
+  {
+    // 24. Bound values.
+    let threw = '';
+    x.t_bound_section();
+    const seen = new MutationObserver(() => {});
+    seen.observe($('#bound'), { subtree: true, childList: true, attributes: true, characterData: true });
+    const counts = [], pend = [];
+    try { for (let k = 0; k <= 10; k++) { x.t_bound(k); counts.push(seen.takeRecords().length); pend.push(x.t_bound_pending()); } } catch (e) { threw = String(e); }
+    const dom = { text: $('#bound p') && $('#bound p').textContent, b: $('#bound b') && $('#bound b').outerHTML, disabled: $('#bound input') && $('#bound input').disabled };
+    const liveBefore = x.t_bound_live();
+    try { x.t_bound(11); } catch (e) { threw += String(e); }
+    seen.disconnect();
+    check('cd_bound: a set writes only when the value changed (an interned value by its id, a cd_tmp one by its bytes, a number by its value), for text, attr, class, style and bool', () => {
+      const r = [counts.join() === '1,0,1,1,0,1,1,2,1,1,2', dom.text === '7', dom.b === '<b data-x="3" class="k" style="width: 10px;"></b>', dom.disabled === false];
+      return (!threw && r.every(Boolean)) || JSON.stringify({ r, counts, dom, threw });
+    });
+    check('cd_bound: an unchanged cd_tmp value is taken back off the batch and never crosses', () => (!threw && pend[4] === 0) || JSON.stringify({ pend, threw }));
+    check('cd_bound: values bound while a region builds are unbound when it goes', () => (!threw && liveBefore === 31 && x.t_bound_live() === 0) || JSON.stringify({ liveBefore, after: x.t_bound_live(), threw }));
   }
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>

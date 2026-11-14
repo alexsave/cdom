@@ -1721,3 +1721,56 @@ EXPORT("t_sync_cleanup") const char *t_sync_cleanup(void) {
   cd_render_now();
   return slog;
 }
+
+/* 24. Bound values: a set writes only when the value changed (unit.html counts the mutations each
+ * step makes). Bound inside a region, they are unbound when it goes. */
+static cd_region bound_r;
+static cd_bound bt, ba, bc, bs, bb;
+EXPORT("t_bound_section") void t_bound_section(void) {
+  cd_id s = section("bound");
+  bound_r.parent = s;
+  if (!cd_region_show(&bound_r, 1)) return;
+  cd_at(s, 0);
+  cd_id t, el, in;
+  cd_open(L("p")); cd_text(L("")); cd_name_text(t = cd_id_new()); cd_close();
+  el = cd_open_id(L("b")); cd_close();
+  in = cd_open_id(L("input")); cd_close();
+  cd_bind_text(&bt, t);
+  cd_bind_attr(&ba, el, L("data-x"));
+  cd_bind_class(&bc, el);
+  cd_bind_style(&bs, el, L("width"));
+  cd_bind_bool(&bb, in, L("disabled"));
+  cd_region_end(&bound_r);
+}
+static void bset_tmp(cd_bound *b, const char *s) { cd_bound_set(b, cd_tmpz(s)); }
+EXPORT("t_bound") void t_bound(uint32_t step) {
+  switch (step) {
+  case 0: cd_bound_set(&bt, L("a")); break;          /* 1 */
+  case 1: cd_bound_set(&bt, L("a")); break;          /* 0 */
+  case 2: cd_bound_set(&bt, L("b")); break;          /* 1 */
+  case 3: bset_tmp(&bt, "x5"); break;                /* 1 */
+  case 4: bset_tmp(&bt, "x5"); break;                /* 0, and nothing left to cross */
+  case 5: bset_tmp(&bt, "x6"); break;                /* 1 */
+  case 6: cd_bound_set_num(&bt, 7); cd_bound_set_num(&bt, 7); break; /* 1 */
+  case 7: cd_bound_set(&ba, L("on")); cd_bound_set(&ba, L("on")); cd_bound_set_num(&ba, 3); cd_bound_set_num(&ba, 3); break; /* 2 */
+  case 8: cd_bound_set(&bc, L("k")); cd_bound_set(&bc, L("k")); break; /* 1 */
+  case 9: cd_bound_set(&bs, L("10px")); bset_tmp(&bs, "10px"); bset_tmp(&bs, "10px"); break; /* 1: the browser records no change for the same style, set again by bytes */
+  case 10: cd_bound_set_num(&bb, 1); cd_bound_set_num(&bb, 5); cd_bound_set_num(&bb, 0); break; /* 2: 5 is the same true as 1 */
+  case 11: cd_region_hide(&bound_r); break;
+  }
+}
+EXPORT("t_bound_pending") uint32_t t_bound_pending(void) { return cd_pending(); }
+EXPORT("t_bound_live") uint32_t t_bound_live(void) {
+  return cd_bound_live(&bt) | cd_bound_live(&ba) << 1 | cd_bound_live(&bc) << 2 | cd_bound_live(&bs) << 3 | cd_bound_live(&bb) << 4;
+}
+static cd_bound trap_b;
+EXPORT("t_trap_bound_unbound") void t_trap_bound_unbound(void) { cd_bound_set(&trap_b, L("x")); }
+EXPORT("t_trap_bound_tmp") void t_trap_bound_tmp(void) { /* a cd_tmp that is not the last one made */
+  cd_id s = section("trapbound"), t;
+  cd_at(s, 0);
+  cd_text(L("")); cd_name_text(t = cd_id_new());
+  cd_bind_text(&trap_b, t);
+  cd_str a = cd_tmpz("a");
+  cd_tmpz("b");
+  cd_bound_set(&trap_b, a);
+}
