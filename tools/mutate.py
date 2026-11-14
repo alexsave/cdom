@@ -446,6 +446,18 @@ M = [
   ('tslot-clear-noop', 'src/cdom.c', '  if (t->token) cd_timer_stop(t->token);\n', '', UNIT, 'FAIL cd_timer_set'),
   ('input-whole-fits', 'src/cdom.c', '  return n <= cap;\n}', '  return n < cap;\n}', UNIT, 'FAIL cd_input_whole: the whole value'),
   ('input-whole-len', 'src/cdom.c', '  *len = n;\n  return n <= cap;', '  *len = n <= cap ? n : 0;\n  return n <= cap;', UNIT, 'FAIL cd_input_whole: the whole value'),
+  ('ui-el-no-class', 'src/cdom_ui.c', '  cd_open(tag);\n  if (cls) cd_class(cls);', '  cd_open(tag);\n  (void)cls;', UNIT, 'FAIL cd_el,'),
+  ('ui-button-type', 'src/cdom_ui.c', '  cd_attr(CD_LIT("type"), CD_LIT("button"));\n', '', UNIT, 'FAIL cd_button'),
+  ('ui-button-ctx', 'src/cdom_ui.c', '  cd_on(b, CD_EV_CLICK, fn, ctx);', '  cd_on(b, CD_EV_CLICK, fn, 0);\n  (void)ctx;', UNIT, 'FAIL cd_button'),
+  ('ui-button-label', 'src/cdom_ui.c', '  if (label_text) cd_name_text(*label_text = cd_id_new());\n', '  (void)label_text;\n', UNIT, 'FAIL cd_button'),
+  ('ui-buf-partial', 'src/cdom_ui.c', '  if (b->over || n > b->cap - b->len) { b->over = 1; return; }', '  if (b->over) return;\n  if (n > b->cap - b->len) { b->over = 1; n = b->cap - b->len; }', UNIT, 'FAIL cd_buf'),
+  ('ui-buf-not-sticky', 'src/cdom_ui.c', '  if (b->over || n > b->cap - b->len)', '  if (n > b->cap - b->len)', UNIT, 'FAIL cd_buf'),
+  ('ui-i64-sign', 'src/cdom_ui.c', "  if (v < 0) t[--k] = '-';\n", '', UNIT, 'FAIL cd_buf'),
+  ('ui-dialog-no-hide', 'src/cdom_ui.c', '  cd_region_hide(&d->r);\n  if (fn) fn(c);', '  if (fn) fn(c);', UNIT, 'FAIL cd_dialog_open'),
+  ('ui-dialog-not-modal', 'src/cdom_ui.c', 'cd_call(d->r.root, CD_LIT("showModal"));', 'cd_call(d->r.root, CD_LIT("show"));', UNIT, 'FAIL cd_dialog_open'),
+  ('ui-dialog-twice', 'src/cdom_ui.c', '  if (d->r.shown) return 0;\n  d->r.parent = 0;', '  d->r.parent = 0;', UNIT, 'FAIL cd_dialog_open'),
+  ('ui-linked-always', 'src/cdom_ui.c', 'void cd_el(cd_str tag, cd_str cls) {', '__attribute__((export_name("cd_el"))) void cd_el(cd_str tag, cd_str cls) {', LINK, 'FAIL cdom_ui linked and not called'),
+  ('callbacks-only-http', 'src/cdom_callbacks_only.h', '#pragma GCC poison cd_http cd_on_http', '#pragma GCC poison cd_on_http', LINK, 'FAIL the callbacks-only profile let a poisoned call through (USE_HTTP)'),
 ]
 
 def build_and_run(root, cmd, minify=False):
