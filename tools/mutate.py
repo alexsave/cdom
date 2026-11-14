@@ -468,10 +468,16 @@ def build_and_run(root, cmd, minify=False):
 # mutated file left those for every later mutant of that worker, whose pages then failed for that
 # reason, not their own (seven link mutants missed). So after each mutant every tracked file goes back
 # to the copy's index, which holds the real tree's files; the generated minified shim is among them.
+# Files a test created outside the ignored build directories (tests/out and the rest of .gitignore stay:
+# every build writes them afresh) go too, so no mutant reads what an earlier one left; the node_modules
+# link copy_tree made is kept.
 def restore_tree(root):
   changed = subprocess.run(['git', 'diff', '--name-only'], cwd=root, capture_output=True, text=True, check=True).stdout.split()
   if changed: subprocess.run(['git', 'checkout', '--', *changed], cwd=root, check=True)
-  return [f for f in changed if f != 'shim/cdom.min.js'] # the min shim is rebuilt by every shim mutant: not news
+  clean = ['git', 'clean', '-d', '-e', 'node_modules']
+  made = [l.removeprefix('Would remove ') for l in subprocess.run(clean + ['-n'], cwd=root, capture_output=True, text=True, check=True).stdout.splitlines()]
+  if made: subprocess.run(clean + ['-f', '-q'], cwd=root, check=True)
+  return [f for f in changed if f != 'shim/cdom.min.js'] + [f + ' (new)' for f in made] # the min shim is rebuilt by every shim mutant: not news
 
 def copy_tree(dst):
   files = subprocess.run(['git', 'ls-files', '-z'], cwd=top, capture_output=True, text=True, check=True).stdout.split('\0')
