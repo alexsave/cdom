@@ -5,9 +5,11 @@ on an error. Mutants run in parallel, each worker in a private copy of the track
 tree is never mutated, and an interrupted run leaves nothing behind); the test drivers serve on free
 ports and Chrome takes a free debugging port, so the workers never collide.
 Usage: python3 tools/mutate.py [-j N] [name ...]   (N workers, default half the cores)"""
-import subprocess, sys, pathlib, os, shutil, tempfile, threading, queue
+import subprocess, sys, pathlib, os, shutil, tempfile, threading, queue, signal
 
 top = pathlib.Path(__file__).resolve().parent.parent
+TEST_TIMEOUT = 150 # s: unit.mjs takes about 10 on a passing tree and waits at most 60 for a broken page
+HUNG = -999
 UNIT = ['node', 'tools/unit.mjs']
 FUZZ = ['node', 'tools/fuzz.mjs']
 LINK = ['tests/link/run.sh']
@@ -404,8 +406,17 @@ def build_and_run(root, cmd, minify=False):
     if m.returncode: return 1, 'MINSHIM FAILED ' + m.stderr[-400:]
   b = subprocess.run(['tests/build.sh'], cwd=root, capture_output=True, text=True)
   if b.returncode: return 1, 'BUILD FAILED ' + b.stderr[-400:]
-  r = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
-  return r.returncode, r.stdout + r.stderr
+  # A mutant can make C loop forever (a cycle in a list it walks): the page then never answers, and
+  # the run would wait on it for good. The test runs in a process group of its own (Chrome with it),
+  # killed whole past TEST_TIMEOUT; a hang is a broken module, so it counts as caught (HUNG).
+  t = subprocess.Popen(cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+  try:
+    out, _ = t.communicate(timeout=TEST_TIMEOUT)
+  except subprocess.TimeoutExpired:
+    os.killpg(t.pid, signal.SIGKILL)
+    out, _ = t.communicate()
+    return HUNG, f'HUNG: killed after {TEST_TIMEOUT} s\n' + (out or '')
+  return t.returncode, out
 
 def copy_tree(dst):
   files = subprocess.run(['git', 'ls-files', '-z'], cwd=top, capture_output=True, text=True, check=True).stdout.split('\0')
@@ -446,8 +457,8 @@ def worker(w):
         code, out = build_and_run(root, cmd, minify=True)
       finally:
         p.write_text(src)
-      ok = code != 0 and want in out
-      line = ('caught ' if ok else 'MISSED ') + name + ('' if ok else '\n  ' + out[-600:].replace('\n', '\n  '))
+      ok = code == HUNG or (code != 0 and want in out)
+      line = ('caught (HUNG, killed) ' if code == HUNG else 'caught ' if ok else 'MISSED ') + name + ('' if ok else '\n  ' + out[-600:].replace('\n', '\n  '))
     with lock:
       results[k] = ok
       print(line, flush=True)
