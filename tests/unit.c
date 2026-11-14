@@ -1664,3 +1664,60 @@ EXPORT("t_dirty_mode") void t_dirty_mode(uint32_t m) { dmode = m; dlog_n = 0; d_
 EXPORT("t_dirty_log") const char *t_dirty_log(void) { return dlog; }
 EXPORT("t_dirty_loop") void t_dirty_loop(void) { cd_dirty(d_loop, 0); cd_render_now(); }
 EXPORT("t_dirty_n") uint32_t t_dirty_n(void) { return dlog_n; }
+
+/* 23. The reads, the layout reads, cd_set and the calls run the pending renders first. The render
+ * widens a box from 50 to 120 px and logs R; each read logs r after it. A region's cleanup that
+ * reads does not run them (they would change the DOM inside it), and they run after. */
+static cd_id sync_box, sync_input;
+static char slog[8];
+static uint32_t slog_n;
+static void sput(char c) { if (slog_n < 7) slog[slog_n++] = c; }
+static void sync_view(void *ctx) { (void)ctx; sput('R'); cd_set_style_num(sync_box, L("width"), 120, CD_UNIT_PX); }
+EXPORT("t_sync_section") void t_sync_section(void) {
+  cd_id s = section("sync");
+  cd_at(s, 0);
+  sync_box = cd_open_id(L("div"));
+  cd_attr(L("style"), L("width: 50px; height: 10px; position: fixed; left: 0; top: 0"));
+  cd_listen(sync_box, CD_EV_CLICK);
+  cd_close();
+  sync_input = cd_open_id(L("input")); cd_close();
+}
+static double sync_w;
+EXPORT("t_sync") const char *t_sync(uint32_t k) {
+  char buf[16];
+  double r[4] = {0};
+  cd_viewport_rec v;
+  slog_n = 0;
+  __builtin_memset(slog, 0, sizeof slog);
+  cd_set_style_num(sync_box, L("width"), 50, CD_UNIT_PX);
+  cd_dirty(sync_view, 0);
+  switch (k) {
+  case 0: sync_w = cd_get_num(sync_box, L("offsetWidth")); break;
+  case 1: cd_get_str(sync_box, L("style.width"), buf, sizeof buf); break;
+  case 2: cd_get_id(CD_DOCUMENT, L("activeElement")); break;
+  case 3: cd_input_text(sync_input, buf, sizeof buf); break;
+  case 4: cd_rect(sync_box, r); sync_w = r[2]; break;
+  case 5: cd_hit(1, 1); break;
+  case 6: cd_viewport(&v); break;
+  case 7: cd_set_num(sync_input, L("value"), 1); break;
+  case 8: cd_call(sync_input, L("blur")); break;
+  }
+  sput('r');
+  cd_render_now(); /* a case that did not run it leaves it pending: run it so the next starts clean */
+  return slog;
+}
+EXPORT("t_sync_w") double t_sync_w(void) { return sync_w; }
+static cd_region sync_r;
+static void sync_cleanup(void *ctx) { (void)ctx; sput('c'); sync_w = cd_get_num(sync_box, L("offsetWidth")); }
+EXPORT("t_sync_cleanup") const char *t_sync_cleanup(void) {
+  slog_n = 0;
+  __builtin_memset(slog, 0, sizeof slog);
+  cd_set_style_num(sync_box, L("width"), 50, CD_UNIT_PX);
+  sync_r.parent = sync_input;
+  if (cd_region_show(&sync_r, 1)) { cd_on_free(0, sync_cleanup, 0); cd_region_end(&sync_r); }
+  cd_dirty(sync_view, 0);
+  cd_region_hide(&sync_r);
+  sput('h');
+  cd_render_now();
+  return slog;
+}
