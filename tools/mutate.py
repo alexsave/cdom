@@ -73,6 +73,14 @@ M = [
   ('fmt-zeros', 'src/cdom.c', '  while (lo < dec && t[lo] == \'0\') lo++;', '', UNIT, 'FAIL cd_fmt'),
   ('fmt-round', 'src/cdom.c', '(v < 0 ? -0.5 : 0.5)', '0.5', UNIT, 'FAIL cd_fmt'),
   ('two-heaps', 'src/cdom.c', 'void *cd_alloc(uint32_t n) {\n  void *p = malloc(n);', 'void *cd_alloc(uint32_t n) {\n  void *p = heap_alloc(n);', LINK, "FAIL the app's heap"),
+  # the _try allocations (tools/alloc.mjs, tests/link/run.sh's size gate)
+  ('try-traps', 'src/cdom.c', '      if (may_fail) return 0;\n', '      (void)may_fail;\n', ALLOC, 'FAIL cd_alloc_try: blocks'),
+  ('malloc-null', 'src/cdom.c', '      __builtin_trap(); /* out of memory */', '      return 0;', ALLOC, 'FAIL malloc still traps'),
+  ('realloc-try-frees', 'src/cdom.c', '  if (!q) return 0; /* p is kept, as it was */', '  if (!q) { free(p); return 0; }', ALLOC, 'FAIL cd_realloc_try'),
+  ('heap-cap-loose', 'src/cdom.c', '  if ((uint32_t)__builtin_wasm_memory_size(0) + pages > (uint32_t)(CDOM_HEAP_PAGES_MAX)) return 0;', '  if ((uint32_t)__builtin_wasm_memory_size(0) + pages > (uint32_t)(CDOM_HEAP_PAGES_MAX) + 8) return 0;', ALLOC, 'FAIL cd_alloc_try: blocks'),
+  ('own-alloc-bypassed', 'src/cdom.c', 'static int heap_is_cdoms(void) { return malloc == cdom_heap_malloc; }', 'static int heap_is_cdoms(void) { return 1; }', ALLOC, 'FAIL cd_alloc_try and cd_realloc_try on an app'),
+  ('try-path-shared', 'src/cdom.c', 'static inline __attribute__((always_inline)) void *heap_alloc_or(', '__attribute__((noinline)) static void *heap_alloc_or(', LINK, 'FAIL the _try path is in an app that never calls it'),
+  ('try-path-heavy', 'src/cdom.c', '  return n >> 31 ? 0 : heap_alloc_or(n, 1);\n}', '  void *p = n >> 31 ? 0 : heap_alloc_or(n, 1);\n  char t[24];\n  if (p) ((uint8_t *)p)[0] = (uint8_t)cd_fmt_len(t, (double)n / 3, CD_UNIT_PX); /* a path that grew: cd_fmt in it */\n  return p;\n}', LINK, 'FAIL calling cd_alloc_try costs'),
   ('foreign-free', 'src/cdom.c', '  if ((uintptr_t)p < heap_lo + 8 || (uintptr_t)p >= heap_ptr) __builtin_trap(); /* not from this heap */', '  (void)heap_lo;', LINK, 'FAIL an app that replaces malloc alone'),
   ('image-pixels', 'shim/cdom.js', 'new Uint8ClampedArray(memory.buffer, pixelsPtr, width * height * channels)', 'new Uint8ClampedArray(memory.buffer, pixelsPtr + 4, width * height * channels)', UNIT, 'FAIL cd_encode_image'),
   ('image-token', 'shim/cdom.js', 'deliver(exports.cd_encoded, token, await blob.arrayBuffer())', 'deliver(exports.cd_encoded, token + 1, await blob.arrayBuffer())', UNIT, 'FAIL cd_encode_image'),
@@ -456,11 +464,6 @@ M = [
   ('ui-i64-sign', 'src/cdom_ui.c', "  if (v < 0) t[--k] = '-';\n", '', UNIT, 'FAIL cd_buf'),
   ('ui-linked-always', 'src/cdom_ui.c', 'void cd_el(cd_str tag, cd_str cls) {', '__attribute__((export_name("cd_el"))) void cd_el(cd_str tag, cd_str cls) {', LINK, 'FAIL cdom_ui linked and not called'),
   ('callbacks-only-http', 'src/cdom_callbacks_only.h', '#pragma GCC poison cd_http cd_on_http', '#pragma GCC poison cd_on_http', LINK, 'FAIL the callbacks-only profile let a poisoned call through (USE_HTTP)'),
-  ('try-traps', 'src/cdom.c', '      if (may_fail) return 0;\n', '      (void)may_fail;\n', ALLOC, 'FAIL cd_alloc_try: blocks'),
-  ('malloc-null', 'src/cdom.c', '      __builtin_trap(); /* out of memory */', '      return 0;', ALLOC, 'FAIL malloc still traps'),
-  ('realloc-try-frees', 'src/cdom.c', '  if (!q) return 0; /* p is kept, as it was */', '  if (!q) { free(p); return 0; }', ALLOC, 'FAIL cd_realloc_try'),
-  ('heap-cap-loose', 'src/cdom.c', '  if ((uint32_t)__builtin_wasm_memory_size(0) + pages > (uint32_t)(CDOM_HEAP_PAGES_MAX)) return 0;', '  if ((uint32_t)__builtin_wasm_memory_size(0) + pages > (uint32_t)(CDOM_HEAP_PAGES_MAX) + 8) return 0;', ALLOC, 'FAIL cd_alloc_try: blocks'),
-  ('own-alloc-bypassed', 'src/cdom.c', 'static int heap_is_cdoms(void) { return malloc == cdom_heap_malloc; }', 'static int heap_is_cdoms(void) { return 1; }', ALLOC, 'FAIL cd_alloc_try and cd_realloc_try on an app'),
 ]
 
 def build_and_run(root, cmd, minify=False):

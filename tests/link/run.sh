@@ -50,6 +50,16 @@ for u in LISTEN HTTP TIMER STORE; do
     echo "FAIL the callbacks-only profile refused USE_$u for another reason:"; cat "$out/callbacks_only_$u.log"; fail=1
   else echo "ok   the callbacks-only profile refuses USE_$u ($(grep -o "attempt to use a poisoned identifier" "$out/callbacks_only_$u.log" | head -1))"; fi
 done
+# The _try allocations' path is linked only into an app that calls them: alloc_try_size.c built with
+# cd_alloc and with cd_alloc_try differs by the path itself, 318 bytes at -Oz now. Under 150 the path is
+# in every app (malloc sharing it); over 400 it has grown past its budget. Z is the -Oz set above.
+if "$CC" "${Z[@]}" -o "$out/try_none.wasm" "$here/alloc_try_size.c" "$src/cdom.c" "$src/mini.c" &&
+   "$CC" "${Z[@]}" -DTRY -o "$out/try_asks.wasm" "$here/alloc_try_size.c" "$src/cdom.c" "$src/mini.c"; then
+  none=$(wc -c < "$out/try_none.wasm"); asks=$(wc -c < "$out/try_asks.wasm"); gap=$((asks - none))
+  if [ $gap -lt 150 ]; then echo "FAIL the _try path is in an app that never calls it: $none bytes without cd_alloc_try, $asks with (a gap of $gap, under 150)"; fail=1
+  elif [ $gap -gt 400 ]; then echo "FAIL calling cd_alloc_try costs $gap bytes, past its budget of 400 ($none without, $asks with)"; fail=1
+  else echo "ok   the _try path costs only an app that calls it: $gap bytes (150 to 400)"; fi
+else echo "FAIL alloc_try_size.c does not build"; fail=1; fi
 # string.h (and stdio.h, below): a file that includes it builds under cdom's flags and under freestanding ones (-ffreestanding, where
 # clang emits a call for a memcpy it does not know), and links with mini.c alone; memcpy, memmove and
 # memset are memory.copy and memory.fill in place, never an undefined symbol. libc_addr takes their
