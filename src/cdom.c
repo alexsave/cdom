@@ -21,7 +21,18 @@ extern unsigned char __heap_base;
 static uintptr_t heap_lo, heap_ptr, heap_end;
 static void *free_lists[32];
 
-static void *heap_alloc(uint32_t n) {
+/* CDOM_HEAP_PAGES_MAX, when an app (or a test) defines it, bounds the memory the heap grows to, in
+ * 64 KB pages; unset, the heap grows until memory.grow refuses, and the check is not compiled. */
+static int heap_grow(uint32_t pages) {
+#ifdef CDOM_HEAP_PAGES_MAX
+  if ((uint32_t)__builtin_wasm_memory_size(0) + pages > (uint32_t)(CDOM_HEAP_PAGES_MAX)) return 0;
+#endif
+  return __builtin_wasm_memory_grow(0, pages) >= 0;
+}
+/* may_fail 0 (malloc and everything on it): no room traps, as it always has, since in wasm a
+ * pointer 0 is ordinary memory and code that does not check would write over it. may_fail 1
+ * (cd_alloc_try alone): no room answers 0. Inlined, so malloc's code is what it was. */
+static inline __attribute__((always_inline)) void *heap_alloc_or(uint32_t n, int may_fail) {
   uint32_t c = 4;
   while ((1u << c) < n + 8) c++;
   void *p = free_lists[c];
@@ -36,7 +47,10 @@ static void *heap_alloc(uint32_t n) {
   uintptr_t need = heap_ptr + (1u << c);
   if (need > heap_end) {
     uint32_t pages = (uint32_t)((need - heap_end + 65535) >> 16);
-    if (__builtin_wasm_memory_grow(0, pages) < 0) __builtin_trap();
+    if (!heap_grow(pages)) {
+      if (may_fail) return 0;
+      __builtin_trap(); /* out of memory */
+    }
     heap_end += (uintptr_t)pages << 16;
   }
   uint32_t *h = (uint32_t *)heap_ptr;
@@ -44,13 +58,16 @@ static void *heap_alloc(uint32_t n) {
   h[0] = c;
   return h + 2;
 }
+static void *heap_alloc(uint32_t n) { return heap_alloc_or(n, 0); }
 
 static uint32_t heap_class(void *p) {
   if ((uintptr_t)p < heap_lo + 8 || (uintptr_t)p >= heap_ptr) __builtin_trap(); /* not from this heap */
   return ((uint32_t *)p)[-2];
 }
 
-__attribute__((weak)) void *malloc(size_t n) { return n >> 31 ? 0 : heap_alloc((uint32_t)n); }
+/* malloc is cdom_heap_malloc, weakly: cd_alloc_try tells cdom's heap from an app's own by comparing them. */
+void *cdom_heap_malloc(size_t n) { return n >> 31 ? 0 : heap_alloc((uint32_t)n); }
+void *malloc(size_t n) __attribute__((weak, alias("cdom_heap_malloc")));
 
 __attribute__((weak)) void free(void *p) {
   if (!p) return;
@@ -89,6 +106,26 @@ void cd_free(void *p) { free(p); }
 void *cd_realloc(void *p, uint32_t n) {
   void *q = realloc(p, n);
   if (!q) __builtin_trap();
+  return q;
+}
+
+/* On cdom's own heap, the non-trapping path; on an app's own allocator, whatever its malloc and
+ * realloc answer (an allocator of the app's own says itself what no room is). */
+static int heap_is_cdoms(void) { return malloc == cdom_heap_malloc; }
+void *cd_alloc_try(uint32_t n) {
+  if (!heap_is_cdoms()) return malloc(n);
+  return n >> 31 ? 0 : heap_alloc_or(n, 1);
+}
+void *cd_realloc_try(void *p, uint32_t n) {
+  if (!heap_is_cdoms()) return realloc(p, n);
+  uint32_t cap = p ? (1u << heap_class(p)) - 8 : 0;
+  if (p && cap >= n) return p;
+  void *q = n >> 31 ? 0 : heap_alloc_or(n, 1);
+  if (!q) return 0; /* p is kept, as it was */
+  if (p) {
+    __builtin_memcpy(q, p, cap);
+    free(p);
+  }
   return q;
 }
 

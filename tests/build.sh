@@ -27,6 +27,9 @@ cp "$here/unit.html" "$here/../demo/click.html" "$here/../shim/cdom.js" "$here/o
 node "$legacy" page "$here/listfuzz.html" "$here/out/listfuzz.html"
 node "$legacy" shim "$here/out/cdom.legacy.js"
 node "$legacy" app "$here/out/listfuzz.wasm" "$here/out/listfuzz.wasm.js"
+# The _try allocations at a small cap, and on an app's own allocator (tools/alloc.mjs, in Node).
+wasm -O2 "$here/out/alloc_try.wasm" -DCDOM_HEAP_PAGES_MAX=40 "$here/alloc_try.c" "$here/../src/cdom.c" "$here/../src/mini.c"
+wasm -O2 "$here/out/alloc_own.wasm" -DOWN_ALLOC "$here/alloc_try.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 wasm -O2 "$here/out/canvas.wasm" "$here/canvas.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 cp "$here/canvas.html" "$here/out/"
 wasm -O2 "$here/out/host.wasm" "$here/host.c" "$here/../src/cdom.c" "$here/../src/mini.c"

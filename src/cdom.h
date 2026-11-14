@@ -85,6 +85,17 @@ enum { CD_MOD_SHIFT = 1, CD_MOD_CTRL = 2, CD_MOD_ALT = 4, CD_MOD_META = 8, CD_MO
 void *cd_alloc(uint32_t n);
 void *cd_realloc(void *p, uint32_t n);
 void cd_free(void *p);
+/* cd_alloc and cd_realloc trap when there is no room, and so do malloc, realloc and calloc on cdom's
+ * heap: in wasm a pointer 0 is ordinary memory, so code that does not check would write over it.
+ * The _try forms are for code that does check (a large buffer it can do without, a file it can say
+ * is too big): cd_alloc_try answers 0 when there is no room; cd_realloc_try answers 0 and leaves p
+ * as it was, still the caller's to use and to cd_free. What they answer is freed with cd_free and
+ * grown with cd_realloc or cd_realloc_try, as any block. On an app's own allocator (all four
+ * strong) they answer what its malloc and realloc do. Building with -DCDOM_HEAP_PAGES_MAX=N bounds
+ * the heap to N pages of 64 KB in all (an app's own cap, and how the tests run out of room); unset,
+ * the heap grows until memory.grow refuses. */
+void *cd_alloc_try(uint32_t n);
+void *cd_realloc_try(void *p, uint32_t n);
 
 /* ---- strings ---- */
 cd_str cd_intern(const char *s, uint32_t len);

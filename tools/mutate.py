@@ -16,6 +16,7 @@ LINK = ['tests/link/run.sh']
 HOST = ['node', 'tools/host.mjs']
 CANVAS = ['node', 'tools/canvas.mjs']
 FRESH = ['node', 'tools/legacyfresh.mjs']
+ALLOC = ['node', 'tools/alloc.mjs']
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -455,6 +456,11 @@ M = [
   ('ui-i64-sign', 'src/cdom_ui.c', "  if (v < 0) t[--k] = '-';\n", '', UNIT, 'FAIL cd_buf'),
   ('ui-linked-always', 'src/cdom_ui.c', 'void cd_el(cd_str tag, cd_str cls) {', '__attribute__((export_name("cd_el"))) void cd_el(cd_str tag, cd_str cls) {', LINK, 'FAIL cdom_ui linked and not called'),
   ('callbacks-only-http', 'src/cdom_callbacks_only.h', '#pragma GCC poison cd_http cd_on_http', '#pragma GCC poison cd_on_http', LINK, 'FAIL the callbacks-only profile let a poisoned call through (USE_HTTP)'),
+  ('try-traps', 'src/cdom.c', '      if (may_fail) return 0;\n', '      (void)may_fail;\n', ALLOC, 'FAIL cd_alloc_try: blocks'),
+  ('malloc-null', 'src/cdom.c', '      __builtin_trap(); /* out of memory */', '      return 0;', ALLOC, 'FAIL malloc still traps'),
+  ('realloc-try-frees', 'src/cdom.c', '  if (!q) return 0; /* p is kept, as it was */', '  if (!q) { free(p); return 0; }', ALLOC, 'FAIL cd_realloc_try'),
+  ('heap-cap-loose', 'src/cdom.c', '  if ((uint32_t)__builtin_wasm_memory_size(0) + pages > (uint32_t)(CDOM_HEAP_PAGES_MAX)) return 0;', '  if ((uint32_t)__builtin_wasm_memory_size(0) + pages > (uint32_t)(CDOM_HEAP_PAGES_MAX) + 8) return 0;', ALLOC, 'FAIL cd_alloc_try: blocks'),
+  ('own-alloc-bypassed', 'src/cdom.c', 'static int heap_is_cdoms(void) { return malloc == cdom_heap_malloc; }', 'static int heap_is_cdoms(void) { return 1; }', ALLOC, 'FAIL cd_alloc_try and cd_realloc_try on an app'),
 ]
 
 def build_and_run(root, cmd, minify=False):
