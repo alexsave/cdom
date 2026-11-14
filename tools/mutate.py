@@ -51,7 +51,7 @@ M = [
   ('no-end-anchor-fuzz', 'src/cdom.c', 'cd_id end = L->end; /*', 'cd_id end = 0; /*', FUZZ, 'the anchor is not last'),
   ('end-anchor-moves', 'src/cdom.c', 'cd_move(old[os].node, ne < n ? nw[ne].node : end);\n      nw[--ne]', 'cd_move(old[os].node, ne < n ? nw[ne].node : 0);\n      nw[--ne]', FUZZ, 'the anchor is not last'),
   ('forget-keeps-ids', 'src/cdom.c', '    f->destroy(f->ctx, &L->items[i]);\n    cd_id_free(L->items[i].node);', '    f->destroy(f->ctx, &L->items[i]);', UNIT, 'FAIL lists and regions'),
-  ('region-keeps-ids', 'src/cdom.c', '  for (; i < r->n; i++) cd_id_free(r->ids[i]);', '', UNIT, 'FAIL lists and regions'),
+  ('region-keeps-ids', 'src/cdom.c', '  for (; i < r->n; i++) cd_id_free(r->ids[i]);', '  for (; i < r->n && 0; i++) cd_id_free(r->ids[i]);', UNIT, 'FAIL lists and regions'),
   ('region-records-list', 'src/cdom.c', '  build_push(0); /* the items', '  build_push(recording); /* the items', UNIT, 'FAIL lists and regions'),
   ('double-free-silent', 'src/cdom.c', '  if (id >= next_id || !alive[id]) __builtin_trap();', '', UNIT, 'FAIL freeing a free id traps'),
   ('name-open-is-last', 'shim/cdom.js', '    nodes[id] = stack[depth - 1];', '    nodes[id] = last;', UNIT, 'FAIL cd_name_open'),
