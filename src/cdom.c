@@ -1218,9 +1218,9 @@ void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_
 }
 
 /* ---- bound values: a node property that remembers what it last sent ----
- * seen says what last holds: 0 nothing yet, 1 an interned string's id, 2 a number, 3 a one-off
- * string's bytes, kept in b->bytes (a one-off string's id is reused by the next batch, so only its
- * bytes can say it is the same). */
+ * seen says what last holds: 0 nothing yet, 1 an interned string's id, 2 a number, 3 bytes given
+ * to cd_bound_set_bytes, kept in b->bytes (compared exactly: a hash could collide and leave the DOM
+ * wrong). */
 enum { BOUND_TEXT, BOUND_ATTR, BOUND_CLASS, BOUND_STYLE, BOUND_BOOL };
 enum { SEEN_NONE, SEEN_ID, SEEN_NUM, SEEN_BYTES };
 void cd_unbind(cd_bound *b) {
@@ -1228,49 +1228,40 @@ void cd_unbind(cd_bound *b) {
   __builtin_memset(b, 0, sizeof *b);
 }
 static void unbind_cleanup(void *ctx) { cd_unbind(ctx); }
-static void bind(cd_bound *b, cd_id id, cd_str name, uint32_t kind) {
+/* Each binder names its writer, so an app links the writers of the kinds it binds and no other. */
+static void write_text(cd_id id, cd_str name, cd_str v) { (void)name; cd_set_text_node(id, v); }
+static void write_attr(cd_id id, cd_str name, cd_str v) { cd_set_attr(id, name, v); }
+static void write_class(cd_id id, cd_str name, cd_str v) { (void)name; cd_set_class(id, v); }
+static void write_style(cd_id id, cd_str name, cd_str v) { cd_set_style(id, name, v); }
+static void bind(cd_bound *b, cd_id id, cd_str name, uint32_t kind, cd_bound_write write) {
   if (!id || name >= TRANSIENT) __builtin_trap(); /* no node, or a one-off name (it is kept) */
   b->id = id;
   b->name = name;
   b->kind = kind;
+  b->write = write;
   b->seen = SEEN_NONE;
   b->blen = 0;
   if (recording) cd_on_free(0, unbind_cleanup, b); /* its node goes with the region: so does the binding */
 }
-void cd_bind_text(cd_bound *b, cd_id text_node) { bind(b, text_node, 0, BOUND_TEXT); }
-void cd_bind_attr(cd_bound *b, cd_id el, cd_str name) { bind(b, el, name, BOUND_ATTR); }
-void cd_bind_class(cd_bound *b, cd_id el) { bind(b, el, 0, BOUND_CLASS); }
-void cd_bind_style(cd_bound *b, cd_id el, cd_str prop) { bind(b, el, prop, BOUND_STYLE); }
-void cd_bind_bool(cd_bound *b, cd_id el, cd_str prop) { bind(b, el, prop, BOUND_BOOL); }
+void cd_bind_text(cd_bound *b, cd_id text_node) { bind(b, text_node, 0, BOUND_TEXT, write_text); }
+void cd_bind_attr(cd_bound *b, cd_id el, cd_str name) { bind(b, el, name, BOUND_ATTR, write_attr); }
+void cd_bind_class(cd_bound *b, cd_id el) { bind(b, el, 0, BOUND_CLASS, write_class); }
+void cd_bind_style(cd_bound *b, cd_id el, cd_str prop) { bind(b, el, prop, BOUND_STYLE, write_style); }
+void cd_bind_bool(cd_bound *b, cd_id el, cd_str prop) { bind(b, el, prop, BOUND_BOOL, 0); }
 int cd_bound_live(const cd_bound *b) { return b->id != 0; }
 
-static void bound_write(cd_bound *b, cd_str s) {
-  switch (b->kind) {
-  case BOUND_TEXT: cd_set_text_node(b->id, s); break;
-  case BOUND_ATTR: cd_set_attr(b->id, b->name, s); break;
-  case BOUND_CLASS: cd_set_class(b->id, s); break;
-  default: cd_set_style(b->id, b->name, s); break;
-  }
-}
+static void bound_write(cd_bound *b, cd_str s) { b->write(b->id, b->name, s); }
 void cd_bound_set(cd_bound *b, cd_str s) {
   if (!b->id || b->kind == BOUND_BOOL) __builtin_trap(); /* unbound, or a bool (cd_bound_set_num) */
-  if (s < TRANSIENT) {
-    if (b->seen == SEEN_ID && b->last == s) return;
-    bound_write(b, s);
-    b->seen = SEEN_ID;
-    b->last = s;
-    return;
-  }
-  /* A one-off string: the last one made, its bytes still in the pending batch. */
-  if (s != TRANSIENT + ntmp - 1 || smeta[nstrs - 1].id != s) __builtin_trap(); /* not the last cd_tmp */
-  uint32_t len = smeta[nstrs - 1].bytes;
-  const uint8_t *p = sbytes + nsb - len;
-  if (b->seen == SEEN_BYTES && b->blen == len && !__builtin_memcmp(b->bytes, p, len)) {
-    nstrs--; /* unchanged: it need not cross at all */
-    nsb -= len;
-    ntmp--;
-    return;
-  }
+  if (s >= TRANSIENT) __builtin_trap(); /* a cd_tmp: its id says nothing of its bytes (cd_bound_set_bytes) */
+  if (b->seen == SEEN_ID && b->last == s) return;
+  bound_write(b, s);
+  b->seen = SEEN_ID;
+  b->last = s;
+}
+void cd_bound_set_bytes(cd_bound *b, const char *p, uint32_t len) {
+  if (!b->id || b->kind == BOUND_BOOL) __builtin_trap();
+  if (b->seen == SEEN_BYTES && b->blen == len && !__builtin_memcmp(b->bytes, p, len)) return; /* nothing crosses */
   if (len > b->bcap) {
     b->bcap = len;
     b->bytes = cd_realloc(b->bytes, len);
@@ -1278,7 +1269,17 @@ void cd_bound_set(cd_bound *b, cd_str s) {
   __builtin_memcpy(b->bytes, p, len);
   b->blen = len;
   b->seen = SEEN_BYTES;
-  bound_write(b, s);
+  bound_write(b, cd_tmp(p, len));
+}
+void cd_bound_shows(cd_bound *b, cd_str s) {
+  if (!b->id || s >= TRANSIENT) __builtin_trap(); /* unbound, or a one-off string */
+  b->seen = SEEN_ID;
+  b->last = s;
+}
+void cd_bound_shows_num(cd_bound *b, uint32_t n) {
+  if (!b->id) __builtin_trap();
+  b->seen = SEEN_NUM;
+  b->last = b->kind == BOUND_BOOL ? n != 0 : n;
 }
 void cd_bound_set_num(cd_bound *b, uint32_t n) {
   if (!b->id) __builtin_trap(); /* unbound */

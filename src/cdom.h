@@ -259,15 +259,19 @@ void cd_req_drop(cd_req *r);
  * text sets a text node's value (cd_set_text_node), attr an attribute, class the class, style one
  * style property, and bool a boolean property such as "disabled" or "checked" (cd_set_bool, the
  * property, not the attribute, so it holds after the user changed it). name and prop are interned.
- * An interned value is the same when its id is; a cd_tmp value when its bytes are, so a label made
- * with cd_fmt and cd_tmp each time is compared by what it says. Such a value must be the last cd_tmp
- * made; unchanged, it is taken back off the batch and never crosses. cd_bound_set_num takes a number
- * (for a bool, 0 or not: 1 and 5 are the same true). The first set after a bind always writes.
+ * cd_bound_set takes an interned value, the same when its id is. cd_bound_set_bytes takes bytes (a
+ * label made with cd_fmt or snprintf each time), the same when the bytes are: unchanged, nothing is
+ * made and nothing crosses; changed, they cross as a cd_tmp. cd_bound_set_num takes a number
+ * (for a bool, 0 or not: 1 and 5 are the same true). The first set after a bind always writes,
+ * unless cd_bound_shows said what the node was built with.
  * Node ids carry no generation, so a binding must not outlive its node: one bound while a region
  * builds is unbound when the region goes (a cleanup cdom registers), and one bound elsewhere (a list
- * row's create) is the app's to cd_unbind. Setting an unbound value traps; cd_bound_live tells. */
+ * row's create) is the app's to cd_unbind. Setting an unbound value traps; cd_bound_live tells.
+ * A cd_bound starts zeroed (static, or cleared memory), and is zeroed again by cd_unbind. */
+typedef void (*cd_bound_write)(cd_id id, cd_str name, cd_str value);
 typedef struct {
   cd_id id; cd_str name; uint32_t kind, seen, last; /* cdom's: the node, and what it last sent */
+  cd_bound_write write;                              /* cdom's: how its kind writes a string */
   uint8_t *bytes; uint32_t blen, bcap;               /* cdom's: a cd_tmp value's bytes */
 } cd_bound;
 void cd_bind_text(cd_bound *b, cd_id text_node);
@@ -275,8 +279,13 @@ void cd_bind_attr(cd_bound *b, cd_id el, cd_str name);
 void cd_bind_class(cd_bound *b, cd_id el);
 void cd_bind_style(cd_bound *b, cd_id el, cd_str prop);
 void cd_bind_bool(cd_bound *b, cd_id el, cd_str prop);
-void cd_bound_set(cd_bound *b, cd_str value);
+void cd_bound_set(cd_bound *b, cd_str value);   /* interned; a cd_tmp traps */
+void cd_bound_set_bytes(cd_bound *b, const char *p, uint32_t len);
 void cd_bound_set_num(cd_bound *b, uint32_t n);
+/* The node already shows value (it was built with it): the binding records it without writing, so
+ * the first set of the same value writes nothing. value is interned. */
+void cd_bound_shows(cd_bound *b, cd_str value);
+void cd_bound_shows_num(cd_bound *b, uint32_t n);
 void cd_unbind(cd_bound *b);
 int cd_bound_live(const cd_bound *b);
 
