@@ -150,6 +150,19 @@ var cdom = (() => {
     length &= 0x7fffffff;
     return textDecoder.decode(u8.subarray(ptr, ptr + length));
   }
+  // options.read "args": the ASCII test here, then ascii(); TextDecoder above SHORT or for anything else.
+  function readArgs(ptr, length) {
+    if (length <= SHORT) {
+      let high = 0;
+      for (let k = 0; k < length; k++) {
+        high |= u8[ptr + k];
+      }
+      if (high < 128) {
+        return ascii(ptr, length);
+      }
+    }
+    return textDecoder.decode(u8.subarray(ptr, ptr + length));
+  }
   let readString = readLoop;
   let lengthCheck = false;
   function readLoop(ptr, length) {
@@ -1362,6 +1375,8 @@ var cdom = (() => {
     }
     if (options.read === "argsC") {
       readString = readArgsC;
+    } else if (options.read === "args") {
+      readString = readArgs;
     }
     lengthCheck = options.chk === "length";
     if (mode === "D") {

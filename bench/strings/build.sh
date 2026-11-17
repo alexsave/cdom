@@ -6,6 +6,8 @@
 #   sb-c          the same module unstripped; the shim decodes the slots from memory at load
 #   sb-c1         as sb-c, one TextDecoder call over cd_chars split at its NULs
 #   sb-d          literal addresses as Map keys (-DCDOM_LITD=1)
+#   sb-bx         sb-b with the faster runtime read: fromCharCode with arguments up to 32 ASCII bytes, the
+#                 view checked by its length
 #   *-n           the same with -DCDOM_TEMPLATES=0
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -28,6 +30,8 @@ entry() {
   local opts="undefined"
   case "$mode" in
     B) python3 "$here/lits.py" "$d/app.linked.wasm" "$d/lits.js" "$d/app.wasm"; opts="{strMode:\"B\",lits:$(cat "$d/lits.js")}";;
+    Bx) python3 "$here/lits.py" "$d/app.linked.wasm" "$d/lits.js" "$d/app.wasm"
+      opts="{strMode:\"B\",lits:$(cat "$d/lits.js"),read:\"args\",short:32,chk:\"length\"}";;
     C|C1|D) cp "$d/app.linked.wasm" "$d/app.wasm"; opts="{strMode:\"$mode\"}";;
     *) cp "$d/app.linked.wasm" "$d/app.wasm";;
   esac
@@ -53,6 +57,7 @@ for t in "" -n; do
   entry "sb-b$t"  "$B" b B -DCDOM_STRB=1 ${tf[@]+"${tf[@]}"}
 done
 entry sb-at "$B" a ""
+entry sb-bx "$B" b Bx -DCDOM_STRB=1
 entry sb-c  "$B" b C  -DCDOM_STRB=1
 entry sb-c1 "$B" b C1 -DCDOM_STRB=1
 entry sb-d  "$B" b D  -DCDOM_STRB=1 -DCDOM_LITD=1
