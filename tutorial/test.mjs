@@ -88,6 +88,68 @@ const LESSONS = {
     await t.clickText('[role=tab]', 'Usage');
     ok(await t.text('.panel h2') === 'Usage', 'the page ends on Usage, with the details open');
   },
+  '05-todo': async (t) => {
+    const texts = () => t.texts('.items .text');
+    const rows = () => t.eval(`[...document.querySelectorAll('.items li')].map(li => li.className)`);
+    const pressed = () => t.eval(`[...document.querySelectorAll('.filters button')].map(b => b.textContent + ':' + b.getAttribute('aria-pressed'))`);
+    const add = async (s) => { await t.type('.new', s); await t.key('Enter'); };
+    ok(await t.count('.items li') === 0, 'the list starts with no items');
+    ok(await t.text('.left') === '0 items left', `the footer starts at "0 items left" (${await t.text('.left')})`);
+    ok(JSON.stringify(await pressed()) === '["All:true","Active:false","Done:false"]', 'All is the filter at first');
+    await add('Buy milk');
+    ok(JSON.stringify(await texts()) === '["Buy milk"]', 'Enter adds "Buy milk"');
+    ok(await t.eval(`document.querySelector('.new').value`) === '', 'the field is empty after an add');
+    ok(await t.eval(`document.activeElement === document.querySelector('.new')`), 'the field keeps the focus after Enter');
+    await add('Walk dog');
+    await add('Write C');
+    ok(JSON.stringify(await texts()) === '["Buy milk","Walk dog","Write C"]', 'three items, in the order they were added');
+    ok(await t.text('.left') === '3 items left', `three open items are "3 items left" (${await t.text('.left')})`);
+    // The rows' elements, kept on window: a row that is patched is the same element afterwards.
+    await t.eval(`window.__walk = document.querySelectorAll('.items li')[1], window.__writeC = document.querySelectorAll('.items li')[2], true`);
+    await t.click('.items li:nth-child(2) input[type=checkbox]');
+    ok(JSON.stringify(await rows()) === '["item","item done","item"]', 'checking "Walk dog" gives its row the done class');
+    ok(await t.eval(`document.querySelectorAll('.items li')[1].querySelector('input').checked`), 'and its checkbox is checked');
+    ok(await t.text('.left') === '2 items left', `two open items are "2 items left" (${await t.text('.left')})`);
+    ok(await t.eval(`document.querySelectorAll('.items li')[1] === window.__walk`), 'the Walk dog row is patched in place, not built again');
+    ok(await t.eval(`document.querySelectorAll('.items li')[2] === window.__writeC`), 'the Write C row is the same element after another row changed');
+    await t.clickText('.filters button', 'Active');
+    ok(JSON.stringify(await texts()) === '["Buy milk","Write C"]', 'Active shows the open items, in order');
+    ok(JSON.stringify(await pressed()) === '["All:false","Active:true","Done:false"]', 'Active is the pressed filter');
+    await t.clickText('.filters button', 'Done');
+    ok(JSON.stringify(await texts()) === '["Walk dog"]', 'Done shows only the checked item');
+    await t.clickText('.filters button', 'All');
+    ok(JSON.stringify(await texts()) === '["Buy milk","Walk dog","Write C"]', 'All shows every item again, in the original order');
+    // Done took the Write C row away and All built it again, so the element is taken again from the page.
+    await t.eval(`window.__writeC = document.querySelectorAll('.items li')[2], true`);
+    await t.click('.items li:nth-child(1) .remove');
+    ok(JSON.stringify(await texts()) === '["Walk dog","Write C"]', 'removing "Buy milk" leaves the other two, in order');
+    ok(await t.text('.left') === '1 item left', `one open item is "1 item left" (${await t.text('.left')})`);
+    ok(await t.eval(`document.querySelectorAll('.items li')[1] === window.__writeC`), 'removing a row leaves the Write C row as the same element');
+    await t.click('.clear');
+    ok(JSON.stringify(await texts()) === '["Write C"]', 'Clear done leaves only "Write C"');
+    await t.type('.new', '   ');
+    await t.key('Enter');
+    ok(JSON.stringify(await texts()) === '["Write C"]', 'a field of spaces adds nothing');
+    for (let i = 0; i < 3; i++) await t.key('Backspace');
+    await t.clickText('.add button', 'Add');
+    ok(JSON.stringify(await texts()) === '["Write C"]', 'Add with an empty field adds nothing');
+    await t.type('.new', 'Ship it');
+    await t.clickText('.add button', 'Add');
+    ok(JSON.stringify(await texts()) === '["Write C","Ship it"]', 'a click on Add adds the todo');
+    ok(await t.eval(`document.querySelector('.new').value`) === '', 'the field is empty after a click on Add');
+    ok(await t.eval(`document.activeElement === document.querySelector('.new')`), 'the focus goes back to the field after a click on Add');
+    await add('Read the cdom tutorial');
+    ok(JSON.stringify(await texts()) === '["Write C","Ship it","Read the cdom tutorial"]', 'Enter adds the third todo after the others');
+    await t.click('.items li:nth-child(2) input[type=checkbox]');
+    ok(JSON.stringify(await rows()) === '["item","item done","item"]', 'checking "Ship it" gives its row the done class');
+    await t.click('.items li:nth-child(2) input[type=checkbox]');
+    ok(JSON.stringify(await rows()) === '["item","item","item"]', 'unchecking "Ship it" takes the done class away');
+    ok(await t.eval(`!document.querySelectorAll('.items li')[1].querySelector('input').checked`), 'and its checkbox is unchecked');
+    await t.click('.items li:nth-child(3) input[type=checkbox]');
+    ok(await t.text('.left') === '2 items left', `two open items after one check are "2 items left" (${await t.text('.left')})`);
+    await t.clickText('.filters button', 'All');
+    ok(JSON.stringify(await pressed()) === '["All:true","Active:false","Done:false"]', 'the page ends on All');
+  },
 };
 
 // The page driver: one tab, the page's errors collected, clicks and keys as the browser's own input events.
