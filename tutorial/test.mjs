@@ -150,6 +150,84 @@ const LESSONS = {
     await t.clickText('.filters button', 'All');
     ok(JSON.stringify(await pressed()) === '["All:true","Active:false","Done:false"]', 'the page ends on All');
   },
+  '06-stopwatch': async (t) => {
+    const time = () => t.text('.time');
+    const note = () => t.text('.note');
+    const laps = () => t.texts('.laps .name');
+    const splits = () => t.texts('.laps .split');
+    const disabled = (sel) => t.eval(`document.querySelector(${JSON.stringify(sel)}).disabled`);
+    // MM:SS.cc to ms; NaN for anything else.
+    const toMs = (s) => { const m = /^(\d+):(\d{2})\.(\d{2})$/.exec(s ?? ''); return m ? (+m[1] * 60 + +m[2]) * 1000 + +m[3] * 10 : NaN; };
+    ok(await time() === '00:00.00', `the time starts at "00:00.00" (${await time()})`);
+    ok(await t.text('.start') === 'Start', 'the start button says "Start" at first');
+    ok(await disabled('button.lap') === true, 'Lap is disabled at first');
+    ok(await disabled('button.reset') === true, 'Reset is disabled at zero');
+    ok(await t.count('.laps li') === 0, 'there are no laps at first');
+    ok(await note() === '', 'the note is empty at first');
+    // Start: the time runs, and it is read from the clock, so it is past 0.2 s after 0.3 s of waiting.
+    await t.click('button.start');
+    ok(await t.text('.start') === 'Stop', `Start turns the button into "Stop" (${await t.text('.start')})`);
+    ok(await disabled('button.lap') === false, 'Lap is enabled while running');
+    ok(await disabled('button.reset') === true, 'Reset is disabled while running');
+    await t.sleep(300);
+    ok(toMs(await time()) > 200, `after ~300 ms the time is past 00:00.20 (${await time()})`);
+    const a = await time();
+    await t.sleep(100);
+    const b = await time();
+    ok(a !== b, `the time is changing (${a}, then ${b} 100 ms later)`);
+    // Two laps, newest first. The second split is the time since the first lap, about 150 ms.
+    await t.click('button.lap');
+    await t.sleep(150);
+    await t.click('button.lap');
+    ok(await t.count('.laps li') === 2, 'two laps make two rows');
+    ok(JSON.stringify(await laps()) === '["Lap 2","Lap 1"]', `the newest lap is first (${JSON.stringify(await laps())})`);
+    const [split2, split1] = (await splits()).map(toMs);
+    ok(split2 >= 100 && split2 < 600, `the second lap's split is about 150 ms (${split2} ms)`);
+    ok(split1 > 200, `the first lap's split is the time since Start, past 300 ms (${split1} ms)`);
+    // Stop: the time freezes, Lap is off and Reset is on.
+    await t.click('button.start');
+    ok(await t.text('.start') === 'Start', 'Stop turns the button back into "Start"');
+    ok(await disabled('button.lap') === true, 'Lap is disabled once stopped');
+    ok(await disabled('button.reset') === false, 'Reset is enabled once stopped');
+    const f1 = await time();
+    await t.sleep(200);
+    const f2 = await time();
+    ok(f1 === f2, `the time is frozen after Stop (${f1}, then ${f2} 200 ms later)`);
+    ok(JSON.stringify(await laps()) === '["Lap 2","Lap 1"]', 'the laps are kept after Stop');
+    // Reset: the time, the laps and the note.
+    await t.click('button.reset');
+    ok(await time() === '00:00.00', `Reset makes the time "00:00.00" (${await time()})`);
+    ok(await t.count('.laps li') === 0, 'Reset takes the laps away');
+    ok(await note() === 'Reset', `Reset shows the note "Reset" (${await note()})`);
+    ok(await t.eval(`document.querySelector('.note').getAttribute('role')`) === 'status', 'the note is a status region');
+    ok(await disabled('button.reset') === true, 'Reset is disabled again at zero');
+    // A second Reset before the first note clears: the first timer is stopped, so it cannot clear this note early.
+    await t.sleep(300);
+    await t.click('button.start');
+    await t.click('button.start');
+    await t.click('button.reset');
+    const second = Date.now();
+    ok(await note() === 'Reset', 'the second Reset shows the note again');
+    await t.sleep(Math.max(0, 1300 - (Date.now() - second)));
+    ok(await note() === 'Reset', `the note is still there ~1300 ms after the second Reset (${await note()})`);
+    await t.sleep(Math.max(0, 1750 - (Date.now() - second)));
+    ok(await note() === '', 'after ~1700 ms the note is empty');
+    // The page ends on a run with three laps about 200 ms apart, stopped.
+    await t.click('button.start');
+    for (let i = 0; i < 3; i++) {
+      await t.sleep(200);
+      await t.click('button.lap');
+    }
+    await t.click('button.start');
+    ok(JSON.stringify(await laps()) === '["Lap 3","Lap 2","Lap 1"]', 'three laps, newest first');
+    const all = (await splits()).map(toMs);
+    ok(all.every((ms) => ms >= 180 && ms < 1000), `each split is about 200 ms (${all.join(', ')})`);
+    // The splits add up to the time shown: the last lap was taken just before Stop.
+    const sum = all.reduce((x, y) => x + y, 0);
+    const rest = toMs(await time()) - sum;
+    ok(rest >= 0 && rest < 150, `the splits add up to the time shown (${sum} + ${rest} ms = ${await time()})`);
+    ok(await t.text('.start') === 'Start', 'the page ends stopped');
+  },
 };
 
 // The page driver: one tab, the page's errors collected, clicks and keys as the browser's own input events.
