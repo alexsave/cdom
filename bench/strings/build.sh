@@ -46,6 +46,8 @@ entry() {
 { "name": "js-framework-benchmark-$name", "version": "0.1.0", "description": "cdom strings-bench $name",
   "js-framework-benchmark": { "frameworkVersion": "0.1.0", "language": "C", "issues": [1139] } }
 JSON
+  # the harness server lists only entries with a package-lock.json
+  printf '{ "name": "js-framework-benchmark-%s", "version": "0.1.0", "lockfileVersion": 3, "requires": true, "packages": {} }\n' "$name" > "$d/package-lock.json"
   printf '%-8s wasm %6s B, page brotli %6s B\n' "$name" "$(wc -c < "$d/app.wasm" | tr -d ' ')" \
     "$(cat "$d/index.html" "$d/app.wasm" | brotli -q 11 -c | wc -c | tr -d ' ')"
 }
