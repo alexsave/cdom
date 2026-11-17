@@ -57,7 +57,7 @@ Added 2026-11-17 18:22 EST, before the table runs, for the two forms found while
 - T6. (e) has the lowest table-script-plus-install time at every N, because the parser builds the table and no JS runs. Falsified if any form beats it by more than the noise at 10,000 or more.
 - T7. (f) has the lowest heap after the install at 10,000 and 100,000. Falsified if any form is lower.
 
-Added 2026-11-17 18:31 EST, after the micro and before any whole-app run: the micro found that in Chrome a TextDecoder call costs about 120 ns whatever the length, so the design's read (TextDecoder above 12 bytes) pays that for most of the benchmark's labels (10 to 25 bytes), while today's path decodes a create's 1,000 fresh labels in one call.
+Added 2026-11-17 18:23 EST, after the micro and before any whole-app run: the micro found that in Chrome a TextDecoder call costs about 120 ns whatever the length, so the design's read (TextDecoder above 12 bytes) pays that for most of the benchmark's labels (10 to 25 bytes), while today's path decodes a create's 1,000 fresh labels in one call.
 
 - W1 is now expected to fail on create: B's create 1k and create 10k script 5% to 15% worse than A (about 0.07 ms per 1,000 labels). Falsified if B is within the noise of A on both.
 - W3. sb-bx, B with the faster read (fromCharCode with the bytes as arguments up to 32 ASCII bytes, the view checked by its length), is within the noise of A or better on every operation. Falsified if any operation is more than 3% worse beyond the noise.

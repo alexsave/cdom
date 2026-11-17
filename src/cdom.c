@@ -333,6 +333,12 @@ uint32_t cd_str_bytes(void) { return pool_len; }
 cd_str cd_tmp(const char *s, uint32_t len) {
   if (tmp_stale) { tmp.serial0 += tmp.n; tmp.n = 0; tmp_stale = 0; }
   if (tmp.n == TMP_CAP) __builtin_trap();
+#if CDOM_TMP_ASCII
+  /* strings-bench option: the ASCII test in C, as the top bit of len (set: some byte is 128 or more). */
+  uint8_t high = 0;
+  for (uint32_t i = 0; i < len; i++) high |= (uint8_t)s[i];
+  if (high & 0x80) len |= 0x80000000u;
+#endif
   tmp.r[tmp.n] = (tmp_rec){(uint32_t)(uintptr_t)s, len};
   return 0x80000000u | ((tmp.serial0 + tmp.n++) & 0x7fffffffu);
 }
