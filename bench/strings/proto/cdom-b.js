@@ -123,7 +123,36 @@ var cdom = (() => {
   let litMap = new Map();
   let tmpBlock, tmpSerial0, tmpCount, tmpRecords, tmpWords, tmpLen;
   let SHORT = 12; // runtime strings up to this many bytes are read by a char loop
-  function readString(ptr, length) {
+  const F = String.fromCharCode;
+  // n ASCII bytes at p as a string: fromCharCode with the bytes as arguments, 8 at a time.
+  function ascii(p, n) {
+    const b = u8;
+    let v = "";
+    for (; n >= 8; p += 8, n -= 8) {
+      v += F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5], b[p + 6], b[p + 7]);
+    }
+    switch (n) {
+      case 0: return v;
+      case 1: return v + F(b[p]);
+      case 2: return v + F(b[p], b[p + 1]);
+      case 3: return v + F(b[p], b[p + 1], b[p + 2]);
+      case 4: return v + F(b[p], b[p + 1], b[p + 2], b[p + 3]);
+      case 5: return v + F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4]);
+      case 6: return v + F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5]);
+      default: return v + F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5], b[p + 6]);
+    }
+  }
+  // options.read "argsC": C set the top bit of length for a string that is not ASCII (-DCDOM_TMP_ASCII).
+  function readArgsC(ptr, length) {
+    if (length <= SHORT) {
+      return ascii(ptr, length);
+    }
+    length &= 0x7fffffff;
+    return textDecoder.decode(u8.subarray(ptr, ptr + length));
+  }
+  let readString = readLoop;
+  let lengthCheck = false;
+  function readLoop(ptr, length) {
     if (length <= SHORT) {
       let value = "";
       let high = 0;
@@ -139,7 +168,7 @@ var cdom = (() => {
     return textDecoder.decode(u8.subarray(ptr, ptr + length));
   }
   function runtimeString(s) {
-    if (buffer !== memory.buffer) {
+    if (lengthCheck ? u32.length === 0 : buffer !== memory.buffer) {
       views();
     }
     const k = ((s & 0x7fffffff) - u32[tmpSerial0]) & 0x7fffffff;
@@ -1331,6 +1360,10 @@ var cdom = (() => {
     if (options.short !== undefined) {
       SHORT = options.short;
     }
+    if (options.read === "argsC") {
+      readString = readArgsC;
+    }
+    lengthCheck = options.chk === "length";
     if (mode === "D") {
       stringOf = strMap;
       return;

@@ -1,0 +1,140 @@
+# Chrome/157.0.8103.79
+mode	build	test	read	short	kind	len	ns	q1	q3	n
+resolve	a	lit8					9.35	9.25	9.44	131072
+resolve	b	lit8					6.77	6.77	6.82	262144
+resolve	d	lit8					9.44	9.39	9.49	262144
+resolve	b	dense8					7.10	7.06	7.15	262144
+resolve	a	tmp			ascii	1	72.10	71.33	72.48	262144
+resolve	b	tmp	loop12		ascii	1	23.65	23.46	23.65	524288
+resolve	a	intern_hit			ascii	1	12.78	12.78	12.78	1048576
+resolve	b	tmp	td		ascii	1	135.04	135.04	135.80	131072
+resolve	b	tmp	fcc		ascii	1	67.52	67.14	67.90	262144
+resolve	b	tmp	latin1		ascii	1	136.57	135.80	136.57	131072
+resolve	b	tmp	loop12	16	ascii	1	23.65	23.46	23.65	524288
+resolve	b	tmp	loop12	24	ascii	1	23.84	23.65	24.03	524288
+resolve	b	tmp	loop12	32	ascii	1	23.27	23.27	23.46	524288
+resolve	a	tmp			ascii	9	124.36	123.60	125.89	131072
+resolve	b	tmp	loop12		ascii	9	80.11	79.35	80.11	131072
+resolve	a	intern_hit			ascii	9	19.07	19.07	19.07	524288
+resolve	a	intern_new			ascii	9	54.93	51.88	65.61	65536
+resolve	b	tmp	td		ascii	9	138.85	138.09	141.91	131072
+resolve	b	tmp	fcc		ascii	9	90.79	90.03	90.79	131072
+resolve	b	tmp	latin1		ascii	9	142.67	141.91	143.43	131072
+resolve	b	tmp	loop12	16	ascii	9	80.11	80.11	80.87	131072
+resolve	b	tmp	loop12	24	ascii	9	79.35	78.58	80.11	131072
+resolve	b	tmp	loop12	32	ascii	9	80.11	80.11	80.87	131072
+resolve	a	tmp			ascii	12	150.30	148.77	150.30	131072
+resolve	b	tmp	loop12		ascii	12	100.71	99.95	102.23	131072
+resolve	a	intern_hit			ascii	12	22.51	22.32	22.51	524288
+resolve	a	intern_new			ascii	12	64.09	56.46	91.55	65536
+resolve	b	tmp	td		ascii	12	137.33	136.57	138.09	131072
+resolve	b	tmp	fcc		ascii	12	96.13	94.60	96.89	131072
+resolve	b	tmp	latin1		ascii	12	147.25	142.67	151.82	131072
+resolve	b	tmp	loop12	16	ascii	12	109.10	109.10	111.39	131072
+resolve	b	tmp	loop12	24	ascii	12	101.47	100.71	102.23	131072
+resolve	b	tmp	loop12	32	ascii	12	101.47	101.47	103.00	131072
+resolve	a	tmp			ascii	13	157.17	155.64	158.69	65536
+resolve	b	tmp	loop12		ascii	13	146.48	144.96	149.54	65536
+resolve	a	intern_hit			ascii	13	23.65	23.65	23.84	524288
+resolve	a	intern_new			ascii	13	67.14	59.51	83.92	65536
+resolve	b	tmp	td		ascii	13	144.20	141.91	144.96	131072
+resolve	b	tmp	fcc		ascii	13	99.95	99.18	100.71	131072
+resolve	b	tmp	latin1		ascii	13	144.96	143.43	148.01	131072
+resolve	b	tmp	loop12	16	ascii	13	110.63	110.63	112.15	131072
+resolve	b	tmp	loop12	24	ascii	13	103.00	102.23	103.00	131072
+resolve	b	tmp	loop12	32	ascii	13	103.00	102.23	103.76	131072
+resolve	a	tmp			ascii	30	227.36	227.36	228.88	65536
+resolve	b	tmp	loop12		ascii	30	142.67	141.91	144.20	131072
+resolve	a	intern_hit			ascii	30	50.35	50.35	50.35	262144
+resolve	a	intern_new			ascii	30	125.12	109.86	137.33	32768
+resolve	b	tmp	td		ascii	30	143.43	140.38	143.43	32768
+resolve	b	tmp	fcc		ascii	30	150.30	149.54	151.06	131072
+resolve	b	tmp	latin1		ascii	30	157.17	157.17	163.27	65536
+resolve	b	tmp	loop12	16	ascii	30	146.48	144.96	148.77	131072
+resolve	b	tmp	loop12	24	ascii	30	146.48	144.20	147.25	131072
+resolve	b	tmp	loop12	32	ascii	30	164.79	164.79	166.32	65536
+resolve	a	tmp			ascii	200	341.80	338.75	341.80	32768
+resolve	b	tmp	loop12		ascii	200	157.17	154.11	158.69	65536
+resolve	a	intern_hit			ascii	200	332.64	329.59	332.64	32768
+resolve	a	intern_new			ascii	200	463.87	451.66	512.70	8192
+resolve	b	tmp	td		ascii	200	149.54	149.54	149.54	65536
+resolve	b	tmp	fcc		ascii	200	659.18	653.08	671.39	16384
+resolve	b	tmp	latin1		ascii	200	308.23	308.23	311.28	32768
+resolve	b	tmp	loop12	16	ascii	200	154.11	154.11	155.64	65536
+resolve	b	tmp	loop12	24	ascii	200	155.64	154.11	157.17	65536
+resolve	b	tmp	loop12	32	ascii	200	155.64	155.64	157.17	65536
+resolve	a	tmp			utf8	9	205.99	204.47	209.05	65536
+resolve	b	tmp	loop12		utf8	9	215.15	213.62	215.15	65536
+resolve	a	intern_hit			utf8	9	19.26	19.07	19.45	524288
+resolve	a	intern_new			utf8	9	109.86	94.60	122.07	32768
+resolve	b	tmp	td		utf8	9	154.11	152.59	155.64	65536
+resolve	b	tmp	fcc		utf8	9	184.63	183.11	186.16	65536
+resolve	b	tmp	latin1		utf8	9	166.32	163.27	166.32	65536
+resolve	b	tmp	loop12	16	utf8	9	219.73	218.20	221.25	65536
+resolve	b	tmp	loop12	24	utf8	9	216.67	215.15	216.67	65536
+resolve	b	tmp	loop12	32	utf8	9	230.41	227.36	233.46	65536
+resolve	a	tmp			utf8	12	215.15	215.15	216.67	65536
+resolve	b	tmp	loop12		utf8	12	245.67	244.14	247.19	65536
+resolve	a	intern_hit			utf8	12	22.70	22.32	22.89	524288
+resolve	a	intern_new			utf8	12	65.61	51.88	77.82	65536
+resolve	b	tmp	td		utf8	12	157.17	155.64	158.69	65536
+resolve	b	tmp	fcc		utf8	12	184.63	183.11	186.16	65536
+resolve	b	tmp	latin1		utf8	12	167.85	167.85	170.90	65536
+resolve	b	tmp	loop12	16	utf8	12	245.67	244.14	247.19	65536
+resolve	b	tmp	loop12	24	utf8	12	236.51	234.99	238.04	65536
+resolve	b	tmp	loop12	32	utf8	12	245.67	244.14	247.19	65536
+resolve	a	tmp			utf8	13	215.15	213.62	224.30	65536
+resolve	b	tmp	loop12		utf8	13	160.22	158.69	163.27	65536
+resolve	a	intern_hit			utf8	13	23.84	23.46	23.84	524288
+resolve	a	intern_new			utf8	13	73.24	56.46	86.98	65536
+resolve	b	tmp	td		utf8	13	164.79	164.79	166.32	65536
+resolve	b	tmp	fcc		utf8	13	193.79	193.79	193.79	65536
+resolve	b	tmp	latin1		utf8	13	175.48	175.48	177.00	65536
+resolve	b	tmp	loop12	16	utf8	13	254.82	253.30	257.87	65536
+resolve	b	tmp	loop12	24	utf8	13	248.72	247.19	250.24	65536
+resolve	b	tmp	loop12	32	utf8	13	256.35	254.82	259.40	65536
+resolve	a	tmp			utf8	30	263.98	260.93	265.50	65536
+resolve	b	tmp	loop12		utf8	30	193.79	192.26	195.31	65536
+resolve	a	intern_hit			utf8	30	50.74	50.74	51.12	262144
+resolve	a	intern_new			utf8	30	158.69	131.23	170.90	32768
+resolve	b	tmp	td		utf8	30	187.68	186.16	189.21	65536
+resolve	b	tmp	fcc		utf8	30	228.88	227.36	230.41	65536
+resolve	b	tmp	latin1		utf8	30	212.10	210.57	213.62	65536
+resolve	b	tmp	loop12	16	utf8	30	195.31	193.79	201.42	65536
+resolve	b	tmp	loop12	24	utf8	30	195.31	192.26	196.84	65536
+resolve	b	tmp	loop12	32	utf8	30	332.64	332.64	335.69	32768
+resolve	a	tmp			utf8	200	787.35	787.35	793.46	16384
+resolve	b	tmp	loop12		utf8	200	604.25	598.14	604.25	16384
+resolve	a	intern_hit			utf8	200	332.64	332.64	332.64	32768
+resolve	a	intern_new			utf8	200	695.80	622.56	720.21	8192
+resolve	b	tmp	td		utf8	200	604.25	598.14	610.35	16384
+resolve	b	tmp	fcc		utf8	200	756.84	738.53	762.94	16384
+resolve	b	tmp	latin1		utf8	200	769.04	762.94	775.15	16384
+resolve	b	tmp	loop12	16	utf8	200	634.77	628.66	634.77	16384
+resolve	b	tmp	loop12	24	utf8	200	610.35	604.25	616.46	16384
+resolve	b	tmp	loop12	32	utf8	200	610.35	604.25	610.35	16384
+dom	a	lit8					119.02	115.97	143.43	4096
+dom	b	lit8					125.12	119.02	128.17	8192
+dom	d	lit8					114.44	112.92	114.44	8192
+dom	a	tmp			ascii	1	198.36	192.26	204.47	32768
+dom	b	tmp	loop12		ascii	1	146.48	146.48	149.54	32768
+dom	a	tmp			ascii	9	262.45	262.45	268.55	16384
+dom	b	tmp	loop12		ascii	9	228.88	225.83	238.04	32768
+dom	a	tmp			ascii	12	292.97	286.87	292.97	16384
+dom	b	tmp	loop12		ascii	12	238.04	234.99	241.09	32768
+dom	a	tmp			ascii	13	299.07	299.07	305.18	16384
+dom	b	tmp	loop12		ascii	13	262.45	250.24	274.66	16384
+dom	a	tmp			ascii	30	433.35	427.25	433.35	16384
+dom	b	tmp	loop12		ascii	30	250.24	250.24	256.35	16384
+dom	a	tmp			ascii	200	463.87	457.76	469.97	16384
+dom	b	tmp	loop12		ascii	200	268.55	262.45	280.76	16384
+dom	a	tmp			utf8	9	329.59	323.49	354.00	16384
+dom	b	tmp	loop12		utf8	9	341.80	335.69	341.80	16384
+dom	a	tmp			utf8	12	341.80	341.80	347.90	16384
+dom	b	tmp	loop12		utf8	12	390.63	384.52	463.87	16384
+dom	a	tmp			utf8	13	354.00	341.80	354.00	16384
+dom	b	tmp	loop12		utf8	13	286.87	280.76	292.97	16384
+dom	a	tmp			utf8	30	390.62	384.52	408.94	16384
+dom	b	tmp	loop12		utf8	30	341.80	311.28	390.62	16384
+dom	a	tmp			utf8	200	903.32	891.11	915.53	8192
+dom	b	tmp	loop12		utf8	200	720.21	720.21	732.42	8192

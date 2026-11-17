@@ -1,0 +1,58 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>strings jsread</title></head>
+<body><script>
+// strings-bench: ways to turn len bytes of a Uint8Array into a JS string, without wasm, one per page
+// load. Query: read=..., len=..., kind=ascii|utf8. Sets window.RESULT = {ns, lo, hi}.
+const q = new URLSearchParams(location.search);
+const read = q.get('read'), len = +q.get('len'), kind = q.get('kind') || 'ascii';
+const td = new TextDecoder();
+const mem = new ArrayBuffer(1 << 16), u8 = new Uint8Array(mem);
+const enc = new TextEncoder();
+let s = '';
+if (kind === 'ascii') for (let i = 0; i < len; i++) s += String.fromCharCode(97 + (i * 7) % 26);
+else { while (enc.encode(s).length + 3 <= len) s += 'жa'; while (enc.encode(s).length < len) s += 'b'; }
+// 64 copies at different offsets, so a read cannot be cached by pointer.
+const P = [];
+for (let i = 0; i < 64; i++) { P.push(i * 512); u8.set(enc.encode(s), i * 512); }
+const fixed = u8.subarray(0, len);
+const F = String.fromCharCode;
+const readers = {
+  loop(p, n) { let v = "", h = 0; for (let k = 0; k < n; k++) { const c = u8[p + k]; h |= c; v += F(c); } return h < 128 ? v : td.decode(u8.subarray(p, p + n)); },
+  td(p, n) { return td.decode(u8.subarray(p, p + n)); },
+  td_fixed(p, n) { return td.decode(fixed); }, // no subarray: the binding's own cost
+  subarray(p, n) { return u8.subarray(p, p + n).length ? "x" : ""; }, // the view alone
+  fcc_apply(p, n) { return F.apply(null, u8.subarray(p, p + n)); },
+  // char codes gathered into a reused array, one fromCharCode.apply
+  arr(p, n) { const a = ARR; a.length = n; let h = 0; for (let k = 0; k < n; k++) { const c = u8[p + k]; h |= c; a[k] = c; } return h < 128 ? F.apply(null, a) : td.decode(u8.subarray(p, p + n)); },
+  // fromCharCode with the bytes as arguments, by length, up to 16; one string, no concatenation
+  args(p, n) {
+    const b = u8;
+    switch (n) {
+      case 0: return "";
+      case 1: return F(b[p]);
+      case 2: return F(b[p], b[p + 1]);
+      case 3: return F(b[p], b[p + 1], b[p + 2]);
+      case 4: return F(b[p], b[p + 1], b[p + 2], b[p + 3]);
+      case 5: return F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4]);
+      case 6: return F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5]);
+      case 7: return F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5], b[p + 6]);
+      case 8: return F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5], b[p + 6], b[p + 7]);
+      default: return n <= 16 ? F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5], b[p + 6], b[p + 7]) + readers.args(p + 8, n - 8) : td.decode(b.subarray(p, p + n));
+    }
+  },
+};
+const ARR = [];
+const f = readers[read];
+let acc = 0;
+const sample = (n) => { const t0 = performance.now(); for (let i = 0; i < n; i++) acc += f(P[i & 63], len).length; return performance.now() - t0; };
+let n = 64;
+for (let i = 0; i < 4; i++) sample(n);
+while (sample(n) < 10) n *= 2;
+for (let i = 0; i < 5; i++) sample(n);
+// spin=s: keep reading for s seconds first, for the macOS sample command (bench/strings/sample.sh)
+for (const end = performance.now() + 1000 * +(q.get('spin') || 0); performance.now() < end;) sample(n);
+const v = [];
+for (let i = 0; i < 21; i++) v.push(sample(n) * 1e6 / n);
+v.sort((a, b) => a - b);
+window.RESULT = { ns: v[10], lo: v[5], hi: v[15], n, ok: f(P[3], len) === s || read === 'subarray' };
+</script></body></html>

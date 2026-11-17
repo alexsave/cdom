@@ -1,0 +1,139 @@
+# Chrome/157.0.8103.79
+mode	build	test	read	short	kind	len	ns	q1	q3	n
+resolve	a	lit8					9.16	9.11	9.25	262144
+resolve	b	lit8					6.87	6.77	6.91	262144
+resolve	a	tmp			ascii	1	67.90	67.52	67.90	262144
+resolve	b	tmp	loop12		ascii	1	23.46	23.27	23.46	524288
+resolve	b	tmp	loop12/length		ascii	1	17.36	16.50	17.55	1048576
+resolve	b	tmp	args	32	ascii	1	26.32	26.13	26.51	524288
+resolve	b2	tmp	argsC	32	ascii	1	25.56	25.37	25.94	524288
+resolve	b2	tmp	argsC/length	32	ascii	1	18.22	18.22	18.41	1048576
+resolve	b	tmp	args	64	ascii	1	26.70	26.51	26.89	524288
+resolve	b2	tmp	argsC	64	ascii	1	25.75	25.56	25.94	524288
+resolve	b2	tmp	argsC/length	64	ascii	1	18.50	18.31	18.50	524288
+resolve	a	tmp			ascii	9	125.12	124.36	125.89	131072
+resolve	b	tmp	loop12		ascii	9	80.11	80.11	80.87	131072
+resolve	b	tmp	loop12/length		ascii	9	79.35	78.58	79.35	131072
+resolve	b	tmp	args	32	ascii	9	47.68	47.68	48.07	262144
+resolve	b2	tmp	argsC	32	ascii	9	45.01	45.01	45.39	262144
+resolve	b2	tmp	argsC/length	32	ascii	9	41.58	41.20	41.58	262144
+resolve	b	tmp	args	64	ascii	9	48.45	48.07	49.21	262144
+resolve	b2	tmp	argsC	64	ascii	9	44.63	44.63	45.01	262144
+resolve	b2	tmp	argsC/length	64	ascii	9	41.96	41.58	42.34	262144
+resolve	a	tmp			ascii	12	147.25	146.48	148.77	131072
+resolve	b	tmp	loop12		ascii	12	101.47	101.47	102.23	131072
+resolve	b	tmp	loop12/length		ascii	12	99.95	99.18	100.71	131072
+resolve	b	tmp	args	32	ascii	12	57.22	56.46	57.98	262144
+resolve	b2	tmp	argsC	32	ascii	12	52.64	52.26	53.02	262144
+resolve	b2	tmp	argsC/length	32	ascii	12	48.83	48.45	49.97	262144
+resolve	b	tmp	args	64	ascii	12	56.46	56.46	56.84	262144
+resolve	b2	tmp	argsC	64	ascii	12	51.88	51.88	52.26	262144
+resolve	b2	tmp	argsC/length	64	ascii	12	49.21	48.83	49.21	262144
+resolve	a	tmp			ascii	13	155.64	154.11	158.69	65536
+resolve	b	tmp	loop12		ascii	13	141.14	140.38	142.67	131072
+resolve	b	tmp	loop12/length		ascii	13	136.57	135.04	137.33	131072
+resolve	b	tmp	args	32	ascii	13	56.08	55.69	56.46	262144
+resolve	b2	tmp	argsC	32	ascii	13	51.12	50.35	51.50	262144
+resolve	b2	tmp	argsC/length	32	ascii	13	47.30	46.92	47.68	262144
+resolve	b	tmp	args	64	ascii	13	54.93	54.93	55.31	262144
+resolve	b2	tmp	argsC	64	ascii	13	49.59	49.59	49.59	262144
+resolve	b2	tmp	argsC/length	64	ascii	13	46.54	46.16	46.54	262144
+resolve	a	tmp			ascii	30	225.83	221.25	227.36	65536
+resolve	b	tmp	loop12		ascii	30	145.72	144.96	148.77	131072
+resolve	b	tmp	loop12/length		ascii	30	141.91	141.14	143.43	131072
+resolve	b	tmp	args	32	ascii	30	94.60	93.84	95.37	131072
+resolve	b2	tmp	argsC	32	ascii	30	83.92	83.16	83.92	131072
+resolve	b2	tmp	argsC/length	32	ascii	30	79.35	78.58	79.35	131072
+resolve	b	tmp	args	64	ascii	30	93.84	93.84	94.60	131072
+resolve	b2	tmp	argsC	64	ascii	30	83.16	83.16	83.92	131072
+resolve	b2	tmp	argsC/length	64	ascii	30	81.63	78.58	81.63	131072
+resolve	a	tmp			ascii	64	357.06	357.06	360.11	32768
+resolve	b	tmp	loop12		ascii	64	144.96	144.20	148.77	131072
+resolve	b	tmp	loop12/length		ascii	64	163.27	161.74	164.79	65536
+resolve	b	tmp	args	32	ascii	64	149.54	149.54	152.59	65536
+resolve	b2	tmp	argsC	32	ascii	64	163.27	163.27	166.32	65536
+resolve	b2	tmp	argsC/length	32	ascii	64	157.17	154.11	158.69	65536
+resolve	b	tmp	args	64	ascii	64	170.90	169.37	172.42	65536
+resolve	b2	tmp	argsC	64	ascii	64	143.43	143.43	144.96	131072
+resolve	b2	tmp	argsC/length	64	ascii	64	141.91	141.14	142.67	131072
+resolve	a	tmp			ascii	200	338.75	338.75	338.75	32768
+resolve	b	tmp	loop12		ascii	200	155.64	152.59	157.17	65536
+resolve	b	tmp	loop12/length		ascii	200	166.32	163.27	169.37	65536
+resolve	b	tmp	args	32	ascii	200	161.74	158.69	161.74	65536
+resolve	b2	tmp	argsC	32	ascii	200	245.67	244.14	248.72	65536
+resolve	b2	tmp	argsC/length	32	ascii	200	233.46	231.93	233.46	65536
+resolve	b	tmp	args	64	ascii	200	170.90	169.37	170.90	65536
+resolve	b2	tmp	argsC	64	ascii	200	242.61	241.09	245.67	65536
+resolve	b2	tmp	argsC/length	64	ascii	200	236.51	234.99	238.04	65536
+resolve	a	tmp			utf8	9	227.36	227.36	228.88	65536
+resolve	b	tmp	loop12		utf8	9	233.46	231.93	236.51	65536
+resolve	b	tmp	loop12/length		utf8	9	224.30	222.78	225.83	65536
+resolve	b	tmp	args	32	utf8	9	184.63	183.11	186.16	65536
+resolve	b2	tmp	argsC	32	utf8	9	175.48	172.42	175.48	65536
+resolve	b2	tmp	argsC/length	32	utf8	9	170.90	169.37	172.42	65536
+resolve	b	tmp	args	64	utf8	9	187.68	186.16	189.21	65536
+resolve	b2	tmp	argsC	64	utf8	9	177.00	175.48	178.53	65536
+resolve	b2	tmp	argsC/length	64	utf8	9	170.90	169.37	172.42	65536
+resolve	a	tmp			utf8	12	238.04	234.99	239.56	65536
+resolve	b	tmp	loop12		utf8	12	254.82	253.30	257.87	65536
+resolve	b	tmp	loop12/length		utf8	12	257.87	256.35	259.40	65536
+resolve	b	tmp	args	32	utf8	12	186.16	184.63	186.16	65536
+resolve	b2	tmp	argsC	32	utf8	12	180.05	178.53	181.58	65536
+resolve	b2	tmp	argsC/length	32	utf8	12	172.42	169.37	172.42	65536
+resolve	b	tmp	args	64	utf8	12	184.63	183.11	186.16	65536
+resolve	b2	tmp	argsC	64	utf8	12	177.00	175.48	180.05	65536
+resolve	b2	tmp	argsC/length	64	utf8	12	173.95	172.42	177.00	65536
+resolve	a	tmp			utf8	13	241.09	238.04	242.61	65536
+resolve	b	tmp	loop12		utf8	13	181.58	180.05	183.11	65536
+resolve	b	tmp	loop12/length		utf8	13	172.42	172.42	173.95	65536
+resolve	b	tmp	args	32	utf8	13	189.21	187.68	190.73	65536
+resolve	b2	tmp	argsC	32	utf8	13	180.05	178.53	181.58	65536
+resolve	b2	tmp	argsC/length	32	utf8	13	172.42	170.90	173.95	65536
+resolve	b	tmp	args	64	utf8	13	195.31	193.79	199.89	65536
+resolve	b2	tmp	argsC	64	utf8	13	180.05	177.00	181.58	65536
+resolve	b2	tmp	argsC/length	64	utf8	13	172.42	170.90	173.95	65536
+resolve	a	tmp			utf8	30	280.76	277.71	280.76	32768
+resolve	b	tmp	loop12		utf8	30	205.99	202.94	207.52	65536
+resolve	b	tmp	loop12/length		utf8	30	202.94	201.42	204.47	65536
+resolve	b	tmp	args	32	utf8	30	233.46	230.41	234.99	65536
+resolve	b2	tmp	argsC	32	utf8	30	212.10	210.57	213.62	65536
+resolve	b2	tmp	argsC/length	32	utf8	30	205.99	204.47	207.52	65536
+resolve	b	tmp	args	64	utf8	30	231.93	228.88	234.99	65536
+resolve	b2	tmp	argsC	64	utf8	30	209.05	209.05	210.57	65536
+resolve	b2	tmp	argsC/length	64	utf8	30	202.94	199.89	204.47	65536
+resolve	a	tmp			utf8	64	369.26	363.16	369.26	32768
+resolve	b	tmp	loop12		utf8	64	283.81	283.81	286.87	32768
+resolve	b	tmp	loop12/length		utf8	64	280.76	279.24	280.76	65536
+resolve	b	tmp	args	32	utf8	64	292.97	291.44	294.49	65536
+resolve	b2	tmp	argsC	32	utf8	64	294.49	294.49	296.02	65536
+resolve	b2	tmp	argsC/length	32	utf8	64	288.39	288.39	289.92	65536
+resolve	b	tmp	args	64	utf8	64	332.64	332.64	335.69	32768
+resolve	b2	tmp	argsC	64	utf8	64	294.49	292.97	296.02	65536
+resolve	b2	tmp	argsC/length	64	utf8	64	285.34	283.81	288.39	65536
+resolve	a	tmp			utf8	200	799.56	793.46	805.66	16384
+resolve	b	tmp	loop12		utf8	200	622.56	616.46	622.56	16384
+resolve	b	tmp	loop12/length		utf8	200	610.35	610.35	616.46	16384
+resolve	b	tmp	args	32	utf8	200	616.46	616.46	622.56	16384
+resolve	b2	tmp	argsC	32	utf8	200	695.80	689.70	701.90	16384
+resolve	b2	tmp	argsC/length	32	utf8	200	689.70	683.59	689.70	16384
+resolve	b	tmp	args	64	utf8	200	622.56	622.56	628.66	16384
+resolve	b2	tmp	argsC	64	utf8	200	701.90	695.80	701.90	16384
+resolve	b2	tmp	argsC/length	64	utf8	200	695.80	689.70	701.90	16384
+dom	a	tmp			ascii	9	268.55	268.55	274.66	16384
+dom	b	tmp	loop12		ascii	9	219.73	219.73	231.93	16384
+dom	b2	tmp	argsC/length	64	ascii	9	183.11	177.00	253.30	32768
+dom	a	tmp			ascii	30	421.14	415.04	421.14	16384
+dom	b	tmp	loop12		ascii	30	280.76	274.66	280.76	16384
+dom	b2	tmp	argsC/length	64	ascii	30	250.24	238.04	305.18	16384
+dom	a	tmp			ascii	200	469.97	469.97	494.38	16384
+dom	b	tmp	loop12		ascii	200	268.55	262.45	292.97	16384
+dom	b2	tmp	argsC/length	64	ascii	200	360.11	347.90	378.42	16384
+dom	a	tmp			utf8	9	341.80	335.69	360.11	16384
+dom	b	tmp	loop12		utf8	9	341.80	341.80	347.90	16384
+dom	b2	tmp	argsC/length	64	utf8	9	299.07	286.87	354.00	16384
+dom	a	tmp			utf8	30	402.83	396.73	408.94	16384
+dom	b	tmp	loop12		utf8	30	311.28	311.28	317.38	16384
+dom	b2	tmp	argsC/length	64	utf8	30	317.38	311.28	323.49	16384
+dom	a	tmp			utf8	200	927.73	927.73	952.15	4096
+dom	b	tmp	loop12		utf8	200	732.42	720.21	756.84	8192
+dom	b2	tmp	argsC/length	64	utf8	200	817.87	805.66	830.08	8192

@@ -1,0 +1,184 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>strings micro</title></head>
+<body><div id="app"></div>
+<script>
+// strings-bench micro (bench/strings/micro.c). Query: build=a|b|d, mode=resolve|dom, test=lit8|dense8|tmp|
+// intern_hit|intern_new, read=loop12|td|loop|fcc|loopN (B's runtime read), short=N, len=bytes, kind=ascii|utf8.
+// Sets window.RESULT = {ns: median ns per cd_text, samples: [...]}.
+const q = new URLSearchParams(location.search);
+const build = q.get('build'), mode = q.get('mode') || 'resolve', test = q.get('test');
+const len = +(q.get('len') || 0), kind = q.get('kind') || 'ascii', read = q.get('read') || 'loop12';
+let SHORT = +(q.get('short') || 12);
+const td = new TextDecoder();
+let acc = 0, exports, memory, buffer, u8, u32;
+function views() { buffer = memory.buffer; u8 = new Uint8Array(buffer); u32 = new Uint32Array(buffer); }
+
+// ---- A: today's shim, verbatim (decode, keep, stringOf) ----
+const TRANSIENT = 0x40000000, SMALL = 64;
+const interned = [], transient = [];
+let stringBytes, stringMeta, metaWords, metaId, metaBytes, metaChars;
+function keep(id, value) { if (id < TRANSIENT) interned[id] = value; else transient[id - TRANSIENT] = value; }
+function decode(count, byteCount) {
+  let meta = stringMeta >> 2;
+  if (byteCount > SMALL) {
+    const all = td.decode(u8.subarray(stringBytes, stringBytes + byteCount));
+    let offset = 0;
+    for (let i = 0; i < count; i++, meta += metaWords) {
+      const chars = u32[meta + metaChars];
+      keep(u32[meta + metaId], all.substring(offset, offset + chars));
+      offset += chars;
+    }
+    return;
+  }
+  let at = stringBytes;
+  for (let i = 0; i < count; i++, meta += metaWords) {
+    const bytes = u32[meta + metaBytes];
+    let value;
+    if (bytes === u32[meta + metaChars]) {
+      value = "";
+      for (let k = 0; k < bytes; k++) value += String.fromCharCode(u8[at + k]);
+    } else value = td.decode(u8.subarray(at, at + bytes));
+    keep(u32[meta + metaId], value);
+    at += bytes;
+  }
+}
+const importsA = {
+  strings(count, byteCount) { if (buffer !== memory.buffer) views(); decode(count, byteCount); },
+  text(id) { acc += (id < TRANSIENT ? interned[id] : transient[id - TRANSIENT]).length; },
+};
+
+// ---- B, C, D, E: the design's str ----
+let lits = [], litBase = 0, tmpSerial0, tmpCount, tmpRecords, tmpWords, tmpLen;
+const litMap = new Map();
+const readers = {
+  loop12(ptr, length) { // the design: a char loop up to SHORT bytes, TextDecoder above or on a high byte
+    if (length <= SHORT) {
+      let v = "", high = 0;
+      for (let k = 0; k < length; k++) { const c = u8[ptr + k]; high |= c; v += String.fromCharCode(c); }
+      if (high < 128) return v;
+    }
+    return td.decode(u8.subarray(ptr, ptr + length));
+  },
+  td(ptr, length) { return td.decode(u8.subarray(ptr, ptr + length)); },
+  fcc(ptr, length) { // fromCharCode.apply over the bytes when they are ASCII
+    if (length <= 256) {
+      const b = u8.subarray(ptr, ptr + length);
+      let high = 0;
+      for (let k = 0; k < length; k++) high |= b[k];
+      if (high < 128) return String.fromCharCode.apply(null, b);
+    }
+    return td.decode(u8.subarray(ptr, ptr + length));
+  },
+  // fromCharCode with the bytes as arguments, 8 at a time, after a JS test for ASCII; TextDecoder
+  // above ARGS bytes or for anything else
+  args(ptr, length) {
+    if (length <= SHORT) {
+      let high = 0;
+      for (let k = 0; k < length; k++) high |= u8[ptr + k];
+      if (high < 128) return ascii(ptr, length);
+    }
+    return td.decode(u8.subarray(ptr, ptr + length));
+  },
+  // the same with the ASCII test made in C (cd_tmp, -DCDOM_TMP_ASCII): the top bit of length
+  argsC(ptr, length) {
+    if (length <= SHORT) return ascii(ptr, length);
+    length &= 0x7fffffff;
+    return td.decode(u8.subarray(ptr, ptr + length));
+  },
+  latin1(ptr, length) { // TextDecoder("latin1") when ASCII (a one-byte fast path in V8?)
+    let high = 0;
+    for (let k = 0; k < length; k++) high |= u8[ptr + k];
+    return (high < 128 ? l1 : td).decode(u8.subarray(ptr, ptr + length));
+  },
+};
+const l1 = new TextDecoder('latin1');
+const F = String.fromCharCode;
+function ascii(p, n) { // n ASCII bytes at p, as one string per 8
+  const b = u8;
+  let v = "";
+  for (; n >= 8; p += 8, n -= 8) v += F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5], b[p + 6], b[p + 7]);
+  switch (n) {
+    case 0: return v;
+    case 1: return v + F(b[p]);
+    case 2: return v + F(b[p], b[p + 1]);
+    case 3: return v + F(b[p], b[p + 1], b[p + 2]);
+    case 4: return v + F(b[p], b[p + 1], b[p + 2], b[p + 3]);
+    case 5: return v + F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4]);
+    case 6: return v + F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5]);
+    default: return v + F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5], b[p + 6]);
+  }
+}
+const lengthCheck = q.get('chk') === 'length';
+const readString = readers[read];
+function runtimeString(s) {
+  if (lengthCheck ? u32.length === 0 : buffer !== memory.buffer) views(); // chk=length: a detached view is empty
+  const k = ((s & 0x7fffffff) - u32[tmpSerial0]) & 0x7fffffff;
+  if (k >= u32[tmpCount]) throw new Error("stale");
+  const at = tmpRecords + k * tmpWords;
+  return readString(u32[at], u32[at + tmpLen]);
+}
+function cString(p) { let e = p; while (u8[e]) e++; return td.decode(u8.subarray(p, e)); }
+const importsB = { text(s) { acc += (s > 0 ? lits[(s - litBase) >> 2] : runtimeString(s)).length; } };
+const importsD = {
+  text(s) {
+    let v;
+    if (s > 0) { v = litMap.get(s); if (v === undefined) litMap.set(s, v = cString(s)); }
+    else v = runtimeString(s);
+    acc += v.length;
+  },
+};
+const importsE = { text(s) { acc += lits[s].length; } };
+
+function readLayoutA(at) { at++; stringBytes = u32[at++]; stringMeta = u32[at++]; metaWords = u32[at++] >> 2; metaId = u32[at++] >> 2; metaBytes = u32[at++] >> 2; metaChars = u32[at++] >> 2; }
+function readLayoutB(at) { at++; const t = u32[at++]; tmpSerial0 = (t + u32[at++]) >> 2; tmpCount = (t + u32[at++]) >> 2; tmpRecords = (t + u32[at++]) >> 2; tmpWords = u32[at++] >> 2; tmpLen = u32[at++] >> 2; }
+
+function fill() { // len bytes into C's buf: ASCII letters, or UTF-8 with every other char two-byte
+  const p = exports.buf();
+  const enc = new TextEncoder();
+  let s = '';
+  if (kind === 'ascii') { for (let i = 0; i < len; i++) s += String.fromCharCode(97 + (i * 7) % 26); }
+  else { while (enc.encode(s).length + 3 <= len) s += 'жa'; while (enc.encode(s).length < len) s += 'b'; }
+  const b = enc.encode(s);
+  if (b.length !== len) throw new Error('fill ' + b.length);
+  new Uint8Array(memory.buffer).set(b, p);
+}
+
+async function run() {
+  const bytes = await (await fetch(`out/micro-${build}.wasm`)).arrayBuffer();
+  let call;
+  if (mode === 'resolve') {
+    const mine = build === 'a' ? importsA : test === 'dense8' ? importsE : build === 'd' ? importsD : importsB;
+    const cdom = new Proxy(mine, { get: (o, k) => o[k] || (() => 0) });
+    const { instance } = await WebAssembly.instantiate(bytes, { cdom, env: {} });
+    exports = instance.exports; memory = exports.memory; views();
+    (build === 'a' ? readLayoutA : readLayoutB)(exports.cd_layout() >> 2);
+    if (build[0] === 'b') { // C's install (B's lookups are the same array)
+      const s0 = exports.__start_cd_lits.value, s1 = exports.__stop_cd_lits.value;
+      litBase = s0; for (let a = s0; a < s1; a += 4) lits.push(cString(u32[a >> 2]));
+    }
+    if (test === 'dense8') lits = [, 'Hello', 'div', 'col-md-1', 'glyphicon glyphicon-remove', 'aria-hidden', 'Create 1,000 rows', 'danger', 'x'];
+    exports.cd_start(1);
+  } else {
+    await new Promise((r) => { const s = document.createElement('script'); s.src = build === 'a' ? '../../shim/cdom.js' : 'proto/cdom-b.js'; s.onload = r; document.head.appendChild(s); });
+    exports = await cdom.start(URL.createObjectURL(new Blob([bytes], { type: 'application/wasm' })), 'app', {}, { strMode: build === 'd' ? 'D' : 'C', short: SHORT, read, chk: q.get('chk') });
+    memory = exports.memory; views();
+  }
+  if (len) fill();
+  const per = test === 'lit8' || test === 'dense8' ? 8 : 1;
+  let salt = 1;
+  const go = test === 'tmp' ? (n) => exports.tmp(n, len) : test === 'intern_hit' ? (n) => exports.intern_hit(n, len)
+    : test === 'intern_new' ? (n) => exports.intern_new(n, len, salt++) : (n) => exports[test](n);
+  const sample = (n) => { if (mode === 'dom') exports.dom_reset(); const t0 = performance.now(); go(n); return performance.now() - t0; };
+  // Calibrate: grow n until a sample takes 10 ms (intern_new and dom: 4 ms, they grow memory).
+  const target = test === 'intern_new' || mode === 'dom' ? 4 : 10;
+  let n = 64;
+  for (let i = 0; i < 4; i++) sample(n); // warm up the tiers
+  while (sample(n) < target && n < 1 << 26) n *= 2;
+  for (let i = 0; i < 5; i++) sample(n);
+  const v = [];
+  for (let i = 0; i < 21; i++) v.push(sample(n) * 1e6 / (n * per));
+  const s = [...v].sort((a, b) => a - b);
+  window.RESULT = { ns: s[10], lo: s[5], hi: s[15], n, acc };
+}
+run().catch((e) => { window.RESULT = { error: String(e.stack || e) }; });
+</script></body></html>
