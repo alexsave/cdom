@@ -31,6 +31,23 @@ const LESSONS = {
     await t.clickText('button', 'reset');
     ok(await t.text('output') === '0', 'reset makes 0');
   },
+  '03-input': async (t) => {
+    ok(await t.text('.greeting') === 'Hello, stranger!', 'the greeting starts as "Hello, stranger!"');
+    ok(await t.text('.count') === '0 characters', `the count starts at "0 characters" (${await t.text('.count')})`);
+    await t.type('#name', 'Ada');
+    ok(await t.text('.greeting') === 'Hello, Ada!', `typing Ada greets Ada (${await t.text('.greeting')})`);
+    ok(await t.text('.count') === '3 characters', `Ada is 3 characters (${await t.text('.count')})`);
+    for (let i = 0; i < 3; i++) await t.key('Backspace');
+    ok(await t.text('.greeting') === 'Hello, stranger!', 'emptying the field greets a stranger again');
+    ok(await t.text('.count') === '0 characters', 'an empty field is 0 characters');
+    await t.type('#name', 'Zoë');
+    ok(await t.text('.greeting') === 'Hello, Zoë!', `the e with a diaeresis is kept (${await t.text('.greeting')})`);
+    ok(await t.text('.count') === '3 characters', `Zoë is 3 characters, not 4 bytes (${await t.text('.count')})`);
+    for (let i = 0; i < 3; i++) await t.key('Backspace');
+    await t.type('#name', 'Ada Lovelace');
+    ok(await t.text('.greeting') === 'Hello, Ada Lovelace!', 'the name in the field is greeted');
+    ok(await t.text('.count') === '12 characters', `Ada Lovelace is 12 characters (${await t.text('.count')})`);
+  },
 };
 
 // The page driver: one tab, the page's errors collected, clicks and keys as the browser's own input events.
