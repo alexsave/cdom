@@ -52,6 +52,11 @@ The table's scale (forms a to e, at 10, 1,000, 10,000 and 100,000 unique literal
 - T4. (d) dense ids save the map: about 1 to 2 bytes of brotli per slot, and 10% to 30% of (a)'s install time. Falsified if the saving is under 0.5 bytes per slot.
 - T5. A table with some non-ASCII strings makes the joined string of (a) and (c) two-byte, so its heap is up to twice the one-byte size; (b) keeps each ASCII string one-byte. Falsified if (b)'s heap is not lower than (a)'s for a mixed table.
 
+Added 2026-11-17 18:22 EST, before the table runs, for the two forms found while writing them ((e) dense ids as an array literal, (f) dense ids kept whole and sliced lazily):
+
+- T6. (e) has the lowest table-script-plus-install time at every N, because the parser builds the table and no JS runs. Falsified if any form beats it by more than the noise at 10,000 or more.
+- T7. (f) has the lowest heap after the install at 10,000 and 100,000. Falsified if any form is lower.
+
 ## Method
 
 (Filled in below as the work goes.)
