@@ -1,0 +1,4 @@
+benchmark	metric	sb-a	sb-a2	sb-b	sb-bx	noise (a2/a)	sb-b/a	sb-bx/a
+21_ready-memory	DEFAULT	0.66	0.65	0.67	0.60	0.983	1.003	0.905
+22_run-memory	DEFAULT	1.75	1.84	1.81	1.84	1.050	1.034	1.048
+25_run-clear-memory	DEFAULT	0.85	0.85	0.72	0.78	1.000	0.839	0.912

@@ -1,0 +1,5 @@
+benchmark	metric	sb-a-n	sb-a2-n	sb-b-n	noise (a2/a)	sb-b-n/a
+01_run1k	total	31.4	31.5	32.2	1.003	1.025
+01_run1k	script	4.50	4.50	5.20	1.000	1.156
+07_create10k	total	316.9	317.2	319.9	1.001	1.009
+07_create10k	script	35.9	35.3	38.1	0.983	1.061
