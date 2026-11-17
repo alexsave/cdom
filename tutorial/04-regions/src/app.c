@@ -97,7 +97,7 @@ static void style(void) {
   cd_open(L("style"));
   cd_text(L(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
             "body { margin: 0; }"
-            ".page { max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }"
+            ".page { max-width: 40rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }"
             ".toggle { font: inherit; padding: 0.5rem 1rem; color: inherit; cursor: pointer;"
             "  background: light-dark(#ffffff, #1c1c1e); border: 1px solid light-dark(#8a8a8f, #6e6e73);"
             "  border-radius: 0.375rem; }"
