@@ -3,15 +3,18 @@
 Seven small apps, each a lesson, each one C file that builds into one HTML page.
 Every lesson puts the same app in React next to it, so you can read cdom in terms you already know.
 
-| Lesson | What it teaches | The React it replaces |
-| --- | --- | --- |
-| [1. Hello](01-hello/) | building a page: `cd_open`, `cd_text`, `cd_attr`, interned strings | JSX |
-| [2. Counter](02-counter/) | state in C variables, ids, `cd_on` handlers, updating one node | `useState`, `onClick` |
-| [3. Input](03-input/) | reading a text field, derived state, one-off strings | a controlled `<input>` |
-| [4. Show and hide](04-regions/) | regions: parts of the page that come and go | `{open && <Panel/>}` |
-| [5. Todo list](05-todo/) | the keyed list: `cd_list_update` with create, patch and destroy | `items.map(i => <li key={i.id}>)` |
-| [6. Stopwatch](06-stopwatch/) | time: frames, timers and the clock | `useEffect`, `setInterval`, cleanup |
-| [7. Particles](07-particles/) | pixels from C to a canvas, with a seeded random generator | `useRef`, `useEffect`, a canvas loop |
+| Lesson | What it teaches | The React it replaces | Page, brotli |
+| --- | --- | --- | ---: |
+| [1. Hello](01-hello/) | building a page: `cd_open`, `cd_text`, `cd_attr`, interned strings | JSX | 8.9 KB |
+| [2. Counter](02-counter/) | state in C variables, ids, `cd_on` handlers, updating one node | `useState`, `onClick` | 10.0 KB |
+| [3. Input](03-input/) | reading a text field, derived state, one-off strings | a controlled `<input>` | 10.3 KB |
+| [4. Show and hide](04-regions/) | regions: parts of the page that come and go | `{open && <Panel/>}` | 11.6 KB |
+| [5. Todo list](05-todo/) | the keyed list: `cd_list_update` with create, patch and destroy | `items.map(i => <li key={i.id}>)` | 15.1 KB |
+| [6. Stopwatch](06-stopwatch/) | time: frames, timers and the clock | `useEffect`, `setInterval`, cleanup | 14.3 KB |
+| [7. Particles](07-particles/) | pixels from C to a canvas, with a seeded random generator | `useRef`, `useEffect`, a canvas loop | 12.3 KB |
+
+"Page, brotli" is the whole page as it is served: the HTML, the shim and the module bundled in it, measured with `brotli` on 2026-11-17.
+For scale, the benchmark's React entry, a table of rows about as big as lesson 5, ships 51.4 KB brotli in all ([RESULTS.md](../RESULTS.md#startup-memory-and-bytes)).
 
 ## Running a lesson
 
