@@ -228,6 +228,67 @@ const LESSONS = {
     ok(rest >= 0 && rest < 150, `the splits add up to the time shown (${sum} + ${rest} ms = ${await time()})`);
     ok(await t.text('.start') === 'Start', 'the page ends stopped');
   },
+  '07-particles': async (t) => {
+    // The picture, read in the page: how many pixels are lit (not the night colour), how many are lit in a box,
+    // and a digest of every byte, so two reads can be compared without sending 256 KB across.
+    const picture = (x0 = 0, y0 = 0, x1 = 320, y1 = 200) => t.eval(`(() => {
+      const d = document.querySelector('canvas').getContext('2d').getImageData(0, 0, 320, 200).data;
+      let lit = 0, box = 0, digest = 0;
+      for (let y = 0; y < 200; y++) for (let x = 0; x < 320; x++) {
+        const i = (y * 320 + x) * 4;
+        const isLit = Math.abs(d[i] - 11) + Math.abs(d[i + 1] - 16) + Math.abs(d[i + 2] - 32) > 30;
+        if (isLit) lit++;
+        if (isLit && x >= ${x0} && x < ${x1} && y >= ${y0} && y < ${y1}) box++;
+        digest = (Math.imul(digest, 31) + d[i] * 65536 + d[i + 1] * 256 + d[i + 2]) | 0;
+      }
+      return { lit, box, digest };
+    })()`);
+    const particles = async () => {
+      const m = /^(\d+) particles$/.exec((await t.text('.count')) ?? '');
+      return m ? +m[1] : NaN;
+    };
+    // A real click, at a fraction of the canvas's box (scrolled into view first, as a reader would have it).
+    const tapCanvas = async (fx, fy) => {
+      await t.center('canvas');
+      const [l, top, w, h] = await t.eval(`(() => { const r = document.querySelector('canvas').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`);
+      await t.clickAt([l + w * fx, top + h * fy]);
+    };
+    ok(/^\d+ particles$/.test(await t.text('.count') ?? '') && (await particles()) > 0, `the count starts above 0 (${await t.text('.count')})`);
+    ok((await picture()).lit > 0, 'the start burst is on the canvas at once');
+    await t.sleep(200);
+    const d1 = (await picture()).digest;
+    await t.sleep(200);
+    const d2 = (await picture()).digest;
+    ok(d1 !== d2, 'the picture changes from one read to the next, 200 ms apart');
+    // A click a quarter of the way across and halfway down: 200 particles at that point, counted within a frame or two.
+    const before = await particles();
+    const boxBefore = (await picture(56, 64, 104, 116)).box;
+    await tapCanvas(0.25, 0.5);
+    ok(await t.until(async () => (await particles()) >= before + 200, 1000), `a click adds 200 particles (${before} -> ${await t.text('.count')})`);
+    const boxAfter = (await picture(56, 64, 104, 116)).box;
+    ok(boxAfter > boxBefore + 30, `the burst is lit where it was clicked, a quarter across (${boxBefore} -> ${boxAfter} lit pixels in the box)`);
+    ok((await picture(0, 0, 160, 200)).box > 0, 'lit pixels are in the left half');
+    // Pause: the button says "Play", and the picture stops.
+    await t.click('button.pause');
+    ok(await t.text('button.pause') === 'Play', `Pause turns the button into "Play" (${await t.text('button.pause')})`);
+    const p1 = (await picture()).digest;
+    await t.sleep(300);
+    const p2 = (await picture()).digest;
+    ok(p1 === p2, 'paused: the picture does not change over 300 ms');
+    // Play: the button says "Pause", and the picture moves again.
+    await t.click('button.pause');
+    ok(await t.text('button.pause') === 'Pause', 'Play turns the button back into "Pause"');
+    const q1 = (await picture()).digest;
+    await t.sleep(300);
+    const q2 = (await picture()).digest;
+    ok(q1 !== q2, 'playing again: the picture animates');
+    // The page ends playing, with two more bursts elsewhere and ~400 ms of trails.
+    await tapCanvas(0.75, 0.3);
+    await tapCanvas(0.5, 0.75);
+    await t.sleep(400);
+    ok(await t.text('button.pause') === 'Pause', 'the page ends playing');
+    ok(await particles() > 400, `the bursts are counted (${await t.text('.count')})`);
+  },
 };
 
 // The page driver: one tab, the page's errors collected, clicks and keys as the browser's own input events.
