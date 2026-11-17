@@ -99,8 +99,20 @@ cd_str cd_tmpz(const char *s);
  * ONLY A LITERAL: the cache is per call site, so a variable would answer its first value
  * forever. `"" lit` makes anything but a string literal a compile error. The check is in a
  * helper, not inline: inlined at every site it cost an app 5.5 KB. */
+#if !CDOM_STRB
 cd_str cd_lit_(cd_str *slot, const char *lit, uint32_t len);
 #define CD_LIT(lit) ({ static cd_str cd_lit_slot_; cd_lit_(&cd_lit_slot_, "" lit, sizeof(lit) - 1); })
+#elif CDOM_LITD
+/* strings-bench prototype D: a literal's own address is its id; the shim caches it in a Map. */
+#define CD_LIT(lit) ((cd_str)(uintptr_t)("" lit))
+#else
+/* strings-bench prototype B/C (docs/strings-design.md): a literal is a 4-byte slot in cd_lits that
+ * points at its bytes in cd_chars; the slot's address is the id, the shim's table is lits[(s - base) >> 2]. */
+#define CD_LIT(lit) ({ \
+  static const char cd_c_[] __attribute__((section("cd_chars"), aligned(1))) = "" lit; \
+  static const char *const cd_l_ __attribute__((section("cd_lits"))) = cd_c_; \
+  (cd_str)(uintptr_t)&cd_l_; })
+#endif
 /* The string table's size: C's pool and the shim's array hold the same strings. */
 uint32_t cd_str_count(void);
 uint32_t cd_str_bytes(void);

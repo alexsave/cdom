@@ -150,6 +150,7 @@ IMPORTS("timer_stop") void j_timer_stop(uint32_t handle);
 IMPORTS("raf") void j_raf(uint32_t token);
 IMPORTS("now") double j_now(void);
 
+#if !CDOM_STRB
 #define SB_CAP (1u << 18)
 #define SM_CAP (1u << 12)
 #define TRANSIENT 0x40000000u
@@ -160,6 +161,20 @@ typedef struct { uint32_t id, bytes, chars; } str_meta;
 static uint8_t sbytes[SB_CAP];
 static str_meta smeta[SM_CAP];
 static uint32_t nsb, nstrs, ntmp;
+#define CD_STR_LAYOUT(X) \
+  X((uintptr_t)sbytes) X((uintptr_t)smeta) X(sizeof(str_meta)) \
+  X(offsetof(str_meta, id)) X(offsetof(str_meta, bytes)) X(offsetof(str_meta, chars))
+#else
+/* strings-bench prototype: runtime strings are records C keeps for the call that uses them
+ * (docs/strings-design.md, cdom.c section); the shim reads the bytes during that call. */
+#define TMP_CAP 32
+typedef struct { uint32_t p, len; } tmp_rec;
+static struct { uint32_t serial0, n; tmp_rec r[TMP_CAP]; } tmp;
+static uint32_t tmp_stale; /* a call crossed since the last cd_tmp: the next one starts a new window */
+#define CD_STR_LAYOUT(X) \
+  X((uintptr_t)&tmp) X(offsetof(__typeof__(tmp), serial0)) X(offsetof(__typeof__(tmp), n)) \
+  X(offsetof(__typeof__(tmp), r)) X(sizeof(tmp_rec)) X(offsetof(tmp_rec, len))
+#endif
 static cd_event_rec inbox;
 
 /* The shim's map of C memory, which cd_layout hands it once at start: where the string batch and the
@@ -169,8 +184,7 @@ static cd_event_rec inbox;
  * in the same order; an entry is only ever appended. rect's out-parameter is a double[4] in the order
  * cdom.h documents, and the byte buffers are (pointer, length): neither has fields to map. */
 #define CD_LAYOUT(X) \
-  X((uintptr_t)sbytes) X((uintptr_t)smeta) X(sizeof(str_meta)) \
-  X(offsetof(str_meta, id)) X(offsetof(str_meta, bytes)) X(offsetof(str_meta, chars)) \
+  CD_STR_LAYOUT(X) \
   X((uintptr_t)&inbox) \
   X(offsetof(cd_event_rec, type)) X(offsetof(cd_event_rec, id)) X(offsetof(cd_event_rec, x)) \
   X(offsetof(cd_event_rec, y)) X(offsetof(cd_event_rec, button)) X(offsetof(cd_event_rec, key)) \
@@ -185,10 +199,11 @@ static cd_event_rec inbox;
 /* Data, not code: the linker writes the addresses in, so cd_layout only hands the block over. */
 static const uint32_t layout[] = {0 CD_LAYOUT(CD_LAYOUT_ONE), CD_LAYOUT(CD_LAYOUT_ENTRY)};
 /* The shim indexes 32-bit fields as words and cd_val's number as a double. */
-_Static_assert(sizeof(str_meta) % 4 == 0 && sizeof(cd_event_rec) % 4 == 0, "word-sized records");
+_Static_assert(sizeof(cd_event_rec) % 4 == 0, "word-sized records");
 _Static_assert(offsetof(cd_event_rec, dx) % 4 == 0 && offsetof(cd_event_rec, dy) % 4 == 0, "word-aligned floats");
 _Static_assert(sizeof(cd_val) % 8 == 0 && offsetof(cd_val, num) % 8 == 0 && offsetof(cd_val, u) % 4 == 0, "aligned cd_val");
 
+#if !CDOM_STRB
 /* Decodes the pending strings in JS. */
 static void send_strings(void) {
   if (nstrs) j_strings(nstrs, nsb);
@@ -314,6 +329,20 @@ static uint32_t tmp_check(cd_str s) {
 cd_str cd_lit_(cd_str *slot, const char *lit, uint32_t len) { return *slot ? *slot : (*slot = cd_intern(lit, len)); }
 uint32_t cd_str_count(void) { return nstr_ids - 1; }
 uint32_t cd_str_bytes(void) { return pool_len; }
+#else
+cd_str cd_tmp(const char *s, uint32_t len) {
+  if (tmp_stale) { tmp.serial0 += tmp.n; tmp.n = 0; tmp_stale = 0; }
+  if (tmp.n == TMP_CAP) __builtin_trap();
+  tmp.r[tmp.n] = (tmp_rec){(uint32_t)(uintptr_t)s, len};
+  return 0x80000000u | ((tmp.serial0 + tmp.n++) & 0x7fffffffu);
+}
+cd_str cd_tmpz(const char *s) {
+  uint32_t n = 0;
+  while (s[n]) n++;
+  return cd_tmp(s, n);
+}
+#define send_strings() (tmp_stale = 1)
+#endif
 
 /* ---- numbers ---- */
 static const char UNIT_STR[CD_UNITS][4] = {"", "px", "%", "deg", "em", "rem", "vw", "vh", "ms", "s", "rad"};
@@ -340,6 +369,7 @@ uint32_t cd_fmt_len(char *d, double v, uint32_t unit) {
   return cd_fmt(d, (int32_t)(v * 10000.0 + (v < 0 ? -0.5 : 0.5)), 4, unit);
 }
 
+#if !CDOM_STRB
 /* A name (tag, attribute): always cached in JS. */
 static uint32_t ref_name(cd_str s) {
   if (s >= TRANSIENT) return tmp_check(s);
@@ -359,6 +389,10 @@ static uint32_t ref_text(cd_str s) {
   return push_str(s, TRANSIENT + ntmp++);
 #endif
 }
+#else
+static inline uint32_t ref_name(cd_str s) { return s; }
+static inline uint32_t ref_text(cd_str s) { return s; }
+#endif
 
 
 /* ---- emitters ---- */
@@ -380,7 +414,11 @@ static void walk_step(uint32_t s) {
 static inline void ready(void) { walk_done(); send_strings(); }
 
 void cd_flush(void) { ready(); }
+#if !CDOM_STRB
 uint32_t cd_pending(void) { return walking | nstrs; }
+#else
+uint32_t cd_pending(void) { return walking; }
+#endif
 
 static cd_id at_parent = CD_DETACHED - 1, at_before = CD_DETACHED - 1;
 
@@ -396,7 +434,11 @@ static uint32_t svg_depth;
 void cd_open(cd_str tag) {
   uint32_t t = ref_name(tag);
   ready();
+#if !CDOM_STRB
   if (svg_depth || tag == svg_tag) { svg_depth++; j_open_svg(t); } else j_open(t);
+#else
+  j_open(t); /* the shim counts the SVG depth */
+#endif
 }
 void cd_close(void) { if (svg_depth) svg_depth--; ready(); j_close(); }
 void cd_text(cd_str s) { uint32_t v = ref_text(s); ready(); j_text(v); }
@@ -465,7 +507,11 @@ void cd_set_style(cd_id id, cd_str prop, cd_str v) { uint32_t b = ref_text(v), a
 static cd_str unit_ids[CD_UNITS];
 void cd_set_style_num(cd_id id, cd_str prop, double v, uint32_t unit) {
   if (unit >= CD_UNITS) __builtin_trap();
+#if !CDOM_STRB
   if (!unit_ids[unit]) unit_ids[unit] = cd_internz(UNIT_STR[unit]);
+#else
+  unit_ids[unit] = cd_tmpz(UNIT_STR[unit]);
+#endif
   uint32_t a = ref_name(prop), u = ref_name(unit_ids[unit]);
   ready(); j_style_num(id, a, v, u);
 }
