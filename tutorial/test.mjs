@@ -48,6 +48,46 @@ const LESSONS = {
     ok(await t.text('.greeting') === 'Hello, Ada Lovelace!', 'the name in the field is greeted');
     ok(await t.text('.count') === '12 characters', `Ada Lovelace is 12 characters (${await t.text('.count')})`);
   },
+  '04-regions': async (t) => {
+    const expanded = () => t.eval(`document.querySelector('.toggle').getAttribute('aria-expanded')`);
+    const selected = () => t.eval(`[...document.querySelectorAll('[role=tab]')].filter(e => e.getAttribute('aria-selected') === 'true').map(e => e.textContent)`);
+    // The disclosure: the section is not in the page until the button builds it.
+    ok(await t.count('#details') === 0, 'the details are not in the page at first');
+    ok(await t.text('.toggle') === 'Show details', 'the button says "Show details" at first');
+    ok(await expanded() === 'false', 'aria-expanded is "false" at first');
+    const before = await t.eval(`document.querySelectorAll('#app *').length`);
+    await t.click('.toggle');
+    ok(await t.count('#details') === 1, 'a click builds the details');
+    ok(await t.text('.toggle') === 'Hide details', `the button now says "Hide details" (${await t.text('.toggle')})`);
+    ok(await expanded() === 'true', 'aria-expanded is "true" while open');
+    ok(await t.text('#details h2') === 'What a region is', 'the details have their heading');
+    ok(await t.eval(`document.querySelector('.toggle').nextElementSibling?.id`) === 'details', 'the section is right after the button');
+    await t.click('.toggle');
+    ok(await t.count('#details') === 0, 'a second click takes the details away');
+    ok(await t.text('.toggle') === 'Show details', 'the button says "Show details" again');
+    ok(await expanded() === 'false', 'aria-expanded is "false" again');
+    const after = await t.eval(`document.querySelectorAll('#app *').length`);
+    ok(after === before, `closing leaves nothing behind (${after} elements, was ${before})`);
+    await t.click('.toggle');
+    ok(await t.count('#details') === 1, 'a third click builds the details again');
+    // The tabs: each click rebuilds the panel, and the current tab does nothing.
+    ok(await t.text('.panel h2') === 'Overview', 'the Overview panel is shown at first');
+    ok(JSON.stringify(await selected()) === '["Overview"]', 'only Overview is selected at first');
+    await t.clickText('[role=tab]', 'Usage');
+    ok(await t.text('.panel h2') === 'Usage', `a click on Usage shows the Usage panel (${await t.text('.panel h2')})`);
+    ok(await t.count('.panel code') === 2, 'the Usage panel has its two code elements');
+    ok(JSON.stringify(await selected()) === '["Usage"]', 'only Usage is selected');
+    ok(JSON.stringify(await t.texts('[role=tab].active')) === '["Usage"]', 'Usage is the active tab');
+    await t.clickText('[role=tab]', 'Notes');
+    ok(await t.text('.panel h2') === 'Notes', 'a click on Notes shows the Notes panel');
+    ok(await t.count('.panel code') === 0, 'the Usage content is gone from the panel');
+    await t.eval(`window.__notesHeading = document.querySelector('.panel h2'), true`);
+    await t.clickText('[role=tab]', 'Notes');
+    ok(await t.eval(`document.querySelector('.panel h2') === window.__notesHeading`), 'a click on the current tab leaves its panel as it was');
+    ok(JSON.stringify(await selected()) === '["Notes"]', 'Notes is still the only selected tab');
+    await t.clickText('[role=tab]', 'Usage');
+    ok(await t.text('.panel h2') === 'Usage', 'the page ends on Usage, with the details open');
+  },
 };
 
 // The page driver: one tab, the page's errors collected, clicks and keys as the browser's own input events.
