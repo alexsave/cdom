@@ -1,6 +1,7 @@
 # The keyed list: rows that are regions, built in a loop
 
 Status: design, written 2026-11-17, not approved and not implemented.
+Amended 2026-11-18 by `docs/shared-state-design.md` (Alex's decision 4): the revision rule in `cd_list_row`'s comment, `cd_list_reset`, step 12 replaced by `cd_state` (which is in cdom's core now), a row of "Composition", and lesson 5 with `todos_state`.
 Branch: `strings` (worktree `/Users/alex/Dev/cdom-strings`, at bfed813 when this was written).
 Nothing here was measured: the benchmark section is a plan with predictions.
 The code in "Lesson 5" and "The benchmark app" was type-checked against a copy of `cdom.h` with the new declarations (`clang --target=wasm32 -std=c23 -Wall -Wextra -Werror -fsyntax-only`), and nothing more.
@@ -175,8 +176,12 @@ typedef struct cd_region {
 #define CD_LIST_ALL 0xfffffffeu
 void cd_list_begin(cd_id parent, cd_id end);
 
-/* The next row to show. rev is the row's revision: any number that changes whenever what the row shows
- * changes (a flag, a counter in the model, a hash of the fields).
+/* The next row to show. rev is the row's revision: a number that changes whenever what the row shows
+ * changes. Make it the sum of the versions of everything the row shows (a cd_state's ver, a counter of
+ * the row's own in the model): versions only go up, so their sum changes when, and only when, one of
+ * them did. A value such as "is selected" goes in as the value (r->id == selected), not as the version
+ * of the selection, which would build every row again for every click: put in what the row shows, at
+ * the grain the row shows it.
  * Returns 1 when the row must be built now: the key is new, or rev is not the one its row was built
  * with. cd_at is then set (leave it), and the caller builds one element, the row's root, and passes
  * its id to cd_list_row_end. A row built again takes the old row's place in one operation; if the
@@ -199,6 +204,13 @@ int cd_list_row_patch(uint64_t key, uint64_t rev, cd_id *root, uint64_t *was);
 
 /* Ends the pass: rows not named are taken away, and the others are put in the order named. */
 void cd_list_end(void);
+
+/* Takes every row of parent's list away now, as one clear, with the rows' regions and cleanups; the
+ * next pass fills an empty list (the bulk path: tail appends, off the document from the 64th row). For
+ * rows that are not the same things as before whatever their keys (a second load from another URL):
+ * a pass of all-new keys over unclaimed old rows would build the key map for nothing and lose the bulk
+ * path. A reload of the same source does not reset, and the keys and revisions decide. */
+void cd_list_reset(cd_id parent);
 
 /* The list's DOM already went by a call of the app's own (cd_clear of the parent or of an ancestor):
  * take every row away as a region is forgotten, with no DOM op. Not needed when the parent's id is
@@ -288,6 +300,8 @@ One flag byte per id says what hangs off it, extending today's `on_ids[]`:
 | the clear fast path (`CD_LIST_ALL`, every row gone) | one `cd_clear`, then each row is taken with no DOM op | as today, minus the destroy call per row |
 | the off-document first fill | the list began the pass empty; at the 64th appended row the parent is detached, and attached again in `cd_list_end` | the pass does not know its length up front; 63 rows are built in the document, of 1,000 or 10,000 |
 | a row built again | the old row's child regions, lists and cleanups are taken and its ids other than the root freed when `cd_list_row` returns 1; the new row is built off the document; `cd_list_row_end` replaces the old root with the new one and frees the old root's id | freed ids are reused by the new build, so `cd_ids_high` stays flat |
+
+| a `cd_watch` in a row's build | the row's, as a cleanup would be; but rows do not watch: the list's own view watches the collection and the shared states its rows show, and a row puts their versions in its revision | one view per list runs one pass, and the pass skips unchanged rows by revision; a watch per row is 131 bytes a row and a link and an unlink per row that comes or goes (`docs/shared-state-design.md`, S7). A region inside a row (an open editor) may watch, and goes with the row |
 
 Traps: `cd_list_row` outside a pass or before the last row's `cd_list_row_end`; `cd_list_begin` on a parent whose pass is open; `cd_list_end` with a row open; a pass still open at the flush; a row or a list's parent freed while its pass is open; the 9th nested pass.
 
@@ -777,6 +791,38 @@ Gone: `ItemView`, `views[]`, the free list, `view_new`, `keys[]`, `find()` in ev
 
 Lesson 6's laps become `if (cd_list_row(lap, 0)) cd_list_row_end(lap_build(lap));` in a loop, and its empty `lap_patch` and `lap_destroy` go.
 
+### After, with `cd_state`
+
+With `cd_state` in cdom (`docs/shared-state-design.md`), the `render()` calls after every mutation go, and each setter says what it changed instead:
+
+```c
+/* todo.h */
+extern cd_state todos_state;     /* a todo was added, removed or toggled */
+extern cd_state filter_state;    /* the filter changed */
+
+/* app.c: the three setters end in one line each, instead of render() */
+void todo_toggle(uint64_t id) { Todo *t = find(id); if (!t) return; t->done = !t->done; cd_changed(&todos_state); }
+/* todo_remove, on_submit's add and on_clear the same; on_filter ends in cd_changed(&filter_state) */
+
+/* app.c: the list and the footer are two views, made while the page's region builds */
+static void list_view(void *) { ...cd_list_begin, the loop of cd_list_row, cd_list_end... }
+static void footer_view(void *) { ...the count, and each filter button's aria-pressed... }
+void cd_main(void) {
+  if (!cd_region_show(&page, 1)) return;   /* a watch belongs to a region: the page is one */
+  ...the build as before...
+  cd_watch(&todos_state, list_view, nullptr);
+  cd_watch(&filter_state, list_view, nullptr);
+  cd_watch(&todos_state, footer_view, nullptr);
+  cd_watch(&filter_state, footer_view, nullptr);
+  list_view(nullptr);
+  footer_view(nullptr);
+  cd_region_end(&page);
+}
+```
+
+The footer is no longer drawn by hand after the list, and a handler that changes both the todos and the filter runs each view once.
+The rows do not watch: a row's revision is still its done flag, the one thing it shows that changes.
+
 ## amgi, before and after
 
 Not compiled: amgi is on main's API and on `CD_LIT`, and this shows the screen after the strings change and this one.
@@ -926,17 +972,17 @@ Either the editor closes on save (then nothing is lost), or that row uses `cd_li
 
 amgi's views are `cd_dirty` renders, and each module guards its ask twice (`app.h:56-63`): `dirty()` asks only while the owner is up, and the owner's cleanup calls `cd_undirty` on each view.
 The comment says why both are needed, and they do cover different vectors, so they are not a double fix to collapse.
-But they are one rule, "a view lives as long as the region it draws", written by hand in every module, and it has an owner in cdom:
+But they are one rule, "a view lives as long as the region it draws", written by hand in every module, and it has an owner in cdom.
+This section first proposed `cd_region_dirty(r, fn, ctx)`; `docs/shared-state-design.md` replaced it with `cd_state`, `cd_changed` and `cd_watch`, which are in cdom's core now:
 
 ```c
-/* cd_dirty for a view that draws r: asked only while r is shown, and a pending ask is dropped when r
- * is taken away. */
-void cd_region_dirty(cd_region *r, cd_render_fn fn, void *ctx);
+cd_watch(&decks_state, decks_view, nullptr);   /* in the region's build: the view lives as long as the region */
+cd_changed(&decks_state);                       /* in the setter: the views are found in the flush */
 ```
 
-It replaces the per-module `dirty()` wrappers, the `shown` flags kept only for them, and the `cd_undirty` lines in the cleanups.
-It is next to this design and not part of it: a list pass runs inside a view exactly as inside any function, and needs nothing from `cd_dirty`.
-It is step 12, on its own.
+A watch goes with the region that made it, a pending run included, so it replaces the per-module `dirty()` wrappers, the `shown` flags kept only for them, and the `cd_undirty` lines in the cleanups, and it also says what the view draws from.
+It is next to this design and not part of it: a list pass runs inside a view exactly as inside any function.
+It was step 12; it landed on its own, before this design.
 
 ## Files: one for the app, one per row
 
@@ -1208,7 +1254,7 @@ Every executor: work in `/Users/alex/Dev/cdom-strings`, commit and push after th
    Both imports, `replace` with the focus path; reached in this step only through two test exports in `tests/unit.c`.
    Verify: the focus row of the test plan, in Chrome; the shim's size against L14.
 6. **The pass, beside the old list.**
-   `cd_list_begin`, `cd_list_row`, `cd_list_row_patch`, `cd_list_row_end`, `cd_list_end`, the list's state under its parent's id, plain rows only (ids, no child regions, no cleanups, no nesting).
+   `cd_list_begin`, `cd_list_row`, `cd_list_row_patch`, `cd_list_row_end`, `cd_list_end`, `cd_list_reset`, the list's state under its parent's id, plain rows only (ids, no child regions, no cleanups, no nesting).
    `tests/listfuzz.c` gains a second set of exports that drive the pass with the same seeds as the old list, and the fuzz compares both against the model.
    Verify: `node tools/fuzz.mjs`, with the three diff mutants, the revision mutants and the counted-ops mutants.
 7. **Move every caller, then delete the old list** (two commits; the first is Haiku with this document's code).
@@ -1227,8 +1273,9 @@ Every executor: work in `/Users/alex/Dev/cdom-strings`, commit and push after th
 11. **Discover the C files** (after the page tool has landed).
     The list mode takes a suffix; `cdom.mk` builds from the discovered files and `APP_SRC`; the app's headers are prerequisites; `tools/new.sh` and every lesson lose their `APP_SRC` line; the README's "Building an app".
     Verify: the discovery row of the test plan; `tests/link/run.sh`.
-12. **`cd_region_dirty`** (optional, on its own).
-    The call, its test (an ask after the region went is dropped; a pending ask is dropped when it goes), each with a mutant.
+12. **Views of shared state: done, not a step.**
+    `cd_state`, `cd_changed` and `cd_watch` landed in cdom's core on their own (`docs/shared-state-design.md`), and replace `cd_region_dirty`.
+    What this design adds to them is `cd_list_reset` (in step 6, with the pass) and the revision rule in `cd_list_row`'s comment.
 13. **amgi** (amgi's manager, through the super-coordinator, after cdom's pin moves).
     `decks.c` as above; `deck.c`'s rows on the list with a per-note revision, the hash guard, the row arrays and the editor's region gone; every `CTX_OF` to `cd_on_key`; amgi's `el` helpers deleted for `cdom_ui`'s.
 

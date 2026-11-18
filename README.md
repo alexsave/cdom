@@ -154,6 +154,14 @@ flowchart LR
 ```
 
 - The API is `src/cdom.h`, with the network in `src/cdom_net.h`, the store in `src/cdom_store.h`, and the other platform modules beside them.
+- Shared state: a module keeps its data as plain C, private to its file, with a `cd_state` beside it, and its one setter ends in `cd_changed(&name_state)`.
+  A view anywhere in the tree says `cd_watch(&name_state, badge_view, ctx)` while its region builds, and draws itself once; `grep name_state` lists the commit and every view.
+  `cd_changed` only bumps the version and queues the state, so a thousand sets in one event cost a thousand increments.
+  In the flush that ends the entry each view of a changed state runs once, outermost region first, and a view goes with its region, a pending run included.
+  `cd_dirty(fn, ctx)` stays the low-level queue, for a render that is not a view of shared state.
+  Built with `-DCD_STATE_CHECK`, a getter's `cd_read(&name_state)` traps when a view, or a region's build, reads a state that nothing there watches.
+  `docs/shared-state-design.md` has the design and its measurements.
+- Bound values (`cd_bound`) write a node's property only when its value changed; `cd_bind_prop(&b, input, "value")` binds an input's value, and `cd_bound_shows_bytes` records what the user typed, so a view that sets the same bytes back writes nothing and leaves the caret alone.
 - A timer slot (`cd_timer_slot`, `cd_timer_set`, `cd_timer_clear`) holds at most one pending timer: setting it again replaces the one that waits (a debounce), and clearing it from a region's cleanup stops it. `cd_input_whole(id, dst, cap, &len)` reads an input's whole value or none of it, with its whole length either way.
 - Memory: `cd_alloc` and `cd_realloc`, like `malloc` on cdom's heap, trap when there is no room (in wasm a pointer 0 is ordinary memory, so unchecked code would write over it); `cd_alloc_try` and `cd_realloc_try` answer 0 instead, for code that checks (a large buffer it can do without), and a refused `cd_realloc_try` leaves the block as it was. `-DCDOM_HEAP_PAGES_MAX=N` bounds the heap to N pages of 64 KB.
 - URL helpers are in `src/cdom_url.h` (module `url`): `cd_url_encode` percent-encodes bytes as `encodeURIComponent` does (for a query value), and `cd_url_decode` reverses it; both are plain C, with no shim call.
