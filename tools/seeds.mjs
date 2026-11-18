@@ -5,6 +5,8 @@
 // seed, rand in its name) a number, or passes a number to a seeding call (srand, *seed*(...)).
 // ALLOWED lists the fixtures that must draw the same numbers on every run and cannot reach cd_seed, each
 // with why; a test that can reach cd_seed pins it through the page instead (tests/unit.html).
+// An app draws from cd_rand (src/cdom.c, the one generator, seeded from cd_seed), so no file under demo/
+// or tutorial/ carries a generator of its own: a xorshift step (a shift by 13) there fails too.
 // Fails naming each file and line. Run by tests/link/run.sh; standalone: node tools/seeds.mjs [dir].
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,6 +16,8 @@ const top = path.resolve(process.argv[2] || path.join(path.dirname(new URL(impor
 const LIT = String.raw`(?:\(\s*\w+\s*\)\s*)?(?:0[xX][0-9a-fA-F]+|\d+)[uUlL]*`;
 const NAME = String.raw`\b\w*(?:rng|seed|rand)\w*`;
 const ASSIGN = new RegExp(String.raw`${NAME}\s*=\s*${LIT}\s*[;,)]`, 'i');
+const OWN_GENERATOR = /\^=\s*\w+\s*<<\s*13\b/;
+const APP_DIRS = ['demo/', 'tutorial/'];
 const CALL = new RegExp(String.raw`\b(?:srand\w*|\w*seed\w*)\s*\(\s*${LIT}\s*\)`, 'i');
 // file -> the exact line (trimmed) that may seed with a literal, and why.
 const ALLOWED = {
@@ -35,6 +39,11 @@ for (const f of files) {
     continue; // tracked, deleted in the tree
   }
   text.split('\n').forEach((line, i) => {
+    if (OWN_GENERATOR.test(line) && APP_DIRS.some((d) => f.startsWith(d))) {
+      console.log(`FAIL ${f}:${i + 1}: a generator of its own; draw from cd_rand (src/cdom.h): ${line.trim().slice(0, 120)}`);
+      hits++;
+      return;
+    }
     if (!ASSIGN.test(line) && !CALL.test(line)) {
       return;
     }

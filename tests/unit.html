@@ -38,6 +38,15 @@ let storeOpenedAt = -1;
 const realOpen = indexedDB.open.bind(indexedDB);
 indexedDB.open = (...a) => { if (storeOpenedAt < 0) storeOpenedAt = performance.now(); return realOpen(...a); };
 const aheadOff = new URLSearchParams(location.search).get('checkahead') === 'off'; // the second run: the option off
+// ?rand=SEED: only the first draws of cd_rand under that seed (tools/unit.mjs opens it twice, and with seed 0).
+const randOnly = new URLSearchParams(location.search).get('rand');
+const randSeed = randOnly === null ? 0xdeadbeef : Number(randOnly);
+let draws = [];
+// xorshift32 written out again here, not read from C: a state of 0 would stay 0, so the seed is made odd.
+function xorshiftDraws(seed, n) {
+  let s = (seed | 1) >>> 0;
+  return Array.from({ length: n }, () => { s = (s ^ (s << 13)) >>> 0; s = (s ^ (s >>> 17)) >>> 0; s = (s ^ (s << 5)) >>> 0; return s; });
+}
 // The batched read (cd_tmp_ahead) and the life of a cd_tmp after a throw. Run at the end of the page, and
 // alone on the page with options.checkAhead off (?checkahead=off, which tools/unit.mjs opens last).
 function aheadChecks(x) {
@@ -82,9 +91,17 @@ function aheadChecks(x) {
     return r.every((v) => v === true) || r.join(' | ');
   });
 }
-cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef, checkAhead: !aheadOff, onRoRead: (a) => roReads.push(a) }).then(async (x) => {
+cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: randSeed, checkAhead: !aheadOff, onRoRead: (a) => roReads.push(a) }).then(async (x) => {
   check('options.openStore opens the store before the module starts', () => (storeOpenedAt >= 0 && storeOpenedAt <= x.t_started()) || `opened at ${storeOpenedAt}, started at ${x.t_started()}`);
   window.__x = x;
+  // First, before any other call into C can draw: the draws cd_rand gives straight after cd_start.
+  draws = Array.from({ length: 8 }, () => x.t_rand() >>> 0);
+  check(`cd_rand: the first 8 draws under seed ${randSeed} are the xorshift32 sequence from seed | 1`, () => {
+    const want = xorshiftDraws(randSeed, 8);
+    return draws.every((d, i) => d === want[i]) || `${draws} != ${want}`;
+  });
+  check('cd_rand: a draw is never 0, and the draws are not all one value (seed 0 does not stick)', () => draws.every((d) => d !== 0) && new Set(draws).size === 8 || String(draws));
+  if (randOnly !== null) return;
   if (aheadOff) { aheadChecks(x); return; }
   {
     // 22. Host access.
@@ -1128,5 +1145,5 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef, che
     return r.every(Boolean) || JSON.stringify(r) + ` ${wholeOut} ${cutOut}`;
   });
   aheadChecks(x);
-}).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
+}).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed, draws }; });
 </script></body></html>

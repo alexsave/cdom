@@ -9,14 +9,6 @@
 #define SAMPLES (RATE * 30 / 1000)
 
 static uint8_t click_wav[44 + 2 * SAMPLES];
-/* xorshift32 from cd_seed (cdom.h): the page fixes the seed in one line (cdom.start's options.seed). */
-static uint32_t rng;
-static uint32_t next_random(void) {
-  rng ^= rng << 13;
-  rng ^= rng >> 17;
-  rng ^= rng << 5;
-  return rng;
-}
 static void put32(uint8_t *p, uint32_t v) { for (int i = 0; i < 4; i++) p[i] = (uint8_t)(v >> (8 * i)); }
 static void put16(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
 /* 16-bit mono PCM: noise whose loudness falls by 1/64 every sample (to under 1/10,000 by the end). */
@@ -29,7 +21,7 @@ static void make_click(void) {
   __builtin_memcpy(w + 36, "data", 4); put32(w + 40, 2 * SAMPLES);
   int32_t loudness = 24000;
   for (uint32_t i = 0; i < SAMPLES; i++) {
-    int32_t sample = (int32_t)(next_random() % (uint32_t)(2 * loudness + 1)) - loudness;
+    int32_t sample = (int32_t)(cd_rand() % (uint32_t)(2 * loudness + 1)) - loudness;
     put16(w + 44 + 2 * i, (uint32_t)sample);
     loudness = loudness * 63 / 64;
   }
@@ -45,7 +37,6 @@ static void show_state(void) {
 }
 
 void cd_main(void) {
-  rng = cd_seed | 1; /* xorshift32 stays at 0 from 0 */
   make_click();
   cd_audio_load(1, click_wav, sizeof click_wav);
   cd_open("p"); cd_text("tap for sound"); cd_name_text(hint = cd_id_new()); cd_close();
@@ -69,7 +60,7 @@ void cd_on_audio_state(uint32_t) {
 /* A tap plays the click now, its pitch within 10% either way. */
 void cd_on_event(const cd_event_rec *e) {
   if (e->type != CD_EV_POINTERDOWN || (cd_id)e->id != button || clip == CD_AUDIO_FAILED) return;
-  double rate = 0.9 + (double)(next_random() % 21) / 100;
+  double rate = 0.9 + (double)(cd_rand() % 21) / 100;
   cd_audio_play(clip, 0.8, rate, 0);
 }
 

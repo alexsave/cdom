@@ -286,6 +286,11 @@ void cd_main(void);                  /* the app's entry, called once at start */
 /* The seed for the app's random draws, set before cd_main: cdom.start's options.seed when the page fixes
  * one (one line makes a run deterministic), else 32 bits from crypto.getRandomValues. */
 extern uint32_t cd_seed;
+/* The app's one random source: xorshift32 (shifts 13, 17, 5), seeded from cd_seed by cd_start before
+ * cd_main, so the same seed (cdom.start's options.seed) gives the same draws. Take a draw in logical
+ * units, not scaled by a size the run's screen decides, and the same seed gives the same scene on any
+ * screen. Not for secrets: cd_random_bytes (cdom_random.h) is the one for those. */
+uint32_t cd_rand(void);
 /* An input's value now, as UTF-8 into dst: returns its whole length in bytes. When that is more than
  * cap the value did not fit, and dst holds only the whole characters that fit in cap bytes (cd_get_str
  * of "value" returns how many bytes those are). */

@@ -239,6 +239,22 @@ try {
     if (want ? got.startsWith(want) : got === 'tap for sound') passed.push(`start, the ${name} page: ${want ? `throws "${want}..."` : 'starts the app'}`);
     else errors.push(`start, the ${name} page: wanted ${want ? `"${want}"` : 'the app started'}, got "${got}"`);
   }
+  // cd_rand under one seed: two fresh pages with the same seed draw the same first values (each page also
+  // checks them against xorshift32 written out in JS), and a page with seed 0 does not stick at 0.
+  const randRun = async (seed) => {
+    await b.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/unit.html?rand=${seed}` });
+    let res;
+    for (let i = 0; i < 200 && !res; i++) { await sleep(50); res = await b.evaluate('window.RESULT').catch(() => undefined); }
+    if (!res) { errors.push(`the rand=${seed} page never finished`); return null; }
+    errors.push(...res.errors.map((e) => `${e} (rand=${seed} page)`));
+    passed.push(...res.passed.map((n) => `${n} (rand=${seed} page)`));
+    return res.draws;
+  };
+  const r1 = await randRun(0x1badf00d), r2 = await randRun(0x1badf00d), r0 = await randRun(0);
+  if (r1 && r2 && r1.length === 8 && JSON.stringify(r1) === JSON.stringify(r2)) passed.push('cd_rand: a second page with the same seed draws the same first 8 values');
+  else errors.push(`cd_rand: two pages with one seed drew ${JSON.stringify(r1)} and ${JSON.stringify(r2)}`);
+  if (r0 && r1 && JSON.stringify(r0) !== JSON.stringify(r1)) passed.push('cd_rand: seed 0 and another seed draw different values');
+  else errors.push('cd_rand: seed 0 drew the same as another seed, or never finished');
   // The same page with options.checkAhead off: it runs only the cd_tmp_ahead cases, and a changed byte
   // inside a live range shows the old text instead of throwing.
   await b.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/unit.html?checkahead=off` });

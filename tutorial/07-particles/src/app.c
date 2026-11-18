@@ -42,17 +42,6 @@ static uint32_t nparts;
  * copies it to the canvas. */
 static uint32_t px[NPIX];
 
-/* One xorshift32 generator, seeded from cd_seed. cdom.start's options.seed fixes the seed, so a run repeats
- * exactly. Every draw is in logical units: a velocity is in 1/256 px per step, and a colour is three bytes of
- * one draw. Nothing scales a draw by the canvas's CSS size, so one seed gives the same particles at any size. */
-static uint32_t rng;
-static uint32_t next_random(void) {
-  rng ^= rng << 13;
-  rng ^= rng >> 17;
-  rng ^= rng << 5;
-  return rng;
-}
-
 /* The state of the clock and the controls. */
 static double acc, last_ms;   /* the time not yet run as steps, in 1/60 ms, and the last frame's time */
 static int have_last;         /* 0 until a frame has a time to compare with: the first frame after Play */
@@ -80,13 +69,15 @@ static void fade(void) {
 }
 
 /* A burst: BURST particles at (x, y), each with a random push and colour. Four draws per particle, always,
- * even when the cap has no room: the draws do not depend on how many particles are alive. */
+ * even when the cap has no room: the draws do not depend on how many particles are alive. Every draw is in
+ * logical units: a velocity is in 1/256 px per step, and a colour is three bytes of one draw. Nothing scales
+ * a draw by the canvas's CSS size, so one seed gives the same particles at any size. */
 static void burst(int32_t x, int32_t y) {
   for (uint32_t i = 0; i < BURST; i++) {
-    int32_t vx = (int32_t)(next_random() % 1025u) - 512;   /* -2 to 2 px per step */
-    int32_t vy = -(768 + (int32_t)(next_random() % 768u));  /* 3 to 6 px per step, up */
-    int32_t life = (int32_t)(90 + next_random() % 120u);    /* 1.5 to 3.5 s */
-    uint32_t d = next_random();
+    int32_t vx = (int32_t)(cd_rand() % 1025u) - 512;   /* -2 to 2 px per step */
+    int32_t vy = -(768 + (int32_t)(cd_rand() % 768u));  /* 3 to 6 px per step, up */
+    int32_t life = (int32_t)(90 + cd_rand() % 120u);    /* 1.5 to 3.5 s */
+    uint32_t d = cd_rand();
     uint32_t colour = rgba(128 + (d & 127u), 128 + ((d >> 8) & 127u), 128 + ((d >> 16) & 127u));
     if (nparts == CAP) continue;
     particles[nparts].x = x;
@@ -227,8 +218,6 @@ static void style(void) {
 }
 
 void cd_main(void) {
-  /* The seed comes before anything draws, so the first burst is the same for the same seed. */
-  rng = cd_seed | 1; /* xorshift32 stays at 0 from 0 */
   style();
 
   cd_open("main"); cd_class("sky");

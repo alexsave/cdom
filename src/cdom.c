@@ -694,8 +694,17 @@ volatile uint32_t cd_lits_stamp = 0x7374696c;
 EXPORT("cd_lits") uint32_t cd_lits(void) { return cd_lits_stamp; }
 
 uint32_t cd_seed;
+/* cd_rand's state. An app does not reseed it: the one seed is cd_seed, which a page fixes in one line. */
+static uint32_t rand_state;
+uint32_t cd_rand(void) {
+  rand_state ^= rand_state << 13;
+  rand_state ^= rand_state >> 17;
+  rand_state ^= rand_state << 5;
+  return rand_state;
+}
 EXPORT("cd_start") void cd_start(uint32_t seed) {
   cd_seed = seed;
+  rand_state = seed | 1; /* xorshift32 stays at 0 once it is 0, so seed 0 must not start it there */
   cd_at(CD_MOUNT, CD_APPEND); /* so an app starts building at the end of its mount, and calls cd_at only to build somewhere else */
   cd_main();
   cd_flush();

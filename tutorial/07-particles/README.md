@@ -144,7 +144,6 @@ function paint(parts, data) {
 ```c
 static uint32_t px[WORLD_W * WORLD_H];   /* the picture: 0xAABBGGRR per pixel */
 static particle particles[CAP];
-static uint32_t rng;                      /* one xorshift32, seeded from cd_seed */
 
 void cd_on_frame(double ms) {
   acc += (ms - last_ms) * 60.0;           /* 1/60 ms units: a step is 1000 */
@@ -161,7 +160,6 @@ static void on_click(const cd_event_rec *e, void *) {
 }
 
 void cd_main(void) {
-  rng = cd_seed | 1;
   ...
   cd_on(canvas, CD_EV_POINTERDOWN, on_click, nullptr);
   cd_on(pause_btn, CD_EV_CLICK, on_pause, nullptr);
@@ -174,7 +172,7 @@ void cd_main(void) {
 - **The crossing is one call.** The React version has a loop in JS that moves the particles and writes the pixels, then one `putImageData`.
   In cdom the step, the paint and the fade are all C, on integers, and each frame makes one `cd_blit`.
   No particle is an object that crosses to JS, and nothing is allocated while the page runs.
-- **One generator, seeded once.** `rng` is the only source of randomness, and `cd_seed` seeds it.
+- **One generator, seeded once.** The only source of randomness is cdom's `cd_rand()`, seeded from `cd_seed`.
   The page can fix the seed (`options.seed` in `cdom.start`), and then a run repeats exactly.
   The React version calls `Math.random`, so no two runs match.
 - **Draws in logical units.** A velocity is drawn in 1/256 px per step, and a colour is a byte of a draw.
