@@ -50,7 +50,7 @@ void cd_main(void) {
   cd_attr("autocomplete", "off");
   cd_close();
   ...
-  cd_on(input, CD_EV_INPUT, on_input, 0);
+  cd_on(input, CD_EV_INPUT, on_input, nullptr);
 }
 ```
 

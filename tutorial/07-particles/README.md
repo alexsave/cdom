@@ -163,8 +163,8 @@ static void on_click(const cd_event_rec *e, void *) {
 void cd_main(void) {
   rng = cd_seed | 1;
   ...
-  cd_on(canvas, CD_EV_POINTERDOWN, on_click, 0);
-  cd_on(pause_btn, CD_EV_CLICK, on_pause, 0);
+  cd_on(canvas, CD_EV_POINTERDOWN, on_click, nullptr);
+  cd_on(pause_btn, CD_EV_CLICK, on_pause, nullptr);
   cd_frames(1);
 }
 ```

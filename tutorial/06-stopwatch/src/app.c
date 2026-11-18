@@ -104,7 +104,7 @@ static void lap_patch(void *, uint32_t, cd_item *) {
 static void lap_destroy(void *, cd_item *) {
 }
 
-static const cd_list_fns LAP_FNS = {0, lap_create, lap_patch, lap_destroy};
+static const cd_list_fns LAP_FNS = {nullptr, lap_create, lap_patch, lap_destroy};
 
 /* The list is the laps, newest first: the keys are the lap numbers, the largest on top. */
 static void render_laps(void) {
@@ -158,7 +158,7 @@ static void on_reset(const cd_event_rec *, void *) {
    * cannot clear the new note early. Stopping a timer that already fired does nothing. */
   if (note_timer) cd_timer_stop(note_timer);
   cd_set_text_node(note_text, "Reset");
-  note_timer = cd_timer_cb(NOTE_MS, clear_note, 0);
+  note_timer = cd_timer_cb(NOTE_MS, clear_note, nullptr);
 }
 
 /* The page's look. The colours are light-dark() tokens, so the page reads the same in both schemes. */
@@ -209,9 +209,9 @@ void cd_main(void) {
   laps_list.owns_parent = 1;
   cd_close();
 
-  cd_on(start_btn, CD_EV_CLICK, on_start_stop, 0);
-  cd_on(lap_btn, CD_EV_CLICK, on_lap, 0);
-  cd_on(reset_btn, CD_EV_CLICK, on_reset, 0);
+  cd_on(start_btn, CD_EV_CLICK, on_start_stop, nullptr);
+  cd_on(lap_btn, CD_EV_CLICK, on_lap, nullptr);
+  cd_on(reset_btn, CD_EV_CLICK, on_reset, nullptr);
 
   show(0);
   sync();

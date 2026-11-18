@@ -104,7 +104,7 @@ static void item_destroy(void *, cd_item *it) {
   free_views[nfree_views++] = it->data;
 }
 
-static const cd_list_fns TODO_FNS = {0, item_create, item_patch, item_destroy};
+static const cd_list_fns TODO_FNS = {nullptr, item_create, item_patch, item_destroy};
 
 /* The view of the model: the keys the filter lets through, then the footer's count. */
 static void render(void) {
@@ -258,9 +258,9 @@ void cd_main(void) {
   cd_close();
 
   /* The handlers are registered once the nodes they name are closed. */
-  cd_on(form, CD_EV_SUBMIT, on_submit, 0);
+  cd_on(form, CD_EV_SUBMIT, on_submit, nullptr);
   for (uint32_t k = 0; k < 3; k++) cd_on(filter_btn[k], CD_EV_CLICK, on_filter, (void *)(uintptr_t)k);
-  cd_on(clear_btn, CD_EV_CLICK, on_clear, 0);
+  cd_on(clear_btn, CD_EV_CLICK, on_clear, nullptr);
 
   render();
 }

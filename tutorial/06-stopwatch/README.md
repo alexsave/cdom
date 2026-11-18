@@ -133,7 +133,7 @@ static void on_reset(const cd_event_rec *, void *) {
   ...
   if (note_timer) cd_timer_stop(note_timer); /* a Reset before the note clears replaces its timer */
   cd_set_text_node(note_text, "Reset");
-  note_timer = cd_timer_cb(NOTE_MS, clear_note, 0);
+  note_timer = cd_timer_cb(NOTE_MS, clear_note, nullptr);
 }
 ```
 

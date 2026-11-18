@@ -142,7 +142,7 @@ void cd_main(void) {
   panel_region.parent = panel;
 
   /* The handlers are registered once the nodes they name are closed. */
-  cd_on(toggle, CD_EV_CLICK, on_toggle, 0);
+  cd_on(toggle, CD_EV_CLICK, on_toggle, nullptr);
   for (uint32_t k = 0; k < 3; k++) cd_on(tabs[k], CD_EV_CLICK, on_tab, (void *)(uintptr_t)k);
 
   select_tab(0);

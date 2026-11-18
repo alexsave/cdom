@@ -275,8 +275,8 @@ void cd_on_event(const cd_event_rec *e);
  * id is a live node id or CD_WINDOW, CD_DOCUMENT or CD_BODY; cd_on also makes the shim deliver ev for id,
  * as cd_listen does: for a node it selects id's node first (cd_sel), so the last node is id's node after
  * the call, and it may be called any time after the node was named. Registering again for the same
- * (id, ev) replaces fn and ctx. fn 0 removes the handler and stops delivery of ev for id (cd_unlisten),
- * also when the app had listened for the pair itself, since cdom cannot tell; removing a pair with no
+ * (id, ev) replaces fn and ctx. ctx may be nullptr when the handler needs none. fn 0 removes the handler
+ * and stops delivery of ev for id (cd_unlisten), also when the app had listened for the pair itself, since cdom cannot tell; removing a pair with no
  * handler does nothing. A node's handlers go when its id is freed (cd_id_free, cd_remove, a region or a
  * list), so an id handed out again starts with none. Traps on ev >= CD_EV_TYPES, on CD_MOUNT, CD_EVENT,
  * CD_RESULT and a free id. Freeing an id with no handler costs one byte read. */

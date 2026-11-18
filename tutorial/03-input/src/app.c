@@ -74,5 +74,5 @@ void cd_main(void) {
   cd_close();
 
   /* The handler is registered after the field is closed, so the id names the input element. */
-  cd_on(input, CD_EV_INPUT, on_input, 0);
+  cd_on(input, CD_EV_INPUT, on_input, nullptr);
 }

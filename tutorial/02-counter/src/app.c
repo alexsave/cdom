@@ -58,5 +58,5 @@ void cd_main(void) {
    * which routes it to the handler registered for that node. */
   cd_on(minus, CD_EV_CLICK, step, (void *)(intptr_t)-1);
   cd_on(plus, CD_EV_CLICK, step, (void *)(intptr_t)1);
-  cd_on(reset, CD_EV_CLICK, on_reset, 0);
+  cd_on(reset, CD_EV_CLICK, on_reset, nullptr);
 }

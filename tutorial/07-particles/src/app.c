@@ -244,8 +244,8 @@ void cd_main(void) {
   cd_close();
   cd_close();
 
-  cd_on(canvas, CD_EV_POINTERDOWN, on_click, 0);
-  cd_on(pause_btn, CD_EV_CLICK, on_pause, 0);
+  cd_on(canvas, CD_EV_POINTERDOWN, on_click, nullptr);
+  cd_on(pause_btn, CD_EV_CLICK, on_pause, nullptr);
 
   /* One burst in the middle, so the page is never empty when it opens. */
   burst(to_fixed(WORLD_W / 2.0, WORLD_W - 1), to_fixed(WORLD_H / 2.0, WORLD_H - 1));
