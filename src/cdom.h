@@ -294,11 +294,14 @@ void cd_render_now(void);
  * watchers, so it costs the same for none or ten thousand, and a thousand calls in one entry are a
  * thousand increments. In the pass that ends the entry (cd_flush, with cd_dirty's renders), every view
  * watching a changed state runs once, however many of its states changed and however often:
- * - outermost region first: a view of a region at depth d (1 for a region with no parent region, its
- *   child 2) runs after every view at a depth under d, so a view may rely on its region being shown:
- *   the views of every region around it ran before it and had the chance to hide it. At one depth the
- *   views run in the order their states changed, and the views of one state in the order they began
- *   to watch it;
+ * - outermost region first: a view of a region at depth d runs after every view at a depth under d,
+ *   so a view may rely on its region being shown: the views of every region around it ran before it
+ *   and had the chance to hide it. A region's depth is set as it is shown, one more than the deepest
+ *   of: the region building or the view running that it is shown in (through a list: a region opened
+ *   in a row's create is under the region whose build, or the view that, updates the list), and its
+ *   r->up. So a region shown from a handler or a timer with no r->up is at depth 1, and so is one
+ *   opened in a row's create when a handler updates the list. At one depth the views run in the
+ *   order their states changed, and the views of one state in the order they began to watch it;
  * - a view whose region is taken away (by a view before it, or before the pass) does not run;
  * - a view, or a render, that changes a state causes another round of the same pass, and a view that
  *   already ran after the last change of every changed state it watches is not run again; a view made
@@ -634,6 +637,7 @@ typedef struct { cd_cleanup_fn fn; void *ctx; } cd_cleanup;
 typedef struct cd_region {
   cd_id parent, root; cd_id *ids; uint32_t n, cap; int shown;
   struct cd_region *up;                 /* the parent region (set by the app, or by showing inside one) */
+  uint32_t depth;                       /* cdom's: set at each show (shared state, above) */
   struct cd_region *kids, *next;        /* cdom's: the child regions shown now, newest first */
   cd_cleanup *fns; uint32_t nfns, fcap; /* cdom's: the cleanups */
   struct cd_view *views;                /* cdom's: the views its build made (cd_watch), newest first */

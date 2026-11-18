@@ -1027,8 +1027,13 @@ Where the code differs from "How it sits in cdom.c", and why:
    A round runs the views of the states changed before it, then the renders asked before it.
    A view may ask for a render and a render may change a state; both run in the same flush.
 5. **`cd_watch` also traps inside a cleanup**, as `cd_on_free` does: a cleanup releases, it does not subscribe.
-6. **A region's depth is its `r->up` chain.**
-   A region opened in a list row's create is no region's child, so it is depth 1 unless the app set its `r->up`.
+6. **A region's depth is set as it is shown, from where it is shown, not from its `r->up` chain alone.**
+   It was first the `r->up` chain, counted in `cd_watch`; a region opened in a list row's create is no region's child, so it was depth 1 unless the app set its `r->up`, and its view ran before the view of the list that was about to remove its row (the detail of a deleted row, in one entry), a rule an app would forget and that failed silently.
+   Now `cd_region_show` sets `r->depth` to one more than the deepest of the region building or the view running that it is shown in, and its `r->up`.
+   cdom keeps the depth of the innermost region building or view running, whichever opened last; a list's level in the build stack keeps it, so a row's region counts under the region whose build, or the view that, updates the list: rows made in a region's first build, rows made by a list's view in a later entry or round, and the rows of a list inside another list's row alike.
+   A region shown from a handler or a timer, with no build open and no view running, is at its `r->up`'s depth plus one, or 1, as before; so is a row's region when a handler updates the list, where nothing tells cdom what the list is inside.
+   A unit case (W) deletes a row and changes the state its region watches in one entry, and checks that the list's view runs first and the row's view never runs; it failed on the `r->up` rule (`1X3Lnm`) and passes now (`Ln13m`), and six mutants cover each half of the rule.
+   It costs every app that shows regions 4 bytes a region and 97 bytes of code at `-Oz`, state or not.
 7. **The check build's build half looks in two places**: the region's own `r->up` chain, and the regions building under it.
    The second covers a region opened in a list row's create, inside another region's build, which has no `r->up`.
    A read in a region shown by a running view is that build's read, checked at its end, not the view's.
