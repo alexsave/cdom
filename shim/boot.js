@@ -5,10 +5,11 @@
  * polyfills, next to the page) and url + ".js" (the same wasm compiled to JS by wasm2js, which sets
  * window.cdomFactory) in parallel, and starts that. Neither fallback file is fetched when WebAssembly
  * exists.
- * mount is an element or its id, as cdom.start takes it; ready, if given, receives the exports. */
-function cdomBoot(url, mount, env, ready) {
+ * mount is an element or its id, as cdom.start takes it; ready, if given, receives the exports; options
+ * is cdom.start's fourth argument. */
+function cdomBoot(url, mount, env, ready, options) {
   if (typeof WebAssembly === "object") {
-    cdom.start(url, mount, env).then(ready);
+    cdom.start(url, mount, env, options).then(ready);
     return;
   }
   var head = document.getElementsByTagName("head")[0];
@@ -26,7 +27,7 @@ function cdomBoot(url, mount, env, ready) {
     if (--left) return;
     var f = window.cdomFactory;
     window.cdomFactory = undefined;
-    cdom.start(f, mount, env).then(ready);
+    cdom.start(f, mount, env, options).then(ready);
   }
   load("cdom.legacy.js", loaded);
   load(url + ".js", loaded);

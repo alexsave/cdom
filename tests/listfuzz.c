@@ -11,17 +11,37 @@ static uint32_t rnd(uint32_t m) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng
 static uint32_t keys[64], nkeys;
 static const uint32_t *cur = keys; /* the key array create() reads */
 static cd_list list, tlist; /* tlist shares its <ul> with a fixed last <li>: its end anchor */
-static cd_str S_LI;
 
-static cd_id create(void *ctx, uint32_t i, uint32_t *data) {
-  (void)ctx;
+/* The rounds of run_fuzz and run_fuzz_end show each key as a runtime label (the number, then a suffix of
+ * 0, 2, 3 or 4 UTF-8 bytes by key % 4), all in one buffer that cd_tmp_ahead announces before the update:
+ * the shim cuts the labels from one decode. The page checks the text. Every seventh round does not
+ * announce (it ends the old range), so those labels are read on use. */
+static char arena[64 * 16];
+static uint32_t aoff[65], labels;
+static void announce(uint32_t round) {
+  static const char *const SUFFIX[4] = {"", "\xc3\xa9", "\xe6\x97\xa5", "\xf0\x9f\x98\x80"};
+  uint32_t n = 0;
+  for (uint32_t i = 0; i < nkeys; i++) {
+    aoff[i] = n;
+    uint32_t k = keys[i];
+    if (k >= 10) arena[n++] = (char)('0' + k / 10);
+    arena[n++] = (char)('0' + k % 10);
+    for (const char *c = SUFFIX[k % 4]; *c; c++) arena[n++] = *c;
+  }
+  aoff[nkeys] = n;
+  if (round % 7 != 3) cd_tmp_ahead(arena, n); else cd_tmp_ahead(0, 0); /* the old range's bytes just changed */
+}
+
+static cd_id create(void *, uint32_t i, uint32_t *data) {
   cd_id id = cd_id_new();
-  cd_open(S_LI); cd_name_el(id); cd_text_num(cur[i]); cd_close();
+  cd_open("li"); cd_name_el(id);
+  if (labels) cd_text(cd_tmp(arena + aoff[i], aoff[i + 1] - aoff[i])); else cd_text_num(cur[i]);
+  cd_close();
   *data = 0;
   return id;
 }
-static void patch(void *ctx, uint32_t i, cd_item *it) { (void)ctx; (void)i; (void)it; }
-static void destroy(void *ctx, cd_item *it) { (void)ctx; (void)it; }
+static void patch(void *, uint32_t, cd_item *) { }
+static void destroy(void *, cd_item *) { }
 static const cd_list_fns FNS = {0, create, patch, destroy};
 
 static void next_keys(void) {
@@ -48,12 +68,10 @@ static void next_keys(void) {
   }
 }
 
-void cd_on_event(const cd_event_rec *e) { (void)e; }
+void cd_on_event(const cd_event_rec *) { }
 
 void cd_main(void) {
-  S_LI = cd_internz("li");
-  cd_at(CD_MOUNT, 0);
-  cd_open(cd_internz("ul"));
+  cd_open("ul");
   list.parent = cd_id_new();
   list.owns_parent = 1;
   cd_name_el(list.parent);
@@ -62,8 +80,10 @@ void cd_main(void) {
 
 __attribute__((export_name("run_fuzz"))) void run_fuzz(uint32_t seed, uint32_t rounds) {
   rng = seed | 1;
+  labels = 1;
   for (uint32_t round = 0; round < rounds; round++) {
     next_keys();
+    announce(round);
     cd_list_update(&list, keys, nkeys, &FNS);
     cd_flush();
     check(keys, nkeys, round);
@@ -75,14 +95,15 @@ __attribute__((export_name("run_fuzz"))) void run_fuzz(uint32_t seed, uint32_t r
 __attribute__((export_name("run_fuzz_end"))) void run_fuzz_end(uint32_t seed, uint32_t rounds) {
   rng = seed | 1;
   nkeys = 0;
-  cd_at(CD_MOUNT, 0);
-  cd_open(cd_internz("ul"));
-  cd_class(cd_internz("tail"));
+  cd_at(CD_MOUNT, CD_APPEND);
+  cd_open("ul");
+  cd_class("tail");
   cd_name_open(tlist.parent = cd_id_new());
-  cd_open(S_LI); cd_name_open(tlist.end = cd_id_new()); cd_text(cd_internz("end")); cd_close();
+  cd_open("li"); cd_name_open(tlist.end = cd_id_new()); cd_text("end"); cd_close();
   cd_close();
   for (uint32_t round = 0; round < rounds; round++) {
     next_keys();
+    announce(round);
     cd_list_update(&tlist, keys, nkeys, &FNS);
     cd_flush();
     check_end(keys, nkeys, round);
@@ -93,15 +114,15 @@ __attribute__((export_name("run_fuzz_end"))) void run_fuzz_end(uint32_t seed, ui
  * TextDecoder call sliced by UTF-16 length). The page reads them back. */
 static const char *STRS[] = {"plain", "h\xc3\xa9llo", "\xe6\x97\xa5\xe6\x9c\xac", "\xf0\x9f\x98\x80x", ""};
 __attribute__((export_name("run_strings"))) void run_strings(uint32_t big) {
-  cd_at(CD_MOUNT, 0);
-  cd_open(cd_internz("p"));
+  cd_at(CD_MOUNT, CD_APPEND);
+  cd_open("p");
   for (uint32_t r = 0; r < (big ? 20 : 1); r++)
     for (uint32_t i = 0; i < 5; i++) {
-      cd_open(cd_internz("b"));
+      cd_open("b");
       char buf[32]; uint32_t n = 0;
       for (const char *c = STRS[i]; *c; c++) buf[n++] = *c;
       buf[n++] = (char)('a' + r % 26);
-      cd_text(cd_intern(buf, n));
+      cd_text(cd_tmp(buf, n));
       cd_close();
     }
   cd_close();
@@ -116,7 +137,7 @@ __attribute__((export_name("run_freeruns"))) void run_freeruns(uint32_t seed, ui
   static cd_list L[2];
   static uint32_t K[2][64], nk[2];
   rng = seed | 1;
-  cd_str S_UL = cd_internz("ul"), S_X = cd_internz("x");
+  labels = 0;
   /* A flush closes the open run: after it, op 0 is a new op whose args must not be taken for
    * the run's (first id, count). Needs a freed id y right below a live id z. */
   cd_flush();
@@ -127,18 +148,18 @@ __attribute__((export_name("run_freeruns"))) void run_freeruns(uint32_t seed, ui
       if (ids[k] + 1 == ids[i]) { y = ids[k]; z = ids[i]; } else if (ids[i] + 1 == ids[k]) { y = ids[i]; z = ids[k]; }
   }
   w = cd_id_new();
-  cd_at(CD_MOUNT, 0);
-  cd_open(S_LI); cd_name_el(z); cd_close();
+  cd_at(CD_MOUNT, CD_APPEND);
+  cd_open("li"); cd_name_el(z); cd_close();
   cd_flush();
   cd_id_free(w);         /* op 0: a run (w, 1) */
   cd_flush();
-  cd_set_class(z, S_X);  /* op 0 again: (z, S_X) */
+  cd_set_class(z, "x");  /* op 0 again: (z, "x") */
   cd_id_free(y);         /* must be its own run, not an edit of op 0 (y names no node) */
-  cd_set_class(z, S_X);
+  cd_set_class(z, "x");
   cd_flush();
   for (int j = 0; j < 2; j++) {
-    cd_at(CD_MOUNT, 0);
-    cd_open(S_UL); L[j].parent = cd_id_new(); L[j].owns_parent = 1; cd_name_el(L[j].parent); cd_close();
+    cd_at(CD_MOUNT, CD_APPEND);
+    cd_open("ul"); L[j].parent = cd_id_new(); L[j].owns_parent = 1; cd_name_el(L[j].parent); cd_close();
   }
   for (uint32_t round = 0; round < rounds; round++) {
     /* grow both lists a few items at a time, alternating, so their ids interleave in runs */
@@ -152,7 +173,7 @@ __attribute__((export_name("run_freeruns"))) void run_freeruns(uint32_t seed, ui
     nk[c] = 0;
     cur = K[c];
     cd_list_update(&L[c], K[c], 0, &FNS);
-    for (uint32_t i = 0; i < L[1 - c].n; i++) cd_set_class(L[1 - c].items[i].node, S_X);
+    for (uint32_t i = 0; i < L[1 - c].n; i++) cd_set_class(L[1 - c].items[i].node, "x");
     cd_flush();
   }
   for (int j = 0; j < 2; j++) { nk[j] = 0; cd_list_update(&L[j], K[j], 0, &FNS); }
@@ -163,18 +184,17 @@ __attribute__((export_name("run_freeruns"))) void run_freeruns(uint32_t seed, ui
  * node they reach: a class after a walk, a walk from the last node, a 20-step walk. The page
  * checks where each class landed. */
 __attribute__((export_name("run_walks"))) void run_walks(void) {
-  cd_str S_DIV = cd_internz("div"), S_I = cd_internz("i"), S_W = cd_internz("w");
   cd_id root = cd_id_new();
-  cd_at(CD_MOUNT, 0);
-  cd_open(S_DIV); cd_name_el(root);
-  for (int d = 0; d < 20; d++) cd_open(S_DIV);
-  cd_text(cd_internz("deep"));
-  cd_up(); cd_class(cd_internz("w20"));          /* from the last node (the text) up to its div */
+  cd_at(CD_MOUNT, CD_APPEND);
+  cd_open("div"); cd_name_el(root);
+  for (int d = 0; d < 20; d++) cd_open("div");
+  cd_text("deep");
+  cd_up(); cd_class("w20");          /* from the last node (the text) up to its div */
   for (int d = 0; d < 20; d++) cd_close();
-  cd_open(S_I); cd_text(cd_internz("a")); cd_close();
-  cd_open(S_I); cd_open(S_I); cd_text(cd_internz("b")); cd_close(); cd_close();
+  cd_open("i"); cd_text("a"); cd_close();
+  cd_open("i"); cd_open("i"); cd_text("b"); cd_close(); cd_close();
   cd_close();
-  cd_sel(root); cd_down(); cd_next(); cd_next(); cd_down(); cd_class(S_W);   /* the inner i */
-  cd_sel(root); for (int d = 0; d < 19; d++) cd_down(); cd_class(cd_internz("w19")); /* 19 steps: one split */
+  cd_sel(root); cd_down(); cd_next(); cd_next(); cd_down(); cd_class("w");   /* the inner i */
+  cd_sel(root); for (int d = 0; d < 19; d++) cd_down(); cd_class("w19"); /* 19 steps: one split */
     cd_flush();
 }

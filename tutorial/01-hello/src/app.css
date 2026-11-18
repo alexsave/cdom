@@ -1,0 +1,20 @@
+/* Lesson 1's styles. The build writes every .css file under src/ into the page's <head>. */
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+body {
+  margin: 0;
+}
+.card {
+  max-width: 32rem;
+  margin: 3rem auto;
+  padding: 0 1rem;
+  line-height: 1.5;
+}
+.card h1 {
+  margin: 0 0 0.5rem;
+}
+.card a {
+  color: light-dark(#1f5fd0, #8ab4ff);
+}

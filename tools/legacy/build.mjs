@@ -38,12 +38,12 @@ const METHODS = new Set(['includes', 'find', 'findIndex', 'fill', 'repeat', 'pad
 // The only names allowed past the scan, each in the one file that may use it: promise-polyfill defines
 // Promise.allSettled and Promise.any itself; PEP uses Map only behind a check for it, and includes only on
 // touch-action strings; wasm2js output calls copyWithin and fill on a Uint8Array; the shim reads
-// globalThis.crypto and Object.entries, and Babel's own helpers name Symbol only behind a typeof check.
+// globalThis.crypto and Object.entries, names Map only behind a typeof check (the read-only string table falls back to a plain object), and Babel's own helpers name Symbol only behind a typeof check.
 // polyfills.js supplies (and so names) everything here but Symbol. wasm2js output also reads the shim's
 // import named "at" (cd_at) off the imports object, which the scan cannot tell from Array.prototype.at.
 const ALLOWED = { 'promise-polyfill': new Set(['.allSettled', '.any']), pepjs: new Set(['Map', '.includes']),
   polyfills: new Set(['.includes', '.copyWithin', '.fill', 'globalThis', '.entries']),
-  wasm2js: new Set(['.copyWithin', '.fill', '.at']), shim: new Set(['Symbol', 'globalThis', '.entries']) };
+  wasm2js: new Set(['.copyWithin', '.fill', '.at']), shim: new Set(['Symbol', 'globalThis', '.entries', 'Map']) };
 
 function es5(name, src) {
   try { acorn.parse(src, { ecmaVersion: 5, sourceType: 'script' }); } catch (e) {
@@ -122,6 +122,8 @@ function page(src, out) {
   // The marker sits in a <script> of its own, after the shim's (see shim/boot.js).
   const html = read(src), mark = '/*CDOM_BOOT*/';
   if (html.split(mark).length !== 2) throw new Error(`${src} needs exactly one ${mark}`);
+  // The table is a script of its own that tools/cdpage wrote before the shim; the fallback needs it too.
+  if (!html.includes('var cdomLits=')) throw new Error(`${src} has no string table (tools/cdpage writes it before the shim)`);
   return html.replace(mark, () => boot);
 }
 

@@ -1,0 +1,5 @@
+/* A comment that fills its line: the page leaves it out. */
+.n-a { order: 1; } /* a.css */
+  /* indented, over
+     two lines: left out too */  
+#probe { --last: "a"; }

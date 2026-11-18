@@ -1,0 +1,8 @@
+--target=wasm32
+-std=c23
+-nostdlib
+-isystem
+../src/libc
+-I../src
+-Wall
+-Wextra

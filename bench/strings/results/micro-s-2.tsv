@@ -1,0 +1,38 @@
+# Chrome/157.0.8103.79
+mode	test	kind	len	ns	q1	q3	n
+resolve	lit8			12.80	12.68	12.90	131072
+resolve	ternary8			12.56	12.51	12.66	131072
+resolve	helper8			13.40	13.38	13.52	131072
+resolve	table8			14.00	13.96	14.05	131072
+resolve	tmp	ascii	1	23.23	22.78	24.50	524288
+resolve	tmp	ascii	9	51.29	49.61	53.18	262144
+resolve	ahead	ascii	9	31.59	31.51	31.73	524288
+resolve	tmp	ascii	12	58.00	57.91	58.06	262144
+resolve	ahead	ascii	12	33.64	33.53	33.75	524288
+resolve	tmp	ascii	13	57.47	57.07	58.10	262144
+resolve	ahead	ascii	13	23.23	23.19	23.33	524288
+resolve	tmp	ascii	30	96.17	95.86	96.55	131072
+resolve	ahead	ascii	30	25.02	24.85	25.08	524288
+resolve	tmp	ascii	64	135.73	134.70	136.53	131072
+resolve	tmp	ascii	200	145.80	145.49	146.33	65536
+resolve	tmp	utf8	9	163.27	162.73	163.96	65536
+resolve	ahead	utf8	9	68.66	68.55	69.12	262144
+resolve	tmp	utf8	12	170.67	168.46	177.15	65536
+resolve	ahead	utf8	12	82.28	81.48	83.73	131072
+resolve	tmp	utf8	13	172.12	170.90	173.26	65536
+resolve	ahead	utf8	13	85.53	85.26	86.21	131072
+resolve	tmp	utf8	30	216.45	215.30	218.58	65536
+resolve	ahead	utf8	30	144.65	143.97	146.71	131072
+resolve	tmp	utf8	64	271.15	270.08	272.22	65536
+resolve	tmp	utf8	200	620.73	616.46	625.61	16384
+resolve/split	lit8			7.97	7.89	8.02	262144
+resolve/split	ternary8			13.01	12.97	13.05	131072
+resolve/split	helper8			13.60	13.53	13.74	131072
+resolve/split	tmp	ascii	9	50.13	49.71	50.35	262144
+resolve/split	tmp	ascii	30	102.31	100.48	103.53	131072
+dom	lit8			138.70	126.80	204.16	4096
+dom	ternary8			123.60	120.70	126.65	4096
+dom	tmp	ascii	9	186.46	182.50	189.51	32768
+dom	ahead	ascii	9	169.37	167.39	186.00	32768
+dom	tmp	ascii	30	243.53	240.94	251.16	32768
+dom	ahead	ascii	30	175.02	161.59	181.43	32768

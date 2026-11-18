@@ -4,7 +4,7 @@
 
 static uint32_t heard;
 static cd_id node;
-static void on_click(const cd_event_rec *e, void *ctx) { (void)e; ++*(uint32_t *)ctx; }
+static void on_click(const cd_event_rec *, void *ctx) { ++*(uint32_t *)ctx; }
 void cd_main(void) {
   node = cd_id_new();
   cd_on(node, CD_EV_CLICK, on_click, &heard);

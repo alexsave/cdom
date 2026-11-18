@@ -1,0 +1,10 @@
+benchmark	metric	lf-tn	lf-tn2	lf-ln	lf-ln2	noise (a2/a)	lf-ln/a	lf-ln2/a
+01_run1k	total	31.5	31.3	31.4	31.2	0.994	0.997	0.990
+01_run1k	script	4.40	4.40	4.40	4.40	1.000	1.000	1.000
+07_create10k	total	317.1	317.7	317.8	318.0	1.002	1.002	1.003
+07_create10k	script	35.2	35.3	35.3	35.4	1.003	1.003	1.006
+benchmark	metric	lf-t	lf-t2	lf-l	lf-l2	noise (a2/a)	lf-l/a	lf-l2/a
+01_run1k	total	29.9	29.8	30.0	29.9	0.997	1.003	1.000
+01_run1k	script	2.50	2.60	2.60	2.50	1.040	1.040	1.000
+07_create10k	total	303.3	302.5	303.1	302.3	0.997	0.999	0.997
+07_create10k	script	20.8	20.9	20.8	20.7	1.005	1.000	0.995

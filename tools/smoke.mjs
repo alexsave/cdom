@@ -18,6 +18,10 @@ try {
   await click('#run'); ok(await rows() === 1000, 'run -> 1000 rows');
   ok(await E('document.querySelector("tbody tr td").textContent') === '1', 'first id is 1');
   ok(await E('/^\\w+ \\w+ \\w+$/.test(document.querySelector("tbody tr td:nth-child(2) a").textContent)'), 'label shape');
+  // The shape alone passes when every row shows one label (a stale template slot did): 1,000 random
+  // labels are about 850 distinct, so require most of them to differ.
+  const distinct = await E('new Set([...document.querySelectorAll("tbody tr td:nth-child(2) a")].map(a => a.textContent)).size');
+  ok(distinct >= 500, `labels differ across rows: ${distinct} distinct of 1000`);
   ok(await E('document.querySelector("tbody tr").outerHTML'), 'row html: ' + await E('document.querySelector("tbody tr").outerHTML'));
   await click('#add'); ok(await rows() === 2000, 'add -> 2000');
   ok(await E('document.querySelector("tbody tr:nth-child(1001) td").textContent') === '1001', 'appended ids continue');
@@ -41,8 +45,24 @@ try {
   await click('#run'); ok(await rows() === 1000, 'run after clear');
   await click('#run'); ok(await rows() === 1000, 'run replaces');
   ok(await E('document.querySelector("tbody tr td").textContent') === '13001', 'run replace ids: ' + await E('document.querySelector("tbody tr td").textContent'));
-  for (let i = 0; i < 5; i++) await click('#update');
-  ok(await E('document.querySelector("tbody tr td:nth-child(2) a").textContent.endsWith(" !!! !!! !!! !!! !!!")'), 'repeated update');
+  // Thirty updates: the replaced labels outweigh the live ones twice over, so the app compacts its label arena and then reads labels from the moved bytes.
+  for (let i = 0; i < 30; i++) await click('#update');
+  ok(await E(`document.querySelector("tbody tr td:nth-child(2) a").textContent.endsWith(${JSON.stringify(' !!!'.repeat(30))})`), 'repeated update');
+  ok(await E('[...document.querySelectorAll("tbody tr")].every((r, i) => /^\\w+ \\w+ \\w+( !!!)*$/.test(r.children[1].textContent) && (r.children[1].textContent.split("!!!").length - 1 === (i % 10 === 0 ? 30 : 0)))'), 'labels intact after compaction');
+  // The app compacts its label arena and must move every row's offset with it. A row that is not re-read keeps a stale
+  // offset unseen, so remove rows (the rows every 10th update reads shift) and compare every label with a model after each step.
+  await click('#run');
+  const labels = () => E('[...document.querySelectorAll("tbody tr")].map(r => r.children[1].textContent)');
+  const model = await labels();
+  let bad = '';
+  for (let step = 0; step < 40 && !bad; step++) {
+    if (step % 10 === 5) { await click('tbody tr:nth-child(1) td:nth-child(3) a span'); model.shift(); }
+    else { await click('#update'); for (let i = 0; i < model.length; i += 10) model[i] += ' !!!'; }
+    const now = await labels();
+    const at = now.findIndex((l, i) => l !== model[i]);
+    if (now.length !== model.length || at >= 0) bad = `step ${step}: row ${at} shows "${now[at]}", expected "${model[at]}"`;
+  }
+  ok(!bad, `update and remove keep every label across arena compaction${bad ? ': ' + bad : ''}`);
 } finally { await b.close(); }
 console.log(fails ? `${fails} FAILED` : 'all ok');
 process.exit(fails ? 1 : 0);

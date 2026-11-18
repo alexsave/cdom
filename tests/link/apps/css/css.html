@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>css</title>
+<style>
+#probe { --first: "page"; --last: "page"; }
+/*CDOM_CSS*/
+#probe { --after: "page"; }
+</style>
+</head>
+<body>
+<div id="probe"></div>
+<div id="app"></div>
+<script>
+/*CDOM_SHIM*/
+cdom.start(/*CDOM_WASM*/, "app");
+</script>
+</body>
+</html>

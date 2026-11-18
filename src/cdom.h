@@ -29,15 +29,7 @@
 #define CDOM_H
 #include <stdint.h>
 
-/* Content strings (text, class values) cross once and are cached in JS by id
- * when 1; when 0 every use re-sends the bytes. Tag and attribute names are
- * always cached: they are the enum. */
-#ifndef CDOM_INTERN_TEXT
-#define CDOM_INTERN_TEXT 1
-#endif
-
 typedef uint32_t cd_id;  /* node id; 0 is the mount element */
-typedef uint32_t cd_str; /* interned string id */
 
 #define CD_MOUNT 0u
 /* Fixed ids for host objects, usable wherever an id is accepted (cd_sel, cd_listen, cd_set, cd_call_args,
@@ -49,6 +41,7 @@ typedef uint32_t cd_str; /* interned string id */
 #define CD_EVENT 4u    /* the DOM event being delivered; valid inside cd_on_event or a cd_on handler only */
 #define CD_RESULT 5u   /* what the last cd_call_args returned (undefined if it threw) */
 #define CD_FIRST_ID 6u
+#define CD_APPEND 0u /* cd_at's before: no child, so append at the end */
 #define CD_DETACHED 0xffffffffu
 
 /* Event types. The numbers are stable: new ones are only appended, and there are at most 64.
@@ -97,24 +90,66 @@ void cd_free(void *p);
 void *cd_alloc_try(uint32_t n);
 void *cd_realloc_try(void *p, uint32_t n);
 
-/* ---- strings ---- */
-cd_str cd_intern(const char *s, uint32_t len);
-cd_str cd_internz(const char *s);
-const char *cd_bytes(cd_str s, uint32_t *len);
-/* A one-off string: its bytes cross with the next op and are never interned or cached, so a
- * value that changes (a position, a count in a label) does not grow the string table. Use it
- * in the very next op that takes a string; using it after another op has crossed traps. */
+/* ---- strings ----
+ * A string argument is written as plain C: cd_open("div"), cd_text(name), cd_text(cd_tmp(buf, n)).
+ * Every function below that takes a cd_str is also a macro of the same name that passes each string
+ * argument through cd_s(), so the functions are never called with a cd_str made by hand.
+ *
+ * A string literal costs nothing at run time: the build (tools/cdlits, run by cdom.mk) moves it out of
+ * the module into the page's string table, and the argument is its slot. A literal is an argument spelled
+ * as one ("...", adjacent literals, or a macro that expands to them).
+ * Any other char pointer is read from C memory (UTF-8, to the terminating 0) by the call that uses it.
+ * A literal the macro cannot see (inside a ternary, or passed through a helper's const char *) is such a
+ * pointer, and so is a const table entry or a static const char[]. A pointer into read-only data is its
+ * own id and the shim keeps its string by address: C never writes const data, so one address is one
+ * string for the life of the page (cdom.c, cd_tmpz). Any other pointer (a mutable static, the stack, the
+ * heap) is read on every use, so its bytes may change between calls.
+ * cd_tmp is the same for bytes with a length and no terminator, and is always read on use.
+ *
+ * A cd_str from a literal or from read-only data is good for the life of the page. A cd_str from any
+ * other runtime string (cd_tmp, or cd_tmpz of mutable bytes) is good for the next call that takes a
+ * string: that call reads the bytes, and when it returns every such cd_str is dead (using one later
+ * throws out of the call that uses it). The bytes must stay unchanged until that call. At most
+ * CD_TMP_CAP are alive at once. */
+typedef struct { uint32_t v; } cd_str;  /* a slot address, or 0x80000000 | a serial; never made by hand */
+#define CD_NONE ((cd_str){0})          /* no string: the path that reads the object itself */
+#define CD_TMP_CAP 32
 cd_str cd_tmp(const char *s, uint32_t len);
-cd_str cd_tmpz(const char *s);
-/* A string literal interned once per call site: the hash lookup is paid the first time only.
- * ONLY A LITERAL: the cache is per call site, so a variable would answer its first value
- * forever. `"" lit` makes anything but a string literal a compile error. The check is in a
- * helper, not inline: inlined at every site it cost an app 5.5 KB. */
-cd_str cd_lit_(cd_str *slot, const char *lit, uint32_t len);
-#define CD_LIT(lit) ({ static cd_str cd_lit_slot_; cd_lit_(&cd_lit_slot_, "" lit, sizeof(lit) - 1); })
-/* The string table's size: C's pool and the shim's array hold the same strings. */
-uint32_t cd_str_count(void);
-uint32_t cd_str_bytes(void);
+cd_str cd_tmpz(const char *s);          /* traps on a null pointer */
+
+/* A burst of fresh runtime strings (a list's labels, built into one buffer and about to be shown):
+ * cd_tmp_ahead(p, len) says the bytes [p, p + len) will not change until the range ends. The shim
+ * decodes the range once, now, and until it ends a runtime string that lies wholly inside it is cut
+ * from that decode instead of being read on its own; any other runtime string is read as always.
+ * The range ends, and the shim drops the decoded text, when the outermost call into C returns
+ * (cd_main, an event, a timer, a frame, a network answer), at the next cd_tmp_ahead, or at
+ * cd_tmp_ahead(0, 0). It changes no result, only the time: use it for a few hundred strings or more.
+ * The bytes must be valid UTF-8 and must not change while the range lives. The shim reports a changed
+ * byte only under start's options.checkAhead (the tests set it): otherwise the page shows the old text. */
+void cd_tmp_ahead(const char *p, uint32_t len);
+
+/* cd_s(x): the cd_str of x. It is what the macros below use, and an app never needs to call it: plain C
+ * (cd_set_class(id, sel ? "danger" : "")) is read once per address, within a few ns of a slot. It is a
+ * statement expression, so it works inside a function, not in a file-scope initializer. */
+#define CD_SPELL_(s) #s
+#define CD_SPELL(s) CD_SPELL_(s)
+#define CD_CHARP(s) _Generic((s), cd_str: (const char *)0, default: (s))
+#define CD_ASSTR(s) _Generic((s), cd_str: (s), default: (cd_str){0})
+#define CD_LITQ(s) (__builtin_strncmp(CD_SPELL(s), "\"", 1) == 0 && \
+                    __builtin_constant_p(__builtin_strlen(CD_CHARP(s))))
+#ifdef CD_LITS_CHECK /* the check build: each slot also holds the compiler's own bytes (cdlits --check) */
+typedef struct { const char *spell, *real; } cd_lit_slot;
+#define CD_REAL(s) , (__builtin_constant_p(__builtin_strlen(CD_CHARP(s))) ? CD_CHARP(s) : 0)
+#else
+typedef struct { const char *spell; } cd_lit_slot;
+#define CD_REAL(s)
+#endif
+#define CD_LIT_(s) ({ \
+  static const char cd_c_[] __attribute__((section("cd_chars"), aligned(1))) = CD_SPELL(s); \
+  static const cd_lit_slot cd_l_ __attribute__((section("cd_lits"))) = { cd_c_ CD_REAL(s) }; \
+  (cd_str){(uint32_t)(uintptr_t)&cd_l_}; })
+#define cd_s(s) _Generic((s), cd_str: CD_ASSTR(s), \
+  default: __builtin_choose_expr(CD_LITQ(s), CD_LIT_(s), cd_tmpz(CD_CHARP(s))))
 
 /* Numbers as JS and CSS write them, with no printf. cd_fmt writes v / 10^decimals (decimals <= 9)
  * as JS's String(v / 10 ** decimals) does (trailing zeros dropped, no "-0"), then the unit, and
@@ -134,12 +169,12 @@ uint32_t cd_ids_live(void);          /* ids handed out and not freed (the reserv
 uint32_t cd_ids_high(void);          /* the highest id ever handed out: the size of the shim's node table */
 
 /* ---- building: nodes go to (parent, before) when their root closes ---- */
-void cd_at(cd_id parent, cd_id before); /* before 0 = append; parent CD_DETACHED = keep off-DOM */
+void cd_at(cd_id parent, cd_id before); /* before CD_APPEND = append; an app starts at (CD_MOUNT, CD_APPEND); parent CD_DETACHED = keep off-DOM */
 /* An <svg>, and everything opened inside it, is made in the SVG namespace (C keeps the depth). */
 void cd_open(cd_str tag);
 void cd_close(void);
 /* cd_text with an empty string still makes a text node, so a value that is empty at first and filled
- * in later (cd_set_text_node) is made with cd_text(CD_LIT("")) and named with cd_name_text. */
+ * in later (cd_set_text_node) is made with cd_text("") and named with cd_name_text. */
 void cd_text(cd_str s);
 void cd_text_num(uint32_t n);
 void cd_attr(cd_str name, cd_str value);
@@ -190,7 +225,7 @@ void cd_set_text_node(cd_id id, cd_str s);
 void cd_set_text_node_num(cd_id id, uint32_t n);
 void cd_set_attr(cd_id id, cd_str name, cd_str value);
 void cd_set_class(cd_id id, cd_str value);
-/* One style property: element.style.setProperty(prop, value). value may be a cd_tmp; "" removes it. */
+/* One style property: element.style.setProperty(prop, value). value may be a runtime string; "" removes it. */
 void cd_set_style(cd_id id, cd_str prop, cd_str value);
 void cd_set_style_num(cd_id id, cd_str prop, double v, uint32_t unit);
 /* Pixels to an image file: px is w * h * n bytes in C memory, n = 4 (RGBA) or 3 (RGB, opaque: a
@@ -215,10 +250,10 @@ void cd_move(cd_id id, cd_id before);
 void cd_clear(cd_id id);             /* drop all children; caller frees their ids (a cd_region does it for you) */
 void cd_detach(cd_id id);            /* take a node out of the document, remembering its place */
 void cd_attach(cd_id id);            /* put it back where it was */
-/* Sends pending strings and any held walk. Every entry from JS (start, events, timers, frames,
- * the network) flushes on its way out, so an app calls this only from an export of its own. */
+/* Sends any held walk. Every entry from JS (start, events, timers, frames, the network) flushes on
+ * its way out, so an app calls this only from an export of its own. */
 void cd_flush(void);
-uint32_t cd_pending(void);           /* nonzero while strings or a walk wait to cross (for tests) */
+uint32_t cd_pending(void);           /* nonzero while a walk waits to cross, or a runtime string waits for the call that reads it (for tests) */
 
 /* ---- renders: the setter half of state ----
  * State stays plain C. A setter changes it and asks for the view that shows it to be drawn again:
@@ -265,12 +300,16 @@ void cd_req_drop(cd_req *r);
  * A node property that remembers what it last sent, so setting it writes to the DOM only when the
  * value changed: a view can set every bound value it shows each time it runs, and only the changes
  * cross. Bind once the node is named, then set:
- *   cd_text(CD_LIT("")); cd_name_text(t = cd_id_new()); cd_bind_text(&label, t);
- *   cd_bound_set(&label, busy ? CD_LIT("Saving") : CD_LIT("Save"));
+ *   cd_text(""); cd_name_text(t = cd_id_new()); cd_bind_text(&label, t);
+ *   cd_bound_set(&label, busy ? "Saving" : "Save");
  * text sets a text node's value (cd_set_text_node), attr an attribute, class the class, style one
  * style property, and bool a boolean property such as "disabled" or "checked" (cd_set_bool, the
- * property, not the attribute, so it holds after the user changed it). name and prop are interned.
- * cd_bound_set takes an interned value, the same when its id is. cd_bound_set_bytes takes bytes (a
+ * property, not the attribute, so it holds after the user changed it). name and prop are kept, so
+ * each is a string good for the page: a literal, or a pointer into read-only data (a ternary of
+ * literals, a const table entry; see strings above). cd_bound_set takes such a value, the same when
+ * its cd_str is; a runtime string read on use traps there. A literal's cd_str is its slot, one per
+ * call site, so the same text set from two call sites is two values (the second writes once): a view
+ * sets a bound value from one place, or takes it from a const table. cd_bound_set_bytes takes bytes (a
  * label made with cd_fmt or snprintf each time), the same when the bytes are: unchanged, nothing is
  * made and nothing crosses; changed, they cross as a cd_tmp. cd_bound_set_num takes a number
  * (for a bool, 0 or not: 1 and 5 are the same true). The first set after a bind always writes,
@@ -292,16 +331,16 @@ void cd_bind_attr(cd_bound *b, cd_id el, cd_str name);
 void cd_bind_class(cd_bound *b, cd_id el);
 void cd_bind_style(cd_bound *b, cd_id el, cd_str prop);
 void cd_bind_bool(cd_bound *b, cd_id el, cd_str prop);
-/* interned; a cd_tmp traps. The unchanged case is inline (two compares, no call): a list patching a
+/* a string good for the page; a runtime one traps. The unchanged case is inline (two compares, no call): a list patching a
  * thousand bound rows per event skips as fast as a hand-written last-value check. */
 void cd_bound_set_(cd_bound *b, cd_str value);
 static inline void cd_bound_set(cd_bound *b, cd_str value) {
-  if (b->seen != 1 || b->last != value) cd_bound_set_(b, value); /* 1: an interned id was sent */
+  if (b->seen != 1 || b->last != value.v) cd_bound_set_(b, value); /* 1: such a string was sent */
 }
 void cd_bound_set_bytes(cd_bound *b, const char *p, uint32_t len);
 void cd_bound_set_num(cd_bound *b, uint32_t n);
 /* The node already shows value (it was built with it): the binding records it without writing, so
- * the first set of the same value writes nothing. value is interned. */
+ * the first set of the same value writes nothing. value is a string good for the page. */
 void cd_bound_shows(cd_bound *b, cd_str value);
 void cd_bound_shows_num(cd_bound *b, uint32_t n);
 void cd_unbind(cd_bound *b);
@@ -338,8 +377,8 @@ void cd_on_event(const cd_event_rec *e);
  * id is a live node id or CD_WINDOW, CD_DOCUMENT or CD_BODY; cd_on also makes the shim deliver ev for id,
  * as cd_listen does: for a node it selects id's node first (cd_sel), so the last node is id's node after
  * the call, and it may be called any time after the node was named. Registering again for the same
- * (id, ev) replaces fn and ctx. fn 0 removes the handler and stops delivery of ev for id (cd_unlisten),
- * also when the app had listened for the pair itself, since cdom cannot tell; removing a pair with no
+ * (id, ev) replaces fn and ctx. ctx may be nullptr when the handler needs none. fn 0 removes the handler
+ * and stops delivery of ev for id (cd_unlisten), also when the app had listened for the pair itself, since cdom cannot tell; removing a pair with no
  * handler does nothing. A node's handlers go when its id is freed (cd_id_free, cd_remove, a region or a
  * list), so an id handed out again starts with none. Traps on ev >= CD_EV_TYPES, on CD_MOUNT, CD_EVENT,
  * CD_RESULT and a free id. Freeing an id with no handler costs one byte read. */
@@ -349,10 +388,15 @@ void cd_main(void);                  /* the app's entry, called once at start */
 /* The seed for the app's random draws, set before cd_main: cdom.start's options.seed when the page fixes
  * one (one line makes a run deterministic), else 32 bits from crypto.getRandomValues. */
 extern uint32_t cd_seed;
+/* The app's one random source: xorshift32 (shifts 13, 17, 5), seeded from cd_seed by cd_start before
+ * cd_main, so the same seed (cdom.start's options.seed) gives the same draws. Take a draw in logical
+ * units, not scaled by a size the run's screen decides, and the same seed gives the same scene on any
+ * screen. Not for secrets: cd_random_bytes (cdom_random.h) is the one for those. */
+uint32_t cd_rand(void);
 /* An input's whole value now, as UTF-8 into dst, or none of it. When it fits in cap bytes: 1, and *len
  * its length. When it does not: 0, *len the whole length (so the caller can make that much room and
  * ask again), and dst holds nothing to use. A part of a value (a search box read into a fixed buffer)
- * is cd_get_str(id, CD_LIT("value"), dst, cap), which returns the bytes it wrote, whole characters. */
+ * is cd_get_str(id, "value", dst, cap), which returns the bytes it wrote, whole characters. */
 int cd_input_whole(cd_id id, char *dst, uint32_t cap, uint32_t *len);
 /* Whole-page delivery, as cd_listen on the host object that has the event: CD_EV_RESIZE on CD_WINDOW,
  * every other type on CD_DOCUMENT (keys, and the moves and release of a drag). */
@@ -385,20 +429,19 @@ void cd_viewport(cd_viewport_rec *v);
 int cd_rect(cd_id id, double out[4]);
 
 /* ---- host access: properties and methods of nodes and of the reserved ids, along dotted paths ----
- * A path is an interned string such as "style.width", "files.0.name" or "childNodes.2.nodeValue"; it is
+ * A path is a string such as "style.width", "files.0.name" or "childNodes.2.nodeValue"; it is
  * walked from the object one property per segment, and a segment of digits indexes an array or a
  * collection the same way. A segment that starts with "--" reads or writes a custom property through
  * getPropertyValue or setProperty on the object before it, so "style.--accent" names a CSS variable.
- * A path may be interned (its segments are split once and kept by its id) or a cd_tmp (split each time,
- * since a one-off string's id is reused by the next one); interning is the cheap choice for a path used
- * more than once. Each call is made the moment C makes it, like every other operation. */
+ * A literal path is split once and kept by its slot; a runtime path is split each time, so a path used
+ * more than once is best a literal. Each call is made the moment C makes it, like every other operation. */
 enum { CD_V_NUM, CD_V_STR, CD_V_BOOL, CD_V_ID, CD_V_NULL, CD_V_OBJ };
 /* A tagged value. CD_V_ID is the node (or reserved object) with that id. CD_V_OBJ starts a plain object of
  * u key-value pairs, which follow it in the same array as a CD_V_STR key then a value (objects may nest).
  * The shim reads the array in C memory during the call, so it may live on the stack. */
 typedef struct { uint32_t tag; union { double num; uint32_t u; }; } cd_val;
 static inline cd_val cd_v_num(double n) { cd_val v = {CD_V_NUM, {.num = n}}; return v; }
-static inline cd_val cd_v_str(cd_str s) { cd_val v = {CD_V_STR, {.u = s}}; return v; }
+static inline cd_val cd_v_str(cd_str s) { cd_val v = {CD_V_STR, {.u = s.v}}; return v; }
 static inline cd_val cd_v_bool(int b) { cd_val v = {CD_V_BOOL, {.u = b != 0}}; return v; }
 static inline cd_val cd_v_id(cd_id id) { cd_val v = {CD_V_ID, {.u = id}}; return v; }
 static inline cd_val cd_v_null(void) { cd_val v = {CD_V_NULL, {.u = 0}}; return v; }
@@ -421,8 +464,8 @@ void cd_call_args(cd_id id, cd_str method, uint32_t n, const cd_val *a);
 void cd_call(cd_id id, cd_str method);
 
 /* Reads walk the path from id synchronously and see every operation made before them. A missing or null
- * step never throws: it reads as NaN, an empty string or CD_DETACHED. Path 0 reads the object itself, e.g.
- * cd_get_num(CD_RESULT, 0) for a call's result. */
+ * step never throws: it reads as NaN, an empty string or CD_DETACHED. CD_NONE reads the object itself, e.g.
+ * cd_get_num(CD_RESULT, CD_NONE) for a call's result. */
 double cd_get_num(cd_id id, cd_str path);  /* a number, a boolean as 0 or 1; NaN for anything else */
 /* The string form (String(v)) as UTF-8 into dst, at most cap bytes and never a split character; returns
  * the bytes written. An object reads as its "[object ...]" name, so a non-zero length also tests presence. */
@@ -435,10 +478,10 @@ cd_id cd_get_id(cd_id id, cd_str path);
 /* Copy w*h RGBA pixels (bytes R,G,B,A; a uint32 0xAABBGGRR) from C memory into the canvas at 0,0 with
  * putImageData, read during the call. The canvas's width and height attributes are the app's to set. */
 void cd_blit(cd_id canvas, const void *rgba, uint32_t w, uint32_t h);
-/* 1 starts a loop that calls cd_on_frame before every frame, 0 stops it. It is cd_raf_request asked again
- * each frame under a token of cdom's own (CD_FRAMES_TOKEN, never passed to cd_on_raf), so starting twice
- * is one loop. */
-void cd_frames(int on);
+/* true starts a loop that calls cd_on_frame before every frame, false stops it. It is cd_raf_request
+ * asked again each frame under a token of cdom's own (CD_FRAMES_TOKEN, never passed to cd_on_raf), so
+ * starting twice is one loop. */
+void cd_frames(bool on);
 void cd_on_frame(double ms);         /* the app's hook (empty weak default); ms is the frame's timestamp */
 #define CD_FRAMES_TOKEN 0xffffffffu
 
@@ -555,5 +598,44 @@ void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_
 /* The list's DOM already went (an ancestor was cleared or removed): free every item's ids,
  * emit nothing for their nodes, and leave the list empty. */
 void cd_list_forget(cd_list *L, const cd_list_fns *f);
+
+/* The string wrappers: each function above that takes a cd_str, as a macro of its own name that passes
+ * every string argument through cd_s(). (cd_text) in parentheses is the function, for a function pointer.
+ * They come after every declaration and every inline body, so those call the functions. cdom.c, which
+ * defines the functions, sets CD_NO_WRAPPERS so that its definitions are not macro calls. */
+#ifndef CD_NO_WRAPPERS
+#define cd_open(tag) (cd_open)(cd_s(tag))
+#define cd_text(s) (cd_text)(cd_s(s))
+#define cd_attr(name, value) (cd_attr)(cd_s(name), cd_s(value))
+#define cd_class(value) (cd_class)(cd_s(value))
+#define cd_open_id(tag) (cd_open_id)(cd_s(tag))
+#define cd_value(s) (cd_value)(cd_s(s))
+#define cd_tpl_text(t, k, s) (cd_tpl_text)(t, k, cd_s(s))
+#define cd_set_text_node(id, s) (cd_set_text_node)(id, cd_s(s))
+#define cd_set_attr(id, name, value) (cd_set_attr)(id, cd_s(name), cd_s(value))
+#define cd_set_class(id, value) (cd_set_class)(id, cd_s(value))
+#define cd_set_style(id, prop, value) (cd_set_style)(id, cd_s(prop), cd_s(value))
+#define cd_set_style_num(id, prop, v, unit) (cd_set_style_num)(id, cd_s(prop), v, unit)
+#define cd_encode_image(px, w, h, n, mime, token) (cd_encode_image)(px, w, h, n, cd_s(mime), token)
+#define cd_encode_image_in(px, w, h, n, W, H, x, y, mime, token) \
+  (cd_encode_image_in)(px, w, h, n, W, H, x, y, cd_s(mime), token)
+#define cd_set_image_bytes(id, prop, p, len, mime, token) \
+  (cd_set_image_bytes)(id, cd_s(prop), p, len, cd_s(mime), token)
+#define cd_v_str(s) (cd_v_str)(cd_s(s))
+#define cd_set(id, path, v) (cd_set)(id, cd_s(path), v)
+#define cd_set_num(id, path, n) (cd_set_num)(id, cd_s(path), n)
+#define cd_set_str(id, path, s) (cd_set_str)(id, cd_s(path), cd_s(s))
+#define cd_set_bool(id, path, b) (cd_set_bool)(id, cd_s(path), b)
+#define cd_call_args(id, method, n, a) (cd_call_args)(id, cd_s(method), n, a)
+#define cd_call(id, method) (cd_call)(id, cd_s(method))
+#define cd_get_num(id, path) (cd_get_num)(id, cd_s(path))
+#define cd_get_str(id, path, dst, cap) (cd_get_str)(id, cd_s(path), dst, cap)
+#define cd_get_id(id, path) (cd_get_id)(id, cd_s(path))
+#define cd_bind_attr(b, el, name) (cd_bind_attr)(b, el, cd_s(name))
+#define cd_bind_style(b, el, prop) (cd_bind_style)(b, el, cd_s(prop))
+#define cd_bind_bool(b, el, prop) (cd_bind_bool)(b, el, cd_s(prop))
+#define cd_bound_set(b, value) (cd_bound_set)(b, cd_s(value))
+#define cd_bound_shows(b, value) (cd_bound_shows)(b, cd_s(value))
+#endif
 
 #endif

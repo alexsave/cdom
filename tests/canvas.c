@@ -9,8 +9,6 @@ IMPORT("frame_seen") void frame_seen(uint32_t count, double ms);
 static cd_id canvas, target;
 static uint32_t frames, stop_after;
 
-static cd_str z(const char *s) { return cd_internz(s); }
-
 /* A pattern no byte order mistake survives: every channel of every pixel is different. */
 static void fill(uint8_t *p, uint32_t w, uint32_t h, uint32_t salt) {
   for (uint32_t i = 0; i < w * h; i++) {
@@ -22,14 +20,13 @@ static void fill(uint8_t *p, uint32_t w, uint32_t h, uint32_t salt) {
 }
 
 void cd_main(void) {
-  cd_at(CD_MOUNT, 0);
-  cd_open(z("canvas")); cd_attr(z("width"), z("7")); cd_attr(z("height"), z("5"));
+  cd_open("canvas"); cd_attr("width", "7"); cd_attr("height", "5");
   canvas = cd_id_new(); cd_name_el(canvas); cd_close();
-  cd_open(z("div")); cd_attr(z("id"), z("target"));
+  cd_open("div"); cd_attr("id", "target");
   target = cd_id_new(); cd_name_el(target); cd_close();
 }
 
-void cd_on_event(const cd_event_rec *e) { (void)e; }
+void cd_on_event(const cd_event_rec *) { }
 
 static uint8_t small[7 * 5 * 4];
 EXPORT("blit_small") uint32_t blit_small(uint32_t salt) {
@@ -51,20 +48,20 @@ EXPORT("blit_grown") uint32_t blit_grown(uint32_t salt) {
 EXPORT("frames_for") void frames_for(uint32_t n) {
   frames = 0;
   stop_after = n;
-  cd_frames(1);
-  cd_frames(1); /* starting twice must not double the loop */
+  cd_frames(true);
+  cd_frames(true); /* starting twice must not double the loop */
   cd_flush();
 }
 
 void cd_on_frame(double ms) {
   frames++;
   frame_seen(frames, ms);
-  if (frames >= stop_after) cd_frames(0);
+  if (frames >= stop_after) cd_frames(false);
 }
 
 EXPORT("frame_count") uint32_t frame_count(void) { return frames; }
 /* A stop from outside a frame (an event, a timer) while the next frame is already asked for: that frame must
  * not reach cd_on_frame. */
-EXPORT("frames_stop") void frames_stop(void) { cd_frames(0); cd_flush(); }
-EXPORT("call_ping") void call_ping(void) { cd_call(target, z("ping")); cd_flush(); }
+EXPORT("frames_stop") void frames_stop(void) { cd_frames(false); cd_flush(); }
+EXPORT("call_ping") void call_ping(void) { cd_call(target, "ping"); cd_flush(); }
 EXPORT("target_id") uint32_t target_id(void) { return target; }

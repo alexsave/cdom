@@ -15,7 +15,7 @@ void *malloc(size_t n) {
   app_mallocs++;
   return (void *)p;
 }
-void free(void *p) { (void)p; }
+void free(void *) { }
 void *calloc(size_t n, size_t sz) {
   unsigned char *p = malloc(n * sz);
   if (p) __builtin_memset(p, 0, n * sz);

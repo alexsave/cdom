@@ -1,14 +1,17 @@
 <!doctype html><html><head><meta charset="utf-8"><title>unit</title></head><body><div id="m"></div>
-<script src="cdom.js"></script><script>
+<script>
+/*CDOM_SHIM*/
+</script><script>
 // Runs tests/unit.c's cases and checks them; tools/unit.mjs reads window.RESULT, then drives the
 // resize and the network from outside. The imports are wrapped only to see what crosses after an
 // entry returns (the auto-flush check).
 const errors = [], passed = [], trace = [];
 let tracing = false;
 const real = WebAssembly.instantiateStreaming;
+const roReads = []; // the addresses the shim read from memory as read-only strings (options.onRoRead)
 let shim; // the shim's imports, to ask it directly what it still holds
 WebAssembly.instantiateStreaming = (res, imp) => {
-  for (const k of ['strings', 'walk']) { const f = imp.cdom[k]; imp.cdom[k] = (...a) => { if (tracing) trace.push(k); return f(...a); }; }
+  for (const k of ['walk']) { const f = imp.cdom[k]; imp.cdom[k] = (...a) => { if (tracing) trace.push(k); return f(...a); }; }
   shim = imp.cdom;
   return real(res, imp);
 };
@@ -34,7 +37,61 @@ const until = async (f, ms = 3000) => { for (let i = 0; i < ms / 10; i++) { if (
 let storeOpenedAt = -1;
 const realOpen = indexedDB.open.bind(indexedDB);
 indexedDB.open = (...a) => { if (storeOpenedAt < 0) storeOpenedAt = performance.now(); return realOpen(...a); };
-cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).then(async (x) => {
+const aheadOff = new URLSearchParams(location.search).get('checkahead') === 'off'; // the second run: the option off
+// ?rand=SEED: only the first draws of cd_rand under that seed (tools/unit.mjs opens it twice, and with seed 0).
+const randOnly = new URLSearchParams(location.search).get('rand');
+const randSeed = randOnly === null ? 0xdeadbeef : Number(randOnly);
+let draws = [];
+// xorshift32 written out again here, not read from C: a state of 0 would stay 0, so the seed is made odd.
+function xorshiftDraws(seed, n) {
+  let s = (seed | 1) >>> 0;
+  return Array.from({ length: n }, () => { s = (s ^ (s << 13)) >>> 0; s = (s ^ (s >>> 17)) >>> 0; s = (s ^ (s << 5)) >>> 0; return s; });
+}
+// The batched read (cd_tmp_ahead) and the life of a cd_tmp after a throw. Run at the end of the page, and
+// alone on the page with options.checkAhead off (?checkahead=off, which tools/unit.mjs opens last).
+function aheadChecks(x) {
+  const SUF = [['', 'a', 'bc', 'def'], ['', 'é', '日', '\u{1F600}'], ['\u{1F600}', '\u{1F600}', '\u{1F600}', '\u{1F600}']];
+  const expect = (kind, poked) => Array.from({ length: 1024 }, (_, i) =>
+    kind === 1 && i === 1023 ? '' : (poked && i === 5 ? 'Z' : String(i)) + SUF[kind][i & 3]);
+  const shown = (id) => [...document.querySelector(`#ah${String(id).padStart(3, '0')}`).childNodes].map((n) => n.data);
+  const diff = (got, exp) => { for (let i = 0; i < 1024; i++) if (got[i] !== exp[i]) return `[${i}] ${JSON.stringify(got[i])}, wanted ${JSON.stringify(exp[i])}`; return true; };
+  const run = (kind, mode) => { x.t_ahead_fill(kind); return shown(x.t_ahead_show(mode)); };
+  if (aheadOff) {
+    check('checkAhead off: a byte changed inside a live range shows the old text', () => {
+      const got = run(1, 5);
+      return got[5] === '5' + SUF[1][1] || `string 5 shows ${JSON.stringify(got[5])}`;
+    });
+  }
+  for (const kind of [0, 1, 2]) {
+    check(`cd_tmp_ahead, kind ${kind}: each of 1024 strings shown from the range equals a read on use of the same bytes, and the text expected`, () => {
+      const plain = run(kind, 0), all = run(kind, 1);
+      return diff(plain, expect(kind, false)) === true ? diff(all, plain) : 'read on use: ' + diff(plain, expect(kind, false));
+    });
+    check(`cd_tmp_ahead, kind ${kind}: a range from inside string 100 to inside string 900 leaves 100 and 900 right`, () => diff(run(kind, 2), expect(kind, false)));
+  }
+  check('cd_tmp_ahead: the range is gone when the call into C returns (a byte changed in a later call shows)', () => {
+    x.t_ahead_fill(1);
+    x.t_ahead_show(6);       // announces, shows nothing, returns
+    x.t_ahead_poke();        // a later call changes string 5
+    return diff(shown(x.t_ahead_show(0)), expect(1, true));
+  });
+  check('cd_tmp_ahead(0, 0) ends the range, and a second cd_tmp_ahead replaces the first', () => {
+    const r = [diff(run(1, 3), expect(1, true)), diff(run(1, 4), expect(1, true))];
+    return r.every((v) => v === true) || r.join(' | ');
+  });
+  if (aheadOff) return;
+  check('checkAhead on: a byte changed inside a live range throws, naming the rule', () => {
+    x.t_ahead_fill(1);
+    try { x.t_ahead_show(5); return 'no throw'; } catch (e) { return /^cdom: bytes inside a cd_tmp_ahead range changed/.test(e.message) || String(e); }
+  });
+  check('a cd_tmp made before a throw is dead in the next call into C, which throws on it', () => {
+    const r = [];
+    try { x.t_tmp_throw(); r.push('no throw'); } catch (e) { r.push(/^cdom: a cd_tmp string used after/.test(e.message) || String(e)); }
+    try { x.t_tmp_after_throw(); r.push('no throw on the later use'); } catch (e) { r.push(/^cdom: a cd_tmp string used after the call it was made for/.test(e.message) || String(e)); }
+    return r.every((v) => v === true) || r.join(' | ');
+  });
+}
+cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: randSeed, checkAhead: !aheadOff, onRoRead: (a) => roReads.push(a) }).then(async (x) => {
   const trapCase = new URLSearchParams(location.search).get('trap');
   if (trapCase) {
     // 20d. What traps, one case per page load (tools/unit.mjs opens unit.html?trap=NAME for each): a
@@ -49,7 +106,7 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
       otherUp: ['a region whose up is another region than the one building', () => x.t_trap_up_other(), () => true],
       renderLoop: ['renders that keep asking for renders (16 rounds)', () => x.t_dirty_loop(), () => x.t_dirty_n() === 16],
       boundUnbound: ['a set on an unbound value', () => x.t_trap_bound_unbound(), () => true],
-      boundTmp: ['cd_bound_set given a cd_tmp (its id says nothing of its bytes)', () => x.t_trap_bound_tmp(), () => true],
+      boundTmp: ['cd_bound_set given a runtime string (its id says nothing of its bytes)', () => x.t_trap_bound_tmp(), () => true],
     };
     const [what, run, after] = cases[trapCase];
     const got = traps(run);
@@ -58,6 +115,15 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
   }
   check('options.openStore opens the store before the module starts', () => (storeOpenedAt >= 0 && storeOpenedAt <= x.t_started()) || `opened at ${storeOpenedAt}, started at ${x.t_started()}`);
   window.__x = x;
+  // First, before any other call into C can draw: the draws cd_rand gives straight after cd_start.
+  draws = Array.from({ length: 8 }, () => x.t_rand() >>> 0);
+  check(`cd_rand: the first 8 draws under seed ${randSeed} are the xorshift32 sequence from seed | 1`, () => {
+    const want = xorshiftDraws(randSeed, 8);
+    return draws.every((d, i) => d === want[i]) || `${draws} != ${want}`;
+  });
+  check('cd_rand: a draw is never 0, and the draws are not all one value (seed 0 does not stick)', () => draws.every((d) => d !== 0) && new Set(draws).size === 8 || String(draws));
+  if (randOnly !== null) return;
+  if (aheadOff) { aheadChecks(x); return; }
   {
     // 22. Host access.
     x.t_host_section();
@@ -243,9 +309,10 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     });
   }
   check('options.seed is cd_seed, so one line makes a run deterministic', () => (x.t_seed() >>> 0) === 0xdeadbeef || x.t_seed() >>> 0);
-  const shimSource = await (await fetch('cdom.js')).text();
+  // The shim the page inlined, the one it runs: the first script after the string table's (tools/cdpage).
+  const shimSource = [...document.scripts].map((s) => s.textContent).find((t) => !/^\s*var cdomLits=/.test(t)) || '';
   check('the shim draws no stray random: no Math.random, no Date.now seed', () =>
-    !/Math\.random|Date\.now\(\)\s*[^;]*seed/.test(shimSource) || 'found one');
+    (/getRandomValues/.test(shimSource) && !/Math\.random|Date\.now\(\)\s*[^;]*seed/.test(shimSource)) || (shimSource ? 'found one' : 'no shim script'));
   // The shim's view of C's structs (unit.c 31): each field of the event record, C's cd_val and viewport.
   {
     const box = x.t_layout();
@@ -275,6 +342,15 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     const got = [...$('#clone').childNodes].map((n) => n.outerHTML).join('');
     return got === '<p><b>one</b><b>two</b></p><b>two</b>' || got;
   });
+  check('an app that calls no cd_at builds at the end of the mount', () => {
+    const el = document.getElementById('default-at'), mount = document.getElementById('m');
+    return (el && el.parentNode === mount && mount.firstChild === el) || 'not the mount\'s first child';
+  });
+  check('a template slot set from a cd_tmp shows that text in every batch, a literal after it too', () => {
+    for (let i = 0; i < 6; i++) x.t_tpl_tmp(i);
+    const got = [...$('#tpltmp').children].map((n) => n.textContent).join();
+    return got === 'alpha,beta,lit,lit,gamma,lit' || got;
+  });
   check('svg and its descendants in the SVG namespace, the namespace popped on close', () => {
     x.t_svg();
     const ns = (s) => $('#svg ' + s).namespaceURI;
@@ -301,20 +377,127 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     if ($('#namekinds').innerHTML !== before) r.push('changed: ' + $('#namekinds').innerHTML);
     return !r.length || r.join('; ');
   });
-  check('cd_set_style and cd_set_style_num; 400 transient values leave the string table alone', () => {
-    const grew = x.t_style(400);
+  check('cd_set_style and cd_set_style_num, with 400 runtime values', () => {
+    x.t_style(400);
     const st = $('#style > div').style;
     const r = [st.left === '399px', st.top === '399.5px', st.color === 'red', st.width === '12.25em', st.opacity === '0.5',
-      $('#style > div').dataset.t === 'one-off é', grew === 10];
-    return r.every(Boolean) || JSON.stringify(r) + ' grew ' + grew;
+      $('#style > div').dataset.t === 'one-off é'];
+    return r.every(Boolean) || JSON.stringify(r);
   });
-  check('a transient used after another op crossed traps', () => {
-    try { x.t_tmp_stale(); return 'no trap'; } catch (e) { return e instanceof WebAssembly.RuntimeError || String(e); }
+  check('a runtime string of 0 to 300 bytes, ASCII and not, is read as C holds it', () => {
+    const r = [], dec = new TextDecoder();
+    let n = 0;
+    for (const len of [0, 1, 7, 8, 9, 11, 12, 13, 15, 16, 17, 31, 32, 33, 300]) {
+      for (let kind = 0; kind <= 5; kind++) {
+        if (!x.t_read(len, kind)) continue;
+        const want = dec.decode(new Uint8Array(x.memory.buffer, x.t_read_buf(), len)), got = $('#read').textContent;
+        n++;
+        if (got !== want) r.push(`${len} bytes, kind ${kind}: ${JSON.stringify(got)} for ${JSON.stringify(want)}`);
+      }
+    }
+    // The edge of the fast path: 32 ASCII bytes skip TextDecoder and 33 use it (the text is the same either way).
+    const realDecode = TextDecoder.prototype.decode, used = [];
+    let calls = 0;
+    TextDecoder.prototype.decode = function (...a) { calls++; return realDecode.apply(this, a); };
+    try { for (const len of [32, 33]) { calls = 0; x.t_read(len, 0); used.push(calls); } } finally { TextDecoder.prototype.decode = realDecode; }
+    if (used.join() !== '0,1') r.push(`TextDecoder calls for 32 and 33 ASCII bytes: ${used}`);
+    return (!r.length && n === 80) || (r.join('; ') || `${n} strings, not 80`); // 15 ASCII, 13 for each of the two-byte positions, the three-byte and the astral one
+  });
+  check('every string position takes a literal, a cd_tmp, a cd_tmpz and a chosen cd_s: tag, text, attribute, class, style, path, method, cd_v_str', () => {
+    const r = [], dec = new TextDecoder();
+    for (let k = 0; k < 4; k++) x.t_pos(k);
+    const els = [...$('#pos').children];
+    const at = (list, k) => list[k];
+    const set = ['set-a', 'set-b', 'set-c', 'red'];
+    for (let k = 0; k < 4; k++) {
+      const el = els[k], L = 'abcd'[k], style = [['width', '1px'], ['height', '2px'], ['left', '3px'], ['top', '4px']][k];
+      const got = {
+        tag: el.localName, attr: el.getAttribute('data-' + L), cls: el.firstElementChild.className, text: el.textContent,
+        attr2: el.getAttribute('data-' + 'efgh'[k]), cls2: el.className, style: el.style.getPropertyValue(style[0]),
+        path: [el.title, el.lang, el.dataset.p, el.style.color][k], method: el.getAttribute('data-m'), obj: el.id,
+        read: dec.decode(new Uint8Array(x.memory.buffer, x.t_pos_out(k), x.t_pos_len(k))),
+      };
+      const want = {
+        tag: at(['mark', 'kbd', 'samp', 'var'], k), attr: 'v' + L, cls: 'c' + L, text: 't2' + L,
+        attr2: 've' + L, cls2: 'c2' + L, style: style[1], path: set[k], method: 'm' + L, obj: 'o' + L, read: set[k],
+      };
+      for (const key of Object.keys(want)) if (got[key] !== want[key]) r.push(`variant ${k}, ${key}: ${JSON.stringify(got[key])}, wanted ${JSON.stringify(want[key])}`);
+    }
+    return !r.length || r.join('; ');
+  });
+  // A pointer into read-only data is its own id, kept by address (docs/strings-plain-c.md, option B).
+  x.t_ro(8, 0);
+  const roShow = (k, i) => { x.t_ro(k, i); return $('#ro').lastChild.data; };
+  const roRun = (cases, rounds) => {
+    const r = [];
+    for (let n = 0; n < rounds; n++) for (const [k, i, want] of cases) { const got = roShow(k, i); if (got !== want) r.push(`k${k} i${i} round ${n}: ${JSON.stringify(got)}, wanted ${JSON.stringify(want)}`); }
+    return r;
+  };
+  check('read-only strings: a ternary, a helper, a const table entry and a static const char[] show the right text and are read from memory once each', () => {
+    const cases = [[0, 0, 'tern-no'], [0, 1, 'tern-yes'], [1, 0, 'help-no'], [1, 1, 'help-yes'], [2, 0, 'table-a'], [2, 1, 'table-b'], [3, 0, 'static-const-array']];
+    const before = roReads.length, r = roRun(cases, 3), reads = roReads.length - before;
+    if (reads !== cases.length) r.push(`${reads} reads from memory, wanted ${cases.length}`);
+    return !r.length || r.join('; ');
+  });
+  check('read-only strings: a mutable static, a stack buffer and heap bytes at a reused address show their new text every time and are never kept', () => {
+    const before = roReads.length, r = [];
+    for (const k of [4, 5, 6]) r.push(...roRun([[k, 0, 'buf-one'], [k, 1, 'buf-two'], [k, 0, 'buf-one'], [k, 1, 'buf-two']], 2));
+    if (roReads.length !== before) r.push(`${roReads.length - before} reads went through the read-only cache`);
+    return !r.length || r.join('; ');
+  });
+  check('read-only strings: two addresses of one direct-mapped cache entry both show correctly, alternating, and are read once each', () => {
+    const before = roReads.length, r = roRun([[7, 0, 'col-a'], [7, 1, 'col-b']], 4), got = roReads.slice(before);
+    if (got.length !== 2 || (got[0] & 255) !== (got[1] & 255) || got[0] === got[1]) r.push(`the two addresses are not one cache entry: ${got}`);
+    return !r.length || r.join('; ');
+  });
+  check('read-only strings: an id above the slot range is a pointer, not a slot', () => {
+    const node = x.t_ro_node(), at = x.t_ro_above(), lits = cdomLits[3].split('\0');
+    if (at < cdomLits[0] + 4 * lits.length) return `the layout puts these bytes at ${at}, below the end of the slots (${cdomLits[0] + 4 * lits.length}): the test cannot reach above them`;
+    shim.set_text(node, at);
+    const got = cdom.node(node).data;
+    return got === 'buf-one' || `showed ${JSON.stringify(got)}`;
+  });
+  check('a cd_tmp used after another call that took a string throws, naming the rule', () => {
+    try { x.t_tmp_stale(); return 'no throw'; } catch (e) { return /^cdom: a cd_tmp string used after the call it was made for/.test(e.message) || String(e); }
+  });
+  check('32 cd_tmp are alive at once, and the 33rd traps', () => {
+    const r = [x.t_tmp_cap(32) === 32, x.t_tmp_cap(1) === 1];
+    try { x.t_tmp_cap(33); r.push('no trap'); } catch (e) { r.push(e instanceof WebAssembly.RuntimeError || String(e)); }
+    r.push(x.t_none() === 7); // a call that takes a string ends the dead run, so the module goes on
+    return r.every((v) => v === true) || JSON.stringify(r);
+  });
+  check('a string argument is evaluated once, a literal 0 for a path traps, and CD_NONE reads the object itself', () => {
+    const r = [x.t_once() === 102, $('#once p').textContent === 'oncen0n1', x.t_none() === 7];
+    const body = new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.t_none_buf(), x.t_none_str()));
+    r.push(body === '[object HTMLBodyElement]');
+    try { x.t_zero_path(); r.push('no trap'); } catch (e) { r.push(e instanceof WebAssembly.RuntimeError || String(e)); }
+    return r.every((v) => v === true) || JSON.stringify(r) + ' ' + body;
+  });
+  check('every unit through cd_set_style_num reads back as its text, and as cd_fmt writes it', () => {
+    const units = ['', 'px', '%', 'deg', 'em', 'rem', 'vw', 'vh', 'ms', 's', 'rad'];
+    const count = x.t_units();
+    const el = $('#units > div'), r = [count === units.length];
+    for (let i = 0; i < units.length; i++) {
+      const got = el.style.getPropertyValue('--u' + i), fmt = el.getAttribute('data-u' + i);
+      if (got !== '5' + units[i] || fmt !== got) r.push(i + ': ' + JSON.stringify([got, fmt]));
+    }
+    return r.length === 1 && r[0] || r.join('; ');
+  });
+  check('after the memory grew, a runtime string, the viewport, a set and a call each see fresh views', () => {
+    const r = [], el = () => $('#grow > div');
+    for (let which = 0; which < 4; which++) {
+      const pages = x.memory.buffer.byteLength;
+      const got = x.t_grow(which);
+      if (x.memory.buffer.byteLength <= pages) r.push(which + ': memory did not grow');
+      const want = [() => el().getAttribute('data-grown') === 'read after the memory grew é', () => got === innerWidth,
+        () => el().tabIndex === 7, () => el().getAttribute('data-called') === 'yes'][which];
+      if (!want()) r.push(which + ': stale');
+    }
+    return !r.length || r.join('; ');
   });
   check('freeing a free id traps', () => {
     try { x.t_free_twice(); return 'no trap'; } catch (e) { return e instanceof WebAssembly.RuntimeError || String(e); }
   });
-  check('CD_LIT: one interned id per call site', () => x.t_lit() === 1 || 'wrong ids');
   check('cd_fmt matches String(v / 10 ** d) + unit', () => {
     const U = ['', 'px', '%', 'deg', 'em', 'rem', 'vw', 'vh', 'ms', 's', 'rad'];
     const vals = [0, 1, -1, 5, -5, 9, 10, 99, 100, 101, 1000, 12345, -12345, 99999, 100000, 2147483647, -2147483647, -2147483648];
@@ -349,7 +532,7 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     const r = [x.t_ids_live(), x.t_ids_high(), $('#leak').querySelectorAll('*').length];
     return (r[0] === ids && r[1] === high && r[2] === nodes) || `live ${ids}->${r[0]}, high ${high}->${r[1]}, nodes ${nodes}->${r[2]}`;
   });
-  // Timers, frames and the auto-flush: the timer hook leaves a string and a walk pending and calls no flush.
+  // Timers, frames and the auto-flush: the timer hook leaves a walk pending and calls no flush.
   x.t_time();
   tracing = true;
   const fired = await until(() => $('#time i').textContent === '41' && $('#time i + i').textContent === '42');
@@ -360,7 +543,7 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
   check('cd_now is performance.now', () => { const a = performance.now(), c = x.t_now(), b = performance.now();
     return (a <= c && c <= b && x.t_raf_t() > 0 && x.t_raf_t() <= a) || `${a} ${c} ${b} raf ${x.t_raf_t()}`; });
   check('the timer and frame exports flush what their hooks left pending', () =>
-    (trace.includes('strings') && trace.includes('walk') && x.t_stale() === 0) || JSON.stringify(trace) + ' stale ' + x.t_stale());
+    (trace.includes('walk') && x.t_stale() === 0) || JSON.stringify(trace) + ' stale ' + x.t_stale());
   check('cd_rect: the box the styles give, then the transformed box, read in one entry', () => {
     x.t_rect();
     const got = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => x.t_rect_at(k)).join(' ');
@@ -1105,7 +1288,7 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     const liveBefore = x.t_bound_live();
     try { x.t_bound(11); } catch (e) { threw += String(e); }
     seen.disconnect();
-    check('cd_bound: a set writes only when the value changed (an interned value by its id, bytes by the bytes, a number by its value), for text, attr, class, style and bool', () => {
+    check('cd_bound: a set writes only when the value changed (a literal or read-only string by its id, bytes by the bytes, a number by its value), for text, attr, class, style and bool', () => {
       const r = [counts.join() === '1,0,1,1,0,1,1,2,1,1,2', dom.text === '7', dom.b === '<b data-x="3" class="k" style="width: 10px;"></b>', dom.disabled === false];
       return (!threw && r.every(Boolean)) || JSON.stringify({ r, counts, dom, threw });
     });
@@ -1137,7 +1320,7 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
       for (const k of [1, 2]) { x.t_bound_shows(k); counts.push(seen.takeRecords().length); }
       seen.disconnect();
     } catch (e) { threw = String(e); }
-    check('cd_bound_shows: the value a node was built with is recorded, so setting it again writes nothing, and a new one writes', () =>
+    check('cd_bound_shows: the value a node was built with is recorded, so setting it again (the same read-only address) writes nothing, and a new one writes', () =>
       (!threw && counts.join() === '0,1' && $('#boundshows').textContent === 'b') || JSON.stringify({ counts, threw }));
   }
   {
@@ -1187,5 +1370,6 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     check('a stop inside a cleanup works: cd_timer_stop from the cleanup of a region that goes, and the timer never fires', () =>
       (!threw && x.t_regbuf_fired() === 0) || JSON.stringify({ fired: x.t_regbuf_fired(), threw }));
   }
-}).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
+  aheadChecks(x);
+}).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed, draws }; });
 </script></body></html>

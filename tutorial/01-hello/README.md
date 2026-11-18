@@ -1,0 +1,81 @@
+# 1. Hello: building a page
+
+A cdom app is one C function, `cd_main`, that runs once when the page starts and builds the page with calls.
+This lesson builds a heading, a paragraph, a list from an array and a link, and nothing on it ever changes.
+
+```sh
+make -C tutorial/01-hello && open tutorial/01-hello/build/index.html
+```
+
+## The React version
+
+```jsx
+const FRUITS = ["apple", "banana", "cherry"];
+
+export default function App() {
+  return (
+    <main className="card">
+      <h1>Hello, cdom</h1>
+      <p>This page was built by C, compiled to WebAssembly.</p>
+      <ul>
+        {FRUITS.map((f) => <li key={f}>{f}</li>)}
+      </ul>
+      <a href="https://github.com/alexsave/cdom">cdom on GitHub</a>
+    </main>
+  );
+}
+```
+
+## The cdom version
+
+[`src/app.c`](src/app.c) builds the same tree:
+
+```c
+cd_open("main"); cd_class("card");
+cd_open("h1"); cd_text("Hello, cdom"); cd_close();
+cd_open("ul");
+for (uint32_t i = 0; FRUITS[i]; i++) {
+  cd_open("li"); cd_text(FRUITS[i]); cd_close();
+}
+cd_close();
+...
+cd_close();                               /* the whole tree enters the page here */
+```
+
+## What to notice
+
+- `cd_open` and `cd_close` are JSX's opening and closing tags, and `cd_text` is a text child.
+  Attributes (`cd_attr`, `cd_class`) go on the element opened last, before its first child.
+- A list is a plain `for` loop.
+  There is no `key` here because nothing in this list ever changes; lesson 5 shows the keyed list.
+- **Write the string.** Every string argument is plain C: `"main"`, `"Hello, cdom"`, `FRUITS[i]`.
+  A literal written as the argument itself (`"main"`) is moved out of the module into the page's string table when the app is built, so it costs nothing at run time.
+  A string the compiler keeps in read-only data (`FRUITS[i]` from a `const` table, a literal inside a ternary or passed through a helper) stays in the module and is read from C memory once, the first time it is used.
+  Anything else, a buffer or a name typed by the user, is read from C memory every time a call uses it, so it is never stale.
+  Text built with `snprintf` is such a buffer: it ends in a 0, so it is passed as it is.
+  `cd_tmp(p, len)` is only for bytes that have a length and no terminator.
+- `cd_main` starts building at the end of the mount (`<div id="app">`).
+  `cd_at(parent, before)` is only for building somewhere else; `CD_APPEND` is its `before` for "at the end".
+- The tree is built off the page and enters it in one step, when its root (`main`) closes.
+- The CSS is [`src/app.css`](src/app.css), a plain stylesheet beside the C, and the Makefile does not name it.
+  Every file whose name ends in `.css` under the app's `src/` directory, in any subfolder, is written into the page's `<style>`, in byte order of its path, so `00-base.css` comes before `10-layout.css`, and that before `theme/dark.css`; a file or folder whose name starts with a dot is skipped, and nothing else is.
+  The `<style>` is in the page's `<head>`, so the page is styled before `cd_main` runs; inline styles (`cd_attr("style", ...)`, `cd_set_style`) work as they always did.
+  A larger app brings its own page instead (`APP_PAGE_SRC`, see the main README).
+- React runs this function again whenever state changes.
+  `cd_main` runs exactly once, and nothing runs again unless the app asks: the next lesson shows how.
+
+## The build
+
+The [`Makefile`](Makefile) is the one `make new` writes, with a title and warnings as errors:
+
+```make
+CDOM ?= $(abspath ../..)
+APP_WASM := build/app.wasm
+APP_SRC := src/app.c
+APP_PAGE := build/index.html
+APP_TITLE := Hello, cdom
+APP_CFLAGS := -Wall -Wextra -Werror
+include $(CDOM)/cdom.mk
+```
+
+`make` compiles the C to `build/app.wasm` and writes `build/index.html`, one file with the shim and the module inside it, which opens from disk.

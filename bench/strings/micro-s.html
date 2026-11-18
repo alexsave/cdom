@@ -1,0 +1,62 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>strings micro, step 10</title></head>
+<body><div id="app"></div>
+<script>
+// The step 10 micro (micro-s.c) on this branch's real shim (shim/cdom.js) and module. Query: test=lit8|
+// ternary8|helper8|table8|tmp|ahead, mode=resolve|dom, len=bytes, kind=ascii|utf8. "resolve" runs the
+// same shim with one change made here at load: text() returns after str(id), so only the string is
+// resolved (no DOM call). Sets window.RESULT = {ns, lo, hi, n}.
+const q = new URLSearchParams(location.search);
+const test = q.get('test'), mode = q.get('mode') || 'resolve';
+const len = +(q.get('len') || 0), kind = q.get('kind') || 'ascii';
+window.__acc = 0;
+async function load(src) {
+  const t = await (await fetch(src)).text();
+  const s = document.createElement('script');
+  s.text = t;
+  document.head.appendChild(s);
+}
+function fill(p, count, u8) { // count strings of len bytes from p: ASCII letters, or UTF-8 with every other char two-byte
+  const enc = new TextEncoder();
+  for (let i = 0; i < count; i++) {
+    let s = '';
+    if (kind === 'ascii') { for (let k = 0; k < len; k++) s += String.fromCharCode(97 + (k * 7 + i) % 26); }
+    else { while (enc.encode(s).length + 3 <= len) s += i & 1 ? 'жa' : 'яb'; while (enc.encode(s).length < len) s += 'b'; }
+    const b = enc.encode(s);
+    if (b.length !== len) throw new Error('fill ' + b.length);
+    u8.set(b, p + i * len);
+  }
+}
+async function run() {
+  await load('out/micro-s.wasm.lits');
+  let shim = await (await fetch('../../shim/cdom.js')).text();
+  if (mode === 'resolve') {
+    const from = 'last = lastText = doc.createTextNode(str(id));';
+    if (!shim.includes(from)) throw new Error('shim text() changed');
+    // a closure variable, as the bench's own sink was: a window property costs a few ns more per call
+    shim = shim.replace(from, '__acc += str(id).length; return;').replace('var cdom = (() => {', 'var cdom = (() => {\n  let __acc = 0;');
+  }
+  if (q.get('split')) { // diagnosis only (split=1): str's literal test alone, the rest in a second function
+    const head = 'function str(s) {\n    if (s >= litBase && s < litEnd) {\n      return lits[(s - litBase) >> 2];\n    }';
+    if (!shim.includes(head)) throw new Error('shim str() changed');
+    shim = shim.replace(head, 'function str(s) {\n    if (s >= litBase && s < litEnd) {\n      return lits[(s - litBase) >> 2];\n    }\n    return strRest(s);\n  }\n  function strRest(s) {');
+  }
+  const s = document.createElement('script'); s.text = shim; document.head.appendChild(s);
+  const exports = await cdom.start('out/micro-s.wasm', 'app');
+  const u8 = () => new Uint8Array(exports.memory.buffer);
+  if (len) { fill(exports.buf(), 1, u8()); if (test === 'ahead') fill(exports.area(), 1024, u8()); }
+  const per = /8$/.test(test) ? 8 : 1;
+  const go = test === 'tmp' ? (n) => exports.tmp(n, len) : test === 'ahead' ? (n) => exports.ahead(n, len) : (n) => exports[test](n);
+  const sample = (n) => { if (mode === 'dom') exports.dom_reset(); const t0 = performance.now(); go(n); return performance.now() - t0; };
+  const target = mode === 'dom' ? 4 : 10;
+  let n = 64;
+  for (let i = 0; i < 4; i++) sample(n);
+  while (sample(n) < target && n < 1 << 26) n *= 2;
+  for (let i = 0; i < 5; i++) sample(n);
+  const v = [];
+  for (let i = 0; i < 21; i++) v.push(sample(n) * 1e6 / (n * per));
+  v.sort((a, b) => a - b);
+  window.RESULT = { ns: v[10], lo: v[5], hi: v[15], n };
+}
+run().catch((e) => { window.RESULT = { error: String(e.stack || e) }; });
+</script></body></html>

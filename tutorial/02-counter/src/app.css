@@ -1,0 +1,29 @@
+/* Lesson 2's styles. The build writes every .css file under src/ into the page's <head>. */
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+body {
+  margin: 0;
+}
+.counter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 4rem;
+}
+.counter output {
+  font-size: 4rem;
+  font-variant-numeric: tabular-nums;
+}
+.counter .row {
+  display: flex;
+  gap: 0.5rem;
+}
+.counter button {
+  font: inherit;
+  font-size: 1.25rem;
+  min-width: 3rem;
+  padding: 0.5rem 1rem;
+}

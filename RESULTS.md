@@ -289,6 +289,20 @@ Firefox is not installed on this Mac.
 Safari is installed, but driving it needs "Allow remote automation" turned on in its settings, and it was already running as Alex's own process, so it was not touched.
 No Firefox or Safari numbers exist yet.
 
+## Strings without interning (2026-11-17)
+
+cdom no longer interns: a string literal moves out of the module into the page's table at build time (`tools/cdlits`, `tools/page.awk`), a pointer into read-only data is read once and kept by address, and any other string is read from C memory by the op that uses it, with `cd_tmp_ahead` for a burst of them.
+The section below is the history it replaces.
+The measurements are in three files:
+
+- [docs/strings-bench.md](docs/strings-bench.md) (branch `strings-bench`): the designs compared in Chrome before any was built, with predictions, and the five changes that went into the design.
+- [docs/strings-plain-c.md](docs/strings-plain-c.md): the options for literals a macro cannot see (ternaries, helpers, `const` tables); option B, a pointer into read-only data as its own id, is the one built.
+- [docs/strings-results.md](docs/strings-results.md): the built change against `tutorial` (e35056c), prediction by prediction.
+
+In short, against A and A2 built from `tutorial`: every lesson's page is smaller (hello 8,942 to 8,810 bytes of brotli, todo 15,119 to 14,370) and its module 1,578 to 3,699 bytes smaller; a page with 2,000 literal sites is 20,573 to 15,831 bytes and its `cd_main` 3.2 to 1.8 ms; the keyed entry starts with 3 pages of wasm memory instead of 8 and touches 116 KB instead of 408 after five create-and-clear cycles; run-clear memory is 0.85 to 0.79 MB.
+The jfb totals are within 3% of A except swap (1.055 and 1.075 in two passes); create 10k script is 19.9 against 20.4 ms, and create 1k 2.2 against 2.6.
+The shim grew 742 bytes of brotli (6,672), and a literal lookup costs 12.8 ns where the prototype measured 6.8, because the bigger `str` is no longer inlined (docs/strings-results.md has the profiles).
+
 ## Interned strings against per-op strings
 
 Interning wins on partial update (16.0 ms against 20.4 ms, and 16.7 against 19.6 in pass 1) and ties elsewhere.
@@ -300,11 +314,10 @@ Templates matter more than interning: without them every row is 25 ops instead o
 
 This section describes cdom as it is now; the measurements above were taken on its first design, a batched op stream (C wrote one byte per op, a u32 argument stream and a string section into linear memory, and one import applied a whole buffer), which direct calls replaced on 2026-11-08 (the head to head above, and PERF_LOG.md, "The two lines merged").
 C owns the model, the view state and the diff, and calls the shim once per DOM operation, each operation its own wasm import (module "cdom"), the moment C makes it (src/cdom.c, "calls").
-Only two things are held in C: the bytes of new strings, and a walk (cd_sel, cd_down, cd_next, cd_up), which crosses as one call with the value it leads to or before the next operation.
-Strings are interned in C, and an interned string is queued to cross when it is interned; the first use of a string sends its bytes with an id, and later uses send only the id.
-The queued strings go in one `strings` call right before the operation that first needs them, which decodes the batch with one TextDecoder call (a char loop below 64 bytes) and slices it by UTF-16 length, which C counts when it interns.
-Every entry from JS (cd_start, cd_event, a timer, a frame, an answer) ends in cd_flush, which sends whatever strings and walk are still held.
-Tag and attribute names always go through the intern table, which is how they become the enum; numbers cross as u32 and the browser formats them.
+Only a walk (cd_sel, cd_down, cd_next, cd_up) is held in C, and it crosses as one call with the value it leads to or before the next operation.
+Strings are not interned: a string literal crosses as its slot, whose text is in the page's table (`tools/cdlits`), a pointer into read-only data is read once and kept by address, and any other string is read from C memory by the call that uses it ([docs/strings-design.md](docs/strings-design.md)).
+Every entry from JS (cd_start, cd_event, a timer, a frame, an answer) ends in cd_flush, which runs the renders asked for (cd_dirty) and sends a walk still held.
+Numbers cross as u32 and the browser formats them.
 "Last node" is implicit: open, close, text, class, attr, name, listen and the walk ops (down, next, up, sel) all act on it, as in sledgehammer.
 Templates are built once with the same ops and deep-cloned per row; the row's id and label are set in the template's slots before the clone (cd_tpl_text), so a clone needs no walk (PERF_LOG.md, change 3; the first version walked into each clone).
 Only list roots get node ids; inner nodes are reached by a path from their root (sel then down and next), so 10,000 rows hold 10,000 JS references; the first version named four nodes per row.

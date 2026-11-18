@@ -27,16 +27,15 @@ var cdom = (() => {
   const BODY = 3;
   const EVENT = 4;              // the event being delivered
   const RESULT = 5;             // what the last call returned
-  const TRANSIENT = 0x40000000; // string ids from here up are one-off strings (cd_tmp)
   const DETACHED = 0xffffffff;  // "no insertion parent" for at()
-  const SMALL = 64;             // string batches up to this many bytes are decoded char by char
+  const ASCII_MAX = 32;         // a runtime string up to this many bytes is tested for ASCII and read without TextDecoder
   const SVG = "http://www.w3.org/2000/svg";
+  // The CSS units, in the order of cdom.h's CD_UNIT_* and cdom.c's UNIT_STR (tests/unit.c checks all three).
+  const UNITS = ["", "px", "%", "deg", "em", "rem", "vw", "vh", "ms", "s", "rad"];
   const doc = document;
   const textDecoder = new TextDecoder();
   const textEncoder = new TextEncoder();
   const nodes = [];         // node by id
-  const interned = [];      // interned strings by id
-  const transient = [];     // one-off strings by id - TRANSIENT
   const templates = [];     // template root by template id
   const stack = [];         // the open elements
   const delegated = [];     // event types with a listener on the mount
@@ -48,7 +47,24 @@ var cdom = (() => {
   let busy = 0;             // how many calls into C are on the stack
   let exports;              // the wasm module's exports
   let memory;
-  let buffer;               // memory.buffer when the views below were made
+  let aheadText = null;     // the cd_tmp_ahead range decoded as one string, while a range is alive
+  let aheadAt = 0;          // its first byte's address
+  let aheadEnd = 0;         // and the address just past its last byte
+  let aheadIndex = null;    // the UTF-16 offset of each of its bytes, or null when it is all ASCII
+  let checkAhead = false;   // options.checkAhead: every read from the range is compared with the bytes
+  let lits;                 // the page's string table (cdomLits), one entry per literal slot
+  let litBase;              // the address of slot 0: a literal's id is litBase + 4 * its index
+  let litEnd;               // the address just past the last slot (0 when the page has no slots)
+  // Strings of read-only data by address (cd_tmpz): the module's const bytes never change, so one address is
+  // one string for the life of the page. A 256-entry direct-mapped cache sits in front of the table; the
+  // table is a Map, or a plain object on the ES5 tier, which has no Map.
+  const roKey = new Int32Array(256);
+  const roVal = [];
+  const roMap = typeof Map === "function" ? new Map() : null;
+  const roObj = roMap ? null : {};
+  let onRoRead = null;      // options.onRoRead: a test hook, called with an address each time one is read from memory
+  let buffer;               // memory.buffer when the views below were made (compared on the wasm2js tier only)
+  let copiedOnGrow = false; // the module is wasm2js, whose grow leaves the old buffer attached
   let u8;
   let u32;
   let i32;
@@ -57,12 +73,12 @@ var cdom = (() => {
   // Where C's records are and how they are laid out, read once at start from cd_layout (src/cdom.c,
   // CD_LAYOUT, filled with offsetof and sizeof): the shim hardcodes no offset into C memory
   // (tools/offsets.mjs). Field offsets are in words (4 bytes), as u32, i32 and f32 index them.
-  let stringBytes;          // where C writes a batch of string bytes
-  let stringMeta;           // where C writes a str_meta (id, bytes, chars) per string in the batch
-  let metaWords;            // a str_meta's size
-  let metaId;               // and its fields
-  let metaBytes;
-  let metaChars;
+  let tmpSerial0;           // C's runtime-string block (cd_tmp): the serial of its first record, as an index into u32
+  let tmpCount;             // how many records are alive
+  let tmpRecords;           // where the records start, as a byte address
+  let recWords;             // a record's size
+  let recP;                 // and its fields: the string's address and its length in bytes
+  let recLen;
   let evType;               // the event record's fields, as indexes into i32 and f32 (the record stays put)
   let evId;
   let evX;
@@ -87,6 +103,7 @@ var cdom = (() => {
   let valNum;
   let valU;
   let depth = 0;            // how many elements are open
+  let svgDepth = 0;         // how many of them are the <svg> or inside it
   let last = null;          // the node made or walked to last
   let lastElement = null;   // the element opened or cloned last (cd_name_el)
   let lastText = null;      // the text node made last (cd_name_text)
@@ -103,6 +120,13 @@ var cdom = (() => {
     f32 = new Float32Array(buffer);
     f64 = new Float64Array(buffer);
   }
+  // True when the views are of a memory that has grown. WebAssembly detaches the old buffer on a grow,
+  // so a stale view has length 0 and the test reads no memory.buffer (a getter that costs a call).
+  // wasm2js has no detaching: it copies into a bigger ArrayBuffer and the old one keeps its length, so
+  // that tier compares the buffer, as the shim always did.
+  function stale() {
+    return u8.length === 0 || (copiedOnGrow && buffer !== memory.buffer);
+  }
   // A view of length bytes of C memory at ptr, good until the memory grows.
   function bytes(ptr, length) {
     return new Uint8Array(memory.buffer, ptr, length);
@@ -115,48 +139,137 @@ var cdom = (() => {
   function place(parent, node, next) {
     parent.insertBefore(node, next);
   }
-  // A string by id, interned or one-off.
-  function stringOf(id) {
-    return id < TRANSIENT ? interned[id] : transient[id - TRANSIENT];
-  }
-  // Keeps string value under id.
-  function keep(id, value) {
-    if (id < TRANSIENT) {
-      interned[id] = value;
-    } else {
-      transient[id - TRANSIENT] = value;
+  const fromCode = String.fromCharCode;
+  // n ASCII bytes at p as a string: fromCharCode with the bytes as arguments, 8 at a time.
+  function ascii(p, n) {
+    const b = u8;
+    let v = "";
+    for (; n >= 8; p += 8, n -= 8) {
+      v += fromCode(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5], b[p + 6], b[p + 7]);
+    }
+    switch (n) {
+      case 0: return v;
+      case 1: return v + fromCode(b[p]);
+      case 2: return v + fromCode(b[p], b[p + 1]);
+      case 3: return v + fromCode(b[p], b[p + 1], b[p + 2]);
+      case 4: return v + fromCode(b[p], b[p + 1], b[p + 2], b[p + 3]);
+      case 5: return v + fromCode(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4]);
+      case 6: return v + fromCode(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5]);
+      default: return v + fromCode(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5], b[p + 6]);
     }
   }
-
-  // Decodes a batch of count strings (byteCount bytes in all): one TextDecoder call for the
-  // batch, or a char loop when it is small.
-  function decode(count, byteCount) {
-    let meta = stringMeta >> 2;
-    if (byteCount > SMALL) {
-      const all = textDecoder.decode(u8.subarray(stringBytes, stringBytes + byteCount));
-      let offset = 0;
-      for (let i = 0; i < count; i++, meta += metaWords) {
-        const chars = u32[meta + metaChars];
-        keep(u32[meta + metaId], all.substring(offset, offset + chars));
-        offset += chars;
+  // The n bytes of UTF-8 at p as a string. Short ones that are ASCII skip TextDecoder, whose fixed cost
+  // is 100 to 140 ns in Chrome whatever the length.
+  function readString(p, n) {
+    if (n <= ASCII_MAX) {
+      let high = 0;
+      for (let k = 0; k < n; k++) {
+        high |= u8[p + k];
       }
+      if (high < 128) {
+        return ascii(p, n);
+      }
+    }
+    return textDecoder.decode(u8.subarray(p, p + n));
+  }
+  // The string a cd_str stands for (s is an i32 from an import): a literal's slot address is positive and
+  // indexes the page's table; a runtime string's serial has the top bit set (negative), and its record
+  // in C's block says where its bytes are right now. CD_NONE (0) is no string and never reaches here.
+  // Kept small so V8 inlines it into every import: everything but the literal lookup is in strRest.
+  function str(s) {
+    if (s >= litBase && s < litEnd) {
+      return lits[(s - litBase) >> 2];
+    }
+    return strRest(s);
+  }
+  // Not a literal: the read-only cache, then the runtime record and the ahead range.
+  function strRest(s) {
+    if (s > 0) {
+      // A pointer into read-only data is its own id. Any other positive id is not a slot, so it is one of these.
+      const h = s & 255;
+      if (roKey[h] === s) {
+        return roVal[h];
+      }
+      let v = roMap ? roMap.get(s) : roObj[s];
+      if (v === undefined) {
+        if (stale()) {
+          views();
+        }
+        let end = s;
+        while (u8[end]) {
+          end++;
+        }
+        v = readString(s, end - s);
+        if (roMap) {
+          roMap.set(s, v);
+        } else {
+          roObj[s] = v;
+        }
+        if (onRoRead) {
+          onRoRead(s);
+        }
+      }
+      roKey[h] = s;
+      roVal[h] = v;
+      return v;
+    }
+    if (stale()) {
+      views();
+    }
+    const k = ((s & 0x7fffffff) - u32[tmpSerial0]) & 0x7fffffff;
+    if (k >= u32[tmpCount]) {
+      throw new Error("cdom: a cd_tmp string used after the call it was made for");
+    }
+    const at = (tmpRecords >> 2) + k * recWords;
+    const q = u32[at + recP];
+    const n = u32[at + recLen];
+    if (aheadText !== null && q >= aheadAt && q + n <= aheadEnd) {
+      const a = q - aheadAt;
+      const text = aheadIndex === null ? aheadText.substring(a, a + n) : aheadText.substring(aheadIndex[a], aheadIndex[a + n]);
+      if (checkAhead && text !== readString(q, n)) {
+        throw new Error("cdom: bytes inside a cd_tmp_ahead range changed");
+      }
+      return text;
+    }
+    return readString(q, n);
+  }
+  // cd_tmp_ahead: decodes [p, p + len) once, so the runtime strings inside it are cut from the result (str).
+  // The range holds until the outermost call into C ends (callEnded), the next ahead, or ahead(0, 0).
+  function ahead(p, len) {
+    if (!len) {
+      aheadText = null;
       return;
     }
-    let at = stringBytes;
-    for (let i = 0; i < count; i++, meta += metaWords) {
-      const bytes = u32[meta + metaBytes];
-      let value;
-      if (bytes === u32[meta + metaChars]) { // ASCII: one char per byte
-        value = "";
-        for (let k = 0; k < bytes; k++) {
-          value += String.fromCharCode(u8[at + k]);
-        }
-      } else {
-        value = textDecoder.decode(u8.subarray(at, at + bytes));
-      }
-      keep(u32[meta + metaId], value);
-      at += bytes;
+    p >>>= 0;
+    if (stale()) {
+      views();
     }
+    aheadText = textDecoder.decode(u8.subarray(p, p + len));
+    aheadAt = p;
+    aheadEnd = p + len;
+    if (aheadText.length === len) {
+      aheadIndex = null; // all ASCII: a byte offset is a character offset
+      return;
+    }
+    aheadIndex = new Uint32Array(len + 1);
+    let u = 0;
+    for (let i = 0; i < len; i++) {
+      aheadIndex[i] = u;
+      const c = u8[p + i];
+      u += (c & 0xc0) !== 0x80; // a lead byte or an ASCII byte: one unit
+      u += c >= 0xf0;           // an astral lead byte: a surrogate pair
+    }
+    aheadIndex[len] = u;
+  }
+  // The outermost call into C has returned or thrown: its range and its runtime strings are dead. One rule
+  // for both, so a cd_str made before a throw is no longer readable by the next call.
+  function callEnded() {
+    aheadText = null;
+    if (stale()) {
+      views();
+    }
+    u32[tmpSerial0] += u32[tmpCount];
+    u32[tmpCount] = 0;
   }
 
   // Puts a new top-level node where at() said, or into the open element.
@@ -192,7 +305,7 @@ var cdom = (() => {
       }
       return;
     }
-    if (buffer !== memory.buffer) {
+    if (stale()) {
       views();
     }
     const key = event.key;
@@ -265,13 +378,6 @@ var cdom = (() => {
     }, { capture: (type >= FOCUS && type <= PAUSE) || type === CANCEL || type === CLOSE, passive: false });
   }
 
-  // C sends a batch of new strings.
-  function strings(count, byteCount) {
-    if (buffer !== memory.buffer) {
-      views();
-    }
-    decode(count, byteCount);
-  }
   // Where new top-level nodes go: into parent, before node beforeId (0: at the end).
   function at(parent, beforeId) {
     base = parent >>> 0;
@@ -285,15 +391,22 @@ var cdom = (() => {
     stack[depth++] = element;
     last = lastElement = element;
   }
-  // Opens an element; C says which tags are SVG.
+  // Opens an element. An <svg> and everything opened inside it is made in the SVG namespace, so the
+  // shim counts the open elements that are SVG: one counter and one compare, no read of the DOM.
   function open(tag) {
-    push(doc.createElement(stringOf(tag)));
-  }
-  function open_svg(tag) {
-    push(doc.createElementNS(SVG, stringOf(tag)));
+    const name = str(tag);
+    if (svgDepth || name === "svg") {
+      svgDepth++;
+      push(doc.createElementNS(SVG, name));
+    } else {
+      push(doc.createElement(name));
+    }
   }
   // Closes the open element; the outermost one is placed.
   function close() {
+    if (svgDepth) {
+      svgDepth--;
+    }
     const element = stack[--depth];
     if (!depth) {
       root = element;
@@ -301,7 +414,7 @@ var cdom = (() => {
     }
   }
   function text(id) {
-    last = lastText = doc.createTextNode(stringOf(id));
+    last = lastText = doc.createTextNode(str(id));
     placeNew(last);
   }
   function text_num(number) {
@@ -309,10 +422,10 @@ var cdom = (() => {
     placeNew(last);
   }
   function attr(name, value) {
-    last.setAttribute(stringOf(name), stringOf(value));
+    last.setAttribute(str(name), str(value));
   }
   function setClass(value) {
-    last.className = stringOf(value);
+    last.className = str(value);
   }
   // Names the element opened last, the text node made last, or the open element, with a node id.
   function name_el(id) {
@@ -351,7 +464,7 @@ var cdom = (() => {
     }
   }
   function value(id) {
-    last.nodeValue = stringOf(id);
+    last.nodeValue = str(id);
   }
   function value_num(number) {
     last.nodeValue = number >>> 0;
@@ -364,13 +477,16 @@ var cdom = (() => {
     root.remove();
   }
   function clone(templateId) {
+    if (svgDepth) {
+      svgDepth++;
+    }
     push(templates[templateId].cloneNode(true));
   }
   function slot(index) {
     slots[index] = last;
   }
   function tpl_text(templateId, index, id) {
-    templateSlots[templateId][index].nodeValue = stringOf(id);
+    templateSlots[templateId][index].nodeValue = str(id);
   }
   function tpl_text_num(templateId, index, number) {
     templateSlots[templateId][index].nodeValue = number >>> 0;
@@ -393,7 +509,7 @@ var cdom = (() => {
   }
   function walk_value(from, steps, count, id) {
     walk(from, steps, count);
-    last.nodeValue = stringOf(id);
+    last.nodeValue = str(id);
   }
   function walk_value_num(from, steps, count, number) {
     walk(from, steps, count);
@@ -410,23 +526,23 @@ var cdom = (() => {
     throw new Error(`cdom: ${call}(${id}, ...): ${node ? 'not a text node' : 'no node has this id'}`);
   }
   function set_text(id, textId) {
-    textNode(id, 'cd_set_text_node').nodeValue = stringOf(textId);
+    textNode(id, 'cd_set_text_node').nodeValue = str(textId);
   }
   function set_text_num(id, number) {
     textNode(id, 'cd_set_text_node_num').nodeValue = number >>> 0;
   }
   function set_attr(id, name, value) {
-    nodes[id].setAttribute(stringOf(name), stringOf(value));
+    nodes[id].setAttribute(str(name), str(value));
   }
   function set_class(id, value) {
-    nodes[id].className = stringOf(value);
+    nodes[id].className = str(value);
   }
   // One style property.
   function style(id, property, value) {
-    nodes[id].style.setProperty(stringOf(property), stringOf(value));
+    nodes[id].style.setProperty(str(property), str(value));
   }
   function style_num(id, property, number, unit) {
-    nodes[id].style.setProperty(stringOf(property), number + stringOf(unit));
+    nodes[id].style.setProperty(str(property), number + UNITS[unit]);
   }
   // Pixels in C memory (channels bytes each: RGBA, or RGB and opaque), at (x, y) in an image of
   // fullWidth x fullHeight, to an image file: copied now, encoded off the call, the file's bytes
@@ -447,15 +563,15 @@ var cdom = (() => {
       pixels = rgba;
     }
     canvas.getContext("2d").putImageData(new ImageData(pixels, width, height), x, y);
-    canvas.toBlob(async (blob) => deliver(exports.cd_encoded, token, await blob.arrayBuffer()), stringOf(mime), 0.92);
+    canvas.toBlob(async (blob) => deliver(exports.cd_encoded, token, await blob.arrayBuffer()), str(mime), 0.92);
   }
   // An image file's bytes in C memory as a url(blob:) on a style property, set once the image has
   // decoded (so no frame paints the property with nothing behind it), then answered with
   // cd_image(token, 1); bytes that do not decode set nothing and answer 0.
   function image_bytes(id, property, bytesPtr, length, mime, token) {
     const node = nodes[id];
-    const name = stringOf(property);
-    const url = URL.createObjectURL(new Blob([copyBytes(bytesPtr, length)], { type: stringOf(mime) }));
+    const name = str(property);
+    const url = URL.createObjectURL(new Blob([copyBytes(bytesPtr, length)], { type: str(mime) }));
     const image = new Image();
     image.src = url;
     image.decode().then(() => {
@@ -544,7 +660,7 @@ var cdom = (() => {
   }
   // The viewport into C memory: width, height, hidden, device pixel ratio times 100.
   function viewport(recordPtr) {
-    if (buffer !== memory.buffer) {
+    if (stale()) {
       views();
     }
     const record = recordPtr >> 2;
@@ -1057,17 +1173,17 @@ var cdom = (() => {
   }
 
   // Host access along dotted paths (cdom.h); a "--" segment is a custom property of the style object
-  // before it. A path is an interned string, split once; a one-off string is split each time, since
-  // its id is reused.
-  const segments = []; // a path's segments by string id
+  // before it. A literal path is split once and kept by its slot; any other path is split each time.
+  const segments = []; // a literal path's segments by slot index
   function segmentsOf(path) {
     if (!path) {
       return [];
     }
-    if (path >= TRANSIENT) {
-      return stringOf(path).split(".");
+    if (path < litBase || path >= litEnd) {
+      // A runtime string or a read-only pointer (a path through a helper): split each time.
+      return str(path).split(".");
     }
-    return segments[path] ??= stringOf(path).split(".");
+    return segments[(path - litBase) >> 2] ??= str(path).split(".");
   }
   // Walks count segments from object; a null step stops the walk, so a missing value costs no
   // exception (get and the setters still catch, for getters and setters that throw).
@@ -1086,7 +1202,7 @@ var cdom = (() => {
     const payload = u32[at + valU];
     switch (tag) {
       case 0: return [f64[(at + valNum) >> 1], index + 1];
-      case 1: return [stringOf(payload), index + 1];
+      case 1: return [str(payload | 0), index + 1];
       case 2: return [payload === 1, index + 1];
       case 3: return [nodes[payload], index + 1];
       case 5: {
@@ -1106,7 +1222,7 @@ var cdom = (() => {
   // Sets the value at valuePtr on the path's last segment. A failure is reported, not thrown, so C
   // goes on.
   function set(id, path, valuePtr) {
-    if (buffer !== memory.buffer) {
+    if (stale()) {
       views();
     }
     const value = valueAt(valuePtr, 0)[0];
@@ -1126,7 +1242,7 @@ var cdom = (() => {
   // Calls the method at the path's last segment with count values from argsPtr; the result is kept
   // as CD_RESULT, a returned promise's rejection is swallowed and a thrown error is reported.
   function call(id, method, count, argsPtr) {
-    if (buffer !== memory.buffer) {
+    if (stale()) {
       views();
     }
     const args = [];
@@ -1194,12 +1310,18 @@ var cdom = (() => {
   // options.openStore: an app that reads its store as it starts opens it now, while the wasm is
   // fetched and compiled, so its first get finds the database open. options.seed: cd_seed (seed()).
   async function start(url, mount, env, options) {
+    // The page's string table, written before the shim by the build (tools/cdpage).
+    const table = globalThis.cdomLits;
+    if (!table) {
+      throw new Error("cdom: this page has no string table (build it with cdom.mk or tools/cdpage, which write it before the shim)");
+    }
+    if (table[2] !== "\u2603") throw new Error("cdom: this page was not read as UTF-8");
     if (options && options.openStore) {
       openDatabase().catch(() => {}); // a failure shows again, as a miss, at the first get
     }
     const imports = {
       cdom: {
-        strings, at, open, open_svg, close, text, text_num, attr, class: setClass, name_el, name_text, name_open,
+        ahead, at, open, close, text, text_num, attr, class: setClass, name_el, name_text, name_open,
         listen, value, value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num,
         set_text, set_text_num, set_attr, set_class, style, style_num, encode, image_bytes, remove, free, move, clear,
         detach, attach, unlisten, hit, viewport, rect, blit, set, call, get, timer, timer_stop, raf, now, ws_open, ws_send, ws_close, ws_buffered, http, epoch, origin,
@@ -1215,6 +1337,7 @@ var cdom = (() => {
     };
     let instance;
     if (typeof url === "function") {
+      copiedOnGrow = true;
       instance = { exports: url(imports) };
     } else {
       const response = fetch(url);
@@ -1242,13 +1365,23 @@ var cdom = (() => {
         try {
           return raw(...args);
         } finally {
-          busy--;
+          if (--busy === 0) {
+            callEnded();
+          }
         }
       };
     }
     memory = exports.memory;
+    if (!exports.cd_lits || instance.exports.cd_lits() >>> 0 !== table[1] >>> 0) {
+      throw new Error("cdom: the page's string table is not this module's (the page and the module are from different builds, or the module did not go through cdlits)");
+    }
+    checkAhead = !!(options && options.checkAhead);
+    lits = table[3].split("\0");
+    litBase = table[0];
+    litEnd = litBase ? litBase + 4 * lits.length : 0;
+    onRoRead = (options && options.onRoRead) || null;
     views();
-    readLayout(exports.cd_layout() >> 2);
+    readLayout(instance.exports.cd_layout() >> 2);
     if (exports.cd_url_changed) {
       addEventListener("popstate", urlChanged);
     }
@@ -1269,12 +1402,14 @@ var cdom = (() => {
     const word = () => u32[at++] >> 2;
     const count = next();
     const end = at + count;
-    stringBytes = next();
-    stringMeta = next();
-    metaWords = word();
-    metaId = word();
-    metaBytes = word();
-    metaChars = word();
+    const block = next();
+    const tmpField = () => (block + u32[at++]) >> 2;
+    tmpSerial0 = tmpField();
+    tmpCount = tmpField();
+    tmpRecords = block + u32[at++];
+    recWords = word();
+    recP = word();
+    recLen = word();
     const record = next();
     const field = () => (record + u32[at++]) >> 2;
     evType = field();

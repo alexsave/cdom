@@ -11,7 +11,9 @@ ok(r0 === 0, `cdom's heap: cd_alloc, malloc and calloc interleaved never overlap
 x = await load(`${dir}/alloc_app.wasm`);
 const before = x.app_mallocs(), r = x.run();
 ok(r === 0, `the app's heap: the same, with cdom allocating from the app's malloc (run ${r})`);
-ok(x.app_mallocs() - before > 3000, `cdom's cd_alloc went through the app's malloc (${x.app_mallocs() - before} calls)`);
+ok(x.app_mallocs() - before > 1500, `the app's malloc served the interleaved blocks (${x.app_mallocs() - before} calls)`);
+const grown = x.app_mallocs(); x.grow_tables();
+ok(x.app_mallocs() - grown > 0, `cdom's own tables grew through the app's malloc (${x.app_mallocs() - grown} calls)`);
 x = await load(`${dir}/alloc_half.wasm`);
 let trapped = false;
 try { x.free_one(); } catch (e) { trapped = e instanceof WebAssembly.RuntimeError; }
@@ -27,12 +29,16 @@ for (const f of ['cdom', 'freestanding']) {
   const line = x.libc_printf();
   ok(line === 0, `stdio.h (${f} flags): snprintf and vsnprintf write every case of tests/link/libc_printf.c${line ? ` (wrong at line ${line})` : ''}`);
 }
+x = await load(`${dir}/ro_range.wasm`);
+ok(x.ro_span() > 0, `the read-only range is not empty with this toolchain (__rodata_end - __rodata_start is ${x.ro_span()}; wasm-ld before LLVM 22 leaves it empty and every string slow)`);
+ok(x.ro_id(0) === x.ro_ptr(0) && x.ro_id(1) === x.ro_ptr(1) && x.ro_ptr(0) !== x.ro_ptr(1), 'cd_tmpz of a literal the macro cannot see is the literal\'s own address');
+ok(x.mut_id() < 0 || x.mut_id() >= 0x80000000, 'cd_tmpz of mutable bytes is a runtime string (the top bit set), not an address');
 x = await load(`${dir}/on_only.wasm`);
 x.cd_start(0);
-// cd_layout's block (src/cdom.c, CD_LAYOUT): its count, then the string batch's 6 entries, the record, and
+// cd_layout's block (src/cdom.c, CD_LAYOUT): its count, then the runtime strings' 7 entries, the record, and
 // the offsets of its type and id.
-const layout = new Uint32Array(x.memory.buffer, x.cd_layout(), 10), rec = new Int32Array(x.memory.buffer);
-const typeAt = (layout[7] + layout[8]) >> 2, idAt = (layout[7] + layout[9]) >> 2;
+const layout = new Uint32Array(x.memory.buffer, x.cd_layout(), 11), rec = new Int32Array(x.memory.buffer);
+const typeAt = (layout[8] + layout[9]) >> 2, idAt = (layout[8] + layout[10]) >> 2;
 const event = (type, id) => { rec[typeAt] = type; rec[idAt] = id; x.cd_event(); };
 event(0, x.node()); // CD_EV_CLICK: the handler
 event(0, x.node() + 1); // no handler: cdom's empty cd_on_event

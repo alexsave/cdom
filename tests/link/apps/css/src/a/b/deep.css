@@ -1,0 +1,2 @@
+.n-a-b-deep { order: 1; } /* a/b/deep.css */
+#probe { --last: "a/b/deep"; }

@@ -11,10 +11,10 @@ void cd_main(void) {}
 
 #ifdef OWN_ALLOC
 static uint32_t asked;
-void *malloc(size_t n) { (void)n; asked++; return 0; }
-void free(void *p) { (void)p; }
-void *realloc(void *p, size_t n) { (void)p; (void)n; asked++; return 0; }
-void *calloc(size_t n, size_t s) { (void)n; (void)s; asked++; return 0; }
+void *malloc(size_t) { asked++; return 0; }
+void free(void *) {}
+void *realloc(void *, size_t) { asked++; return 0; }
+void *calloc(size_t, size_t) { asked++; return 0; }
 EXPORT("own") uint32_t own(void) { /* both answer 0 and both asked the app's allocator */
   uint32_t before = asked;
   void *a = cd_alloc_try(16), *b = cd_realloc_try(0, 16);

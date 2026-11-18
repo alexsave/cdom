@@ -14,12 +14,12 @@ void cd_share(uint32_t token, const char *title, uint32_t tlen, const char *url,
   j_share(token, title, tlen, url, ulen);
 }
 
-__attribute__((weak)) void cd_on_clipboard(uint32_t token, uint32_t status) { (void)token; (void)status; }
+__attribute__((weak)) void cd_on_clipboard(uint32_t, uint32_t) { }
 EXPORT("cd_clipboard_done") void cd_clipboard_done(uint32_t token, uint32_t status) {
   cd_on_clipboard(token, status);
   cd_flush();
 }
-__attribute__((weak)) void cd_on_share(uint32_t token, uint32_t status) { (void)token; (void)status; }
+__attribute__((weak)) void cd_on_share(uint32_t, uint32_t) { }
 EXPORT("cd_share_done") void cd_share_done(uint32_t token, uint32_t status) {
   cd_on_share(token, status);
   cd_flush();

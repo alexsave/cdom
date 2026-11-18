@@ -11,19 +11,21 @@ On macOS, with Homebrew (on Debian or Ubuntu, `apt install clang lld` and set `W
 ```sh
 brew install llvm lld                      # a clang that targets wasm32, and wasm-ld
 git clone https://github.com/alexsave/cdom
-make -C cdom new DIR=$PWD/myapp            # writes myapp/Makefile, myapp/src/app.c, myapp/.gitignore
+make -C cdom new DIR=$PWD/myapp            # writes myapp/Makefile, myapp/src/app.c, myapp/src/app.css, myapp/.gitignore
 make -C myapp                              # builds myapp/build/index.html
 open myapp/build/index.html                # one file, opens from disk: it says "cdom" in the middle of the page
 ```
 
-Edit `myapp/src/app.c` and run `make -C myapp` again.
+Edit `myapp/src/app.c` (the app) or `myapp/src/app.css` (its look) and run `make -C myapp` again.
+[`tutorial/`](tutorial/) has seven small apps, each a lesson, with the same app in React beside each one.
 "Starting an app", below, has the details, and `src/cdom.h` is the API.
 
 ## Why cdom
 
 cdom runs as fast as hand-written vanilla JS, and much faster than React, while shipping far fewer bytes.
 The four charts come from [RESULTS.md](RESULTS.md), measured on 2026-10-27 with [krausest/js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) (at ca8715d, keyed, its default puppeteer runner, headless) on an Apple M1 (16 GB), macOS 27.0.1, Chrome 156.
-The entries are vanillajs, cdom (its default: interned strings and templates) and react-hooks (React 19.2.0).
+The entries are vanillajs, cdom (its default then: interned strings and templates) and react-hooks (React 19.2.0).
+Since 2026-11-17 cdom has no interning: a literal is in the page's string table and any other string is read when it is used ([docs/strings-results.md](docs/strings-results.md)).
 Lower is better on every chart.
 
 CPU: the weighted geometric mean of the nine CPU benchmarks (create, replace, update, select, swap, remove and clear rows), each a factor against the fastest entry in the pass, median of 15 runs ([RESULTS.md, "Every operation"](RESULTS.md#every-operation-pass-2-median-of-15), line 54):
@@ -69,7 +71,7 @@ xychart-beta
 
 These runs were of cdom's first design, a batched op stream.
 cdom now makes one import call per DOM operation, which measured about 1.7% faster on the same weighted geometric mean and 16 ms sooner to first paint, paired against the op stream ([PERF_LOG.md, "The two lines merged"](PERF_LOG.md#the-two-lines-merged-2026-11-08), line 342); the current design has not had a full pass against React of its own.
-The shim alone is 15,718 bytes minified and 5,930 brotli (`shim/cdom.min.js` as of 386cc82, brotli -q 11; [PERF_LOG.md](PERF_LOG.md), line 421, has how it grew to 14,891), and the per-operation tables, script times and the other entries (wasm-bindgen, dioxus) are in RESULTS.md.
+The shim alone is 17,612 bytes minified and 6,682 brotli on 2026-11-18 (6,672 at the strings change, [docs/strings-results.md](docs/strings-results.md)), and the per-operation tables, script times and the other entries (wasm-bindgen, dioxus) are in RESULTS.md.
 
 A hello world against a modern stack, measured on 2026-11-09: the same small app (a page with a name field that greets you through a one-route server) was built once on cdom, with its server also in C, and once on Next.js with create-next-app's defaults.
 
@@ -91,19 +93,21 @@ Calls go down, one wasm import per DOM operation, and events come back up as cal
 flowchart TB
   subgraph wasm["your app's wasm module: all the logic, all the state"]
     app["app.c: cd_main, cd_on / cd_on_event handlers, cd_on_timer, ..."]
-    lib["cdom.c: node ids, the string table, the builder, the keyed list, the heap<br>mini.c: the program's libc"]
+    lib["cdom.c: node ids, runtime string records, the builder, the keyed list, the heap<br>mini.c: the program's libc"]
   end
   subgraph shim["shim/cdom.js (fixed; pages inline cdom.min.js)"]
-    tables["nodes[id] and interned[id] tables, one listener per event type"]
+    tables["nodes[id], the page's string table (lits) and the read-only string cache, one listener per event type"]
   end
   dom["the browser's DOM"]
-  lib -->|"imports (module #quot;cdom#quot;), one per op:<br>strings, open, close, text, attr, set_text,<br>set_attr, style, move, remove, listen, ..."| tables
+  lib -->|"imports (module #quot;cdom#quot;), one per op:<br>open, close, text, attr, set_text, ahead,<br>set_attr, style, move, remove, listen, ..."| tables
   tables -->|"createElement, setAttribute,<br>nodeValue, insertBefore, ..."| dom
   dom -.->|"click, input, keydown, resize, ...<br>(DOM events)"| tables
   tables -.->|"exports, the only ways in:<br>cd_start, cd_event, cd_timer, cd_raf,<br>cd_net_*, cd_store_*, ..."| lib
 ```
 
-An interned string crosses once: `strings` copies the new ones into the shim's table before the op that needs them, and every later op names it by id.
+A string literal never crosses: the build moves it out of the module into the page's table (`tools/cdlits`, then `tools/cdpage`), and the op passes its slot.
+A pointer into read-only data (a ternary, a helper's `const char *`, a `const` table entry) is read from C memory once and kept by address.
+Any other string is read from C memory by the op that uses it, and `cd_tmp_ahead` lets an app have a burst of them decoded in one call.
 The life of one click, with the real names on each side:
 
 ```mermaid
@@ -167,9 +171,9 @@ make -C path/to/cdom new DIR=path/to/myapp
 make -C path/to/myapp
 ```
 
-- `make new` (`tools/new.sh`) writes three files into `DIR`, which must be new or empty: a `Makefile` (`CDOM ?=`, `APP_WASM := build/app.wasm`, `APP_SRC := src/app.c`, `APP_PAGE := build/index.html`, the include of `cdom.mk`, and `all: $(APP_PAGE)`), `src/app.c` (about ten lines that put "cdom" in the middle of the page), and a `.gitignore` of `build/`.
+- `make new` (`tools/new.sh`) writes four files into `DIR`, which must be new or empty: a `Makefile` (`CDOM ?=`, `APP_WASM := build/app.wasm`, `APP_SRC := src/app.c`, `APP_PAGE := build/index.html`, the include of `cdom.mk`, and `all: $(APP_PAGE)`), `src/app.c` (a few lines that put "cdom" in the middle of the page), `src/app.css` (its look, which the build writes into the page's `<head>`), and a `.gitignore` of `build/`.
 - `make` in `DIR` builds `build/index.html`: one file, with the shim and the module inside it, that opens from disk (double-click it; no server).
-- Edit `src/app.c` and run `make` again; the page says so at its foot.
+- Edit `src/app.c` or `src/app.css` and run `make` again; the page says so at its foot.
 - The generator writes nothing `cdom.mk` could own: the page is cdom.mk's default page and every rule is cdom.mk's, so updating cdom updates the app's build.
 - `CDOM ?=` defaults to this checkout's absolute path, and `make CDOM=...` or a `CDOM` environment variable overrides it, for another clone, CI or a moved folder: `make new` runs no git, and works offline at any commit.
   To vendor cdom with the app instead (`make new` prints this), run `git init && git submodule add https://github.com/alexsave/cdom cdom` in `DIR` and set `CDOM ?= cdom` (and clone with `--recurse-submodules`).
@@ -229,11 +233,11 @@ APP_PAGE := out/index.html
 build: $(APP_WASM) $(APP_PAGE)
 ```
 
-From sources to one page, with make, clang, awk and `base64`, and no Node:
+From sources to one page, with make, clang and a host C compiler, and no Node:
 
 ```mermaid
 flowchart TB
-  new["make -C path/to/cdom new DIR=myapp<br>(tools/new.sh: once, offline)<br>writes myapp/Makefile, myapp/src/app.c, myapp/.gitignore"]
+  new["make -C path/to/cdom new DIR=myapp<br>(tools/new.sh: once, offline)<br>writes myapp/Makefile, myapp/src/app.c, myapp/src/app.css, myapp/.gitignore"]
   mk["make -C myapp<br>(its Makefile includes cdom.mk)"]
   new --> mk
   mk --> appsrc["APP_SRC (src/app.c)"]
@@ -243,11 +247,16 @@ flowchart TB
   core --> cc
   mods --> cc
   cc["$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS)<br>$(APP_CFLAGS) $(CDOM_LDFLAGS) ...<br>(clang --target=wasm32 -nostdlib)"]
-  cc --> wasm["APP_WASM (build/app.wasm)"]
-  wasm -->|"base64"| awk["tools/page.awk"]
-  page["shim/page.html or APP_PAGE_SRC"] --> awk
-  shim["shim/cdom.min.js"] -->|"at /*CDOM_SHIM*/"| awk
-  awk --> out["APP_PAGE (build/index.html): one file that opens from file://,<br>starting the module bundled in it:<br>cdom.start(#quot;data:application/wasm;base64,...#quot;, #quot;app#quot;)"]
+  cc --> cdlits["tools/cdlits (CDOM_LITS, built with HOST_CC)<br>takes the literals out of the module"]
+  cdlits --> wasm["APP_WASM (build/app.wasm)"]
+  cdlits --> lits["APP_WASM.lits (the string table)"]
+  lits -->|"a script before the shim"| cdpage
+  wasm -->|"base64, at /*CDOM_WASM*/"| cdpage["tools/cdpage (CDOM_PAGE_TOOL, built with HOST_CC)<br>writes the page"]
+  page["shim/page.html or APP_PAGE_SRC"] --> cdpage
+  mk --> css["src/**/*.css, every stylesheet under src/"]
+  css -->|"at /*CDOM_CSS*/, in a #lt;style#gt;"| cdpage
+  shim["shim/cdom.min.js"] -->|"at /*CDOM_SHIM*/"| cdpage
+  cdpage --> out["APP_PAGE (build/index.html): one file that opens from file://,<br>starting the module bundled in it:<br>cdom.start(#quot;data:application/wasm;base64,...#quot;, #quot;app#quot;)"]
   wasm -.->|"APP_WASM_SEPARATE := 1 skips base64:<br>/*CDOM_WASM*/ becomes the URL #quot;app.wasm#quot; (APP_WASM_URL),<br>served beside the page"| out
 ```
 
@@ -263,22 +272,35 @@ flowchart TB
 - They turn on `.SECONDEXPANSION` for the rest of the app's Makefile, so a `$$` in a later rule's prerequisites is expanded twice.
 - An unknown `APP_MODULES` name, or a source that is not there, stops make when it builds `APP_WASM`, naming it; cdom.mk never takes the default goal from the app's first rule.
 - The APP_PAGE rule writes the page from cdom's default page (`shim/page.html`), or from the app's own, `APP_PAGE_SRC`.
-  The default page is a contract, stated in cdom.mk's header: a doctype, the charset and viewport metas, a `<title>` of `APP_TITLE` (the base name of `APP_WASM` unless set), `<div id="app"></div>` as the mount, and one `<script>` that holds the shim and `cdom.start(<the module>, "app")`.
+  The default page is a contract, stated in cdom.mk's header: a doctype, the charset and viewport metas, a `<title>` of `APP_TITLE` (the base name of `APP_WASM` unless set), a `<style>` that holds the app's stylesheets (empty when it has none), `<div id="app"></div>` as the mount, and one `<script>` that holds the shim and `cdom.start(<the module>, "app")`.
   An app that needs its own `<head>`, `env` or `options` brings its own page.
 - The page markers are API: the page has a `<script>` with a line that holds only `/*CDOM_SHIM*/`, which becomes `shim/cdom.min.js`, and `/*CDOM_WASM*/` stands for `cdom.start`'s first argument.
+  The `<script ...>` tag before `/*CDOM_SHIM*/` must be whole on one line, since the build writes it again after the string table's script.
+- Every file whose name ends in `.css` under the app's `src/` directory, in any subfolder, is written into the page's `<style>`, in byte order of its path, so `00-base.css` comes before `10-layout.css`, and that before `theme/dark.css`; a file or folder whose name starts with a dot is skipped, and nothing else is.
+  No variable names them, and none turns this off.
+  They go at a line that holds only `/*CDOM_CSS*/`, inside a `<style>` and before the `/*CDOM_SHIM*/` line; the default page has that `<style>` in its `<head>`, so an app on it only adds a file.
+  An app's own page with no such line fails the build while `src/` holds a `.css` file, so a page that loads a stylesheet of its own with a `<link>` keeps that file outside `src/` (`static/app.css`, say).
+  The files are written as they are, but for four things: `</style` is escaped, a comment that fills its lines is left out with them (one beside a rule is kept), a byte order mark is dropped, and a file that does not end in a newline gains one.
+  Each file must be whole by itself: a comment, string or `url(` that never ends, a `{` never closed or a `}` never opened, an `@import`, a NUL or bytes that are not UTF-8 stop the build, naming the file and the line.
+  A relative `url()` resolves against the page, not the `.css` file, since the sheet is inline.
+  The sheet is the page's HTML, before every script, so it styles the first paint in every tier, the IE 9 and 10 fallback too.
+  The page is made again when a `.css` file is added, removed, renamed or edited, and for nothing else: `build/index.html.csslist` lists what went in, in order, with a hash of each file.
+  Inline styles (`cd_attr("style", ...)`, `cd_set_style`) and a `<style>` built from C still work.
 - By default the module is bundled: `/*CDOM_WASM*/` becomes `"data:application/wasm;base64,..."` of `APP_WASM`, so an app is one html file.
   It costs about 30% more bytes after compression (a hello world 9.5 to 12.3 KB brotli, amgi 29.9 to 39.2 KB), and in exchange the page is one request, the page and its module are never from two builds, and it opens from disk (`file://`).
   A bundled page under a Content-Security-Policy needs `data:` in `connect-src`, besides `'wasm-unsafe-eval'`; what needs a real origin (IndexedDB, so the store module, in some browsers) needs the page served over HTTP.
 - `APP_WASM_SEPARATE := 1` keeps the module a file of its own, for large apps, hosts that cache a hashed `.wasm`, or the no-WebAssembly fallback: `/*CDOM_WASM*/` becomes its URL, `APP_WASM_URL` (the base name of `APP_WASM`, beside the page, unless set), or the page names it itself (`cdom.start("app.wasm", "app")`).
 - Bundling, an app's own page must start the bundled module: a page that names its module by URL fails the build with `this page loads app.wasm; set APP_WASM_SEPARATE := 1, or start with the bundled module (the /*CDOM_WASM*/ marker)`, and cdom never rewrites the app's call.
 - The rule fails, and writes nothing, when the page has no `/*CDOM_SHIM*/` line, has two, or has the marker beside other text, or has two `/*CDOM_WASM*/`; `$(call cdom_page,in.html,out.html)` does the same inside an app's own recipe, and `$(call cdom_page,in.html,out.html,module.wasm)` bundles that module too.
-- Nothing on this path needs Node: it is make, awk (`tools/page.awk`), `base64` and clang.
+- The build needs a host C compiler as well as clang: every link goes through `tools/cdlits` (`CDOM_LITS`, built from `tools/cdlits.c` with `HOST_CC`, `cc` unless set), which takes the string literals out of the module and writes them beside it as `$(APP_WASM).lits`.
+- The page gets its string table from `tools/cdpage` (`CDOM_PAGE_TOOL`, built from `tools/cdpage.c` with `HOST_CC`): it writes the `.lits` file as a script of its own before the shim, at the `/*CDOM_SHIM*/` line, so a page needs no marker for it, and `cdom.start` throws on a page with no table or a table from another build.
+- Nothing on this path needs Node: it is make, clang and the host compiler (for `tools/cdlits` and `tools/cdpage`).
 
 ## Working on cdom
 
-- Tests: `tests/build.sh`, then `node tools/unit.mjs`, `node tools/alloc.mjs`, `node tools/fuzz.mjs`, `node tools/canvas.mjs`, `node tools/host.mjs`, `tests/link/run.sh` and `node tools/legacy.mjs`; RESULTS.md, "Reproduce", has the benchmark commands.
+- Tests: `tutorial/run.sh` (builds and drives every lesson), `tests/page/run.sh` (the page tool alone), `tests/lits/run.sh` (the literal tool alone), `tests/build.sh`, then `node tools/unit.mjs`, `node tools/alloc.mjs`, `node tools/fuzz.mjs`, `node tools/canvas.mjs`, `node tools/host.mjs`, `tests/link/run.sh` and `node tools/legacy.mjs`; RESULTS.md, "Reproduce", has the benchmark commands.
 - `shim/cdom.min.js` is generated by `node tools/minshim.mjs` and committed, and `tests/build.sh` checks it against `cdom.js`.
-- cdom's own builds (`tests/build.sh`, `tests/link/run.sh`, `bench/build.sh`, `micro/svg/run.sh`) read the same flag set as cdom.mk through `tools/cdomflags.sh`, which fails when one of them spells a flag of the set itself.
+- cdom's own builds (`tests/build.sh`, `tests/link/run.sh`, `bench/build.sh`) read the same flag set as cdom.mk through `tools/cdomflags.sh`, which fails when one of them spells a flag of the set itself.
 - cdom and its sibling C library have no cycle: the library may depend on cdom (only its browser adapter does, built against cdom's I/O contract), and cdom never depends on the library.
   `tools/edges.mjs` (run by `tests/link/run.sh`) keeps cdom's side: it fails if a tracked file other than the docs (`*.md`, LICENSE) names the C library it once sat beside.
 - Measurements, design notes and how to reproduce them are in RESULTS.md, PERF_LOG.md and BRIDGE.md.

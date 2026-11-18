@@ -9,9 +9,8 @@ static char note[8];
 void cd_main(void) {
   memcpy(note, "hello", 6);
   if (!cd_random_bytes(note + 6, 1)) note[0] = 'H';
-  cd_at(CD_MOUNT, 0);
-  cd_open(cd_internz("p"));
-  cd_text(cd_intern(note, (uint32_t)strlen(note)));
+  cd_open("p");
+  cd_text(cd_tmp(note, (uint32_t)strlen(note)));
   cd_name_text(cd_id_new());
   cd_close();
 }

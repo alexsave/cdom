@@ -1,24 +1,34 @@
 #!/bin/bash
 # The link-level tests: one heap whoever brings it, mini.c next to an app's libc, the program's
-# string.h (src/libc) under cdom's flags and freestanding ones, CD_LIT refusing a variable, the I/O
+# string.h (src/libc) under cdom's flags and freestanding ones, a non-string refused as a string argument, the I/O
 # contract (contract.c), and cdom.mk's rules (app.mk). Builds into tests/out/link and runs tests/link/run.mjs, then the name gate
-# (tools/edges.mjs) and the seed gate (tools/seeds.mjs).
+# (tools/edges.mjs), the seed gate (tools/seeds.mjs) and the string-names gate (tools/strings.mjs).
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 src="$here/../../src"
 out="$here/../out/link"
 CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"
 mkdir -p "$out"
+# cdom.mk bundles the stylesheets under src/ where make runs: tests/link/app.mk runs here, where there is none.
+cd "$out" || exit 1
 . "$here/../../tools/cdomflags.sh" # CDOM_CFLAGS and CDOM_LDFLAGS, cdom.mk's set for apps
 F=(-O2 "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror "${CDOM_LDFLAGS[@]}")
 fail=0
-"$CC" "${F[@]}" -o "$out/alloc_cdom.wasm" "$here/alloc.c" "$src/cdom.c" "$src/mini.c" || fail=1
-"$CC" "${F[@]}" -o "$out/alloc_app.wasm" "$here/alloc.c" "$here/app_alloc.c" "$src/cdom.c" "$src/mini.c" || fail=1
-"$CC" "${F[@]}" -o "$out/alloc_half.wasm" "$here/alloc.c" "$here/half_alloc.c" "$src/cdom.c" "$src/mini.c" || fail=1
-if "$CC" "${F[@]}" -o "$out/own_libc.wasm" "$here/alloc.c" "$here/own_libc.c" "$src/cdom.c" "$src/mini.c" 2> "$out/own_libc.log"; then :; else
+# link out.wasm sources...: a cdom module as an app links it, then cdlits (the step cdom.mk's APP_WASM rule has).
+link() {
+  local o="$1"; shift
+  "$CC" "${F[@]}" -o "$o.linked" "$@" && "$CDOM_LITS" "$o.linked" "$o" "$o.lits"
+  local rc=$?; rm -f "$o.linked"; return $rc
+}
+link "$out/alloc_cdom.wasm" "$here/alloc.c" "$src/cdom.c" "$src/mini.c" || fail=1
+link "$out/alloc_app.wasm" "$here/alloc.c" "$here/app_alloc.c" "$src/cdom.c" "$src/mini.c" || fail=1
+link "$out/alloc_half.wasm" "$here/alloc.c" "$here/half_alloc.c" "$src/cdom.c" "$src/mini.c" || fail=1
+if link "$out/own_libc.wasm" "$here/alloc.c" "$here/own_libc.c" "$src/cdom.c" "$src/mini.c" 2> "$out/own_libc.log"; then :; else
   echo "FAIL an app's own libc does not link next to mini.c:"; cat "$out/own_libc.log"; fail=1; fi
-if "$CC" "${F[@]}" -o "$out/on_only.wasm" "$here/on_only.c" "$src/cdom.c" "$src/mini.c" 2> "$out/on_only.log"; then :; else
+if link "$out/on_only.wasm" "$here/on_only.c" "$src/cdom.c" "$src/mini.c" 2> "$out/on_only.log"; then :; else
   echo "FAIL an app that uses cd_on alone, with no cd_on_event, does not link:"; cat "$out/on_only.log"; fail=1; fi
+if link "$out/ro_range.wasm" "$here/ro_range.c" "$src/cdom.c" "$src/mini.c" 2> "$out/ro_range.log"; then :; else
+  echo "FAIL the read-only range probe does not link:"; cat "$out/ro_range.log"; fail=1; fi
 # The render pass is linked only into an app that asks for a render (cdom.c, renders: the volatile
 # pointer). dirty_pass.c built without and with a cd_dirty call: at -Oz the second is 437 bytes larger
 # (the pass, the queue and cd_dirty); with the pass linked into every app the gap is 219. 330 splits them.
@@ -51,7 +61,7 @@ for u in LISTEN HTTP TIMER STORE; do
   else echo "ok   the callbacks-only profile refuses USE_$u ($(grep -o "attempt to use a poisoned identifier" "$out/callbacks_only_$u.log" | head -1))"; fi
 done
 # The _try allocations' path is linked only into an app that calls them: alloc_try_size.c built with
-# cd_alloc and with cd_alloc_try differs by the path itself, 318 bytes at -Oz now. Under 150 the path is
+# cd_alloc and with cd_alloc_try differs by the path itself, 273 bytes at -Oz now. Under 150 the path is
 # in every app (malloc sharing it); over 400 it has grown past its budget. Z is the -Oz set above.
 if "$CC" "${Z[@]}" -o "$out/try_none.wasm" "$here/alloc_try_size.c" "$src/cdom.c" "$src/mini.c" &&
    "$CC" "${Z[@]}" -DTRY -o "$out/try_asks.wasm" "$here/alloc_try_size.c" "$src/cdom.c" "$src/mini.c"; then
@@ -104,12 +114,18 @@ libc_case() { # name, then the flags
 libc_case cdom "${LIBC_CDOM[@]}"
 libc_case freestanding "${LIBC_FREESTANDING[@]}"
 C=(-O2 "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror -c)
-if ! "$CC" "${C[@]}" -o "$out/lit_ok.o" "$here/lit_ok.c" 2> "$out/lit_ok.log"; then
-  echo "FAIL CD_LIT given a literal does not compile:"; cat "$out/lit_ok.log"; fail=1
-elif "$CC" "${C[@]}" -o "$out/lit_var.o" "$here/lit_var.c" 2> "$out/lit_var.log"; then
-  echo "FAIL CD_LIT accepted a variable"; fail=1
-elif grep -q "lit_var.c:3:.*error: expected ')'" "$out/lit_var.log"; then echo "ok   CD_LIT given a variable does not compile, a literal does"
-else echo "FAIL CD_LIT given a variable failed for another reason:"; cat "$out/lit_var.log"; fail=1; fi
+# A string argument is plain C, and a thing that is not a string is a compile error: str_ok.c, the control,
+# compiles, and each of the others fails with its own message.
+if ! "$CC" "${C[@]}" -o "$out/str_ok.o" "$here/str_ok.c" 2> "$out/str_ok.log"; then
+  echo "FAIL the string control file does not compile:"; cat "$out/str_ok.log"; fail=1
+else
+  for bad in id:'incompatible integer to pointer conversion' int:'incompatible integer to pointer conversion' cmp:'invalid operands to binary expression'; do
+    name="${bad%%:*}" why="${bad#*:}"
+    if "$CC" "${C[@]}" -o "$out/str_$name.o" "$here/str_$name.c" 2> "$out/str_$name.log"; then echo "FAIL str_$name.c compiles"; fail=1
+    elif ! grep -qF -- "$why" "$out/str_$name.log"; then echo "FAIL str_$name.c failed for another reason:"; cat "$out/str_$name.log"; fail=1
+    else echo "ok   str_$name.c does not compile ($why), the control does"; fi
+  done
+fi
 # The I/O contract (cdom.h, top): contract.c compiles only while every declaration it names is unchanged.
 if "$CC" "${LIBC_CDOM[@]}" -fsyntax-only "$here/contract.c" 2> "$out/contract.log"; then
   echo "ok   the I/O contract: every declaration external adapters build on has its type, and every code its value"
@@ -117,7 +133,7 @@ else echo "FAIL the I/O contract changed in place:"; cat "$out/contract.log"; fa
 # cdom.mk as an app uses it (tests/link/app.mk), with its one include before APP_* are set (first), after
 # them (last), and the old two includes (twice): the APP_WASM rule builds a module that exports its memory
 # and cd_main's entry, with the modules APP_MODULES names, and a second make finds it up to date; the
-# APP_PAGE rule (tools/page.awk) puts the shim where the page's one /*CDOM_SHIM*/ line was, and refuses a
+# APP_PAGE rule (tools/cdpage) puts the shim where the page's one /*CDOM_SHIM*/ line was, and refuses a
 # page with the marker beside other text, without it, or with it twice, leaving no output.
 for inc in first last twice; do
 mo="$out/mk-$inc"
@@ -136,30 +152,45 @@ if mk "$mo/mk_app.wasm" PAGE= APP_MODULES='random bogus' -B > "$mo/mk_bogus.log"
 elif ! grep -q 'APP_MODULES names bogus, not a cdom module' "$mo/mk_bogus.log"; then echo "FAIL cdom.mk ($inc) refused APP_MODULES for another reason:"; cat "$mo/mk_bogus.log"; fail=1
 else echo "ok   cdom.mk ($inc) stops at an APP_MODULES name that is no module"; fi
 want="$mo/ok.want"
-{ sed -n '1,3p' "$here/page/ok.html"; cat "$src/../shim/cdom.min.js"; sed -n '5,$p' "$here/page/ok.html"; } > "$want"
+{ sed -n '1,3p' "$here/page/ok.html"; cat "$mo/mk_app.wasm.lits"; echo "</script>"; echo "<script>"
+  cat "$src/../shim/cdom.min.js"; sed -n '5,$p' "$here/page/ok.html"; } > "$want"
 if ! mk "$mo/ok.html" PAGE="$here/page/ok.html" APP_WASM_SEPARATE=1 2> "$mo/mk_page.log"; then
   echo "FAIL cdom_page ($inc) refused a page whose marker is alone on its line:"; cat "$mo/mk_page.log"; fail=1
-elif ! cmp -s "$want" "$mo/ok.html"; then echo "FAIL cdom_page ($inc): the page is not itself with the shim at its marker line"; fail=1
-else echo "ok   cdom_page ($inc) inlines shim/cdom.min.js at the page's /*CDOM_SHIM*/ line, every other line kept (APP_WASM_SEPARATE: the page's own URL)"; fi
+elif ! cmp -s "$want" "$mo/ok.html"; then echo "FAIL cdom_page ($inc): the page is not itself with the table and the shim at its marker line"; fail=1
+else echo "ok   cdom_page ($inc) inlines the table, a script of its own, and shim/cdom.min.js at the page's /*CDOM_SHIM*/ line, every other line kept (APP_WASM_SEPARATE: the page's own URL)"; fi
 # The refused pages, with the module separate: each is refused for its own fault, which bundling would
 # otherwise mask (a page whose start call went with its shim line, or that takes a second module, has no
 # bundled module to start either).
-for bad in inline:'must be alone on its line' none:'no /\*CDOM_SHIM\*/ line' two:'a second /\*CDOM_SHIM\*/' two_wasm:'a second /\*CDOM_WASM\*/'; do
+for bad in inline:'must be alone on its line' none:'no /\*CDOM_SHIM\*/ line' two:'a second /\*CDOM_SHIM\*/' two_wasm:'a second /\*CDOM_WASM\*/' noscript:'with no <script tag before it'; do
   name="${bad%%:*}" why="${bad#*:}"
   if mk "$mo/$name.html" PAGE="$here/page/$name.html" APP_WASM_SEPARATE=1 2> "$mo/mk_$name.log"; then
     echo "FAIL cdom_page ($inc) took the $name page"; fail=1
-  elif [ -e "$mo/$name.html" ] || [ -e "$mo/$name.html.tmp" ]; then
+  elif [ -e "$mo/$name.html" ] || compgen -G "$mo/$name.html.tmp*" > /dev/null; then # the page, or the tool's temporary file
     echo "FAIL cdom_page ($inc) refused the $name page but left a file"; fail=1
   elif ! grep -q "$name.html.*$why" "$mo/mk_$name.log"; then
     echo "FAIL cdom_page ($inc) refused the $name page for another reason:"; cat "$mo/mk_$name.log"; fail=1
   else echo "ok   cdom_page ($inc) refuses the $name page ($(sed 's/.*: //' "$mo/mk_$name.log" | head -1)) and writes nothing"; fi
 done
+# The table is a script of its own before the shim and before the module, whatever the page's script tag
+# carries (it is written again as it was), and the table is the module's own.
+if ! mk "$mo/attrs.html" PAGE="$here/page/attrs.html" APP_WASM_SEPARATE=1 -B 2> "$mo/mk_attrs.log"; then
+  echo "FAIL cdom_page ($inc) refused a page whose script tag has attributes:"; cat "$mo/mk_attrs.log"; fail=1
+elif ! mk "$mo/marker.html" PAGE="$here/page/marker.html" -B 2> "$mo/mk_marker0.log"; then
+  echo "FAIL cdom_page ($inc) refused the marker page:"; cat "$mo/mk_marker0.log"; fail=1
+elif ! node -e 'const fs = require("fs"), [a, m, lits, shim] = process.argv.slice(1);
+    const tag = "<script type=\"text/javascript\" data-x=\"a b\">", table = fs.readFileSync(lits, "utf8");
+    const pa = fs.readFileSync(a, "utf8"), pm = fs.readFileSync(m, "utf8"), sh = fs.readFileSync(shim, "utf8").slice(0, 200);
+    const ok = pa.includes(table + "</script>\n" + tag + "\n" + sh) && pa.indexOf(tag) < pa.indexOf(table) &&
+      pm.includes(table + "</script>\n<script>\n" + sh) && pm.indexOf(table) < pm.indexOf(sh) && pm.indexOf(sh) < pm.indexOf("cdom.start(");
+    process.exit(ok ? 0 : 1)' "$mo/attrs.html" "$mo/marker.html" "$mo/mk_app.wasm.lits" "$src/../shim/cdom.min.js"; then
+  echo "FAIL cdom_page ($inc): the table is not a script of its own before the shim and the module, with the page's script tag written again"; fail=1
+else echo "ok   cdom_page ($inc) writes the table as a script of its own before the shim and the module, the page's script tag (attributes too) written again"; fi
 # Bundling, the default: an app's own page that names its module by URL is refused with the one line that
 # says what to do, and nothing is written (never a rewrite of the app's own call).
 rm -f "$mo/ok.html"
 line="$here/page/ok.html: this page loads mk_app.wasm; set APP_WASM_SEPARATE := 1, or start with the bundled module (the /*CDOM_WASM*/ marker)"
 if mk "$mo/ok.html" PAGE="$here/page/ok.html" 2> "$mo/mk_url.log"; then echo "FAIL APP_PAGE ($inc) bundled into a page that loads its module by URL"; fail=1
-elif [ -e "$mo/ok.html" ] || [ -e "$mo/ok.html.tmp" ]; then echo "FAIL APP_PAGE ($inc) refused a page that loads its module by URL but left a file"; fail=1
+elif [ -e "$mo/ok.html" ] || compgen -G "$mo/ok.html.tmp*" > /dev/null; then echo "FAIL APP_PAGE ($inc) refused a page that loads its module by URL but left a file"; fail=1
 elif ! grep -qxF "$line" "$mo/mk_url.log"; then echo "FAIL APP_PAGE ($inc) refused a page that loads its module by URL with another message:"; cat "$mo/mk_url.log"; fail=1
 else echo "ok   APP_PAGE ($inc), bundling, refuses a page of the app's own that loads mk_app.wasm, with the line that says what to do"; fi
 # The default page (no APP_PAGE_SRC), bundled: shim/page.html with the title, the shim, and the module as
@@ -167,9 +198,11 @@ else echo "ok   APP_PAGE ($inc), bundling, refuses a page of the app's own that 
 # APP_WASM_SEPARATE the start call names the module beside the page (or APP_WASM_URL) and the page does
 # not depend on it. APP_TITLE is escaped for HTML.
 tpl="$src/../shim/page.html"
-want_page() { # title, then the start call's first argument
-  { sed -n '1,5p' "$tpl"; echo "<title>$1</title>"; sed -n '7,10p' "$tpl"; cat "$src/../shim/cdom.min.js"
-    echo "cdom.start($2, \"app\");"; sed -n '13,$p' "$tpl"; } > "$mo/index.want"
+want_page() { # title, then the start call's first argument: the page with an empty <style>
+  { sed -n '1,5p' "$tpl"; echo "<title>$1</title>"; sed -n '7p' "$tpl"; sed -n '9,13p' "$tpl"
+    cat "$mo/mk_app.wasm.lits"; echo "</script>"; echo "<script>"
+    cat "$src/../shim/cdom.min.js"
+    echo "cdom.start($2, \"app\");"; sed -n '16,$p' "$tpl"; } > "$mo/index.want"
 }
 b64() { base64 < "$1" | tr -d '\n\r'; }
 if ! mk "$mo/index.html" PAGE= 2> "$mo/mk_default.log"; then echo "FAIL the default page ($inc) does not build:"; cat "$mo/mk_default.log"; fail=1
@@ -185,10 +218,10 @@ touch "$mo/mk_app.wasm"
 if ! mk "$mo/index.html" PAGE= APP_WASM_SEPARATE=1 APP_TITLE='a<b & c>' -B 2> "$mo/mk_sep.log"; then echo "FAIL the default page ($inc), APP_WASM_SEPARATE, does not build:"; cat "$mo/mk_sep.log"; fail=1
 elif want_page 'a&lt;b &amp; c&gt;' '"mk_app.wasm"'; ! cmp -s "$mo/index.want" "$mo/index.html"; then
   echo "FAIL the default page ($inc), APP_WASM_SEPARATE: not shim/page.html naming mk_app.wasm, titled from APP_TITLE:"; diff "$mo/index.want" "$mo/index.html" | cut -c1-200 | head; fail=1
-elif touch -t 203001010000 "$mo/mk_app.wasm"; ! mk -q "$mo/index.html" PAGE= APP_WASM_SEPARATE=1; then echo "FAIL the default page ($inc), APP_WASM_SEPARATE, depends on the module"; fail=1
+elif touch -t 203001010000 "$mo/mk_app.wasm"; mk -q "$mo/index.html" PAGE= APP_WASM_SEPARATE=1; then echo "FAIL the default page ($inc), APP_WASM_SEPARATE, is up to date with a newer module (its table comes from the module)"; fail=1
 elif ! mk "$mo/index.html" PAGE= APP_WASM_SEPARATE=1 APP_WASM_URL='/w/"x".wasm' -B 2> "$mo/mk_sep.log" || ! grep -qxF 'cdom.start("/w/\"x\".wasm", "app");' "$mo/index.html"; then
   echo "FAIL the default page ($inc), APP_WASM_SEPARATE: APP_WASM_URL is not its start call's URL"; fail=1
-else echo "ok   the default page ($inc), APP_WASM_SEPARATE: names mk_app.wasm (or APP_WASM_URL, as a JS string), no dependency on it, <title> APP_TITLE escaped"; fi
+else echo "ok   the default page ($inc), APP_WASM_SEPARATE: names mk_app.wasm (or APP_WASM_URL, as a JS string), made again with the module for its table, <title> APP_TITLE escaped"; fi
 # An app's own page with the /*CDOM_WASM*/ marker: the module bundled there, or, separate, its URL.
 for sep in '' 1; do
   if [ -n "$sep" ]; then arg='"mk_app.wasm"'; else arg="\"data:application/wasm;base64,$(b64 "$mo/mk_app.wasm")\""; fi
@@ -223,8 +256,87 @@ for cc in /usr/bin/clang "$out/no-such-clang"; do
     echo "FAIL cdom.mk with WASM_CC=$cc, which cannot build wasm32, did not stop at the toolchain check:"; cat "$out/mk_cc.log"; fail=1
   else echo "ok   cdom.mk with WASM_CC=$cc, which cannot build wasm32, stops before compiling: $(grep 'install them' "$out/mk_cc.log")"; fi
 done
+# The stylesheets (docs/page-tool-design.md): cdom.mk writes every .css file under src/ where make runs
+# into the page's <style>, in byte order of its path. The fixture apps of tests/link/apps, built with
+# make -C, CDOM this checkout and OUT under tests/out, so nothing is written into the tree.
+apps="$here/apps"
+top="$(cd "$here/../.." && pwd)"
+ak() { local app="$1"; shift; make -s --no-print-directory -C "$app" CDOM="$top" "$@"; }
+order="10.css 9.css Z.css a.css a/b/deep.css a/x.css b/00.css"
+sheets() { # dir files...: the files as the page holds them: the comments that fill their lines left out,
+  # </style escaped, a newline after a last line without one
+  local d="$1" f; shift
+  for f in "$@"; do perl -0pe 's{^[ \t]*/\*.*?\*/[ \t\r]*(\n|\z)}{}gms; s{</(style)}{<\\/$1}gi' "$d/$f"; [ -n "$(tail -c1 "$d/$f")" ] && echo; done
+}
+heads() { grep -oE '/\* [^ ]+\.css \*/$' "$1" | sed -E 's|^/\* (.*) \*/$|\1|' | tr '\n' ' ' | sed 's/ $//'; }
+# Discovery: the default page holds the seven stylesheets of tests/link/apps/css/src, in byte order of
+# their paths, and nothing else of that tree.
+mo="$out/apps/css-default"; rm -rf "$mo"
+sheets "$apps/css/src" $order > "$out/apps.css.want"
+if ! ak "$apps/css" OUT="$mo" 2> "$out/apps-css.log"; then echo "FAIL the css app does not build:"; cat "$out/apps-css.log"; fail=1
+else
+  { sed -n '1,5p' "$tpl"; echo "<title>css</title>"; sed -n '7p' "$tpl"; cat "$out/apps.css.want"; sed -n '9,13p' "$tpl"
+    cat "$mo/app.wasm.lits"; echo "</script>"; echo "<script>"; cat "$src/../shim/cdom.min.js"
+    echo "cdom.start(\"data:application/wasm;base64,$(base64 < "$mo/app.wasm" | tr -d '\n\r')\", \"app\");"; sed -n '16,$p' "$tpl"; } > "$mo/index.want"
+  if ! cmp -s "$mo/index.want" "$mo/index.html"; then echo "FAIL discovery: the css app's default page is not shim/page.html with its seven stylesheets in byte order:"; diff "$mo/index.want" "$mo/index.html" | cut -c1-160 | head; fail=1
+  else echo "ok   discovery: the default page holds src/'s seven stylesheets in byte order of their paths ($order), and none of its dot-names, .css.bak, .CSS or linked folder"; fi
+fi
+# Rebuilding: in a copy of the app, make -q says up to date after a build, and not after an edit, an added
+# file (with an old time), a removed one, or a rename that moves a file in the order, each of which is
+# then in the page as it should be; a touch alone rebuilds nothing, and the module is never rebuilt. make
+# compares whole seconds here, so a step waits one out before it changes a file.
+rb="$out/apps/css-rebuild"; rm -rf "$rb"; mkdir -p "$out/apps"; cp -R "$apps/css" "$rb"
+rk() { ak "$rb" OUT=build "$@"; }
+step() { # name, then what the page must hold after it ("same" for a step that must rebuild nothing)
+  local name="$1" want="$2"
+  if [ "$want" = same ]; then
+    if rk -q; then echo "ok   rebuilding: $name, and make -q is still up to date"; else echo "FAIL rebuilding: $name made the page out of date"; fail=1; fi
+  elif rk -q; then echo "FAIL rebuilding: $name, and make -q says the page is up to date"; fail=1
+  elif ! rk 2> "$rb.log"; then echo "FAIL rebuilding: $name, and make fails:"; cat "$rb.log"; fail=1
+  elif [ "$(heads "$rb/build/index.html")" != "$want" ]; then echo "FAIL rebuilding: $name: the page holds [$(heads "$rb/build/index.html")], not [$want]"; fail=1
+  elif ! rk -q; then echo "FAIL rebuilding: $name: a second make is not up to date"; fail=1
+  else echo "ok   rebuilding: $name: make -q is out of date, make puts the page right ($want)"; fi
+  if ! rk -q build/app.wasm; then echo "FAIL rebuilding: $name made the module out of date"; fail=1; fi
+}
+if ! rk 2> "$rb.log" || ! { sleep 1; rk -q; }; then echo "FAIL rebuilding: the copy does not build, or a second make is not up to date:"; cat "$rb.log"; fail=1
+else
+  sleep 1; printf '#probe { --edited: "yes"; }\n' >> "$rb/src/a.css"; step "a.css edited" "$order"
+  if ! grep -q -- '--edited' "$rb/build/index.html"; then echo "FAIL rebuilding: the edit is not in the page"; fail=1; fi
+  sleep 1; printf '.n-new { order: 1; } /* a/new.css */\n' > "$rb/src/a/new.css"; touch -t 200001010000 "$rb/src/a/new.css"
+  step "a/new.css added, dated 2000" "10.css 9.css Z.css a.css a/b/deep.css a/new.css a/x.css b/00.css"
+  sleep 1; rm "$rb/src/a/new.css"; step "a/new.css removed" "$order"
+  sleep 1; mv "$rb/src/10.css" "$rb/src/zz.css"; step "10.css renamed zz.css (last now)" "9.css Z.css a.css a/b/deep.css a/x.css b/00.css 10.css"
+  sleep 1; touch "$rb/src/a.css" "$rb/src/zz.css"; step "two files touched" same
+fi
+# The first build: from an empty directory, with tools/cdpage not built yet (so the list cannot be written
+# while make works out the prerequisites), one make writes the page with its stylesheets, and a second
+# finds it up to date.
+fb="$out/apps/css-first"; rm -rf "$fb"; rm -f "$CDOM_PAGE_TOOL"
+if ! ak "$apps/css" OUT="$fb" 2> "$fb.log"; then echo "FAIL the first build fails:"; cat "$fb.log"; fail=1
+elif [ "$(heads "$fb/index.html")" != "$order" ]; then echo "FAIL the first build: the page holds [$(heads "$fb/index.html")]"; fail=1
+elif sleep 1; ! ak "$apps/css" OUT="$fb" -q; then echo "FAIL the first build: a second make is not up to date"; fail=1 # a second later: make compares whole seconds
+elif [ ! -x "$CDOM_PAGE_TOOL" ]; then echo "FAIL the first build: make did not keep tools/cdpage, which it built as an intermediate file"; fail=1
+else echo "ok   the first build, with tools/cdpage not built: one make writes the page with its stylesheets, a second is up to date, and the tool is kept"; fi
+# An app's own page: with no /*CDOM_CSS*/ line and a .css file in src/, the build stops with the line that
+# says what to do and writes nothing; a page that links a stylesheet kept outside src/ (static/) builds,
+# keeps its <link>, and nothing is bundled.
+nm="$out/apps/nomarker"; rm -rf "$nm"
+line="page.html: src/ holds app.css, and this page has no /*CDOM_CSS*/ line (a <style> whose line is only the marker, before the shim's script); add it, or move the files out of src/"
+if ak "$apps/nomarker" OUT="$nm" PAGE=page.html 2> "$nm.log"; then echo "FAIL an own page with no /*CDOM_CSS*/ took src/'s stylesheet"; fail=1
+elif [ -e "$nm/index.html" ] || compgen -G "$nm/index.html.tmp*" > /dev/null; then echo "FAIL an own page with no /*CDOM_CSS*/ was refused but left a file"; fail=1
+elif ! grep -qxF "$line" "$nm.log"; then echo "FAIL an own page with no /*CDOM_CSS*/ was refused with another message:"; cat "$nm.log"; fail=1
+else echo "ok   an own page with no /*CDOM_CSS*/ and a stylesheet in src/ stops the build: $line"; fi
+lk="$out/apps/linked"; rm -rf "$lk"
+if ! ak "$apps/linked" OUT="$lk" PAGE=page.html 2> "$lk.log"; then echo "FAIL an own page that links static/app.css does not build:"; cat "$lk.log"; fail=1
+elif ! grep -qxF '<link rel="stylesheet" href="static/app.css">' "$lk/index.html" || grep -q -- '--last' "$lk/index.html" || [ -s "$lk/index.html.csslist" ]; then
+  echo "FAIL an own page that links static/app.css: the <link> is gone, or a stylesheet was bundled or listed"; fail=1
+else echo "ok   an own page that links a stylesheet kept in static/ builds, keeps its <link>, and bundles and lists nothing"; fi
+# In Chrome: the css app with css.html as its page, from disk (tests/link/css.mjs).
+co="$out/apps/css-own"; rm -rf "$co"
+if ! ak "$apps/css" OUT="$co" PAGE=css.html 2> "$co.log"; then echo "FAIL the css app with css.html does not build:"; cat "$co.log"; fail=1
+else node "$here/css.mjs" "$co/index.html" || fail=1; fi
 # The starter (make new, tools/new.sh), against rot: generated into a fresh directory (relative to where
-# make was run, as a user types it), it is three files; make builds build/index.html, one file with the
+# make was run, as a user types it), it is four files; make builds build/index.html, one file with the
 # shim and the bundled module and no URL of a module, and a second make finds it up to date; opened from
 # disk in headless Chrome it shows "cdom" centered (tools/starter.mjs). make new refuses a directory
 # that is not empty.
@@ -232,8 +344,8 @@ st="$out/starter"
 rm -rf "$st"; mkdir -p "$st"
 if ! (cd "$st" && make -s --no-print-directory -C "$here/../.." new DIR=app > "$st/new.log" 2>&1); then
   echo "FAIL make new did not write the starter:"; cat "$st/new.log"; fail=1
-elif [ "$(cd "$st/app" && find . -type f | sort | tr '\n' ' ')" != "./.gitignore ./Makefile ./src/app.c " ]; then
-  echo "FAIL make new wrote other files than Makefile, src/app.c and .gitignore: $(cd "$st/app" && find . -type f | sort | tr '\n' ' ')"; fail=1
+elif [ "$(cd "$st/app" && find . -type f | sort | tr '\n' ' ')" != "./.gitignore ./Makefile ./src/app.c ./src/app.css " ]; then
+  echo "FAIL make new wrote other files than Makefile, src/app.c, src/app.css and .gitignore: $(cd "$st/app" && find . -type f | sort | tr '\n' ' ')"; fail=1
 elif ! nice -n 10 make -s --no-print-directory -C "$st/app" > "$st/make.log" 2>&1; then
   echo "FAIL the starter does not build:"; cat "$st/make.log"; fail=1
 elif ! grep -qF "$(head -1 "$src/../shim/cdom.min.js")" "$st/app/build/index.html"; then echo "FAIL the starter's page has no shim"; fail=1
@@ -241,7 +353,9 @@ elif ! grep -qxF "cdom.start(\"data:application/wasm;base64,$(base64 < "$st/app/
   echo "FAIL the starter's page does not start its bundled module"; fail=1
 elif grep -qE "\.wasm['\"\`]" "$st/app/build/index.html"; then echo "FAIL the starter's page names a .wasm by URL: $(grep -oE ".{20}\.wasm['\"\`]" "$st/app/build/index.html" | head -1)"; fail=1
 elif ! make -q -C "$st/app"; then echo "FAIL a second make in the starter builds again"; fail=1
-else echo "ok   make new writes Makefile, src/app.c and .gitignore; make builds one page with the shim and the module bundled, then finds it up to date"; fi
+elif ! grep -qxF '  justify-content: center;' "$st/app/build/index.html" || grep -q 'cd_open("style")' "$st/app/src/app.c"; then
+  echo "FAIL the starter's page does not hold src/app.css, or its app.c still builds a <style>"; fail=1
+else echo "ok   make new writes Makefile, src/app.c, src/app.css and .gitignore; make builds one page with the stylesheet, the shim and the module bundled, then finds it up to date"; fi
 node "$here/../../tools/starter.mjs" "$st/app/build/index.html" || fail=1
 if make -s --no-print-directory -C "$here/../.." new DIR="$st/app" > "$st/again.log" 2>&1; then echo "FAIL make new wrote into a directory that is not empty"; fail=1
 elif ! grep -q "app is not empty" "$st/again.log"; then echo "FAIL make new refused a directory for another reason:"; cat "$st/again.log"; fail=1
@@ -260,4 +374,5 @@ else echo "ok   the starter copied elsewhere builds with CDOM from the environme
 node "$here/run.mjs" "$out" || fail=1
 node "$here/../../tools/edges.mjs" || fail=1
 node "$here/../../tools/seeds.mjs" || fail=1
+node "$here/../../tools/strings.mjs" || fail=1
 exit $fail

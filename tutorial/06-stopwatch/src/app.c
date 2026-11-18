@@ -1,0 +1,195 @@
+/* Lesson 6: time. The stopwatch shows the time since Start, less the time it was stopped. The time comes from
+ * cd_now(), the clock, and not from counting frames, so it is right at any frame rate: a slow frame shows a
+ * later time, and the watch never runs slow. Frames are the right clock for drawing: cd_on_frame runs once
+ * before each paint, and it stops with the page's frames when the tab is hidden, so there is no timer to
+ * clear when the page goes away. */
+#include "cdom.h"
+#include <stdio.h>
+
+
+/* Laps are kept in the order they were taken. A watch with more laps than this drops the new ones. */
+#define LAP_CAP 512
+
+/* How long the "Reset" note stays on the page. */
+#define NOTE_MS 1500
+
+/* The state. The clock is the runs added up: accumulated_ms is the time of the runs that are over, and the
+ * run that is going began at started_ms. Both are in ms on cd_now's clock. */
+static int running;
+static double accumulated_ms, started_ms;
+
+/* The laps. split_cs[N - 1] is lap N's time since the lap before it, in whole hundredths. Laps are only
+ * ever added, and Reset takes them all away, so lap N is always split_cs[N - 1]. */
+static uint32_t nlaps;
+static uint32_t split_cs[LAP_CAP];
+static uint32_t lap_mark_cs;  /* the elapsed time at the last lap, in hundredths */
+static uint32_t keys[LAP_CAP]; /* the lap numbers to show, newest first; the keyed list reads them by index */
+
+/* The hundredths on the screen. A frame compares against it, so a frame that would write the same text skips. */
+static uint32_t shown_cs;
+
+static cd_id time_text, start_btn, start_text, lap_btn, reset_btn, note_text, laps_ol;
+static cd_list laps_list;
+static uint32_t note_timer; /* the pending timer that clears the note, 0 when none is pending */
+
+/* The clock now, in ms: a run that is going adds the time since it started. */
+static double elapsed_ms(void) {
+  return accumulated_ms + (running ? cd_now() - started_ms : 0.0);
+}
+
+/* Whole hundredths, rounded down, which is what the display shows. The double is cut to an integer once,
+ * here, and everything after it is integer math. The cap keeps the cast in range after 497 days. */
+static uint32_t hundredths(double ms) {
+  double cs = ms / 10.0;
+  return cs >= 4294967295.0 ? 0xffffffffu : (uint32_t)cs;
+}
+
+/* MM:SS.cc, each part zero-padded. Minutes take more digits past 99, as they should. */
+#define TIME_CAP 16 /* 7 digits of minutes at most, ":SS.cc", and the 0 */
+static void format_time(char *buf, uint32_t cs) {
+  snprintf(buf, TIME_CAP, "%02u:%02u.%02u", cs / 6000, (cs / 100) % 60, cs % 100);
+}
+
+/* The view of the clock: one text write. The buffer is read from C memory when it is used, so it is never
+ * stale. */
+static void show(uint32_t cs) {
+  char buf[TIME_CAP];
+  format_time(buf, cs);
+  cd_set_text_node(time_text, buf);
+  shown_cs = cs;
+}
+
+/* cd_on_frame runs before each paint while cd_frames(true) is on. It reads the clock now, and writes only when
+ * the hundredths changed. A hundredth lasts 10 ms, so a screen faster than 100 Hz has frames that land in the
+ * hundredth already on the screen, and those skip the write. The frame's own timestamp is not used: the clock
+ * is read at the moment of the draw. */
+void cd_on_frame(double) {
+  uint32_t cs = hundredths(elapsed_ms());
+  if (cs != shown_cs) show(cs);
+}
+
+/* The view of the buttons: the start button's label, and which buttons can be pressed. Lap needs a run going.
+ * Reset needs something to reset, and no run going. */
+static void sync(void) {
+  cd_set_text_node(start_text, running ? "Stop" : "Start");
+  cd_set_bool(lap_btn, "disabled", !running);
+  cd_set_bool(reset_btn, "disabled", running || accumulated_ms == 0.0);
+}
+
+/* The lap rows are built from the keys, and the keys are the lap numbers, newest first. A row is created
+ * once, when its lap is taken, and its text is fixed from then on. The text is read from C memory when
+ * the row is created, so no lap is kept anywhere else. */
+static cd_id lap_create(void *, uint32_t i, uint32_t *data) {
+  uint32_t n = keys[i];
+  char name[16], split[TIME_CAP]; /* "Lap " and up to 10 digits, and the 0 */
+  snprintf(name, sizeof name, "Lap %u", n);
+  format_time(split, split_cs[n - 1]);
+
+  cd_id row = cd_open_id("li");
+  cd_open("span"); cd_class("name"); cd_text(name); cd_close();
+  cd_open("span"); cd_class("split"); cd_text(split); cd_close();
+  cd_close();
+  *data = 0; /* a row keeps nothing of its own: no ids and no handlers */
+  return row;
+}
+
+/* patch: a lap survived, and there is nothing to write. A lap's number and its split are fixed when it is
+ * taken, so a row that is kept is already right. The keyed list still calls patch for each kept key, and it
+ * returns at once. */
+static void lap_patch(void *, uint32_t, cd_item *) {
+}
+
+/* destroy: the row's root is already removed from the page. The row has no ids of its own, so there is
+ * nothing else to free. */
+static void lap_destroy(void *, cd_item *) {
+}
+
+static const cd_list_fns LAP_FNS = {nullptr, lap_create, lap_patch, lap_destroy};
+
+/* The list is the laps, newest first: the keys are the lap numbers, the largest on top. */
+static void render_laps(void) {
+  for (uint32_t i = 0; i < nlaps; i++) keys[i] = nlaps - i;
+  cd_list_update(&laps_list, keys, nlaps, &LAP_FNS);
+}
+
+/* The note's timer: it clears the note after NOTE_MS. A timer that fired is done, so the token is dropped. */
+static void clear_note(void *) {
+  note_timer = 0;
+  cd_set_text_node(note_text, "");
+}
+
+/* ---- handlers ---- */
+
+/* Start and Stop share one button. Stop folds the run that is ending into the accumulated time, and it is
+ * where the frame loop is turned off: there is no effect to clean up later, because no frame is asked for
+ * after this point. */
+static void on_start_stop(const cd_event_rec *, void *) {
+  if (running) {
+    accumulated_ms = elapsed_ms(); /* still running here, so this adds the run that ends now */
+    running = 0;
+    cd_frames(false);
+    show(hundredths(accumulated_ms)); /* the last draw, so the display ends on the stop time */
+  } else {
+    started_ms = cd_now();
+    running = 1;
+    cd_frames(true);
+  }
+  sync();
+}
+
+static void on_lap(const cd_event_rec *, void *) {
+  if (!running || nlaps == LAP_CAP) return;
+  /* The split is taken from whole hundredths, so the splits add up to the time shown. */
+  uint32_t cs = hundredths(elapsed_ms());
+  split_cs[nlaps++] = cs - lap_mark_cs;
+  lap_mark_cs = cs;
+  render_laps();
+}
+
+static void on_reset(const cd_event_rec *, void *) {
+  accumulated_ms = 0.0;
+  nlaps = 0;
+  lap_mark_cs = 0;
+  render_laps(); /* no laps: the keyed list removes every row, in one operation */
+  show(0);
+  sync();
+
+  /* One note at a time. A Reset before the last note cleared cancels that note's timer, so the old timer
+   * cannot clear the new note early. Stopping a timer that already fired does nothing. */
+  if (note_timer) cd_timer_stop(note_timer);
+  cd_set_text_node(note_text, "Reset");
+  note_timer = cd_timer_cb(NOTE_MS, clear_note, nullptr);
+}
+
+/* The page's CSS is src/app.css. The build puts every .css file under src/ in a <style> in the page's
+ * <head>, so the page is styled before this code runs. */
+
+void cd_main(void) {
+  cd_open("main"); cd_class("watch");
+  cd_open("output"); cd_class("time"); cd_text("00:00.00"); cd_name_text(time_text = cd_id_new()); cd_close();
+
+  cd_open("div"); cd_class("controls");
+  start_btn = cd_open_id("button"); cd_class("start");
+  cd_text("Start"); cd_name_text(start_text = cd_id_new()); cd_close();
+  lap_btn = cd_open_id("button"); cd_class("lap"); cd_text("Lap"); cd_close();
+  reset_btn = cd_open_id("button"); cd_class("reset"); cd_text("Reset"); cd_close();
+  cd_close();
+
+  /* The note keeps its height when it is empty, so the page does not move when it appears. */
+  cd_open("p"); cd_class("note"); cd_attr("role", "status");
+  cd_text(""); cd_name_text(note_text = cd_id_new());
+  cd_close();
+
+  /* The list's own element: it holds nothing but the laps, so owns_parent lets a clear be one operation. */
+  laps_ol = cd_open_id("ol"); cd_class("laps"); cd_close();
+  laps_list.parent = laps_ol;
+  laps_list.owns_parent = 1;
+  cd_close();
+
+  cd_on(start_btn, CD_EV_CLICK, on_start_stop, nullptr);
+  cd_on(lap_btn, CD_EV_CLICK, on_lap, nullptr);
+  cd_on(reset_btn, CD_EV_CLICK, on_reset, nullptr);
+
+  show(0);
+  sync();
+}

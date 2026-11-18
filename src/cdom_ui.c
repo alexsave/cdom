@@ -1,25 +1,25 @@
 /* cdom_ui: the shorthand of cdom_ui.h, over cdom.h alone. Separate from cdom.c so an app that does not
- * use it does not link it. */
+ * use it does not link it. The names in parentheses are the functions, not cdom_ui.h's macros. */
 #include "cdom_ui.h"
 
-void cd_el(cd_str tag, cd_str cls) {
+void (cd_el)(cd_str tag, cd_str cls) {
   cd_open(tag);
-  if (cls) cd_class(cls);
+  if (cls.v) cd_class(cls);
 }
-cd_id cd_el_id(cd_str tag, cd_str cls) {
+cd_id (cd_el_id)(cd_str tag, cd_str cls) {
   cd_id id = cd_open_id(tag);
-  if (cls) cd_class(cls);
+  if (cls.v) cd_class(cls);
   return id;
 }
-void cd_el_text(cd_str tag, cd_str cls, cd_str s) {
+void (cd_el_text)(cd_str tag, cd_str cls, cd_str s) {
   cd_el(tag, cls);
   cd_text(s);
   cd_close();
 }
 
-cd_id cd_button(cd_str cls, cd_str label, cd_event_fn fn, void *ctx, cd_id *label_text) {
-  cd_id b = cd_el_id(CD_LIT("button"), cls);
-  cd_attr(CD_LIT("type"), CD_LIT("button"));
+cd_id (cd_button)(cd_str cls, cd_str label, cd_event_fn fn, void *ctx, cd_id *label_text) {
+  cd_id b = cd_el_id("button", cls);
+  cd_attr("type", "button");
   cd_text(label);
   if (label_text) cd_name_text(*label_text = cd_id_new());
   cd_close();

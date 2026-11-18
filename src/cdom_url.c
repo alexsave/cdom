@@ -55,7 +55,7 @@ uint32_t cd_url_decode(char *dst, const char *src, uint32_t len) {
   return n;
 }
 
-__attribute__((weak)) void cd_on_url(const uint8_t *path, uint32_t len) { (void)path; (void)len; }
+__attribute__((weak)) void cd_on_url(const uint8_t *, uint32_t) { }
 /* The shim copies the new path into cdom's room for incoming bytes (cd_bytes_buf), then calls this. */
 EXPORT("cd_url_changed") void cd_url_changed(const uint8_t *path, uint32_t len) {
   cd_on_url(path, len);

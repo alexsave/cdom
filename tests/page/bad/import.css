@@ -1,0 +1,3 @@
+/* @import "x.css"; in a comment is fine */
+@import "other.css";
+.a { order: 1; }

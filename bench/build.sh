@@ -16,15 +16,18 @@ build() { # name, version note, extra flags...
   local out="$jfb/$name"
   mkdir -p "$out"
   "$CC" $OPT "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror \
-    "${CDOM_LDFLAGS[@]}" -Wl,--strip-all "$@" -o "$out/app.wasm" \
-    "$here/cdom-keyed/src/app.c" "$top/src/cdom.c" "$top/src/mini.c"
+    "${CDOM_LDFLAGS[@]}" -Wl,--strip-all "$@" \
+    -o "$out/app.wasm.linked" "$here/cdom-keyed/src/app.c" "$top/src/cdom.c" "$top/src/mini.c"
+  "$CDOM_LITS" "$out/app.wasm.linked" "$out/app.wasm" "$out/app.wasm.lits"
+  rm -f "$out/app.wasm.linked"
   # The shim is inlined into the page: one request fewer, and it starts the wasm before the stylesheets.
   # It is the committed shim/cdom.min.js, as an app inlines it (tools/minshim.mjs makes it from cdom.js).
   rm -f "$out/cdom.js"
   node "$top/tools/minshim.mjs" check
-  # Inlined as cdom.mk's cdom_page does it (tools/page.awk), after the entry's name goes in.
+  # Inlined as cdom.mk's cdom_page does it (tools/cdpage), after the entry's name goes in.
   sed -e "s/cdom-\"keyed\"/$name-\"keyed\"/" "$here/cdom-keyed/index.html" > "$out/index.named.html"
-  awk -v shim="$top/shim/cdom.min.js" -f "$top/tools/page.awk" "$out/index.named.html" > "$out/index.src.html"
+  "$CDOM_PAGE_TOOL" --page "$out/index.named.html" --out "$out/index.src.html" --shim "$top/shim/cdom.min.js" --lits "$out/app.wasm.lits"
+  rm -f "$out/app.wasm.lits" # inlined in the page now
   rm "$out/index.named.html"
   # The boot goes in a script of its own after the shim's; without WebAssembly it loads these two instead.
   node "$legacy" page "$out/index.src.html" "$out/index.html"
@@ -35,7 +38,7 @@ build() { # name, version note, extra flags...
 {
   "name": "js-framework-benchmark-$name",
   "version": "0.1.0",
-  "description": "cdom: C owns the tree and the diff; a fixed JS shim applies a batched op stream ($note)",
+  "description": "cdom: C owns the tree and the diff; a fixed JS shim makes one DOM call per operation ($note)",
   "js-framework-benchmark": { "frameworkVersion": "0.1.0", "language": "C", "issues": [1139] },
   "scripts": { "build-prod": "../../../../bench/build.sh" }
 }
@@ -46,9 +49,8 @@ JSON
 
 # NAME=x builds only the default entry, as jfb/frameworks/keyed/x (for side-by-side work); FLAGS adds
 # compile flags to it (FLAGS=-DCDOM_BOUND=1 NAME=x builds cdom-bound's variant as x).
-if [ -n "${NAME:-}" ]; then build "$NAME" "interned strings, templates" ${FLAGS:-}; exit 0; fi
-build cdom "interned strings, templates"
-build cdom-pertext "per-op strings, templates" -DCDOM_INTERN_TEXT=0
-build cdom-notpl "interned strings, no templates" -DCDOM_TEMPLATES=0
-build cdom-o2 "interned strings, templates, -O2"
-build cdom-bound "interned strings, templates, the row class through cd_bound" -DCDOM_BOUND=1
+if [ -n "${NAME:-}" ]; then build "$NAME" "literal table, templates" ${FLAGS:-}; exit 0; fi
+build cdom "literal table, templates"
+build cdom-notpl "literal table, no templates" -DCDOM_TEMPLATES=0
+build cdom-o2 "literal table, templates, -O2"
+build cdom-bound "literal table, templates, the row class through cd_bound" -DCDOM_BOUND=1

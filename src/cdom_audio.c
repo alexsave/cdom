@@ -72,9 +72,9 @@ void cd_audio_mute(int on) {
 }
 uint32_t cd_audio_state(void) { return j_audio_state(); }
 
-__attribute__((weak)) void cd_on_audio_loaded(uint32_t token, uint32_t clip) { (void)token; (void)clip; }
-__attribute__((weak)) void cd_on_audio_ended(uint32_t voice) { (void)voice; }
-__attribute__((weak)) void cd_on_audio_state(uint32_t state) { (void)state; }
+__attribute__((weak)) void cd_on_audio_loaded(uint32_t, uint32_t) { }
+__attribute__((weak)) void cd_on_audio_ended(uint32_t) { }
+__attribute__((weak)) void cd_on_audio_state(uint32_t) { }
 
 /* A clip that did not decode gives its id back before the app hears. */
 EXPORT("cd_audio_loaded") void cd_audio_loaded(uint32_t token, uint32_t clip, uint32_t ok) {

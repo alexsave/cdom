@@ -8,7 +8,7 @@ void *malloc(size_t n);
 void *calloc(size_t n, size_t sz);
 void free(void *p);
 
-void cd_on_event(const cd_event_rec *e) { (void)e; }
+void cd_on_event(const cd_event_rec *) { }
 void cd_main(void) {}
 
 #define N 600
@@ -19,6 +19,14 @@ static uint32_t len[N];
 __attribute__((export_name("free_one"))) int free_one(void) {
   void *p = cd_alloc(24);
   cd_free(p);
+  return 0;
+}
+
+/* cdom's own tables come from the same heap: take enough ids to grow them, then give them back. */
+__attribute__((export_name("grow_tables"))) int grow_tables(void) {
+  static cd_id ids[3000];
+  for (int i = 0; i < 3000; i++) ids[i] = cd_id_new();
+  for (int i = 0; i < 3000; i++) cd_id_free(ids[i]);
   return 0;
 }
 
@@ -49,8 +57,5 @@ __attribute__((export_name("run"))) int run(void) {
       blk[i] = 0;
     }
   }
-  /* cdom's own tables come from the same heap: intern enough strings to grow them */
-  char s[8] = "s000000";
-  for (int i = 0; i < 3000; i++) { s[4] = (char)('0' + i / 100 % 10); s[5] = (char)('0' + i / 10 % 10); s[6] = (char)('0' + i % 10); s[3] = (char)('0' + i / 1000); cd_intern(s, 7); }
   return 0;
 }

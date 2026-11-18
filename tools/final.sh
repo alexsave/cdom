@@ -4,7 +4,7 @@
 set -u
 top="$(cd "$(dirname "$0")/.." && pwd)"
 log="$top/results/loads.tsv"
-fws=(${FWS:-vanillajs react-hooks cdom cdom-pertext cdom-notpl wasm-bindgen dioxus})
+fws=(${FWS:-vanillajs react-hooks cdom cdom-notpl wasm-bindgen dioxus})
 benches=("${@:-01_ 02_ 03_ 04_ 05_ 06_ 07_ 08_ 09_ 21_ 22_ 25_ 40_}")
 load1() { sysctl -n vm.loadavg | awk '{print $2}'; }
 [ -f "$log" ] || printf 'benchmark\tframework\tload_before\tload_after\twaited_s\tgate\n' > "$log"

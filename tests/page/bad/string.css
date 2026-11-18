@@ -1,0 +1,3 @@
+.a { order: 1; }
+.b::before { content: "no closing quote; }
+.c { order: 3; }

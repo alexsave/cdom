@@ -1,0 +1,5 @@
+benchmark	metric	st-a-n	st-a2-n	st-s-n	noise (a2/a)	st-s-n/a
+01_run1k	total	31.7	31.4	31.3	0.991	0.987
+01_run1k	script	4.60	4.50	4.30	0.978	0.935
+07_create10k	total	320.3	319.7	321.1	0.998	1.002
+07_create10k	script	35.2	35.6	35.7	1.011	1.014

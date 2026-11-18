@@ -7,16 +7,22 @@
 #define CDOM_UI_H
 #include "cdom.h"
 
-/* ---- elements ---- */
-void cd_el(cd_str tag, cd_str cls);                /* cd_open(tag), then cd_class(cls) when cls */
+/* ---- elements ----
+ * Strings are plain C, as in cdom.h: each of these is also a macro that passes its strings through
+ * cd_s(). cls CD_NONE is no class. */
+void cd_el(cd_str tag, cd_str cls);                /* cd_open(tag), then cd_class(cls) unless CD_NONE */
 cd_id cd_el_id(cd_str tag, cd_str cls);            /* the same, named with a new id (cd_open_id) */
 void cd_el_text(cd_str tag, cd_str cls, cd_str s); /* an element holding one text, closed */
 
-/* A <button type="button"> (type="button": in a form it submits nothing), with class cls (0: none)
+/* A <button type="button"> (type="button": in a form it submits nothing), with class cls (CD_NONE: none)
  * and the text label, built where the next node goes and closed; a click calls fn(e, ctx) (cd_on).
  * label_text, when not 0, receives the id of the label's text node, to change it later
  * (cd_set_text_node, or a cd_bound). Returns the button's id. */
 cd_id cd_button(cd_str cls, cd_str label, cd_event_fn fn, void *ctx, cd_id *label_text);
+#define cd_el(tag, cls) (cd_el)(cd_s(tag), cd_s(cls))
+#define cd_el_id(tag, cls) (cd_el_id)(cd_s(tag), cd_s(cls))
+#define cd_el_text(tag, cls, s) (cd_el_text)(cd_s(tag), cd_s(cls), cd_s(s))
+#define cd_button(cls, label, fn, ctx, label_text) (cd_button)(cd_s(cls), cd_s(label), fn, ctx, label_text)
 
 /* ---- handlers ---- */
 /* A cd_on handler, defined static; either argument may go unused. */
@@ -29,6 +35,7 @@ cd_id cd_button(cd_str cls, cd_str label, cd_event_fn fn, void *ctx, cd_id *labe
 /* ---- a string builder over the caller's buffer ----
  *   char room[64]; cd_buf b = cd_buf_in(room, sizeof room);
  *   cd_buf_putz(&b, "Line "); cd_buf_u64(&b, line); ... cd_text(cd_tmp(b.p, b.len));
+ * The bytes stay in C memory, and cd_tmp hands them to the one call that reads them (cdom.h, strings).
  * Each put writes the whole piece or, when it does not fit in what is left, none of it, and sets over;
  * after that every put writes nothing, so b.p always holds whole pieces, the first ones. Numbers in
  * decimal, as many digits as they take (u64 at most 20, i64 at most 20 with its sign). */
