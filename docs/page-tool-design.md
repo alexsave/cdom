@@ -1,6 +1,7 @@
 # The page tool: page.awk in C, and CSS files bundled into the page
 
 Status: design, written 2026-11-17, nothing implemented or measured yet.
+Revised the same day on Alex's instruction: there is no `APP_CSS` list; the build discovers every `.css` file under the app's `src/`.
 It supersedes the "The page" section of [strings-design.md](strings-design.md) where that section names `tools/page.awk`.
 
 ## What was asked
@@ -16,32 +17,52 @@ This document designs both: the C tool that replaces `page.awk`, and CSS bundlin
 
 - A new host tool, `tools/cdpage.c`, built to `tools/out/cdpage` with `HOST_CC` exactly as `tools/cdlits` is, writes the page.
   It replaces `tools/page.awk`, `base64`, `tr` and the temporary-file dance in `cdom.mk`.
-- An app names its stylesheets in its Makefile: `APP_CSS := src/app.css src/theme.css`.
+- An app's stylesheets are the `.css` files under its `src/`, in any subfolder; the Makefile names none of them.
   They are plain `.css` files, edited with the editor's CSS highlighting, linting and formatting.
 - The page says where they go with a fourth marker, `/*CDOM_CSS*/`, on a line of its own inside a `<style>` element.
   It follows the rule the shim marker follows: a marker is a comment in the language it sits in, alone on its line, at most once.
-- cdom's default page (`shim/page.html`) gets that `<style>` in its `<head>`, so an app on the default page only sets `APP_CSS`.
-- The files are written at the marker in the order `APP_CSS` lists them, byte for byte, with only `</style` escaped.
+- cdom's default page (`shim/page.html`) gets that `<style>` in its `<head>`, so an app on the default page only adds a file.
+- The files are written at the marker in byte order of their paths, byte for byte, with only `</style` escaped.
   No minifier, no comment stripping, no `@import` or `url()` resolution.
 - The sheet is in the page's HTML, before every script, so it applies to every paint the browser ever makes, in every tier including the IE 9 and 10 fallback.
-- `APP_PAGE` depends on the `.css` files, so an edit rebuilds the page and nothing else (no compile, no link).
+- The page is rebuilt when a `.css` file is added, removed, renamed or edited, and nothing else is (no compile, no link).
 - An app can still build a `<style>` from C (`cd_open("style")` is not removed), and inline styles (`cd_attr("style", ...)`, `cd_set_style`) are untouched.
 
 ## The app-facing interface
 
-### APP_CSS
+### The discovery rule
 
-`APP_CSS` is a list of CSS files, relative to the app's Makefile like `APP_SRC`.
-It is read when make builds, like every `APP_*` variable, so it may be set before or after the include.
-Unset or empty means the page gets no CSS from the build.
-There is no default and no wildcard: `src/app.css` is not picked up because it exists, since an implicit list has no stated order and a stale file would ship silently.
+This is the whole rule, and it is the sentence that goes in `cdom.mk`'s header and in the README, word for word:
 
-### Order
+> Every file whose name ends in `.css` under the app's `src/` directory, in any subfolder, is written into the page's `<style>`, in byte order of its path, so `00-base.css` comes before `10-layout.css`, and that before `theme/dark.css`; a file or folder whose name starts with a dot is skipped, and nothing else is.
 
-One rule: the files are concatenated in the order `APP_CSS` lists them, into the one `<style>` that holds the marker.
-A later file wins a tie in the cascade, as a later `<link>` would.
-Rules the page's own `<style>` holds before the marker line come before all of them, and rules after the marker line come after all of them.
-A file listed twice is an error.
+- `src/` is the directory named `src` where make runs, the same place `APP_SRC := src/app.c` is relative to.
+- The directory is the value of `APP_CSS_DIR`, which is `src` unless the app sets it.
+  It exists for three cases: an app whose sources live elsewhere, cdom's own tests (whose fixtures are not in a `src/`), and an app that wants no discovery at all, which sets `APP_CSS_DIR :=` (empty).
+  It names a directory, never a file: there is no way to list files, by Alex's decision.
+- A directory that does not exist, or holds no `.css` file, means the page gets no CSS from the build.
+- The suffix is matched as written, in lower case: `.CSS` and `.css.bak` are not stylesheets.
+
+### Order, and how an author controls it
+
+The paths are taken relative to `src/`, with `/` between the parts, and sorted by comparing their bytes (`memcmp`, then the shorter first).
+The sort is done in the tool, in C, so it does not depend on the locale, the file system's listing order, the shell or the platform.
+
+- An author controls the order with names: `00-reset.css`, `10-layout.css`, `90-overrides.css`.
+- A folder sorts as part of the path: everything in `a/` comes before everything in `b/`, and `a.css` comes before `a/x.css` (`.` is byte 0x2E, `/` is 0x2F).
+- Digits sort before upper case, and upper case before lower case: `2.css`, `Z.css`, `a.css`.
+- `10.css` comes before `9.css`, so numbered names take leading zeros.
+- A later file wins a tie in the cascade, as a later `<link>` would.
+- Rules the page's own `<style>` holds before the marker line come before all of them, and rules after the marker line come after all of them.
+- An app with one stylesheet has no order to think about, which is every lesson and the starter.
+
+### What is excluded
+
+Everything under `src/` whose name ends in `.css` ships, with one exception: a file or a folder whose name starts with a dot.
+That exception is there because such files are not the author's: editors and macOS write them next to the real file (`.#app.css`, `._app.css`), and a `.git` or `.cache` folder is not source.
+There is no ignore list, no `_partial.css` convention and no opt-out per file.
+A stylesheet that must not ship does not live under `src/`, or does not end in `.css`.
+A symbolic link to a file is read as that file; a symbolic link to a folder is not entered, so a loop cannot happen.
 
 ### The marker, and the two kinds of page
 
@@ -51,13 +72,15 @@ A file listed twice is an error.
 </style>
 ```
 
-| Page | `APP_CSS` set | `APP_CSS` empty |
+| Page | `src/` holds `.css` files | it holds none |
 | --- | --- | --- |
 | Default page (`shim/page.html`), which has the marker | the files replace the marker line | the marker line is removed, and the `<style>` stays empty |
 | The app's own page (`APP_PAGE_SRC`) with the marker | the files replace the marker line | the marker line is removed |
 | The app's own page without the marker | build error, nothing written | nothing to do |
 
-The error for the last case is `page.html: APP_CSS names src/app.css, and this page has no /*CDOM_CSS*/ line (a <style> whose line is only the marker, before the shim's script)`.
+The error for the last case is `page.html: src/ holds 00-base.css (and 2 more), and this page has no /*CDOM_CSS*/ line (a <style> whose line is only the marker, before the shim's script); add it, or set APP_CSS_DIR := to bundle no CSS`.
+It is an error and not a silent skip because discovery is automatic: an author who adds a file and sees no change must be told why, at build time.
+The one app this stops is one whose own page loads those same files itself, with a `<link>`; it says so with `APP_CSS_DIR :=`.
 cdom never adds a `<style>` to an app's own page by itself, for the reason it never rewrites an app's `cdom.start` call: the app's page is the app's.
 An app's own page may give its `<style>` attributes, or its own rules around the marker.
 
@@ -95,21 +118,8 @@ all: $(APP_PAGE)
 .PHONY: all
 ```
 
-`Makefile`, after (one line added):
-
-```make
-CDOM ?= $(abspath ../..)
-APP_WASM := build/app.wasm
-APP_SRC := src/app.c
-APP_CSS := src/app.css
-APP_PAGE := build/index.html
-APP_TITLE := Hello, cdom
-APP_CFLAGS := -Wall -Wextra -Werror
-include $(CDOM)/cdom.mk
-
-all: $(APP_PAGE)
-.PHONY: all
-```
+`Makefile`, after: the same file, unchanged.
+The lesson gains `src/app.css`, and the build finds it.
 
 `src/app.c`, before (the part that changes):
 
@@ -134,8 +144,8 @@ void cd_main(void) {
 `src/app.c`, after (`style()` and its call are gone, and one comment says where the CSS is):
 
 ```c
-/* The page's CSS is src/app.css. The Makefile names it (APP_CSS), and the build puts it in a <style> in
- * the page's <head>, so the page is styled before this code runs. */
+/* The page's CSS is src/app.css. The build puts every .css file under src/ in a <style> in the page's
+ * <head>, so the page is styled before this code runs. */
 
 void cd_main(void) {
   cd_at(CD_MOUNT, 0); /* build into the mount (<div id="app">), appending */
@@ -146,7 +156,7 @@ void cd_main(void) {
 `src/app.css`, new:
 
 ```css
-/* Lesson 1's styles. The build writes this file into the page (APP_CSS in the Makefile). */
+/* Lesson 1's styles. The build writes every .css file under src/ into the page's <head>. */
 :root {
   color-scheme: light dark;
   font-family: system-ui, sans-serif;
@@ -173,7 +183,7 @@ The built page's head, after:
 ```html
 <title>Hello, cdom</title>
 <style>
-/* Lesson 1's styles. The build writes this file into the page (APP_CSS in the Makefile). */
+/* Lesson 1's styles. The build writes every .css file under src/ into the page's <head>. */
 :root {
   ...
 }
@@ -197,7 +207,7 @@ The built page's head, after:
   Concatenation makes one file's mistake swallow the next file's rules without a word, so the tool scans each file with a small state machine (comment, double-quoted string, single-quoted string, unquoted `url(`, plain text) and refuses, naming file and line:
   - a comment or a string that never ends;
   - a `{` that is never closed, or a `}` with no `{`;
-  - `@import` outside a comment or string, with `name the file in APP_CSS instead`: an `@import` after any rule is ignored by the browser without a word, it is a second way to compose that this design does not need, and a bundled page fetches nothing;
+  - `@import` outside a comment or string, with `put the file under src/ instead`: an `@import` after any rule is ignored by the browser without a word, it is a second way to compose that this design does not need, and a bundled page fetches nothing;
   - a NUL byte, or bytes that are not UTF-8 (the page is UTF-8, as `cdlits` requires of literals).
 - **A UTF-8 byte order mark** at the start of a file is dropped, since in the middle of a sheet it would break the selector after it.
 - **A file that does not end in a newline** gets one, so the next file starts on its own line.
@@ -205,14 +215,19 @@ The built page's head, after:
   A `data:` URL or an absolute URL means the same anywhere.
   A relative URL resolves against the page, not against the `.css` file, because the sheet is inline; the README says so.
   Inlining local files as `data:` URLs is a possible later feature and is not designed here.
-- **Rebuilding.**
-  The `APP_PAGE` rule's prerequisites gain `$(APP_CSS)` and the tool itself.
-  A `.css` edit rewrites the page only.
-  `APP_CSS` is also named in `.cdom-mk-sources`, so a missing file stops make with `No rule to make target 'src/app.css', needed by 'build/index.html'` instead of leaving a stale page.
-  A change to the `APP_CSS` list itself does not rebuild, like a change to `APP_TITLE` or `APP_CFLAGS` today (make does not track variables); that existing gap is not widened or closed here.
+- **Rebuilding: one list file, written only when it changes.**
+  `$(wildcard ...)` does not recurse, and no list of prerequisites can say that a file was removed, so the page does not depend on the `.css` files directly.
+  It depends on one file, `$(APP_PAGE).csslist`, which the tool writes: one line for each discovered file, its path and a hash of its bytes (FNV-1a, 64 bits), in the order above.
+  `cdpage --css-list DIR OUT` walks `DIR`, builds that text, and replaces `OUT` only when the text differs from what `OUT` holds.
+  So the list file's time moves exactly when a file is added, removed, renamed or edited, and at no other time: a `touch` or a fresh checkout with the same bytes rebuilds nothing.
+  `cdom.mk` runs that command while it works out the page's prerequisites (a `$(shell ...)` in the `%.html` rule's second expansion, for the `APP_PAGE` target only), then names the list file as a prerequisite.
+  The page's recipe runs it once more before it writes the page, which covers the first build, when the tool did not exist yet at the time the prerequisites were worked out.
+  Because the check runs while make reads its rules and not as a recipe, `make -q` still answers truthfully and a second `make` still says there is nothing to do.
+  The costs, stated: every `make` that considers the page runs one small process (a directory walk and a hash of a few kilobytes), and `make -n` may update the list file, which is a build product in the page's directory and never a source.
+  The list file is plain text, not JSON, and the page tool does not read it back: it walks `src/` itself with the same function, so the order has one owner.
 - **`APP_WASM_SEPARATE`** changes nothing: the CSS stays inline.
   The module is kept apart for long caching of a large file and for the no-WebAssembly fallback; a stylesheet is small, and inline it costs no blocking request.
-  An app that wants a separate, cacheable stylesheet writes `<link rel="stylesheet" href="app.css">` in its own page and leaves `APP_CSS` unset; cdom needs no option for that.
+  An app that wants a separate, cacheable stylesheet writes `<link rel="stylesheet" href="app.css">` in its own page and sets `APP_CSS_DIR :=`; cdom needs no further option for that.
 - **Old browsers.**
   The string table is a script of its own because one syntax error discards a whole `<script>`, and IE 9 and 10 cannot parse the shim.
   CSS has no such problem: a browser drops the declaration or rule it does not understand and keeps the rest, so one `<style>` element serves every tier.
@@ -232,7 +247,8 @@ Each stays one file with no dependencies, compiled by one `cc` command, as `test
 
 ```
 cdpage --page in.html --out out.html --shim cdom.min.js --lits app.wasm.lits
-       [--wasm app.wasm | --wasm-url URL] [--title TITLE] [--css file.css]...
+       [--wasm app.wasm | --wasm-url URL] [--title TITLE] [--css-dir DIR]
+cdpage --css-list DIR out.csslist
 ```
 
 - `--page`, `--out`, `--shim` and `--lits` are required; anything else missing or unknown prints the usage and exits 1.
@@ -240,7 +256,10 @@ cdpage --page in.html --out out.html --shim cdom.min.js --lits app.wasm.lits
 - `--wasm-url URL` makes `/*CDOM_WASM*/` that URL as a JavaScript string.
 - With neither, the page must not have `/*CDOM_WASM*/`.
 - `--title TITLE` makes `/*CDOM_TITLE*/` the title, escaped for HTML; without it the marker is left as it is.
-- `--css FILE`, any number of times, in order.
+- `--css-dir DIR` bundles every `.css` file under `DIR` by the discovery rule; without it, or when `DIR` does not exist, the page gets no CSS.
+- `--css-list DIR OUT` is the second mode: it writes the list file described under "Rebuilding", and touches `OUT` only when its text changes.
+  With an empty `DIR` argument it writes an empty list.
+- Both modes use one walk and one sort, so the list and the page cannot disagree about what is discovered or in what order.
 - Every input is a named file or a flag: no standard input, no environment variables.
 - The whole page is built in memory, written to `out.html.tmp<pid>` and renamed.
   On any error nothing is written, nothing is left behind, a message goes to standard error and the exit status is 1.
@@ -249,9 +268,11 @@ cdpage --page in.html --out out.html --shim cdom.min.js --lits app.wasm.lits
 In `cdom.mk`:
 
 - `CDOM_PAGE_TOOL := $(CDOM)/tools/out/cdpage`, with a pattern rule beside the `cdlits` one (`%/out/cdpage: %/cdpage.c`, same flags, built to a temporary name and renamed).
-- `cdom_mk_page` becomes one command: the tool with its flags, each value quoted by `cdom_mk_q`, and `$(foreach f,$(7),--css ...)`.
-- `$(call cdom_page,in.html,out.html[,module.wasm[,lits[,css files]]])` gains the fifth argument.
-- The `%.html` rule's prerequisites become the page source, the shim, `$(CDOM_PAGE_TOOL)`, `$(APP_CSS)` and `$(APP_WASM)`.
+- `APP_CSS_DIR ?= src`, and the discovery rule as the one sentence above in the header comment.
+- `cdom_mk_page` becomes one command: the tool with its flags, each value quoted by `cdom_mk_q`, and `--css-dir` when its seventh argument is not empty.
+- `$(call cdom_page,in.html,out.html[,module.wasm[,lits[,css directory]]])` gains the fifth argument.
+- The `%.html` rule's prerequisites become the page source, the shim, `$(CDOM_PAGE_TOOL)`, `$(APP_PAGE).csslist` and `$(APP_WASM)`.
+  The list file has no rule of its own: the `$(shell ...)` and the page's recipe write it.
 - `tools/cdomflags.sh` builds the tool and hands it to cdom's own scripts as `CDOM_PAGE_TOOL`, as it does `CDOM_LITS`.
 
 ### Every behaviour of page.awk, kept or dropped
@@ -287,8 +308,8 @@ New in cdpage: the `/*CDOM_CSS*/` marker and its errors.
 - `a second /*CDOM_CSS*/ (the page takes the stylesheets once)`.
 - `/*CDOM_CSS*/ outside a <style> element` (no `<style` tag before it, or a `</style` since).
 - `/*CDOM_CSS*/ after /*CDOM_SHIM*/ (the styles come before the shim's script)`.
-- `--css` given and no marker in the page (the text is in "The marker, and the two kinds of page").
-- `cannot read the stylesheet F`, `F is named twice`, and the per-file refusals above.
+- `.css` files found and no marker in the page (the text is in "The marker, and the two kinds of page").
+- `cannot read the stylesheet F`, `cannot read the directory D`, and the per-file refusals above.
 
 The CSS that was written is not scanned for markers, and a marker inside a `.css` file means nothing.
 
@@ -306,13 +327,18 @@ Its JavaScript output is one string literal and the `</script><script>` boundary
 | A shared `tools/cdtool.h` for the buffer and `die` | each tool stops being one file compiled by one command; the shared part has no logic that could drift into a bug |
 | The tool writes the `<style>` tags itself at a bare `/*CDOM_CSS*/` line in `<head>` | saves the 16 bytes of an empty `<style>` on a default page with no CSS, but the marker is then bare text in `<head>` (invalid HTML at rest), and an app's own page cannot give the element attributes or mix its own rules |
 | No marker: insert before `</head>` | rewrites an app's own page without being asked, and guesses where |
-| `APP_CSS` defaults to `src/*.css` | no stated order; a stale file ships silently |
+| An explicit list, `APP_CSS := src/app.css ...` (this document's first version) | Alex chose discovery: a new stylesheet should need no Makefile edit. What the list gave, a stated order and no stale file shipping silently, is kept by the byte-order rule and by "everything under `src/` ships" |
+| Order from a manifest file in `src/`, or from comments inside the stylesheets | a second place to edit, and the order is no longer visible in a directory listing |
+| Make finds the files (`$(shell find ...)` or a recursive `wildcard`) and lists them as prerequisites | a removed file changes no prerequisite, so the page keeps its rules; and the order would have a second owner, sorted by a shell in some locale |
+| The page depends on the directories' times | a folder's time does not move when a file inside it is edited, and every subfolder would have to be named |
+| A list file updated by an always-run rule | correct, but `make -q` would then never say "up to date", which the tests and users rely on |
+| An ignore file, or `_name.css` meaning "not shipped" | a second rule to remember; moving the file out of `src/` says the same thing |
 | One `<style>` element per file | more bytes, same cascade, and nothing reads them apart |
 | A separate `app.css` and a `<link>` (an `APP_CSS_SEPARATE`) | a render-blocking request, a page that no longer opens as one file, and an app's own page can already do it without cdom |
 | The CSS as a string-table entry the shim installs | the styles would depend on a script that parses, so the IE 9 and 10 tier and the pre-start paint lose them |
 | `#embed` or `.incbin` of the `.css` into the C | gives the highlighting but keeps the three calls, keeps the sheet in the module (base64, 33% larger) and keeps the unstyled first frame |
 | Minify | a second CSS implementation to keep correct, for bytes brotli mostly removes |
-| Inline `@import` and local `url()` | a CSS-aware resolver for something `APP_CSS` order already expresses; `url()` inlining can come later if an app needs it |
+| Inline `@import` and local `url()` | a CSS-aware resolver for something the file order already expresses; `url()` inlining can come later if an app needs it |
 
 ## What Alex's message gets wrong, or leaves out
 
@@ -327,7 +353,7 @@ Its JavaScript output is one string literal and the `</script><script>` boundary
 - **The lessons stop being "one C file".**
   `tutorial/README.md` and lesson 1's README say so today, and that sentence has to go: a lesson becomes `src/app.c` and `src/app.css`.
 - **The default page is a contract other repos may name, and it changes.**
-  Its `<head>` gains a `<style>` element, empty for an app with no `APP_CSS` (16 bytes).
+  Its `<head>` gains a `<style>` element, empty for an app with no `.css` file (16 bytes).
   The other repos' managers need to hear it through the super-coordinator, along with the removal of `tools/page.awk` for any script that runs it directly.
 - **Inline styles are fine, with one note.**
   `cd_attr("style", ...)` sets a whole attribute; to change one property later, `cd_set_style` is the cheaper call.
@@ -341,13 +367,13 @@ There is no backwards compatibility to keep: `tools/page.awk` is deleted, and no
 | --- | --- |
 | `tools/cdpage.c` | new: the tool |
 | `tools/page.awk` | deleted |
-| `cdom.mk` | `CDOM_PAGE_TOOL` and its build rule; `cdom_mk_page` and `cdom_page` call the tool; `APP_CSS` in the header comment, the `%.html` prerequisites and `.cdom-mk-sources`; the header's default-page contract gains the `<style>`; "awk" leaves the list of what the build needs |
+| `cdom.mk` | `CDOM_PAGE_TOOL` and its build rule; `cdom_mk_page` and `cdom_page` call the tool; `APP_CSS_DIR`, the discovery sentence in the header comment, the list file in the `%.html` prerequisites and recipe; the header's default-page contract gains the `<style>`; "awk" leaves the list of what the build needs |
 | `shim/page.html` | `<style>`, the `/*CDOM_CSS*/` line and `</style>` after the `<title>` line |
 | `tools/cdomflags.sh` | builds the tool and exports `CDOM_PAGE_TOOL` |
 | `tests/page/run.sh` | new: the tool standing alone, as `tests/lits/run.sh` does for `cdlits` |
-| `tests/page/*.css`, `tests/page/css.html` | new fixtures |
-| `tests/link/run.sh` | comments name the tool; the default-page golden (`want_page`) gains the style lines; new cases: `APP_CSS` in order, a missing file, a `.css` edit rebuilds, the page opened in Chrome |
-| `tests/link/app.mk` | `APP_CSS := $(CSS)` from the command line |
+| `tests/page/css/` (a tree of `.css` fixtures with subfolders and dot-names), `tests/page/bad/*.css`, `tests/page/css.html` | new fixtures |
+| `tests/link/run.sh` | comments name the tool; the default-page golden (`want_page`) gains the style lines; new cases: discovery in order through `cdom.mk`, a file added, removed, renamed, edited and only touched, an own page without the marker, `APP_CSS_DIR :=`, and the page opened in Chrome |
+| `tests/link/app.mk` | `APP_CSS_DIR := $(CSS_DIR)` from the command line (empty unless a case sets it) |
 | `tests/link/css.mjs` | new: opens a built page in headless Chrome and checks the cascade order, the `</style` escape and that nothing ran |
 | `tests/build.sh` | `page()` calls `$CDOM_PAGE_TOOL` with the unminified shim |
 | `bench/build.sh`, `bench/strings/build-st.sh`, `bench/strings/pages-s.sh` | call `$CDOM_PAGE_TOOL` (after the running benchmark is done) |
@@ -356,13 +382,13 @@ There is no backwards compatibility to keep: `tools/page.awk` is deleted, and no
 | `tools/legacy/build.mjs` | the comment and the error in `page` name `tools/cdpage` |
 | `tutorial/0[1-7]-*/src/app.css` | new, the lesson's sheet, one declaration per line |
 | `tutorial/0[1-7]-*/src/app.c` | `style()` and its call removed; one comment says where the CSS is |
-| `tutorial/0[1-7]-*/Makefile` | `APP_CSS := src/app.css` |
-| `tutorial/01-hello/README.md` | the bullet "The CSS is a `<style>` element the app builds" becomes the `APP_CSS` explanation |
+| `tutorial/0[1-7]-*/Makefile` | unchanged |
+| `tutorial/01-hello/README.md` | the bullet "The CSS is a `<style>` element the app builds" becomes the discovery rule in one line |
 | `tutorial/0[2-7]-*/README.md` | any quoted `style()` code is removed (check each "the parts that matter" block) |
 | `tutorial/README.md` | "each one C file" becomes "a C file and its stylesheet"; the layout sentence names `src/app.css`; the size table is measured again |
 | `tutorial/test.mjs` | `SHOTS_START=dir`; every lesson checks that the styles applied before the app started and that the mount holds no `<style>` |
-| `tools/new.sh` | writes a fourth file, `src/app.css`; the Makefile gains `APP_CSS := src/app.css`; `app.c` loses its style block; the header comment and the "wrote" line name four files |
-| `README.md` | Quick start and "Starting an app" name `src/app.css`; "Building an app" documents `APP_CSS`, the marker, the order, `url()` and the script-tag limit; the diagram's `page.awk` and `base64` nodes become `tools/cdpage`; the default-page contract gains the `<style>` |
+| `tools/new.sh` | writes a fourth file, `src/app.css`; its Makefile is unchanged; `app.c` loses its style block; the header comment and the "wrote" line name four files |
+| `README.md` | Quick start and "Starting an app" name `src/app.css`; "Building an app" carries the discovery sentence, `APP_CSS_DIR`, the marker, `url()` and the script-tag limit; the diagram's `page.awk` and `base64` nodes become `tools/cdpage`, with `src/**/*.css` as an input; the default-page contract gains the `<style>` |
 | `docs/strings-design.md` | one line at the top of "The page" pointing here |
 | `docs/page-tool-results.md` | new, written by the measurement step |
 
@@ -382,7 +408,8 @@ Each prediction is recorded as confirmed, refuted or not measurable, with number
 | Q6 | First paint and first contentful paint: not measurable (they differed by 6 ms between two identical baseline pages) | same run | a shift over 10 ms either way in two passes |
 | Q7 | Comment stripping would save under 30 brotli bytes on every lesson, so it is not added | the lessons carry one or two short comments | over 100 bytes on any lesson: then stripping is designed and added |
 | Q8 | The start screenshots of all seven lessons are byte-identical before and after the migration | the same rules reach the same elements; a `<style>` element takes no space | one differing PNG that two baseline runs agree on |
-| Q9 | A default page with no `APP_CSS` grows by exactly 16 bytes (`<style>` and `</style>` and their newlines) | the marker line is removed | any other difference |
+| Q9 | A default page with no `.css` file grows by exactly 16 bytes (`<style>` and `</style>` and their newlines) | the marker line is removed | any other difference |
+| Q10 | A `make` with nothing to do in lesson 1 takes under 10 ms longer than today (median of 20 runs of `make -q`) | one process that walks one directory and hashes 0.4 KB | 20 ms or more |
 
 ## Test plan
 
@@ -394,18 +421,20 @@ The mutants go into `tools/mutate.py` so they keep running.
 | --- | --- | --- |
 | `tests/page/run.sh`, port | for every page in `tests/link/page/` and each mode (bundle, URL, none, with and without a title), the tool's output, exit status and message equal `page.awk`'s; removed with `page.awk`, when the composed goldens below take over | in `cdpage.c`, write the table after the shim; drop the final newline; base64 without padding |
 | `tests/page/run.sh`, goldens | the same pages against expected output composed in the script from the parts, and each refused page fails with its message and leaves no file | the `page-*` mutants of `tools/mutate.py`, re-pointed |
-| `tests/page/run.sh`, CSS in order | a page with the marker and `--css a.css --css b.css` is the page with `a.css` then `b.css` at the marker line, and both come before the table's script | emit the files in reverse; emit nothing |
+| `tests/page/run.sh`, discovery and order | `--css-dir tests/page/css` over a tree holding `10.css`, `9.css`, `Z.css`, `a.css`, `a/x.css`, `a/b/deep.css`, `b/00.css`, `.hidden.css`, `.dir/in.css`, `notes.css.bak`, `UPPER.CSS` and a symbolic link to a folder: the page holds exactly `10`, `9`, `Z`, `a`, `a/b/deep`, `a/x`, `b/00`, in that order, each file's rule once, all before the table's script; the same tree copied with its files created in reverse order gives the same page | sort reversed; no sort (directory order); compare ignoring case (`Z` moves after `a`); skip subfolders; take dot-names; match `.css` anywhere in the name; enter the linked folder |
+| `tests/page/run.sh`, the list file | `--css-list` on that tree writes the seven paths in order with their hashes; run again, the file is not rewritten (same inode and time); after an edit, an added file, a removed file and a rename it is rewritten each time; after a `touch` it is not; a missing directory and an empty `DIR` give an empty list | always rewrite; hash the path only (an edit is missed); list in directory order |
 | `tests/page/run.sh`, `</style` | a file with `</style>` in a string and `</STYLE>` in a comment yields a page with exactly one `</style` (the page's own) | remove the escape; make the match case-sensitive |
-| `tests/page/run.sh`, refusals | each fires with its message and writes nothing: a missing file, a file named twice, no marker with `--css`, the marker outside a `<style>`, after the shim, twice, beside other text; an unterminated comment, an unterminated string, an unclosed `{`, a stray `}`, `@import`, a NUL, invalid UTF-8; and `@import` inside a comment is accepted | remove each check in turn; make the scanner ignore comments (the accepted file is then refused) |
-| `tests/page/run.sh`, edges | a byte order mark is dropped; a file with no final newline gets one; an empty file adds nothing; no `--css` removes the marker line | keep the BOM; skip the newline |
-| `tests/link/run.sh`, `APP_CSS` | through `cdom.mk` (include first, last, twice): the default page with `CSS="a.css b.css"` equals the golden; with no `CSS` it is the golden with an empty `<style>` | drop `--css` from `cdom_mk_page` |
-| `tests/link/run.sh`, missing file | `make` with `CSS=no_such.css` fails, the log names `no_such.css`, and no page is written | take `$$(APP_CSS)` out of `.cdom-mk-sources` (make then names the page, not the file) |
-| `tests/link/run.sh`, rebuild | after a build `make -q` is up to date; with the `.css` file's time moved forward `make -q` is not; after an edit and `make` the page holds the new rule; `make -q` on the module is still up to date | take `$$(APP_CSS)` out of the `%.html` prerequisites |
+| `tests/page/run.sh`, refusals | each fires with its message and writes nothing: an unreadable file, no marker with `.css` files found, the marker outside a `<style>`, after the shim, twice, beside other text; an unterminated comment, an unterminated string, an unclosed `{`, a stray `}`, `@import`, a NUL, invalid UTF-8; and `@import` inside a comment is accepted | remove each check in turn; make the scanner ignore comments (the accepted file is then refused) |
+| `tests/page/run.sh`, edges | a byte order mark is dropped; a file with no final newline gets one; an empty file adds nothing; no `--css-dir`, or a directory with no `.css` file, removes the marker line | keep the BOM; skip the newline |
+| `tests/link/run.sh`, discovery | through `cdom.mk` (include first, last, twice): the default page with `CSS_DIR=tests/page/css` equals the golden; with no `CSS_DIR` it is the golden with an empty `<style>` | drop `--css-dir` from `cdom_mk_page` |
+| `tests/link/run.sh`, rebuild | in a copy of the fixture tree: after a build `make -q` is up to date; then, one at a time, a file edited, a file added (with an old time, `touch -t 200001010000`), a file removed, a file renamed so that the order changes: each time `make -q` is not up to date, and after `make` the page holds, or no longer holds, that file's rule, in the right place; after a `touch` alone `make -q` is still up to date; `make -q` on the module stays up to date throughout | take the list file out of the `%.html` prerequisites (nothing rebuilds); list the `.css` files as prerequisites instead (the removed file and the old-dated added file are missed); drop the `$(shell ...)` (nothing is noticed until the page is rebuilt for another reason) |
+| `tests/link/run.sh`, first build | from an empty output directory and with `tools/out/cdpage` deleted, one `make` writes a page that holds the CSS, and a second `make -q` is up to date | drop the list step from the page's recipe (the second `make` rebuilds) |
+| `tests/link/run.sh`, own page | an own page without the marker fails with the message, naming the first file and the count, and writes nothing; the same page with `CSS_DIR=` (empty) builds, with no CSS | make the check a silent skip |
 | `tests/link/css.mjs`, in Chrome | the built page of `tests/page/css.html`, from `file://`: `b.css` wins over `a.css` on the same selector; a `::before` content of `"</style><script>window.pwned=1</script>"` reads back exactly and `window.pwned` is undefined; no error; nothing fetched | reverse the order; remove the escape |
-| `tutorial/test.mjs`, before the app starts | a script injected before the page's own (`Page.addScriptToEvaluateOnNewDocument`) defines an accessor for `window.cdomLits`; when the table's script assigns it, before the shim has run, it records the body's computed margin, the number of CSS rules and the mount's child count. Every lesson: margin `0px`, rules above 0, mount empty; and at the end `#app style` matches nothing | in `cdpage.c`, write no CSS (margin is `8px`); put `style()` back in one lesson and drop its `APP_CSS` (margin `8px`, and `#app style` matches) |
+| `tutorial/test.mjs`, before the app starts | a script injected before the page's own (`Page.addScriptToEvaluateOnNewDocument`) defines an accessor for `window.cdomLits`; when the table's script assigns it, before the shim has run, it records the body's computed margin, the number of CSS rules and the mount's child count. Every lesson: margin `0px`, rules above 0, mount empty; and at the end `#app style` matches nothing | in `cdpage.c`, write no CSS (margin is `8px`); put `style()` back in one lesson and move its `app.css` out of `src/` (margin `8px`, and `#app style` matches) |
 | `tutorial/test.mjs`, `SHOTS_START=dir` | a screenshot of each lesson as soon as the mount is not empty, two animation frames later, with every `<canvas>` hidden by the harness (lesson 7's start burst is random). Taken twice before the migration to prove the method (the two runs must be byte-identical), then once after; `cmp` on all seven | change one declaration in one `app.css` (for example lesson 1's `margin: 3rem auto` to `4rem auto`): that lesson's `cmp` fails |
 | `tutorial/run.sh` (exists) | every lesson still behaves, from disk, with nothing fetched | none new |
-| `tools/starter.mjs` through `tests/link/run.sh` (exists) | the starter, with its `app.css`, still centers "cdom" to a pixel | remove `APP_CSS` from the Makefile `tools/new.sh` writes: the centering check fails |
+| `tools/starter.mjs` through `tests/link/run.sh` (exists) | the starter, with its `app.css`, still centers "cdom" to a pixel | make `tools/new.sh` write the stylesheet as `app.css` beside the Makefile, outside `src/`: the centering check fails |
 | `LEGACY=1 node tools/legacy.mjs` (exists) | the fallback page still finds its table after the tool change | none new |
 
 Per step, run only what the step can break (each step names it); the whole suite runs once, before the merge.
@@ -419,7 +448,7 @@ Steps that build or open a browser run one at a time on this Mac, and none of th
 Only step 1 is safe during a benchmark (one host compile and text files).
 
 1. **cdpage, a port of page.awk** (no CSS yet).
-   Write `tools/cdpage.c` to the command line above, without `--css` and the CSS marker, following the keep and drop table row by row.
+   Write `tools/cdpage.c` to the command line above, without the CSS modes and the CSS marker, following the keep and drop table row by row.
    Write `tests/page/run.sh`: compile the tool with `cc -O2 -Wall -Wextra -Werror`, then the port rows of the test plan (differential against `tools/page.awk`, using any small file as the module and a one-line text file as the table), then the goldens.
    Nothing else in the tree changes.
    Verify: `tests/page/run.sh`; then each port mutant by hand.
@@ -433,15 +462,15 @@ Only step 1 is safe during a benchmark (one host compile and text files).
    Delete `tools/page.awk` and the differential block of `tests/page/run.sh`.
    Verify: `grep -rn "page\.awk" --exclude-dir=node_modules --exclude-dir=docs .` prints nothing but PERF_LOG.md or RESULTS.md history; `tests/page/run.sh`; `tests/build.sh && node tools/unit.mjs && node tools/legacy.mjs`; `tests/link/run.sh`; `bench/build.sh`.
 4. **CSS in the tool.**
-   Add `--css`, the `/*CDOM_CSS*/` marker with its five page errors, the per-file scanner and its refusals, the `</style` escape, the BOM and final-newline rules.
-   Add the fixtures and the CSS rows of `tests/page/run.sh`.
+   Add `--css-dir` and `--css-list` (one walk, one byte-order sort, dot-names skipped, linked folders not entered), the `/*CDOM_CSS*/` marker with its five page errors, the per-file scanner and its refusals, the `</style` escape, the BOM and final-newline rules.
+   Add the fixture tree and the CSS rows of `tests/page/run.sh`, the discovery and list-file rows first.
    No make or page change, so every built page is still byte-identical.
    Verify: `tests/page/run.sh`; each CSS mutant of the test plan's `tests/page/run.sh` rows, by hand, then added to `tools/mutate.py`.
-5. **APP_CSS in cdom.mk and the default page.**
-   Add the marker to `shim/page.html`; add `APP_CSS` to `cdom_mk_page`, the `%.html` prerequisites, `.cdom-mk-sources`, `cdom_page`'s fifth argument and the header comment (the variable, the marker, the default-page contract).
-   Update `tests/link/app.mk` and the `want_page` golden, and add the `APP_CSS`, missing-file and rebuild cases and `tests/link/css.mjs` to `tests/link/run.sh`.
+5. **Discovery in cdom.mk, and the default page.**
+   Add the marker to `shim/page.html`; add `APP_CSS_DIR ?= src`, the `$(shell ...)` that runs `--css-list` for the `APP_PAGE` target, the list file in the `%.html` prerequisites, the list step and `--css-dir` in the page's recipe, `cdom_page`'s fifth argument, and the header comment (the discovery sentence word for word, the marker, the default-page contract).
+   Update `tests/link/app.mk` and the `want_page` golden, and add the discovery, rebuild, first-build and own-page cases and `tests/link/css.mjs` to `tests/link/run.sh`.
    The lessons still build their own `<style>`, and still pass.
-   Verify: `tests/link/run.sh`; `tutorial/run.sh`; the three `cdom.mk` mutants and the two `css.mjs` mutants; Q9 by `cmp` against a golden.
+   Verify: `tests/link/run.sh`; `tutorial/run.sh`; the six `cdom.mk` mutants of the four `tests/link/run.sh` rows and the two `css.mjs` mutants; Q9 by `cmp` against a golden.
 6. **The screenshot harness.**
    Add `SHOTS_START=dir` to `tutorial/test.mjs` as the test plan describes.
    Run it twice on the unmigrated lessons into `tutorial/out/start-a` and `tutorial/out/start-b`, and `cmp` the seven pairs.
@@ -450,12 +479,12 @@ Only step 1 is safe during a benchmark (one host compile and text files).
    Verify: `SHOTS_START=tutorial/out/start-a tutorial/run.sh && SHOTS_START=tutorial/out/start-b tutorial/run.sh && for f in tutorial/out/start-a/*.png; do cmp "$f" "tutorial/out/start-b/$(basename "$f")"; done`.
 7. **The seven lessons move to src/app.css.**
    In the same session as its own baseline: `SHOTS_START=tutorial/out/start-before tutorial/run.sh` first.
-   For each lesson: write `src/app.css` from the literals (one declaration per line, the rules in the same order, lesson 7's C comment as a CSS comment), remove `style()` and its call, add the comment, add `APP_CSS := src/app.css` to the Makefile.
-   `tutorial/01-hello/src/.app.c.swp` exists today: someone has that file open, so check with the dispatcher before editing it.
+   For each lesson: write `src/app.css` from the literals (one declaration per line, the rules in the same order, lesson 7's C comment as a CSS comment), remove `style()` and its call, add the comment; the Makefile is not touched.
+   Alex has `tutorial/01-hello/src/app.c` open (`.app.c.swp` is there): do lesson 1 last, and only after the dispatcher says the file is free.
    Add the "before the app starts" check to `tutorial/test.mjs`, and update the lesson READMEs and `tutorial/README.md` (wording now, the size table in step 9).
    Verify: `SHOTS_START=tutorial/out/start-after tutorial/run.sh`; `cmp` of the seven pairs (Q8); `grep -n 'cd_open("style")' tutorial/*/src/app.c` prints nothing; the two "before the app starts" mutants and the screenshot mutant.
 8. **The starter.**
-   `tools/new.sh` writes `src/app.css` and `APP_CSS`, and its `app.c` loses the style block; update its messages and header, the starter cases and messages in `tests/link/run.sh`, and the README's Quick start and "Starting an app".
+   `tools/new.sh` writes `src/app.css` (its Makefile does not change), and its `app.c` loses the style block; update its messages and header, the starter cases and messages in `tests/link/run.sh`, and the README's Quick start and "Starting an app".
    Verify: `tests/link/run.sh` (it generates the starter, builds it and runs `tools/starter.mjs`); the starter mutant.
 9. **Measure, and write the results** (Haiku for the collection, after any benchmark).
    Fill the "after" table of `docs/page-tool-results.md` with the same commands as step 6, run `bench/strings/startup.mjs` on lessons 1 and 5 before (from the commit before step 7, in a temporary worktree) and after, measure what comment stripping would save with a throwaway script, and mark Q1 to Q9 confirmed, refuted or not measurable.
@@ -477,5 +506,11 @@ Only step 1 is safe during a benchmark (one host compile and text files).
   A focused field's caret or a running clock could differ between runs; step 6 proves the method on unmigrated lessons before step 7 depends on it.
 - **Other repos run `page.awk` directly or assert on the default page's bytes.**
   They are outside this tree; step 10 ends with the message to their managers.
+- **Discovery ships a file nobody meant to ship.**
+  A stray `old.css` under `src/` goes into the page with no line in any Makefile saying so.
+  The rule is one sentence in two places, the list file (`build/index.html.csslist`) shows exactly what went in and in what order, and the lesson and starter tests compare whole pages.
+- **The `$(shell ...)` runs on every make.**
+  It is one small process, predicted under 10 ms (Q10), and it writes only a build product.
+  If Q10 is refuted, the fallback is the always-run rule, at the price of `make -q`.
 - **A benchmark is running while this is written.**
   Steps 2 and later build or open browsers, and step 3 edits the benchmark's own build scripts, so they wait for it.
