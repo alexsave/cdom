@@ -25,6 +25,8 @@ if link "$out/own_libc.wasm" "$here/alloc.c" "$here/own_libc.c" "$src/cdom.c" "$
   echo "FAIL an app's own libc does not link next to mini.c:"; cat "$out/own_libc.log"; fail=1; fi
 if link "$out/on_only.wasm" "$here/on_only.c" "$src/cdom.c" "$src/mini.c" 2> "$out/on_only.log"; then :; else
   echo "FAIL an app that uses cd_on alone, with no cd_on_event, does not link:"; cat "$out/on_only.log"; fail=1; fi
+if link "$out/ro_range.wasm" "$here/ro_range.c" "$src/cdom.c" "$src/mini.c" 2> "$out/ro_range.log"; then :; else
+  echo "FAIL the read-only range probe does not link:"; cat "$out/ro_range.log"; fail=1; fi
 # string.h (and stdio.h, below): a file that includes it builds under cdom's flags and under freestanding ones (-ffreestanding, where
 # clang emits a call for a memcpy it does not know), and links with mini.c alone; memcpy, memmove and
 # memset are memory.copy and memory.fill in place, never an undefined symbol. libc_addr takes their

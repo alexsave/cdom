@@ -58,6 +58,15 @@ try {
   ok(await E('document.getElementById("echo").textContent') === 'read after the memory grew \u00e9',
     `a string read after the memory grew: ${await E('document.getElementById("echo").textContent')}`);
 
+  // A literal the macro cannot see is its own address: each read from memory once, then kept (a Map, or a plain
+  // object where there is none), and the same on a page with no Map.
+  const roRun = async (what) => {
+    const seen = [];
+    for (const i of [0, 1, 0, 1]) { await E(`X.ro(${i})`); seen.push(await E('document.getElementById("echo").textContent')); }
+    ok(seen.join('|') === 'ro-zero|ro-one \u00e9|ro-zero|ro-one \u00e9', `read-only strings ${what}: ${seen.join('|')}`);
+  };
+  await roRun('with a Map');
+
   // Pointer events: one press, a drag and a release on the pad, each delivered exactly once.
   let n = (await E('LOG')).length;
   await mouse('mouseMoved', 50, 50); await mouse('mousePressed', 50, 50, 1, 'left');
@@ -137,6 +146,12 @@ try {
     ok(phase('click').includes(false) && !phase('click').includes(true), `click in the bubble phase: ${phase('click')}`);
     ok(phase('focus').includes(true), `focus in the capture phase: ${phase('focus')}`);
   }
+  // The same page with no Map: the read-only strings are kept in a plain object.
+  await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/legacy.html?nomap` });
+  await sleep(300);
+  for (let i = 0; i < 100 && !(await E('!!window.READY')); i++) await sleep(50);
+  ok(await E('typeof Map === "undefined" && !!window.READY'), 'the no-Map page booted with no Map');
+  await roRun('with no Map');
 } finally { await b.close(); srv.close(); }
 console.log(fails ? `${fails} FAILED` : 'all ok');
 process.exit(fails ? 1 : 0);

@@ -112,6 +112,7 @@ function syncChecks() {
   eq(rd(X.c_rw()), 'fresh title', 'read after write in one batch');
   eq(X.c_ids(), 0, 'cd_id_new never returns a reserved id');
   const tp = X.c_tmp_paths(); eq([tp >> 16, tp & 0xffff, rd(tp & 0xffff)].join(), '3,3,DIV', 'a one-off path read twice under one id');
+  const rp = X.c_ro_paths(); eq([rp >> 16, rp & 0xffff, rd(rp & 0xffff)].join(), '3,3,DIV', 'two read-only paths a word apart are two paths');
   const dblEl = H.el('DBL_ONLY'), heard = () => { const k = LOG.length; dblEl.dispatchEvent(new Event('dblclick', { bubbles: true }));
     return H.since(k).filter((r) => r[1] === H.id('DBL_ONLY')).length; };
   X.c_unlisten(0); eq(heard(), 0, 'cd_unlisten: the node no longer hears dblclick');

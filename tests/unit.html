@@ -8,6 +8,7 @@
 const errors = [], passed = [], trace = [];
 let tracing = false;
 const real = WebAssembly.instantiateStreaming;
+const roReads = []; // the addresses the shim read from memory as read-only strings (options.onRoRead)
 let shim; // the shim's imports, to ask it directly what it still holds
 WebAssembly.instantiateStreaming = (res, imp) => {
   for (const k of ['walk']) { const f = imp.cdom[k]; imp.cdom[k] = (...a) => { if (tracing) trace.push(k); return f(...a); }; }
@@ -81,7 +82,7 @@ function aheadChecks(x) {
     return r.every((v) => v === true) || r.join(' | ');
   });
 }
-cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef, checkAhead: !aheadOff }).then(async (x) => {
+cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef, checkAhead: !aheadOff, onRoRead: (a) => roReads.push(a) }).then(async (x) => {
   check('options.openStore opens the store before the module starts', () => (storeOpenedAt >= 0 && storeOpenedAt <= x.t_started()) || `opened at ${storeOpenedAt}, started at ${x.t_started()}`);
   window.__x = x;
   if (aheadOff) { aheadChecks(x); return; }
@@ -374,6 +375,38 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef, che
       for (const key of Object.keys(want)) if (got[key] !== want[key]) r.push(`variant ${k}, ${key}: ${JSON.stringify(got[key])}, wanted ${JSON.stringify(want[key])}`);
     }
     return !r.length || r.join('; ');
+  });
+  // A pointer into read-only data is its own id, kept by address (docs/strings-plain-c.md, option B).
+  x.t_ro(8, 0);
+  const roShow = (k, i) => { x.t_ro(k, i); return $('#ro').lastChild.data; };
+  const roRun = (cases, rounds) => {
+    const r = [];
+    for (let n = 0; n < rounds; n++) for (const [k, i, want] of cases) { const got = roShow(k, i); if (got !== want) r.push(`k${k} i${i} round ${n}: ${JSON.stringify(got)}, wanted ${JSON.stringify(want)}`); }
+    return r;
+  };
+  check('read-only strings: a ternary, a helper, a const table entry and a static const char[] show the right text and are read from memory once each', () => {
+    const cases = [[0, 0, 'tern-no'], [0, 1, 'tern-yes'], [1, 0, 'help-no'], [1, 1, 'help-yes'], [2, 0, 'table-a'], [2, 1, 'table-b'], [3, 0, 'static-const-array']];
+    const before = roReads.length, r = roRun(cases, 3), reads = roReads.length - before;
+    if (reads !== cases.length) r.push(`${reads} reads from memory, wanted ${cases.length}`);
+    return !r.length || r.join('; ');
+  });
+  check('read-only strings: a mutable static, a stack buffer and heap bytes at a reused address show their new text every time and are never kept', () => {
+    const before = roReads.length, r = [];
+    for (const k of [4, 5, 6]) r.push(...roRun([[k, 0, 'buf-one'], [k, 1, 'buf-two'], [k, 0, 'buf-one'], [k, 1, 'buf-two']], 2));
+    if (roReads.length !== before) r.push(`${roReads.length - before} reads went through the read-only cache`);
+    return !r.length || r.join('; ');
+  });
+  check('read-only strings: two addresses of one direct-mapped cache entry both show correctly, alternating, and are read once each', () => {
+    const before = roReads.length, r = roRun([[7, 0, 'col-a'], [7, 1, 'col-b']], 4), got = roReads.slice(before);
+    if (got.length !== 2 || (got[0] & 255) !== (got[1] & 255) || got[0] === got[1]) r.push(`the two addresses are not one cache entry: ${got}`);
+    return !r.length || r.join('; ');
+  });
+  check('read-only strings: an id above the slot range is a pointer, not a slot', () => {
+    const node = x.t_ro_node(), at = x.t_ro_above(), lits = cdomLits[3].split('\0');
+    if (at < cdomLits[0] + 4 * lits.length) return `the layout puts these bytes at ${at}, below the end of the slots (${cdomLits[0] + 4 * lits.length}): the test cannot reach above them`;
+    shim.set_text(node, at);
+    const got = cdom.node(node).data;
+    return got === 'buf-one' || `showed ${JSON.stringify(got)}`;
   });
   check('a cd_tmp used after another call that took a string throws, naming the rule', () => {
     try { x.t_tmp_stale(); return 'no throw'; } catch (e) { return /^cdom: a cd_tmp string used after the call it was made for/.test(e.message) || String(e); }

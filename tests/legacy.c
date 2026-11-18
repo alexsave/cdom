@@ -66,6 +66,8 @@ EXPORT("grow") void grow(void) {
   cd_set_text_node(ids[ECHO], cd_tmpz("read after the memory grew \xc3\xa9"));
   cd_flush();
 }
+/* Strings the macro cannot see, which are ids of their own address (cd_tmpz): shown and shown again. */
+EXPORT("ro") void ro(uint32_t i) { cd_set_text_node(ids[ECHO], i ? "ro-one \xc3\xa9" : "ro-zero"); cd_flush(); }
 EXPORT("id") cd_id id_of(uint32_t k) { return k < NIDS ? ids[k] : CD_DETACHED; }
 /* The input's value read into cap bytes: encodeInto must stop before a character that does not fit
  * (cut: the bytes written), and cd_input_text says the whole length however much fits (whole). */

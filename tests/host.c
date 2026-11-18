@@ -247,8 +247,17 @@ EXPORT("c_ids") uint32_t c_ids(void) {
 /* A runtime path is split each time and never kept: the second read names a different property, though
  * the first path's serial may be reused by it. Returns the two lengths read, the second's bytes left in io. */
 EXPORT("c_tmp_paths") uint32_t c_tmp_paths(void) {
-  uint32_t a = cd_get_str(ids[BOX], cd_tmpz("id"), io, sizeof io);
-  uint32_t b = cd_get_str(ids[BOX], cd_tmpz("tagName"), io, sizeof io);
+  static char p1[] = "id", p2[] = "tagName"; /* mutable: a literal here would be a read-only pointer, its own id */
+  uint32_t a = cd_get_str(ids[BOX], cd_tmpz(p1), io, sizeof io);
+  uint32_t b = cd_get_str(ids[BOX], cd_tmpz(p2), io, sizeof io);
+  return a << 16 | b;
+}
+/* Paths that are read-only pointers, 3 bytes apart (one word: the same slot index if they were taken for
+ * slots): each is split on its own, and neither is mistaken for a literal's slot. */
+EXPORT("c_ro_paths") uint32_t c_ro_paths(void) {
+  static const char two[12] __attribute__((aligned(4))) = "id\0tagName";
+  uint32_t a = cd_get_str(ids[BOX], two, io, sizeof io);
+  uint32_t b = cd_get_str(ids[BOX], two + 3, io, sizeof io);
   return a << 16 | b;
 }
 /* cd_unlisten on a node: it stops hearing dblclick, and starts again when listened for anew. */

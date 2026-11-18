@@ -473,6 +473,53 @@ EXPORT("t_pos") void t_pos(uint32_t k) {
   pos_len[k & 3] = cd_get_str(e, V(k, "title", "lang", "dataset.p", "style.color"), pos_out[k & 3], 32); /* a path read */
 }
 
+/* 11d0. A pointer into read-only data is its own id (cd_tmpz): the shim keeps its string by address, so a
+ * constant string the macro cannot see is read from memory once. Mutable bytes, on the stack, in .data and on
+ * the heap, are read on every use, so a reused address shows its new text. t_ro(k, i) appends one text node
+ * to <section id=ro>: k picks the way the string is made, i picks which of two. */
+static __attribute__((noinline)) void ro_put(const char *s) { cd_text(s); }
+static const char *const RO_TABLE[] = {"table-a", "table-b"};
+static const char RO_ARRAY[] = "static-const-array";
+/* Two strings 256 bytes apart: the same slot of the shim's 256-entry direct-mapped cache. */
+static const struct { char a[256]; char b[256]; } RO_COL = {"col-a", "col-b"};
+static char ro_static[16];
+static char *ro_heap;
+static cd_id ro_text_node;
+static void ro_copy(char *d, uint32_t i) {
+  const char *s = i ? "buf-two" : "buf-one";
+  while ((*d++ = *s++)) {}
+}
+EXPORT("t_ro") void t_ro(uint32_t k, uint32_t i) {
+  static cd_id sec;
+  if (!sec) sec = section("ro");
+  cd_at(sec, 0);
+  switch (k) {
+  case 0: cd_text(i ? "tern-yes" : "tern-no"); break;
+  case 1: ro_put(i ? "help-yes" : "help-no"); break;
+  case 2: cd_text(RO_TABLE[i & 1]); break;
+  case 3: cd_text(RO_ARRAY); break;
+  case 4: ro_copy(ro_static, i); cd_text(ro_static); break;
+  case 5: { char b[16]; ro_copy(b, i); cd_text(b); break; }
+  case 6:
+    if (!ro_heap) ro_heap = (char *)((uintptr_t)__builtin_wasm_memory_grow(0, 1) * 65536); /* a fresh page past everything */
+    ro_copy(ro_heap, i); cd_text(ro_heap); break;
+  case 8: break; /* makes the section: its name goes through a helper, so it is read once here and not in a count */
+  default: cd_text(i ? RO_COL.b : RO_COL.a); break;
+  }
+}
+/* The shim reads an id above the slot range as a pointer too: a layout with read-only data after the
+ * page's table must work, so the test hands it the address of bytes that lie above the table. */
+EXPORT("t_ro_above") char *t_ro_above(void) { ro_copy(ro_static, 0); return ro_static; }
+EXPORT("t_ro_node") cd_id t_ro_node(void) {
+  static cd_id sec;
+  if (!sec) sec = section("ro-above");
+  cd_at(sec, 0);
+  ro_text_node = cd_id_new();
+  cd_text("placeholder");
+  cd_name_text(ro_text_node);
+  return ro_text_node;
+}
+
 /* 11d. The life of a cd_tmp: good for the next call that takes a string. Used after another such call it
  * throws out of the call that uses it. 32 are alive at once (here as the arguments of one call); the 33rd traps. */
 EXPORT("t_tmp_stale") void t_tmp_stale(void) {

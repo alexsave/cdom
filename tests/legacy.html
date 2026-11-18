@@ -1,5 +1,9 @@
 <!doctype html><html><head><meta charset="utf-8"><title>legacy</title></head><body><div id="m"></div>
 <script>
+// ?nomap: a browser with no Map (IE 9 and 10), for the read-only string table's plain-object form.
+if (/nomap/.test(location.search)) window.Map = undefined;
+</script>
+<script>
 /*CDOM_SHIM*/
 </script>
 <script>
