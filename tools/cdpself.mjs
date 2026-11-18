@@ -28,6 +28,13 @@ for (let port = 8730; port <= 8739; port++) {
   });
   await new Promise((ok) => srv.once('error', ok).listen(port, '127.0.0.1', () => { decoys.push(srv); ok(); }));
 }
+// A port another program holds (a Chrome of its own on this machine) gets no decoy, and is named; the run
+// launches on a port the OS picks, so that program is never reached either. With no decoy at all the check
+// would prove nothing, so that is a failure, said as such.
+const taken = [];
+for (let port = 8730; port <= 8739; port++) if (!decoys.some((d) => d.address().port === port)) taken.push(port);
+if (taken.length) console.log(`     port(s) ${taken.join(', ')} taken by another program: no decoy there`);
+if (!decoys.length) { console.log('FAIL every decoy port (8730-8739) is taken by another program: the check cannot run'); process.exit(1); }
 let fails = 0;
 const check = (c, m) => { console.log(c ? 'ok  ' : 'FAIL', m); if (!c) fails++; };
 try {
