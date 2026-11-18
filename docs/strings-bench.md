@@ -306,7 +306,7 @@ Where the design should change:
 3. **Put the table before the module in the page**, in a script of its own: after the base64 it costs 2,400 more bytes of brotli on the synthetic page and turns the design's byte saving into a 5.9% loss.
 4. **Expect create 10k script to get worse, not to hold**: even with the faster read, Bx is 0.8 ms (3.9%) behind A on create 10k script, and the app-owned label arena (step 3) alone costs about 2 ms of it on today's string path (sb-at); totals stay within 1.6% everywhere.
    Fresh non-ASCII labels in bulk are where today's batch decode still wins (64 to 73 ns a label against 153 to 189 for any read on use); an app that renders thousands of fresh non-ASCII strings at once would want a batched read, which the direct-call shape does not offer.
-5. **Carry the table without the per-slot map if possible**, and number ASCII strings first if tables ever reach 10,000 strings: form (g) installs 1.2 to 1.9 times faster than the design's (a) with 30% less heap at 100k.
+5. **Carry the table without the per-slot map if possible**, and number ASCII strings first if tables ever reach 10,000 strings: form (g) installs 1.3 to 1.9 times faster than the design's (a) with 30% less heap at 100k.
 
 Numbers that contradict docs/strings-design.md:
 
