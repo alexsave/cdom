@@ -17,6 +17,7 @@ HOST = ['node', 'tools/host.mjs']
 CANVAS = ['node', 'tools/canvas.mjs']
 FRESH = ['node', 'tools/legacyfresh.mjs']
 ALLOC = ['node', 'tools/alloc.mjs']
+PAGE = ['tests/page/run.sh']
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -437,6 +438,10 @@ M = [
   ('page-url-mode-off', 'tools/page.awk', '  if (wasm == "url") return', '  if (0) return', LINK, 'FAIL the default page (first), APP_WASM_SEPARATE, does not build'),
   ('page-url-unescaped', 'tools/page.awk', '  gsub(/"/, "\\\\\\"", s)\n', '', LINK, 'FAIL the default page (first), APP_WASM_SEPARATE: APP_WASM_URL'),
   ('page-title-unescaped', 'tools/page.awk', '  gsub(/</, "\\\\&lt;", s)\n', '', LINK, 'FAIL the default page (first), APP_WASM_SEPARATE: not shim/page.html'),
+  # tools/cdpage standing alone (tests/page/run.sh): the page from its parts
+  ('cdpage-table-after-shim', 'tools/cdpage.c', '      put_lines(o, lits.p, lits.n);\n      bstr(o, "</script>\\n");\n      bput(o, script.p, script.n);\n      bbyte(o, \'\\n\');\n      if (!slurp(a->shim, &shim)) die("%s: cannot read the shim %s", page_name, a->shim);\n      put_lines(o, shim.p, shim.n);\n', '      if (!slurp(a->shim, &shim)) die("%s: cannot read the shim %s", page_name, a->shim);\n      put_lines(o, shim.p, shim.n);\n      put_lines(o, lits.p, lits.n);\n      bstr(o, "</script>\\n");\n      bput(o, script.p, script.n);\n      bbyte(o, \'\\n\');\n', PAGE, 'FAIL the default page, bundled (8-byte module), titled and escaped: the page is not its parts'),
+  ('cdpage-no-final-newline', 'tools/cdpage.c', "  if (n && p[n - 1] != '\\n') bbyte(o, '\\n');\n", '', PAGE, 'FAIL the default page, bundled (8-byte module), titled and escaped: the page is not its parts'),
+  ('cdpage-b64-unpadded', 'tools/cdpage.c', "    char q[4] = { A[v >> 18], A[v >> 12 & 63], '=', '=' };\n    bput(o, q, 4);", "    char q[4] = { A[v >> 18], A[v >> 12 & 63], '=', '=' };\n    bput(o, q, 2);", PAGE, 'FAIL the default page, bundled (10-byte module), titled and escaped: the page is not its parts'),
   # The starter (make new, tools/new.sh), built and opened from disk (tests/link/run.sh, tools/starter.mjs)
   ('new-not-centered', 'tools/new.sh', ' justify-content: center; }', ' }', LINK, 'FAIL "cdom" is centered'),
   ('new-separate', 'tools/new.sh', 'APP_PAGE := build/index.html\n', 'APP_PAGE := build/index.html\nAPP_WASM_SEPARATE := 1\n', LINK, "FAIL the starter's page does not start its bundled module"),
