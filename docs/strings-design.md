@@ -459,6 +459,8 @@ It would be a change to `cdlits` and `start` only, in the same commit, because t
 
 ## The page: cdom.mk, page.awk, the shim, the boot
 
+`tools/page.awk` is now `tools/cdpage`, which also bundles the stylesheets: [page-tool-design.md](page-tool-design.md).
+
 - **`CDOM_LDFLAGS`** gains `-Wl,--export-if-defined=__start_cd_lits`, `=__stop_cd_lits`, `=__start_cd_chars`, `=__stop_cd_chars` and `=cd_lits_stamp`.
 - **`CDOM_LITS := $(CDOM)/tools/out/cdlits`**, built by a rule from `tools/cdlits.c` with `$(HOST_CC) -O2 -Wall -Wextra -Werror` to a temporary name and renamed (several apps may build it at once); `tools/out/` is ignored by git.
 - **The `APP_WASM` rule** links to `$@.linked`, runs `$(CDOM_LITS) $@.linked $@ $@.lits`, and removes `$@.linked`.

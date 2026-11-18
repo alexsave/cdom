@@ -1,6 +1,6 @@
 # The page tool: page.awk in C, and CSS files bundled into the page
 
-Status: design, written 2026-11-17, nothing implemented or measured yet.
+Status: implemented 2026-11-18 on branch `strings`; the measurements are in [page-tool-results.md](page-tool-results.md), and what the implementation does differently is under "Deviations", at the end.
 Revised the same day on Alex's instructions: there is no `APP_CSS` list and no variable of any kind for CSS; the build discovers every `.css` file under the app's `src/`, and that is the only rule.
 It supersedes the "The page" section of [strings-design.md](strings-design.md) where that section names `tools/page.awk`.
 
@@ -514,3 +514,40 @@ Only step 1 is safe during a benchmark (one host compile and text files).
   If Q10 is refuted, the fallback is the always-run rule, at the price of `make -q`.
 - **A benchmark is running while this is written.**
   Steps 2 and later build or open browsers, and step 3 edits the benchmark's own build scripts, so they wait for it.
+
+## Deviations
+
+Where the implementation differs from the text above.
+The code is the truth for facts; each item says what was done and why.
+
+- **Comments that fill their lines are left out of the page.**
+  Q7 was refuted (43 to 173 brotli bytes a lesson, over 100 on lessons 6 and 7), so, as "What the tool does with CSS" said, stripping was designed and added.
+  Only a comment that fills its lines goes (spaces and tabs before it on its first line, spaces, tabs and a CR after it on its last), with those lines; a comment beside other text is kept, because removing it can join two tokens or part a compound selector (`a`, a comment, `.b` is `a.b`; a space in its place would make a descendant).
+  The scanner that checks a file finds these comments, so there is one CSS state machine.
+  A line number in the browser's style inspector is then no longer the file's plus a fixed offset after such a comment.
+- **The tools and the list file are named in `.cdom-mk-sources`.**
+  Made by pattern rules, they were intermediate files to make: it removed the list file after every page it wrote, so the next make always wrote the page again, and it removed `tools/out/cdpage` after a build that had to make it, and then did not make it again while the page was newer, so the `$(shell)` could not bring the list up to date.
+  Both were found by `tests/link/run.sh` (the first-build and rebuild cases) and each has a mutant.
+- **The `$(shell)` runs only when `tools/out/cdpage` exists and the page's directory does,** and `%.csslist: ;` is an empty rule, so a missing list (a first build) makes the page, not an error.
+  `$(shell)` sits in a variable outside `cdom_mk_for`'s arguments, since `$(call)` expands its arguments for every `.html` make considers; an `$(if)` on `$@` keeps it to `APP_PAGE`.
+  Make 3.81, which macOS ships, expands the page's prerequisites twice, so the list command runs twice per make (Q10: 6.2 ms in all).
+- **Make 3.81 compares whole seconds.**
+  A stylesheet edited in the same second as the page was written is not seen, as for any make rule; the tests wait a second before each `make -q`.
+- **The stylesheets are found and checked before the page's lines,** so a stylesheet's fault is named before any fault of the page.
+- **`--css-list` lists an unreadable file as `path<TAB>unreadable`** instead of failing, since it runs while make reads its rules; the page step then names the file.
+- **Message texts.**
+  `@import` says `put the file in the same folder instead (every .css file there is in the page, in byte order of its path)`.
+  The missing-marker message names the `--css-dir` as given, with a `/` (`src/` from cdom.mk).
+  `cannot read the module to bundle` names the file, and covers an empty one.
+  Messages about a file that is not the page (`cannot read the stylesheet`, `cannot read the directory`, the usage) start with `cdpage: `.
+- **Markers are found in the page's own text, never in text that replaced one** (`page.awk` replaced the title first and then looked for `/*CDOM_WASM*/` in the result); every `/*CDOM_TITLE*/` on a line is replaced, as row 17 said.
+- **Q9 is 17 bytes,** not 16: `<style>\n` is 8 and `</style>\n` 9.
+- **`tests/link/run.sh` works in `tests/out/link`,** so the `src/` that `tests/link/app.mk`'s builds bundle is one that does not exist wherever the script is started from.
+- **The fixtures.**
+  The fixture tree's files end their first line with `/* their path */` (a comment beside a rule, so it stays and the tests can read the order); `a.css` also has two comments that fill their lines, which the page must not hold.
+  `tests/page/good.css` holds the corners the scanner must accept; the NUL and non-UTF-8 files are made by the script.
+- **The screenshot harness** also takes `SCHEME=light|dark`, and hides the canvas only for the shot (a hidden canvas takes no clicks, and lesson 7's checks click it).
+  Lesson 6's end shot is not a pixel oracle (its laps are real time), like lesson 7's.
+- **The lessons' `app.css` files** open with a comment naming the lesson; lessons 6 and 7 carry the comments that were above and inside `style()`.
+- **`tools/mutate.py`** copies a symbolic link as a link (the fixture tree has one), and has a `TUT` test command for the lessons.
+- **`page.awk` is still named** in `RESULTS.md` (history) and in `bench/strings/leaf-bench.patch` (a recorded prototype, not run).
