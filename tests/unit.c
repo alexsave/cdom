@@ -2605,9 +2605,9 @@ EXPORT("t_state_w") const char *t_state_w(uint32_t step) {
     if (st_open(&rw_page)) {
       cd_watch(&sw_items, st_w_list, 0);
       wl.parent = cd_open_id("ol"); cd_close();
+      cd_close(); /* the page's <i>: the list builds at its own parent */
       w_update(); /* the first rows, in the page's build */
       if (st_show(&rw_n)) { cd_watch(&sw_note, st_letter, ST_L('n')); cd_region_end(&rw_n); }
-      cd_close();
       cd_region_end(&rw_page);
     }
     rw_m.up = &rw_page; /* shown with no build open: its depth is its r->up's + 1 */
