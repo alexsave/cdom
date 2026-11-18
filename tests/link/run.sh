@@ -2,7 +2,7 @@
 # The link-level tests: one heap whoever brings it, mini.c next to an app's libc, the program's
 # string.h (src/libc) under cdom's flags and freestanding ones, a non-string refused as a string argument, the I/O
 # contract (contract.c), and cdom.mk's rules (app.mk). Builds into tests/out/link and runs tests/link/run.mjs, then the name gate
-# (tools/edges.mjs) and the seed gate (tools/seeds.mjs).
+# (tools/edges.mjs), the seed gate (tools/seeds.mjs) and the string-names gate (tools/strings.mjs).
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 src="$here/../../src"
@@ -247,4 +247,5 @@ else echo "ok   the starter copied elsewhere builds with CDOM from the environme
 node "$here/run.mjs" "$out" || fail=1
 node "$here/../../tools/edges.mjs" || fail=1
 node "$here/../../tools/seeds.mjs" || fail=1
+node "$here/../../tools/strings.mjs" || fail=1
 exit $fail

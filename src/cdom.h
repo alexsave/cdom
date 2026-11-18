@@ -133,8 +133,6 @@ typedef struct { const char *spell; } cd_lit_slot;
   (cd_str){(uint32_t)(uintptr_t)&cd_l_}; })
 #define cd_s(s) _Generic((s), cd_str: CD_ASSTR(s), \
   default: __builtin_choose_expr(CD_LITQ(s), CD_LIT_(s), cd_tmpz(CD_CHARP(s))))
-/* temporary, deleted in step 9 (docs/strings-design.md): the old name of a literal, so cdom's own call sites compile */
-#define CD_LIT(s) cd_s(s)
 
 /* Numbers as JS and CSS write them, with no printf. cd_fmt writes v / 10^decimals (decimals <= 9)
  * as JS's String(v / 10 ** decimals) does (trailing zeros dropped, no "-0"), then the unit, and
