@@ -2698,8 +2698,23 @@ EXPORT("t_check_view_ok") uint32_t t_check_view_ok(void) {
 /* A view that reads a state it does not watch traps. */
 EXPORT("t_check_view_bad") void t_check_view_bad(void) { t_check_view_ok(); x_bad = 1; cd_changed(&sx1); cd_flush(); }
 /* A build reading a state its region does not watch, but the region building under it does, and its
- * r->up does: no trap. A region shown by a view, whose build reads what the view's region watches,
- * through its r->up: no trap. */
+ * r->up does: no trap. A region opened in a list row's create, inside that build, is no region's child
+ * (its r->up is 0), and reads what the region building under it watches: no trap. A region shown by a
+ * view, whose build reads what the view's region watches, through its r->up: no trap. */
+static cd_region rx_row;
+static cd_id x_row_create(void *, uint32_t, uint32_t *) {
+  cd_id li = cd_open_id("li");
+  if (cd_region_show(&rx_row, 1)) {
+    cd_open("b"); cd_name_open(rx_row.root); cd_close();
+    cd_read(&sx1);
+    cd_region_end(&rx_row);
+  }
+  cd_close();
+  return li;
+}
+static void x_row_patch(void *, uint32_t, cd_item *) {}
+static void x_row_destroy(void *, cd_item *) { cd_region_forget(&rx_row); }
+static const cd_list_fns x_row_fns = {0, x_row_create, x_row_patch, x_row_destroy};
 static void x_shows(void *) {
   rx4.up = &rx1;
   if (st_show(&rx4)) {
@@ -2713,6 +2728,11 @@ EXPORT("t_check_build_ok") uint32_t t_check_build_ok(void) {
   if (st_show(&rx1)) {
     cd_watch(&sx1, x_shows, 0);
     if (st_show(&rx2)) { cd_read(&sx1); cd_region_end(&rx2); }
+    static cd_list xl;
+    static const uint32_t key = 1;
+    cd_at(rx1.root, CD_APPEND);
+    xl.parent = cd_open_id("ul"); cd_close();
+    cd_list_update(&xl, &key, 1, &x_row_fns);
     cd_region_end(&rx1);
   }
   rx3.up = &rx1;
