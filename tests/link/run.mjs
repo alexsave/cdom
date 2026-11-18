@@ -11,7 +11,9 @@ ok(r0 === 0, `cdom's heap: cd_alloc, malloc and calloc interleaved never overlap
 x = await load(`${dir}/alloc_app.wasm`);
 const before = x.app_mallocs(), r = x.run();
 ok(r === 0, `the app's heap: the same, with cdom allocating from the app's malloc (run ${r})`);
-ok(x.app_mallocs() - before > 3000, `cdom's cd_alloc went through the app's malloc (${x.app_mallocs() - before} calls)`);
+ok(x.app_mallocs() - before > 1500, `the app's malloc served the interleaved blocks (${x.app_mallocs() - before} calls)`);
+const grown = x.app_mallocs(); x.grow_tables();
+ok(x.app_mallocs() - grown > 0, `cdom's own tables grew through the app's malloc (${x.app_mallocs() - grown} calls)`);
 x = await load(`${dir}/alloc_half.wasm`);
 let trapped = false;
 try { x.free_one(); } catch (e) { trapped = e instanceof WebAssembly.RuntimeError; }

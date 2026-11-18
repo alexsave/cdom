@@ -29,11 +29,11 @@ void cd_main(void) {
   cd_open(L("h1")); cd_text(L("Hello, cdom")); cd_close();
   cd_open(L("p")); cd_text(L("This page was built by C, compiled to WebAssembly.")); cd_close();
 
-  /* A list from data: a plain loop where JSX would use .map(). The names are not literals, so they are
-   * interned with cd_internz (once each: the string table keeps them). */
+  /* A list from data: a plain loop where JSX would use .map(). The names are not literals, so each is
+   * passed with cd_tmpz, which sends its bytes with the next op. */
   cd_open(L("ul"));
   for (uint32_t i = 0; i < NFRUITS; i++) {
-    cd_open(L("li")); cd_text(cd_internz(FRUITS[i])); cd_close();
+    cd_open(L("li")); cd_text(cd_tmpz(FRUITS[i])); cd_close();
   }
   cd_close();
 

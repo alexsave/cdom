@@ -15,7 +15,7 @@
 
 /* The model. An id names a todo for its whole life and is never reused, so a row whose id is gone can
  * never be mistaken for a newer todo. */
-typedef struct { uint32_t id; cd_str text; uint8_t done; } Todo;
+typedef struct { uint32_t id, len; char text[TEXT_CAP]; uint8_t done; } Todo;
 static Todo todos[TODO_CAP];
 static uint32_t ntodos;
 static uint32_t next_id = 1;
@@ -74,7 +74,7 @@ static cd_id item_create(void *ctx, uint32_t i, uint32_t *data) {
   cd_id row = cd_open_id(L("li"));
   cd_class(t->done ? L("item done") : L("item"));
   v->check = cd_open_id(L("input")); cd_attr(L("type"), L("checkbox")); cd_close();
-  cd_open(L("span")); cd_class(L("text")); cd_text(t->text); cd_close();
+  cd_open(L("span")); cd_class(L("text")); cd_text(cd_tmp(t->text, t->len)); cd_close();
   v->remove = cd_open_id(L("button"));
   cd_class(L("remove")); cd_attr(L("aria-label"), L("Remove")); cd_text(L("×"));
   cd_close();
@@ -143,12 +143,13 @@ static void on_submit(const cd_event_rec *e, void *ctx) {
   while (b > a && is_space(text[b - 1])) b--;
   if (a == b || ntodos == TODO_CAP) return; /* nothing to add: the field keeps what was typed */
 
-  /* Interned, unlike lesson 3's greeting. A todo's text lives as long as the todo, and the row is built again
-   * whenever the filter changes, so the text is used many times. The string table keeps it after the todo is
-   * removed, so the table grows with what the user types, not with how often the page renders. */
+  /* Kept in the todo, unlike lesson 3's greeting. A todo's text lives as long as the todo, and the row is built
+   * again whenever the filter changes, so the text is used many times. Each use is a cd_tmp over these bytes, so
+   * nothing grows with what the user types and the bytes go when the todo does. */
   Todo *t = &todos[ntodos++];
   t->id = next_id++;
-  t->text = cd_intern(text + a, b - a);
+  t->len = b - a;
+  for (uint32_t k = 0; k < t->len; k++) t->text[k] = text[a + k];
   t->done = 0;
 
   cd_set_str(input, L("value"), L(""));

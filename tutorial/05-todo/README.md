@@ -121,7 +121,8 @@ static void item_destroy(void *ctx, cd_item *it) {
 - **Ids are freed in destroy.** A row has two ids of its own, the checkbox and the remove button, and their handlers are attached to those ids.
   `cd_remove` takes the row away, and `cd_id_free` in destroy drops the ids and their handlers together.
   In React the garbage collector takes the handlers with the elements.
-- **Interned text, unlike the greeting in lesson 3.** A todo's text lives as long as the todo, and its row is built again each time the filter changes.
-  So it is interned once on add, with `cd_intern`, and cached by id after that.
-  The greeting in lesson 3 changes on every keystroke, which is why it was a one-off `cd_tmp`.
-  The string table keeps a removed todo's text, so it grows with what the user types, not with each render.
+- **The text stays in the todo, unlike the greeting in lesson 3.**
+  A todo's text lives as long as the todo, and its row is built again each time the filter changes.
+  So the bytes are copied into the todo on add, and each row build passes `cd_tmp(t->text, t->len)`.
+  The greeting in lesson 3 is a `cd_tmp` too, over a buffer that changes on every keystroke.
+  Nothing is interned, so what the user types does not grow any table.

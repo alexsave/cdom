@@ -36,7 +36,7 @@ cd_open(L("main")); cd_class(L("card"));
 cd_open(L("h1")); cd_text(L("Hello, cdom")); cd_close();
 cd_open(L("ul"));
 for (uint32_t i = 0; i < NFRUITS; i++) {
-  cd_open(L("li")); cd_text(cd_internz(FRUITS[i])); cd_close();
+  cd_open(L("li")); cd_text(cd_tmpz(FRUITS[i])); cd_close();
 }
 cd_close();
 ...
@@ -49,8 +49,9 @@ cd_close();                               /* the whole tree enters the page here
   Attributes (`cd_attr`, `cd_class`) go on the element opened last, before its first child.
 - A list is a plain `for` loop.
   There is no `key` here because nothing in this list ever changes; lesson 5 shows the keyed list.
-- Strings are interned: each one crosses into JavaScript once and is named by a small number after that.
-  `CD_LIT("...")` does it for a literal, once per call site, and `cd_internz` for a string made at run time.
+- A literal is interned: it crosses into JavaScript once and is named by a small number after that.
+  `CD_LIT("...")` does it, once per call site.
+  A string made at run time goes with `cd_tmpz`, and its bytes cross with the next op.
 - The tree is built off the page and enters it in one step, when its root (`main`) closes.
 - The CSS is a `<style>` element the app builds like any other, so the lesson is one C file.
   A larger app brings its own page instead (`APP_PAGE_SRC`, see the main README).
