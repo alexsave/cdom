@@ -31,6 +31,7 @@ static void on_input(const cd_event_rec *, void *) {
   value_set(last_read, n);
 }
 static void input_view(void *) {
+  (void)last_read_len; /* read by the guard (CARET_G) only */
 #ifdef CARET_G
   if (value_len == last_read_len && !memcmp(value, last_read, value_len)) { skips++; return; }
 #endif
