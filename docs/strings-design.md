@@ -586,7 +586,8 @@ Outside cdom (each repo's manager owns it; through the super-coordinator, since 
 | amgi (`ui/src/*.c`, 15 files, 671 literal sites) | delete `CD_LIT(` wrappers; `cd_internz(x)` becomes `x` (13); `cd_intern(p, n)` becomes `cd_tmp(p, n)` with the bytes kept by the app (1, deck names in `state.c`); `cd_bytes` (4) reads the app's own copy; `dom.c`'s helpers that take a `cd_str name` keep working; its build runs through `cdom.mk`'s rule or `cdom_lits`, and its page through `page.awk` with the lits |
 | cbase (`example/minimal/page/page.c`, and the adapter's page) | delete three `CD_LIT(` wrappers; the page built with the lits |
 
-Step 7 keeps `#define CD_LIT(s) cd_s(s)` in `cdom.h` so that these repos, and cdom's own call sites, compile unchanged while they are cleaned up; step 10 deletes it once both repos have moved.
+There is no backwards compatibility (Alex, 2026-11-17): the only users are Alex's own apps, and each pins cdom to a git commit, so they move when their pin moves.
+Step 7 keeps `#define CD_LIT(s) cd_s(s)` only so that cdom's own call sites compile between steps 7 and 9; step 9 deletes it, and nothing waits for amgi or cbase.
 
 ## Predictions
 
@@ -691,7 +692,7 @@ The measured prototypes are on branch `strings-bench` (worktree `/Users/alex/Dev
    Verify: the test commands of step 3, `tutorial/run.sh`, `tests/lits/run.sh`, `LEGACY=1 node tools/legacy.mjs`, and `node tools/starter.mjs` (a new app builds and opens).
 
 7. **The switch.**
-   `cdom.h`: the strings section and wrapper macros without `cd_tmp_ahead`, `cd_str` a struct, `CD_NONE`, and for now `#define CD_LIT(s) cd_s(s)` marked "temporary, deleted in step 10".
+   `cdom.h`: the strings section and wrapper macros without `cd_tmp_ahead`, `cd_str` a struct, `CD_NONE`, and for now `#define CD_LIT(s) cd_s(s)` marked "temporary, deleted in step 9".
    `cdom.c`: the intern machinery out, the `tmp` block and `tmp_done()` in, the layout entries.
    The shim: `str`, `ascii`, `readString`, the path cache by slot; `interned`, `transient`, `decode`, `strings` out; regenerate the minified shim.
    `tests/lits/lits.h` is deleted and its tests include `cdom.h`.
@@ -699,7 +700,7 @@ The measured prototypes are on branch `strings-bench` (worktree `/Users/alex/Dev
    `tools/mutate.py`, `tools/offsets.mjs`: as in the migration table.
    `bench/build.sh` and `tools/final.sh`: `cdom-pertext` goes.
    `tests/link`: the `lit_*` cases go, the compile-error cases come.
-   All call sites keep compiling through the temporary `CD_LIT`.
+   cdom's own call sites keep compiling through the temporary `CD_LIT` until step 9.
    Verify (the one step that touches everything): `tests/build.sh && node tools/unit.mjs && node tools/fuzz.mjs && node tools/canvas.mjs && node tools/host.mjs && tests/link/run.sh && node tools/legacy.mjs`, `LEGACY=1 node tools/fuzz.mjs && LEGACY=1 node tools/legacy.mjs`, `tests/lits/run.sh`, `tutorial/run.sh`, `bench/build.sh && node tools/smoke.mjs`.
    Then `strings` on a lesson's `app.wasm` must not find "Hello, cdom".
 
@@ -711,16 +712,13 @@ The measured prototypes are on branch `strings-bench` (worktree `/Users/alex/Dev
    Hypothesis for this step: P12 and P5a.
    Verify: `tests/build.sh && node tools/unit.mjs && node tools/fuzz.mjs && LEGACY=1 node tools/fuzz.mjs`, `bench/build.sh && node tools/smoke.mjs && node tools/domcheck.mjs`.
 
-9. **Plain literals everywhere in cdom** (Haiku, three commits: `tutorial/`, then `tests/` and `demo/` and `bench/`, then `tools/new.sh`).
+9. **Plain literals everywhere in cdom, and `CD_LIT` deleted** (Haiku, four commits: `tutorial/`, then `tests/` and `demo/` and `bench/`, then `tools/new.sh`, then `cdom.h`).
    Delete `#define L(s) CD_LIT(s)`, turn `L("x")` and `CD_LIT("x")` into `"x"`, drop `cd_tmpz(` around plain pointers where the argument goes straight into a call, and rewrite the comments and lesson READMEs that explain `L`, `CD_LIT` or interning (lesson 1's README and `tutorial/README.md`'s strings bullet say: write the string; a literal is in the page's table, anything else is read when used).
    Verify per commit: `tutorial/run.sh`; then `tests/build.sh && node tools/unit.mjs && node tools/host.mjs && tests/lits/run.sh` (the differential now covers every app); then `node tools/starter.mjs`.
    Look at each lesson's screenshot (`SHOTS=tutorial/out tutorial/run.sh`) against the one from before: they must be identical.
+   The last commit deletes the temporary `CD_LIT` from `cdom.h` and adds the grep gate; verify it with `tests/link/run.sh` and the gate's mutant.
 
-10. **Delete the temporary `CD_LIT`** and add the grep gate.
-    Only after amgi and cbase have moved (the repo manager confirms through the super-coordinator).
-    Verify: `tests/link/run.sh`; the gate's mutant.
-
-11. **Measure and write up.**
+10. **Measure and write up.**
     Repeat step 1's sizes.
     Run the bench's scripts from branch `strings-bench` against this branch's build in place of its B (the micro for P11, P12 and P13; `startup.mjs` for P3 and P4; `jfb.sh` for P5, P5a, P6 and P8, with A and A2 built from `tutorial` for the noise), one Chrome at a time.
     Fill the "Measured" column and mark each of P1 to P13 confirmed, refuted or not measurable, with the numbers.
@@ -740,8 +738,8 @@ The measured prototypes are on branch `strings-bench` (worktree `/Users/alex/Dev
 - **The API functions are macros.**
   A diagnostic for a wrong argument points into `cd_s`, and a function pointer needs `(cd_text)`.
   A string argument that contains a top-level comma outside parentheses (a compound literal) needs parentheses, as with any macro.
-- **Two other repos must move with the change.**
-  The temporary `CD_LIT` covers most of amgi's call sites, but its 18 uses of `cd_intern`, `cd_internz` and `cd_bytes` and its page build need real edits before its cdom pin can move past step 7.
+- **amgi and cbase break when they move their cdom pin past step 7.**
+  That is accepted: no compatibility layer is kept, and each repo migrates (the table above) when it next bumps its pin.
 - **The build gains a host compiler.**
   `cc` is present wherever clang is, but a cross-only environment must set `HOST_CC`.
 - **A short runtime string shown again and again unchanged** costs 26 to 95 ns where an intern hit cost 13 to 51.
