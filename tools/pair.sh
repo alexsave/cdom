@@ -1,7 +1,9 @@
 #!/bin/bash
 # Paired run: the listed frameworks run benchmark by benchmark, interleaved, each start
 # gated on the 1-minute load being under 4 (bounded wait), results kept in results/pairs/$TAG.
-# Usage: TAG=x FWS="vanillajs cdomb cdomp" [COUNT=15] [PORT=8193] tools/pair.sh 01_ 02_ ...
+# The order of the entries rotates by one each benchmark, and PASS (default 0) shifts the start, so no entry
+# always runs first or last: run-order drift once faked a 3% swap regression (docs/strings-results.md, P5).
+# Usage: TAG=x FWS="vanillajs cdomb cdomp" [COUNT=15] [PORT=8193] [PASS=0] tools/pair.sh 01_ 02_ ...
 set -u
 top="$(cd "$(dirname "$0")/.." && pwd)"
 out="$top/results/pairs/${TAG:?TAG}"
@@ -13,8 +15,11 @@ load1() { sysctl -n vm.loadavg | awk '{print $2}'; }
 [ -f "$log" ] || printf 'benchmark\tframework\tload_before\tload_after\twaited_s\tgate\n' > "$log"
 ln -sfn "$top/jfb/webdriver-ts/dist" "$out/dist"
 cd "$out"
-for b in "${benches[@]}"; do
-  for f in "${fws[@]}"; do
+n=${#fws[@]}
+for i in "${!benches[@]}"; do
+  b=${benches[$i]}
+  for k in $(seq 0 $((n-1))); do
+    f=${fws[$(( (i + ${PASS:-0} + k) % n ))]}
     # Resume: a (benchmark, entry) that already ran under the gate is not run again.
     if grep -q "^$b	$f	.*	ok$" "$log"; then continue; fi
     w=0; gate=ok
