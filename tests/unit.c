@@ -2644,9 +2644,10 @@ EXPORT("t_state_p") void t_state_p(uint32_t step) {
 }
 EXPORT("t_state_p_live") uint32_t t_state_p_live(void) { return (uint32_t)cd_bound_live(&pv_b); }
 
-/* Q: cd_dirty's hash. 100 asks of one function with ctx 0..99, each asked three times, in one entry,
- * and ctx 50 dropped: 99 runs, each once, in the order first asked. The render of ctx 99 asks for
- * ctx 0..9 again (they ran: they run again) and 100..139 (new, past the table's growth). */
+/* Q: cd_dirty's table. 100 asks of one function with ctx 0..99, each asked three times, in one entry;
+ * ctx 50 dropped, and ctx 60 dropped and asked again: 99 runs, each once, in the order first asked (60
+ * last). The render of ctx 99 asks for ctx 0..9 again (they ran: they run again) and 100..139 (new, past
+ * the table's growth). */
 static uint8_t q_order[256];
 static uint32_t q_n;
 static void st_q(void *ctx) {
@@ -2660,6 +2661,8 @@ EXPORT("t_state_q") uint32_t t_state_q(void) {
   for (uint32_t r = 0; r < 3; r++)
     for (uint32_t i = 0; i < 100; i++) cd_dirty(st_q, CD_CTX_OF(i));
   cd_undirty(st_q, CD_CTX_OF(50));
+  cd_undirty(st_q, CD_CTX_OF(60));
+  cd_dirty(st_q, CD_CTX_OF(60));
   cd_flush();
   return q_n;
 }

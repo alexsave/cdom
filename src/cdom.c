@@ -305,17 +305,12 @@ static inline void ready(void) {
  * renders[0, render_at) have run, and the rest wait, each (fn, ctx) once; a render that asks for
  * more appends them, and the entries past where the round started form the next round. They run in
  * cd_flush, which ends every entry from JS, so one pass per event, timer, frame or answer.
- * asked finds a pending (fn, ctx) in one probe or a few: an open-addressed table of indexes into
- * renders, at most half full, whose slots count only when they carry this pass's generation, so the
- * end of a pass empties it by moving the generation on, not by clearing it. A slot may name an entry
- * that already ran or that cd_undirty dropped: the entry's own (fn, ctx) and render_at decide. */
+ * asked (with the pairs, below) finds a pending (fn, ctx) in a probe or a few, so ten thousand distinct
+ * asks are ten thousand lookups, not fifty million compares; the pass's end empties it. */
 #define CD_RENDER_ROUNDS 16
 typedef struct { cd_render_fn fn; void *ctx; } render_ent;
-typedef struct { uint32_t gen, at; } asked_slot;
 static render_ent *renders;
 static uint32_t nrenders, renders_cap, render_at, rendering;
-static asked_slot *asked;
-static uint32_t asked_cap, asked_gen = 1;
 /* The pass, reached through a pointer cd_dirty sets: an app that never asks for a render does not
  * carry it, and its flush pays one load. volatile, or clang sees the one value the pointer can take,
  * calls run_renders directly and inlines it into every export (236 bytes in the keyed bench app). */
@@ -328,43 +323,8 @@ static void (*volatile render_pass)(void);
 static void (*volatile views_pass)(int end);
 static cd_state *changed, *changed_last;
 #define CHANGED_END ((cd_state *)&changed)
-static uint32_t asked_home(cd_render_fn fn, void *ctx) {
-  uint32_t h = (uint32_t)(uintptr_t)fn * 0x9e3779b1u ^ (uint32_t)(uintptr_t)ctx * 0x85ebca6bu;
-  return (h ^ (h >> 15)) & (asked_cap - 1);
-}
-/* The slot of the pending (fn, ctx), or the empty slot where it goes. */
-static asked_slot *asked_find(cd_render_fn fn, void *ctx) {
-  for (uint32_t m = asked_cap - 1, i = asked_home(fn, ctx);; i = (i + 1) & m) {
-    asked_slot *a = &asked[i];
-    if (a->gen != asked_gen) return a;
-    const render_ent *e = &renders[a->at];
-    if (a->at >= render_at && e->fn == fn && e->ctx == ctx) return a;
-  }
-}
-void cd_dirty(cd_render_fn fn, void *ctx) {
-  render_pass = run_renders;
-  if ((nrenders + 1) * 2 > asked_cap) { /* grow, and put the pending entries back */
-    asked_cap = asked_cap ? asked_cap * 2 : 16;
-    cd_free(asked);
-    asked = cd_alloc(asked_cap * sizeof(asked_slot));
-    __builtin_memset(asked, 0, asked_cap * sizeof(asked_slot)); /* generation 0 is never current */
-    for (uint32_t i = render_at; i < nrenders; i++)
-      if (renders[i].fn) *asked_find(renders[i].fn, renders[i].ctx) = (asked_slot){asked_gen, i};
-  }
-  asked_slot *a = asked_find(fn, ctx);
-  if (a->gen == asked_gen) return; /* pending */
-  if (nrenders == renders_cap) {
-    renders_cap = renders_cap ? renders_cap * 2 : 16;
-    renders = cd_realloc(renders, renders_cap * sizeof(render_ent));
-  }
-  *a = (asked_slot){asked_gen, nrenders};
-  renders[nrenders++] = (render_ent){fn, ctx};
-}
-void cd_undirty(cd_render_fn fn, void *ctx) {
-  if (!asked_cap) return;
-  asked_slot *a = asked_find(fn, ctx);
-  if (a->gen == asked_gen) renders[a->at].fn = 0;
-}
+void cd_dirty(cd_render_fn fn, void *ctx);   /* with the pairs, below */
+static void asked_reset(void);
 /* One round of renders: those asked before it began. */
 static void renders_round(void) {
   for (uint32_t end = nrenders; render_at < end;) {
@@ -385,10 +345,7 @@ static void run_renders(void) {
   }
   if (views_pass) views_pass(1);
   render_at = nrenders = rendering = 0;
-  if (++asked_gen == 0) { /* every slot's generation is now possibly current: clear them */
-    __builtin_memset(asked, 0, asked_cap * sizeof(asked_slot));
-    asked_gen = 1;
-  }
+  asked_reset();
 }
 static inline void renders_now(void) { if (render_pass) render_pass(); }
 void cd_render_now(void) { renders_now(); }
@@ -634,7 +591,8 @@ static void build_pop(void) {
 /* Takes r away: its child regions first, newest first, each forgotten (r's own DOM op takes their nodes
  * with it); then r's cleanups, newest first, while the DOM may not change; then, when dom, r's one DOM
  * op (a clear, or a remove of its root); then its ids. It does not unlink r from its parent. */
-static void (*volatile views_gone)(cd_region *r); /* the views' takedown, set by cd_watch */
+static void views_drop(cd_region *r);
+static void (*volatile views_gone)(cd_region *r); /* views_drop, set by cd_watch */
 static void take(cd_region *r, int dom) {
   for (uint32_t i = 0; i < nbuilding; i++)
     if (building[i] == r) __builtin_trap(); /* taken away while it builds */
@@ -937,7 +895,8 @@ static void reads_check(uint32_t level) {
 #endif
 
 /* ---- pairs: a hash of (a, b) entries, open addressing on a alone ----
- * The one table type for cdom's own maps from a pair: cd_on's handlers by (id, event type). Every entry
+ * The one table type for cdom's own maps from a pair: cd_on's handlers by (id, event type), the timers
+ * by (token, handle), and cd_dirty's pending asks. Every entry
  * with the same a lies in the probe run from a's home slot, so one walk to the first empty slot finds
  * all of them (pair_any), and a delete shifts the run back instead of leaving a tombstone. */
 typedef struct { uint32_t a, b, used; void *p, *q; } pair_ent;
@@ -991,6 +950,42 @@ static void pair_del(pair_tab *t, pair_ent *e) {
     }
     t->e[i] = t->e[j];
     i = j;
+  }
+}
+
+/* ---- renders: cd_dirty's asks ----
+ * asked maps a pending (fn, ctx) to its index in renders: the pair (ctx ^ fn * K, fn), which names one
+ * (fn, ctx) and spreads one function's many ctx over the table. An index under render_at ran in this
+ * pass, and an entry cd_undirty dropped has no fn: asked again, either is asked anew. The pass's end
+ * empties the table, and drops one grown past its first size. */
+static pair_tab asked;
+static pair_ent *asked_find(cd_render_fn fn, void *ctx) {
+  uint32_t f = (uint32_t)(uintptr_t)fn;
+  pair_ent *e = pair_find(&asked, (uint32_t)(uintptr_t)ctx ^ f * 0x9e3779b1u, f);
+  return e && (uintptr_t)e->p >= render_at && renders[(uintptr_t)e->p].fn ? e : 0;
+}
+void cd_dirty(cd_render_fn fn, void *ctx) {
+  render_pass = run_renders;
+  if (asked_find(fn, ctx)) return; /* pending */
+  if (nrenders == renders_cap) {
+    renders_cap = renders_cap ? renders_cap * 2 : 16;
+    renders = cd_realloc(renders, renders_cap * sizeof(render_ent));
+  }
+  uint32_t f = (uint32_t)(uintptr_t)fn;
+  pair_put(&asked, (uint32_t)(uintptr_t)ctx ^ f * 0x9e3779b1u, f, (void *)(uintptr_t)nrenders, 0);
+  renders[nrenders++] = (render_ent){fn, ctx};
+}
+void cd_undirty(cd_render_fn fn, void *ctx) {
+  pair_ent *e = asked_find(fn, ctx);
+  if (e) renders[(uintptr_t)e->p].fn = 0;
+}
+static void asked_reset(void) {
+  if (asked.cap > 64) {
+    cd_free(asked.e);
+    asked = (pair_tab){0};
+  } else if (asked.n) {
+    __builtin_memset(asked.e, 0, asked.cap * sizeof(pair_ent));
+    asked.n = 0;
   }
 }
 

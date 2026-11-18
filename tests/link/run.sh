@@ -30,8 +30,9 @@ if link "$out/on_only.wasm" "$here/on_only.c" "$src/cdom.c" "$src/mini.c" 2> "$o
 if link "$out/ro_range.wasm" "$here/ro_range.c" "$src/cdom.c" "$src/mini.c" 2> "$out/ro_range.log"; then :; else
   echo "FAIL the read-only range probe does not link:"; cat "$out/ro_range.log"; fail=1; fi
 # The render pass is linked only into an app that asks for a render (cdom.c, renders: the volatile
-# pointer). dirty_pass.c built without and with a cd_dirty call: at -Oz the second is 437 bytes larger
-# (the pass, the queue and cd_dirty); with the pass linked into every app the gap is 219. 330 splits them.
+# pointer). dirty_pass.c built without and with a cd_dirty call: at -Oz the second is 586 bytes larger
+# (the pass, the queue, its table and cd_dirty); with the pass linked into every app the gap is 230. 330
+# splits them.
 Z=(-Oz "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror "${CDOM_LDFLAGS[@]}" -Wl,--strip-all)
 if "$CC" "${Z[@]}" -o "$out/dirty_none.wasm" "$here/dirty_pass.c" "$src/cdom.c" "$src/mini.c" &&
    "$CC" "${Z[@]}" -DASKS -o "$out/dirty_asks.wasm" "$here/dirty_pass.c" "$src/cdom.c" "$src/mini.c"; then
@@ -40,6 +41,18 @@ if "$CC" "${Z[@]}" -o "$out/dirty_none.wasm" "$here/dirty_pass.c" "$src/cdom.c" 
     echo "FAIL an app that never calls cd_dirty carries the render pass: $none bytes without cd_dirty, $asks with (a gap under 330)"; fail=1
   fi
 else echo "FAIL dirty_pass.c does not build"; fail=1; fi
+# The views of shared state are linked only into an app that uses cd_state (cdom.c, shared state: the
+# volatile pointers views_pass and views_gone). state_pass.c renders and hides a region, and with -DWATCH
+# its render is a view: at -Oz the second is 1,456 bytes larger (the views' pass, their takedown,
+# cd_watch and cd_changed). With the pass linked into every app that renders the gap is 523, and with the
+# takedown linked into every app that hides a region it is 1,277. 1,370 splits them.
+if "$CC" "${Z[@]}" -o "$out/state_none.wasm" "$here/state_pass.c" "$src/cdom.c" "$src/mini.c" &&
+   "$CC" "${Z[@]}" -DWATCH -o "$out/state_watch.wasm" "$here/state_pass.c" "$src/cdom.c" "$src/mini.c"; then
+  none=$(wc -c < "$out/state_none.wasm"); watch=$(wc -c < "$out/state_watch.wasm")
+  if [ $((watch - none)) -lt 1370 ]; then
+    echo "FAIL an app that never uses cd_state carries the views' pass or takedown: $none bytes without cd_state, $watch with (a gap under 1370)"; fail=1
+  fi
+else echo "FAIL state_pass.c does not build"; fail=1; fi
 # cdom_ui (src/cdom_ui.c) costs an app that links it and calls none of it nothing: dirty_pass.c built with
 # and without it is the same bytes.
 if "$CC" "${Z[@]}" -o "$out/ui_off.wasm" "$here/dirty_pass.c" "$src/cdom.c" "$src/mini.c" &&
