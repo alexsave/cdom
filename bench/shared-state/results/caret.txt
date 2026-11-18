@@ -1,0 +1,6 @@
+# Chrome/157.0.8103.79
+caret a: after "abcdef" {"value":"abcdef","selectionStart":6,"selectionEnd":6,"writes":7,"skips":0}; caret at 3, then "X": {"value":"abcXdef","selectionStart":4,"selectionEnd":4,"writes":8,"skips":0}
+caret c: after "abcdef" {"value":"ABCDEF","selectionStart":6,"selectionEnd":6,"writes":7,"skips":0}; caret at 3, then "X": {"value":"ABCXDEF","selectionStart":4,"selectionEnd":4,"writes":8,"skips":0}
+caret c (extra): caret at 3 again, then lower-case "x", which the setter upper-cases: {"value":"ABCXXDEF","selectionStart":8,"selectionEnd":8,"writes":9,"skips":0}
+caret g: after "abcdef" {"value":"abcdef","selectionStart":6,"selectionEnd":6,"writes":0,"skips":7}; caret at 3, then "X": {"value":"abcXdef","selectionStart":4,"selectionEnd":4,"writes":0,"skips":8}
+ime a: after "ni" {"value":"ni","selectionStart":2,"selectionEnd":2,"writes":2,"skips":0}; after "nih" {"value":"nih","selectionStart":3,"selectionEnd":3,"writes":3,"skips":0}; after the commit {"value":"你","selectionStart":1,"selectionEnd":1,"writes":4,"skips":0}; compositionend 1 time(s)

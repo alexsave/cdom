@@ -43,6 +43,12 @@ try {
     await type('X');
     const after = await state();
     console.log(`caret ${v}: after "abcdef" ${JSON.stringify(typed)}; caret at 3, then "X": ${JSON.stringify(after)}`);
+    if (v === 'c') { // beyond the brief: "X" is upper case already, so (c)'s setter changed nothing at that step;
+      // a lower-case "x" at offset 3 is the keystroke whose value the setter does change
+      await ev(`document.querySelector('input').setSelectionRange(3, 3), 1`);
+      await type('x');
+      console.log(`caret c (extra): caret at 3 again, then lower-case "x", which the setter upper-cases: ${JSON.stringify(await state())}`);
+    }
   }
   for (const v of ['a', 'g']) {
     await open(v);
