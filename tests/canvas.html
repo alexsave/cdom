@@ -10,6 +10,12 @@ function expectPixels(x, ptr, label) {
   const got = document.querySelector('#m canvas').getContext('2d').getImageData(0, 0, 7, 5).data;
   for (let i = 0; i < want.length; i++) if (got[i] !== want[i]) { fail(`${label}: byte ${i} = ${got[i]}, want ${want[i]}`); return; }
 }
+/* One loop means at most one requestAnimationFrame outstanding. Equal timestamps cannot prove a doubled loop: a
+ * browser under load may hand two successive frames the same time (seen: 69.532,69.532,86.2,...), so the
+ * timestamps are only held to never go backwards. */
+let outstanding = 0, doubled = 0;
+const raf = window.requestAnimationFrame.bind(window);
+window.requestAnimationFrame = (cb) => { if (++outstanding > 1) doubled++; return raf((t) => { outstanding--; cb(t); }); };
 const env = { frame_seen(n, ms) { seen.push([n, ms]); } };
 cdom.start('canvas.wasm', document.getElementById('m'), env).then(async (x) => {
   expectPixels(x, x.blit_small(0), 'blit');
@@ -21,7 +27,8 @@ cdom.start('canvas.wasm', document.getElementById('m'), env).then(async (x) => {
   x.frames_for(5);
   await new Promise(r => setTimeout(r, 600));
   if (x.frame_count() !== 5) fail(`frames: ${x.frame_count()}, want 5 (loop did not stop or did not run)`);
-  for (let i = 1; i < seen.length; i++) if (!(seen[i][1] > seen[i - 1][1])) fail(`frame times not increasing: ${seen.map(s => s[1])}`);
+  for (let i = 1; i < seen.length; i++) if (seen[i][1] < seen[i - 1][1]) fail(`frame times going backwards: ${seen.map(s => s[1])}`);
+  if (doubled) fail(`frame loop doubled: ${doubled} requests made while one was outstanding`);
   x.frames_for(3);
   await new Promise(r => setTimeout(r, 400));
   if (x.frame_count() !== 3) fail(`restart frames: ${x.frame_count()}, want 3`);
