@@ -50,8 +50,9 @@ cd_close();                               /* the whole tree enters the page here
 - A list is a plain `for` loop.
   There is no `key` here because nothing in this list ever changes; lesson 5 shows the keyed list.
 - **Write the string.** Every string argument is plain C: `"main"`, `"Hello, cdom"`, `FRUITS[i]`.
-  A literal ends up in the page's string table when the app is built, so it costs nothing at run time.
-  Anything else, a buffer or a name typed by the user, is read from C memory at the moment the call uses it, so it is never stale.
+  A literal written as the argument itself (`"main"`) is moved out of the module into the page's string table when the app is built, so it costs nothing at run time.
+  A string the compiler keeps in read-only data (`FRUITS[i]` from a `const` table, a literal inside a ternary or passed through a helper) stays in the module and is read from C memory once, the first time it is used.
+  Anything else, a buffer or a name typed by the user, is read from C memory every time a call uses it, so it is never stale.
   `cd_tmp(p, len)` is the same for bytes that have a length and no terminator, such as the result of `cd_fmt`.
 - The tree is built off the page and enters it in one step, when its root (`main`) closes.
 - The CSS is a `<style>` element the app builds like any other, so the lesson is one C file.
