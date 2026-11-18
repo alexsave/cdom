@@ -1,6 +1,6 @@
 # Strings: plain literals in C, a table baked into the page
 
-Status: design, revised 2026-11-18 with the Chrome measurements in [strings-bench.md](strings-bench.md); approved by Alex, not implemented.
+Status: design, revised 2026-11-17 with the Chrome measurements in [strings-bench.md](strings-bench.md); approved by Alex, not implemented.
 Branch: `strings` (from `tutorial`).
 The first version of this file (e35056c) is what strings-bench.md measured; "What the measurements changed" below lists every difference.
 
@@ -92,7 +92,7 @@ From strings-bench.md (Chrome 157; A is today, B the first version of this desig
 | tutorial/01-hello page, brotli | 8,848 | 8,597 | |
 | Synthetic page, 2,000 sites, brotli, table before the module | 20,573 | 19,299 | |
 
-Measured for this revision (2026-11-18): how to carry the table.
+Measured for this revision (2026-11-17): how to carry the table.
 The literal call sites of three sources, in source order, as JavaScript text, brotli -q 11, counted as what the table adds to a page that already holds the shim:
 
 | Source | Slots | Unique | Unique strings and a map (first version) | One entry per slot, repeats spelled again (chosen) | The same with non-ASCII entries in a second string |
@@ -590,7 +590,7 @@ Step 7 keeps `#define CD_LIT(s) cd_s(s)` in `cdom.h` so that these repos, and cd
 
 ## Predictions
 
-Written 2026-11-18, before the real implementation is measured, from the numbers in strings-bench.md.
+Written 2026-11-17, before the real implementation is measured, from the numbers in strings-bench.md.
 The baseline is that file's A (and its A2 for the noise); nothing is measured again before the change except the lesson sizes in step 1.
 Each prediction is recorded as confirmed, refuted or not measurable, with the numbers, in `docs/strings-results.md`.
 "Beyond the noise" means by more than the gap between the two baseline passes of that run.
