@@ -412,7 +412,7 @@ Steps of the build form:
    No `__start_cd_lits`: the module has no literal; the table is empty.
 3. Read memory through an overlay of the data segments, where a byte no segment covers is 0 (wasm-ld trims trailing zeros and splits segments at runs of zeros: the prototype saw `cd_chars` in three segments).
 4. For each 4-byte slot from start to stop: the pointer must lie in `cd_chars`; lex the spelling there.
-   The lexer accepts a sequence of string literals separated by white space, each optionally prefixed `u8`, and nothing else.
+   The lexer accepts a sequence of string literals separated by white space, and nothing else (a `u8` literal is not one: in C23 it is a `char8_t` array, which `cd_text` rejects).
    Escapes: `\a \b \f \n \r \t \v \\ \' \" \?`, `\e` (27, as clang), one to three octal digits, `\x` with one or more hex digits (value up to 255), `\uXXXX` and `\UXXXXXXXX` as UTF-8; any other byte is itself.
    Errors, each naming the spelling: not a string literal; a NUL inside a literal; bytes that are not UTF-8.
 5. Stamp: FNV-1a 32 over every slot's bytes and a 0 after each, in slot order; 0 becomes 1.
@@ -804,7 +804,6 @@ def lex(sp):   # the bytes of adjacent C string literals as spelled; None for an
     o = bytearray(); i = 0; n = len(sp); any_ = False
     while i < n:
         if sp[i] in b' \t\n': i += 1; continue
-        if sp[i:i + 2] == b'u8': i += 2
         if i >= n or sp[i] != 34: return None
         i += 1; any_ = True
         while True:

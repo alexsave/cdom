@@ -36,8 +36,6 @@ EX(k_torture) void k_torture(void) {
   cd_text("\u2212 minus");                    /* an escaped minus sign, and the raw one: */
   cd_text("\xe2\x88\x92");
   cd_text("− minus, héllo, 日本語, 😀");     /* raw UTF-8 in the source */
-  cd_text(u8"u8 prefix");
-  cd_text("a" u8"b");
   cd_text("/* not a comment */ // nor this");
   cd_text("a\\");
   cd_text("\\n is not a newline");

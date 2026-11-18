@@ -276,7 +276,6 @@ static int lex(const uint8_t *sp, size_t n, Buf *o) {
   while (i < n) {
     uint8_t c = sp[i];
     if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') { i++; continue; }
-    if (c == 'u' && i + 1 < n && sp[i + 1] == '8') i += 2;
     if (i >= n || sp[i] != '"') return LEX_NOT_LITERAL;
     i++;
     any = 1;

@@ -10,7 +10,8 @@
 # module's string literals into $(APP_WASM).lits; tools/page.awk writes that table into the page as a
 # script of its own before the shim (docs/strings-design.md).
 #
-#   CDOM_CFLAGS   the compile flags every file of a cdom module needs
+#   CDOM_CFLAGS   the compile flags every file of a cdom module needs, -std=c23 among them: C23, so a handler
+#                 can leave a parameter it does not use unnamed, static void on_reset(const cd_event_rec *, void *)
 #   CDOM_LDFLAGS  the link flags of a cdom module
 #   CDOM_SRC      the core sources every app links (cdom.c, and mini.c, the program's libc)
 #   CDOM_NET_SRC, CDOM_STORE_SRC, CDOM_RANDOM_SRC, CDOM_AUDIO_SRC, CDOM_URL_SRC, CDOM_LOCALE_SRC,
@@ -78,7 +79,7 @@ WASM_CC ?= /opt/homebrew/opt/llvm/bin/clang
 HOST_CC ?= cc
 CDOM_OPT ?= -Oz
 
-CDOM_CFLAGS := --target=wasm32 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src
+CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src
 CDOM_LDFLAGS := -Wl,--no-entry -Wl,--export-memory -Wl,--stack-first -Wl,-z,stack-size=65536 \
   -Wl,--export-if-defined=__start_cd_lits -Wl,--export-if-defined=__stop_cd_lits \
   -Wl,--export-if-defined=__start_cd_chars -Wl,--export-if-defined=__stop_cd_chars \
@@ -103,7 +104,7 @@ CDOM_LITS       := $(CDOM)/tools/out/cdlits
 # several apps may build it at once. A pattern rule, so it never becomes the app's default goal.
 %/out/cdlits: %/cdlits.c
 	@mkdir -p $(@D)
-	$(HOST_CC) -O2 -Wall -Wextra -Werror -o $@.tmp$$$$ $< && mv $@.tmp$$$$ $@
+	$(HOST_CC) -std=c23 -O2 -Wall -Wextra -Werror -o $@.tmp$$$$ $< && mv $@.tmp$$$$ $@
 
 # $(call cdom_lits,linked.wasm,out.wasm): the step after a link, for an app's own rules; it writes
 # out.wasm and out.wasm.lits. Make the rule depend on $(CDOM_LITS).

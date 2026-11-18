@@ -18,7 +18,7 @@ ok() { echo "ok   $*"; pass=$((pass + 1)); }
 bad() { echo "FAIL $*"; fail=$((fail + 1)); }
 
 # The tool: built like cdom.mk will build it (a temporary name, renamed).
-if cc -O2 -Wall -Wextra -Werror -o "$CDLITS.tmp$$" "$top/tools/cdlits.c" 2> "$out/cc.log"; then
+if cc -std=c23 -O2 -Wall -Wextra -Werror -o "$CDLITS.tmp$$" "$top/tools/cdlits.c" 2> "$out/cc.log"; then
   mv "$CDLITS.tmp$$" "$CDLITS"; ok "tools/cdlits.c builds with -Wall -Wextra -Werror"
 else
   bad "tools/cdlits.c does not build:"; cat "$out/cc.log"; echo "tests/lits: 0 passed, 1 failed"; exit 1
