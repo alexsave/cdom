@@ -1,0 +1,39 @@
+# Chrome/157.0.8103.79
+mode	test	kind	len	ns	q1	q3	n
+resolve	lit8			12.58	12.41	12.99	131072
+resolve	ternary8			12.31	12.27	12.35	131072
+resolve	helper8			13.16	13.15	13.19	131072
+resolve	table8			13.33	13.28	13.76	131072
+resolve	tmp	ascii	1	20.91	20.84	21.07	524288
+resolve	tmp	ascii	9	46.14	46.04	46.46	262144
+resolve	ahead	ascii	9	28.74	28.66	30.24	524288
+resolve	tmp	ascii	12	51.29	51.25	51.46	262144
+resolve	ahead	ascii	12	29.99	29.98	30.04	524288
+resolve	tmp	ascii	13	49.59	49.51	49.78	262144
+resolve	ahead	ascii	13	22.39	22.22	22.50	524288
+resolve	tmp	ascii	30	88.31	87.89	89.19	131072
+resolve	ahead	ascii	30	24.06	23.92	24.28	524288
+resolve	tmp	ascii	64	132.71	131.99	133.74	131072
+#ERROR mode=resolve&test=tmp&len=200&kind=ascii RangeError: offset is out of bounds
+    at Uint8Array.set (<anonymous>)
+    at fill (http://127.0.0.1:53072/bench/strings/micro-s.html?mode=resolve&test=tmp&len=200&kind=ascii:27:8)
+    at run (http://127.0.0.1:53072/bench/strings/micro-s.html?mode=resolve&test=tmp&len=200&kind=ascii:41:44)
+resolve	tmp	utf8	9	153.35	152.74	154.04	65536
+resolve	ahead	utf8	9	64.43	63.84	67.46	262144
+resolve	tmp	utf8	12	162.43	161.74	162.58	65536
+resolve	ahead	utf8	12	77.59	76.83	77.90	131072
+resolve	tmp	utf8	13	167.39	167.08	167.92	65536
+resolve	ahead	utf8	13	80.15	79.42	80.91	131072
+resolve	tmp	utf8	30	206.68	205.61	207.60	65536
+resolve	ahead	utf8	30	144.23	143.62	147.40	131072
+resolve	tmp	utf8	64	272.22	269.62	273.74	32768
+#ERROR mode=resolve&test=tmp&len=200&kind=utf8 RangeError: offset is out of bounds
+    at Uint8Array.set (<anonymous>)
+    at fill (http://127.0.0.1:53072/bench/strings/micro-s.html?mode=resolve&test=tmp&len=200&kind=utf8:27:8)
+    at run (http://127.0.0.1:53072/bench/strings/micro-s.html?mode=resolve&test=tmp&len=200&kind=utf8:41:44)
+dom	lit8			188.75	119.48	192.41	4096
+dom	ternary8			119.93	116.27	127.56	4096
+dom	tmp	ascii	9	168.15	165.41	194.40	16384
+dom	ahead	ascii	9	158.69	154.11	178.99	32768
+dom	tmp	ascii	30	240.48	233.61	262.30	32768
+dom	ahead	ascii	30	148.32	146.18	168.91	32768

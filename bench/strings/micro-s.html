@@ -33,12 +33,18 @@ async function run() {
   if (mode === 'resolve') {
     const from = 'last = lastText = doc.createTextNode(str(id));';
     if (!shim.includes(from)) throw new Error('shim text() changed');
-    shim = shim.replace(from, 'window.__acc += str(id).length; return;');
+    // a closure variable, as the bench's own sink was: a window property costs a few ns more per call
+    shim = shim.replace(from, '__acc += str(id).length; return;').replace('var cdom = (() => {', 'var cdom = (() => {\n  let __acc = 0;');
+  }
+  if (q.get('split')) { // diagnosis only (split=1): str's literal test alone, the rest in a second function
+    const head = 'function str(s) {\n    if (s >= litBase && s < litEnd) {\n      return lits[(s - litBase) >> 2];\n    }';
+    if (!shim.includes(head)) throw new Error('shim str() changed');
+    shim = shim.replace(head, 'function str(s) {\n    if (s >= litBase && s < litEnd) {\n      return lits[(s - litBase) >> 2];\n    }\n    return strRest(s);\n  }\n  function strRest(s) {');
   }
   const s = document.createElement('script'); s.text = shim; document.head.appendChild(s);
   const exports = await cdom.start('out/micro-s.wasm', 'app');
   const u8 = () => new Uint8Array(exports.memory.buffer);
-  if (len) { fill(exports.buf(), 1, u8()); fill(exports.area(), 1024, u8()); }
+  if (len) { fill(exports.buf(), 1, u8()); if (test === 'ahead') fill(exports.area(), 1024, u8()); }
   const per = /8$/.test(test) ? 8 : 1;
   const go = test === 'tmp' ? (n) => exports.tmp(n, len) : test === 'ahead' ? (n) => exports.ahead(n, len) : (n) => exports[test](n);
   const sample = (n) => { if (mode === 'dom') exports.dom_reset(); const t0 = performance.now(); go(n); return performance.now() - t0; };
@@ -50,7 +56,7 @@ async function run() {
   const v = [];
   for (let i = 0; i < 21; i++) v.push(sample(n) * 1e6 / (n * per));
   v.sort((a, b) => a - b);
-  window.RESULT = { ns: v[10], lo: v[5], hi: v[15], n, acc: window.__acc };
+  window.RESULT = { ns: v[10], lo: v[5], hi: v[15], n };
 }
 run().catch((e) => { window.RESULT = { error: String(e.stack || e) }; });
 </script></body></html>

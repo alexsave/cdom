@@ -1,0 +1,23 @@
+# Chrome/157.0.8103.79
+mode	test	kind	len	ns	q1	q3	n
+resolve	lit8			12.64	12.58	12.71	131072
+resolve	ternary8			12.24	12.23	12.28	131072
+resolve	helper8			13.17	13.15	13.20	131072
+resolve	table8			13.29	13.28	13.32	131072
+resolve	tmp	ascii	1	20.85	20.84	20.91	524288
+resolve	tmp	ascii	9	46.22	45.99	46.33	262144
+resolve	ahead	ascii	9	28.41	28.31	28.51	524288
+resolve	tmp	ascii	12	51.50	51.33	51.90	262144
+resolve	ahead	ascii	12	30.16	30.03	31.52	524288
+resolve	tmp	ascii	13	50.13	49.72	50.45	262144
+resolve	ahead	ascii	13	22.71	22.46	22.80	524288
+resolve	tmp	ascii	30	88.27	88.04	88.62	131072
+resolve	ahead	ascii	30	23.90	23.86	24.03	524288
+resolve	tmp	ascii	64	134.28	133.90	135.19	131072
+#ERROR mode=resolve&test=tmp&len=200&kind=ascii RangeError: offset is out of bounds
+    at Uint8Array.set (<anonymous>)
+    at fill (http://127.0.0.1:53111/bench/strings/micro-s.html?mode=resolve&test=tmp&len=200&kind=ascii:27:8)
+    at run (http://127.0.0.1:53111/bench/strings/micro-s.html?mode=resolve&test=tmp&len=200&kind=ascii:41:44)
+resolve	tmp	utf8	9	156.86	156.17	157.55	65536
+resolve	ahead	utf8	9	63.59	63.46	64.09	262144
+resolve	tmp	utf8	12	165.48	162.81	169.68	65536

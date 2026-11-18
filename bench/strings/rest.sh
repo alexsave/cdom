@@ -3,7 +3,7 @@
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"; top="$here/../.."
 r="$here/results"; mkdir -p "$r"
-PORT=8093 TAG=step10-swap2 FWS="st-a st-a2 st-s" "${PAIR:-/Users/alex/Dev/cdom-strings-bench/tools/pair.sh}" 05_
+[ -n "${SWAP:-}" ] && PORT=8093 TAG=step10-swap2 FWS="st-a st-a2 st-s" "${PAIR:-/Users/alex/Dev/cdom-strings-bench/tools/pair.sh}" 05_
 cd "$top"
 bench/strings/micro-s.sh
 node bench/strings/micro-s.mjs > "$r/micro-s-1.tsv" 2>&1

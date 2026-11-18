@@ -11,6 +11,8 @@ for (const kind of ['ascii', 'utf8'])
     configs.push({ mode: 'resolve', test: 'tmp', len, kind });
     if (len >= 9 && len <= 30) configs.push({ mode: 'resolve', test: 'ahead', len, kind });
   }
+for (const test of ['lit8', 'ternary8', 'helper8']) configs.push({ mode: 'resolve', test, split: 1 });
+for (const len of [9, 30]) configs.push({ mode: 'resolve', test: 'tmp', len, kind: 'ascii', split: 1 });
 for (const test of ['lit8', 'ternary8']) configs.push({ mode: 'dom', test });
 for (const len of [9, 30]) configs.push({ mode: 'dom', test: 'tmp', len, kind: 'ascii' }, { mode: 'dom', test: 'ahead', len, kind: 'ascii' });
 const srv = serve();
@@ -25,6 +27,6 @@ try {
     let r;
     for (let i = 0; i < 600 && !r; i++) { await sleep(100); try { r = await b.evaluate('window.RESULT'); } catch {} }
     if (!r || r.error) { console.log('#ERROR', key, r && r.error); continue; }
-    console.log([c.mode, c.test, c.kind || '', c.len || '', r.ns.toFixed(2), r.lo.toFixed(2), r.hi.toFixed(2), r.n].join('\t'));
+    console.log([c.mode + (c.split ? '/split' : ''), c.test, c.kind || '', c.len || '', r.ns.toFixed(2), r.lo.toFixed(2), r.hi.toFixed(2), r.n].join('\t'));
   }
 } finally { await b.close(); srv.close(); }
