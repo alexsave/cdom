@@ -1,6 +1,6 @@
 # cd_file_read, the heap's large blocks, and the encoder's quality
 
-Three changes raceclub asked for, on the branch `file-read` (stacked on `shared-state`, PR #42).
+Three changes raceclub asked for, on the branch `file-read`.
 
 ## The problems
 
@@ -51,6 +51,8 @@ Falsifier: a median slower by 2% or more, outside the spread of both sides.
 Size predictions:
 
 - The shim gains `file_read` (about 30 lines) and a quality argument: shim/cdom.min.js grows by 550 to 900 bytes, and by 200 to 400 bytes brotli.
+- The base for both: 17,610 bytes minified and 6,677 brotli (brotli -q 11).
+- The picked-image call (`cd_file_fit`) was begun on this branch and moved to the branch `file-fit` before this PR; its prediction (700 to 1,100 bytes minified, 300 to 450 brotli more) goes with it.
 - An app that does not link src/cdom_file.c carries none of it: 0 bytes of its module (tests/link checks the exports and imports).
 - The large-block code adds 200 to 500 bytes to every module (raw, -Oz), since every app links the heap.
 
