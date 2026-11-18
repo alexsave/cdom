@@ -2210,3 +2210,475 @@ EXPORT("t_regbuf_stop") void t_regbuf_stop(void) {
   cd_region_hide(&rb_stop_r);
 }
 EXPORT("t_regbuf_fired") uint32_t t_regbuf_fired(void) { return rb_fired; }
+/* 29. Shared state (cd_state, cd_changed, cd_watch). Every view logs one letter (sput's log, slog's
+ * twin); each case is an export that ends in cd_flush, as an entry from JS does, and returns the log of
+ * that entry. The regions live under <section id=state>; each region is one <i>. */
+static char stlog[64];
+static uint32_t stlog_n;
+static void stput(char c) { if (stlog_n < 63) stlog[stlog_n++] = c; }
+static const char *st_end(void) { cd_flush(); stlog[stlog_n] = 0; return stlog; }
+static void st_begin(void) { stlog_n = 0; __builtin_memset(stlog, 0, sizeof stlog); }
+static cd_id st_sec;
+/* Shows r, one <i> under the section or inside its parent region's <i>, and leaves the <i> open: 1 when
+ * its build is open. st_show closes the <i> at once. */
+static int st_open(cd_region *r) {
+  if (!st_sec) st_sec = section("state");
+  if (!cd_region_show(r, 1)) return 0;
+  cd_at(r->up ? r->up->root : st_sec, CD_APPEND); /* r->up: set before, or the region building now */
+  cd_open("i"); cd_name_open(r->root);
+  return 1;
+}
+static int st_show(cd_region *r) {
+  if (!st_open(r)) return 0;
+  cd_close();
+  return 1;
+}
+static void st_letter(void *ctx) { stput((char)(uintptr_t)ctx); }
+#define ST_L(c) ((void *)(uintptr_t)(c))
+
+/* A: one view of two states; one changed 1,000 times and the other once, in one click: it runs once. */
+static cd_state sa1, sa2;
+static cd_region ra;
+static cd_id st_btn;
+static void st_click(const cd_event_rec *, void *) {
+  for (int i = 0; i < 1000; i++) cd_changed(&sa1);
+  cd_changed(&sa2);
+}
+EXPORT("t_state_a_setup") void t_state_a_setup(void) {
+  if (st_show(&ra)) {
+    cd_watch(&sa1, st_letter, ST_L('a'));
+    cd_watch(&sa2, st_letter, ST_L('a'));
+    cd_region_end(&ra);
+  }
+  cd_at(st_sec, CD_APPEND);
+  st_btn = cd_open_id("button"); cd_close();
+  cd_on(st_btn, CD_EV_CLICK, st_click, 0);
+  st_end();
+  st_begin();
+}
+EXPORT("t_state_log") const char *t_state_log(void) { stlog[stlog_n] = 0; return stlog; }
+EXPORT("t_state_a_ver") uint64_t t_state_a_ver(uint32_t k) { return k ? sa2.ver : sa1.ver; }
+
+/* B: a state changed, then its view's region hidden, in one entry: the view does not run, and nothing
+ * watches the state after; a later change runs nothing. */
+static cd_state sb;
+static cd_region rb;
+EXPORT("t_state_b") const char *t_state_b(uint32_t step) {
+  st_begin();
+  if (step == 0 && st_show(&rb)) { cd_watch(&sb, st_letter, ST_L('b')); cd_region_end(&rb); }
+  if (step == 1) { cd_changed(&sb); cd_region_hide(&rb); }
+  if (step == 2) cd_changed(&sb);
+  return st_end();
+}
+EXPORT("t_state_b_watched") uint32_t t_state_b_watched(void) { return sb.first != 0 || sb.last != 0; }
+
+/* C: two views of one state at one depth; the first hides the second's region: the second does not run. */
+static cd_state sc_st;
+static cd_region rc1, rc2;
+static void st_c1(void *) { stput('c'); cd_region_hide(&rc2); }
+EXPORT("t_state_c") const char *t_state_c(uint32_t step) {
+  st_begin();
+  if (step == 0) {
+    if (st_show(&rc1)) { cd_watch(&sc_st, st_c1, 0); cd_region_end(&rc1); }
+    if (st_show(&rc2)) { cd_watch(&sc_st, st_letter, ST_L('d')); cd_region_end(&rc2); }
+  }
+  if (step == 1) cd_changed(&sc_st);
+  return st_end();
+}
+
+/* D: view x of sd shows a region whose build watches sd and sd2 (view y), and draws y; a later view z
+ * changes sd2: y was made before that change, so it runs in the next round, once. At the next change of
+ * sd, x and y both run once. */
+static cd_state sd, sd2;
+static cd_region rdx, rdy, rdz;
+static void st_dy(void *) { stput('y'); }
+static void st_dx(void *) {
+  stput('x');
+  rdy.up = &rdx;
+  if (st_show(&rdy)) {
+    cd_watch(&sd, st_dy, 0);
+    cd_watch(&sd2, st_dy, 0);
+    cd_region_end(&rdy);
+  }
+}
+static void st_dz(void *) { stput('z'); cd_changed(&sd2); }
+EXPORT("t_state_d") const char *t_state_d(uint32_t step) {
+  st_begin();
+  if (step == 0) {
+    if (st_show(&rdx)) { cd_watch(&sd, st_dx, 0); cd_region_end(&rdx); }
+    if (st_show(&rdz)) { cd_watch(&sd, st_dz, 0); cd_region_end(&rdz); }
+  }
+  if (step == 1) cd_changed(&sd); /* x (makes y), z (changes sd2), then y */
+  if (step == 2) { cd_region_hide(&rdz); cd_changed(&sd); } /* x (y is shown: no build), y */
+  return st_end();
+}
+
+/* E: a view that changes another state, and asks for a render; a render that changes a state. All in
+ * one pass: e (changes se2, asks r1), then r1 (changes se3), then se2's and se3's views (f, g). */
+static cd_state se1, se2, se3;
+static cd_region re1, re2;
+static void st_r1(void *) { stput('1'); cd_changed(&se3); }
+static void st_e(void *) { stput('e'); cd_changed(&se2); cd_dirty(st_r1, 0); }
+EXPORT("t_state_e") const char *t_state_e(uint32_t step) {
+  st_begin();
+  if (step == 0) {
+    if (st_show(&re1)) { cd_watch(&se1, st_e, 0); cd_region_end(&re1); }
+    if (st_show(&re2)) { cd_watch(&se2, st_letter, ST_L('f')); cd_watch(&se3, st_letter, ST_L('g')); cd_region_end(&re2); }
+  }
+  if (step == 1) cd_changed(&se1);
+  return st_end();
+}
+
+/* F: the tick. p (depth 1) watches sf1 and changes sf2; q (depth 2) watches sf1 and sf2 and runs after
+ * that change: it runs once. P (depth 2) watches sf3 and changes sf4; Q (depth 1) watches sf3 and sf4
+ * and ran before that change: it runs again, in the next round. */
+static cd_state sf1, sf2, sf3, sf4;
+static cd_region rfp, rfq, rfP, rfQ;
+static void st_fp(void *) { stput('p'); cd_changed(&sf2); }
+static void st_fP(void *) { stput('P'); cd_changed(&sf4); }
+EXPORT("t_state_f") const char *t_state_f(uint32_t step) {
+  st_begin();
+  if (step == 0) {
+    if (st_show(&rfp)) {
+      cd_watch(&sf1, st_fp, 0);
+      if (st_show(&rfq)) { cd_watch(&sf2, st_letter, ST_L('q')); cd_watch(&sf1, st_letter, ST_L('q')); cd_region_end(&rfq); }
+      cd_region_end(&rfp);
+    }
+    if (st_show(&rfQ)) {
+      cd_watch(&sf3, st_letter, ST_L('Q'));
+      cd_watch(&sf4, st_letter, ST_L('Q'));
+      if (st_show(&rfP)) { cd_watch(&sf3, st_fP, 0); cd_region_end(&rfP); }
+      cd_region_end(&rfQ);
+    }
+  }
+  if (step == 1) cd_changed(&sf1);
+  if (step == 2) cd_changed(&sf3);
+  return st_end();
+}
+
+/* G: outermost region first. The list (depth 1) watches the selection, and shows the detail (depth 2)
+ * while an item is selected; the detail watches the items and shows the selected one. Deleting the
+ * selected item clears the selection, in one entry; the items' change comes first, so the detail's view
+ * is found first. Run first it would show an item that is gone (X); the list's view, run first, hides
+ * the detail, whose view then never runs. */
+static cd_state items_st, sel_st;
+static uint32_t g_items[4] = {1, 1, 1, 1}, g_sel; /* g_items[k]: item k exists; g_sel: k + 1, or 0 */
+static cd_region rg_list, rg_detail;
+static void st_g_detail(void *) { stput(g_sel && g_items[g_sel - 1] ? 'D' : 'X'); }
+static void st_g_list(void *) {
+  stput('L');
+  if (!g_sel) cd_region_hide(&rg_detail);
+}
+EXPORT("t_state_g") const char *t_state_g(uint32_t step) {
+  st_begin();
+  if (step == 0) {
+    g_sel = 3;
+    if (st_show(&rg_list)) {
+      cd_watch(&sel_st, st_g_list, 0);
+      if (st_show(&rg_detail)) { cd_watch(&items_st, st_g_detail, 0); cd_watch(&sel_st, st_g_detail, 0); cd_region_end(&rg_detail); }
+      cd_region_end(&rg_list);
+    }
+  }
+  if (step == 1) { g_items[2] = 0; cd_changed(&items_st); g_sel = 0; cd_changed(&sel_st); }
+  return st_end();
+}
+/* G2: four views at depths 2, 1, 2, 1, found in that order (a then d from sg1, b then c from sg2):
+ * they run d b a c, outermost first, and at one depth in the order found. */
+static cd_state sg1, sg2;
+static cd_region rg1, rg1k, rg2, rg2k;
+EXPORT("t_state_g2") const char *t_state_g2(uint32_t step) {
+  st_begin();
+  if (step == 0) {
+    if (st_show(&rg1)) {
+      if (st_show(&rg1k)) { cd_watch(&sg1, st_letter, ST_L('a')); cd_region_end(&rg1k); }
+      cd_watch(&sg1, st_letter, ST_L('d'));
+      cd_watch(&sg2, st_letter, ST_L('b'));
+      cd_region_end(&rg1);
+    }
+    if (st_show(&rg2)) {
+      if (st_show(&rg2k)) { cd_watch(&sg2, st_letter, ST_L('c')); cd_region_end(&rg2k); }
+      cd_region_end(&rg2);
+    }
+  }
+  if (step == 1) { cd_changed(&sg1); cd_changed(&sg2); }
+  return st_end();
+}
+
+/* H: a region hidden and shown again draws the value at its build, and follows later changes. */
+static cd_state sh;
+static uint32_t h_value;
+static cd_region rh;
+static cd_id h_txt;
+static void st_h(void *) { stput('h'); cd_set_text_node_num(h_txt, h_value); }
+EXPORT("t_state_h") const char *t_state_h(uint32_t op, uint32_t v) {
+  st_begin();
+  if (op == 0 && st_open(&rh)) {
+    cd_attr("id", "st-h");
+    cd_text(""); cd_name_text(h_txt = cd_id_new());
+    cd_close();
+    cd_watch(&sh, st_h, 0);
+    st_h(0);
+    cd_region_end(&rh);
+  }
+  if (op == 1) cd_region_hide(&rh);
+  if (op == 2) { h_value = v; cd_changed(&sh); }
+  return st_end();
+}
+
+/* I: one (fn, ctx) watched twice in one region, once on each of two states and once again on the first,
+ * is one view; the same (fn, ctx) in a second region is a second view. Both states change: 2 runs. */
+static cd_state si1, si2;
+static cd_region ri1, ri2;
+EXPORT("t_state_i") const char *t_state_i(uint32_t step) {
+  st_begin();
+  if (step == 0) {
+    if (st_show(&ri1)) {
+      cd_watch(&si1, st_letter, ST_L('i'));
+      cd_watch(&si2, st_letter, ST_L('j')); /* another view between */
+      cd_watch(&si2, st_letter, ST_L('i'));
+      cd_watch(&si1, st_letter, ST_L('i'));
+      cd_region_end(&ri1);
+    }
+    if (st_show(&ri2)) { cd_watch(&si2, st_letter, ST_L('i')); cd_region_end(&ri2); }
+  }
+  if (step == 1) { cd_changed(&si1); cd_changed(&si2); }
+  return st_end();
+}
+
+/* J: views that keep changing what they watch trap past 16 rounds (the trap page). */
+static cd_state sj;
+static cd_region rj;
+static uint32_t j_runs;
+static void st_j(void *) { j_runs++; cd_changed(&sj); }
+EXPORT("t_state_loop") void t_state_loop(void) {
+  if (st_show(&rj)) { cd_watch(&sj, st_j, 0); cd_region_end(&rj); }
+  cd_changed(&sj);
+  cd_flush();
+}
+EXPORT("t_state_loop_n") uint32_t t_state_loop_n(void) { return j_runs; }
+/* cd_watch with no region building, and in a list row's create, trap (the trap page). */
+static cd_state sk;
+EXPORT("t_state_idle_watch") void t_state_idle_watch(void) { cd_watch(&sk, st_letter, 0); }
+static cd_id k_create(void *, uint32_t, uint32_t *) {
+  cd_id li = cd_open_id("li"); cd_close();
+  cd_watch(&sk, st_letter, 0);
+  return li;
+}
+static void k_patch(void *, uint32_t, cd_item *) {}
+static void k_destroy(void *, cd_item *) {}
+EXPORT("t_state_row_watch") void t_state_row_watch(void) {
+  static const cd_list_fns fns = {0, k_create, k_patch, k_destroy};
+  static cd_list kl;
+  static const uint32_t key = 1;
+  cd_at(CD_MOUNT, CD_APPEND);
+  kl.parent = cd_open_id("ul"); cd_close();
+  cd_list_update(&kl, &key, 1, &fns);
+}
+
+/* L: a keyed list whose rows each open a region in their create, and the region's view watches sl. One
+ * entry changes sl and removes row 2: rows 1 and 3 run, row 2's view does not; the removed row's region
+ * went with the row (its destroy forgets it). */
+static cd_state sl;
+static cd_list ll;
+static cd_region l_rows[4];
+static uint32_t l_keys[4];
+static void st_l_row(void *ctx) { stput((char)('0' + CD_CTX_INDEX(ctx))); }
+static cd_id l_create(void *, uint32_t i, uint32_t *) {
+  uint32_t k = l_keys[i];
+  cd_region *r = &l_rows[k];
+  cd_id li = cd_open_id("li");
+  if (cd_region_show(r, 1)) { /* the row's region: one <b> in the <li>, no outer region's child */
+    cd_open("b"); cd_name_open(r->root); cd_close();
+    cd_watch(&sl, st_l_row, CD_CTX_OF(k));
+    cd_region_end(r);
+  }
+  cd_close();
+  return li;
+}
+static void l_patch(void *, uint32_t, cd_item *) {}
+static void l_destroy(void *, cd_item *it) { cd_region_forget(&l_rows[it->key]); }
+static const cd_list_fns l_fns = {0, l_create, l_patch, l_destroy};
+EXPORT("t_state_l") const char *t_state_l(uint32_t step) {
+  st_begin();
+  if (step == 0) {
+    if (!st_sec) st_sec = section("state");
+    cd_at(st_sec, CD_APPEND);
+    ll.parent = cd_open_id("ol"); cd_close();
+    l_keys[0] = 1; l_keys[1] = 2; l_keys[2] = 3;
+    cd_list_update(&ll, l_keys, 3, &l_fns);
+  }
+  if (step == 1) {
+    cd_changed(&sl);
+    l_keys[1] = 3;
+    cd_list_update(&ll, l_keys, 2, &l_fns); /* row 2 goes: its destroy forgets its region */
+  }
+  if (step == 2) cd_changed(&sl);
+  return st_end();
+}
+EXPORT("t_state_l_rows") uint32_t t_state_l_rows(void) { return ll.n * 10 + l_rows[1].shown + l_rows[2].shown + l_rows[3].shown; }
+
+/* M: the reads run the pending views first: the view widens a box, and cd_get_num reads it. */
+static cd_state sm;
+static cd_region rm;
+static cd_id m_box;
+static uint32_t m_w = 50;
+static void st_m(void *) { stput('m'); cd_set_style_num(m_box, "width", m_w, CD_UNIT_PX); }
+EXPORT("t_state_m") const char *t_state_m(void) {
+  st_begin();
+  if (!rm.shown && st_open(&rm)) {
+    cd_attr("style", "display: block; width: 50px; height: 1px");
+    cd_close();
+    m_box = rm.root;
+    cd_watch(&sm, st_m, 0);
+    cd_region_end(&rm);
+  }
+  m_w = 120;
+  cd_changed(&sm);
+  stput((char)('0' + (uint32_t)cd_get_num(m_box, "offsetWidth") / 40)); /* 120 / 40: 3 */
+  return st_end();
+}
+
+/* N: memory. A region with three views on two states, shown, changed and hidden from inside the pass
+ * (one view hides it: its views die in the pass and are freed at its end), then shown and hidden from
+ * outside; round after round, the memory and the live ids stay as they were. */
+static cd_state sn1, sn2;
+static cd_region rn;
+static uint32_t n_runs;
+static void st_n_hide(void *) { n_runs++; cd_region_hide(&rn); }
+static void st_n(void *) { n_runs++; }
+static void n_show(void) {
+  if (!st_show(&rn)) return;
+  cd_watch(&sn1, st_n_hide, 0);
+  cd_watch(&sn2, st_n_hide, 0);
+  cd_watch(&sn1, st_n, CD_CTX_OF(1));
+  cd_watch(&sn2, st_n, CD_CTX_OF(1));
+  cd_watch(&sn1, st_n, CD_CTX_OF(2));
+  cd_watch(&sn2, st_n, CD_CTX_OF(2));
+  cd_region_end(&rn);
+}
+EXPORT("t_state_n") uint32_t t_state_n(uint32_t rounds) {
+  for (uint32_t k = 0; k < rounds; k++) {
+    n_show();
+    cd_changed(&sn1);
+    cd_changed(&sn2);
+    cd_flush(); /* st_n_hide runs first and hides rn: the other two never run */
+    n_show();
+    cd_region_hide(&rn);
+    cd_changed(&sn1);
+    cd_flush();
+  }
+  return n_runs;
+}
+EXPORT("t_state_n_watched") uint32_t t_state_n_watched(void) { return sn1.first != 0 || sn2.first != 0; }
+
+/* O: the version is 64 bits. */
+static cd_state so = {.ver = 0xffffffffu};
+EXPORT("t_state_o") uint64_t t_state_o(void) { cd_changed(&so); cd_flush(); return so.ver; }
+
+/* P: cd_bind_prop and cd_bound_shows_bytes: an input's value bound; what the user typed is recorded
+ * with shows_bytes, so setting the same bytes writes nothing. unit.html counts the shim's set calls. */
+static cd_bound pv_b;
+static cd_region rp;
+static cd_id p_input;
+EXPORT("t_state_p") void t_state_p(uint32_t step) {
+  static char typed[16];
+  if (step == 0 && st_open(&rp)) {
+    p_input = cd_open_id("input"); cd_close();
+    cd_close();
+    cd_bind_prop(&pv_b, p_input, "value");
+    cd_region_end(&rp);
+  }
+  if (step == 1) cd_bound_set_bytes(&pv_b, "abc", 3);       /* writes */
+  if (step == 2) cd_bound_set_bytes(&pv_b, "abc", 3);       /* nothing */
+  if (step == 3) {                                          /* the user typed: C reads it and records it */
+    uint32_t n;
+    if (cd_input_whole(p_input, typed, sizeof typed, &n)) cd_bound_shows_bytes(&pv_b, typed, n);
+  }
+  if (step == 4) cd_bound_set_bytes(&pv_b, typed, 5);       /* the bytes it shows: nothing */
+  if (step == 5) cd_bound_set_bytes(&pv_b, "reset", 5);     /* other bytes: writes */
+  if (step == 6) cd_bound_set_num(&pv_b, 42);               /* a number, as text: writes */
+  if (step == 7) cd_region_hide(&rp);
+  cd_flush();
+}
+EXPORT("t_state_p_live") uint32_t t_state_p_live(void) { return (uint32_t)cd_bound_live(&pv_b); }
+
+/* Q: cd_dirty's hash. 100 asks of one function with ctx 0..99, each asked three times, in one entry,
+ * and ctx 50 dropped: 99 runs, each once, in the order first asked. The render of ctx 99 asks for
+ * ctx 0..9 again (they ran: they run again) and 100..139 (new, past the table's growth). */
+static uint8_t q_order[256];
+static uint32_t q_n;
+static void st_q(void *ctx) {
+  uint32_t i = CD_CTX_INDEX(ctx);
+  if (q_n < 256) q_order[q_n++] = (uint8_t)i;
+  if (i == 99)
+    for (uint32_t k = 0; k < 140; k++) if (k < 10 || k >= 100) cd_dirty(st_q, CD_CTX_OF(k));
+}
+EXPORT("t_state_q") uint32_t t_state_q(void) {
+  q_n = 0;
+  for (uint32_t r = 0; r < 3; r++)
+    for (uint32_t i = 0; i < 100; i++) cd_dirty(st_q, CD_CTX_OF(i));
+  cd_undirty(st_q, CD_CTX_OF(50));
+  cd_flush();
+  return q_n;
+}
+EXPORT("t_state_q_at") uint32_t t_state_q_at(uint32_t k) { return q_order[k]; }
+
+/* The check build's cases (unit_check.wasm, -DCD_STATE_CHECK; the trap page). A getter calls cd_read. */
+static cd_state sx1, sx2;
+static uint32_t x_bad;
+static cd_region rx1, rx2, rx3, rx4;
+static void x_view(void *) { cd_read(&sx1); if (x_bad) cd_read(&sx2); }
+static void x_other(void *) { cd_read(&sx2); }
+EXPORT("t_check_build") uint32_t t_check_build(void) {
+#ifdef CD_STATE_CHECK
+  return 1;
+#else
+  return 0;
+#endif
+}
+/* Views that read what they watch, and a build that reads before it watches, do not trap. */
+EXPORT("t_check_view_ok") uint32_t t_check_view_ok(void) {
+  if (st_show(&rx1)) {
+    cd_read(&sx1); /* before the watch: the build's reads are checked at its end */
+    cd_watch(&sx1, x_view, 0);
+    cd_watch(&sx2, x_other, 0);
+    cd_region_end(&rx1);
+  }
+  cd_changed(&sx1);
+  cd_changed(&sx2);
+  cd_read(&sx2); /* no view runs and no region builds: not checked */
+  cd_flush();
+  return 1;
+}
+/* A view that reads a state it does not watch traps. */
+EXPORT("t_check_view_bad") void t_check_view_bad(void) { t_check_view_ok(); x_bad = 1; cd_changed(&sx1); cd_flush(); }
+/* A build reading a state its region does not watch, but the region building under it does, and its
+ * r->up does: no trap. A region shown by a view, whose build reads what the view's region watches,
+ * through its r->up: no trap. */
+static void x_shows(void *) {
+  rx4.up = &rx1;
+  if (st_show(&rx4)) {
+    cd_read(&sx1);
+    cd_region_end(&rx4);
+  }
+}
+EXPORT("t_check_build_ok") uint32_t t_check_build_ok(void) {
+  if (st_show(&rx1)) {
+    cd_watch(&sx1, x_shows, 0);
+    if (st_show(&rx2)) { cd_read(&sx1); cd_region_end(&rx2); }
+    cd_region_end(&rx1);
+  }
+  rx3.up = &rx1;
+  if (st_show(&rx3)) { cd_read(&sx1); cd_region_end(&rx3); }
+  cd_changed(&sx1);
+  cd_flush();
+  return rx4.shown;
+}
+/* A build that reads a state nothing around it watches traps at its end. */
+EXPORT("t_check_build_bad") void t_check_build_bad(void) {
+  if (st_show(&rx1)) {
+    cd_watch(&sx1, x_view, 0);
+    if (st_show(&rx2)) { cd_read(&sx2); cd_region_end(&rx2); }
+    cd_region_end(&rx1);
+  }
+}
