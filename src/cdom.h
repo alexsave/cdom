@@ -86,14 +86,19 @@ void cd_free(void *p);
  * A string literal costs nothing at run time: the build (tools/cdlits, run by cdom.mk) moves it out of
  * the module into the page's string table, and the argument is its slot. A literal is an argument spelled
  * as one ("...", adjacent literals, or a macro that expands to them).
- * Any other char pointer is a runtime string: its bytes (UTF-8, to the terminating 0) are read from C
- * memory by the call that uses it. Nothing is kept, so a string may change between calls.
- * cd_tmp is the same for bytes with a length and no terminator.
+ * Any other char pointer is read from C memory (UTF-8, to the terminating 0) by the call that uses it.
+ * A literal the macro cannot see (inside a ternary, or passed through a helper's const char *) is such a
+ * pointer, and so is a const table entry or a static const char[]. A pointer into read-only data is its
+ * own id and the shim keeps its string by address: C never writes const data, so one address is one
+ * string for the life of the page (cdom.c, cd_tmpz). Any other pointer (a mutable static, the stack, the
+ * heap) is read on every use, so its bytes may change between calls.
+ * cd_tmp is the same for bytes with a length and no terminator, and is always read on use.
  *
- * A cd_str from a literal is good for the life of the page. A cd_str from a runtime string (cd_tmp,
- * cd_tmpz, or cd_s of a non-literal) is good for the next call that takes a string: that call reads the
- * bytes, and when it returns every such cd_str is dead (using one later throws out of the call that
- * uses it). The bytes must stay unchanged until that call. At most CD_TMP_CAP are alive at once. */
+ * A cd_str from a literal or from read-only data is good for the life of the page. A cd_str from any
+ * other runtime string (cd_tmp, or cd_tmpz of mutable bytes) is good for the next call that takes a
+ * string: that call reads the bytes, and when it returns every such cd_str is dead (using one later
+ * throws out of the call that uses it). The bytes must stay unchanged until that call. At most
+ * CD_TMP_CAP are alive at once. */
 typedef struct { uint32_t v; } cd_str;  /* a slot address, or 0x80000000 | a serial; never made by hand */
 #define CD_NONE ((cd_str){0})          /* no string: the path that reads the object itself */
 #define CD_TMP_CAP 32
@@ -111,9 +116,9 @@ cd_str cd_tmpz(const char *s);          /* traps on a null pointer */
  * byte only under start's options.checkAhead (the tests set it): otherwise the page shows the old text. */
 void cd_tmp_ahead(const char *p, uint32_t len);
 
-/* cd_s(x): the cd_str of x. Call it yourself only to keep a literal in a variable or to choose between
- * literals: cd_set_class(id, sel ? cd_s("danger") : cd_s("")). It is a statement expression, so it
- * works inside a function, not in a file-scope initializer. */
+/* cd_s(x): the cd_str of x. It is what the macros below use, and an app never needs to call it: plain C
+ * (cd_set_class(id, sel ? "danger" : "")) is read once per address, within a few ns of a slot. It is a
+ * statement expression, so it works inside a function, not in a file-scope initializer. */
 #define CD_SPELL_(s) #s
 #define CD_SPELL(s) CD_SPELL_(s)
 #define CD_CHARP(s) _Generic((s), cd_str: (const char *)0, default: (s))

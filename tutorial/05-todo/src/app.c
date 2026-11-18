@@ -71,7 +71,7 @@ static cd_id item_create(void *ctx, uint32_t i, uint32_t *data) {
   ItemView *v = &views[vi];
   v->done = t->done;
   cd_id row = cd_open_id("li");
-  cd_class(t->done ? cd_s("item done") : cd_s("item"));
+  cd_class(t->done ? "item done" : "item");
   v->check = cd_open_id("input"); cd_attr("type", "checkbox"); cd_close();
   cd_open("span"); cd_class("text"); cd_text(cd_tmp(t->text, t->len)); cd_close();
   v->remove = cd_open_id("button");
@@ -93,7 +93,7 @@ static void item_patch(void *ctx, uint32_t i, cd_item *it) {
   ItemView *v = &views[it->data];
   if (v->done == t->done) return;
   v->done = t->done;
-  cd_set_class(it->node, t->done ? cd_s("item done") : cd_s("item"));
+  cd_set_class(it->node, t->done ? "item done" : "item");
   cd_set_bool(v->check, "checked", t->done);
 }
 
@@ -178,7 +178,7 @@ static void on_filter(const cd_event_rec *e, void *ctx) {
   uint32_t k = (uint32_t)(uintptr_t)ctx;
   filter = k;
   for (uint32_t i = 0; i < 3; i++) {
-    cd_set_attr(filter_btn[i], "aria-pressed", i == k ? cd_s("true") : cd_s("false"));
+    cd_set_attr(filter_btn[i], "aria-pressed", i == k ? "true" : "false");
   }
   render();
 }
@@ -193,9 +193,9 @@ static void on_clear(const cd_event_rec *e, void *ctx) {
   render();
 }
 
-static cd_id filter_button(cd_str label, uint32_t k) {
+static cd_id filter_button(const char *label, uint32_t k) {
   cd_id id = cd_open_id("button");
-  cd_attr("aria-pressed", k == filter ? cd_s("true") : cd_s("false"));
+  cd_attr("aria-pressed", k == filter ? "true" : "false");
   cd_text(label);
   cd_close();
   return id;
@@ -258,9 +258,9 @@ void cd_main(void) {
   cd_open("footer");
   cd_open("span"); cd_class("left"); cd_text(""); cd_name_text(left_text = cd_id_new()); cd_close();
   cd_open("div"); cd_class("filters");
-  filter_btn[0] = filter_button(cd_s("All"), FILTER_ALL);
-  filter_btn[1] = filter_button(cd_s("Active"), FILTER_ACTIVE);
-  filter_btn[2] = filter_button(cd_s("Done"), FILTER_DONE);
+  filter_btn[0] = filter_button("All", FILTER_ALL);
+  filter_btn[1] = filter_button("Active", FILTER_ACTIVE);
+  filter_btn[2] = filter_button("Done", FILTER_DONE);
   cd_close();
   clear_btn = cd_open_id("button"); cd_class("clear"); cd_text("Clear done"); cd_close();
   cd_close();

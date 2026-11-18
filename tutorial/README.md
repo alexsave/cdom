@@ -5,15 +5,15 @@ Every lesson puts the same app in React next to it, so you can read cdom in term
 
 | Lesson | What it teaches | The React it replaces | Page, brotli |
 | --- | --- | --- | ---: |
-| [1. Hello](01-hello/) | building a page: `cd_open`, `cd_text`, `cd_attr`, plain string literals | JSX | 8.9 KB |
-| [2. Counter](02-counter/) | state in C variables, ids, `cd_on` handlers, updating one node | `useState`, `onClick` | 10.0 KB |
-| [3. Input](03-input/) | reading a text field, derived state, strings with a length | a controlled `<input>` | 10.3 KB |
-| [4. Show and hide](04-regions/) | regions: parts of the page that come and go | `{open && <Panel/>}` | 11.6 KB |
-| [5. Todo list](05-todo/) | the keyed list: `cd_list_update` with create, patch and destroy | `items.map(i => <li key={i.id}>)` | 15.1 KB |
-| [6. Stopwatch](06-stopwatch/) | time: frames, timers and the clock | `useEffect`, `setInterval`, cleanup | 14.3 KB |
-| [7. Particles](07-particles/) | pixels from C to a canvas, with a seeded random generator | `useRef`, `useEffect`, a canvas loop | 12.3 KB |
+| [1. Hello](01-hello/) | building a page: `cd_open`, `cd_text`, `cd_attr`, plain string literals | JSX | 8.8 KB |
+| [2. Counter](02-counter/) | state in C variables, ids, `cd_on` handlers, updating one node | `useState`, `onClick` | 9.8 KB |
+| [3. Input](03-input/) | reading a text field, derived state, strings with a length | a controlled `<input>` | 10.0 KB |
+| [4. Show and hide](04-regions/) | regions: parts of the page that come and go | `{open && <Panel/>}` | 10.9 KB |
+| [5. Todo list](05-todo/) | the keyed list: `cd_list_update` with create, patch and destroy | `items.map(i => <li key={i.id}>)` | 14.4 KB |
+| [6. Stopwatch](06-stopwatch/) | time: frames, timers and the clock | `useEffect`, `setInterval`, cleanup | 13.6 KB |
+| [7. Particles](07-particles/) | pixels from C to a canvas, with a seeded random generator | `useRef`, `useEffect`, a canvas loop | 12.0 KB |
 
-"Page, brotli" is the whole page as it is served: the HTML, the shim and the module bundled in it, measured with `brotli` on 2026-11-17.
+"Page, brotli" is the whole page as it is served: the HTML, the shim and the module bundled in it, measured with `brotli -q 11` on 2026-11-17, in thousands of bytes.
 For scale, the benchmark's React entry, a table of rows about as big as lesson 5, ships 51.4 KB brotli in all ([RESULTS.md](../RESULTS.md#startup-memory-and-bytes)).
 
 ## Running a lesson
@@ -43,6 +43,7 @@ Copy one to start your own, and set `CDOM` in its Makefile to where cdom is.
   No hooks, no rules about where state can be read, no stale closures.
 - **Write the string.** A string argument is plain C.
   A literal sits in the page's string table, built in with the page, so it costs nothing at run time.
+  A string the compiler keeps in read-only data (one inside a ternary, a `const` table entry, a helper's `const char *`) is read from C memory once, the first time it is used.
   Any other string (a buffer, a typed name) is read from C memory when the call uses it, so it is never stale, and `cd_tmp(p, len)` does the same for bytes with a length.
 - **One listener per event type.** The shim listens on the mount and passes each event to C, which routes it to the handler `cd_on` registered for that node.
 - **The page is one file.** The shim and the module are inlined into `index.html`, so it opens from disk, and the page and its code always come from the same build.

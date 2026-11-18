@@ -72,7 +72,7 @@ void cd_on_frame(double ms) {
 /* The view of the buttons: the start button's label, and which buttons can be pressed. Lap needs a run going.
  * Reset needs something to reset, and no run going. */
 static void sync(void) {
-  cd_set_text_node(start_text, running ? cd_s("Stop") : cd_s("Start"));
+  cd_set_text_node(start_text, running ? "Stop" : "Start");
   cd_set_bool(lap_btn, "disabled", !running);
   cd_set_bool(reset_btn, "disabled", running || accumulated_ms == 0.0);
 }

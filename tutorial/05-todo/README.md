@@ -75,7 +75,7 @@ export default function Todo() {
 [`src/app.c`](src/app.c), the parts that matter:
 
 ```c
-typedef struct { uint32_t id; cd_str text; uint8_t done; } Todo;
+typedef struct { uint32_t id, len; char text[TEXT_CAP]; uint8_t done; } Todo;
 static Todo todos[TODO_CAP];
 
 /* The three things React does for you when it reconciles, written out. */
@@ -95,7 +95,7 @@ static void item_patch(void *ctx, uint32_t i, cd_item *it) {
   ItemView *v = &views[it->data];
   if (v->done == t->done) return;              /* nothing changed: the row stays as it is */
   v->done = t->done;
-  cd_set_class(it->node, t->done ? cd_s("item done") : cd_s("item"));
+  cd_set_class(it->node, t->done ? "item done" : "item");
   cd_set_bool(v->check, "checked", t->done);
 }
 

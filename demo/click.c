@@ -41,7 +41,7 @@ static cd_id hint, button, played_txt;
 
 static void show_state(void) {
   uint32_t state = cd_audio_state();
-  cd_set_text_node(hint, state == CD_AUDIO_RUNNING ? cd_s("sound on") : cd_s("tap for sound"));
+  cd_set_text_node(hint, state == CD_AUDIO_RUNNING ? "sound on" : "tap for sound");
 }
 
 void cd_main(void) {

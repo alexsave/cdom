@@ -70,8 +70,8 @@ static void on_toggle(const cd_event_rec *e, void *ctx) {
     build_details();                              /* cd_name_open(details_region.root) names it */
     cd_region_end(&details_region);
   }                                               /* 0 with open 0: the section is removed */
-  cd_set_text_node(toggle_text, open ? cd_s("Hide details") : cd_s("Show details"));
-  cd_set_attr(toggle, "aria-expanded", open ? cd_s("true") : cd_s("false"));
+  cd_set_text_node(toggle_text, open ? "Hide details" : "Show details");
+  cd_set_attr(toggle, "aria-expanded", open ? "true" : "false");
 }
 
 static void select_tab(uint32_t k) {

@@ -36,8 +36,8 @@ static void on_toggle(const cd_event_rec *e, void *ctx) {
     build_details();
     cd_region_end(&details_region);
   }
-  cd_set_text_node(toggle_text, open ? cd_s("Hide details") : cd_s("Show details"));
-  cd_set_attr(toggle, "aria-expanded", open ? cd_s("true") : cd_s("false"));
+  cd_set_text_node(toggle_text, open ? "Hide details" : "Show details");
+  cd_set_attr(toggle, "aria-expanded", open ? "true" : "false");
 }
 
 /* One panel per tab. Any id made while a region builds (cd_id_new, cd_open_id) is recorded and freed with
@@ -67,8 +67,8 @@ static void build_panel(uint32_t k) {
 static void select_tab(uint32_t k) {
   selected = k;
   for (uint32_t i = 0; i < 3; i++) {
-    cd_set_attr(tabs[i], "aria-selected", i == k ? cd_s("true") : cd_s("false"));
-    cd_set_class(tabs[i], i == k ? cd_s("tab active") : cd_s("tab"));
+    cd_set_attr(tabs[i], "aria-selected", i == k ? "true" : "false");
+    cd_set_class(tabs[i], i == k ? "tab active" : "tab");
   }
   cd_region_hide(&panel_region);
   if (cd_region_show(&panel_region, 1)) {
@@ -84,7 +84,7 @@ static void on_tab(const cd_event_rec *e, void *ctx) {
   if (k != selected) select_tab(k);
 }
 
-static cd_id tab_button(cd_str label) {
+static cd_id tab_button(const char *label) {
   cd_id id = cd_open_id("button");
   cd_attr("role", "tab");
   cd_text(label);
@@ -133,9 +133,9 @@ void cd_main(void) {
   cd_close();
 
   cd_open("div"); cd_attr("role", "tablist"); cd_class("tabs");
-  tabs[0] = tab_button(cd_s("Overview"));
-  tabs[1] = tab_button(cd_s("Usage"));
-  tabs[2] = tab_button(cd_s("Notes"));
+  tabs[0] = tab_button("Overview");
+  tabs[1] = tab_button("Usage");
+  tabs[2] = tab_button("Notes");
   cd_close();
 
   panel = cd_open_id("div"); cd_class("panel"); cd_attr("role", "tabpanel"); cd_close();
