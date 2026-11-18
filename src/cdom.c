@@ -1,4 +1,5 @@
-/* cdom core: allocator, strings, DOM calls, node ids, regions, events, keyed diff. */
+/* cdom core: allocator, runtime strings, DOM calls, node ids, regions, events, keyed diff. */
+#define CD_NO_WRAPPERS /* this file defines the functions the wrappers in cdom.h call */
 #include "cdom.h"
 #include "cdom_cb.h"
 #include <stddef.h>
@@ -93,13 +94,12 @@ void *cd_realloc(void *p, uint32_t n) {
 }
 
 /* ---- calls ----
- * Every DOM operation is its own import, called the moment C emits it. Only strings are
- * batched: a string crosses once (an id thereafter), and new strings are decoded together
- * right before the call that first needs them. Paired harness runs measured this against a
- * batched op list that the shim interpreted: the calls won on creates and clears
- * (PERF_LOG.md, the direct-call experiment), except for walks, which travel as one call. */
+ * Every DOM operation is its own import, called the moment C emits it. A string is a cd_str: a literal's
+ * slot (the shim finds its text in the page's table) or a runtime string's serial (the shim reads its
+ * bytes from C memory in the call that uses it). Paired harness runs measured the calls against a
+ * batched op list that the shim interpreted: the calls won on creates and clears (PERF_LOG.md, the
+ * direct-call experiment), except for walks, which travel as one call. */
 #define IMPORTS(n) __attribute__((import_module("cdom"), import_name(n)))
-IMPORTS("strings") void j_strings(uint32_t n, uint32_t nbytes);
 IMPORTS("at") void j_at(cd_id parent, cd_id before);
 IMPORTS("open") void j_open(uint32_t tag);
 IMPORTS("close") void j_close(void);
@@ -149,27 +149,22 @@ IMPORTS("timer_stop") void j_timer_stop(uint32_t handle);
 IMPORTS("raf") void j_raf(uint32_t token);
 IMPORTS("now") double j_now(void);
 
-#define SB_CAP (1u << 18)
-#define SM_CAP (1u << 12)
-#define TRANSIENT 0x40000000u
-
-/* One string of a batch, as the shim decodes it: the id it goes under, its bytes in sbytes, and its
- * length in UTF-16 units (equal to bytes when it is ASCII). */
-typedef struct { uint32_t id, bytes, chars; } str_meta;
-static uint8_t sbytes[SB_CAP];
-static str_meta smeta[SM_CAP];
-static uint32_t nsb, nstrs, ntmp;
+/* The runtime strings of the call being made: cd_tmp writes a record (p, len) here and copies nothing; the
+ * shim reads the record and then the bytes in the import that takes the string. serial0 is the serial of
+ * r[0], so a cd_str whose serial is not in [serial0, serial0 + n) is dead and the shim throws on it. */
+typedef struct { uint32_t p, len; } tmp_rec;
+static struct tmp_block { uint32_t serial0, n; tmp_rec r[CD_TMP_CAP]; } tmp;
 static cd_event_rec inbox;
 
-/* The shim's map of C memory, which cd_layout hands it once at start: where the string batch and the
+/* The shim's map of C memory, which cd_layout hands it once at start: where the runtime-string records and the
  * event record live, and the offset of every field and the size of every struct the shim reads or
  * writes, from offsetof and sizeof, so the shim hardcodes no offset (tools/offsets.mjs checks it does
  * not). The block is its entry count, then the entries in this order, which shim/cdom.js (start) reads
  * in the same order; an entry is only ever appended. rect's out-parameter is a double[4] in the order
  * cdom.h documents, and the byte buffers are (pointer, length): neither has fields to map. */
 #define CD_LAYOUT(X) \
-  X((uintptr_t)sbytes) X((uintptr_t)smeta) X(sizeof(str_meta)) \
-  X(offsetof(str_meta, id)) X(offsetof(str_meta, bytes)) X(offsetof(str_meta, chars)) \
+  X((uintptr_t)&tmp) X(offsetof(struct tmp_block, serial0)) X(offsetof(struct tmp_block, n)) \
+  X(offsetof(struct tmp_block, r)) X(sizeof(tmp_rec)) X(offsetof(tmp_rec, p)) X(offsetof(tmp_rec, len)) \
   X((uintptr_t)&inbox) \
   X(offsetof(cd_event_rec, type)) X(offsetof(cd_event_rec, id)) X(offsetof(cd_event_rec, x)) \
   X(offsetof(cd_event_rec, y)) X(offsetof(cd_event_rec, button)) X(offsetof(cd_event_rec, key)) \
@@ -184,133 +179,29 @@ static cd_event_rec inbox;
 /* Data, not code: the linker writes the addresses in, so cd_layout only hands the block over. */
 static const uint32_t layout[] = {0 CD_LAYOUT(CD_LAYOUT_ONE), CD_LAYOUT(CD_LAYOUT_ENTRY)};
 /* The shim indexes 32-bit fields as words and cd_val's number as a double. */
-_Static_assert(sizeof(str_meta) % 4 == 0 && sizeof(cd_event_rec) % 4 == 0, "word-sized records");
+_Static_assert(sizeof(tmp_rec) % 4 == 0 && sizeof(cd_event_rec) % 4 == 0, "word-sized records");
 _Static_assert(offsetof(cd_event_rec, dx) % 4 == 0 && offsetof(cd_event_rec, dy) % 4 == 0, "word-aligned floats");
 _Static_assert(sizeof(cd_val) % 8 == 0 && offsetof(cd_val, num) % 8 == 0 && offsetof(cd_val, u) % 4 == 0, "aligned cd_val");
 
-/* Decodes the pending strings in JS. */
-static void send_strings(void) {
-  if (nstrs) j_strings(nstrs, nsb);
-  nsb = nstrs = ntmp = 0;
-}
-
-/* ---- strings ---- */
-typedef struct { uint32_t off, len, u16, hash; } str_ent;
-static uint8_t *pool;
-static uint32_t pool_len;
-static str_ent *strs;
-static uint32_t nstr_ids = 1; /* 0 is unused */
-static uint8_t *sent;         /* JS holds the decoded string */
-static uint32_t *htab, hcap;
-
-static uint32_t hash_bytes(const char *s, uint32_t len) {
-  uint32_t h = 2166136261u;
-  for (uint32_t i = 0; i < len; i++) h = (h ^ (uint8_t)s[i]) * 16777619u;
-  return h | 1;
-}
-
-static void htab_put(uint32_t h, uint32_t id) {
-  uint32_t m = hcap - 1, i = h & m;
-  while (htab[i]) i = (i + 1) & m;
-  htab[i] = id;
-}
-
-static uint32_t utf16_len(const char *s, uint32_t len) {
-  uint32_t u16 = 0;
-  for (uint32_t i = 0; i < len; i++) {
-    uint8_t c = (uint8_t)s[i];
-    u16 += (c & 0xc0) != 0x80;
-    u16 += c >= 0xf0; /* astral: a surrogate pair */
-  }
-  return u16;
-}
-
-static uint32_t push_str(cd_str s, uint32_t dest);
-cd_str cd_intern(const char *s, uint32_t len) {
-  uint32_t h = hash_bytes(s, len);
-  if (hcap) {
-    uint32_t m = hcap - 1;
-    for (uint32_t i = h & m, id; (id = htab[i]); i = (i + 1) & m) {
-      str_ent *e = &strs[id];
-      if (e->hash == h && e->len == len && !__builtin_memcmp(pool + e->off, s, len)) return id;
-    }
-  }
-  if (nstr_ids * 2 >= hcap) { /* grow and rehash */
-    uint32_t ncap = hcap ? hcap * 2 : 1024;
-    cd_free(htab);
-    htab = cd_alloc(ncap * 4);
-    __builtin_memset(htab, 0, ncap * 4);
-    hcap = ncap;
-    for (uint32_t id = 1; id < nstr_ids; id++) htab_put(strs[id].hash, id);
-  }
-  uint32_t id = nstr_ids++;
-  strs = cd_realloc(strs, nstr_ids * sizeof(str_ent));
-  sent = cd_realloc(sent, nstr_ids);
-  sent[id] = 0;
-  pool = cd_realloc(pool, pool_len + len);
-  __builtin_memcpy(pool + pool_len, s, len);
-  uint32_t u16 = utf16_len(s, len);
-  strs[id] = (str_ent){pool_len, len, u16, h};
-  pool_len += len;
-  htab_put(h, id);
-#if CDOM_INTERN_TEXT
-  /* Queued now, not at first use: strings are interned in bursts (a list's labels) and then
-   * used one call each, so they decode together in the call before the first use. */
-  sent[id] = 1;
-  push_str(id, id);
-#endif
-  return id;
-}
-
-cd_str cd_internz(const char *s) {
-  uint32_t n = 0;
-  while (s[n]) n++;
-  return cd_intern(s, n);
-}
-
-const char *cd_bytes(cd_str s, uint32_t *len) {
-  *len = strs[s].len;
-  return (const char *)pool + strs[s].off;
-}
-
-static void push_raw(const uint8_t *b, uint32_t len, uint32_t u16, uint32_t dest) {
-  if (len > SB_CAP) __builtin_trap();
-  if (nsb + len > SB_CAP || nstrs + 1 > SM_CAP) send_strings();
-  str_meta *m = &smeta[nstrs++];
-  m->id = dest;
-  m->bytes = len;
-  m->chars = u16;
-  __builtin_memcpy(sbytes + nsb, b, len);
-  nsb += len;
-}
-
-static uint32_t push_str(cd_str s, uint32_t dest) {
-  str_ent *e = &strs[s];
-  push_raw(pool + e->off, e->len, e->u16, dest);
-  return dest;
-}
-
-/* A transient crosses in the batch that is pending when it is made, and JS keeps it only until
- * the next batch reuses its slot: so it must be used before any op sends that batch. */
+/* ---- strings ----
+ * No byte is copied: the shim reads them in place. A cd_tmp is good until the next call that takes a
+ * string returns (tmp_done), and at most CD_TMP_CAP are alive at once. */
 cd_str cd_tmp(const char *s, uint32_t len) {
-  if (nstrs + 1 > SM_CAP || nsb + len > SB_CAP) send_strings();
-  uint32_t dest = TRANSIENT + ntmp++;
-  push_raw((const uint8_t *)s, len, utf16_len(s, len), dest);
-  return dest;
+  if (tmp.n == CD_TMP_CAP) __builtin_trap();
+  tmp.r[tmp.n] = (tmp_rec){(uint32_t)(uintptr_t)s, len};
+  return (cd_str){0x80000000u | ((tmp.serial0 + tmp.n++) & 0x7fffffffu)};
 }
 cd_str cd_tmpz(const char *s) {
+  if (!s) __builtin_trap();
   uint32_t n = 0;
   while (s[n]) n++;
   return cd_tmp(s, n);
 }
-static uint32_t tmp_check(cd_str s) {
-  if (s - TRANSIENT >= ntmp) __builtin_trap(); /* its batch already went: the slot may hold another string */
-  return s;
+/* Every function that takes a cd_str ends with this: its runtime strings are dead now. */
+static void tmp_done(void) {
+  tmp.serial0 += tmp.n;
+  tmp.n = 0;
 }
-
-cd_str cd_lit_(cd_str *slot, const char *lit, uint32_t len) { return *slot ? *slot : (*slot = cd_intern(lit, len)); }
-uint32_t cd_str_count(void) { return nstr_ids - 1; }
-uint32_t cd_str_bytes(void) { return pool_len; }
 
 /* ---- numbers ---- */
 static const char UNIT_STR[CD_UNITS][4] = {"", "px", "%", "deg", "em", "rem", "vw", "vh", "ms", "s", "rad"};
@@ -337,27 +228,6 @@ uint32_t cd_fmt_len(char *d, double v, uint32_t unit) {
   return cd_fmt(d, (int32_t)(v * 10000.0 + (v < 0 ? -0.5 : 0.5)), 4, unit);
 }
 
-/* A name (tag, attribute): always cached in JS. */
-static uint32_t ref_name(cd_str s) {
-  if (s >= TRANSIENT) return tmp_check(s);
-  if (!sent[s]) {
-    sent[s] = 1;
-    push_str(s, s);
-  }
-  return s;
-}
-
-/* Content: cached or per-op, by build flag. */
-static uint32_t ref_text(cd_str s) {
-#if CDOM_INTERN_TEXT
-  return ref_name(s);
-#else
-  if (s >= TRANSIENT) return tmp_check(s);
-  return push_str(s, TRANSIENT + ntmp++);
-#endif
-}
-
-
 /* ---- emitters ---- */
 /* A walk (cd_sel, cd_down, cd_next, cd_up) is held here and crosses as one call: with the value
  * it leads to, or before the next op that reads the node it reached. Steps are 2 bits each:
@@ -373,47 +243,42 @@ static void walk_step(uint32_t s) {
   if (!walking) { walking = 1; walk_from = WALK_LAST; walk_steps = walk_n = 0; }
   walk_steps |= s << (2 * walk_n++);
 }
-/* Strings an op takes are queued by ref_*; this sends them, and any held walk, before the call. */
-static inline void ready(void) { walk_done(); send_strings(); }
-
-void cd_flush(void) { ready(); }
-uint32_t cd_pending(void) { return walking | nstrs; }
+void cd_flush(void) { walk_done(); }
+uint32_t cd_pending(void) { return walking; }
 
 static cd_id at_parent = CD_DETACHED - 1, at_before = CD_DETACHED - 1;
 
 void cd_at(cd_id parent, cd_id before) {
   if (parent == at_parent && before == at_before) return;
-  ready(); j_at(parent, before);
+  walk_done(); j_at(parent, before);
   at_parent = parent;
   at_before = before;
 }
 /* The shim says which elements are SVG (it counts the open ones), so C does not look at the tag. */
-void cd_open(cd_str tag) { uint32_t t = ref_name(tag); ready(); j_open(t); }
-void cd_close(void) { ready(); j_close(); }
-void cd_text(cd_str s) { uint32_t v = ref_text(s); ready(); j_text(v); }
-void cd_text_num(uint32_t n) { ready(); j_text_num(n); }
-void cd_attr(cd_str name, cd_str v) { uint32_t b = ref_text(v), a = ref_name(name); ready(); j_attr(a, b); }
-void cd_class(cd_str v) { uint32_t a = ref_text(v); ready(); j_class(a); }
-void cd_name_el(cd_id id) { ready(); j_name_el(id); }
-void cd_name_text(cd_id id) { ready(); j_name_text(id); }
-void cd_name_open(cd_id id) { ready(); j_name_open(id); }
+void cd_open(cd_str tag) { walk_done(); j_open(tag.v); tmp_done(); }
+void cd_close(void) { walk_done(); j_close(); }
+void cd_text(cd_str s) { walk_done(); j_text(s.v); tmp_done(); }
+void cd_text_num(uint32_t n) { walk_done(); j_text_num(n); }
+void cd_attr(cd_str name, cd_str v) { walk_done(); j_attr(name.v, v.v); tmp_done(); }
+void cd_class(cd_str v) { walk_done(); j_class(v.v); tmp_done(); }
+void cd_name_el(cd_id id) { walk_done(); j_name_el(id); }
+void cd_name_text(cd_id id) { walk_done(); j_name_text(id); }
+void cd_name_open(cd_id id) { walk_done(); j_name_open(id); }
 /* One import for both: the shim tells a host object (it listens on it) from a node (it names the last
  * node and marks it in the mount's delegation). */
 void cd_listen(cd_id id, uint32_t ev) {
   if (ev >= CD_EV_TYPES) __builtin_trap();
-  ready(); j_listen(id, ev);
+  walk_done(); j_listen(id, ev);
 }
 void cd_unlisten(cd_id id, uint32_t ev) {
   if (ev >= CD_EV_TYPES) __builtin_trap();
-  ready(); j_unlisten(id, ev);
+  walk_done(); j_unlisten(id, ev);
 }
 void cd_value(cd_str s) {
-  uint32_t v = ref_text(s);
-  send_strings();
-  if (walking) { walking = 0; j_walk_value(walk_from, walk_steps, walk_n, v); } else j_value(v);
+  if (walking) { walking = 0; j_walk_value(walk_from, walk_steps, walk_n, s.v); } else j_value(s.v);
+  tmp_done();
 }
 void cd_value_num(uint32_t n) {
-  send_strings();
   if (walking) { walking = 0; j_walk_value_num(walk_from, walk_steps, walk_n, n); } else j_value_num(n);
 }
 /* What each template slot holds now (kind 0 unknown, 1 string id, 2 number), so an unchanged
@@ -422,12 +287,12 @@ static uint32_t slot_val[CD_TPLS][CD_SLOTS];
 static uint8_t slot_kind[CD_TPLS][CD_SLOTS];
 void cd_tpl_save(uint32_t t) {
   if (t < CD_TPLS) __builtin_memset(slot_kind[t], 0, CD_SLOTS);
-  ready(); j_tpl_save(t);
+  walk_done(); j_tpl_save(t);
 }
-void cd_clone(uint32_t t) { ready(); j_clone(t); }
+void cd_clone(uint32_t t) { walk_done(); j_clone(t); }
 void cd_slot(uint32_t k) {
   if (k >= CD_SLOTS) __builtin_trap();
-  ready(); j_slot(k);
+  walk_done(); j_slot(k);
 }
 static int slot_same(uint32_t t, uint32_t k, uint8_t kind, uint32_t v) {
   if (t >= CD_TPLS || k >= CD_SLOTS) __builtin_trap();
@@ -437,81 +302,68 @@ static int slot_same(uint32_t t, uint32_t k, uint8_t kind, uint32_t v) {
   return 0;
 }
 void cd_tpl_text(uint32_t t, uint32_t k, cd_str s) {
-  if (s >= TRANSIENT) { /* a transient id is reused by the next batch, so equal ids do not mean equal text */
+  if (s.v >> 31) { /* a runtime string: the same text can be new bytes, so it is never skipped as unchanged */
     if (t >= CD_TPLS || k >= CD_SLOTS) __builtin_trap();
     slot_kind[t][k] = 0;
-  } else if (slot_same(t, k, 1, s)) return;
-  uint32_t v = ref_text(s); ready(); j_tpl_text(t, k, v);
+  } else if (slot_same(t, k, 1, s.v)) { /* only a literal may skip: its slot always means the same text */
+    tmp_done();
+    return;
+  }
+  walk_done(); j_tpl_text(t, k, s.v); tmp_done();
 }
 void cd_tpl_text_num(uint32_t t, uint32_t k, uint32_t n) {
   if (slot_same(t, k, 2, n)) return;
-  ready(); j_tpl_text_num(t, k, n);
+  walk_done(); j_tpl_text_num(t, k, n);
 }
 void cd_down(void) { walk_step(1); }
 void cd_next(void) { walk_step(2); }
 void cd_up(void) { walk_step(3); }
 void cd_sel(cd_id id) { walk_done(); walking = 1; walk_from = id; walk_steps = walk_n = 0; }
-void cd_set_text_node(cd_id id, cd_str s) { uint32_t v = ref_text(s); ready(); j_set_text(id, v); }
-void cd_set_text_node_num(cd_id id, uint32_t n) { ready(); j_set_text_num(id, n); }
-void cd_set_attr(cd_id id, cd_str name, cd_str v) { uint32_t b = ref_text(v), a = ref_name(name); ready(); j_set_attr(id, a, b); }
-void cd_set_class(cd_id id, cd_str v) { uint32_t a = ref_text(v); ready(); j_set_class(id, a); }
-void cd_set_style(cd_id id, cd_str prop, cd_str v) { uint32_t b = ref_text(v), a = ref_name(prop); ready(); j_style(id, a, b); }
+void cd_set_text_node(cd_id id, cd_str s) { walk_done(); j_set_text(id, s.v); tmp_done(); }
+void cd_set_text_node_num(cd_id id, uint32_t n) { walk_done(); j_set_text_num(id, n); }
+void cd_set_attr(cd_id id, cd_str name, cd_str v) { walk_done(); j_set_attr(id, name.v, v.v); tmp_done(); }
+void cd_set_class(cd_id id, cd_str v) { walk_done(); j_set_class(id, v.v); tmp_done(); }
+void cd_set_style(cd_id id, cd_str prop, cd_str v) { walk_done(); j_style(id, prop.v, v.v); tmp_done(); }
 /* The unit crosses as its index; the shim's UNITS list has the same order as CD_UNIT_* and UNIT_STR. */
 void cd_set_style_num(cd_id id, cd_str prop, double v, uint32_t unit) {
   if (unit >= CD_UNITS) __builtin_trap();
-  uint32_t a = ref_name(prop);
-  ready(); j_style_num(id, a, v, unit);
+  walk_done(); j_style_num(id, prop.v, v, unit); tmp_done();
 }
 void cd_encode_image_in(const uint8_t *px, uint32_t w, uint32_t h, uint32_t n, uint32_t W, uint32_t H, uint32_t x,
                         uint32_t y, cd_str mime, uint32_t token) {
   if ((n != 3 && n != 4) || x + w > W || y + h > H) __builtin_trap();
-  uint32_t m = ref_name(mime);
-  ready(); j_encode(px, w, h, n, W, H, x, y, m, token);
+  walk_done(); j_encode(px, w, h, n, W, H, x, y, mime.v, token); tmp_done();
 }
 void cd_encode_image(const uint8_t *px, uint32_t w, uint32_t h, uint32_t n, cd_str mime, uint32_t token) {
   cd_encode_image_in(px, w, h, n, w, h, 0, 0, mime, token);
 }
 void cd_set_image_bytes(cd_id id, cd_str prop, const uint8_t *p, uint32_t len, cd_str mime, uint32_t token) {
-  uint32_t a = ref_name(prop), m = ref_name(mime);
-  ready(); j_image_bytes(id, a, p, len, m, token);
+  walk_done(); j_image_bytes(id, prop.v, p, len, mime.v, token); tmp_done();
 }
-void cd_move(cd_id id, cd_id before) { ready(); j_move(id, before); }
-void cd_clear(cd_id id) { ready(); j_clear(id); }
-void cd_detach(cd_id id) { ready(); j_detach(id); }
-void cd_attach(cd_id id) { ready(); j_attach(id); }
-void cd_blit(cd_id canvas, const void *rgba, uint32_t w, uint32_t h) { ready(); j_blit(canvas, rgba, w, h); }
+void cd_move(cd_id id, cd_id before) { walk_done(); j_move(id, before); }
+void cd_clear(cd_id id) { walk_done(); j_clear(id); }
+void cd_detach(cd_id id) { walk_done(); j_detach(id); }
+void cd_attach(cd_id id) { walk_done(); j_attach(id); }
+void cd_blit(cd_id canvas, const void *rgba, uint32_t w, uint32_t h) { walk_done(); j_blit(canvas, rgba, w, h); }
 
 /* ---- host access ----
  * The values stay in C memory: the shim reads the cd_val array during the call (tag at +0, payload at +8),
- * so only their strings have to cross first. vals_ref queues the strings of n top-level values (an
- * object's pairs follow it) and returns how many array entries they take. */
-static uint32_t vals_ref(const cd_val *a, uint32_t n) {
-  uint32_t used = 0;
-  for (; n; n--) {
-    const cd_val *v = &a[used++];
-    if (v->tag == CD_V_STR) ref_name(v->u); /* by id: the shim reads the id from the array */
-    else if (v->tag == CD_V_OBJ) used += vals_ref(a + used, v->u * 2);
-  }
-  return used;
-}
+ * and a string value is a cd_str, read there like any other. */
 void cd_set(cd_id id, cd_str path, cd_val v) {
   if (v.tag == CD_V_OBJ) __builtin_trap(); /* its pairs cannot follow a value passed alone */
-  uint32_t p = ref_name(path);
-  vals_ref(&v, 1);
-  ready(); j_set(id, p, &v);
+  walk_done(); j_set(id, path.v, &v); tmp_done();
 }
 void cd_call_args(cd_id id, cd_str method, uint32_t n, const cd_val *a) {
-  uint32_t m = ref_name(method);
-  vals_ref(a, n);
-  ready(); j_call(id, m, n, a);
+  walk_done(); j_call(id, method.v, n, a); tmp_done();
 }
 void cd_call(cd_id id, cd_str method) { cd_call_args(id, method, 0, 0); }
 
 enum { GET_NUM, GET_STR, GET_ID, GET_STR_LEN };
 static double get(cd_id id, cd_str path, uint32_t kind, void *dst, uint32_t cap) {
-  uint32_t p = path ? ref_name(path) : 0;
-  ready();
-  return j_get(id, p, kind, dst, cap);
+  walk_done();
+  double r = j_get(id, path.v, kind, dst, cap);
+  tmp_done();
+  return r;
 }
 double cd_get_num(cd_id id, cd_str path) { return get(id, path, GET_NUM, 0, 0); }
 uint32_t cd_get_str(cd_id id, cd_str path, char *dst, uint32_t cap) { return (uint32_t)get(id, path, GET_STR, dst, cap); }
@@ -570,7 +422,7 @@ static void release(cd_id id) {
 /* cd_open, cd_id_new and cd_name_open, in that order: the id is made once the element is open, so a
  * region that is building records it, and it names the open element, not the last node. */
 cd_id cd_open_id(cd_str tag) {
-  cd_open(tag);
+  (cd_open)(tag);
   cd_id id = cd_id_new();
   cd_name_open(id);
   return id;
@@ -582,20 +434,20 @@ uint32_t cd_ids_high(void) { return next_id - 1; }
 /* The mount and the reserved ids are never freed, so they stay bound and cd_id_new never returns them. */
 void cd_id_free(cd_id id) {
   if (id < CD_FIRST_ID) return;
-  ready(); j_free(id);
+  walk_done(); j_free(id);
   release(id);
 }
 
 void cd_remove(cd_id id) {
   if (id < CD_FIRST_ID) return;
-  ready(); j_remove(id);
+  walk_done(); j_remove(id);
   release(id);
 }
 
 void cd_tag_set(cd_id id, uint32_t tag) { tags[id] = tag; }
 uint32_t cd_tag(cd_id id) { return id < tags_cap ? tags[id] : 0; }
 
-uint32_t cd_input_text(cd_id id, char *dst, uint32_t cap) { return (uint32_t)get(id, CD_LIT("value"), GET_STR_LEN, dst, cap); }
+uint32_t cd_input_text(cd_id id, char *dst, uint32_t cap) { return (uint32_t)get(id, cd_s("value"), GET_STR_LEN, dst, cap); }
 
 /* ---- regions ---- */
 int cd_region_show(cd_region *r, int want) {

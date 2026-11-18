@@ -22,7 +22,7 @@ const startPage = (name) => {
   const edit = {
     good: (h) => h,
     latin1: (h) => h,
-    stamp: (h) => h.replace('2166136261', '1234'), // a table from another build: the stamp differs
+    stamp: (h) => h.replace(/^(var cdomLits=\[\d+,)\d+/m, '$11234'), // a table from another build: the stamp differs
     canary: (h) => h.replace('"\u2603"', '"\\u00e2\\u0098\\u0083"'), // the canary as a Latin-1 read of its UTF-8 bytes
     none: (h) => h.replace(/^var cdomLits=.*\n/m, ''),
   }[name];

@@ -1,6 +1,16 @@
 /* The stub runtime for tests/lits: cd_tmp and cd_tmpz (records in a ring, nothing copied, as cdom.c keeps
- * them), the stamp word cdlits patches, and two exports the Node run reads. */
-#include "lits.h"
+ * them), the three cdom calls the tests make as imports the Node run reads, the stamp word cdlits patches,
+ * and two exports the Node run reads. */
+#define CD_NO_WRAPPERS /* this file defines the functions the wrappers in cdom.h call */
+#include "stub.h"
+
+#define IMPORT(n) __attribute__((import_module("env"), import_name(n)))
+IMPORT("open") void stub_open(uint32_t tag);
+IMPORT("text") void stub_text(uint32_t s);
+IMPORT("attr") void stub_attr(uint32_t name, uint32_t value);
+void cd_open(cd_str tag) { stub_open(tag.v); }
+void cd_text(cd_str s) { stub_text(s.v); }
+void cd_attr(cd_str name, cd_str value) { stub_attr(name.v, value.v); }
 
 #ifndef STAMP_INIT
 #define STAMP_INIT 0x7374696c

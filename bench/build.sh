@@ -38,7 +38,7 @@ build() { # name, version note, extra flags...
 {
   "name": "js-framework-benchmark-$name",
   "version": "0.1.0",
-  "description": "cdom: C owns the tree and the diff; a fixed JS shim applies a batched op stream ($note)",
+  "description": "cdom: C owns the tree and the diff; a fixed JS shim makes one DOM call per operation ($note)",
   "js-framework-benchmark": { "frameworkVersion": "0.1.0", "language": "C", "issues": [1139] },
   "scripts": { "build-prod": "../../../../bench/build.sh" }
 }
@@ -48,8 +48,7 @@ JSON
 }
 
 # NAME=x builds only the default entry, as jfb/frameworks/keyed/x (for side-by-side work).
-if [ -n "${NAME:-}" ]; then build "$NAME" "interned strings, templates"; exit 0; fi
-build cdom "interned strings, templates"
-build cdom-pertext "per-op strings, templates" -DCDOM_INTERN_TEXT=0
-build cdom-notpl "interned strings, no templates" -DCDOM_TEMPLATES=0
-build cdom-o2 "interned strings, templates, -O2"
+if [ -n "${NAME:-}" ]; then build "$NAME" "literal table, templates"; exit 0; fi
+build cdom "literal table, templates"
+build cdom-notpl "literal table, no templates" -DCDOM_TEMPLATES=0
+build cdom-o2 "literal table, templates, -O2"

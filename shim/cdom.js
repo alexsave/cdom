@@ -27,9 +27,8 @@ var cdom = (() => {
   const BODY = 3;
   const EVENT = 4;              // the event being delivered
   const RESULT = 5;             // what the last call returned
-  const TRANSIENT = 0x40000000; // string ids from here up are one-off strings (cd_tmp)
   const DETACHED = 0xffffffff;  // "no insertion parent" for at()
-  const SMALL = 64;             // string batches up to this many bytes are decoded char by char
+  const ASCII_MAX = 32;         // a runtime string up to this many bytes is tested for ASCII and read without TextDecoder
   const SVG = "http://www.w3.org/2000/svg";
   // The CSS units, in the order of cdom.h's CD_UNIT_* and cdom.c's UNIT_STR (tests/unit.c checks all three).
   const UNITS = ["", "px", "%", "deg", "em", "rem", "vw", "vh", "ms", "s", "rad"];
@@ -37,8 +36,6 @@ var cdom = (() => {
   const textDecoder = new TextDecoder();
   const textEncoder = new TextEncoder();
   const nodes = [];         // node by id
-  const interned = [];      // interned strings by id
-  const transient = [];     // one-off strings by id - TRANSIENT
   const templates = [];     // template root by template id
   const stack = [];         // the open elements
   const delegated = [];     // event types with a listener on the mount
@@ -62,12 +59,12 @@ var cdom = (() => {
   // Where C's records are and how they are laid out, read once at start from cd_layout (src/cdom.c,
   // CD_LAYOUT, filled with offsetof and sizeof): the shim hardcodes no offset into C memory
   // (tools/offsets.mjs). Field offsets are in words (4 bytes), as u32, i32 and f32 index them.
-  let stringBytes;          // where C writes a batch of string bytes
-  let stringMeta;           // where C writes a str_meta (id, bytes, chars) per string in the batch
-  let metaWords;            // a str_meta's size
-  let metaId;               // and its fields
-  let metaBytes;
-  let metaChars;
+  let tmpSerial0;           // C's runtime-string block (cd_tmp): the serial of its first record, as an index into u32
+  let tmpCount;             // how many records are alive
+  let tmpRecords;           // where the records start, as a byte address
+  let recWords;             // a record's size
+  let recP;                 // and its fields: the string's address and its length in bytes
+  let recLen;
   let evType;               // the event record's fields, as indexes into i32 and f32 (the record stays put)
   let evId;
   let evX;
@@ -128,48 +125,55 @@ var cdom = (() => {
   function place(parent, node, next) {
     parent.insertBefore(node, next);
   }
-  // A string by id, interned or one-off.
-  function stringOf(id) {
-    return id < TRANSIENT ? interned[id] : transient[id - TRANSIENT];
-  }
-  // Keeps string value under id.
-  function keep(id, value) {
-    if (id < TRANSIENT) {
-      interned[id] = value;
-    } else {
-      transient[id - TRANSIENT] = value;
+  const fromCode = String.fromCharCode;
+  // n ASCII bytes at p as a string: fromCharCode with the bytes as arguments, 8 at a time.
+  function ascii(p, n) {
+    const b = u8;
+    let v = "";
+    for (; n >= 8; p += 8, n -= 8) {
+      v += fromCode(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5], b[p + 6], b[p + 7]);
+    }
+    switch (n) {
+      case 0: return v;
+      case 1: return v + fromCode(b[p]);
+      case 2: return v + fromCode(b[p], b[p + 1]);
+      case 3: return v + fromCode(b[p], b[p + 1], b[p + 2]);
+      case 4: return v + fromCode(b[p], b[p + 1], b[p + 2], b[p + 3]);
+      case 5: return v + fromCode(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4]);
+      case 6: return v + fromCode(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5]);
+      default: return v + fromCode(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5], b[p + 6]);
     }
   }
-
-  // Decodes a batch of count strings (byteCount bytes in all): one TextDecoder call for the
-  // batch, or a char loop when it is small.
-  function decode(count, byteCount) {
-    let meta = stringMeta >> 2;
-    if (byteCount > SMALL) {
-      const all = textDecoder.decode(u8.subarray(stringBytes, stringBytes + byteCount));
-      let offset = 0;
-      for (let i = 0; i < count; i++, meta += metaWords) {
-        const chars = u32[meta + metaChars];
-        keep(u32[meta + metaId], all.substring(offset, offset + chars));
-        offset += chars;
+  // The n bytes of UTF-8 at p as a string. Short ones that are ASCII skip TextDecoder, whose fixed cost
+  // is 100 to 140 ns in Chrome whatever the length.
+  function readString(p, n) {
+    if (n <= ASCII_MAX) {
+      let high = 0;
+      for (let k = 0; k < n; k++) {
+        high |= u8[p + k];
       }
-      return;
-    }
-    let at = stringBytes;
-    for (let i = 0; i < count; i++, meta += metaWords) {
-      const bytes = u32[meta + metaBytes];
-      let value;
-      if (bytes === u32[meta + metaChars]) { // ASCII: one char per byte
-        value = "";
-        for (let k = 0; k < bytes; k++) {
-          value += String.fromCharCode(u8[at + k]);
-        }
-      } else {
-        value = textDecoder.decode(u8.subarray(at, at + bytes));
+      if (high < 128) {
+        return ascii(p, n);
       }
-      keep(u32[meta + metaId], value);
-      at += bytes;
     }
+    return textDecoder.decode(u8.subarray(p, p + n));
+  }
+  // The string a cd_str stands for (s is an i32 from an import): a literal's slot address is positive and
+  // indexes the page's table; a runtime string's serial has the top bit set (negative), and its record
+  // in C's block says where its bytes are right now. CD_NONE (0) is no string and never reaches here.
+  function str(s) {
+    if (s > 0) {
+      return lits[(s - litBase) >> 2];
+    }
+    if (stale()) {
+      views();
+    }
+    const k = ((s & 0x7fffffff) - u32[tmpSerial0]) & 0x7fffffff;
+    if (k >= u32[tmpCount]) {
+      throw new Error("cdom: a cd_tmp string used after the call it was made for");
+    }
+    const at = (tmpRecords >> 2) + k * recWords;
+    return readString(u32[at + recP], u32[at + recLen]);
   }
 
   // Puts a new top-level node where at() said, or into the open element.
@@ -278,13 +282,6 @@ var cdom = (() => {
     }, { capture: (type >= FOCUS && type <= PAUSE) || type === CANCEL || type === CLOSE, passive: false });
   }
 
-  // C sends a batch of new strings.
-  function strings(count, byteCount) {
-    if (stale()) {
-      views();
-    }
-    decode(count, byteCount);
-  }
   // Where new top-level nodes go: into parent, before node beforeId (0: at the end).
   function at(parent, beforeId) {
     base = parent >>> 0;
@@ -301,7 +298,7 @@ var cdom = (() => {
   // Opens an element. An <svg> and everything opened inside it is made in the SVG namespace, so the
   // shim counts the open elements that are SVG: one counter and one compare, no read of the DOM.
   function open(tag) {
-    const name = stringOf(tag);
+    const name = str(tag);
     if (svgDepth || name === "svg") {
       svgDepth++;
       push(doc.createElementNS(SVG, name));
@@ -321,7 +318,7 @@ var cdom = (() => {
     }
   }
   function text(id) {
-    last = lastText = doc.createTextNode(stringOf(id));
+    last = lastText = doc.createTextNode(str(id));
     placeNew(last);
   }
   function text_num(number) {
@@ -329,10 +326,10 @@ var cdom = (() => {
     placeNew(last);
   }
   function attr(name, value) {
-    last.setAttribute(stringOf(name), stringOf(value));
+    last.setAttribute(str(name), str(value));
   }
   function setClass(value) {
-    last.className = stringOf(value);
+    last.className = str(value);
   }
   // Names the element opened last, the text node made last, or the open element, with a node id.
   function name_el(id) {
@@ -371,7 +368,7 @@ var cdom = (() => {
     }
   }
   function value(id) {
-    last.nodeValue = stringOf(id);
+    last.nodeValue = str(id);
   }
   function value_num(number) {
     last.nodeValue = number >>> 0;
@@ -393,7 +390,7 @@ var cdom = (() => {
     slots[index] = last;
   }
   function tpl_text(templateId, index, id) {
-    templateSlots[templateId][index].nodeValue = stringOf(id);
+    templateSlots[templateId][index].nodeValue = str(id);
   }
   function tpl_text_num(templateId, index, number) {
     templateSlots[templateId][index].nodeValue = number >>> 0;
@@ -416,7 +413,7 @@ var cdom = (() => {
   }
   function walk_value(from, steps, count, id) {
     walk(from, steps, count);
-    last.nodeValue = stringOf(id);
+    last.nodeValue = str(id);
   }
   function walk_value_num(from, steps, count, number) {
     walk(from, steps, count);
@@ -433,23 +430,23 @@ var cdom = (() => {
     throw new Error(`cdom: ${call}(${id}, ...): ${node ? 'not a text node' : 'no node has this id'}`);
   }
   function set_text(id, textId) {
-    textNode(id, 'cd_set_text_node').nodeValue = stringOf(textId);
+    textNode(id, 'cd_set_text_node').nodeValue = str(textId);
   }
   function set_text_num(id, number) {
     textNode(id, 'cd_set_text_node_num').nodeValue = number >>> 0;
   }
   function set_attr(id, name, value) {
-    nodes[id].setAttribute(stringOf(name), stringOf(value));
+    nodes[id].setAttribute(str(name), str(value));
   }
   function set_class(id, value) {
-    nodes[id].className = stringOf(value);
+    nodes[id].className = str(value);
   }
   // One style property.
   function style(id, property, value) {
-    nodes[id].style.setProperty(stringOf(property), stringOf(value));
+    nodes[id].style.setProperty(str(property), str(value));
   }
   function style_num(id, property, number, unit) {
-    nodes[id].style.setProperty(stringOf(property), number + UNITS[unit]);
+    nodes[id].style.setProperty(str(property), number + UNITS[unit]);
   }
   // Pixels in C memory (channels bytes each: RGBA, or RGB and opaque), at (x, y) in an image of
   // fullWidth x fullHeight, to an image file: copied now, encoded off the call, the file's bytes
@@ -470,15 +467,15 @@ var cdom = (() => {
       pixels = rgba;
     }
     canvas.getContext("2d").putImageData(new ImageData(pixels, width, height), x, y);
-    canvas.toBlob(async (blob) => deliver(exports.cd_encoded, token, await blob.arrayBuffer()), stringOf(mime), 0.92);
+    canvas.toBlob(async (blob) => deliver(exports.cd_encoded, token, await blob.arrayBuffer()), str(mime), 0.92);
   }
   // An image file's bytes in C memory as a url(blob:) on a style property, set once the image has
   // decoded (so no frame paints the property with nothing behind it), then answered with
   // cd_image(token, 1); bytes that do not decode set nothing and answer 0.
   function image_bytes(id, property, bytesPtr, length, mime, token) {
     const node = nodes[id];
-    const name = stringOf(property);
-    const url = URL.createObjectURL(new Blob([copyBytes(bytesPtr, length)], { type: stringOf(mime) }));
+    const name = str(property);
+    const url = URL.createObjectURL(new Blob([copyBytes(bytesPtr, length)], { type: str(mime) }));
     const image = new Image();
     image.src = url;
     image.decode().then(() => {
@@ -1080,17 +1077,16 @@ var cdom = (() => {
   }
 
   // Host access along dotted paths (cdom.h); a "--" segment is a custom property of the style object
-  // before it. A path is an interned string, split once; a one-off string is split each time, since
-  // its id is reused.
-  const segments = []; // a path's segments by string id
+  // before it. A literal path is split once and kept by its slot; a runtime path is split each time.
+  const segments = []; // a literal path's segments by slot index
   function segmentsOf(path) {
     if (!path) {
       return [];
     }
-    if (path >= TRANSIENT) {
-      return stringOf(path).split(".");
+    if (path < 0) {
+      return str(path).split(".");
     }
-    return segments[path] ??= stringOf(path).split(".");
+    return segments[(path - litBase) >> 2] ??= str(path).split(".");
   }
   // Walks count segments from object; a null step stops the walk, so a missing value costs no
   // exception (get and the setters still catch, for getters and setters that throw).
@@ -1109,7 +1105,7 @@ var cdom = (() => {
     const payload = u32[at + valU];
     switch (tag) {
       case 0: return [f64[(at + valNum) >> 1], index + 1];
-      case 1: return [stringOf(payload), index + 1];
+      case 1: return [str(payload | 0), index + 1];
       case 2: return [payload === 1, index + 1];
       case 3: return [nodes[payload], index + 1];
       case 5: {
@@ -1228,7 +1224,7 @@ var cdom = (() => {
     }
     const imports = {
       cdom: {
-        strings, at, open, close, text, text_num, attr, class: setClass, name_el, name_text, name_open,
+        at, open, close, text, text_num, attr, class: setClass, name_el, name_text, name_open,
         listen, value, value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num,
         set_text, set_text_num, set_attr, set_class, style, style_num, encode, image_bytes, remove, free, move, clear,
         detach, attach, unlisten, hit, viewport, rect, blit, set, call, get, timer, timer_stop, raf, now, ws_open, ws_send, ws_close, ws_buffered, http, epoch, origin,
@@ -1304,12 +1300,14 @@ var cdom = (() => {
     const word = () => u32[at++] >> 2;
     const count = next();
     const end = at + count;
-    stringBytes = next();
-    stringMeta = next();
-    metaWords = word();
-    metaId = word();
-    metaBytes = word();
-    metaChars = word();
+    const block = next();
+    const tmpField = () => (block + u32[at++]) >> 2;
+    tmpSerial0 = tmpField();
+    tmpCount = tmpField();
+    tmpRecords = block + u32[at++];
+    recWords = word();
+    recP = word();
+    recLen = word();
     const record = next();
     const field = () => (record + u32[at++]) >> 2;
     evType = field();

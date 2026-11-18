@@ -23,7 +23,7 @@ static cd_id section(const char *name) {
   cd_id id = cd_id_new();
   cd_at(CD_MOUNT, 0);
   cd_open(L("section"));
-  cd_attr(L("id"), cd_internz(name));
+  cd_attr(L("id"), name);
   cd_name_open(id);
   cd_close();
   return id;
@@ -42,8 +42,8 @@ EXPORT("t_clone_inside") void t_clone_inside(void) {
   cd_clone(3); cd_close(); /* a root clone, as before */
 }
 
-/* 1b. A template slot set from a cd_tmp: a transient id is reused by every batch, so the same id in
- * the next batch is another text. Each step is its own call, so its own batch. */
+/* 1b. A template slot set from a runtime string: the text behind it changes between calls, so it is never
+ * skipped as unchanged, and a literal after it is written again. Each step is its own call. */
 EXPORT("t_tpl_tmp") void t_tpl_tmp(uint32_t step) {
   static cd_id s;
   if (step == 0) {
@@ -84,7 +84,7 @@ static void enter(void) { stale += cd_pending() != 0; }
 EXPORT("t_stale") uint32_t t_stale(void) { enter(); return stale; }
 
 /* 3. Timers and frames come back through the app's hooks, and the export flushes after them:
- * the hook interns a string the DOM never uses and holds a walk, and the page sees both cross. */
+ * the hook holds a walk, and the page sees it cross. */
 static cd_id timer_txt, raf_txt;
 EXPORT("t_time") void t_time(void) {
   cd_id s = section("time");
@@ -101,7 +101,6 @@ void cd_on_timer(uint32_t token) {
   if (token >= CD_TOKEN_CDOM) cdom_token_heard++;
   if (token >= 50 && token < 60) { app_timer_heard[token - 50]++; return; }
   cd_set_text_node_num(timer_txt, token);
-  cd_intern("timer-flushed", 13);
   hold(timer_txt);
 }
 static double raf_t;
@@ -345,14 +344,12 @@ EXPORT("t_set_text_el") void t_set_text_el(uint32_t which) {
   }
 }
 
-/* 11. One style property at a time, by string (transient or interned) and by number; transient
- * strings leave the table as it was. */
+/* 11. One style property at a time, by string (a literal or a runtime string) and by number. */
 static cd_id styled;
-EXPORT("t_style") uint32_t t_style(uint32_t n) {
+EXPORT("t_style") void t_style(uint32_t n) {
   cd_id s = section("style");
   cd_at(s, 0);
   cd_open(L("div")); cd_name_open(styled = cd_id_new()); cd_close();
-  uint32_t before = cd_str_count();
   char buf[32];
   for (uint32_t i = 0; i < n; i++) {
     uint32_t k = cd_fmt(buf, (int32_t)i, 0, CD_UNIT_PX);
@@ -364,7 +361,6 @@ EXPORT("t_style") uint32_t t_style(uint32_t n) {
   cd_set_style_num(styled, L("opacity"), 0.5, CD_UNIT_NONE);
   cd_set_attr(styled, L("data-t"), cd_tmpz("one-off \xc3\xa9"));
   cd_flush();
-  return cd_str_count() - before; /* the 7 literals above, none of the n values */
 }
 /* Each unit through cd_set_style_num, on a custom property so the browser keeps the text as given.
  * The same value goes through cd_fmt into an attribute: the page compares the two with a list of its
@@ -389,7 +385,7 @@ EXPORT("t_units") uint32_t t_units(void) {
 }
 /* The shim's views go stale (length 0) when memory grows, and each import that reads or writes C memory
  * must make them again first. cd_alloc of 8 MiB or more grows memory (the page checks that it did); which picks
- * the import: 0 a batch of new strings, 1 the viewport record, 2 a property set, 3 a method call. */
+ * the import: 0 a runtime string, 1 the viewport record, 2 a property set, 3 a method call. */
 static cd_id grown_el;
 EXPORT("t_grow") int32_t t_grow(uint32_t which) {
   if (!grown_el) {
@@ -397,8 +393,8 @@ EXPORT("t_grow") int32_t t_grow(uint32_t which) {
     cd_open(L("div")); cd_name_open(grown_el = cd_id_new()); cd_close();
     cd_flush();
   }
-  /* The strings of the set and the call cross first: a batch of new strings would make the views fresh
-   * itself, and the set or the call then would not be what the test sees. */
+  /* The values of the set and the call are literals, so no string read makes the views fresh first and the
+   * set or the call is what the test sees. */
   cd_val a[2] = {cd_v_str(L("data-called")), cd_v_str(L("yes"))};
   if (which == 2) cd_set_num(CD_BODY, L("tabIndex"), 1); /* on the body: the page reads grown_el */
   if (which == 3) cd_call_args(CD_BODY, L("setAttribute"), 2, a);
@@ -420,11 +416,107 @@ EXPORT("t_grow") int32_t t_grow(uint32_t which) {
   cd_flush();
   return r;
 }
+
+/* 11b. The runtime read: a string of len bytes in C memory, shown through cd_set_text_node as a cd_tmp, so
+ * the shim reads the bytes. ASCII letters; kind 1 to 3 put a two-byte letter (e acute) first, in the middle
+ * and last, kind 4 a three-byte character (euro) and kind 5 an astral one (a grin) in the middle. The page
+ * compares the text with its own decode of the bytes (t_read_buf). 0 when len is too short for the kind. */
+static char read_buf[512];
+static cd_id read_txt;
+EXPORT("t_read_buf") char *t_read_buf(void) { return read_buf; }
+EXPORT("t_read") uint32_t t_read(uint32_t len, uint32_t kind) {
+  static const char *const CH[] = {"", "\xc3\xa9", "\xc3\xa9", "\xc3\xa9", "\xe2\x82\xac", "\xf0\x9f\x98\x80"};
+  uint32_t w = kind == 0 ? 0 : kind <= 3 ? 2 : kind == 4 ? 3 : 4;
+  if (len > sizeof read_buf || len < w) return 0;
+  if (!read_txt) {
+    cd_id s = section("read");
+    cd_at(s, 0);
+    cd_text(L(""));
+    cd_name_text(read_txt = cd_id_new());
+  }
+  for (uint32_t i = 0; i < len; i++) read_buf[i] = (char)('a' + i % 26);
+  uint32_t at = kind == 1 ? 0 : kind == 3 ? len - w : (len - w) / 2;
+  for (uint32_t i = 0; i < w; i++) read_buf[at + i] = CH[kind][i];
+  cd_set_text_node(read_txt, cd_tmp(read_buf, len));
+  return 1;
+}
+
+/* 11c. Every string position, each given four ways by k: a literal, a cd_tmp, a cd_tmpz and a ternary of
+ * cd_s. V(k, a, b, c, d) is the string a, b, c or d by k (all four in the page's expectations), so the
+ * four ways show four different texts and a position that read the wrong kind shows the wrong one. */
+static volatile int sel = 1;
+#define V(k, a, b, c, d) ((k) == 0 ? cd_s(a) : (k) == 1 ? cd_tmp(b, sizeof(b) - 1) : (k) == 2 ? cd_tmpz(c) : (sel ? cd_s(d) : cd_s("unused")))
+static char pos_out[4][32];
+static uint32_t pos_len[4];
+EXPORT("t_pos_out") char *t_pos_out(uint32_t k) { return pos_out[k & 3]; }
+EXPORT("t_pos_len") uint32_t t_pos_len(uint32_t k) { return pos_len[k & 3]; }
+EXPORT("t_pos") void t_pos(uint32_t k) {
+  static cd_id sec;
+  if (!sec) sec = section("pos");
+  cd_id e = cd_id_new(), t = cd_id_new();
+  cd_at(sec, 0);
+  cd_open(V(k, "mark", "kbd", "samp", "var"));                                  /* a tag */
+  cd_attr(V(k, "data-a", "data-b", "data-c", "data-d"), V(k, "va", "vb", "vc", "vd")); /* an attribute's name and value */
+  cd_name_open(e);
+  cd_open(L("span")); cd_class(V(k, "ca", "cb", "cc", "cd")); cd_close();       /* a class */
+  cd_text(V(k, "ta", "tb", "tc", "td"));                                        /* a text */
+  cd_name_text(t);
+  cd_close();
+  cd_set_text_node(t, V(k, "t2a", "t2b", "t2c", "t2d"));
+  cd_set_attr(e, V(k, "data-e", "data-f", "data-g", "data-h"), V(k, "vea", "veb", "vec", "ved"));
+  cd_set_class(e, V(k, "c2a", "c2b", "c2c", "c2d"));
+  cd_set_style(e, V(k, "width", "height", "left", "top"), V(k, "1px", "2px", "3px", "4px")); /* a style's property and value */
+  cd_set_str(e, V(k, "title", "lang", "dataset.p", "style.color"), V(k, "set-a", "set-b", "set-c", "red")); /* a path and a string value */
+  cd_val a[2] = {cd_v_str(V(k, "data-m", "data-m", "data-m", "data-m")), cd_v_str(V(k, "ma", "mb", "mc", "md"))}; /* cd_v_str in arguments */
+  cd_call_args(e, V(k, "setAttribute", "setAttribute", "setAttribute", "setAttribute"), 2, a); /* a method */
+  cd_val o[4] = {cd_v_id(e), cd_v_obj(1), cd_v_str(V(k, "id", "id", "id", "id")), cd_v_str(V(k, "oa", "ob", "oc", "od"))};
+  cd_call_args(CD_WINDOW, cd_s("Object.assign"), 2, o);                          /* cd_v_str in an object, key and value */
+  pos_len[k & 3] = cd_get_str(e, V(k, "title", "lang", "dataset.p", "style.color"), pos_out[k & 3], 32); /* a path read */
+}
+
+/* 11d. The life of a cd_tmp: good for the next call that takes a string. Used after another such call it
+ * throws out of the call that uses it. 32 are alive at once (here as the arguments of one call); the 33rd traps. */
 EXPORT("t_tmp_stale") void t_tmp_stale(void) {
   cd_str t = cd_tmpz("stale");
-  cd_set_class(styled, L("x")); /* another op crosses first */
-  cd_set_class(styled, t);       /* traps */
+  cd_set_class(styled, L("x")); /* another call that takes a string: t is dead */
+  cd_set_class(styled, t);       /* throws out of this call */
 }
+EXPORT("t_tmp_cap") double t_tmp_cap(uint32_t n) {
+  static char digits[40][3];
+  cd_val a[40];
+  for (uint32_t i = 0; i < n; i++) {
+    digits[i][0] = (char)('0' + (i + 1) / 10);
+    digits[i][1] = (char)('0' + (i + 1) % 10);
+    a[i] = cd_v_str(cd_tmp(digits[i], 2));
+  }
+  cd_call_args(CD_WINDOW, "Math.max", n, a); /* the numbers as strings: the largest is n */
+  return cd_get_num(CD_RESULT, CD_NONE);
+}
+/* A string argument is evaluated once, whichever kind it is. */
+static uint32_t once_calls;
+static const char *once_next(void) { once_calls++; return "once"; }
+EXPORT("t_once") uint32_t t_once(void) {
+  static const char *const names[] = {"n0", "n1", "n2"};
+  uint32_t i = 0;
+  once_calls = 0;
+  cd_at(section("once"), 0);
+  cd_open(L("p"));
+  cd_text(once_next());
+  cd_text(names[i++]);
+  cd_text(cd_tmp(names[i++], 2));
+  cd_close();
+  return once_calls * 100 + i; /* 102: one call, two increments */
+}
+/* CD_NONE is the object itself; a literal 0 compiles (a null pointer) and traps. */
+EXPORT("t_none") double t_none(void) {
+  cd_val a = cd_v_num(-7);
+  cd_call_args(CD_WINDOW, "Math.abs", 1, &a);
+  return cd_get_num(CD_RESULT, CD_NONE);
+}
+static char none_buf[32];
+EXPORT("t_none_buf") char *t_none_buf(void) { return none_buf; }
+EXPORT("t_none_str") uint32_t t_none_str(void) { return cd_get_str(CD_BODY, CD_NONE, none_buf, sizeof none_buf); }
+EXPORT("t_zero_path") double t_zero_path(void) { return cd_get_num(CD_RESULT, 0); }
 
 /* Pixels as a CSS image: encoded to a 3 x 2 PNG, whose bytes come back and go on a div's background. */
 static cd_id imaged;
@@ -534,15 +626,6 @@ void cd_on_store(uint32_t token, const uint8_t *p, int32_t len) {
 }
 EXPORT("t_store") int32_t t_store(uint32_t token, int32_t sum) { return sum ? (int32_t)store_sum[token & 7] : store_len[token & 7]; }
 
-/* 12. A literal per call site. */
-static cd_str lit_a(void) { return CD_LIT("alpha"); }
-static cd_str lit_b(void) { return CD_LIT("beta"); }
-EXPORT("t_lit") uint32_t t_lit(void) {
-  for (int i = 0; i < 3; i++)
-    if (lit_a() != cd_internz("alpha") || lit_b() != cd_internz("beta") || lit_a() == lit_b()) return 0;
-  return 1;
-}
-
 /* 13. The formatter: the page compares with String(v / 10 ** d) + unit. */
 static char fmt_buf[64];
 EXPORT("t_fmt") uint32_t t_fmt(int32_t v, uint32_t d, uint32_t unit) { return cd_fmt(fmt_buf, v, d, unit); }
@@ -557,7 +640,7 @@ static uint8_t out_msg[sizeof MSG];
 static cd_id net_txt;
 static int ws_ok;
 static uint32_t net_port;
-static void say(const char *s) { cd_set_text_node(net_txt, cd_internz(s)); }
+static void say(const char *s) { cd_set_text_node(net_txt, s); }
 /* What the sockets are doing: the echo, the open-and-close cycles, the large send. */
 enum { WS_ECHO, WS_CYCLE, WS_BIG, WS_PAIR };
 static int ws_mode;

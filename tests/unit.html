@@ -10,7 +10,7 @@ let tracing = false;
 const real = WebAssembly.instantiateStreaming;
 let shim; // the shim's imports, to ask it directly what it still holds
 WebAssembly.instantiateStreaming = (res, imp) => {
-  for (const k of ['strings', 'walk']) { const f = imp.cdom[k]; imp.cdom[k] = (...a) => { if (tracing) trace.push(k); return f(...a); }; }
+  for (const k of ['walk']) { const f = imp.cdom[k]; imp.cdom[k] = (...a) => { if (tracing) trace.push(k); return f(...a); }; }
   shim = imp.cdom;
   return real(res, imp);
 };
@@ -287,12 +287,63 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     if ($('#namekinds').innerHTML !== before) r.push('changed: ' + $('#namekinds').innerHTML);
     return !r.length || r.join('; ');
   });
-  check('cd_set_style and cd_set_style_num; 400 transient values leave the string table alone', () => {
-    const grew = x.t_style(400);
+  check('cd_set_style and cd_set_style_num, with 400 runtime values', () => {
+    x.t_style(400);
     const st = $('#style > div').style;
     const r = [st.left === '399px', st.top === '399.5px', st.color === 'red', st.width === '12.25em', st.opacity === '0.5',
-      $('#style > div').dataset.t === 'one-off é', grew === 7];
-    return r.every(Boolean) || JSON.stringify(r) + ' grew ' + grew;
+      $('#style > div').dataset.t === 'one-off é'];
+    return r.every(Boolean) || JSON.stringify(r);
+  });
+  check('a runtime string of 0 to 300 bytes, ASCII and not, is read as C holds it', () => {
+    const r = [], dec = new TextDecoder();
+    let n = 0;
+    for (const len of [0, 1, 7, 8, 9, 11, 12, 13, 15, 16, 17, 31, 32, 33, 300]) {
+      for (let kind = 0; kind <= 5; kind++) {
+        if (!x.t_read(len, kind)) continue;
+        const want = dec.decode(new Uint8Array(x.memory.buffer, x.t_read_buf(), len)), got = $('#read').textContent;
+        n++;
+        if (got !== want) r.push(`${len} bytes, kind ${kind}: ${JSON.stringify(got)} for ${JSON.stringify(want)}`);
+      }
+    }
+    return (!r.length && n === 80) || (r.join('; ') || `${n} strings, not 80`); // 15 ASCII, 13 for each of the two-byte positions, the three-byte and the astral one
+  });
+  check('every string position takes a literal, a cd_tmp, a cd_tmpz and a chosen cd_s: tag, text, attribute, class, style, path, method, cd_v_str', () => {
+    const r = [], dec = new TextDecoder();
+    for (let k = 0; k < 4; k++) x.t_pos(k);
+    const els = [...$('#pos').children];
+    const at = (list, k) => list[k];
+    const set = ['set-a', 'set-b', 'set-c', 'red'];
+    for (let k = 0; k < 4; k++) {
+      const el = els[k], L = 'abcd'[k], style = [['width', '1px'], ['height', '2px'], ['left', '3px'], ['top', '4px']][k];
+      const got = {
+        tag: el.localName, attr: el.getAttribute('data-' + L), cls: el.firstElementChild.className, text: el.textContent,
+        attr2: el.getAttribute('data-' + 'efgh'[k]), cls2: el.className, style: el.style.getPropertyValue(style[0]),
+        path: [el.title, el.lang, el.dataset.p, el.style.color][k], method: el.getAttribute('data-m'), obj: el.id,
+        read: dec.decode(new Uint8Array(x.memory.buffer, x.t_pos_out(k), x.t_pos_len(k))),
+      };
+      const want = {
+        tag: at(['mark', 'kbd', 'samp', 'var'], k), attr: 'v' + L, cls: 'c' + L, text: 't2' + L,
+        attr2: 've' + L, cls2: 'c2' + L, style: style[1], path: set[k], method: 'm' + L, obj: 'o' + L, read: set[k],
+      };
+      for (const key of Object.keys(want)) if (got[key] !== want[key]) r.push(`variant ${k}, ${key}: ${JSON.stringify(got[key])}, wanted ${JSON.stringify(want[key])}`);
+    }
+    return !r.length || r.join('; ');
+  });
+  check('a cd_tmp used after another call that took a string throws, naming the rule', () => {
+    try { x.t_tmp_stale(); return 'no throw'; } catch (e) { return /^cdom: a cd_tmp string used after the call it was made for/.test(e.message) || String(e); }
+  });
+  check('32 cd_tmp are alive at once, and the 33rd traps', () => {
+    const r = [x.t_tmp_cap(32) === 32, x.t_tmp_cap(1) === 1];
+    try { x.t_tmp_cap(33); r.push('no trap'); } catch (e) { r.push(e instanceof WebAssembly.RuntimeError || String(e)); }
+    r.push(x.t_none() === 7); // a call that takes a string ends the dead run, so the module goes on
+    return r.every((v) => v === true) || JSON.stringify(r);
+  });
+  check('a string argument is evaluated once, a literal 0 for a path traps, and CD_NONE reads the object itself', () => {
+    const r = [x.t_once() === 102, $('#once p').textContent === 'oncen0n1', x.t_none() === 7];
+    const body = new TextDecoder().decode(new Uint8Array(x.memory.buffer, x.t_none_buf(), x.t_none_str()));
+    r.push(body === '[object HTMLBodyElement]');
+    try { x.t_zero_path(); r.push('no trap'); } catch (e) { r.push(e instanceof WebAssembly.RuntimeError || String(e)); }
+    return r.every((v) => v === true) || JSON.stringify(r) + ' ' + body;
   });
   check('every unit through cd_set_style_num reads back as its text, and as cd_fmt writes it', () => {
     const units = ['', 'px', '%', 'deg', 'em', 'rem', 'vw', 'vh', 'ms', 's', 'rad'];
@@ -304,7 +355,7 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     }
     return r.length === 1 && r[0] || r.join('; ');
   });
-  check('after the memory grew, a string batch, the viewport, a set and a call each see fresh views', () => {
+  check('after the memory grew, a runtime string, the viewport, a set and a call each see fresh views', () => {
     const r = [], el = () => $('#grow > div');
     for (let which = 0; which < 4; which++) {
       const pages = x.memory.buffer.byteLength;
@@ -316,13 +367,9 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     }
     return !r.length || r.join('; ');
   });
-  check('a transient used after another op crossed traps', () => {
-    try { x.t_tmp_stale(); return 'no trap'; } catch (e) { return e instanceof WebAssembly.RuntimeError || String(e); }
-  });
   check('freeing a free id traps', () => {
     try { x.t_free_twice(); return 'no trap'; } catch (e) { return e instanceof WebAssembly.RuntimeError || String(e); }
   });
-  check('CD_LIT: one interned id per call site', () => x.t_lit() === 1 || 'wrong ids');
   check('cd_fmt matches String(v / 10 ** d) + unit', () => {
     const U = ['', 'px', '%', 'deg', 'em', 'rem', 'vw', 'vh', 'ms', 's', 'rad'];
     const vals = [0, 1, -1, 5, -5, 9, 10, 99, 100, 101, 1000, 12345, -12345, 99999, 100000, 2147483647, -2147483647, -2147483648];
@@ -357,7 +404,7 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     const r = [x.t_ids_live(), x.t_ids_high(), $('#leak').querySelectorAll('*').length];
     return (r[0] === ids && r[1] === high && r[2] === nodes) || `live ${ids}->${r[0]}, high ${high}->${r[1]}, nodes ${nodes}->${r[2]}`;
   });
-  // Timers, frames and the auto-flush: the timer hook leaves a string and a walk pending and calls no flush.
+  // Timers, frames and the auto-flush: the timer hook leaves a walk pending and calls no flush.
   x.t_time();
   tracing = true;
   const fired = await until(() => $('#time i').textContent === '41' && $('#time i + i').textContent === '42');
@@ -368,7 +415,7 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
   check('cd_now is performance.now', () => { const a = performance.now(), c = x.t_now(), b = performance.now();
     return (a <= c && c <= b && x.t_raf_t() > 0 && x.t_raf_t() <= a) || `${a} ${c} ${b} raf ${x.t_raf_t()}`; });
   check('the timer and frame exports flush what their hooks left pending', () =>
-    (trace.includes('strings') && trace.includes('walk') && x.t_stale() === 0) || JSON.stringify(trace) + ' stale ' + x.t_stale());
+    (trace.includes('walk') && x.t_stale() === 0) || JSON.stringify(trace) + ' stale ' + x.t_stale());
   check('cd_rect: the box the styles give, then the transformed box, read in one entry', () => {
     x.t_rect();
     const got = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => x.t_rect_at(k)).join(' ');

@@ -1,7 +1,7 @@
 /* One call of each row of the classification table (docs/strings-design.md, "How a literal is told from a
  * runtime string"). run.sh checks which of them became slots (cdlits --list) and what string each one
  * shows (a Node run with stub imports). */
-#include "lits.h"
+#include "stub.h"
 
 #define GREETING "hi-macro"
 static const char NAME[] = "const-array";

@@ -152,26 +152,26 @@ else bad "strip: the merged module: cdlits failed:"; cat "$out/merged.log" 2> /d
 # ---- the build errors ----
 e="$out/e"
 cat > "$e.plus.c" <<'EOT'
-#include "lits.h"
+#include "stub.h"
 EX(k) void k(void) { cd_text("abc" + 1); }
 EOT
 cat > "$e.wide.c" <<'EOT'
-#include "lits.h"
+#include "stub.h"
 /* a slot by hand: the macro never classifies L"x" as a literal, but a tool must still refuse the spelling */
 static const char c[] __attribute__((section("cd_chars"), used, aligned(1))) = "L\"x\"";
 static const cd_lit_slot l __attribute__((section("cd_lits"), used)) = {c};
 EX(k) void k(void) {}
 EOT
 cat > "$e.nul.c" <<'EOT'
-#include "lits.h"
+#include "stub.h"
 EX(k) void k(void) { cd_text("a\0b"); }
 EOT
 cat > "$e.utf8.c" <<'EOT'
-#include "lits.h"
+#include "stub.h"
 EX(k) void k(void) { cd_text("bad \xff byte"); }
 EOT
 cat > "$e.ok.c" <<'EOT'
-#include "lits.h"
+#include "stub.h"
 EX(k) void k(void) { cd_text("fine"); }
 EOT
 for c in plus wide nul utf8; do bw "$e.$c.wasm" -Oz -Wno-string-plus-int "$e.$c.c" "$here/stub.c" || { bad "error case $c does not build:"; cat "$e.$c.wasm.log"; }; done
@@ -191,18 +191,19 @@ expect_err 'no arguments' 'usage:' "$CDLITS"
 if [ ! -e "$e.plus.o.wasm" ] && [ ! -e "$e.plus.o.lits" ]; then ok "error: a failed run writes no output"; else bad "error: a failed run left its outputs"; fi
 
 # ---- the compile errors: a non-string is not a string argument ----
-ce() { # name body expected: the file must not compile, with the message
+ce() { # name body message: the file must not compile, and the compiler's message is the one expected
   local f="$out/ce_$1.c"
-  printf '#include "lits.h"\nEX(k) void k(uint32_t some_id) { (void)some_id; %s }\n' "$2" > "$f"
+  printf '#include "stub.h"\nEX(k) void k(uint32_t some_id) { (void)some_id; %s }\n' "$2" > "$f"
   if "$CC" "${CDOM_CFLAGS[@]}" -I"$here" -c -o "$f.o" "$f" 2> "$f.log"; then bad "compile error: $1 compiles"
-  else ok "compile error: $1"; fi
+  elif grep -qF -- "$3" "$f.log"; then ok "compile error: $1 ($3)"
+  else bad "compile error: $1 fails for another reason:"; head -5 "$f.log"; fi
 }
-printf '#include "lits.h"\nEX(k) void k(uint32_t some_id) { (void)some_id; cd_text("fine"); cd_str a = cd_s("x"), b = cd_s("y"); (void)(a.v != b.v); }\n' > "$out/ce_control.c"
+printf '#include "stub.h"\nEX(k) void k(uint32_t some_id) { (void)some_id; cd_text("fine"); cd_str a = cd_s("x"), b = cd_s("y"); (void)(a.v != b.v); }\n' > "$out/ce_control.c"
 if "$CC" "${CDOM_CFLAGS[@]}" -I"$here" -Wall -Wextra -Werror -c -o "$out/ce_control.o" "$out/ce_control.c" 2> "$out/ce_control.log"; then ok "compile errors: the control file compiles"
 else bad "compile errors: the control file does not compile:"; cat "$out/ce_control.log"; fi
-ce id 'cd_text(some_id);'
-ce int 'cd_text(5);'
-ce compare 'cd_str a = cd_s("x"), b = cd_s("y"); (void)(a != b);'
+ce id 'cd_text(some_id);' 'incompatible integer to pointer conversion'
+ce int 'cd_text(5);' 'incompatible integer to pointer conversion'
+ce compare 'cd_str a = cd_s("x"), b = cd_s("y"); (void)(a != b);' 'invalid operands to binary expression'
 
 echo "tests/lits: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

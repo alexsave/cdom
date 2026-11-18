@@ -1,6 +1,6 @@
 #!/bin/bash
 # The link-level tests: one heap whoever brings it, mini.c next to an app's libc, the program's
-# string.h (src/libc) under cdom's flags and freestanding ones, CD_LIT refusing a variable, the I/O
+# string.h (src/libc) under cdom's flags and freestanding ones, a non-string refused as a string argument, the I/O
 # contract (contract.c), and cdom.mk's rules (app.mk). Builds into tests/out/link and runs tests/link/run.mjs, then the name gate
 # (tools/edges.mjs) and the seed gate (tools/seeds.mjs).
 set -uo pipefail
@@ -69,12 +69,18 @@ libc_case() { # name, then the flags
 libc_case cdom "${LIBC_CDOM[@]}"
 libc_case freestanding "${LIBC_FREESTANDING[@]}"
 C=(-O2 "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror -c)
-if ! "$CC" "${C[@]}" -o "$out/lit_ok.o" "$here/lit_ok.c" 2> "$out/lit_ok.log"; then
-  echo "FAIL CD_LIT given a literal does not compile:"; cat "$out/lit_ok.log"; fail=1
-elif "$CC" "${C[@]}" -o "$out/lit_var.o" "$here/lit_var.c" 2> "$out/lit_var.log"; then
-  echo "FAIL CD_LIT accepted a variable"; fail=1
-elif grep -q "lit_var.c:3:.*error: expected ')'" "$out/lit_var.log"; then echo "ok   CD_LIT given a variable does not compile, a literal does"
-else echo "FAIL CD_LIT given a variable failed for another reason:"; cat "$out/lit_var.log"; fail=1; fi
+# A string argument is plain C, and a thing that is not a string is a compile error: str_ok.c, the control,
+# compiles, and each of the others fails with its own message.
+if ! "$CC" "${C[@]}" -o "$out/str_ok.o" "$here/str_ok.c" 2> "$out/str_ok.log"; then
+  echo "FAIL the string control file does not compile:"; cat "$out/str_ok.log"; fail=1
+else
+  for bad in id:'incompatible integer to pointer conversion' int:'incompatible integer to pointer conversion' cmp:'invalid operands to binary expression'; do
+    name="${bad%%:*}" why="${bad#*:}"
+    if "$CC" "${C[@]}" -o "$out/str_$name.o" "$here/str_$name.c" 2> "$out/str_$name.log"; then echo "FAIL str_$name.c compiles"; fail=1
+    elif ! grep -qF -- "$why" "$out/str_$name.log"; then echo "FAIL str_$name.c failed for another reason:"; cat "$out/str_$name.log"; fail=1
+    else echo "ok   str_$name.c does not compile ($why), the control does"; fi
+  done
+fi
 # The I/O contract (cdom.h, top): contract.c compiles only while every declaration it names is unchanged.
 if "$CC" "${LIBC_CDOM[@]}" -fsyntax-only "$here/contract.c" 2> "$out/contract.log"; then
   echo "ok   the I/O contract: every declaration external adapters build on has its type, and every code its value"

@@ -143,7 +143,7 @@ void cd_on_event(const cd_event_rec *e) {
 EXPORT("io") char *io_ptr(void) { return io; }
 EXPORT("rect") double *rect_ptr(void) { return rect; }
 EXPORT("id") cd_id id_of(uint32_t k) { return k < NIDS ? ids[k] : CD_DETACHED; }
-static cd_str P(uint32_t len) { return len ? cd_tmp(io, len) : 0; }
+static cd_str P(uint32_t len) { return len ? cd_tmp(io, len) : CD_NONE; }
 EXPORT("g_num") double g_num(cd_id id, uint32_t len) { return cd_get_num(id, P(len)); }
 EXPORT("g_str") uint32_t g_str(cd_id id, uint32_t len) { return cd_get_str(id, P(len), io, sizeof io); }
 EXPORT("g_strcap") uint32_t g_strcap(cd_id id, uint32_t len, uint32_t cap) { return cd_get_str(id, P(len), io, cap); }
@@ -184,12 +184,12 @@ EXPORT("c_insert") void c_insert(void) { /* a node and null: move item a after i
 EXPORT("c_contains") double c_contains(void) { /* a result read back through CD_RESULT */
   cd_val a = cd_v_id(ids[BOX]);
   cd_call_args(CD_BODY, CD_LIT("contains"), 1, &a);
-  return cd_get_num(CD_RESULT, 0);
+  return cd_get_num(CD_RESULT, CD_NONE);
 }
 EXPORT("c_getattr") uint32_t c_getattr(void) {
   cd_val a = cd_v_str(CD_LIT("id"));
   cd_call_args(ids[BOX], CD_LIT("getAttribute"), 1, &a);
-  return cd_get_str(CD_RESULT, 0, io, sizeof io);
+  return cd_get_str(CD_RESULT, CD_NONE, io, sizeof io);
 }
 /* CD_RESULT holds a named node; cd_get_id still names it by its own id. */
 EXPORT("c_query") cd_id c_query(void) {
@@ -244,9 +244,8 @@ EXPORT("c_ids") uint32_t c_ids(void) {
   cd_flush();
   return bad;
 }
-/* A one-off path (cd_tmp) reuses its id from one crossing to the next, so the shim must not keep its
- * segments by id: the second read names a different property under the same id. Returns the two lengths
- * read, the second's bytes left in io. */
+/* A runtime path is split each time and never kept: the second read names a different property, though
+ * the first path's serial may be reused by it. Returns the two lengths read, the second's bytes left in io. */
 EXPORT("c_tmp_paths") uint32_t c_tmp_paths(void) {
   uint32_t a = cd_get_str(ids[BOX], cd_tmpz("id"), io, sizeof io);
   uint32_t b = cd_get_str(ids[BOX], cd_tmpz("tagName"), io, sizeof io);

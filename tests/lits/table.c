@@ -1,6 +1,6 @@
 /* The table's text: a literal used at three call sites, and the characters that must not break a script
  * or the separator. run.sh runs the table line in Node and compares each string with the one written here. */
-#include "lits.h"
+#include "stub.h"
 
 EX(k_table) void k_table(void) {
   cd_text("1first-digit");

@@ -31,10 +31,10 @@ for (const f of ['cdom', 'freestanding']) {
 }
 x = await load(`${dir}/on_only.wasm`);
 x.cd_start(0);
-// cd_layout's block (src/cdom.c, CD_LAYOUT): its count, then the string batch's 6 entries, the record, and
+// cd_layout's block (src/cdom.c, CD_LAYOUT): its count, then the runtime strings' 7 entries, the record, and
 // the offsets of its type and id.
-const layout = new Uint32Array(x.memory.buffer, x.cd_layout(), 10), rec = new Int32Array(x.memory.buffer);
-const typeAt = (layout[7] + layout[8]) >> 2, idAt = (layout[7] + layout[9]) >> 2;
+const layout = new Uint32Array(x.memory.buffer, x.cd_layout(), 11), rec = new Int32Array(x.memory.buffer);
+const typeAt = (layout[8] + layout[9]) >> 2, idAt = (layout[8] + layout[10]) >> 2;
 const event = (type, id) => { rec[typeAt] = type; rec[idAt] = id; x.cd_event(); };
 event(0, x.node()); // CD_EV_CLICK: the handler
 event(0, x.node() + 1); // no handler: cdom's empty cd_on_event

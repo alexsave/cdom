@@ -1,6 +1,6 @@
 /* Every way a string literal can be spelled that the lexer must read as clang does. Built with
  * -DCD_LITS_CHECK, each slot also holds the compiler's own bytes and `cdlits --check` compares them. */
-#include "lits.h"
+#include "stub.h"
 
 #define GREETING "hi " "there"
 #define PASS(x) x
