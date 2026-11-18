@@ -316,15 +316,14 @@ static uint32_t nrenders, renders_cap, render_at, rendering;
  * calls run_renders directly and inlines it into every export (236 bytes in the keyed bench app). */
 static void run_renders(void);
 static void (*volatile render_pass)(void);
-/* The views of shared state (cd_state, below), reached the same way: cd_changed sets it, so an app that
- * renders but never changes a state does not carry them. views_pass(0) runs one round of views, and
+/* The views of shared state (cd_state, below), reached the same way: cd_changed and cd_watch set it, so
+ * an app that renders but never uses a state does not carry them. views_pass(0) runs one round of views, and
  * views_pass(1) ends the pass. changed is the list of changed states; CHANGED_END ends it, so a state
  * is on it exactly when its changed is not null. */
 static void (*volatile views_pass)(int end);
 static cd_state *changed, *changed_last;
 #define CHANGED_END ((cd_state *)&changed)
-void cd_dirty(cd_render_fn fn, void *ctx);   /* with the pairs, below */
-static void asked_reset(void);
+static void asked_reset(void); /* cd_dirty, cd_undirty and their table are with the pairs, below */
 /* One round of renders: those asked before it began. */
 static void renders_round(void) {
   for (uint32_t end = nrenders; render_at < end;) {
