@@ -245,3 +245,74 @@ The rest is the app's own change: A with `cd_tmp` labels (sb-at, today's string 
 Bx's faster read takes back 2 of the 2.8 ms.
 
 Reproduce: the jfb server on 8093 (`cd jfb/server && PORT=8093 npx tsx index.ts`), then `bench/strings/build.sh && bench/strings/jfb.sh`, then `node bench/strings/jfbsum.mjs results/pairs/strings-cpu sb-a sb-a2 sb-b sb-bx sb-at`.
+
+## The table at scale: which form carries it
+
+`bench/strings/tablegen.mjs` writes one page per form and size: N unique strings (3 to 30 bytes, one in ten with non-ASCII text, from one seeded xorshift32) and 1.25 N slots (the extra slots repeat random strings, so this map compresses worse than a real app's, where repeats cluster).
+`bench/strings/table.mjs` loads each page in a fresh Chrome, 7 rounds interleaved (`bench/strings/results/table.tsv`); forms d, e and g ran again, 9 rounds (`table-g.tsv`), and the two runs of d and e are the noise band.
+"Table + install" is the table script's parse, compile and run (marks around it) plus the install; heap is CDP's after a GC, minus the page with no table (435 KB); "after use" reads every slot once.
+
+| Form | N | Table + install (ms) | Install alone (ms) | Heap after install (KB) | Heap after use (KB) | Page, brotli (bytes) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| a, the design: joined string split, map split | 10 / 1k / 10k / 100k | 0.20 / 0.47 / 2.83 / 37.2 | 0.05 / 0.18 / 1.22 / 13.4 | 0 / 62 / 642 / 6,541 | same | 336 / 7,817 / 61,486 / 676,040 |
+| b, array literal of strings, map split | | 0.19 / 0.55 / 3.48 / 45.0 | 0.04 / 0.14 / 0.82 / 7.9 | 0 / 36 / 373 / 3,778 | same | 331 / 7,750 / 72,733 / 652,055 |
+| c, one string kept whole, sliced lazily, map | | 0.26 / 0.61 / 3.34 / 36.0 | 0.06 / 0.28 / 1.71 / 11.3 | 1 / 43 / 427 / 4,438 | 2 / 68 / 675 / 6,950 | 460 / 8,002 / 67,067 / 675,970 |
+| d, dense ids, joined string split, no map | | 0.15 / 0.31 / 1.77 / 23.2 (rerun 24.2) | 0.03 / 0.06 / 0.41 / 7.1 | 0 / 61 / 632 / 6,443 | same | 258 / 5,995 / 54,147 / 533,554 |
+| e, dense ids, array literal, no install | | 0.15 / 0.41 / 2.52 / 44.8 (rerun 35.1) | 0.02 / 0.02 / 0.03 / 0.03 | 0 / 35 / 363 / 3,681 | same | 257 / 5,978 / 54,046 / 531,248 |
+| f, dense ids, one string sliced lazily | | 0.20 / 0.42 / 2.27 / 18.7 | 0.04 / 0.14 / 0.87 / 3.8 | 1 / 43 / 427 / 4,438 | 2 / 68 / 675 / 6,951 | 368 / 6,075 / 54,391 / 533,452 |
+| g, dense ids, ASCII strings and the rest as two joined strings | | 0.17 / 0.35 / 1.72 / 19.9 | 0.04 / 0.08 / 0.34 / 6.3 | 0 / 42 / 456 / 4,620 | same | 282 / 5,996 / 54,205 / 531,594 |
+
+Noise: d's table + install was 1.77 and 1.78 ms at 10k and 23.2 and 24.2 at 100k in the two runs, e's 2.52 and 2.48 at 10k but 44.8 and 35.1 at 100k (its interquartile range in the first run was 38.6 to 45.7), so at 100k differences under about 10 ms are not measurable for e.
+Reading every slot once costs 0.4 to 0.8 ms at 100k for the forms that hold every string already, and 4.5 to 4.9 ms for the lazy forms c and f, so laziness moves the cost to first use and does not remove it.
+
+| # | Prediction | Measured | Verdict |
+| --- | --- | --- | --- |
+| T1 | (a) grows linearly, about 5 ms install at 100k, under 0.01 ms at 10 | install 0.05 / 0.18 / 1.22 / 13.4 ms; with the table script 37 ms at 100k | confirmed (inside 1 to 20 ms), but about 2.7 times the predicted 5 ms; the floor at 10 is cold code, 0.05 ms |
+| T2 | (b) within 30% of (a) | +23% at 10k, +21% at 100k | confirmed |
+| T3 | (c) the cheapest at 100k, install under 10% of (a)'s | 36.0 ms, install 11.3 (84% of a's); (f) 18.7 and (g) 19.9 are cheaper | refuted: finding the offsets and converting the map cost nearly what splitting does |
+| T4 | dense ids save 1 to 2 bytes of brotli per slot | 1.46 B per slot at 1k (7,817 to 5,995 over 1,250 slots), 0.98 at 10k, 1.14 at 100k | confirmed |
+| T5 | (b)'s heap below (a)'s with mixed text | 373 against 642 KB at 10k, 3,778 against 6,541 at 100k | confirmed: a split of a string that holds any non-ASCII text makes every piece two-byte (and pieces of 13 characters or more are slices that keep the whole string alive); literals in source are one-byte where they can be |
+| T6 | (e) the fastest table + install at every N | 2.5 ms at 10k against 1.7 for (d) and (g); 35 to 45 ms at 100k against 20 to 24 | refuted: parsing 100,000 string literals costs more than splitting one string |
+| T7 | (f) the lowest heap after install at 10k and 100k | (e) is lower: 363 against 427 KB, 3,681 against 4,438 | refuted |
+| T8 | (g) within 20% of (d)'s time and 15% of (e)'s heap at 10k and 100k | time 1.72 against 1.78 ms (3% faster) and 19.9 against 24.2 (18% faster); heap 456 against 363 KB (+26%), 4,620 against 3,681 (+26%) | time confirmed, heap refuted |
+
+What carries the table best: at the sizes a real page has (10 to 1,000 literals) every form installs in 0.02 to 0.3 ms and the choice is about bytes, where dropping the per-slot map (dense ids) is the only thing that matters, about 1 to 1.5 bytes of brotli per slot.
+At 10,000 and more, (g) is the fastest (the split of one-byte text is cheap and its pieces stay one-byte) and (e) the leanest; the design's (a) is 1.6 to 1.9 times slower than (g) and holds 40% more heap than (e) at 100k.
+One line of JS text (a joined string) is the right carrier for speed; a JS array literal is the right one for heap; numbering ASCII strings first and carrying two joined strings gets most of both.
+Not measured: a per-slot table with no map and no renumbering (each slot its own entry, repeats spelled again), which needs no rewrite of the module's constants; brotli makes repeated text nearly free, and its install is (d)'s for 1.25 N strings.
+
+Reproduce: `node bench/strings/tablegen.mjs && R=7 node bench/strings/table.mjs`, and `FILTER='^(d|e|g|z)-' R=9 node bench/strings/table.mjs`.
+
+## Bytes, measured on the way
+
+The synthetic page (2,000 literal sites), brotli -q 11: A 20,573 bytes; B with the table in the `start` call after the base64 module (where the design's `page.awk` puts it) 21,779, 5.9% larger than A; B with the same table in a script before the module 19,299, 6.2% smaller; C (no table, literals left in the module) 20,013.
+Brotli codes the table about 2,400 bytes worse when it follows 30 KB of base64 than when it precedes it (`bench/strings/pages.sh` now writes it first).
+tutorial/01-hello: A 8,848, B 8,597 (-2.8%), C 8,707.
+The module: B strips 1,553 bytes from hello's 3,981 and 25,240 from the synthetic page's 48,311; C (slots, unstripped) is still 1,149 and 1,547 bytes smaller than A, from the call sites alone.
+
+## Recommendation
+
+Literals: keep the design's slots and table (B).
+It is the fastest literal lookup measured (6.8 ns a call, 27% under today's 9.3), it takes 38% off `cd_main` on a page with 2,000 literal sites (2.93 to 1.81 ms with the install), it frees 5 of the keyed entry's 8 initial pages, and it ends the interning leak (run-clear memory 0.85 to 0.72 MB, touched wasm memory after five cycles 408 to 116 KB).
+Dense ids (E) would not be faster at run time (7.1 ns), so the design was right to reject the relocation rewrite for speed; they are worth 1 to 1.5 bytes of brotli per slot, which a per-slot table with repeats spelled again may get without any rewrite (not measured).
+The address-as-Map-key route (D) is cheaper than the design thought (2.6 ns over B, not 8.7) but is still slower than B and needs the shim to trust addresses; no reason to take it.
+The no-tool route (C1, one decode of `cd_chars` at load) is within 0.4 ms of B at 2,000 sites and within the noise on small pages: a sound fallback if `cdlits` becomes a burden, and it costs the bytes, not the time.
+
+Where the design should change:
+
+1. **The runtime read.** Replace "a char loop up to 12 bytes, TextDecoder above" with: an ASCII test, then `String.fromCharCode` with the bytes as arguments (8 at a time) up to 32 bytes, TextDecoder above that and for anything non-ASCII.
+   In Chrome a TextDecoder call costs 100 to 140 ns whatever the length (Node's 84 to 90 ns understated it), and the char loop costs 5.5 ns a character; the arguments form reads 9 to 30 ASCII bytes in 48 to 95 ns where the design's read takes 80 to 146, and it took back 2.0 of the 2.8 ms the design lost on create 10k script.
+2. **Check the view by length** (`u32.length === 0` after a grow detaches it) rather than `buffer !== memory.buffer`: the getter is 5.7% of a short runtime string's profile, 4 to 7 ns a call.
+3. **Put the table before the module in the page**, in a script of its own: after the base64 it costs 2,400 more bytes of brotli on the synthetic page and turns the design's byte saving into a 5.9% loss.
+4. **Expect create 10k script to get worse, not to hold**: even with the faster read, Bx is 0.8 ms (3.9%) behind A on create 10k script, and the app-owned label arena (step 3) alone costs about 2 ms of it on today's string path (sb-at); totals stay within 1.6% everywhere.
+   Fresh non-ASCII labels in bulk are where today's batch decode still wins (64 to 73 ns a label against 153 to 189 for any read on use); an app that renders thousands of fresh non-ASCII strings at once would want a batched read, which the direct-call shape does not offer.
+5. **Carry the table without the per-slot map if possible**, and number ASCII strings first if tables ever reach 10,000 strings: form (g) installs 1.2 to 1.9 times faster than the design's (a) with 30% less heap at 100k.
+
+Numbers that contradict docs/strings-design.md:
+
+- P4 (install under 0.05 ms): 0.065 to 0.07 ms on hello and the keyed entry (cold code included); first paint was within the noise, as predicted.
+- P5 (create 10k script 0.0 to 1.0 ms worse, at most 1.5): 2.8 ms worse (13.7%); every total was within 3%.
+- P8 (no-templates create 1k script within 3%): 15.6% worse.
+- The evidence table's times: TextDecoder 100 to 140 ns in Chrome, not 84 to 90; a Map lookup costs 2.6 ns over the slot lookup, not 8.7; the 12-byte threshold is below Chrome's crossover (about 30 bytes for the char loop, 32 to 48 for the arguments form).
+- "Each literal byte moved from the bundled wasm to JS text saves about 0.3 bytes of brotli": only when the table precedes the base64; after it, the move costs bytes.
+- P6 (run-clear memory 0.72 MB or less) held: 0.72 MB.
