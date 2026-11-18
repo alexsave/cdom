@@ -42,6 +42,9 @@
 //
 // One file, no dependencies, no standard input and no environment: every input is a named file or a flag.
 // The page is built in memory, written to out.html.tmp<pid> and renamed, so a failed run leaves nothing.
+/* lstat, S_IFREG and strdup are POSIX, not C: glibc and musl declare them under strict -std=c2x only with
+ * this. */
+#define _DEFAULT_SOURCE
 #include <dirent.h>
 #include <errno.h>
 #include <stdarg.h>

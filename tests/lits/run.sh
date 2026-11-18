@@ -7,7 +7,7 @@ set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 top="$here/../.."
 out="$here/../out/lits"
-CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"
+if [ "$(uname -s)" = Darwin ]; then CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"; else CC="${WASM_CC:-clang}"; fi
 CDLITS="$top/tools/out/cdlits"
 mkdir -p "$out" "$top/tools/out"
 . "$top/tools/cdomflags.sh" # CDOM_CFLAGS and CDOM_LDFLAGS, cdom.mk's set for apps
@@ -18,7 +18,7 @@ ok() { echo "ok   $*"; pass=$((pass + 1)); }
 bad() { echo "FAIL $*"; fail=$((fail + 1)); }
 
 # The tool: built like cdom.mk will build it (a temporary name, renamed).
-if cc -std=c23 -O2 -Wall -Wextra -Werror -o "$CDLITS.tmp$$" "$top/tools/cdlits.c" 2> "$out/cc.log"; then
+if cc -std=c2x -O2 -Wall -Wextra -Werror -o "$CDLITS.tmp$$" "$top/tools/cdlits.c" 2> "$out/cc.log"; then
   mv "$CDLITS.tmp$$" "$CDLITS"; ok "tools/cdlits.c builds with -Wall -Wextra -Werror"
 else
   bad "tools/cdlits.c does not build:"; cat "$out/cc.log"; echo "tests/lits: 0 passed, 1 failed"; exit 1

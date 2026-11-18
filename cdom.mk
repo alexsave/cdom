@@ -20,7 +20,8 @@
 #                 adds them to the APP_WASM rule)
 #   CDOM_SHIM     the minified shim (shim/cdom.min.js) a page inlines
 #   CDOM_OPT      the optimization level of the APP_WASM rule (-Oz unless the app sets it)
-#   WASM_CC       a clang that targets wasm32 (Homebrew's llvm unless set; Apple's clang does not)
+#   WASM_CC       a clang that targets wasm32 (Homebrew's llvm on macOS unless set, since Apple's clang does not;
+#                 clang elsewhere)
 #   HOST_CC       the C compiler for cdom's build tools (tools/cdlits.c, tools/cdpage.c), cc unless set
 #   CDOM_LITS     the built tools/cdlits, which every link goes through: it strips the string table out of
 #                 the module and writes it beside it as $(APP_WASM).lits, for the page
@@ -97,8 +98,17 @@
 # turns off clang's builtins and costs cdom code size); string.h works under it, so an app may add it.
 # Optimization, warnings and -Wl,--strip-all are the app's choice (APP_CFLAGS, APP_LDFLAGS, CDOM_OPT).
 CDOM ?= $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
+# Homebrew's llvm on macOS (Apple's clang has no wasm32), the clang on the PATH elsewhere (Linux
+# distributions' clang targets wasm32; wasm-ld comes with lld).
+ifeq ($(shell uname -s),Darwin)
 WASM_CC ?= /opt/homebrew/opt/llvm/bin/clang
+else
+WASM_CC ?= clang
+endif
 HOST_CC ?= cc
+# The host tools are C23 too, spelled -std=c2x: gcc before 14 and clang before 18 (Ubuntu 24.04's gcc 13,
+# Alpine 3.20's clang 17) reject -std=c23 and take c2x, and every newer one takes both.
+HOST_STD := -std=c2x
 CDOM_OPT ?= -Oz
 
 CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src
@@ -128,11 +138,11 @@ CDOM_PAGE_TOOL  := $(CDOM)/tools/out/cdpage
 # several apps may build it at once. A pattern rule, so it never becomes the app's default goal.
 %/out/cdlits: %/cdlits.c
 	@mkdir -p $(@D)
-	$(HOST_CC) -std=c23 -O2 -Wall -Wextra -Werror -o $@.tmp$$$$ $< && mv $@.tmp$$$$ $@
+	$(HOST_CC) $(HOST_STD) -O2 -Wall -Wextra -Werror -o $@.tmp$$$$ $< && mv $@.tmp$$$$ $@
 # The tool that writes the page (tools/cdpage.c), built the same way.
 %/out/cdpage: %/cdpage.c
 	@mkdir -p $(@D)
-	$(HOST_CC) -std=c23 -O2 -Wall -Wextra -Werror -o $@.tmp$$$$ $< && mv $@.tmp$$$$ $@
+	$(HOST_CC) $(HOST_STD) -O2 -Wall -Wextra -Werror -o $@.tmp$$$$ $< && mv $@.tmp$$$$ $@
 
 # $(call cdom_lits,linked.wasm,out.wasm): the step after a link, for an app's own rules; it writes
 # out.wasm and out.wasm.lits. Make the rule depend on $(CDOM_LITS).
@@ -203,7 +213,7 @@ cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(
 cdom_mk_toolchain = printf 'void f(void) {}\n' | $(WASM_CC) --target=wasm32 -nostdlib -Wl,--no-entry -x c -o '$@.probe' - \
   2> /dev/null && rm -f '$@.probe' || { rm -f '$@.probe'; \
   echo "cdom.mk: $(WASM_CC) cannot build a wasm32 module (that takes clang with the wasm32 target, and wasm-ld)" >&2; \
-  echo "cdom.mk: install them with: brew install llvm lld   (Debian or Ubuntu: apt install clang lld, and set WASM_CC := clang)" >&2; \
+  echo "cdom.mk: install them with: brew install llvm lld   (Debian or Ubuntu: apt install clang lld)" >&2; \
   exit 1; }
 
 # The sources, named. A pattern rule whose prerequisite neither exists nor is named by any rule does not
