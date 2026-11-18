@@ -1,7 +1,7 @@
 import { launch, sleep } from '../../../tools/cdp.mjs';
 const b = await launch();
 await b.send('Runtime.enable');
-for (const v of ['a-rerun', 'b-module', 'c-version']) {
+for (const v of ['a-rerun', 'b-module', 'c-version', 'e-state']) {
   await b.send('Page.navigate', { url: `file://${process.argv[2]}/${v}/build/index.html` });
   await sleep(500);
   const badge = () => b.evaluate(`document.querySelector('nav span')?.textContent ?? null`);
