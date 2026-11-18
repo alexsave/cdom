@@ -359,6 +359,19 @@ function driver(b, errors) {
 
 const names = process.argv.slice(2).length ? process.argv.slice(2).map((a) => path.basename(path.resolve(a))) : Object.keys(LESSONS);
 const b = await launch();
+// Before the app starts: the page's stylesheets (src/app.css, which the build writes into the page's
+// <head>) already apply when the string table's script runs, which is before the shim and so before
+// cd_main. A script run before the page's own defines window.cdomLits as an accessor; the table's script
+// assigns it, and the setter records what the page looks like at that moment.
+await b.send('Page.addScriptToEvaluateOnNewDocument', { source: `Object.defineProperty(window, 'cdomLits', {
+  configurable: true, get() { return window.__lits; },
+  set(v) {
+    window.__lits = v;
+    const app = document.getElementById('app');
+    window.__early = { margin: document.body ? getComputedStyle(document.body).marginTop : null,
+      rules: [...document.styleSheets].reduce((n, s) => n + s.cssRules.length, 0),
+      mount: app ? app.childNodes.length : -1, shim: typeof window.cdom };
+  } });` });
 // SCHEME=light or SCHEME=dark: the pages as that colour scheme shows them, whatever the system's is.
 if (process.env.SCHEME) await b.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: process.env.SCHEME }] });
 const errors = [];
@@ -379,6 +392,9 @@ try {
     const t = driver(b, errors);
     const up = await t.until(() => b.evaluate(`document.querySelector('#app')?.childElementCount > 0`));
     ok(up, `${name}: the app built its page`);
+    const early = await b.evaluate('window.__early || null');
+    ok(early && early.shim === 'undefined' && early.mount === 0 && early.margin === '0px' && early.rules > 0,
+      `${name}: styled before the app started: when the table's script ran (no shim yet, the mount empty) the body's margin was 0px and the page had its rules (${JSON.stringify(early)})`);
     if (up && process.env.SHOTS_START) {
       await b.evaluate(`document.querySelectorAll('canvas').forEach((c) => { c.style.visibility = 'hidden'; }), 1`);
       await t.settle();
@@ -391,6 +407,7 @@ try {
     if (up) {
       try { await check(t); } catch (e) { ok(false, `${name}: ${e.message}`); }
     }
+    ok(await b.evaluate(`document.querySelectorAll('#app style').length`) === 0, `${name}: the app builds no <style> (its CSS is src/app.css)`);
     const fetched = await b.evaluate(`performance.getEntriesByType('resource').map(e => e.name)`);
     ok(fetched.length === 0, `${name}: nothing was fetched but the page (${JSON.stringify(fetched)})`);
     ok(errors.length === 0, `${name}: no error on the page${errors.length ? `: ${errors.join(' | ')}` : ''}`);

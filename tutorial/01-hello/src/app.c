@@ -10,20 +10,11 @@
 /* Data the page shows. In React this would be a prop or an import; here it is a C array. */
 static const char *const FRUITS[] = {"apple", "banana", "cherry", 0};
 
-static void style(void) {
-  cd_open("style");
-  cd_text(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
-          "body { margin: 0; }"
-          ".card { max-width: 32rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }"
-          ".card h1 { margin: 0 0 0.5rem; }"
-          ".card a { color: light-dark(#1f5fd0, #8ab4ff); }");
-  cd_close();
-}
+/* The page's CSS is src/app.css. The build puts every .css file under src/ in a <style> in the page's
+ * <head>, so the page is styled before this code runs. */
 
 /* cd_main starts building at the end of the mount (<div id="app">); cd_at is for building elsewhere. */
 void cd_main(void) {
-  style();
-
   cd_open("main"); cd_class("card");
 
   cd_open("h1"); cd_text("Hello, cdom"); cd_close();

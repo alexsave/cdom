@@ -51,24 +51,10 @@ static void on_input(const cd_event_rec *, void *) {
   cd_set_text_node(count_text, cd_tmp(count, digits + word_len));
 }
 
-static void style(void) {
-  cd_open("style");
-  cd_text(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
-          "body { margin: 0; }"
-          ".form { display: flex; flex-direction: column; gap: 0.5rem; max-width: 24rem; margin: 3rem auto; padding: 0 1rem; }"
-          ".form label { font-weight: 600; }"
-          ".form input { box-sizing: border-box; width: 100%; font: inherit; font-size: 1.25rem; padding: 0.5rem 0.75rem;"
-          "  color: inherit; background: light-dark(#ffffff, #1c1c1e); border: 1px solid light-dark(#8a8a8f, #6e6e73);"
-          "  border-radius: 0.375rem; }"
-          ".form input:focus { outline: 2px solid light-dark(#1f5fd0, #8ab4ff); outline-offset: 1px; }"
-          ".form .greeting { font-size: 1.75rem; margin: 1rem 0 0; }"
-          ".form .count { margin: 0; color: light-dark(#5a5a60, #a1a1a8); }");
-  cd_close();
-}
+/* The page's CSS is src/app.css. The build puts every .css file under src/ in a <style> in the page's
+ * <head>, so the page is styled before this code runs. */
 
 void cd_main(void) {
-  style();
-
   cd_open("main"); cd_class("form");
   cd_open("label"); cd_attr("for", "name"); cd_text("Your name"); cd_close();
   input = cd_open_id("input");

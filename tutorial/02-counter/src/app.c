@@ -33,20 +33,10 @@ static void on_reset(const cd_event_rec *, void *) {
   show();
 }
 
-static void style(void) {
-  cd_open("style");
-  cd_text(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
-          "body { margin: 0; }"
-          ".counter { display: flex; flex-direction: column; align-items: center; gap: 1rem; margin-top: 4rem; }"
-          ".counter output { font-size: 4rem; font-variant-numeric: tabular-nums; }"
-          ".counter .row { display: flex; gap: 0.5rem; }"
-          ".counter button { font: inherit; font-size: 1.25rem; min-width: 3rem; padding: 0.5rem 1rem; }");
-  cd_close();
-}
+/* The page's CSS is src/app.css. The build puts every .css file under src/ in a <style> in the page's
+ * <head>, so the page is styled before this code runs. */
 
 void cd_main(void) {
-  style();
-
   cd_open("div"); cd_class("counter");
   /* cd_text_num makes the text node, and cd_name_text names it, so show() can reach it later. */
   cd_open("output"); cd_text_num(0); cd_name_text(count_text = cd_id_new()); cd_close();

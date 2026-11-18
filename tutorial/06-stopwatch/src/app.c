@@ -161,33 +161,10 @@ static void on_reset(const cd_event_rec *, void *) {
   note_timer = cd_timer_cb(NOTE_MS, clear_note, nullptr);
 }
 
-/* The page's look. The colours are light-dark() tokens, so the page reads the same in both schemes. */
-static void style(void) {
-  cd_open("style");
-  cd_text(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
-          "body { margin: 0; }"
-          "button { font: inherit; color: inherit; cursor: pointer; background: light-dark(#ffffff, #2a2a2e);"
-          "  border: 1px solid light-dark(#8a8a8f, #6e6e73); border-radius: 0.375rem; }"
-          "button:disabled { cursor: default; opacity: 0.45; }"
-          "button:focus-visible { outline: 2px solid light-dark(#1f5fd0, #8ab4ff); outline-offset: 1px; }"
-          ".watch { max-width: 28rem; margin: 3rem auto; padding: 0 1rem; text-align: center; }"
-          ".watch .time { display: block; font-size: clamp(2.5rem, 14vw, 4rem); font-weight: 300;"
-          "  line-height: 1.1; white-space: nowrap; font-variant-numeric: tabular-nums; }"
-          ".controls { display: flex; justify-content: center; gap: 0.5rem; margin-top: 1.5rem; }"
-          ".controls button { min-width: 6rem; font-size: 1.125rem; padding: 0.5rem 1rem; }"
-          ".controls .start { color: light-dark(#1f5fd0, #8ab4ff); border-color: light-dark(#1f5fd0, #8ab4ff); }"
-          ".note { min-height: 1.5em; margin: 1rem 0 0; color: light-dark(#5a5a60, #a1a1a8); }"
-          ".laps { list-style: none; margin: 1rem 0 0; padding: 0; text-align: left;"
-          "  font-variant-numeric: tabular-nums; }"
-          ".laps li { display: flex; justify-content: space-between; padding: 0.625rem 0.25rem;"
-          "  border-bottom: 1px solid light-dark(#e5e5ea, #3a3a3e); }"
-          ".laps .name { color: light-dark(#5a5a60, #a1a1a8); }");
-  cd_close();
-}
+/* The page's CSS is src/app.css. The build puts every .css file under src/ in a <style> in the page's
+ * <head>, so the page is styled before this code runs. */
 
 void cd_main(void) {
-  style();
-
   cd_open("main"); cd_class("watch");
   cd_open("output"); cd_class("time"); cd_text("00:00.00"); cd_name_text(time_text = cd_id_new()); cd_close();
 

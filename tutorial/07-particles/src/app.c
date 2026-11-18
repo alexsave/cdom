@@ -196,30 +196,10 @@ static void on_pause(const cd_event_rec *, void *) {
   cd_set_text_node(pause_text, playing ? "Pause" : "Play");
 }
 
-/* The page's look. The canvas keeps its night colour in both schemes: the page around it follows them. */
-static void style(void) {
-  cd_open("style");
-  cd_text(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
-          "body { margin: 0; }"
-          "button { font: inherit; color: inherit; cursor: pointer; background: light-dark(#ffffff, #2a2a2e);"
-          "  border: 1px solid light-dark(#8a8a8f, #6e6e73); border-radius: 0.375rem; }"
-          "button:focus-visible { outline: 2px solid light-dark(#1f5fd0, #8ab4ff); outline-offset: 1px; }"
-          ".sky { max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }"
-          ".sky h1 { margin: 0 0 1rem; font-size: 1.75rem; font-weight: 600; }"
-            /* The canvas is 320 px wide in its attributes, so it is 16:10 at any width. box-shadow draws its edge
-             * without taking any space, so the picture keeps its exact 16:10 box. */
-          ".view { display: block; width: 100%; max-width: 40rem; height: auto; aspect-ratio: 16 / 10;"
-          "  image-rendering: pixelated; background: #0b1020; border-radius: 0.5rem;"
-          "  box-shadow: 0 0 0 1px light-dark(#c9c9d1, #3a3a3e); }"
-          ".controls { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; }"
-          ".controls button { min-width: 6rem; font-size: 1.125rem; padding: 0.5rem 1rem; }"
-          ".count { color: light-dark(#5a5a60, #a1a1a8); font-variant-numeric: tabular-nums; }");
-  cd_close();
-}
+/* The page's CSS is src/app.css. The build puts every .css file under src/ in a <style> in the page's
+ * <head>, so the page is styled before this code runs. */
 
 void cd_main(void) {
-  style();
-
   cd_open("main"); cd_class("sky");
   cd_open("h1"); cd_text("Particles"); cd_close();
   canvas = cd_open_id("canvas"); cd_class("view");

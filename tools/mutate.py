@@ -18,6 +18,7 @@ CANVAS = ['node', 'tools/canvas.mjs']
 FRESH = ['node', 'tools/legacyfresh.mjs']
 ALLOC = ['node', 'tools/alloc.mjs']
 PAGE = ['tests/page/run.sh']
+TUT = ['tutorial/run.sh']
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -486,6 +487,9 @@ M = [
   ('css-no-mark-silent', 'tools/cdpage.c', '  if (sheets.n && !css_marks) {', '  if (0) {', LINK, 'FAIL an own page with no /*CDOM_CSS*/ took'),
   ('css-sort-reversed-chrome', 'tools/cdpage.c', 'return strcmp(((const Sheet *)a)->rel, ((const Sheet *)b)->rel);', 'return strcmp(((const Sheet *)b)->rel, ((const Sheet *)a)->rel);', LINK, 'FAIL the last stylesheet in byte order of its path'),
   ('css-unescaped-chrome', 'tools/cdpage.c', '      if (p[i] == \'<\' && i + 1 < n && p[i + 1] == \'/\' && starts_ci(p + i + 2, n - i - 2, "style")) { bstr(o, "<\\\\/"); i++; continue; }\n', '', LINK, 'FAIL the </style in a string reads back exactly'),
+  # The lessons' stylesheets (tutorial/run.sh): styled before the app starts, and no <style> built by C
+  ('cdpage-no-css', 'tools/cdpage.c', '      bput(o, css.p, css.n);\n      continue;\n', '      continue;\n', TUT, 'FAIL 01-hello: styled before the app started'),
+  ('lesson-builds-style', 'tutorial/01-hello/src/app.c', 'void cd_main(void) {\n', 'void cd_main(void) {\n  cd_open("style"); cd_text("body { margin: 0; }"); cd_close();\n', TUT, 'FAIL 01-hello: the app builds no <style>'),
   # The starter (make new, tools/new.sh), built and opened from disk (tests/link/run.sh, tools/starter.mjs)
   ('new-not-centered', 'tools/new.sh', ' justify-content: center; }', ' }', LINK, 'FAIL "cdom" is centered'),
   ('new-separate', 'tools/new.sh', 'APP_PAGE := build/index.html\n', 'APP_PAGE := build/index.html\nAPP_WASM_SEPARATE := 1\n', LINK, "FAIL the starter's page does not start its bundled module"),

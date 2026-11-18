@@ -1,0 +1,115 @@
+/* Lesson 5's styles. The build writes every .css file under src/ into the page's <head>. */
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+body {
+  margin: 0;
+}
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: light-dark(#ffffff, #2a2a2e);
+  border: 1px solid light-dark(#8a8a8f, #6e6e73);
+  border-radius: 0.375rem;
+}
+input:focus, button:focus-visible {
+  outline: 2px solid light-dark(#1f5fd0, #8ab4ff);
+  outline-offset: 1px;
+}
+.todo {
+  max-width: 32rem;
+  margin: 3rem auto;
+  padding: 0 1rem;
+}
+.add {
+  display: flex;
+  gap: 0.5rem;
+}
+.add .new {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 1.125rem;
+  padding: 0.5rem 0.75rem;
+  color: inherit;
+  background: light-dark(#ffffff, #1c1c1e);
+  border: 1px solid light-dark(#8a8a8f, #6e6e73);
+  border-radius: 0.375rem;
+}
+.add button {
+  font-size: 1.125rem;
+  padding: 0.5rem 1rem;
+}
+.items {
+  list-style: none;
+  margin: 1.5rem 0 0;
+  padding: 0;
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.25rem;
+  border-bottom: 1px solid light-dark(#e5e5ea, #3a3a3e);
+}
+.item input {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  accent-color: light-dark(#1f5fd0, #8ab4ff);
+}
+.item .text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 1.125rem;
+}
+.item.done .text {
+  color: light-dark(#8a8a8f, #8e8e93);
+  text-decoration: line-through;
+}
+.item .remove {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  font-size: 1.25rem;
+  line-height: 1;
+  color: light-dark(#5a5a60, #a1a1a8);
+  background: none;
+  border-color: transparent;
+}
+.item .remove:hover {
+  color: light-dark(#c4302b, #ff8a85);
+}
+footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 1rem;
+  color: light-dark(#5a5a60, #a1a1a8);
+}
+footer .left {
+  flex: 1;
+}
+.filters {
+  display: flex;
+  gap: 0.25rem;
+}
+.filters button, footer .clear {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.9375rem;
+}
+.filters button[aria-pressed=true] {
+  color: light-dark(#1f5fd0, #8ab4ff);
+  border-color: light-dark(#1f5fd0, #8ab4ff);
+  font-weight: 600;
+}
+footer .clear {
+  background: none;
+  border-color: transparent;
+}

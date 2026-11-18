@@ -1,6 +1,6 @@
 # The cdom tutorial
 
-Seven small apps, each a lesson, each one C file that builds into one HTML page.
+Seven small apps, each a lesson, each a C file and its stylesheet that build into one HTML page.
 Every lesson puts the same app in React next to it, so you can read cdom in terms you already know.
 
 | Lesson | What it teaches | The React it replaces | Page, brotli |
@@ -26,7 +26,7 @@ make -C tutorial/02-counter
 open tutorial/02-counter/build/index.html     # one file; it opens from disk
 ```
 
-Each lesson's directory is a complete app, laid out as `make new` lays one out: a `Makefile` that includes `cdom.mk`, and `src/app.c`.
+Each lesson's directory is a complete app, laid out as `make new` lays one out: a `Makefile` that includes `cdom.mk`, `src/app.c`, and `src/app.css`, which the build writes into the page's `<head>`.
 Copy one to start your own, and set `CDOM` in its Makefile to where cdom is.
 
 ## How cdom differs from React, in one page
