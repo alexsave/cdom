@@ -37,9 +37,11 @@ static void on_input(const cd_event_rec *, void *) {
   char name[NAME_CAP];
   uint32_t n = cd_input_text(input, name, sizeof name);   /* the value, as UTF-8 */
   ...
-  char greeting[7 + NAME_CAP + 1 + 1];
-  snprintf(greeting, sizeof greeting, "Hello, %.*s!", (int)n, name);
-  cd_set_text_node(greeting_text, greeting);  /* a new string per keystroke */
+  char greeting[7 + NAME_CAP + 1];
+  memcpy(greeting, "Hello, ", 7);
+  memcpy(greeting + 7, name, n);
+  greeting[7 + n] = '!';
+  cd_set_text_node(greeting_text, cd_tmp(greeting, 8 + n));  /* a new string per keystroke */
   ...
 }
 
@@ -61,9 +63,8 @@ void cd_main(void) {
   Nothing is kept in sync, and the cursor never jumps, because C never writes the field.
 - **Derived state is computed in the handler.** React computes `count` and the greeting during render from `name`.
   Here the one handler that changes the value also writes the two text nodes, so there is no derived-state hook and nothing can be stale.
-- **`snprintf` for strings that change every keystroke.** Each greeting is a new string, built in a buffer.
-  A literal lives in the page's string table, but a string like this is not one, so cdom reads the buffer from C memory when the call runs.
-  The name has a length and no terminator, so `%.*s` takes exactly `n` bytes of it, and `snprintf` ends the greeting with a 0.
+- **`cd_tmp` for strings that change every keystroke.** Each greeting is a new string, built in a buffer with a length.
+  A literal lives in the page's string table, but a string like this is not one, so `cd_tmp(greeting, len)` hands cdom the bytes and cdom reads them when the call runs.
   Nothing is kept, so the next keystroke can overwrite the buffer.
 - **Bytes are not characters.** `cd_input_text` returns UTF-8 bytes, so "Zoë" is four bytes.
   The count takes the characters by skipping continuation bytes (`(b & 0xC0) == 0x80`).

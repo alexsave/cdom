@@ -3,7 +3,7 @@
  * so there is no value to keep in sync and no cursor to move. The greeting and the count are derived from
  * the value in the handler, the one place the value changes. */
 #include "cdom.h"
-#include <stdio.h>
+#include <string.h>
 
 
 /* The field's value is copied out only for the length of one handler. A value longer than this is cut to
@@ -33,16 +33,21 @@ static void on_input(const cd_event_rec *, void *) {
   if (n == 0) {
     cd_set_text_node(greeting_text, "Hello, stranger!");
   } else {
-    /* The name has a length and no terminator, so %.*s takes exactly n bytes of it. */
-    char greeting[7 + NAME_CAP + 1 + 1]; /* "Hello, ", the name, "!", and the 0 */
-    snprintf(greeting, sizeof greeting, "Hello, %.*s!", (int)n, name);
-    cd_set_text_node(greeting_text, greeting);
+    char greeting[7 + NAME_CAP + 1];
+    memcpy(greeting, "Hello, ", 7);
+    memcpy(greeting + 7, name, n);
+    greeting[7 + n] = '!';
+    /* cd_tmp: the greeting is bytes with a length and no terminator, and it is read when it is used. */
+    cd_set_text_node(greeting_text, cd_tmp(greeting, 8 + n));
   }
 
   uint32_t chars = characters_in(name, n);
-  char count[24]; /* up to 10 digits, a space, "characters" (10), and the 0 */
-  snprintf(count, sizeof count, "%u %s", chars, chars == 1 ? "character" : "characters");
-  cd_set_text_node(count_text, count);
+  char count[24 + 12];
+  uint32_t digits = cd_fmt(count, (int32_t)chars, 0, CD_UNIT_NONE);
+  const char *word = chars == 1 ? " character" : " characters";
+  uint32_t word_len = (uint32_t)strlen(word);
+  memcpy(count + digits, word, word_len);
+  cd_set_text_node(count_text, cd_tmp(count, digits + word_len));
 }
 
 static void style(void) {
