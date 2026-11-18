@@ -1,5 +1,7 @@
 <!doctype html><html><head><meta charset="utf-8"><title>unit</title></head><body><div id="m"></div>
-<script src="cdom.js"></script><script>
+<script>
+/*CDOM_SHIM*/
+</script><script>
 // Runs tests/unit.c's cases and checks them; tools/unit.mjs reads window.RESULT, then drives the
 // resize and the network from outside. The imports are wrapped only to see what crosses after an
 // entry returns (the auto-flush check).
@@ -222,7 +224,7 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     });
   }
   check('options.seed is cd_seed, so one line makes a run deterministic', () => (x.t_seed() >>> 0) === 0xdeadbeef || x.t_seed() >>> 0);
-  const shimSource = await (await fetch('cdom.js')).text();
+  const shimSource = document.scripts[0].textContent; // the shim the page inlined, the one it runs
   check('the shim draws no stray random: no Math.random, no Date.now seed', () =>
     !/Math\.random|Date\.now\(\)\s*[^;]*seed/.test(shimSource) || 'found one');
   // The shim's view of C's structs (unit.c 31): each field of the event record, C's cd_val and viewport.

@@ -22,15 +22,22 @@ node "$here/../tools/minshim.mjs" check
 wasm -O2 "$here/out/listfuzz.wasm" "$here/listfuzz.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 wasm -O2 "$here/out/unit.wasm" "$here/unit.c" "$here/../src/cdom.c" "$here/../src/cdom_net.c" "$here/../src/cdom_store.c" "$here/../src/cdom_audio.c" "$here/../src/cdom_random.c" "$here/../src/cdom_url.c" "$here/../src/cdom_locale.c" "$here/../src/cdom_share.c" "$here/../src/cdom_fonts.c" "$here/../src/mini.c"
 wasm -Oz "$here/out/click.wasm" -Wl,--strip-all "$here/../demo/click.c" "$here/../src/cdom.c" "$here/../src/cdom_audio.c" "$here/../src/mini.c"
-cp "$here/unit.html" "$here/../demo/click.html" "$here/../shim/cdom.js" "$here/out/"
+# Every page inlines the unminified shim at its /*CDOM_SHIM*/ line (tools/page.awk), so the tests run the
+# readable shim/cdom.js that tools/mutate.py mutates.
+shim="$here/../shim/cdom.js"
+page() { awk -v shim="$shim" -f "$here/../tools/page.awk" "$1" > "$2.tmp" && mv "$2.tmp" "$2"; }
+page "$here/unit.html" "$here/out/unit.html"
+page "$here/../demo/click.html" "$here/out/click.html"
 # The fuzz page and the legacy page go through the boot, so LEGACY=1 runs them on the wasm2js build.
-node "$legacy" page "$here/listfuzz.html" "$here/out/listfuzz.html"
+page "$here/listfuzz.html" "$here/out/listfuzz.shim.html"
+node "$legacy" page "$here/out/listfuzz.shim.html" "$here/out/listfuzz.html"
 node "$legacy" shim "$here/out/cdom.legacy.js"
 node "$legacy" app "$here/out/listfuzz.wasm" "$here/out/listfuzz.wasm.js"
 wasm -O2 "$here/out/canvas.wasm" "$here/canvas.c" "$here/../src/cdom.c" "$here/../src/mini.c"
-cp "$here/canvas.html" "$here/out/"
+page "$here/canvas.html" "$here/out/canvas.html"
 wasm -O2 "$here/out/host.wasm" "$here/host.c" "$here/../src/cdom.c" "$here/../src/mini.c"
-cp "$here/host.html" "$here/out/"
+page "$here/host.html" "$here/out/host.html"
 wasm -O2 "$here/out/legacy.wasm" "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 node "$legacy" app "$here/out/legacy.wasm" "$here/out/legacy.wasm.js"
-node "$legacy" page "$here/legacy.html" "$here/out/legacy.html"
+page "$here/legacy.html" "$here/out/legacy.shim.html"
+node "$legacy" page "$here/out/legacy.shim.html" "$here/out/legacy.html"
