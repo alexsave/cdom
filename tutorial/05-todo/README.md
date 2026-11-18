@@ -124,5 +124,6 @@ static void item_destroy(void *, cd_item *it) {
 - **The text stays in the todo, unlike the greeting in lesson 3.**
   A todo's text lives as long as the todo, and its row is built again each time the filter changes.
   So the bytes are copied into the todo on add, and each row build passes `cd_tmp(t->text, t->len)`.
-  The greeting in lesson 3 is a `cd_tmp` too, over a buffer that changes on every keystroke.
+  The text here is bytes with a length and no terminator, which is what `cd_tmp` is for.
+  The greeting in lesson 3 is a plain buffer from `snprintf`, which ends in a 0 and needs no length.
   The bytes are read when the row is built and kept nowhere else, so what the user types does not grow any table.

@@ -115,10 +115,10 @@ static void render(void) {
   }
   cd_list_update(&list, keys, n, &TODO_FNS);
 
-  /* The count changes with every edit, so it is bytes with a length: cd_tmp, read by the call that uses it. */
-  char buf[32];
-  int len = snprintf(buf, sizeof buf, "%u %s left", left, left == 1 ? "item" : "items");
-  cd_set_text_node(left_text, cd_tmp(buf, (uint32_t)len));
+  /* The count changes with every edit. snprintf ends the buffer with a 0, so it is passed as it is. */
+  char buf[32]; /* up to 10 digits, a space, "items left" (10), and the 0 */
+  snprintf(buf, sizeof buf, "%u %s left", left, left == 1 ? "item" : "items");
+  cd_set_text_node(left_text, buf);
 }
 
 /* ---- handlers ---- */

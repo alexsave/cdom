@@ -52,7 +52,8 @@ cd_close();                               /* the whole tree enters the page here
   A literal written as the argument itself (`"main"`) is moved out of the module into the page's string table when the app is built, so it costs nothing at run time.
   A string the compiler keeps in read-only data (`FRUITS[i]` from a `const` table, a literal inside a ternary or passed through a helper) stays in the module and is read from C memory once, the first time it is used.
   Anything else, a buffer or a name typed by the user, is read from C memory every time a call uses it, so it is never stale.
-  `cd_tmp(p, len)` is the same for bytes that have a length and no terminator, such as the result of `cd_fmt`.
+  Text built with `snprintf` is such a buffer: it ends in a 0, so it is passed as it is.
+  `cd_tmp(p, len)` is only for bytes that have a length and no terminator.
 - `cd_main` starts building at the end of the mount (`<div id="app">`).
   `cd_at(parent, before)` is only for building somewhere else; `CD_APPEND` is its `before` for "at the end".
 - The tree is built off the page and enters it in one step, when its root (`main`) closes.

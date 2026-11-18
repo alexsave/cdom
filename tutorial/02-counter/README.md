@@ -62,5 +62,7 @@ void cd_main(void) {
   A parameter a handler does not use goes unnamed, since cdom builds as C23: `step` takes the event as `const cd_event_rec *` and no name.
 - **One listener.** The shim puts a single click listener on the mount and passes each click to C, which finds the handler; buttons have no listener of their own.
 - **Wire after building.** The handlers are registered once the tree is built, which keeps the building code a plain description of the page.
-- **Numbers without printf.** `cd_set_text_node_num` sends a number as it is, and `cd_fmt` writes a signed one as JavaScript would.
-  `cd_tmp(buf, n)` hands cdom the bytes of the result, which it reads when the call runs, so a value that keeps changing is never stale.
+- **Numbers with snprintf.** `show` writes the count with `snprintf(buf, sizeof buf, "%d", count)`, which also puts the terminating 0 in `buf`.
+  The buffer goes to `cd_set_text_node` as it is, and cdom reads it when the call runs, so a value that keeps changing is never stale.
+  cdom's own `snprintf` (`src/libc/stdio.h`) takes integers and strings, and `cd_fmt` is there for numbers with decimals.
+  `cd_set_text_node_num` sends an unsigned number with no buffer at all, for a text that is only that number.

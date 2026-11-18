@@ -45,17 +45,17 @@ static uint32_t hundredths(double ms) {
 }
 
 /* MM:SS.cc, each part zero-padded. Minutes take more digits past 99, as they should. */
-static uint32_t format_time(char *buf, uint32_t cs) {
-  int n = snprintf(buf, 16, "%02u:%02u.%02u", cs / 6000, (cs / 100) % 60, cs % 100);
-  return (uint32_t)n;
+#define TIME_CAP 16 /* 7 digits of minutes at most, ":SS.cc", and the 0 */
+static void format_time(char *buf, uint32_t cs) {
+  snprintf(buf, TIME_CAP, "%02u:%02u.%02u", cs / 6000, (cs / 100) % 60, cs % 100);
 }
 
-/* The view of the clock: one text write. The text is bytes with a length (cd_tmp), read when it is
- * used, so it is never stale. */
+/* The view of the clock: one text write. The buffer is read from C memory when it is used, so it is never
+ * stale. */
 static void show(uint32_t cs) {
-  char buf[16];
-  uint32_t n = format_time(buf, cs);
-  cd_set_text_node(time_text, cd_tmp(buf, n));
+  char buf[TIME_CAP];
+  format_time(buf, cs);
+  cd_set_text_node(time_text, buf);
   shown_cs = cs;
 }
 
@@ -81,13 +81,13 @@ static void sync(void) {
  * the row is created, so no lap is kept anywhere else. */
 static cd_id lap_create(void *, uint32_t i, uint32_t *data) {
   uint32_t n = keys[i];
-  char name[16], split[16];
-  uint32_t name_len = (uint32_t)snprintf(name, sizeof name, "Lap %u", n);
-  uint32_t split_len = format_time(split, split_cs[n - 1]);
+  char name[16], split[TIME_CAP]; /* "Lap " and up to 10 digits, and the 0 */
+  snprintf(name, sizeof name, "Lap %u", n);
+  format_time(split, split_cs[n - 1]);
 
   cd_id row = cd_open_id("li");
-  cd_open("span"); cd_class("name"); cd_text(cd_tmp(name, name_len)); cd_close();
-  cd_open("span"); cd_class("split"); cd_text(cd_tmp(split, split_len)); cd_close();
+  cd_open("span"); cd_class("name"); cd_text(name); cd_close();
+  cd_open("span"); cd_class("split"); cd_text(split); cd_close();
   cd_close();
   *data = 0; /* a row keeps nothing of its own: no ids and no handlers */
   return row;

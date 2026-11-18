@@ -138,13 +138,13 @@ static void paint_particles(void) {
 }
 
 /* The count text: one write, and only when the count changed. The text changes with the count, so it
- * is bytes with a length (cd_tmp), read when it is used. */
+ * is a buffer, read from C memory when it is used. */
 static void show_count(void) {
   if (nparts == shown_count) return;
   shown_count = nparts;
-  char buf[24];
-  uint32_t n = (uint32_t)snprintf(buf, sizeof buf, "%u particles", nparts);
-  cd_set_text_node(count_text, cd_tmp(buf, n));
+  char buf[24]; /* up to 10 digits, " particles" (10), and the 0 */
+  snprintf(buf, sizeof buf, "%u particles", nparts);
+  cd_set_text_node(count_text, buf);
 }
 
 /* What the screen shows: fade, paint, one blit. */
