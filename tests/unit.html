@@ -289,8 +289,18 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     const grew = x.t_style(400);
     const st = $('#style > div').style;
     const r = [st.left === '399px', st.top === '399.5px', st.color === 'red', st.width === '12.25em', st.opacity === '0.5',
-      $('#style > div').dataset.t === 'one-off é', grew === 10];
+      $('#style > div').dataset.t === 'one-off é', grew === 7];
     return r.every(Boolean) || JSON.stringify(r) + ' grew ' + grew;
+  });
+  check('every unit through cd_set_style_num reads back as its text, and as cd_fmt writes it', () => {
+    const units = ['', 'px', '%', 'deg', 'em', 'rem', 'vw', 'vh', 'ms', 's', 'rad'];
+    const count = x.t_units();
+    const el = $('#units > div'), r = [count === units.length];
+    for (let i = 0; i < units.length; i++) {
+      const got = el.style.getPropertyValue('--u' + i), fmt = el.getAttribute('data-u' + i);
+      if (got !== '5' + units[i] || fmt !== got) r.push(i + ': ' + JSON.stringify([got, fmt]));
+    }
+    return r.length === 1 && r[0] || r.join('; ');
   });
   check('a transient used after another op crossed traps', () => {
     try { x.t_tmp_stale(); return 'no trap'; } catch (e) { return e instanceof WebAssembly.RuntimeError || String(e); }

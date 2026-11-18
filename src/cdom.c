@@ -456,12 +456,11 @@ void cd_set_text_node_num(cd_id id, uint32_t n) { ready(); j_set_text_num(id, n)
 void cd_set_attr(cd_id id, cd_str name, cd_str v) { uint32_t b = ref_text(v), a = ref_name(name); ready(); j_set_attr(id, a, b); }
 void cd_set_class(cd_id id, cd_str v) { uint32_t a = ref_text(v); ready(); j_set_class(id, a); }
 void cd_set_style(cd_id id, cd_str prop, cd_str v) { uint32_t b = ref_text(v), a = ref_name(prop); ready(); j_style(id, a, b); }
-static cd_str unit_ids[CD_UNITS];
+/* The unit crosses as its index; the shim's UNITS list has the same order as CD_UNIT_* and UNIT_STR. */
 void cd_set_style_num(cd_id id, cd_str prop, double v, uint32_t unit) {
   if (unit >= CD_UNITS) __builtin_trap();
-  if (!unit_ids[unit]) unit_ids[unit] = cd_internz(UNIT_STR[unit]);
-  uint32_t a = ref_name(prop), u = ref_name(unit_ids[unit]);
-  ready(); j_style_num(id, a, v, u);
+  uint32_t a = ref_name(prop);
+  ready(); j_style_num(id, a, v, unit);
 }
 void cd_encode_image_in(const uint8_t *px, uint32_t w, uint32_t h, uint32_t n, uint32_t W, uint32_t H, uint32_t x,
                         uint32_t y, cd_str mime, uint32_t token) {

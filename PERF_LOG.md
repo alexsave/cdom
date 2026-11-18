@@ -427,6 +427,7 @@ The shim's `open` now counts the open SVG elements: `svgDepth || name === "svg"`
 The earlier entry (SVG: C tracks the namespace, measured) found C 7 ns per open ahead of a JS check of the tag and the parent's `namespaceURI`.
 That check read the DOM; this one is a counter and one string compare, so the gap is expected to be smaller.
 The reason is not speed: literal bytes leave the module in a later step of the strings design (docs/strings-design.md), so C cannot compare a tag with "svg" any more.
+Units move with it: `cd_set_style_num` passes the unit's index and the shim has the `UNITS` list, so C no longer interns a unit string (`UNIT_STR` stays in C for `cd_fmt`).
 
 ## Bridge designs compared (2026-11-01)
 

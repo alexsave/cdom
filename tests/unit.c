@@ -364,7 +364,28 @@ EXPORT("t_style") uint32_t t_style(uint32_t n) {
   cd_set_style_num(styled, L("opacity"), 0.5, CD_UNIT_NONE);
   cd_set_attr(styled, L("data-t"), cd_tmpz("one-off \xc3\xa9"));
   cd_flush();
-  return cd_str_count() - before; /* the 7 literals and 3 units above (10), none of the n values */
+  return cd_str_count() - before; /* the 7 literals above, none of the n values */
+}
+/* Each unit through cd_set_style_num, on a custom property so the browser keeps the text as given.
+ * The same value goes through cd_fmt into an attribute: the page compares the two with a list of its
+ * own, so the shim's UNITS, C's UNIT_STR and the CD_UNIT_* order cannot drift apart. */
+static cd_id unit_el;
+EXPORT("t_units") uint32_t t_units(void) {
+  cd_id s = section("units");
+  cd_at(s, 0);
+  cd_open(L("div")); cd_name_open(unit_el = cd_id_new()); cd_close();
+  char prop[16], attr[16], val[16];
+  for (uint32_t u = 0; u < CD_UNITS; u++) {
+    uint32_t n = cd_fmt(prop + 3, (int32_t)u, 0, CD_UNIT_NONE);
+    prop[0] = '-'; prop[1] = '-'; prop[2] = 'u';
+    cd_set_style_num(unit_el, cd_tmp(prop, 3 + n), 5, u);
+    __builtin_memcpy(attr, "data-u", 6);
+    cd_fmt(attr + 6, (int32_t)u, 0, CD_UNIT_NONE);
+    uint32_t k = cd_fmt(val, 5, 0, u);
+    cd_set_attr(unit_el, cd_tmp(attr, 6 + n), cd_tmp(val, k));
+  }
+  cd_flush();
+  return CD_UNITS;
 }
 EXPORT("t_tmp_stale") void t_tmp_stale(void) {
   cd_str t = cd_tmpz("stale");

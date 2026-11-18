@@ -31,6 +31,8 @@ var cdom = (() => {
   const DETACHED = 0xffffffff;  // "no insertion parent" for at()
   const SMALL = 64;             // string batches up to this many bytes are decoded char by char
   const SVG = "http://www.w3.org/2000/svg";
+  // The CSS units, in the order of cdom.h's CD_UNIT_* and cdom.c's UNIT_STR (tests/unit.c checks all three).
+  const UNITS = ["", "px", "%", "deg", "em", "rem", "vw", "vh", "ms", "s", "rad"];
   const doc = document;
   const textDecoder = new TextDecoder();
   const textEncoder = new TextEncoder();
@@ -437,7 +439,7 @@ var cdom = (() => {
     nodes[id].style.setProperty(stringOf(property), stringOf(value));
   }
   function style_num(id, property, number, unit) {
-    nodes[id].style.setProperty(stringOf(property), number + stringOf(unit));
+    nodes[id].style.setProperty(stringOf(property), number + UNITS[unit]);
   }
   // Pixels in C memory (channels bytes each: RGBA, or RGB and opaque), at (x, y) in an image of
   // fullWidth x fullHeight, to an image file: copied now, encoded off the call, the file's bytes

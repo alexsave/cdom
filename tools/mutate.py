@@ -22,6 +22,8 @@ M = [
   ('svg-off', 'shim/cdom.js', 'if (svgDepth || name === "svg") {', 'if (svgDepth || name === "svgx") {', UNIT, 'FAIL svg and its'),
   ('svg-no-pop', 'shim/cdom.js', '    if (svgDepth) {\n      svgDepth--;\n    }\n', '', UNIT, 'FAIL svg and its'),
   ('svg-clone-depth', 'shim/cdom.js', '    if (svgDepth) {\n      svgDepth++;\n    }\n    push(templates', '    push(templates', UNIT, 'FAIL svg and its'),
+  ('units-swap', 'shim/cdom.js', '"px", "%", "deg"', '"%", "px", "deg"', UNIT, 'FAIL every unit through cd_set_style_num'),
+  ('units-offset', 'shim/cdom.js', 'number + UNITS[unit]', 'number + UNITS[unit + 1]', UNIT, 'FAIL every unit through cd_set_style_num'),
   ('timer-no-flush', 'src/cdom.c', '((cd_timer_fn)fn)(ctx);\n  cd_flush();', '((cd_timer_fn)fn)(ctx);', UNIT, 'FAIL the timer and frame exports flush'),
   ('raf-no-flush', 'src/cdom.c', 'else cd_on_raf(token, t);\n  cd_flush();', 'else cd_on_raf(token, t);', UNIT, 'FAIL the timer and frame exports flush'),
   ('ws-open-no-flush', 'src/cdom_net.c', '((cd_ws_fn)fn)(ctx, id, CD_WS_OPEN, 0, 0);\n  cd_flush();', '((cd_ws_fn)fn)(ctx, id, CD_WS_OPEN, 0, 0);', UNIT, 'FAIL net'),
