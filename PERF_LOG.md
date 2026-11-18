@@ -420,6 +420,14 @@ Two decisions of 2026-11-08: cdom and its sibling C library have zero edges betw
 - Cost, measured against main's entry built beside it (bench/build.sh into a scratch jfb, served on a free port), interleaved, three rounds at loads 13-16: tools/evcost.mjs 7,625 / 7,640 / 7,830 ns per click on main against 7,570 / 7,580 / 7,725 here; tools/quick.mjs run1k 2.0 / 2.0 / 1.9 ms against 1.7 / 1.7 / 1.7, replace1k 2.2 / 2.0 / 2.0 against 2.1 / 1.9 / 2.0, create10k 18.0 / 15.9 / 16.5 against 18.0 / 16.1 / 16.5, the rest at the timer floor for both: the same within the noise.
 - Bytes: the shim grows 14,387 -> 14,891 minified (5,444 -> 5,626 brotli at q11, 6,063 -> 6,290 gzip at -9; main measured in the same terser run), the 29 names the map fills and their reads at start; app.wasm (-Oz) 10,630 -> 10,725, the block being data the linker fills rather than code (as 31 stores at start it was 10,821).
 
+### SVG detection moves to the shim (2026-11-17)
+
+`open_svg`, C's `svg_tag` and `svg_depth`, and `micro/svg/` are gone.
+The shim's `open` now counts the open SVG elements: `svgDepth || name === "svg"` makes the element with `createElementNS`, `clone` adds one inside an SVG, `close` takes one off.
+The earlier entry (SVG: C tracks the namespace, measured) found C 7 ns per open ahead of a JS check of the tag and the parent's `namespaceURI`.
+That check read the DOM; this one is a counter and one string compare, so the gap is expected to be smaller.
+The reason is not speed: literal bytes leave the module in a later step of the strings design (docs/strings-design.md), so C cannot compare a tag with "svg" any more.
+
 ## Bridge designs compared (2026-11-01)
 
 One import per DOM operation stays: a generic dispatcher, a function table, natively bound imports, fused operations, the old op list and the Fast API were each measured against it on real pages and none was faster beyond the noise. Why, and what does help, is in BRIDGE.md; the benchmark is at the tag bridge-bench-2026-11-01.

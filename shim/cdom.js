@@ -87,6 +87,7 @@ var cdom = (() => {
   let valNum;
   let valU;
   let depth = 0;            // how many elements are open
+  let svgDepth = 0;         // how many of them are the <svg> or inside it
   let last = null;          // the node made or walked to last
   let lastElement = null;   // the element opened or cloned last (cd_name_el)
   let lastText = null;      // the text node made last (cd_name_text)
@@ -285,15 +286,22 @@ var cdom = (() => {
     stack[depth++] = element;
     last = lastElement = element;
   }
-  // Opens an element; C says which tags are SVG.
+  // Opens an element. An <svg> and everything opened inside it is made in the SVG namespace, so the
+  // shim counts the open elements that are SVG: one counter and one compare, no read of the DOM.
   function open(tag) {
-    push(doc.createElement(stringOf(tag)));
-  }
-  function open_svg(tag) {
-    push(doc.createElementNS(SVG, stringOf(tag)));
+    const name = stringOf(tag);
+    if (svgDepth || name === "svg") {
+      svgDepth++;
+      push(doc.createElementNS(SVG, name));
+    } else {
+      push(doc.createElement(name));
+    }
   }
   // Closes the open element; the outermost one is placed.
   function close() {
+    if (svgDepth) {
+      svgDepth--;
+    }
     const element = stack[--depth];
     if (!depth) {
       root = element;
@@ -364,6 +372,9 @@ var cdom = (() => {
     root.remove();
   }
   function clone(templateId) {
+    if (svgDepth) {
+      svgDepth++;
+    }
     push(templates[templateId].cloneNode(true));
   }
   function slot(index) {
@@ -1199,7 +1210,7 @@ var cdom = (() => {
     }
     const imports = {
       cdom: {
-        strings, at, open, open_svg, close, text, text_num, attr, class: setClass, name_el, name_text, name_open,
+        strings, at, open, close, text, text_num, attr, class: setClass, name_el, name_text, name_open,
         listen, value, value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num,
         set_text, set_text_num, set_attr, set_class, style, style_num, encode, image_bytes, remove, free, move, clear,
         detach, attach, unlisten, hit, viewport, rect, blit, set, call, get, timer, timer_stop, raf, now, ws_open, ws_send, ws_close, ws_buffered, http, epoch, origin,

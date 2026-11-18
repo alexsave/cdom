@@ -19,9 +19,9 @@ FRESH = ['node', 'tools/legacyfresh.mjs']
 M = [
   ('clone-detached', 'shim/cdom.js', '    push(templates[templateId].cloneNode(true));',
    '    const element = templates[templateId].cloneNode(true);\n    stack[depth++] = element;\n    last = element;', UNIT, 'FAIL clone inside'),
-  ('svg-off', 'src/cdom.c', 'if (svg_depth || tag == svg_tag) {', 'if (0 && tag == svg_tag) {', UNIT, 'FAIL svg and its'),
-  ('svg-no-pop', 'src/cdom.c', 'void cd_close(void) { if (svg_depth) svg_depth--;', 'void cd_close(void) {', UNIT, 'FAIL svg and its'),
-  ('svg-clone-depth', 'src/cdom.c', 'void cd_clone(uint32_t t) { if (svg_depth) svg_depth++;', 'void cd_clone(uint32_t t) {', UNIT, 'FAIL svg and its'),
+  ('svg-off', 'shim/cdom.js', 'if (svgDepth || name === "svg") {', 'if (svgDepth || name === "svgx") {', UNIT, 'FAIL svg and its'),
+  ('svg-no-pop', 'shim/cdom.js', '    if (svgDepth) {\n      svgDepth--;\n    }\n', '', UNIT, 'FAIL svg and its'),
+  ('svg-clone-depth', 'shim/cdom.js', '    if (svgDepth) {\n      svgDepth++;\n    }\n    push(templates', '    push(templates', UNIT, 'FAIL svg and its'),
   ('timer-no-flush', 'src/cdom.c', '((cd_timer_fn)fn)(ctx);\n  cd_flush();', '((cd_timer_fn)fn)(ctx);', UNIT, 'FAIL the timer and frame exports flush'),
   ('raf-no-flush', 'src/cdom.c', 'else cd_on_raf(token, t);\n  cd_flush();', 'else cd_on_raf(token, t);', UNIT, 'FAIL the timer and frame exports flush'),
   ('ws-open-no-flush', 'src/cdom_net.c', '((cd_ws_fn)fn)(ctx, id, CD_WS_OPEN, 0, 0);\n  cd_flush();', '((cd_ws_fn)fn)(ctx, id, CD_WS_OPEN, 0, 0);', UNIT, 'FAIL net'),

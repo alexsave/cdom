@@ -13,7 +13,7 @@ if [ "${#CDOM_CFLAGS[@]}" -lt 3 ] || [ "${#CDOM_LDFLAGS[@]}" -lt 1 ]; then
   echo "FAIL cdom.mk gave no CDOM_CFLAGS or CDOM_LDFLAGS" >&2; exit 1
 fi
 # The scripts that build cdom modules. Each must take the set from here, never write a flag of it.
-CDOM_FLAG_USERS=(tests/build.sh tests/link/run.sh bench/build.sh micro/svg/run.sh)
+CDOM_FLAG_USERS=(tests/build.sh tests/link/run.sh bench/build.sh)
 cdom_flags_gate() {
   local bad=0 f w n
   for f in "${CDOM_FLAG_USERS[@]}"; do

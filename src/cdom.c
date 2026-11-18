@@ -102,7 +102,6 @@ void *cd_realloc(void *p, uint32_t n) {
 IMPORTS("strings") void j_strings(uint32_t n, uint32_t nbytes);
 IMPORTS("at") void j_at(cd_id parent, cd_id before);
 IMPORTS("open") void j_open(uint32_t tag);
-IMPORTS("open_svg") void j_open_svg(uint32_t tag);
 IMPORTS("close") void j_close(void);
 IMPORTS("text") void j_text(uint32_t s);
 IMPORTS("text_num") void j_text_num(uint32_t n);
@@ -227,7 +226,6 @@ static uint32_t utf16_len(const char *s, uint32_t len) {
 }
 
 static uint32_t push_str(cd_str s, uint32_t dest);
-static cd_str svg_tag; /* "svg", once interned: cd_open compares ids, not bytes */
 cd_str cd_intern(const char *s, uint32_t len) {
   uint32_t h = hash_bytes(s, len);
   if (hcap) {
@@ -255,7 +253,6 @@ cd_str cd_intern(const char *s, uint32_t len) {
   strs[id] = (str_ent){pool_len, len, u16, h};
   pool_len += len;
   htab_put(h, id);
-  if (len == 3 && s[0] == 's' && s[1] == 'v' && s[2] == 'g') svg_tag = id;
 #if CDOM_INTERN_TEXT
   /* Queued now, not at first use: strings are interned in bursts (a list's labels) and then
    * used one call each, so they decode together in the call before the first use. */
@@ -390,15 +387,9 @@ void cd_at(cd_id parent, cd_id before) {
   at_parent = parent;
   at_before = before;
 }
-/* Open elements inside an <svg>, the <svg> itself included: an id compare here rather than a
- * tag compare per open in JS (PERF_LOG.md, SVG). */
-static uint32_t svg_depth;
-void cd_open(cd_str tag) {
-  uint32_t t = ref_name(tag);
-  ready();
-  if (svg_depth || tag == svg_tag) { svg_depth++; j_open_svg(t); } else j_open(t);
-}
-void cd_close(void) { if (svg_depth) svg_depth--; ready(); j_close(); }
+/* The shim says which elements are SVG (it counts the open ones), so C does not look at the tag. */
+void cd_open(cd_str tag) { uint32_t t = ref_name(tag); ready(); j_open(t); }
+void cd_close(void) { ready(); j_close(); }
 void cd_text(cd_str s) { uint32_t v = ref_text(s); ready(); j_text(v); }
 void cd_text_num(uint32_t n) { ready(); j_text_num(n); }
 void cd_attr(cd_str name, cd_str v) { uint32_t b = ref_text(v), a = ref_name(name); ready(); j_attr(a, b); }
@@ -433,7 +424,7 @@ void cd_tpl_save(uint32_t t) {
   if (t < CD_TPLS) __builtin_memset(slot_kind[t], 0, CD_SLOTS);
   ready(); j_tpl_save(t);
 }
-void cd_clone(uint32_t t) { if (svg_depth) svg_depth++; ready(); j_clone(t); }
+void cd_clone(uint32_t t) { ready(); j_clone(t); }
 void cd_slot(uint32_t k) {
   if (k >= CD_SLOTS) __builtin_trap();
   ready(); j_slot(k);
