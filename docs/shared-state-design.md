@@ -1,6 +1,6 @@
 # Shared state: views that follow data owned somewhere else
 
-Status: design, written 2026-11-18, not approved; nothing in `src/` or `shim/` is changed by it.
+Status: design written 2026-11-18; approved by Alex the same day with the decisions in "The implementation", and implemented on this branch (`src/cdom.h`, `src/cdom.c`). The shim is unchanged.
 Branch: `shared-state` (worktree `/Users/alex/Dev/cdom-shared-state`), from main at cfee569.
 The prototypes, the tests and the benchmark are under `bench/shared-state/`; `bench/shared-state/run.sh` runs all of it.
 
@@ -1002,6 +1002,37 @@ The pass over unchanged rows is cheap enough at the sizes a page holds (S13), an
    A `cd_watch_key(s, fn, key)` beside `cd_on_key`, for a view inside a row whose ctx is the row's key: now, or when the first case appears.
 8. **When.**
    `cd_state` does not depend on the list design: it can land before it (amgi's `dirty()` wrappers and its three `_changed` calls are its first users) or as that design's step 12, which it replaces.
+
+## The implementation
+
+Alex's decisions (2026-11-18): `cd_state`, `cd_changed` and `cd_watch` in cdom's core; the check build, with its build half; views outermost region first; the amendments to `docs/list-design.md` written in, the list design itself not built; `cd_bind_prop` and `cd_bound_shows_bytes` now; about 0.5 ms per single-row change at 100,000 rows accepted, no key lookup; `ver` 64-bit and no `cd_watch_key`; `cd_state` on its own, before the list design.
+It is in `src/cdom.h` ("shared state") and `src/cdom.c` ("shared state: cd_state, cd_changed, cd_watch"), with its cases in `tests/unit.c` (29) and its mutants in `tools/mutate.py`.
+
+### Predictions for the implementation
+
+Written before the implementation was measured, from the prototype's numbers above.
+Two entries are added to the benchmark: `LI` is `L` on cdom's own `cd_state`, the same source built with `-DCD_STATE_REAL` and no prototype; `EI` is `E` on cdom's own `cd_state`, where a watch belongs to a region, so each row's create shows a region of its own (its parent is the row's `<tr>`, it makes no node) and watches the currency, the selection and the row's own state in its build, and the row's destroy forgets it.
+`A` to `L` are built on cdom's `src/` as it was measured (main at cfee569), so `L` against `LI` in S12 is `cd_dirty`'s scan against its table.
+One run, 5 passes, `E`, `L`, `EI` and `LI` interleaved in each pass (`ENTRIES=E,L,EI,LI`), into `results/implemented/`.
+
+The hypothesis: where the shape is the prototype's (`L`; `E`'s views in regions in S4, S5, S10 and S11), the implementation costs what the prototype did, within the spread; the depth order, the tick and the pass's bookkeeping are a few loads per view.
+Where the real API changes the shape (`EI`'s rows, each a region with a view and three watches on the heap), it costs more than `E` did.
+
+| # | Predicted | Refuted by |
+| --- | --- | --- |
+| S1 | `LI` 1.6 to 1.9 ms (`L` 1.71); `EI` 1.9 to 2.3 (`E` 1.89) | `LI` over 1.2 of `L`, or `EI` over 1.3 of `E`, outside the spread |
+| S2 | `LI` 0.035 to 0.045; `EI` 0.07 to 0.10 (`E` 0.063: it adds a stored tick and a reset per view) | the same |
+| S3 | `LI` 0.035 to 0.045 at 10,000 and 0.38 to 0.6 at 100,000; `EI` 0.0003 to 0.001 at both | `LI` over 1.2 of `L` |
+| S4, S5 | `EI` 0.0019 to 0.003, and 0.17 to 0.22 | `EI` over 1.3 of `E` |
+| S6 | `LI` and `EI`: their S1 plus under 0.02 ms | over S1 plus 0.1 ms |
+| S7 build | `LI` as `L` (9.6); `EI` 10.5 to 12 ms: a region, four allocations and three links a row, 0.1 to 0.2 us | `EI` over 14 ms |
+| S7 take away | `LI` as `L` (1.16); `EI` 2 to 2.5 ms: a forget, three unlinks and four frees a row | `EI` over 3.5 ms |
+| S7 memory | `LI` 0 bytes a row beyond `L`; `EI` 210 to 240 (a 104-byte row struct, with its region and state, and a view and three links of 32 bytes each on the heap) | `EI` under 190 or over 260 |
+| S8 | both under 0.0005 | over 0.001 |
+| S9 | `LI` as `L` in (a1), (a2), (b) and (d); `EI` (c) 13 to 16 ms (`E` 11.4 plus the regions) | `LI` over 1.2 of `L` |
+| S10, S11 | `EI` as `E` (0.675, 0.002) | over 1.3 of `E` |
+| S12 | `cd_dirty`'s table: `LI` 0.02 to 0.06 ms for 1,000 distinct asks and 0.2 to 0.6 for 10,000 (ratio 8 to 14), against the scan's 0.27 and 25.6 in `L`; for 4 asks, `LI` within 1.5 of `L` | `LI` at 10,000 over 1 ms, a ratio over 20, or 4 asks over 1.5 of `L` |
+| S13 (i) | `LI` as `L` (0.038, 0.383) | over 1.2 of `L` |
 
 ## What is in `bench/shared-state/`
 

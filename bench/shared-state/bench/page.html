@@ -41,6 +41,7 @@ const SC = {
   S9d: { n: 10000, op: (x) => x.op_replace_region(), total: 1, one: 1 },
   S10: { n: 0, pre: () => fillTa(), before: keystroke, op: (x) => x.op_big(), total: 1, one: 1 },
   S11: { n: 0, pre: (x) => { fillTa(); x.op_big(); }, op: (x) => x.op_field() },
+  S12_4: { n: 0, op: (x) => x.op_dirty(4) },
   S12_1k: { n: 0, op: (x) => x.op_dirty(1000) },
   S12_10k: { n: 0, op: (x) => x.op_dirty(10000) },
   S13i_10k: { n: 10000, op: (x) => x.op_nochange() },

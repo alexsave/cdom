@@ -1,8 +1,11 @@
 /* E's and L's states and small views (included by entry_e.c and entry_l.c): each state is a cd_state
- * beside its data (the prototype, ../../lib/cd_state.h), its setter ends in cd_changed, and a view
- * watches what it draws from while its region builds (cd_watch, gone with the region) and draws once. */
+ * beside its data (the prototype, ../../lib/cd_state.h; or, built with -DCD_STATE_REAL for the entries EI and
+ * LI, cdom's own in src/cdom.h), its setter ends in cd_changed, and a view watches what it draws from
+ * while its region builds (cd_watch, gone with the region) and draws once. */
 #include "app.h"
+#ifndef CD_STATE_REAL
 #include "cd_state.h"
+#endif
 
 static cd_state currency_state, selected_state, f_state[NF], draft_state, big_state;
 
