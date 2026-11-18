@@ -16,15 +16,18 @@ build() { # name, version note, extra flags...
   local out="$jfb/$name"
   mkdir -p "$out"
   "$CC" $OPT "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror \
-    "${CDOM_LDFLAGS[@]}" -Wl,--strip-all "$@" -o "$out/app.wasm" \
-    "$here/cdom-keyed/src/app.c" "$top/src/cdom.c" "$top/src/mini.c"
+    "${CDOM_LDFLAGS[@]}" -Wl,--strip-all "$@" \
+    -o "$out/app.wasm.linked" "$here/cdom-keyed/src/app.c" "$top/src/cdom.c" "$top/src/mini.c"
+  "$CDOM_LITS" "$out/app.wasm.linked" "$out/app.wasm" "$out/app.wasm.lits"
+  rm -f "$out/app.wasm.linked"
   # The shim is inlined into the page: one request fewer, and it starts the wasm before the stylesheets.
   # It is the committed shim/cdom.min.js, as an app inlines it (tools/minshim.mjs makes it from cdom.js).
   rm -f "$out/cdom.js"
   node "$top/tools/minshim.mjs" check
   # Inlined as cdom.mk's cdom_page does it (tools/page.awk), after the entry's name goes in.
   sed -e "s/cdom-\"keyed\"/$name-\"keyed\"/" "$here/cdom-keyed/index.html" > "$out/index.named.html"
-  awk -v shim="$top/shim/cdom.min.js" -f "$top/tools/page.awk" "$out/index.named.html" > "$out/index.src.html"
+  awk -v shim="$top/shim/cdom.min.js" -v lits="$out/app.wasm.lits" -f "$top/tools/page.awk" "$out/index.named.html" > "$out/index.src.html"
+  rm -f "$out/app.wasm.lits" # inlined in the page now
   rm "$out/index.named.html"
   # The boot goes in a script of its own after the shim's; without WebAssembly it loads these two instead.
   node "$legacy" page "$out/index.src.html" "$out/index.html"

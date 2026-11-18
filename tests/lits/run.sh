@@ -11,11 +11,7 @@ CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"
 CDLITS="$top/tools/out/cdlits"
 mkdir -p "$out" "$top/tools/out"
 . "$top/tools/cdomflags.sh" # CDOM_CFLAGS and CDOM_LDFLAGS, cdom.mk's set for apps
-# What cdom.mk will add to CDOM_LDFLAGS (design, "The page"): the five symbols cdlits reads.
-EXPORTS=(-Wl,--export-if-defined=__start_cd_lits -Wl,--export-if-defined=__stop_cd_lits
-         -Wl,--export-if-defined=__start_cd_chars -Wl,--export-if-defined=__stop_cd_chars
-         -Wl,--export-if-defined=cd_lits_stamp)
-F=("${CDOM_CFLAGS[@]}" -I"$here" -Wall -Wextra -Werror "${CDOM_LDFLAGS[@]}" "${EXPORTS[@]}")
+F=("${CDOM_CFLAGS[@]}" -I"$here" -Wall -Wextra -Werror "${CDOM_LDFLAGS[@]}")
 pass=0
 fail=0
 ok() { echo "ok   $*"; pass=$((pass + 1)); }
