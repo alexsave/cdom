@@ -14,4 +14,6 @@
 #pragma GCC poison cd_http cd_on_http cd_ws_open cd_on_ws_open cd_on_ws_msg cd_on_ws_close
 /* the store: cd_store_get_cb, cd_store_put_cb, cd_store_del_cb (cdom_store.h) */
 #pragma GCC poison cd_store_get cd_store_put cd_store_del cd_on_store cd_on_store_put cd_on_store_del
+/* picked files: cd_file_read_cb, cd_file_fit_cb (cdom_file.h) */
+#pragma GCC poison cd_file_read cd_on_file cd_file_fit cd_on_file_fit
 #endif

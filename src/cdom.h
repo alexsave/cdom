@@ -567,8 +567,8 @@ void cd_on_frame(double ms);         /* the app's hook (empty weak default); ms 
 /* ---- time: answered through the app's hooks (cdom has empty weak defaults) ----
  * Tokens: an app's tokens for cd_timer_start, cd_http and the store (cdom_store.h) stay below
  * CD_TOKEN_CDOM. The tokens from CD_TOKEN_CDOM up are cdom's own: those the _cb forms hand out
- * (cd_timer_cb, cd_http_cb, cd_ws_open_cb, cd_store_get_cb, cd_store_put_cb, cd_store_del_cb), and
- * CD_FRAMES_TOKEN.
+ * (cd_timer_cb, cd_http_cb, cd_ws_open_cb, cd_store_get_cb, cd_store_put_cb, cd_store_del_cb,
+ * cd_file_read_cb, cd_file_fit_cb), and CD_FRAMES_TOKEN.
  * The hooks (cd_on_timer, cd_on_http, cd_on_ws_*, cd_on_store*, cd_on_event) are app-wide, so they are
  * the app's own: a library linked inside an app (an SDK, a client) never defines one, and uses the _cb
  * forms (and cd_on for events), whose answers reach only the callback that asked. */

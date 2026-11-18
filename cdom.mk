@@ -15,7 +15,7 @@
 #   CDOM_LDFLAGS  the link flags of a cdom module
 #   CDOM_SRC      the core sources every app links (cdom.c, and mini.c, the program's libc)
 #   CDOM_NET_SRC, CDOM_STORE_SRC, CDOM_RANDOM_SRC, CDOM_AUDIO_SRC, CDOM_URL_SRC, CDOM_LOCALE_SRC,
-#   CDOM_SHARE_SRC, CDOM_FONTS_SRC, CDOM_UI_SRC
+#   CDOM_SHARE_SRC, CDOM_FONTS_SRC, CDOM_UI_SRC, CDOM_FILE_SRC
 #                 one optional module each (src/cdom_<name>.h), for an app's own rules (APP_MODULES below
 #                 adds them to the APP_WASM rule)
 #   CDOM_SHIM     the minified shim (shim/cdom.min.js) a page inlines
@@ -28,7 +28,7 @@
 #
 #   APP_WASM, APP_SRC, APP_MODULES, APP_CFLAGS, APP_LDFLAGS
 #                 the app's module: $(APP_WASM) is built from $(APP_SRC), $(CDOM_SRC) and the optional
-#                 modules APP_MODULES names (net store random audio url locale share fonts ui: their
+#                 modules APP_MODULES names (net store random audio url locale share fonts ui file: their
 #                 CDOM_<NAME>_SRC) with $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS) $(APP_LDFLAGS)
 #   APP_PAGE, APP_PAGE_SRC, APP_TITLE, APP_WASM_SEPARATE, APP_WASM_URL
 #                 the app's page: $(APP_PAGE) is $(APP_PAGE_SRC) (or, unset, the default page below) with
@@ -117,6 +117,7 @@ CDOM_LOCALE_SRC := $(CDOM)/src/cdom_locale.c
 CDOM_SHARE_SRC  := $(CDOM)/src/cdom_share.c
 CDOM_FONTS_SRC  := $(CDOM)/src/cdom_fonts.c
 CDOM_UI_SRC     := $(CDOM)/src/cdom_ui.c
+CDOM_FILE_SRC   := $(CDOM)/src/cdom_file.c
 CDOM_HEADERS    := $(wildcard $(CDOM)/src/*.h $(CDOM)/src/libc/*.h)
 CDOM_SHIM       := $(CDOM)/shim/cdom.min.js
 
@@ -151,7 +152,7 @@ cdom_mk_page = $(CDOM_PAGE_TOOL) --page $(call cdom_mk_q,$(1)) --out $(call cdom
   --lits $(call cdom_mk_q,$(6))$(if $(3), --wasm $(call cdom_mk_q,$(3)))$(if $(4), --wasm-url $(call cdom_mk_q,$(4)))$(if $(5), --title $(call cdom_mk_q,$(5))) \
   --css-dir src
 
-CDOM_MODULES := net store random audio url locale share fonts ui
+CDOM_MODULES := net store random audio url locale share fonts ui file
 
 # The APP_WASM and APP_PAGE rules. Their targets are the names APP_WASM and APP_PAGE hold, which an app
 # may set after this include, so they are pattern rules (%.wasm and %.html: APP_WASM ends in .wasm,
