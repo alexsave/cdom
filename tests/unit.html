@@ -309,7 +309,7 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: randSeed, check
     });
   }
   check('options.seed is cd_seed, so one line makes a run deterministic', () => (x.t_seed() >>> 0) === 0xdeadbeef || x.t_seed() >>> 0);
-  // The shim the page inlined, the one it runs: the first script after the string table's (tools/page.awk).
+  // The shim the page inlined, the one it runs: the first script after the string table's (tools/cdpage).
   const shimSource = [...document.scripts].map((s) => s.textContent).find((t) => !/^\s*var cdomLits=/.test(t)) || '';
   check('the shim draws no stray random: no Math.random, no Date.now seed', () =>
     (/getRandomValues/.test(shimSource) && !/Math\.random|Date\.now\(\)\s*[^;]*seed/.test(shimSource)) || (shimSource ? 'found one' : 'no shim script'));

@@ -24,11 +24,11 @@ node "$here/../tools/minshim.mjs" check
 wasm -O2 "$here/out/listfuzz.wasm" "$here/listfuzz.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 wasm -O2 "$here/out/unit.wasm" "$here/unit.c" "$here/../src/cdom.c" "$here/../src/cdom_net.c" "$here/../src/cdom_store.c" "$here/../src/cdom_audio.c" "$here/../src/cdom_random.c" "$here/../src/cdom_url.c" "$here/../src/cdom_locale.c" "$here/../src/cdom_share.c" "$here/../src/cdom_fonts.c" "$here/../src/cdom_ui.c" "$here/../src/mini.c"
 wasm -Oz "$here/out/click.wasm" -Wl,--strip-all "$here/../demo/click.c" "$here/../src/cdom.c" "$here/../src/cdom_audio.c" "$here/../src/mini.c"
-# Every page inlines the unminified shim at its /*CDOM_SHIM*/ line (tools/page.awk), so the tests run the
+# Every page inlines the unminified shim at its /*CDOM_SHIM*/ line (tools/cdpage), so the tests run the
 # readable shim/cdom.js that tools/mutate.py mutates.
 shim="$here/../shim/cdom.js"
 # page <in.html> <out.html> <module.wasm>: the string table of that module goes before the shim.
-page() { awk -v shim="$shim" -v lits="$3.lits" -f "$here/../tools/page.awk" "$1" > "$2.tmp" && mv "$2.tmp" "$2"; }
+page() { "$CDOM_PAGE_TOOL" --page "$1" --out "$2" --shim "$shim" --lits "$3.lits"; }
 page "$here/unit.html" "$here/out/unit.html" "$here/out/unit.wasm"
 page "$here/../demo/click.html" "$here/out/click.html" "$here/out/click.wasm"
 # The fuzz page and the legacy page go through the boot, so LEGACY=1 runs them on the wasm2js build.

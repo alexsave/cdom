@@ -2,7 +2,7 @@
 # Startup pages for step 10, in out/pages/<page>/index.html:
 #   hello-a, hello-a2, synth-a, synth-a2  before (from strings-bench's bench/strings/pages.sh: tutorial's cdom)
 #   hello-s   tutorial/01-hello as this branch builds it (tutorial/run.sh, cdom.mk's APP_PAGE)
-#   synth-s   gen_synth.py's 2,000-site page in plain C, linked through cdlits, bundled by page.awk
+#   synth-s   gen_synth.py's 2,000-site page in plain C, linked through cdlits, bundled by tools/cdpage
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"; top="$here/../.."
 bench="${BENCH:-/Users/alex/Dev/cdom-strings-bench/bench/strings/out/pages}"
@@ -19,8 +19,8 @@ d="$o/synth-s"; mkdir -p "$d"
 "$CC" -Oz "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror "${CDOM_LDFLAGS[@]}" -Wl,--strip-all -o "$d/linked.wasm" \
   "$here/out/synth.c" "$top/src/cdom.c" "$top/src/mini.c"
 "$CDOM_LITS" "$d/linked.wasm" "$d/app.wasm" "$d/app.wasm.lits"
-base64 < "$d/app.wasm" | tr -d '\n\r' | CDOM_TITLE=synth awk -v shim="$top/shim/cdom.min.js" -v lits="$d/app.wasm.lits" \
-  -v wasm=bundle -v title=1 -f "$top/tools/page.awk" "$top/shim/page.html" > "$d/index.html"
+"$CDOM_PAGE_TOOL" --page "$top/shim/page.html" --out "$d/index.html" --shim "$top/shim/cdom.min.js" --lits "$d/app.wasm.lits" \
+  --wasm "$d/app.wasm" --title synth
 rm "$d/linked.wasm"
 for p in hello-a hello-s synth-a synth-s; do
   printf '%-9s page %7s B  brotli %6s B\n' "$p" "$(wc -c < "$o/$p/index.html" | tr -d ' ')" "$(brotli -q 11 -c "$o/$p/index.html" | wc -c | tr -d ' ')"

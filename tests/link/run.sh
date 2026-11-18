@@ -131,7 +131,7 @@ else echo "FAIL the I/O contract changed in place:"; cat "$out/contract.log"; fa
 # cdom.mk as an app uses it (tests/link/app.mk), with its one include before APP_* are set (first), after
 # them (last), and the old two includes (twice): the APP_WASM rule builds a module that exports its memory
 # and cd_main's entry, with the modules APP_MODULES names, and a second make finds it up to date; the
-# APP_PAGE rule (tools/page.awk) puts the shim where the page's one /*CDOM_SHIM*/ line was, and refuses a
+# APP_PAGE rule (tools/cdpage) puts the shim where the page's one /*CDOM_SHIM*/ line was, and refuses a
 # page with the marker beside other text, without it, or with it twice, leaving no output.
 for inc in first last twice; do
 mo="$out/mk-$inc"

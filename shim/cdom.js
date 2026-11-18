@@ -1310,10 +1310,10 @@ var cdom = (() => {
   // options.openStore: an app that reads its store as it starts opens it now, while the wasm is
   // fetched and compiled, so its first get finds the database open. options.seed: cd_seed (seed()).
   async function start(url, mount, env, options) {
-    // The page's string table, written before the shim by the build (tools/page.awk).
+    // The page's string table, written before the shim by the build (tools/cdpage).
     const table = globalThis.cdomLits;
     if (!table) {
-      throw new Error("cdom: this page has no string table (build it with cdom.mk or tools/page.awk, which write it before the shim)");
+      throw new Error("cdom: this page has no string table (build it with cdom.mk or tools/cdpage, which write it before the shim)");
     }
     if (table[2] !== "\u2603") throw new Error("cdom: this page was not read as UTF-8");
     if (options && options.openStore) {

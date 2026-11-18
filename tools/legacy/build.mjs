@@ -122,8 +122,8 @@ function page(src, out) {
   // The marker sits in a <script> of its own, after the shim's (see shim/boot.js).
   const html = read(src), mark = '/*CDOM_BOOT*/';
   if (html.split(mark).length !== 2) throw new Error(`${src} needs exactly one ${mark}`);
-  // The table is a script of its own that page.awk wrote before the shim; the fallback needs it too.
-  if (!html.includes('var cdomLits=')) throw new Error(`${src} has no string table (tools/page.awk writes it before the shim)`);
+  // The table is a script of its own that tools/cdpage wrote before the shim; the fallback needs it too.
+  if (!html.includes('var cdomLits=')) throw new Error(`${src} has no string table (tools/cdpage writes it before the shim)`);
   return html.replace(mark, () => boot);
 }
 

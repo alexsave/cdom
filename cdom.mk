@@ -5,10 +5,10 @@
 #
 # Included once, before or after the app sets APP_*: it defines variables and the rules for the files
 # APP_WASM and APP_PAGE name, which read APP_* when make builds, not where cdom.mk is included (see the
-# rules below). It never changes the app's default goal. Plain make, awk, clang and a host C compiler
-# (HOST_CC, for tools/cdlits): no Node on this path. Every link goes through tools/cdlits, which moves the
-# module's string literals into $(APP_WASM).lits; tools/page.awk writes that table into the page as a
-# script of its own before the shim (docs/strings-design.md).
+# rules below). It never changes the app's default goal. Plain make, clang and a host C compiler
+# (HOST_CC, for tools/cdlits and tools/cdpage): no Node on this path. Every link goes through tools/cdlits,
+# which moves the module's string literals into $(APP_WASM).lits; tools/cdpage writes the page, that table
+# in it as a script of its own before the shim (docs/strings-design.md, docs/page-tool-design.md).
 #
 #   CDOM_CFLAGS   the compile flags every file of a cdom module needs, -std=c23 among them: C23, so a handler
 #                 can leave a parameter it does not use unnamed, static void on_reset(const cd_event_rec *, void *)
@@ -21,9 +21,10 @@
 #   CDOM_SHIM     the minified shim (shim/cdom.min.js) a page inlines
 #   CDOM_OPT      the optimization level of the APP_WASM rule (-Oz unless the app sets it)
 #   WASM_CC       a clang that targets wasm32 (Homebrew's llvm unless set; Apple's clang does not)
-#   HOST_CC       the C compiler for cdom's build tools (tools/cdlits.c), cc unless set
+#   HOST_CC       the C compiler for cdom's build tools (tools/cdlits.c, tools/cdpage.c), cc unless set
 #   CDOM_LITS     the built tools/cdlits, which every link goes through: it strips the string table out of
 #                 the module and writes it beside it as $(APP_WASM).lits, for the page
+#   CDOM_PAGE_TOOL the built tools/cdpage, which writes every page
 #
 #   APP_WASM, APP_SRC, APP_MODULES, APP_CFLAGS, APP_LDFLAGS
 #                 the app's module: $(APP_WASM) is built from $(APP_SRC), $(CDOM_SRC) and the optional

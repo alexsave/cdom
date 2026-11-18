@@ -3,7 +3,7 @@
 // and changing any one declared input (each in turn, then putting it back) rebuilds exactly the outputs
 // that name it. A missing, hand-edited or unstamped output is rebuilt too. Exit 1 on any failure.
 // Needs tests/build.sh to have run (it takes listfuzz.wasm, legacy.wasm and listfuzz.shim.html, the page with
-// its string table and shim inlined by tools/page.awk, from tests/out).
+// its string table and shim inlined by tools/cdpage, from tests/out).
 // Usage: node tools/legacyfresh.mjs
 import fs from 'node:fs';
 import os from 'node:os';

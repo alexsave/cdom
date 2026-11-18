@@ -124,43 +124,5 @@ usage "--page twice" --page "$pages/ok.html" --page "$pages/ok.html" --out "$out
 usage "--wasm and --wasm-url" --page "$pages/ok.html" --out "$out/u.html" --shim "$out/shim.js" --lits "$out/app.lits" --wasm "$out/m1.wasm" --wasm-url x
 usage "a flag with no value" --page "$pages/ok.html" --out "$out/u.html" --shim "$out/shim.js" --lits
 
-# ---- the differential: cdpage against tools/page.awk, which it replaces ----
-# Every page, each mode, with and without a title: the same bytes, the same exit status, the same message.
-# Removed with page.awk, when the goldens above are the whole story.
-if [ -f "$top/tools/page.awk" ]; then
-  awk_page() { # page out mode title
-    local mode="$3" title="$4" in=()
-    case "$mode" in bundle) in=(-v wasm=bundle);; url) in=(-v wasm=url);; *) in=(-v wasm=);; esac
-    [ -n "$title" ] && in+=(-v title=1)
-    if [ "$mode" = bundle ]; then base64 < "$out/m2.wasm" | tr -d '\n\r'; else :; fi |
-      CDOM_WASM_URL='/w/"x"\y.wasm' CDOM_TITLE="$title" awk -v shim="$out/shim.js" -v lits="$out/app.lits" ${in[@]+"${in[@]}"} \
-        -f "$top/tools/page.awk" "$1" > "$2" 2> "$2.err"
-  }
-  c_page() {
-    local mode="$3" title="$4" in=()
-    case "$mode" in bundle) in=(--wasm "$out/m2.wasm");; url) in=(--wasm-url '/w/"x"\y.wasm');; esac
-    [ -n "$title" ] && in+=(--title "$title")
-    "$CDPAGE" --page "$1" --out "$2" --shim "$out/shim.js" --lits "$out/app.lits" ${in[@]+"${in[@]}"} 2> "$2.err"
-  }
-  d="$out/diff"; mkdir -p "$d"
-  n=0 same=0
-  for p in "$pages"/*.html "$top/shim/page.html" "$e"/*.html; do
-    for mode in bundle url none; do
-      for title in '' 'a<b & "c">'; do
-        # the edge pages with a title twice on a line differ by design (cdpage replaces every one)
-        [ -n "$title" ] && [ "$p" = "$e/tags.html" ] && continue
-        n=$((n + 1)); k="$d/$n"
-        awk_page "$p" "$k.awk" "$mode" "$title"; ra=$?
-        c_page "$p" "$k.c" "$mode" "$title"; rc=$?
-        [ "$ra" -ne 0 ] && rm -f "$k.awk" && : > "$k.awk"
-        [ -e "$k.c" ] || : > "$k.c"
-        if [ "$ra" -eq "$rc" ] && cmp -s "$k.awk" "$k.c" && cmp -s "$k.awk.err" "$k.c.err"; then same=$((same + 1))
-        else bad "differential: $(basename "$p") $mode title=${title:+yes}: page.awk exit $ra, cdpage exit $rc"; diff "$k.awk.err" "$k.c.err" | head -4; cmp "$k.awk" "$k.c" | head -2; fi
-      done
-    done
-  done
-  [ "$same" -eq "$n" ] && ok "differential: $n pages and modes, cdpage writes what page.awk writes, byte for byte, the same exit status and message"
-fi
-
 echo "tests/page: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
