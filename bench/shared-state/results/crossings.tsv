@@ -4,36 +4,50 @@ S1	B	op	10000	10000	0	set_text:10000
 S1	C	op	10000	10000	0	set_text:10000
 S1	E	op	10000	10000	0	set_text:10000
 S1	L	op	10000	10000	0	set_text:10000
+S1	EI	op	10000	10000	0	set_text:10000
+S1	LI	op	10000	10000	0	set_text:10000
 S2	A	op	2	2	0	set_class:2
 S2	B	op	2	2	0	set_class:2
 S2	C	op	2	2	0	set_class:2
 S2	E	op	2	2	0	set_class:2
 S2	L	op	2	2	0	set_class:2
+S2	EI	op	2	2	0	set_class:2
+S2	LI	op	2	2	0	set_class:2
 S3_10k	A	op	1	1	0	set_text:1
 S3_10k	B	op	1	1	0	set_text:1
 S3_10k	C	op	1	1	0	set_text:1
 S3_10k	E	op	1	1	0	set_text:1
 S3_10k	L	op	1	1	0	set_text:1
+S3_10k	EI	op	1	1	0	set_text:1
+S3_10k	LI	op	1	1	0	set_text:1
 S3_100k	A	op	1	1	0	set_text:1
 S3_100k	B	op	1	1	0	set_text:1
 S3_100k	C	op	1	1	0	set_text:1
 S3_100k	E	op	1	1	0	set_text:1
 S3_100k	L	op	1	1	0	set_text:1
+S3_100k	EI	op	1	1	0	set_text:1
+S3_100k	LI	op	1	1	0	set_text:1
 S4	A	op	10	10	0	set_text:10
 S4	B	op	10	10	0	set_text:10
 S4	C	op	10	10	0	set_text:10
 S4	E	op	10	10	0	set_text:10
 S4	L	op	10	10	0	set_text:10
+S4	EI	op	10	10	0	set_text:10
+S4	LI	op	10	10	0	set_text:10
 S5	A	op	1000	1000	0	set_text:1000
 S5	B	op	1000	1000	0	set_text:1000
 S5	C	op	1000	1000	0	set_text:1000
 S5	E	op	1000	1000	0	set_text:1000
 S5	L	op	1000	1000	0	set_text:1000
+S5	EI	op	1000	1000	0	set_text:1000
+S5	LI	op	1000	1000	0	set_text:1000
 S6	A	op	10000	10000	0	set_text:10000
 S6	B	op	10000	10000	0	set_text:10000
 S6	C	op	10000	10000	0	set_text:10000
 S6	E	op	10000	10000	0	set_text:10000
 S6	L	op	10000	10000	0	set_text:10000
+S6	EI	op	10000	10000	0	set_text:10000
+S6	LI	op	10000	10000	0	set_text:10000
 S7	A	build	120002	100002	20000	open:30000 close:30000 name_open:10000 class:10000 text_num:10000 text:10000 name_text:10000 set_text:10000 detach:1 attach:1
 S7	A	clear	20001	1	20000	free:20000 clear:1
 S7	B	build	110002	90002	20000	open:30000 close:30000 name_open:10000 class:10000 text_num:10000 text:10000 name_text:10000 detach:1 attach:1
@@ -44,26 +58,45 @@ S7	E	build	110002	90002	20000	open:30000 close:30000 name_open:10000 class:10000
 S7	E	clear	20001	1	20000	free:20000 clear:1
 S7	L	build	110002	90002	20000	open:30000 close:30000 name_open:10000 class:10000 text_num:10000 text:10000 name_text:10000 detach:1 attach:1
 S7	L	clear	20001	1	20000	free:20000 clear:1
+S7	EI	build	110002	90002	20000	open:30000 close:30000 name_open:10000 class:10000 text_num:10000 text:10000 name_text:10000 detach:1 attach:1
+S7	EI	clear	20001	1	20000	free:20000 clear:1
+S7	LI	build	110002	90002	20000	open:30000 close:30000 name_open:10000 class:10000 text_num:10000 text:10000 name_text:10000 detach:1 attach:1
+S7	LI	clear	20001	1	20000	free:20000 clear:1
 S8	A	op	1	1	0	set_text:1
 S8	B	op	1	1	0	set_text:1
 S8	C	op	1	1	0	set_text:1
 S8	E	op	1	1	0	set_text:1
 S8	L	op	1	1	0	set_text:1
+S8	EI	op	1	1	0	set_text:1
+S8	LI	op	1	1	0	set_text:1
 S8	CL	op	1	1	0	set_text:1
 S9a1	L	op	130003	90003	40000	open:30000 close:30000 free:20000 name_open:10000 class:10000 text_num:10000 text:10000 name_text:10000 clear:1 detach:1 attach:1
 S9a1	E	op	130003	90003	40000	open:30000 close:30000 free:20000 name_open:10000 class:10000 text_num:10000 text:10000 name_text:10000 clear:1 detach:1 attach:1
+S9a1	LI	op	130003	90003	40000	open:30000 close:30000 free:20000 name_open:10000 class:10000 text_num:10000 text:10000 name_text:10000 clear:1 detach:1 attach:1
+S9a1	EI	op	130003	90003	40000	open:30000 close:30000 free:20000 name_open:10000 class:10000 text_num:10000 text:10000 name_text:10000 clear:1 detach:1 attach:1
 S9a2	L	op	130003	90003	40000	open:30000 close:30000 free:20000 name_open:10000 class:10000 text_num:10000 text:10000 name_text:10000 clear:1 detach:1 attach:1
+S9a2	LI	op	130003	90003	40000	open:30000 close:30000 free:20000 name_open:10000 class:10000 text_num:10000 text:10000 name_text:10000 clear:1 detach:1 attach:1
 S9b	L	op	10000	10000	0	set_text:10000
+S9b	LI	op	10000	10000	0	set_text:10000
 S9d	L	op	130011	90007	40004	open:30002 close:30002 free:20001 name_open:10001 class:10000 text_num:10000 text:10000 name_text:10000 at:2 clear:1 detach:1 attach:1
+S9d	LI	op	130011	90007	40004	open:30002 close:30002 free:20001 name_open:10001 class:10000 text_num:10000 text:10000 name_text:10000 at:2 clear:1 detach:1 attach:1
 S10	A	op	2	1	1	get:1 set_text:1
 S10	C	op	2	1	1	get:1 set_text:1
 S10	E	op	2	1	1	get:1 set_text:1
+S10	EI	op	2	1	1	get:1 set_text:1
 S11	A	op	10	10	0	set_text:10
 S11	C	op	10	10	0	set_text:10
 S11	E	op	10	10	0	set_text:10
+S11	EI	op	10	10	0	set_text:10
+S12_4	L	op	0	0	0	
+S12_4	LI	op	0	0	0	
 S12_1k	L	op	0	0	0	
+S12_1k	LI	op	0	0	0	
 S12_10k	L	op	0	0	0	
+S12_10k	LI	op	0	0	0	
 S13i_10k	L	op	0	0	0	
+S13i_10k	LI	op	0	0	0	
 S13i_100k	L	op	0	0	0	
+S13i_100k	LI	op	0	0	0	
 S13ii_10k	L	op	0	0	0	
 S13ii_100k	L	op	0	0	0	
