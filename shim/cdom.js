@@ -50,6 +50,8 @@ var cdom = (() => {
   let busy = 0;             // how many calls into C are on the stack
   let exports;              // the wasm module's exports
   let memory;
+  let lits;                 // the page's string table (cdomLits), one entry per literal slot
+  let litBase;              // the address of slot 0: a literal's id is litBase + 4 * its index
   let buffer;               // memory.buffer when the views below were made (compared on the wasm2js tier only)
   let copiedOnGrow = false; // the module is wasm2js, whose grow leaves the old buffer attached
   let u8;
@@ -1215,6 +1217,12 @@ var cdom = (() => {
   // options.openStore: an app that reads its store as it starts opens it now, while the wasm is
   // fetched and compiled, so its first get finds the database open. options.seed: cd_seed (seed()).
   async function start(url, mount, env, options) {
+    // The page's string table, written before the shim by the build (tools/page.awk).
+    const table = globalThis.cdomLits;
+    if (!table) {
+      throw new Error("cdom: this page has no string table (build it with cdom.mk or tools/page.awk, which write it before the shim)");
+    }
+    if (table[2] !== "\u2603") throw new Error("cdom: this page was not read as UTF-8");
     if (options && options.openStore) {
       openDatabase().catch(() => {}); // a failure shows again, as a miss, at the first get
     }
@@ -1269,6 +1277,11 @@ var cdom = (() => {
       };
     }
     memory = exports.memory;
+    if (!exports.cd_lits || exports.cd_lits() >>> 0 !== table[1] >>> 0) {
+      throw new Error("cdom: the page's string table is not this module's (the page and the module are from different builds, or the module did not go through cdlits)");
+    }
+    lits = table[3].split("\0");
+    litBase = table[0];
     views();
     readLayout(exports.cd_layout() >> 2);
     if (exports.cd_url_changed) {

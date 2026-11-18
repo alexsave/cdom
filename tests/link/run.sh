@@ -101,11 +101,12 @@ if mk "$mo/mk_app.wasm" PAGE= APP_MODULES='random bogus' -B > "$mo/mk_bogus.log"
 elif ! grep -q 'APP_MODULES names bogus, not a cdom module' "$mo/mk_bogus.log"; then echo "FAIL cdom.mk ($inc) refused APP_MODULES for another reason:"; cat "$mo/mk_bogus.log"; fail=1
 else echo "ok   cdom.mk ($inc) stops at an APP_MODULES name that is no module"; fi
 want="$mo/ok.want"
-{ sed -n '1,3p' "$here/page/ok.html"; cat "$src/../shim/cdom.min.js"; sed -n '5,$p' "$here/page/ok.html"; } > "$want"
+{ sed -n '1,3p' "$here/page/ok.html"; cat "$mo/mk_app.wasm.lits"; echo "</script>"; echo "<script>"
+  cat "$src/../shim/cdom.min.js"; sed -n '5,$p' "$here/page/ok.html"; } > "$want"
 if ! mk "$mo/ok.html" PAGE="$here/page/ok.html" APP_WASM_SEPARATE=1 2> "$mo/mk_page.log"; then
   echo "FAIL cdom_page ($inc) refused a page whose marker is alone on its line:"; cat "$mo/mk_page.log"; fail=1
-elif ! cmp -s "$want" "$mo/ok.html"; then echo "FAIL cdom_page ($inc): the page is not itself with the shim at its marker line"; fail=1
-else echo "ok   cdom_page ($inc) inlines shim/cdom.min.js at the page's /*CDOM_SHIM*/ line, every other line kept (APP_WASM_SEPARATE: the page's own URL)"; fi
+elif ! cmp -s "$want" "$mo/ok.html"; then echo "FAIL cdom_page ($inc): the page is not itself with the table and the shim at its marker line"; fail=1
+else echo "ok   cdom_page ($inc) inlines the table, a script of its own, and shim/cdom.min.js at the page's /*CDOM_SHIM*/ line, every other line kept (APP_WASM_SEPARATE: the page's own URL)"; fi
 # The refused pages, with the module separate: each is refused for its own fault, which bundling would
 # otherwise mask (a page whose start call went with its shim line, or that takes a second module, has no
 # bundled module to start either).
@@ -133,7 +134,8 @@ else echo "ok   APP_PAGE ($inc), bundling, refuses a page of the app's own that 
 # not depend on it. APP_TITLE is escaped for HTML.
 tpl="$src/../shim/page.html"
 want_page() { # title, then the start call's first argument
-  { sed -n '1,5p' "$tpl"; echo "<title>$1</title>"; sed -n '7,10p' "$tpl"; cat "$src/../shim/cdom.min.js"
+  { sed -n '1,5p' "$tpl"; echo "<title>$1</title>"; sed -n '7,10p' "$tpl"; cat "$mo/mk_app.wasm.lits"; echo "</script>"; echo "<script>"
+    cat "$src/../shim/cdom.min.js"
     echo "cdom.start($2, \"app\");"; sed -n '13,$p' "$tpl"; } > "$mo/index.want"
 }
 b64() { base64 < "$1" | tr -d '\n\r'; }
@@ -150,10 +152,10 @@ touch "$mo/mk_app.wasm"
 if ! mk "$mo/index.html" PAGE= APP_WASM_SEPARATE=1 APP_TITLE='a<b & c>' -B 2> "$mo/mk_sep.log"; then echo "FAIL the default page ($inc), APP_WASM_SEPARATE, does not build:"; cat "$mo/mk_sep.log"; fail=1
 elif want_page 'a&lt;b &amp; c&gt;' '"mk_app.wasm"'; ! cmp -s "$mo/index.want" "$mo/index.html"; then
   echo "FAIL the default page ($inc), APP_WASM_SEPARATE: not shim/page.html naming mk_app.wasm, titled from APP_TITLE:"; diff "$mo/index.want" "$mo/index.html" | cut -c1-200 | head; fail=1
-elif touch -t 203001010000 "$mo/mk_app.wasm"; ! mk -q "$mo/index.html" PAGE= APP_WASM_SEPARATE=1; then echo "FAIL the default page ($inc), APP_WASM_SEPARATE, depends on the module"; fail=1
+elif touch -t 203001010000 "$mo/mk_app.wasm"; mk -q "$mo/index.html" PAGE= APP_WASM_SEPARATE=1; then echo "FAIL the default page ($inc), APP_WASM_SEPARATE, is up to date with a newer module (its table comes from the module)"; fail=1
 elif ! mk "$mo/index.html" PAGE= APP_WASM_SEPARATE=1 APP_WASM_URL='/w/"x".wasm' -B 2> "$mo/mk_sep.log" || ! grep -qxF 'cdom.start("/w/\"x\".wasm", "app");' "$mo/index.html"; then
   echo "FAIL the default page ($inc), APP_WASM_SEPARATE: APP_WASM_URL is not its start call's URL"; fail=1
-else echo "ok   the default page ($inc), APP_WASM_SEPARATE: names mk_app.wasm (or APP_WASM_URL, as a JS string), no dependency on it, <title> APP_TITLE escaped"; fi
+else echo "ok   the default page ($inc), APP_WASM_SEPARATE: names mk_app.wasm (or APP_WASM_URL, as a JS string), made again with the module for its table, <title> APP_TITLE escaped"; fi
 # An app's own page with the /*CDOM_WASM*/ marker: the module bundled there, or, separate, its URL.
 for sep in '' 1; do
   if [ -n "$sep" ]; then arg='"mk_app.wasm"'; else arg="\"data:application/wasm;base64,$(b64 "$mo/mk_app.wasm")\""; fi

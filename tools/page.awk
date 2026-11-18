@@ -1,7 +1,10 @@
-# The page with cdom's shim inlined, and its module named or bundled (cdom.mk's cdom_page and APP_PAGE
-# rule): every line of the page as it is, except
+# The page with cdom's string table and shim inlined, and its module named or bundled (cdom.mk's cdom_page
+# and APP_PAGE rule): every line of the page as it is, except
 # - the one line that holds only the marker /*CDOM_SHIM*/ (spaces around it allowed), which becomes the
-#   file named by -v shim=;
+#   table, the file named by -v lits= (what tools/cdlits wrote beside the module), then </script>, then the
+#   opening tag of the script the marker is in written again as it was, then the file named by -v shim=.
+#   So the table is a script of its own that runs before the shim and the module, and no page needs a
+#   marker for it;
 # - the marker /*CDOM_WASM*/ (cdom.start's first argument), which becomes the module as a JS string:
 #   with -v wasm=bundle, a data:application/wasm;base64 URL of the module whose base64 is the first line
 #   of standard input; with -v wasm=url, the URL in the environment's CDOM_WASM_URL; with neither, the
@@ -9,10 +12,11 @@
 # - with -v title=1, the marker /*CDOM_TITLE*/, which becomes the environment's CDOM_TITLE, escaped for
 #   HTML (the default page's <title>).
 # Fails, and the caller keeps no output, when the page has no /*CDOM_SHIM*/ line, more than one, or that
-# marker on a line with other text (it would be lost with the line); when /*CDOM_WASM*/ is there twice;
+# marker on a line with other text (it would be lost with the line), or with no <script tag before it
+# (there is no script to close and open again), or when -v lits= is not given or cannot be read; when /*CDOM_WASM*/ is there twice;
 # and, bundling, when the page has no /*CDOM_WASM*/: a page that names its module by URL would fetch it
 # besides carrying it, so it is refused, naming the URL it loads, and never rewritten.
-# Usage: awk -v shim=path/to/cdom.min.js [-v wasm=bundle|url] [-v title=1] -f tools/page.awk page.html > out.html
+# Usage: awk -v shim=path/to/cdom.min.js -v lits=path/to/app.wasm.lits [-v wasm=bundle|url] [-v title=1] -f tools/page.awk page.html > out.html
 function fail(msg) {
   printf "%s\n", msg > "/dev/stderr"
   bad = 1
@@ -36,11 +40,26 @@ function module(   b64) {
   if ((getline b64 < "/dev/stdin") <= 0 || b64 == "") fail(sprintf("%s: cannot read the module to bundle", FILENAME))
   return "\"data:application/wasm;base64," b64 "\""
 }
+# The last script tag seen, as written: the marker is in it.
+{
+  rest = $0
+  while (match(rest, /<[sS][cC][rR][iI][pP][tT]([ \t][^>]*)?>/)) {
+    script_tag = substr(rest, RSTART, RLENGTH)
+    rest = substr(rest, RSTART + RLENGTH)
+  }
+}
 index($0, "/*CDOM_SHIM*/") {
   line = $0
   gsub(/^[ \t]+|[ \t\r]+$/, "", line)
   if (line != "/*CDOM_SHIM*/") fail(sprintf("%s:%d: /*CDOM_SHIM*/ must be alone on its line", FILENAME, FNR))
   if (++marks > 1) fail(sprintf("%s:%d: a second /*CDOM_SHIM*/ (the page takes the shim once)", FILENAME, FNR))
+  if (lits == "") fail(sprintf("%s: no -v lits= (the module's string table, the .lits file tools/cdlits writes beside it)", FILENAME))
+  if (script_tag == "") fail(sprintf("%s:%d: /*CDOM_SHIM*/ with no <script tag before it", FILENAME, FNR))
+  while ((got = getline litsline < lits) > 0) print litsline
+  if (got < 0) fail(sprintf("%s: cannot read the string table %s", FILENAME, lits))
+  close(lits)
+  print "</script>"
+  print script_tag
   while ((got = getline shimline < shim) > 0) print shimline
   if (got < 0) fail(sprintf("%s: cannot read the shim %s", FILENAME, shim))
   close(shim)
