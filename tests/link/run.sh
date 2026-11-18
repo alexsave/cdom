@@ -110,7 +110,7 @@ else echo "ok   cdom_page ($inc) inlines the table, a script of its own, and shi
 # The refused pages, with the module separate: each is refused for its own fault, which bundling would
 # otherwise mask (a page whose start call went with its shim line, or that takes a second module, has no
 # bundled module to start either).
-for bad in inline:'must be alone on its line' none:'no /\*CDOM_SHIM\*/ line' two:'a second /\*CDOM_SHIM\*/' two_wasm:'a second /\*CDOM_WASM\*/'; do
+for bad in inline:'must be alone on its line' none:'no /\*CDOM_SHIM\*/ line' two:'a second /\*CDOM_SHIM\*/' two_wasm:'a second /\*CDOM_WASM\*/' noscript:'with no <script tag before it'; do
   name="${bad%%:*}" why="${bad#*:}"
   if mk "$mo/$name.html" PAGE="$here/page/$name.html" APP_WASM_SEPARATE=1 2> "$mo/mk_$name.log"; then
     echo "FAIL cdom_page ($inc) took the $name page"; fail=1
@@ -120,6 +120,20 @@ for bad in inline:'must be alone on its line' none:'no /\*CDOM_SHIM\*/ line' two
     echo "FAIL cdom_page ($inc) refused the $name page for another reason:"; cat "$mo/mk_$name.log"; fail=1
   else echo "ok   cdom_page ($inc) refuses the $name page ($(sed 's/.*: //' "$mo/mk_$name.log" | head -1)) and writes nothing"; fi
 done
+# The table is a script of its own before the shim and before the module, whatever the page's script tag
+# carries (it is written again as it was), and the table is the module's own.
+if ! mk "$mo/attrs.html" PAGE="$here/page/attrs.html" APP_WASM_SEPARATE=1 -B 2> "$mo/mk_attrs.log"; then
+  echo "FAIL cdom_page ($inc) refused a page whose script tag has attributes:"; cat "$mo/mk_attrs.log"; fail=1
+elif ! mk "$mo/marker.html" PAGE="$here/page/marker.html" -B 2> "$mo/mk_marker0.log"; then
+  echo "FAIL cdom_page ($inc) refused the marker page:"; cat "$mo/mk_marker0.log"; fail=1
+elif ! node -e 'const fs = require("fs"), [a, m, lits, shim] = process.argv.slice(1);
+    const tag = "<script type=\"text/javascript\" data-x=\"a b\">", table = fs.readFileSync(lits, "utf8");
+    const pa = fs.readFileSync(a, "utf8"), pm = fs.readFileSync(m, "utf8"), sh = fs.readFileSync(shim, "utf8").slice(0, 200);
+    const ok = pa.includes(table + "</script>\n" + tag + "\n" + sh) && pa.indexOf(tag) < pa.indexOf(table) &&
+      pm.includes(table + "</script>\n<script>\n" + sh) && pm.indexOf(table) < pm.indexOf(sh) && pm.indexOf(sh) < pm.indexOf("cdom.start(");
+    process.exit(ok ? 0 : 1)' "$mo/attrs.html" "$mo/marker.html" "$mo/mk_app.wasm.lits" "$src/../shim/cdom.min.js"; then
+  echo "FAIL cdom_page ($inc): the table is not a script of its own before the shim and the module, with the page's script tag written again"; fail=1
+else echo "ok   cdom_page ($inc) writes the table as a script of its own before the shim and the module, the page's script tag (attributes too) written again"; fi
 # Bundling, the default: an app's own page that names its module by URL is refused with the one line that
 # says what to do, and nothing is written (never a rewrite of the app's own call).
 rm -f "$mo/ok.html"

@@ -378,7 +378,7 @@ M = [
   ('mk-bundle-off', 'cdom.mk', 'cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))', 'cdom_mk_bundled =', LINK, 'FAIL APP_PAGE (first) bundled into a page that loads its module by URL'),
   ('mk-separate-ignored', 'cdom.mk', 'cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))', 'cdom_mk_bundled = $(APP_WASM)', LINK, 'FAIL cdom_page (first) refused a page whose marker is alone'),
   ('mk-b64-wrapped', 'cdom.mk', "| tr -d '\\n\\r' | ", '| fold -w 76 | ', LINK, 'FAIL the default page (first), bundled, is not shim/page.html'),  # GNU base64's lines, not joined
-  ('mk-page-no-wasm-dep', 'cdom.mk', '$$(CDOM)/tools/page.awk $$(cdom_mk_bundled))', '$$(CDOM)/tools/page.awk)', LINK, 'FAIL the default page (first), bundled, is up to date with a newer module'),
+  ('mk-page-no-wasm-dep', 'cdom.mk', '$$(CDOM)/tools/page.awk $$(APP_WASM))', '$$(CDOM)/tools/page.awk)', LINK, 'FAIL the default page (first), bundled, is up to date with a newer module'),
   ('mk-no-default-page', 'cdom.mk', 'cdom_mk_page_src = $(or $(APP_PAGE_SRC),$(CDOM_PAGE))', 'cdom_mk_page_src = $(APP_PAGE_SRC)', LINK, 'FAIL the default page (first) does not build'),
   ('mk-title-full-name', 'cdom.mk', '$(or $(APP_TITLE),$(basename $(notdir $(APP_WASM))))', '$(or $(APP_TITLE),$(notdir $(APP_WASM)))', LINK, 'FAIL the default page (first), bundled, is not shim/page.html'),
   ('mk-wasm-intermediate', 'cdom.mk', '$$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src))', '$$(if $$(APP_WASM),$$(cdom_mk_app_src))', LINK, "FAIL the starter's page does not start its bundled module"),  # make deletes the module after the page

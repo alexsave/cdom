@@ -14,6 +14,22 @@ import { literalOffsets, memoryReaches } from './offsets.mjs';
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
 let PORT = +(process.env.UNIT_PORT || 0); // 0: a free port, so two worktrees' runs never collide (the page is told the port)
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
+// The click demo's page with its table changed, and a hook that records what start rejects with. latin1 is
+// the unchanged page served with another charset, so the canary's UTF-8 bytes are read as Latin-1.
+const clickPage = () => fs.readFileSync(path.join(root, 'click.html'), 'utf8').replace("'click.wasm'", "'/click.wasm'");
+const startPage = (name) => {
+  const hook = `<script>window.__errs = []; addEventListener('unhandledrejection', (e) => __errs.push(String(e.reason && e.reason.message)));</script>`;
+  const edit = {
+    good: (h) => h,
+    latin1: (h) => h,
+    stamp: (h) => h.replace('2166136261', '1234'), // a table from another build: the stamp differs
+    canary: (h) => h.replace('"\u2603"', '"\\u00e2\\u0098\\u0083"'), // the canary as a Latin-1 read of its UTF-8 bytes
+    none: (h) => h.replace(/^var cdomLits=.*\n/m, ''),
+  }[name];
+  if (!edit) return null;
+  const html = edit(clickPage());
+  return html.replace('<script>', hook + '<script>');
+};
 const srv = http.createServer((q, r) => {
   if (q.url === '/headers') { // the request headers C sent, and a status that is not 200
     q.resume();
@@ -26,6 +42,14 @@ const srv = http.createServer((q, r) => {
     const parts = [];
     q.on('data', (d) => parts.push(d));
     q.on('end', () => { r.writeHead(200, { 'content-type': 'application/octet-stream' }); r.end(Buffer.concat(parts).reverse()); });
+    return;
+  }
+  const startCase = /^\/start\/(\w+)\.html$/.exec(q.url);
+  if (startCase) { // a variant of the click demo page with its string table changed, to see what start says
+    const page = startPage(startCase[1]);
+    if (page === null) { r.writeHead(404); r.end(); return; }
+    r.writeHead(200, { 'content-type': 'text/html; charset=' + (startCase[1] === 'latin1' ? 'iso-8859-1' : 'utf-8') });
+    r.end(Buffer.from(page, 'utf8'));
     return;
   }
   const f = path.join(root, q.url.split(/[?#]/)[0]);
@@ -196,6 +220,25 @@ try {
   let tapped = '';
   for (let i = 0; i < 200 && tapped !== 'sound on|clicks played: 1'; i++) { await sleep(20); tapped = await page(); }
   if (before === 'tap for sound|clicks played: 0' && tapped === 'sound on|clicks played: 1') passed.push('the click demo: "tap for sound" until a tap, then the tap\'s click played'); else errors.push(`demo: ${before} then ${tapped}`);
+  // start's checks of the page's string table (docs/strings-design.md, "The page"): a good page starts, and
+  // each fault throws its own message and never starts the app.
+  const startCases = [
+    ['good', null],
+    ['none', 'cdom: this page has no string table'],
+    ['stamp', "cdom: the page's string table is not this module's"],
+    ['canary', 'cdom: this page was not read as UTF-8'],
+    ['latin1', 'cdom: this page was not read as UTF-8'],
+  ];
+  for (const [name, want] of startCases) {
+    await b.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/start/${name}.html` });
+    let got = '';
+    for (let i = 0; i < 100 && !got; i++) {
+      await sleep(20);
+      got = await b.evaluate(want ? `(window.__errs || []).join('|')` : `document.querySelector('#m p') ? document.querySelector('#m p').textContent : ''`).catch(() => '');
+    }
+    if (want ? got.startsWith(want) : got === 'tap for sound') passed.push(`start, the ${name} page: ${want ? `throws "${want}..."` : 'starts the app'}`);
+    else errors.push(`start, the ${name} page: wanted ${want ? `"${want}"` : 'the app started'}, got "${got}"`);
+  }
 } catch (e) { errors.push('threw: ' + String(e.message || e).slice(0, 300)); } finally { await b.close(); srv.close(); }
 // The shim hardcodes no offset into C memory: every one comes from cd_layout (tools/offsets.mjs).
 const shimSource = fs.readFileSync(path.join(root, '../../shim/cdom.js'), 'utf8');
