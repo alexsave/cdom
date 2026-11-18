@@ -694,7 +694,7 @@ The measured prototypes are on branch `strings-bench` (worktree `/Users/alex/Dev
 7. **The switch.**
    `cdom.h`: the strings section and wrapper macros without `cd_tmp_ahead`, `cd_str` a struct, `CD_NONE`, and for now `#define CD_LIT(s) cd_s(s)` marked "temporary, deleted in step 9".
    `cdom.c`: the intern machinery out, the `tmp` block and `tmp_done()` in, the layout entries.
-   The shim: `str`, `ascii`, `readString`, the path cache by slot; `interned`, `transient`, `decode`, `strings` out; regenerate the minified shim.
+   The shim: `str`, `ascii`, `readString`, the path cache by slot (`str` tests the views with step 4's `stale()`, not a bare `u8.length === 0`, because wasm2js's grow copies into a new buffer and leaves the old view's length unchanged); `interned`, `transient`, `decode`, `strings` out; regenerate the minified shim.
    `tests/lits/lits.h` is deleted and its tests include `cdom.h`.
    `tests/unit.c`: the interning tests go; the read-path, string-position, lifetime and evaluated-once tests come, with their mutants; path 0 becomes `CD_NONE` everywhere.
    `tools/mutate.py`, `tools/offsets.mjs`: as in the migration table.
