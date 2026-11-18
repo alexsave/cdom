@@ -34,7 +34,7 @@ export default function App() {
 cd_open("main"); cd_class("card");
 cd_open("h1"); cd_text("Hello, cdom"); cd_close();
 cd_open("ul");
-for (uint32_t i = 0; i < NFRUITS; i++) {
+for (uint32_t i = 0; FRUITS[i]; i++) {
   cd_open("li"); cd_text(FRUITS[i]); cd_close();
 }
 cd_close();
