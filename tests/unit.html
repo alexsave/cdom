@@ -114,6 +114,8 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
       stateLoop: ['views that keep changing what they watch (16 rounds)', () => x.t_state_loop(), () => x.t_state_loop_n() === 16],
       stateIdle: ['cd_watch with no region building', () => x.t_state_idle_watch(), () => true],
       stateRow: ['cd_watch in a list row\'s create (rows do not watch)', () => x.t_state_row_watch(), () => true],
+      stateUnwatched: ['cd_state on a fresh page: a state that no view ever watched changes, and the pass runs nothing', () => x.t_state_unwatched(), () => true, 'no trap'],
+      stateMadeByRender: ['cd_state on a fresh page: a view made by a render, before any state changed, runs at a later change of its state', () => x.t_state_render_made(), () => x.t_state_render_made() === 2, 'no trap'],
       // unit_check.html, the check build: each case checks first that the page runs that build
       checkViewOk: ['the check build: views that read only what they watch, and a build that reads before it watches, do not trap', () => x.t_check_view_ok(), () => x.t_check_build() === 1, 'no trap'],
       checkViewBad: ['the check build: a view in the pass that reads a state it does not watch', () => x.t_check_view_bad(), () => x.t_check_build() === 1],
@@ -1394,16 +1396,17 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
       (!threw && a === 'a' && av[0] === 1000n && av[1] === 1n) || JSON.stringify({ a, av: av.map(String), threw }));
     const b = [0, 1].map((k) => run(() => x.t_state_b(k))), bw = x.t_state_b_watched(), b2 = run(() => x.t_state_b(2));
     check('cd_state: a state changed, then its view\'s region hidden, in one entry: the view does not run, nothing watches the state after, and a later change runs nothing', () =>
-      (!threw && b.join() === ',' && bw === 0 && b2 === '') || JSON.stringify({ b, bw, b2, threw }));
-    const c = [0, 1].map((k) => run(() => x.t_state_c(k)));
-    check('cd_state: two views of one state queued in one round, the first hides the second\'s region: the second does not run', () =>
-      (!threw && c.join() === ',c') || JSON.stringify({ c, threw }));
-    const d = [0, 1, 2].map((k) => run(() => x.t_state_d(k)));
-    check('cd_state: a view shows a region whose build watches the state being processed: the new view drew in its build and does not run for that change, a later change in the same pass (by a view after it) runs it once, in the next round; the next change runs both once', () =>
-      (!threw && d.join() === ',xzy,xy') || JSON.stringify({ d, threw }));
-    const e = [0, 1].map((k) => run(() => x.t_state_e(k)));
-    check('cd_state: a view that changes a state and asks for a render, and a render that changes a state: one pass, the render after the round\'s views, the changed states\' views in the next round', () =>
-      (!threw && e.join() === ',e1fg') || JSON.stringify({ e, threw }));
+      (!threw && b.join() === ',' && bw % 10 === 0 && b2 === '') || JSON.stringify({ b, bw, b2, threw }));
+    check('cd_state: a region\'s views go before its cleanups run (a cleanup sees its state no longer watched)', () => (!threw && bw === 0) || JSON.stringify({ bw, threw }));
+    const c = [0, 1, 2].map((k) => run(() => x.t_state_c(k)));
+    check('cd_state: two views of one state queued in one round, the first hides the second\'s region and shows a region with a new view of the state: neither runs; the next change runs the first and the new one', () =>
+      (!threw && c.join() === ',c,cn') || JSON.stringify({ c, threw }));
+    const d = [0, 1, 2, 3].map((k) => run(() => x.t_state_d(k)));
+    check('cd_state: a view shows a region whose build watches the state being processed: the new view drew in its build and does not run for that change, nor for a change made before it in the pass; a change after it (by a later view) runs it once, in the next round; the next change runs both once', () =>
+      (!threw && d.join() === ',xzy,xy,x') || JSON.stringify({ d, threw }));
+    const e = [0, 1, 2].map((k) => run(() => x.t_state_e(k)));
+    check('cd_state: a view that changes a state and asks for a render, and a render that changes a state: one pass, a round\'s views before its renders, the changed states\' views in the next round', () =>
+      (!threw && e.join() === ',e1fg,er1fg') || JSON.stringify({ e, threw }));
     const f = [0, 1, 2].map((k) => run(() => x.t_state_f(k)));
     check('cd_state: a view that ran after a state\'s change in the pass is not run again for it; one that ran before the change runs again, in the next round', () =>
       (!threw && f.join() === ',pq,QPQ') || JSON.stringify({ f, threw }));
@@ -1421,6 +1424,9 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
     const i = [0, 1].map((k) => run(() => x.t_state_i(k)));
     check('cd_state: one (fn, ctx) watched on two states, and again, in one region is one view (it runs once); the same in another region is a second view', () =>
       (!threw && i.join() === ',iji') || JSON.stringify({ i, threw }));
+    let iGrew = -1;
+    try { x.t_state_i_dup(10); const bytes = x.memory.buffer.byteLength; x.t_state_i_dup(10000); iGrew = x.memory.buffer.byteLength - bytes; } catch (err) { threw += String(err); }
+    check('cd_state: a view that watches a state it watches already holds one watch: 10,000 such watches in one build grow no memory', () => (!threw && iGrew === 0) || JSON.stringify({ iGrew, threw }));
     const l = [0, 1].map((k) => run(() => x.t_state_l(k))), lRows = x.t_state_l_rows(), l2 = run(() => x.t_state_l(2));
     check('cd_state: views in regions opened in keyed-list rows: a row removed in the entry of a change does not run, its region gone with it; the kept rows run', () =>
       (!threw && l.join() === ',13' && lRows === 22 && l2 === '13') || JSON.stringify({ l, lRows, l2, threw }));
