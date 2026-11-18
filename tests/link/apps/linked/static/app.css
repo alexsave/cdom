@@ -1,0 +1,2 @@
+/* linked/static/app.css: the page loads it by its <link>, so it lives outside src/ */
+#probe { --last: "linked"; }

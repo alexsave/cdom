@@ -421,7 +421,7 @@ M = [
   ('mk-target-early', 'cdom.mk', '%.wasm: $$(call cdom_mk_for,$$(APP_WASM),', '$(APP_WASM): $$(call cdom_mk_for,$$(APP_WASM),', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   ('mk-page-early', 'cdom.mk', '%.html: $$(call cdom_mk_for,$$(APP_PAGE),', '$(APP_PAGE): $$(call cdom_mk_for,$$(APP_PAGE),', LINK, 'FAIL cdom_page (first) refused a page whose marker is alone'),
   ('mk-any-wasm', 'cdom.mk', 'cdom_mk_for = $(if $(filter $(2),$(1)),$(3),$(2).cdom-mk-none)', 'cdom_mk_for = $(3)', LINK, "FAIL cdom.mk's rules built a .wasm or .html that is not APP_WASM or APP_PAGE"),
-  ('mk-missing-unnamed', 'cdom.mk', '\n.cdom-mk-sources: $$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src)) $$(if $$(APP_PAGE),$$(cdom_mk_page_src))\n', '\n', LINK, 'FAIL cdom.mk built an app whose APP_SRC names a file that is not there'),  # the rule no longer applies, and the module built before is kept
+  ('mk-missing-unnamed', 'cdom.mk', '\n.cdom-mk-sources: $$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(CDOM_LITS)) $$(if $$(APP_PAGE),$$(cdom_mk_page_src) $$(CDOM_PAGE_TOOL))\n', '\n', LINK, 'FAIL cdom.mk built an app whose APP_SRC names a file that is not there'),  # the rule no longer applies, and the module built before is kept
   ('mk-rebuilt', 'cdom.mk', '$$(cdom_mk_known)$$(cdom_mk_app_src) $$(CDOM_HEADERS) $$(CDOM_LITS))', '$$(cdom_mk_known)$$(cdom_mk_app_src) $$(CDOM_HEADERS) $$(CDOM_LITS) .cdom-mk-sources)', LINK, "FAIL cdom.mk's APP_WASM rule (first): a second make builds the module again"),
   # The page's module (cdom.mk's APP_PAGE rule, tools/cdpage): bundled by default, or named (APP_WASM_SEPARATE)
   ('mk-bundle-off', 'cdom.mk', 'cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))', 'cdom_mk_bundled =', LINK, 'FAIL APP_PAGE (first) bundled into a page that loads its module by URL'),
@@ -430,7 +430,7 @@ M = [
   ('mk-page-no-wasm-dep', 'cdom.mk', '$$(CDOM_PAGE_TOOL) $$(APP_WASM))', '$$(CDOM_PAGE_TOOL))', LINK, 'FAIL the default page (first), bundled, is up to date with a newer module'),
   ('mk-no-default-page', 'cdom.mk', 'cdom_mk_page_src = $(or $(APP_PAGE_SRC),$(CDOM_PAGE))', 'cdom_mk_page_src = $(APP_PAGE_SRC)', LINK, 'FAIL the default page (first) does not build'),
   ('mk-title-full-name', 'cdom.mk', '$(or $(APP_TITLE),$(basename $(notdir $(APP_WASM))))', '$(or $(APP_TITLE),$(notdir $(APP_WASM)))', LINK, 'FAIL the default page (first), bundled, is not shim/page.html'),
-  ('mk-wasm-intermediate', 'cdom.mk', '$$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src))', '$$(if $$(APP_WASM),$$(cdom_mk_app_src))', LINK, "FAIL the starter's page does not start its bundled module"),  # make deletes the module after the page
+  ('mk-wasm-intermediate', 'cdom.mk', '$$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(CDOM_LITS))', '$$(if $$(APP_WASM),$$(cdom_mk_app_src) $$(CDOM_LITS))', LINK, "FAIL the starter's page does not start its bundled module"),  # make deletes the module after the page
   ('mk-toolchain-unchecked', 'cdom.mk', '\t@$(cdom_mk_toolchain)\n', '', LINK, 'FAIL cdom.mk with WASM_CC=/usr/bin/clang, which cannot build wasm32, did not stop'),
   ('page-url-unchecked', 'tools/cdpage.c', '  if (a->wasm && !wasms) {', '  if (0) {', LINK, 'FAIL APP_PAGE (first) bundled into a page that loads its module by URL'),
   ('page-url-unnamed', 'tools/cdpage.c', '    if (have_loads)\n', '    if (0)\n', LINK, 'FAIL APP_PAGE (first) refused a page that loads its module by URL with another message'),
@@ -473,6 +473,18 @@ M = [
   ('css-no-mark-ok', 'tools/cdpage.c', '  if (sheets.n && !css_marks) {', '  if (0) {', PAGE, 'FAIL refuses css_none'),
   ('css-bom-kept', 'tools/cdpage.c', '    if (n >= 3 && p[0] == 0xef && p[1] == 0xbb && p[2] == 0xbf) p += 3, n -= 3;\n', '', PAGE, 'FAIL the edges:'),
   ('css-no-last-newline', 'tools/cdpage.c', "    if (n && p[n - 1] != '\\n') bbyte(o, '\\n');\n    free(b.p);", '    free(b.p);', PAGE, 'FAIL the edges:'),
+  # cdom.mk and the stylesheets (tests/link/run.sh, the fixture apps of tests/link/apps, and tests/link/css.mjs in Chrome):
+  # discovery through make, rebuilding on a stylesheet change only, the first build, an own page, the cascade
+  ('mk-css-dir-dropped', 'cdom.mk', ' \\\n  --css-dir src\n', '\n', LINK, 'FAIL discovery: the css app'),
+  ('mk-css-walk-app-dir', 'cdom.mk', ' \\\n  --css-dir src\n', ' \\\n  --css-dir .\n', LINK, 'FAIL an own page that links static/app.css does not build'),
+  ('mk-csslist-not-prereq', 'cdom.mk', '$$(APP_WASM)) $$(cdom_mk_csslist)', '$$(APP_WASM))', LINK, 'FAIL rebuilding: a.css edited, and make -q says'),
+  ('mk-css-files-prereq', 'cdom.mk', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) ] && [ -d $(call cdom_mk_q,$(@D)) ] \\\n  && $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) --css-list src $(call cdom_mk_q,$@.csslist))$@.csslist)', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(wildcard src/*.css src/*/*.css src/*/*/*.css))', LINK, 'FAIL rebuilding: a/new.css'),
+  ('mk-csslist-no-shell', 'cdom.mk', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) ] && [ -d $(call cdom_mk_q,$(@D)) ] \\\n  && $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) --css-list src $(call cdom_mk_q,$@.csslist))$@.csslist)', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$@.csslist)', LINK, 'FAIL rebuilding: a.css edited, and make -q says'),
+  ('mk-csslist-not-in-recipe', 'cdom.mk', '\t$(CDOM_PAGE_TOOL) --css-list src $(call cdom_mk_q,$@.csslist)\n', '', LINK, 'a second make is not up to date'),
+  ('mk-tool-intermediate', 'cdom.mk', ' $$(if $$(APP_PAGE),$$(cdom_mk_page_src) $$(CDOM_PAGE_TOOL))', ' $$(if $$(APP_PAGE),$$(cdom_mk_page_src))', LINK, 'FAIL the first build: make did not keep tools/cdpage'),
+  ('css-no-mark-silent', 'tools/cdpage.c', '  if (sheets.n && !css_marks) {', '  if (0) {', LINK, 'FAIL an own page with no /*CDOM_CSS*/ took'),
+  ('css-sort-reversed-chrome', 'tools/cdpage.c', 'return strcmp(((const Sheet *)a)->rel, ((const Sheet *)b)->rel);', 'return strcmp(((const Sheet *)b)->rel, ((const Sheet *)a)->rel);', LINK, 'FAIL the last stylesheet in byte order of its path'),
+  ('css-unescaped-chrome', 'tools/cdpage.c', '      if (p[i] == \'<\' && i + 1 < n && p[i + 1] == \'/\' && starts_ci(p + i + 2, n - i - 2, "style")) { bstr(o, "<\\\\/"); i++; continue; }\n', '', LINK, 'FAIL the </style in a string reads back exactly'),
   # The starter (make new, tools/new.sh), built and opened from disk (tests/link/run.sh, tools/starter.mjs)
   ('new-not-centered', 'tools/new.sh', ' justify-content: center; }', ' }', LINK, 'FAIL "cdom" is centered'),
   ('new-separate', 'tools/new.sh', 'APP_PAGE := build/index.html\n', 'APP_PAGE := build/index.html\nAPP_WASM_SEPARATE := 1\n', LINK, "FAIL the starter's page does not start its bundled module"),

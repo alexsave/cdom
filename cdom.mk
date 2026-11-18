@@ -44,11 +44,31 @@
 #                 /*CDOM_WASM*/ marker)", and is never rewritten.
 #                 $(call cdom_page,in.html,out.html,,lits) inlines the shim in a recipe (lits is the module's
 #                 .lits file), and $(call cdom_page,in.html,out.html,module.wasm) bundles that module as well,
-#                 with the string table cdlits wrote beside it (module.wasm.lits).
+#                 with the string table cdlits wrote beside it (module.wasm.lits). Both bundle src/'s
+#                 stylesheets, as the APP_PAGE rule does.
+#
+# The stylesheets: Every file whose name ends in .css under the app's src/ directory, in any subfolder,
+# is written into the page's <style>, in byte order of its path, so 00-base.css comes before
+# 10-layout.css, and that before theme/dark.css; a file or folder whose name starts with a dot is
+# skipped, and nothing else is.
+# src/ is the directory named src where make runs (where APP_SRC := src/app.c points), and no variable
+# names a file, the directory, or a way to turn this off. The files go at the line that holds only the
+# marker /*CDOM_CSS*/, inside a <style> and before the /*CDOM_SHIM*/ line (the default page has that
+# <style> in its <head>), written as they are but for </style, which is escaped; a byte order mark is
+# dropped, and a file that does not end in a newline gains one. Each file must be whole by itself: a
+# comment, string or url( that never ends, a { never closed or a } never opened, an @import, a NUL or
+# bytes that are not UTF-8 stop the build, naming the file and the line. An app's own page with no
+# /*CDOM_CSS*/ line fails while src/ holds a .css file, so a page that loads a stylesheet of its own with
+# a <link> keeps that file outside src/ (static/app.css, say). A relative url() in a stylesheet resolves
+# against the page, since the sheet is inline. The sheet is the page's HTML, before every script, so it
+# styles the first paint in every tier. The page is made again when a .css file is added, removed,
+# renamed or edited, and for nothing else: $(APP_PAGE).csslist (tools/cdpage --css-list) lists what went
+# in, with a hash of each file, and is replaced only when that text changes.
 #
 # The default page (shim/page.html), the contract other repos may name as "cdom's default page": a
 # doctype, <meta charset="utf-8">, the viewport meta (width=device-width, initial-scale=1), a <title> of
-# APP_TITLE (HTML-escaped; the base name of APP_WASM unless set), a <body> that holds only
+# APP_TITLE (HTML-escaped; the base name of APP_WASM unless set), a <style> after it that holds the
+# app's stylesheets (empty when src/ has none), a <body> that holds only
 # <div id="app"></div>, the app's mount, and one <script>: the shim and the one start call,
 # cdom.start(<the module>, "app"), with no env and no options. An app that needs its own <head>, env or
 # options brings its own page (APP_PAGE_SRC).
@@ -66,7 +86,7 @@
 # The APP_WASM rule first checks that WASM_CC builds a wasm32 module at all, and when it does not (Apple's
 # clang, or no wasm-ld), stops with the command that installs one, instead of a linker error.
 # A new app: make -C path/to/cdom new DIR=path/to/app (tools/new.sh) writes a Makefile of the APP_* lines
-# its app needs and this include, src/app.c and a .gitignore: nothing this file could own.
+# its app needs and this include, src/app.c, src/app.css and a .gitignore: nothing this file could own.
 #
 # The flags: wasm32 with no C library but cdom's own (-nostdlib, then -isystem $(CDOM)/src/libc for
 # string.h, whose memcpy, memmove and memset are bulk-memory instructions, hence -mbulk-memory), cdom's
@@ -127,7 +147,8 @@ cdom_page = $(call cdom_mk_page,$(1),$(2),$(3),,,$(if $(3),$(3).lits,$(4)))
 # made. cdom_mk_q quotes a value for the shell.
 cdom_mk_q = '$(subst ','\'',$(1))'
 cdom_mk_page = $(CDOM_PAGE_TOOL) --page $(call cdom_mk_q,$(1)) --out $(call cdom_mk_q,$(2)) --shim $(call cdom_mk_q,$(CDOM_SHIM)) \
-  --lits $(call cdom_mk_q,$(6))$(if $(3), --wasm $(call cdom_mk_q,$(3)))$(if $(4), --wasm-url $(call cdom_mk_q,$(4)))$(if $(5), --title $(call cdom_mk_q,$(5)))
+  --lits $(call cdom_mk_q,$(6))$(if $(3), --wasm $(call cdom_mk_q,$(3)))$(if $(4), --wasm-url $(call cdom_mk_q,$(4)))$(if $(5), --title $(call cdom_mk_q,$(5))) \
+  --css-dir src
 
 CDOM_MODULES := net store random audio url locale share fonts ui
 
@@ -158,9 +179,21 @@ cdom_mk_page_src = $(or $(APP_PAGE_SRC),$(CDOM_PAGE))
 cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))
 cdom_mk_wasm_url = $(if $(APP_WASM_SEPARATE),$(or $(APP_WASM_URL),$(notdir $(APP_WASM))))
 cdom_mk_title = $(if $(APP_PAGE_SRC),,$(or $(APP_TITLE),$(basename $(notdir $(APP_WASM)))))
-%.html: $$(call cdom_mk_for,$$(APP_PAGE),$$@,$$(cdom_mk_page_src) $$(CDOM_SHIM) $$(CDOM_PAGE_TOOL) $$(APP_WASM))
+# The page's stylesheets, as a prerequisite: $(APP_PAGE).csslist, the list tools/cdpage --css-list writes
+# of the .css files under src/ with a hash of each, which it replaces only when that text changes. A
+# list of the .css files themselves could not see one removed, nor one added with an older time. It is
+# brought up to date here, while make works out the page's prerequisites, so make -q answers truthfully
+# (an always-run rule would never let it say "up to date"); for the APP_PAGE target only, since only the
+# chosen branch of an $(if) is expanded. The tool is not there before the first build, nor the page's
+# directory: then the page's recipe writes the list, and the empty rule makes a missing list a reason to
+# build the page, not an error.
+cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) ] && [ -d $(call cdom_mk_q,$(@D)) ] \
+  && $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) --css-list src $(call cdom_mk_q,$@.csslist))$@.csslist)
+%.csslist: ;
+%.html: $$(call cdom_mk_for,$$(APP_PAGE),$$@,$$(cdom_mk_page_src) $$(CDOM_SHIM) $$(CDOM_PAGE_TOOL) $$(APP_WASM)) $$(cdom_mk_csslist)
 	$(if $(APP_PAGE_SRC)$(APP_WASM),,$(error cdom.mk: the default page starts APP_WASM, and APP_WASM is unset))
 	@mkdir -p $(@D)
+	$(CDOM_PAGE_TOOL) --css-list src $(call cdom_mk_q,$@.csslist)
 	$(call cdom_mk_page,$(cdom_mk_page_src),$@,$(cdom_mk_bundled),$(cdom_mk_wasm_url),$(cdom_mk_title),$(APP_WASM).lits)
 
 # The toolchain check before the APP_WASM rule compiles: a one-function module through WASM_CC, its
@@ -177,6 +210,9 @@ cdom_mk_toolchain = printf 'void f(void) {}\n' | $(WASM_CC) --target=wasm32 -nos
 # rule to make target <the app's .wasm>". Named here (an explicit rule's prerequisites, expanded as
 # late), the rule still applies and make stops at the missing source, naming it. APP_WASM is named too:
 # a bundled page is built from it through the two pattern rules, and make deletes such an intermediate
-# file once the page is made unless a rule names it. Nothing builds this target, and one that starts with
-# a dot is never the default goal.
-.cdom-mk-sources: $$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src)) $$(if $$(APP_PAGE),$$(cdom_mk_page_src))
+# file once the page is made unless a rule names it. So are cdom's two tools, CDOM_LITS and CDOM_PAGE_TOOL,
+# made by pattern rules as well: as intermediate files, make would remove the one it had to build once the
+# build is done, and not build it again while what was made from it is newer, so the page's stylesheet
+# list, which the tool brings up to date as make starts, would go stale. Nothing builds this target, and
+# one that starts with a dot is never the default goal.
+.cdom-mk-sources: $$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(CDOM_LITS)) $$(if $$(APP_PAGE),$$(cdom_mk_page_src) $$(CDOM_PAGE_TOOL))
