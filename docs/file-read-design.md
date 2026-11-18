@@ -40,5 +40,6 @@ Falsifier: a median slower by 2% or more, outside the spread of both sides.
 Size predictions:
 
 - The shim gains `file_read` (about 30 lines) and a quality argument: shim/cdom.min.js grows by 550 to 900 bytes, and by 200 to 400 bytes brotli.
+- Added before the shim's fit code was written (the picked-image call came after the first predictions): `file_fit` (decode, fit, encode, and the WebP fallback, about 40 lines) adds 700 to 1,100 bytes minified and 300 to 450 brotli, so the whole change is 1,250 to 2,000 bytes minified and 500 to 850 brotli, from 17,610 and 6,677 (brotli -q 11).
 - An app that does not link src/cdom_file.c carries none of it: 0 bytes of its module (tests/link checks the exports and imports).
 - The large-block code adds 200 to 500 bytes to every module (raw, -Oz), since every app links the heap.
