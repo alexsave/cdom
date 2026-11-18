@@ -53,3 +53,31 @@ Size predictions:
 - The shim gains `file_read` (about 30 lines) and a quality argument: shim/cdom.min.js grows by 550 to 900 bytes, and by 200 to 400 bytes brotli.
 - An app that does not link src/cdom_file.c carries none of it: 0 bytes of its module (tests/link checks the exports and imports).
 - The large-block code adds 200 to 500 bytes to every module (raw, -Oz), since every app links the heap.
+
+## Results
+
+Every page count below is what tools/alloc.mjs and tools/file.mjs measured; the "before" column ran the same harness on main's src/cdom.c and src/cdom.h (b59e476), the rest of src/ as on this branch.
+
+| case | predicted before | measured before | predicted after | measured after | verdict |
+| --- | --- | --- | --- | --- | --- |
+| S1 | 1,024 | 1,024 | 558 | 558 | confirmed |
+| S2 | 1,536 | 1,536 | 558 | 558 | confirmed |
+| S3 | 1,536, not reused | 1,536, not reused | 558, reused | 558, reused | confirmed |
+| S4 | 4,064 | 4,064 | 1,024 | 1,024 | confirmed |
+| S5 | 2,048, not reused | 2,048, not reused | 610, reused | 610, reused | confirmed |
+| S6 | 390 | 390 | 0 | 0 | confirmed |
+| H | 512, then 1,024 | 512, then 1,024 | 305, then 305 | 305, then 305 | confirmed |
+| P12 | 1,216, 0, 79.8 MB | 1,216, 0, 79.8 MB (79,822,848 bytes) | 857, 0, 56.3 MB | 857, 0, 56.3 MB (56,295,424 bytes) | confirmed |
+| P24 | 2,368, 0, 155.3 MB | 2,368, 0, 155.3 MB (155,320,320 bytes) | 1,658, 0, 108.8 MB | 1,658, 0, 108.8 MB (108,789,760 bytes) | confirmed |
+
+S7 (three freed neighbours merging), S8 (a free run under the top going back with it) and the 20,000-step seeded churn were added after the predictions, as tests of the merge rules, not as hypotheses.
+In P12 and P24 the second photo grows the memory by 0 pages both before and after: the old size classes also reuse a block of the same class.
+What the fix changes for a photo is the first photo's cost: 23.5 MB less at 12 MP and 46.5 MB less at 24 MP, since each block now costs its size.
+
+The file read in Chrome (tools/file.mjs): the first 20 MB read grew the memory by 305 pages, the second by 0, and the app's 20 MB after both by 0, as predicted.
+
+Sizes:
+
+- shim/cdom.min.js: 17,610 to 18,169 bytes (+559, predicted 550 to 900: confirmed, at the bottom), brotli 6,677 to 6,846 (+169, predicted 200 to 400: refuted, below the range; `file_read` compresses better than guessed).
+- A hello world at -Oz (one div of text): 2,067 to 2,537 bytes (+470, predicted 200 to 500: confirmed). That is the large-block code (heap_big, heap_big_free, heap_grow_top), which every app links with the heap.
+- An app that does not link src/cdom_file.c has none of its exports (tests/link checks it through cdom.mk).
