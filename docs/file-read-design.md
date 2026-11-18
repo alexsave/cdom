@@ -83,3 +83,47 @@ Sizes:
 - shim/cdom.min.js: 17,610 to 18,169 bytes (+559, predicted 550 to 900: confirmed, at the bottom), brotli 6,677 to 6,846 (+169, predicted 200 to 400: refuted, below the range; `file_read` compresses better than guessed).
 - A hello world at -Oz (one div of text): 2,067 to 2,537 bytes (+470, predicted 200 to 500: confirmed). That is the large-block code (heap_big, heap_big_free, heap_grow_top), which every app links with the heap.
 - An app that does not link src/cdom_file.c has none of its exports (tests/link checks it through cdom.mk).
+- The keyed bench app at -Oz: 10,198 to 11,157 bytes (+959; the hello world's 470 plus realloc's large path and the frees in the answer exports). For an app that grows arrays with cd_realloc the prediction of 200 to 500 bytes is refuted.
+
+## The small-object path: timed
+
+The keyed bench entry built from main (b59e476, entry cdom-frbase) and from this branch (cdom-fr), both with bench/build.sh, run by tools/pair.sh with LOADMAX=4 (every start gated on a 1-minute load under 4), 15 iterations, interleaved benchmark by benchmark, in two passes with PASS=0 and PASS=1 so neither entry always runs first.
+tools/smoke.mjs passed on both entries (wasm and LEGACY=1), and tools/domcheck.mjs found their DOM identical over 22 snapshots.
+The load before each start is in the last column (base, branch).
+Other jobs on the machine pushed the load to 7.4 during pass 0's 04_select1k (the load after it), so that row of pass 0 is noise; the machine was then cleared for the rest.
+
+Pass 0 (PASS=0):
+| benchmark | metric | base median (q1 to q3) | branch median (q1 to q3) | branch/base | loads at start |
+| --- | --- | ---: | ---: | ---: | --- |
+| 01_run1k | total | 30.20 (29.80 to 30.70) | 30.20 (29.50 to 30.70) | 1.000 | 3.65, 2.94 |
+| 02_replace1k | total | 32.40 (31.70 to 32.90) | 31.90 (31.40 to 33.00) | 0.985 | 3.54, 3.04 |
+| 03_update10th1k_x16 | total | 19.00 (18.30 to 21.50) | 17.40 (16.70 to 18.90) | 0.916 | 3.57, 3.68 |
+| 04_select1k | total | 4.20 (4.00 to 4.90) | 5.50 (5.10 to 7.70) | 1.310 | 3.74, 3.12 |
+| 05_swap1k | total | 18.50 (18.20 to 19.00) | 18.30 (17.90 to 18.50) | 0.989 | 2.62, 2.55 |
+| 06_remove-one-1k | total | 15.90 (15.40 to 16.80) | 15.90 (15.50 to 17.10) | 1.000 | 2.48, 2.44 |
+| 07_create10k | total | 308.20 (305.20 to 310.00) | 306.50 (304.90 to 308.90) | 0.994 | 2.18, 2.02 |
+| 08_create1k-after1k_x2 | total | 34.60 (34.20 to 35.00) | 34.70 (34.10 to 35.70) | 1.003 | 3.66, 2.28 |
+| 09_clear1k_x8 | total | 13.30 (13.10 to 13.60) | 13.40 (13.10 to 13.60) | 1.008 | 2.76, 2.30 |
+| 21_ready-memory | DEFAULT | 0.69 (0.69 to 0.69) | 0.69 (0.69 to 0.69) | 1.006 | 2.04, 2.14 |
+| 22_run-memory | DEFAULT | 1.75 (1.75 to 1.75) | 1.83 (1.83 to 1.83) | 1.043 | 1.67, 1.82 |
+| 25_run-clear-memory | DEFAULT | 0.79 (0.79 to 0.79) | 0.79 (0.79 to 0.79) | 1.008 | 2.87, 2.47 |
+
+Pass 1 (PASS=1):
+| benchmark | metric | base median (q1 to q3) | branch median (q1 to q3) | branch/base | loads at start |
+| --- | --- | ---: | ---: | ---: | --- |
+| 01_run1k | total | 30.00 (29.60 to 30.40) | 30.10 (29.90 to 30.30) | 1.003 | 3.74, 3.98 |
+| 02_replace1k | total | 31.40 (31.20 to 31.90) | 31.60 (31.30 to 31.80) | 1.006 | 3.11, 2.85 |
+| 03_update10th1k_x16 | total | 15.90 (15.30 to 16.10) | 15.80 (15.50 to 16.00) | 0.994 | 2.51, 2.85 |
+| 04_select1k | total | 4.00 (3.90 to 4.70) | 4.30 (3.90 to 4.60) | 1.075 | 2.73, 2.73 |
+| 05_swap1k | total | 17.90 (17.50 to 18.40) | 18.20 (17.70 to 18.60) | 1.017 | 2.05, 2.08 |
+| 06_remove-one-1k | total | 15.10 (14.80 to 16.00) | 15.10 (14.80 to 15.30) | 1.000 | 2.29, 2.41 |
+| 07_create10k | total | 301.50 (298.30 to 302.60) | 302.30 (300.00 to 303.90) | 1.003 | 1.97, 2.32 |
+| 08_create1k-after1k_x2 | total | 34.50 (34.10 to 34.80) | 34.40 (34.10 to 34.70) | 0.997 | 2.24, 2.85 |
+| 09_clear1k_x8 | total | 13.00 (12.80 to 13.30) | 13.00 (12.80 to 13.40) | 1.000 | 1.94, 2.37 |
+| 21_ready-memory | DEFAULT | 0.69 (0.69 to 0.69) | 0.68 (0.68 to 0.68) | 0.989 | 1.96, 2.08 |
+| 22_run-memory | DEFAULT | 1.79 (1.79 to 1.79) | 1.84 (1.84 to 1.84) | 1.028 | 1.64, 1.78 |
+| 25_run-clear-memory | DEFAULT | 0.78 (0.78 to 0.78) | 0.79 (0.79 to 0.79) | 1.002 | 1.69, 1.78 |
+
+tools/ci.mjs, branch over base, weighted geometric mean of the CPU benchmarks with a bootstrap 95% interval: pass 0 0.998 (0.975 to 1.016), pass 1 1.004 (0.995 to 1.016).
+The prediction (a median change under 2%, inside the spread) is confirmed for the CPU benchmarks.
+22_run-memory is 3 to 4% higher on the branch in both passes (1.75 and 1.79 MB against 1.83 and 1.84): not predicted. A likely cause, not yet measured: a large block freed below the top serves only large requests, so small blocks then bump past it where the size classes would have reused its class. That is a follow-up, not part of this PR.
