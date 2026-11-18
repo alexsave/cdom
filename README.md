@@ -270,7 +270,8 @@ flowchart TB
 
 - `CDOM_CFLAGS` and `CDOM_LDFLAGS` are the flags every cdom module needs: wasm32 with no C library but cdom's (`src/libc`, `src/mini.c`), bulk memory, no entry point, the memory exported and the stack placed first.
 - `CDOM_SRC` is the core every app links, and the APP_WASM rule adds it.
-- `APP_MODULES` names the optional modules the app uses (`net`, `store`, `random`, `audio`, `url`, `locale`, `share`, `fonts`, `ui`, each `src/cdom_<name>.h`), and the rule links them; a name that is not a module stops make.
+- `APP_MODULES` names the optional modules the app uses (`net`, `store`, `random`, `audio`, `url`, `locale`, `share`, `fonts`, `ui`, `file`, each `src/cdom_<name>.h`), and the rule links them; a name that is not a module stops make.
+- `file` (`src/cdom_file.h`) brings a picked file's bytes into C memory: `cd_file_read_cb(input, index, max_bytes, fn, ctx)` (or `cd_file_read` with a token, to `cd_on_file`) answers once with a status and the bytes, valid until the callback returns; a file over `max_bytes` is refused from its size and never read.
 - `ui` (`src/cdom_ui.h`) is shorthand an app would otherwise write itself: `cd_el`, `cd_el_id` and `cd_el_text`, `cd_button`, the `CD_ON_EVENT`, `CD_CTX_OF` and `CD_CTX_INDEX` macros, and `cd_buf`, a string builder over the caller's buffer with 64-bit numbers. Each call costs only when used.
 - `src/cdom_callbacks_only.h`, included after the other cdom headers, makes the token forms and the app-wide hooks a compile error (`#pragma GCC poison`), so an app or a library inside one uses only `cd_on` and the `_cb` forms. It costs no bytes.
 - Each module's source is also a variable (`CDOM_NET_SRC`, `CDOM_STORE_SRC` and so on) for an app that writes its own rule.
