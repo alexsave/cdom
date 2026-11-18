@@ -1,0 +1,11 @@
+# Chrome/157.0.8103.79
+mode	test	kind	len	ns	q1	q3	n
+resolve	cross8			6.83	6.82	6.94	262144
+dom	trip8			318.60	308.53	325.93	2048
+dom	leaf8			297.85	292.05	313.72	2048
+dom	quad8			393.98	361.94	551.15	2048
+dom	leafc8			364.07	361.94	420.23	2048
+dom	triptmp	ascii	9	404.05	398.86	429.69	16384
+dom	leaftmp	ascii	9	381.16	371.40	488.59	16384
+dom	triptmp	ascii	30	422.36	417.48	474.85	8192
+dom	leaftmp	ascii	30	412.29	405.58	423.58	16384
