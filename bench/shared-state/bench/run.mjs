@@ -65,7 +65,7 @@ try {
     if (process.env.MEM !== '0') {
       for (const [si, sc] of ['S7', 'S10'].entries()) {
         if (only && !only.has(sc + 'mem')) continue;
-        const es = (sc === 'S7' ? ['A', 'B', 'C', 'E', 'L'] : ['A', 'C', 'E']).filter((e) => !onlyE || onlyE.has(e));
+        const es = (sc === 'S7' ? ['A', 'B', 'C', 'E', 'L', 'EI', 'LI'] : ['A', 'C', 'E', 'EI']).filter((e) => !onlyE || onlyE.has(e));
         for (let k = 0; k < es.length; k++) {
           const e = es[(si + p + k) % es.length];
           await gate();

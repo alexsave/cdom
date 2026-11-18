@@ -17,6 +17,12 @@
 #ifndef CD_STATE_PROTO_H
 #define CD_STATE_PROTO_H
 #include "cdom.h"
+/* cdom.h now has cd_state of its own (the implementation, in src/): the prototype's names are renamed
+ * here, after cdom.h, so the prototype builds beside it and its entries measure what they measured. */
+#define cd_state cdp_state
+#define cd_changed cdp_changed
+#define cd_watch cdp_watch
+#define cd_read cdp_read
 
 typedef struct cd_watcher cd_watcher;
 typedef struct cd_state {

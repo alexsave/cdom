@@ -26,7 +26,7 @@ async function page(entry, sc, mode, limit = 120) {
 try {
   if (what === 'all' || what === 'dom') {
     const seen = {};
-    for (const e of ['A', 'B', 'C', 'CL', 'E', 'L']) {
+    for (const e of ['A', 'B', 'C', 'CL', 'E', 'L', 'EI', 'LI']) {
       const r = await page(e, 'S1', 'dom');
       console.log('dom', e, r.error || `final ${r.hash} steps ${r.steps} (${r.nsteps}) len=${r.len} rows=${r.rows} mirror=${r.mirror} first=${r.first} invariants broken: ${r.bad.length ? r.bad.join('; ') : 'none'}`);
       if (r.error) { bad++; continue; }

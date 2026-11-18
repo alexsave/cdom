@@ -37,13 +37,13 @@ if (fs.existsSync(path.join(res, 'memory.tsv'))) {
   const L = s7('L');
   put('');
   put('S7 memory, op_build(10000) on a fresh page', 'entry', 'row_struct_bytes', 'touched_bytes_per_row', 'touched_minus_L_per_row', 'grown_bytes_per_row', 'grown_minus_L_per_row', 'passes');
-  for (const e of ['A', 'B', 'C', 'E', 'L']) {
+  for (const e of ['A', 'B', 'C', 'E', 'L', 'EI', 'LI']) {
     const x = s7(e); if (!x) continue;
     put('S7mem', e, x.size, (x.touched / 1e4).toFixed(1), L ? ((x.touched - L.touched) / 1e4).toFixed(1) : '', (x.grown / 1e4).toFixed(1), L ? ((x.grown - L.grown) / 1e4).toFixed(1) : '', x.n);
   }
   put('');
   put('S10 memory after 5 keystrokes on a 1 MB textarea', 'entry', 'pages_median', 'pages_min', 'pages_max', 'touchedKB_median', 'passes');
-  for (const e of ['A', 'C', 'E']) {
+  for (const e of ['A', 'C', 'E', 'EI']) {
     const rs = by('S10', e); if (!rs.length) continue;
     const p = rs.map((r) => +r.pages_after);
     put('S10mem', e, median(p), Math.min(...p), Math.max(...p), median(rs.map((r) => +r.touchedKB_after)), rs.length);
