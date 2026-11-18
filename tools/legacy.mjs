@@ -147,6 +147,21 @@ try {
     ok(phase('click').includes(false) && !phase('click').includes(true), `click in the bubble phase: ${phase('click')}`);
     ok(phase('focus').includes(true), `focus in the capture phase: ${phase('focus')}`);
   }
+  // Picked files on the old tiers: a file set on the input (a DataTransfer, as a drop gives), then read and fit
+  // as IE 10 and 11 have it (FileReader, no createImageBitmap): the bytes, and the fit UNSUPPORTED (4); then
+  // as IE 9 has it (neither): both UNSUPPORTED.
+  const fileAsk = async () => {
+    await E('X.file_ask()');
+    for (let i = 0; i < 100 && (await E('[X.file_seen(0), X.file_seen(3)].indexOf(-1) >= 0')); i++) await sleep(20);
+    return E('[0, 1, 2, 3].map(function (k) { return X.file_seen(k); }).join()');
+  };
+  await E(`(function () { var d = new DataTransfer(), b = new Uint8Array(50); for (var i = 0; i < 50; i++) b[i] = i + 1;
+    d.items.add(new File([b], 'f.bin')); document.getElementById('file').files = d.files; delete window.createImageBitmap; })()`);
+  const ie10 = await fileAsk();
+  ok(ie10 === '0,50,1,4', `IE 10 and 11 (FileReader, no createImageBitmap): cd_file_read gives the bytes, cd_file_fit UNSUPPORTED: ${ie10}`);
+  await E('delete window.FileReader');
+  const ie9 = await fileAsk();
+  ok(ie9 === '4,0,0,4', `IE 9 (no FileReader): cd_file_read and cd_file_fit UNSUPPORTED: ${ie9}`);
   // The same page with no Map: the read-only strings are kept in a plain object.
   await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/legacy.html?nomap` });
   await sleep(300);

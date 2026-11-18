@@ -3,13 +3,14 @@
  * call reported (reportError), focus events dispatched during a batch (queueMicrotask) and listener phases.
  * tests/legacy.html boots it and tools/legacy.mjs drives it, with LEGACY=1 or without. */
 #include "../src/cdom.h"
+#include "../src/cdom_file.h"
 
 #define EXPORT(n) __attribute__((export_name(n)))
 #define IMPORT(n) __attribute__((import_module("env"), import_name(n)))
 /* Every delivered event: its type, the listening id and four record fields. */
 IMPORT("ev") void ev(int32_t type, int32_t id, int32_t x, int32_t y, int32_t pointer, int32_t buttons);
 
-enum { PAD, TEXT, ECHO, ERR, FOCUS, NIDS };
+enum { PAD, TEXT, ECHO, ERR, FOCUS, FILE, NIDS };
 static cd_id ids[NIDS];
 static char io[256];
 
@@ -31,6 +32,7 @@ void cd_main(void) {
   cd_close();
   ids[ERR] = el("button", "err", "position:fixed;left:10px;top:250px"); cd_text("err"); cd_close();
   ids[FOCUS] = el("button", "focus", "position:fixed;left:100px;top:250px"); cd_text("focus"); cd_close();
+  ids[FILE] = el("input", "file", "position:fixed;left:10px;top:300px"); cd_attr("type", "file"); cd_close();
   static const uint32_t pad_evs[] = {CD_EV_POINTERDOWN, CD_EV_POINTERMOVE, CD_EV_POINTERUP, CD_EV_CLICK};
   for (uint32_t i = 0; i < sizeof pad_evs / 4; i++) { cd_sel(ids[PAD]); cd_listen(ids[PAD], pad_evs[i]); }
   cd_sel(ids[TEXT]); cd_listen(ids[TEXT], CD_EV_INPUT);
@@ -75,3 +77,20 @@ EXPORT("whole") uint32_t whole(uint32_t cap) { /* 1 << 16 when it fitted, and th
   uint32_t n, fits = (uint32_t)cd_input_whole(ids[TEXT], io, cap < sizeof io ? cap : sizeof io, &n);
   return fits << 16 | n;
 }
+
+/* Picked files on the old tiers (cdom_file.h): IE 10 and 11 have FileReader but no createImageBitmap, IE 9
+ * neither; tools/legacy.mjs takes them away in that order. seen(0..3): the read's status and length and
+ * whether every byte was i + 1, the fit's status. */
+static int32_t file_seen[4] = {-1, -1, -1, -1};
+static void on_read(void *, uint32_t status, const uint8_t *p, uint32_t len) {
+  int32_t same = p != 0;
+  for (uint32_t i = 0; p && i < len; i++) same &= p[i] == (uint8_t)(i + 1);
+  file_seen[0] = (int32_t)status, file_seen[1] = (int32_t)len, file_seen[2] = same;
+}
+static void on_fit(void *, uint32_t status, const uint8_t *, uint32_t, uint32_t, uint32_t, uint32_t) { file_seen[3] = (int32_t)status; }
+EXPORT("file_ask") void file_ask(void) {
+  for (int k = 0; k < 4; k++) file_seen[k] = -1;
+  cd_file_read_cb(ids[FILE], 0, 100, on_read, nullptr);
+  cd_file_fit_cb(ids[FILE], 0, 10, 10, CD_IMAGE_PNG, 0, on_fit, nullptr);
+}
+EXPORT("file_seen") int32_t file_seen_k(uint32_t k) { return file_seen[k]; }

@@ -53,7 +53,7 @@ wasm -O2 "$here/out/file_cap.wasm" -DCDOM_HEAP_PAGES_MAX=200 "$here/file.c" "$he
 page "$here/file.html" "$here/out/file_cap.html" "$here/out/file_cap.wasm"
 wasm -O2 "$here/out/host.wasm" "$here/host.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 page "$here/host.html" "$here/out/host.html" "$here/out/host.wasm"
-wasm -O2 "$here/out/legacy.wasm" "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/mini.c"
+wasm -O2 "$here/out/legacy.wasm" "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/mini.c"
 node "$legacy" app "$here/out/legacy.wasm" "$here/out/legacy.wasm.js"
 page "$here/legacy.html" "$here/out/legacy.shim.html" "$here/out/legacy.wasm"
 node "$legacy" page "$here/out/legacy.shim.html" "$here/out/legacy.html"
