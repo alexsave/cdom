@@ -3,7 +3,11 @@
 // the DevTools input events, never element.click()), and checks what is on screen. Every lesson also
 // fails on any page error, and on anything fetched (the module is bundled into the page).
 // Usage: node tutorial/test.mjs [lesson-dir ...]   (default: every lesson); tutorial/run.sh builds first.
-// SHOTS=dir writes a screenshot of each lesson's final state there.
+// SHOTS=dir writes a screenshot of each lesson's final state there. SHOTS_START=dir writes one of each lesson as
+// it starts: as soon as the mount is not empty, two animation frames later, with every <canvas> hidden
+// (lesson 7's first burst is random), before any input; two runs of an unchanged tree write the same
+// bytes, so a cmp of two such directories says whether a change moved a pixel (docs/page-tool-design.md).
+// SCHEME=light or dark runs the pages in that colour scheme.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -355,6 +359,8 @@ function driver(b, errors) {
 
 const names = process.argv.slice(2).length ? process.argv.slice(2).map((a) => path.basename(path.resolve(a))) : Object.keys(LESSONS);
 const b = await launch();
+// SCHEME=light or SCHEME=dark: the pages as that colour scheme shows them, whatever the system's is.
+if (process.env.SCHEME) await b.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: process.env.SCHEME }] });
 const errors = [];
 b.onEvent = (e) => {
   if (e.method === 'Runtime.exceptionThrown') errors.push(e.params.exceptionDetails.exception?.description || e.params.exceptionDetails.text);
@@ -373,6 +379,15 @@ try {
     const t = driver(b, errors);
     const up = await t.until(() => b.evaluate(`document.querySelector('#app')?.childElementCount > 0`));
     ok(up, `${name}: the app built its page`);
+    if (up && process.env.SHOTS_START) {
+      await b.evaluate(`document.querySelectorAll('canvas').forEach((c) => { c.style.visibility = 'hidden'; }), 1`);
+      await t.settle();
+      fs.mkdirSync(process.env.SHOTS_START, { recursive: true });
+      const { result } = await b.send('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(path.join(process.env.SHOTS_START, `${name}.png`), Buffer.from(result.data, 'base64'));
+      // shown again: a hidden canvas takes no clicks, and lesson 7's checks click it
+      await b.evaluate(`document.querySelectorAll('canvas').forEach((c) => { c.style.visibility = ''; }), 1`);
+    }
     if (up) {
       try { await check(t); } catch (e) { ok(false, `${name}: ${e.message}`); }
     }
