@@ -175,10 +175,15 @@ var cdom = (() => {
   // The string a cd_str stands for (s is an i32 from an import): a literal's slot address is positive and
   // indexes the page's table; a runtime string's serial has the top bit set (negative), and its record
   // in C's block says where its bytes are right now. CD_NONE (0) is no string and never reaches here.
+  // Kept small so V8 inlines it into every import: everything but the literal lookup is in strRest.
   function str(s) {
     if (s >= litBase && s < litEnd) {
       return lits[(s - litBase) >> 2];
     }
+    return strRest(s);
+  }
+  // Not a literal: the read-only cache, then the runtime record and the ahead range.
+  function strRest(s) {
     if (s > 0) {
       // A pointer into read-only data is its own id. Any other positive id is not a slot, so it is one of these.
       const h = s & 255;

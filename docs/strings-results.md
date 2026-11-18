@@ -78,6 +78,9 @@ Chrome's CPU profiler on the micro (`node bench/strings/prof.mjs 'micro-s.html?m
 `str` now also holds the read-only cache and the `cd_tmp_ahead` cut, and it is too big to inline.
 A diagnosis copy of the shim (`split=1` in the micro: the literal test alone in `str`, the rest moved to a second function, nothing else changed) measures 8.0 / 8.0 ns for the literal, with the read-only and runtime rows unchanged (ternary 12.5 / 13.0, 9 ASCII bytes 49.8 / 50.1).
 So most of the 5.9 ns is lost inlining, and a split `str` would take back about 4.8 of it; the other 1.1 ns over B was not traced.
+2026-11-17 fix: `str` is now the slot test and the `lits` lookup only, with the rest in `strRest` (the shape of the diagnosis copy).
+Prediction written before measuring: the literal 7 to 9 ns, the other rows within their step 10 noise.
+Two passes on the real shim, one Chrome at a time: literal 7.87 / 7.97 ns (was 12.8 / 12.9), ternary 12.72 / 12.68, helper 13.83 / 13.81, `const` table entry 14.27 / 14.06, runtime 9 ASCII bytes 53.0 / 53.0 (diagnosis copy 49.8 / 50.1, about 3 ns up, not traced), ahead 9 ASCII bytes 32.5 / 32.0.
 Option B's own rows: ternary 12.6, helper 13.4, `const` table entry 14.0 ns, each read once and then cached, within 1.2 ns of a literal in the same build.
 With the DOM call the literal costs 138 ns and the ternary 123, inside the DOM call's noise.
 
