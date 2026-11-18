@@ -95,3 +95,25 @@ A trace of the swap click, unthrottled (`node tools/onetrace.mjs <entry> '#run' 
 The harness runs swap under 4 times CPU throttling, so that would be about 0.4 ms of the 1.0 to 1.4; the rest does not show unthrottled.
 The page differs from A's by one element (the table's `<script>` in the head), and its rows' text is cut from the range with `substring` where A's came from a decode; which of these doubles the hit test was not found.
 No product code was changed: this is for the repo manager to decide.
+
+**P5, swap, followed up (2026-11-17): the gap does not reproduce, and the earlier traces put it in noise.**
+The swap path does the same DOM work in both builds: `cd_list_update` did not change, the swap is two `insertBefore` from the shim's `move`, and the 1,000 row patches compare a number (a label id in A, a revision in st-s) and make no DOM call.
+No layout is read and no hit test is asked for on this path.
+The 60 harness traces of the two earlier passes (`bench/strings/swapparts.mjs`, `bench/strings/swaphits.mjs`) have exactly one HitTest after the click in every trace: the hover update before Paint, at the mouse on `#swaprows`.
+So st-s has no extra hit test, only a longer one in some runs, and A2 against A alone differs as much (mean HitTest 0.83 against 1.13 ms in pass 2, 1.37 times).
+The extra time also fell in a different phase each pass: pass 1 put +0.7 ms in style and layout and nothing in hit test or paint, and pass 2 put +0.5 in hit test and +0.4 in paint with layout flat.
+The click's own FunctionCall medians were equal (0.46 to 0.51 ms throttled).
+`tools/pair.sh` runs each entry's 15 iterations as one block in FWS order, and st-s ran third in both passes.
+Rebuilt from strings 65d8700 (`bench/strings/build-st.sh`; A and A2 still from e35056c), with the same order and the same harness, two passes (`bench/strings/results/jfb-swap-head*.tsv`):
+
+| pass | loads at start | A | A2 | st-s | A2/A | st-s/A |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 3.4 to 4.0 | 19.8 | 17.7 | 18.2 | 0.894 | 0.919 |
+| 2 | 2.5 to 2.9 | 18.7 | 18.1 | 18.0 | 0.968 | 0.963 |
+
+The trace parts of these passes have st-s's hit test at 1.28 and 0.91 ms (A 1.29 and 0.98), and paint 3.77 and 3.59 (A 3.75 and 3.60).
+Of what changed since step 10, only the `str()` split touches the shim, and a swap reads no string, so the code under the swap is the same as when the gap was measured.
+The verdict: the 1.055 and 1.075 were run-to-run drift between blocks, not a cost of the strings change; P5 is not refuted on swap.
+The loads were higher than step 10's (1.5 to 1.8), so the noise band is wider here (A2/A 0.894 and 0.968), and these passes do not bound st-s tighter than 4%.
+The bisect hybrids (A's page with the table's script, st-s with the table and the shim in one script, st-s-na) were not needed, and were not run.
+For the harness, not the product: an interleaved order (A, st-s, A2, a copy of st-s), or a rotated FWS per pass, would keep a block's drift from reading as a regression.
