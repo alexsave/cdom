@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>cd_state checks</title></head>
+<body><div id="app"></div>
+<script>
+// The cd_state prototype's checks (test.c) on the real shim (shim/cdom.js). Query: build=test|test-check,
+// out=the directory under test/ the modules are in (out unless a mutant's). Sets window.X to the exports,
+// or window.LOADERR.
+const q = new URLSearchParams(location.search);
+const build = q.get('build') || 'test', out = q.get('out') || 'out';
+async function load(src) {
+  const s = document.createElement('script');
+  s.text = await (await fetch(src)).text();
+  document.head.appendChild(s);
+}
+(async () => {
+  await load(`${out}/${build}.wasm.lits`);
+  await load('../../../shim/cdom.js');
+  window.X = await cdom.start(`${out}/${build}.wasm`, 'app', null, { seed: 1 });
+})().catch((e) => { window.LOADERR = String(e.stack || e); });
+</script></body></html>
