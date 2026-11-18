@@ -147,6 +147,21 @@ try {
     ok(phase('click').includes(false) && !phase('click').includes(true), `click in the bubble phase: ${phase('click')}`);
     ok(phase('focus').includes(true), `focus in the capture phase: ${phase('focus')}`);
   }
+  // Picked files on the old tiers: a file set on the input (a DataTransfer, as a drop gives), then read as IE 10
+  // and 11 have it (FileReader): the bytes; then as IE 9 has it (no FileReader): UNSUPPORTED (4). A call that
+  // throws is a failure of its own case, not the end of the run.
+  const fileAsk = async () => {
+    try { await E('X.file_ask()'); } catch (e) { return 'threw ' + String(e).slice(0, 120); }
+    for (let i = 0; i < 100 && (await E('X.file_seen(0) === -1')); i++) await sleep(20);
+    return E('[0, 1, 2].map(function (k) { return X.file_seen(k); }).join()');
+  };
+  await E(`(function () { var d = new DataTransfer(), b = new Uint8Array(50); for (var i = 0; i < 50; i++) b[i] = i + 1;
+    d.items.add(new File([b], 'f.bin')); document.getElementById('file').files = d.files; })()`);
+  const ie10 = await fileAsk();
+  ok(ie10 === '0,50,1', `IE 10 and 11 (FileReader): cd_file_read gives the bytes: ${ie10}`);
+  await E('delete window.FileReader');
+  const ie9 = await fileAsk();
+  ok(ie9 === '4,0,0', `IE 9 (no FileReader): cd_file_read answers UNSUPPORTED: ${ie9}`);
   // The same page with no Map: the read-only strings are kept in a plain object.
   await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/legacy.html?nomap` });
   await sleep(300);

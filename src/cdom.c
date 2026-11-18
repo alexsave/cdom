@@ -260,7 +260,7 @@ IMPORTS("set_class") void j_set_class(cd_id id, uint32_t v);
 IMPORTS("style") void j_style(cd_id id, uint32_t prop, uint32_t v);
 IMPORTS("style_num") void j_style_num(cd_id id, uint32_t prop, double v, uint32_t unit);
 IMPORTS("encode") void j_encode(const uint8_t *px, uint32_t w, uint32_t h, uint32_t n, uint32_t W, uint32_t H, uint32_t x, uint32_t y,
-                             uint32_t mime, uint32_t token);
+                             uint32_t mime, uint32_t quality, uint32_t token);
 IMPORTS("image_bytes") void j_image_bytes(cd_id id, uint32_t prop, const uint8_t *p, uint32_t len, uint32_t mime, uint32_t token);
 IMPORTS("remove") void j_remove(cd_id id);
 IMPORTS("free") void j_free(cd_id id);
@@ -530,12 +530,13 @@ void cd_set_style_num(cd_id id, cd_str prop, double v, uint32_t unit) {
   ready(); j_style_num(id, prop.v, v, unit); tmp_done();
 }
 void cd_encode_image_in(const uint8_t *px, uint32_t w, uint32_t h, uint32_t n, uint32_t W, uint32_t H, uint32_t x,
-                        uint32_t y, cd_str mime, uint32_t token) {
-  if ((n != 3 && n != 4) || x + w > W || y + h > H) __builtin_trap();
-  ready(); j_encode(px, w, h, n, W, H, x, y, mime.v, token); tmp_done();
+                        uint32_t y, cd_str mime, uint32_t quality, uint32_t token) {
+  if ((n != 3 && n != 4) || x + w > W || y + h > H || quality > 100) __builtin_trap();
+  ready(); j_encode(px, w, h, n, W, H, x, y, mime.v, quality, token); tmp_done();
 }
-void cd_encode_image(const uint8_t *px, uint32_t w, uint32_t h, uint32_t n, cd_str mime, uint32_t token) {
-  cd_encode_image_in(px, w, h, n, w, h, 0, 0, mime, token);
+void cd_encode_image(const uint8_t *px, uint32_t w, uint32_t h, uint32_t n, cd_str mime, uint32_t quality,
+                     uint32_t token) {
+  cd_encode_image_in(px, w, h, n, w, h, 0, 0, mime, quality, token);
 }
 void cd_set_image_bytes(cd_id id, cd_str prop, const uint8_t *p, uint32_t len, cd_str mime, uint32_t token) {
   ready(); j_image_bytes(id, prop.v, p, len, mime.v, token); tmp_done();

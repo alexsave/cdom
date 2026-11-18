@@ -637,7 +637,7 @@ EXPORT("t_image") void t_image(void) {
   cd_at(s, CD_APPEND);
   cd_open("div"); cd_name_open(imaged = cd_id_new()); cd_close();
   for (uint32_t i = 0; i < 6; i++) { pix[i * 4] = (uint8_t)(40 * i); pix[i * 4 + 1] = (uint8_t)(255 - 30 * i); pix[i * 4 + 2] = (uint8_t)(7 * i); pix[i * 4 + 3] = 255; }
-  cd_encode_image(pix, 3, 2, 4, "image/png", 77);
+  cd_encode_image(pix, 3, 2, 4, "image/png", 92, 77);
   __builtin_memset(pix, 0, sizeof pix); /* the shim copied them during the call */
 }
 /* The same pixels as RGB, at (1, 1) in a 5 x 4 PNG: its bytes kept for the page to decode. */
@@ -646,13 +646,28 @@ static uint32_t rgb_len;
 EXPORT("t_image_rgb") void t_image_rgb(void) {
   uint8_t rgb[3 * 2 * 3];
   for (uint32_t i = 0; i < 6; i++) { rgb[i * 3] = (uint8_t)(40 * i); rgb[i * 3 + 1] = (uint8_t)(255 - 30 * i); rgb[i * 3 + 2] = (uint8_t)(7 * i); }
-  cd_encode_image_in(rgb, 3, 2, 3, 5, 4, 1, 1, "image/png", 78);
+  cd_encode_image_in(rgb, 3, 2, 3, 5, 4, 1, 1, "image/png", 92, 78);
 }
+/* One picture of seeded noise (cd_rand) as JPEG at quality 20 and at 95 (tokens 80 and 81), and as PNG at
+ * 0 and at 100 (82 and 83): their sizes, and the first two bytes of each (a JPEG starts FF D8), kept. */
+static uint32_t q_len[4], q_head[4];
+EXPORT("t_quality") void t_quality(void) {
+  static uint8_t noise[64 * 64 * 3];
+  for (uint32_t i = 0; i < sizeof noise; i++) noise[i] = (uint8_t)cd_rand();
+  cd_encode_image(noise, 64, 64, 3, "image/jpeg", 20, 80);
+  cd_encode_image(noise, 64, 64, 3, "image/jpeg", 95, 81);
+  cd_encode_image(noise, 64, 64, 3, "image/png", 0, 82);
+  cd_encode_image(noise, 64, 64, 3, "image/png", 100, 83);
+}
+EXPORT("t_quality_bad") void t_quality_bad(void) { static uint8_t px[4]; cd_encode_image(px, 1, 1, 4, "image/jpeg", 101, 84); }
+EXPORT("t_quality_len") uint32_t t_quality_len(uint32_t k) { return q_len[k]; }
+EXPORT("t_quality_head") uint32_t t_quality_head(uint32_t k) { return q_head[k]; }
 EXPORT("t_rgb_png") uint8_t *t_rgb_png(void) { return rgb_png; }
 EXPORT("t_rgb_len") uint32_t t_rgb_len(void) { return rgb_len; }
 void cd_on_encoded(uint32_t token, const uint8_t *p, uint32_t len) {
   enter();
   if (token == 78) { rgb_len = len < sizeof rgb_png ? len : 0; __builtin_memcpy(rgb_png, p, rgb_len); return; }
+  if (token >= 80 && token <= 83) { q_len[token - 80] = len; q_head[token - 80] = len > 1 ? (uint32_t)p[0] << 8 | p[1] : 0; return; }
   loaded_key = (int32_t)token;
   loaded_id = (int32_t)len;
   /* a PNG starts 0x89 'P' 'N' 'G' */
