@@ -7,7 +7,7 @@ set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 src="$here/../../src"
 out="$here/../out/link"
-CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"
+if [ "$(uname -s)" = Darwin ]; then CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"; else CC="${WASM_CC:-clang}"; fi
 mkdir -p "$out"
 # cdom.mk bundles the stylesheets under src/ where make runs: tests/link/app.mk runs here, where there is none.
 cd "$out" || exit 1
@@ -271,7 +271,7 @@ for cc in /usr/bin/clang "$out/no-such-clang"; do
   rm -rf "$out/mk-cc"
   if env PATH=/usr/bin:/bin make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$out/mk-cc" PAGE= WASM_CC="$cc" "$out/mk-cc/mk_app.wasm" > "$out/mk_cc.log" 2>&1; then
     echo "FAIL cdom.mk built a module with WASM_CC=$cc, which cannot build wasm32"; fail=1
-  elif ! grep -qxF "cdom.mk: install them with: brew install llvm lld   (Debian or Ubuntu: apt install clang lld, and set WASM_CC := clang)" "$out/mk_cc.log" \
+  elif ! grep -qxF "cdom.mk: install them with: brew install llvm lld   (Debian or Ubuntu: apt install clang lld)" "$out/mk_cc.log" \
     || grep -q "linker command failed\|error:" "$out/mk_cc.log" || [ -e "$out/mk-cc/mk_app.wasm" ]; then
     echo "FAIL cdom.mk with WASM_CC=$cc, which cannot build wasm32, did not stop at the toolchain check:"; cat "$out/mk_cc.log"; fail=1
   else echo "ok   cdom.mk with WASM_CC=$cc, which cannot build wasm32, stops before compiling: $(grep 'install them' "$out/mk_cc.log")"; fi
