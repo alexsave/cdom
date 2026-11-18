@@ -49,6 +49,20 @@ try {
   for (let i = 0; i < 30; i++) await click('#update');
   ok(await E(`document.querySelector("tbody tr td:nth-child(2) a").textContent.endsWith(${JSON.stringify(' !!!'.repeat(30))})`), 'repeated update');
   ok(await E('[...document.querySelectorAll("tbody tr")].every((r, i) => /^\\w+ \\w+ \\w+( !!!)*$/.test(r.children[1].textContent) && (r.children[1].textContent.split("!!!").length - 1 === (i % 10 === 0 ? 30 : 0)))'), 'labels intact after compaction');
+  // The app compacts its label arena and must move every row's offset with it. A row that is not re-read keeps a stale
+  // offset unseen, so remove rows (the rows every 10th update reads shift) and compare every label with a model after each step.
+  await click('#run');
+  const labels = () => E('[...document.querySelectorAll("tbody tr")].map(r => r.children[1].textContent)');
+  const model = await labels();
+  let bad = '';
+  for (let step = 0; step < 40 && !bad; step++) {
+    if (step % 10 === 5) { await click('tbody tr:nth-child(1) td:nth-child(3) a span'); model.shift(); }
+    else { await click('#update'); for (let i = 0; i < model.length; i += 10) model[i] += ' !!!'; }
+    const now = await labels();
+    const at = now.findIndex((l, i) => l !== model[i]);
+    if (now.length !== model.length || at >= 0) bad = `step ${step}: row ${at} shows "${now[at]}", expected "${model[at]}"`;
+  }
+  ok(!bad, `update and remove keep every label across arena compaction${bad ? ': ' + bad : ''}`);
 } finally { await b.close(); }
 console.log(fails ? `${fails} FAILED` : 'all ok');
 process.exit(fails ? 1 : 0);
