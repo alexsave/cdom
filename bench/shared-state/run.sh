@@ -9,6 +9,8 @@
 #                                             committed TSVs are not touched); SC is a key of bench/page.html's
 #                                             SC (S1, S3_100k, S9a1, ...) or S7mem / S10mem for the memory runs
 #   bench/shared-state/run.sh caret           S14 only, printed and written to results/caret.txt
+#   bench/shared-state/run.sh checks          everything untimed: the prototype's checks and mutants, the
+#                                             badges, the DOM check and crossings with its mutants, S14
 # The timed runs append to results/times.tsv and results/memory.tsv: delete them first for a fresh run.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -26,6 +28,19 @@ case "$what" in
     node "$here/caret/caret.mjs" | tee "$here/results/caret.txt"
     exit 0;;
 esac
+if [ "$what" = checks ]; then
+  "$here/test/build.sh"
+  node "$here/test/test.mjs"
+  "$here/test/mutate.sh"
+  for d in a-rerun b-module c-version e-state; do make -s -C "$here/badge/$d" > /dev/null; done
+  node "$here/badge/drive.mjs" "$here/badge"
+  build_bench
+  node "$here/bench/check.mjs"
+  "$here/bench/mutate-dom.sh"
+  "$here/caret/build.sh"
+  node "$here/caret/caret.mjs" | tee "$here/results/caret.txt"
+  exit 0
+fi
 if [ "$what" = all ]; then
   "$here/test/build.sh"
   node "$here/test/test.mjs"
