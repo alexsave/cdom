@@ -46,7 +46,7 @@ wasm -O2 "$here/out/alloc_own.wasm" -DOWN_ALLOC "$here/alloc_try.c" "$here/../sr
 wasm -O2 "$here/out/alloc_mem.wasm" "$here/alloc_mem.c" "$here/../src/cdom.c" "$here/../src/cdom_net.c" "$here/../src/cdom_store.c" "$here/../src/cdom_url.c" "$here/../src/cdom_file.c" "$here/../src/mini.c"
 wasm -O2 "$here/out/canvas.wasm" "$here/canvas.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 page "$here/canvas.html" "$here/out/canvas.html" "$here/out/canvas.wasm"
-# cd_file_read and cd_file_fit (tools/file.mjs), and the same with the heap capped at 12.5 MB, for NO_ROOM.
+# cd_file_read (tools/file.mjs), and the same with the heap capped at 12.5 MB, for NO_ROOM.
 wasm -O2 "$here/out/file.wasm" "$here/file.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/mini.c"
 page "$here/file.html" "$here/out/file.html" "$here/out/file.wasm"
 wasm -O2 "$here/out/file_cap.wasm" -DCDOM_HEAP_PAGES_MAX=200 "$here/file.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/mini.c"
