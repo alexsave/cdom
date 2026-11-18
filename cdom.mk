@@ -17,6 +17,9 @@
 #   CDOM_SHIM     the minified shim (shim/cdom.min.js) a page inlines
 #   CDOM_OPT      the optimization level of the APP_WASM rule (-Oz unless the app sets it)
 #   WASM_CC       a clang that targets wasm32 (Homebrew's llvm unless set; Apple's clang does not)
+#   HOST_CC       the C compiler for cdom's build tools (tools/cdlits.c), cc unless set
+#   CDOM_LITS     the built tools/cdlits, which every link goes through: it strips the string table out of
+#                 the module and writes it beside it as $(APP_WASM).lits, for the page
 #
 #   APP_WASM, APP_SRC, APP_MODULES, APP_CFLAGS, APP_LDFLAGS
 #                 the app's module: $(APP_WASM) is built from $(APP_SRC), $(CDOM_SRC) and the optional
@@ -34,8 +37,9 @@
 #                 page has /*CDOM_WASM*/: an app's own page that names its module by URL fails with "this
 #                 page loads <url>; set APP_WASM_SEPARATE := 1, or start with the bundled module (the
 #                 /*CDOM_WASM*/ marker)", and is never rewritten.
-#                 $(call cdom_page,in.html,out.html) inlines the shim in a recipe, and
-#                 $(call cdom_page,in.html,out.html,module.wasm) bundles that module as well.
+#                 $(call cdom_page,in.html,out.html,,lits) inlines the shim in a recipe (lits is the module's
+#                 .lits file), and $(call cdom_page,in.html,out.html,module.wasm) bundles that module as well,
+#                 with the string table cdlits wrote beside it (module.wasm.lits).
 #
 # The default page (shim/page.html), the contract other repos may name as "cdom's default page": a
 # doctype, <meta charset="utf-8">, the viewport meta (width=device-width, initial-scale=1), a <title> of
@@ -68,10 +72,14 @@
 # Optimization, warnings and -Wl,--strip-all are the app's choice (APP_CFLAGS, APP_LDFLAGS, CDOM_OPT).
 CDOM ?= $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
 WASM_CC ?= /opt/homebrew/opt/llvm/bin/clang
+HOST_CC ?= cc
 CDOM_OPT ?= -Oz
 
 CDOM_CFLAGS := --target=wasm32 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src
-CDOM_LDFLAGS := -Wl,--no-entry -Wl,--export-memory -Wl,--stack-first -Wl,-z,stack-size=65536
+CDOM_LDFLAGS := -Wl,--no-entry -Wl,--export-memory -Wl,--stack-first -Wl,-z,stack-size=65536 \
+  -Wl,--export-if-defined=__start_cd_lits -Wl,--export-if-defined=__stop_cd_lits \
+  -Wl,--export-if-defined=__start_cd_chars -Wl,--export-if-defined=__stop_cd_chars \
+  -Wl,--export-if-defined=cd_lits_stamp
 
 CDOM_SRC        := $(CDOM)/src/cdom.c $(CDOM)/src/mini.c
 CDOM_NET_SRC    := $(CDOM)/src/cdom_net.c
@@ -86,17 +94,28 @@ CDOM_HEADERS    := $(wildcard $(CDOM)/src/*.h $(CDOM)/src/libc/*.h)
 CDOM_SHIM       := $(CDOM)/shim/cdom.min.js
 
 CDOM_PAGE       := $(CDOM)/shim/page.html
+CDOM_LITS       := $(CDOM)/tools/out/cdlits
 
-# $(call cdom_page,in.html,out.html[,module.wasm]): the page with the shim inlined at its /*CDOM_SHIM*/
-# line and, when a module is named, that module bundled at its /*CDOM_WASM*/ (tools/page.awk); out.html
+# The tool that moves the literals out of a linked module. Built to a temporary name and renamed, since
+# several apps may build it at once. A pattern rule, so it never becomes the app's default goal.
+%/out/cdlits: %/cdlits.c
+	@mkdir -p $(@D)
+	$(HOST_CC) -O2 -Wall -Wextra -Werror -o $@.tmp$$$$ $< && mv $@.tmp$$$$ $@
+
+# $(call cdom_lits,linked.wasm,out.wasm): the step after a link, for an app's own rules; it writes
+# out.wasm and out.wasm.lits. Make the rule depend on $(CDOM_LITS).
+cdom_lits = $(CDOM_LITS) $(1) $(2) $(2).lits
+
+# $(call cdom_page,in.html,out.html[,module.wasm[,lits]]): the page with the string table and the shim at
+# its /*CDOM_SHIM*/ line and, when a module is named, that module bundled at its /*CDOM_WASM*/ (tools/page.awk); out.html
 # is written only when the page holds its markers as the APP_PAGE rule needs them (the header above).
-cdom_page = $(call cdom_mk_page,$(1),$(2),$(3))
-# $(call cdom_mk_page,in,out,module to bundle,URL for /*CDOM_WASM*/,title for /*CDOM_TITLE*/): the recipe
+cdom_page = $(call cdom_mk_page,$(1),$(2),$(3),,,$(if $(3),$(3).lits,$(4)))
+# $(call cdom_mk_page,in,out,module to bundle,URL for /*CDOM_WASM*/,title for /*CDOM_TITLE*/,lits file): the recipe
 # of cdom_page and the APP_PAGE rule. base64's output is joined into one line (macOS's base64 writes one,
 # GNU's wraps at 76 columns). cdom_mk_q quotes a value for the shell.
 cdom_mk_q = '$(subst ','\'',$(1))'
 cdom_mk_page = $(if $(3),base64 < $(call cdom_mk_q,$(3)) | tr -d '\n\r' | )CDOM_WASM_URL=$(call cdom_mk_q,$(4)) \
-  CDOM_TITLE=$(call cdom_mk_q,$(5)) awk -v shim=$(call cdom_mk_q,$(CDOM_SHIM)) -v wasm=$(if $(3),bundle,$(if $(4),url)) \
+  CDOM_TITLE=$(call cdom_mk_q,$(5)) awk -v shim=$(call cdom_mk_q,$(CDOM_SHIM)) $(if $(6),-v lits=$(call cdom_mk_q,$(6)) )-v wasm=$(if $(3),bundle,$(if $(4),url)) \
   $(if $(5),-v title=1 )-f $(call cdom_mk_q,$(CDOM)/tools/page.awk) $(call cdom_mk_q,$(1)) > $(call cdom_mk_q,$(2).tmp) \
   && mv $(call cdom_mk_q,$(2).tmp) $(call cdom_mk_q,$(2)) || { rm -f $(call cdom_mk_q,$(2).tmp); exit 1; }
 
@@ -116,10 +135,12 @@ cdom_mk_known = $(if $(cdom_mk_unknown),$(error cdom.mk: APP_MODULES names $(cdo
 # else one that nothing makes.
 cdom_mk_for = $(if $(filter $(2),$(1)),$(3),$(2).cdom-mk-none)
 .SECONDEXPANSION:
-%.wasm: $$(call cdom_mk_for,$$(APP_WASM),$$@,$$(cdom_mk_known)$$(cdom_mk_app_src) $$(CDOM_HEADERS))
+%.wasm: $$(call cdom_mk_for,$$(APP_WASM),$$@,$$(cdom_mk_known)$$(cdom_mk_app_src) $$(CDOM_HEADERS) $$(CDOM_LITS))
 	@mkdir -p $(@D)
 	@$(cdom_mk_toolchain)
-	$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS) $(APP_LDFLAGS) -o $@ $(cdom_mk_app_src)
+	$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS) $(APP_LDFLAGS) -o $@.linked $(cdom_mk_app_src)
+	$(call cdom_lits,$@.linked,$@)
+	@rm -f $@.linked
 
 # The page: APP_PAGE_SRC or the default page, the module it bundles (unless APP_WASM_SEPARATE), else the
 # URL its /*CDOM_WASM*/ names, and the default page's title.
@@ -127,10 +148,10 @@ cdom_mk_page_src = $(or $(APP_PAGE_SRC),$(CDOM_PAGE))
 cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))
 cdom_mk_wasm_url = $(if $(APP_WASM_SEPARATE),$(or $(APP_WASM_URL),$(notdir $(APP_WASM))))
 cdom_mk_title = $(if $(APP_PAGE_SRC),,$(or $(APP_TITLE),$(basename $(notdir $(APP_WASM)))))
-%.html: $$(call cdom_mk_for,$$(APP_PAGE),$$@,$$(cdom_mk_page_src) $$(CDOM_SHIM) $$(CDOM)/tools/page.awk $$(cdom_mk_bundled))
+%.html: $$(call cdom_mk_for,$$(APP_PAGE),$$@,$$(cdom_mk_page_src) $$(CDOM_SHIM) $$(CDOM)/tools/page.awk $$(APP_WASM))
 	$(if $(APP_PAGE_SRC)$(APP_WASM),,$(error cdom.mk: the default page starts APP_WASM, and APP_WASM is unset))
 	@mkdir -p $(@D)
-	$(call cdom_mk_page,$(cdom_mk_page_src),$@,$(cdom_mk_bundled),$(cdom_mk_wasm_url),$(cdom_mk_title))
+	$(call cdom_mk_page,$(cdom_mk_page_src),$@,$(cdom_mk_bundled),$(cdom_mk_wasm_url),$(cdom_mk_title),$(APP_WASM).lits)
 
 # The toolchain check before the APP_WASM rule compiles: a one-function module through WASM_CC, its
 # wasm32 target and wasm-ld. When that fails (Apple's clang finds no wasm-ld; WASM_CC is not there), make

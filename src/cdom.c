@@ -824,6 +824,12 @@ static void frame(double t) {
 /* ---- entry points ---- */
 EXPORT("cd_layout") const uint32_t *cd_layout(void) { return layout; }
 
+/* The word tools/cdlits overwrites with the hash of the page's string table; the shim compares it with
+ * the table, so a page and a module from different builds fail at start. volatile and non-zero keep it a
+ * real word in .data under LTO. */
+volatile uint32_t cd_lits_stamp = 0x7374696c;
+EXPORT("cd_lits") uint32_t cd_lits(void) { return cd_lits_stamp; }
+
 uint32_t cd_seed;
 EXPORT("cd_start") void cd_start(uint32_t seed) {
   cd_seed = seed;
