@@ -6,6 +6,7 @@
 //   d   dense ids: the joined string split at load, no map (the build numbers unique strings)
 //   e   dense ids as an array literal: no install at all, the parser builds the table
 //   f   dense ids, lazy: c's string and offsets with no map
+//   g   dense ids, two joined strings: the ASCII strings (numbered first) and the rest, split at load
 // Each page: script 1 marks t0, script 2 is the table, script 3 marks t1 (so t1 - t0 is the table
 // script's parse, compile and run), installs (t2), and window.useAll() reads every slot once.
 import fs from 'node:fs';
@@ -47,6 +48,8 @@ const INSTALL = {
       window.useAll = () => { let n = 0; for (let i = 0; i < lits.length; i++) n += lits[i].length; return n; };`,
   e: `window.lits = T;
       window.useAll = () => { let n = 0; for (let i = 0; i < lits.length; i++) n += lits[i].length; return n; };`,
+  g: `window.lits = T[0].split("\\0").concat(T[1].split("\\0"));
+      window.useAll = () => { let n = 0; for (let i = 0; i < lits.length; i++) n += lits[i].length; return n; };`,
   f: `const all = T, off = []; for (let at = 0; at <= all.length; ) { off.push(at); const z = all.indexOf("\\0", at); at = z < 0 ? all.length + 1 : z + 1; }
       const cache = []; window.nslots = off.length;
       window.lit = (u) => cache[u] ??= all.slice(off[u], off[u + 1] - 1);
@@ -68,6 +71,8 @@ for (const N of [10, 1000, 10000, 100000]) {
   const tables = {
     a: `[${joined},"${map.join(',')}"]`, b: `[${arr},"${map.join(',')}"]`, c: `[${joined},"${map.join(',')}"]`,
     d: joined, e: arr, f: joined,
+    // g: dense ids numbered ASCII first, so the ASCII strings come from a one-byte string
+    g: '[' + [u.filter((v) => !/[^\x00-\x7f]/.test(v)), u.filter((v) => /[^\x00-\x7f]/.test(v))].map((p) => js(p.join('\0')).replace(/\0/g, '\\x00')).join(',') + ']',
   };
   for (const f of Object.keys(INSTALL)) {
     const page = `<!doctype html><html><head><meta charset="utf-8"><title>table ${f} ${N}</title></head><body><p>table</p>

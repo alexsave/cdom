@@ -62,6 +62,10 @@ Added 2026-11-17 18:23 EST, after the micro and before any whole-app run: the mi
 - W1 is now expected to fail on create: B's create 1k and create 10k script 5% to 15% worse than A (about 0.07 ms per 1,000 labels). Falsified if B is within the noise of A on both.
 - W3. sb-bx, B with the faster read (fromCharCode with the bytes as arguments up to 32 ASCII bytes, the view checked by its length), is within the noise of A or better on every operation. Falsified if any operation is more than 3% worse beyond the noise.
 
+Added 2026-11-17 19:01 EST, after the first table run and before measuring it: that run showed (d) is the fastest to install and (e) the leanest, because splitting a string that holds any non-ASCII text makes every piece two-byte.
+
+- T8. (g), dense ids numbered ASCII first and carried as two joined strings (the ASCII ones, then the rest), installs within 20% of (d)'s table-plus-install time and has a heap within 15% of (e)'s at 10,000 and 100,000. Falsified if either bound fails.
+
 ## Method
 
 The designs, all built from this branch's `src/cdom.c` and `src/cdom.h`:
@@ -186,3 +190,58 @@ From the same loads (keyed: after five create-1k-and-clear cycles, then a forced
 The harness's own memory numbers (M2, P6) are under "Whole app".
 A grows to 14 pages because the intern pool, its hash table and the string batch (256 KB, written through by every label) all grow or get touched; B's labels live in the app's arena (reset on each run) and nothing of cdom's grows.
 
+## Whole app: js-framework-benchmark
+
+`bench/strings/jfb.sh`: `tools/pair.sh` over the entries `bench/strings/build.sh` makes, every start gated on a load under 4 (loads 2.7 to 3.7, `bench/strings/results/jfb-cpu-loads.tsv`), the entries interleaved benchmark by benchmark, 15 iterations each (the harness's default), medians in ms (`bench/strings/results/jfb-cpu.tsv`).
+sb-a and sb-a2 are the same build of today's entry, so their gap is the noise; sb-at is today's cdom with the app's labels in an arena and `cd_tmp` at each use (design step 3 on today's string path).
+
+| Benchmark | Metric | A | A2 | Noise | B | B / A | Bx | Bx / A | A with `cd_tmp` labels | / A |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| create 1k | total | 30.1 | 30.0 | 0.3% | 30.5 | 1.013 | 30.0 | 0.997 | 28.8 | 0.957 |
+| create 1k | script | 2.8 | 2.7 | 3.6% | 2.9 | 1.036 | 2.6 | 0.929 | 2.8 | 1.000 |
+| replace 1k | total | 31.7 | 31.7 | 0% | 32.1 | 1.013 | 31.4 | 0.991 | 30.9 | 0.975 |
+| replace 1k | script | 5.0 | 5.0 | 0% | 5.2 | 1.040 | 4.9 | 0.980 | 5.1 | 1.020 |
+| update every 10th | total | 16.2 | 16.1 | 0.6% | 16.1 | 0.994 | 16.1 | 0.994 | 16.6 | 1.025 |
+| select | total | 4.3 | 4.6 | 7.0% | 4.3 | 1.000 | 4.3 | 1.000 | 4.5 | 1.047 |
+| swap | total | 18.3 | 18.3 | 0% | 18.7 | 1.022 | 18.6 | 1.016 | 18.8 | 1.027 |
+| remove one | total | 15.3 | 15.5 | 1.3% | 15.3 | 1.000 | 15.2 | 0.993 | 15.4 | 1.007 |
+| create 10k | total | 303.1 | 302.9 | 0.1% | 305.6 | 1.008 | 304.1 | 1.003 | 293.0 | 0.967 |
+| create 10k | script | 20.4 | 20.5 | 0.5% | 23.2 | 1.137 | 21.2 | 1.039 | 22.4 | 1.098 |
+| append 1k to 1k | total | 34.8 | 34.8 | 0% | 35.2 | 1.011 | 34.8 | 1.000 | 33.7 | 0.968 |
+| append 1k to 1k | script | 2.7 | 2.7 | 0% | 2.9 | 1.074 | 2.6 | 0.963 | 2.8 | 1.037 |
+| clear | total | 13.3 | 13.3 | 0% | 13.3 | 1.000 | 13.2 | 0.992 | 13.3 | 1.000 |
+
+The script times of select, swap and remove are 0.1 to 0.6 ms, at the harness's resolution, so their ratios mean nothing.
+
+Without templates (`-DCDOM_TEMPLATES=0`, `bench/strings/results/jfb-notpl.tsv`):
+
+| Benchmark | Metric | A | A2 | Noise | B | B / A |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| create 1k | total | 31.4 | 31.5 | 0.3% | 32.2 | 1.025 |
+| create 1k | script | 4.5 | 4.5 | 0% | 5.2 | 1.156 |
+| create 10k | total | 316.9 | 317.2 | 0.1% | 319.9 | 1.009 |
+| create 10k | script | 35.9 | 35.3 | 1.7% | 38.1 | 1.061 |
+
+Memory, the harness's `measureUserAgentSpecificMemory`, one iteration each (`bench/strings/results/jfb-mem.tsv`):
+
+| Benchmark | A | A2 | B | Bx |
+| --- | ---: | ---: | ---: | ---: |
+| ready memory (MB) | 0.66 | 0.65 | 0.67 | 0.60 |
+| run memory (MB) | 1.75 | 1.84 | 1.81 | 1.84 |
+| run and clear five times (MB) | 0.85 | 0.85 | 0.72 | 0.78 |
+
+B and Bx carry the same module and differ only in the shim's read, so their 0.06 MB gap on run-clear is the noise of a single iteration.
+
+| # | Prediction | Measured | Verdict |
+| --- | --- | --- | --- |
+| W1 / P5, as the design wrote it | every operation within 3% of A in total; create 10k script 0.0 to 1.0 ms worse, never over 1.5 | totals 0.994 to 1.022; create 10k script 2.8 ms worse (1.137) | refuted on create 10k script; confirmed on totals |
+| W1, revised after the micro (18:23) | B's create 1k and 10k script 5% to 15% worse | 3.6% (inside its own noise of 3.6%) and 13.7% | confirmed on create 10k, not measurable on create 1k |
+| W3 | Bx within the noise of A or better everywhere | totals 0.991 to 1.016; create 1k script 7% better; create 10k script 0.8 ms (3.9%) worse | confirmed on totals; refuted narrowly on create 10k script |
+| W2 / P8 | without templates, create 1k script within 3% of A | 15.6% worse (4.5 to 5.2 ms), total 2.5% worse | refuted: each row reads its label through the design's read (TextDecoder above 12 bytes) |
+| M2 / P6 | run-clear memory 0.72 MB or less | 0.72 MB (A 0.85) | confirmed |
+
+Where B's create 10k script time goes: every label (9 to 27 ASCII bytes, "pretty red table") goes through the design's read, a TextDecoder call (about 140 ns in the micro) where A hashes, copies and then decodes the whole create in one call (about 65 ns a label in the micro's `intern_new`); 10,000 x 75 ns is 0.75 ms of the 2.8.
+The rest is the app's own change: A with `cd_tmp` labels (sb-at, today's string path, the arena app) is also 2.0 ms worse on create 10k script, so moving the labels from interned ids to the app's arena costs about as much as the read itself (an arena copy per label, a `cd_tmp` record per use, and `cd_tpl_text`'s unchanged-slot check that no longer hits).
+Bx's faster read takes back 2 of the 2.8 ms.
+
+Reproduce: the jfb server on 8093 (`cd jfb/server && PORT=8093 npx tsx index.ts`), then `bench/strings/build.sh && bench/strings/jfb.sh`, then `node bench/strings/jfbsum.mjs results/pairs/strings-cpu sb-a sb-a2 sb-b sb-bx sb-at`.

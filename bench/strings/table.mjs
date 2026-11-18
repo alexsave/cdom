@@ -9,7 +9,7 @@ import { launch, sleep } from '../../tools/cdp.mjs';
 import { serve } from './serve.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const R = +(process.env.R || 7);
-const files = fs.readdirSync(path.join(here, 'out', 'table')).filter((f) => f.endsWith('.html')).sort();
+const files = fs.readdirSync(path.join(here, 'out', 'table')).filter((f) => f.endsWith('.html') && new RegExp(process.env.FILTER || '.').test(f)).sort();
 const srv = serve();
 const br = Object.fromEntries(files.map((f) => [f, execFileSync('brotli', ['-q', '11', '-c', path.join(here, 'out', 'table', f)]).length]));
 const rows = [];
