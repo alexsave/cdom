@@ -95,8 +95,8 @@ static void item_patch(void *ctx, uint32_t i, cd_item *it) {
   ItemView *v = &views[it->data];
   if (v->done == t->done) return;              /* nothing changed: the row stays as it is */
   v->done = t->done;
-  cd_set_class(it->node, t->done ? L("item done") : L("item"));
-  cd_set_bool(v->check, L("checked"), t->done);
+  cd_set_class(it->node, t->done ? cd_s("item done") : cd_s("item"));
+  cd_set_bool(v->check, "checked", t->done);
 }
 
 static void item_destroy(void *ctx, cd_item *it) {
@@ -125,4 +125,4 @@ static void item_destroy(void *ctx, cd_item *it) {
   A todo's text lives as long as the todo, and its row is built again each time the filter changes.
   So the bytes are copied into the todo on add, and each row build passes `cd_tmp(t->text, t->len)`.
   The greeting in lesson 3 is a `cd_tmp` too, over a buffer that changes on every keystroke.
-  Nothing is interned, so what the user types does not grow any table.
+  The bytes are read when the row is built and kept nowhere else, so what the user types does not grow any table.

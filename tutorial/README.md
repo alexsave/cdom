@@ -5,9 +5,9 @@ Every lesson puts the same app in React next to it, so you can read cdom in term
 
 | Lesson | What it teaches | The React it replaces | Page, brotli |
 | --- | --- | --- | ---: |
-| [1. Hello](01-hello/) | building a page: `cd_open`, `cd_text`, `cd_attr`, interned strings | JSX | 8.9 KB |
+| [1. Hello](01-hello/) | building a page: `cd_open`, `cd_text`, `cd_attr`, plain string literals | JSX | 8.9 KB |
 | [2. Counter](02-counter/) | state in C variables, ids, `cd_on` handlers, updating one node | `useState`, `onClick` | 10.0 KB |
-| [3. Input](03-input/) | reading a text field, derived state, one-off strings | a controlled `<input>` | 10.3 KB |
+| [3. Input](03-input/) | reading a text field, derived state, strings with a length | a controlled `<input>` | 10.3 KB |
 | [4. Show and hide](04-regions/) | regions: parts of the page that come and go | `{open && <Panel/>}` | 11.6 KB |
 | [5. Todo list](05-todo/) | the keyed list: `cd_list_update` with create, patch and destroy | `items.map(i => <li key={i.id}>)` | 15.1 KB |
 | [6. Stopwatch](06-stopwatch/) | time: frames, timers and the clock | `useEffect`, `setInterval`, cleanup | 14.3 KB |
@@ -41,8 +41,9 @@ Copy one to start your own, and set `CDOM` in its Makefile to where cdom is.
   An id is an index into the shim's table, so `cd_set_text_node(id, ...)` costs one array lookup on the JavaScript side.
 - **State is plain data.** A counter is an `int`, a todo list is an array of structs.
   No hooks, no rules about where state can be read, no stale closures.
-- **Strings are interned.** A string crosses into JavaScript once and is named by a number after that.
-  `CD_LIT("...")` interns a literal once per call site, and `cd_tmp` sends a one-off value (a typed name, a time) without keeping it.
+- **Write the string.** A string argument is plain C.
+  A literal sits in the page's string table, built in with the page, so it costs nothing at run time.
+  Any other string (a buffer, a typed name) is read from C memory when the call uses it, so it is never stale, and `cd_tmp(p, len)` does the same for bytes with a length.
 - **One listener per event type.** The shim listens on the mount and passes each event to C, which routes it to the handler `cd_on` registered for that node.
 - **The page is one file.** The shim and the module are inlined into `index.html`, so it opens from disk, and the page and its code always come from the same build.
 

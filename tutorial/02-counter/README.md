@@ -42,8 +42,8 @@ static void step(const cd_event_rec *e, void *ctx) {
 
 void cd_main(void) {
   ...
-  cd_open(L("output")); cd_text_num(0); cd_name_text(count_text = cd_id_new()); cd_close();
-  minus = cd_open_id(L("button")); cd_text(L("−")); cd_close();
+  cd_open("output"); cd_text_num(0); cd_name_text(count_text = cd_id_new()); cd_close();
+  minus = cd_open_id("button"); cd_text("−"); cd_close();
   ...
   cd_on(minus, CD_EV_CLICK, step, (void *)(intptr_t)-1);
   cd_on(plus, CD_EV_CLICK, step, (void *)(intptr_t)1);
@@ -62,4 +62,4 @@ void cd_main(void) {
 - **One listener.** The shim puts a single click listener on the mount and passes each click to C, which finds the handler; buttons have no listener of their own.
 - **Wire after building.** The handlers are registered once the tree is built, which keeps the building code a plain description of the page.
 - **Numbers without printf.** `cd_set_text_node_num` sends a number as it is, and `cd_fmt` writes a signed one as JavaScript would.
-  `cd_tmp` marks the result as a one-off string, so values that keep changing never grow the string table.
+  `cd_tmp(buf, n)` hands cdom the bytes of the result, which it reads when the call runs, so a value that keeps changing is never stale.

@@ -5,7 +5,6 @@
 #include "cdom.h"
 #include <string.h>
 
-#define L(s) CD_LIT(s)
 
 /* The field's value is copied out only for the length of one handler. A value longer than this is cut to
  * the whole characters that fit. */
@@ -30,16 +29,16 @@ static void on_input(const cd_event_rec *e, void *ctx) {
   uint32_t n = cd_input_text(input, name, sizeof name);
   /* cd_input_text returns the whole length in bytes. When that is more than the buffer, the value was cut:
    * cd_get_str of "value" says how many bytes of whole characters did fit. */
-  if (n > sizeof name) n = cd_get_str(input, L("value"), name, sizeof name);
+  if (n > sizeof name) n = cd_get_str(input, "value", name, sizeof name);
 
   if (n == 0) {
-    cd_set_text_node(greeting_text, L("Hello, stranger!"));
+    cd_set_text_node(greeting_text, "Hello, stranger!");
   } else {
     char greeting[7 + NAME_CAP + 1];
     memcpy(greeting, "Hello, ", 7);
     memcpy(greeting + 7, name, n);
     greeting[7 + n] = '!';
-    /* cd_tmp: this greeting is new on every keystroke, so it is sent once and never interned. */
+    /* cd_tmp: the greeting is bytes with a length and no terminator, and it is read when it is used. */
     cd_set_text_node(greeting_text, cd_tmp(greeting, 8 + n));
   }
 
@@ -53,17 +52,17 @@ static void on_input(const cd_event_rec *e, void *ctx) {
 }
 
 static void style(void) {
-  cd_open(L("style"));
-  cd_text(L(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
-            "body { margin: 0; }"
-            ".form { display: flex; flex-direction: column; gap: 0.5rem; max-width: 24rem; margin: 3rem auto; padding: 0 1rem; }"
-            ".form label { font-weight: 600; }"
-            ".form input { box-sizing: border-box; width: 100%; font: inherit; font-size: 1.25rem; padding: 0.5rem 0.75rem;"
-            "  color: inherit; background: light-dark(#ffffff, #1c1c1e); border: 1px solid light-dark(#8a8a8f, #6e6e73);"
-            "  border-radius: 0.375rem; }"
-            ".form input:focus { outline: 2px solid light-dark(#1f5fd0, #8ab4ff); outline-offset: 1px; }"
-            ".form .greeting { font-size: 1.75rem; margin: 1rem 0 0; }"
-            ".form .count { margin: 0; color: light-dark(#5a5a60, #a1a1a8); }"));
+  cd_open("style");
+  cd_text(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
+          "body { margin: 0; }"
+          ".form { display: flex; flex-direction: column; gap: 0.5rem; max-width: 24rem; margin: 3rem auto; padding: 0 1rem; }"
+          ".form label { font-weight: 600; }"
+          ".form input { box-sizing: border-box; width: 100%; font: inherit; font-size: 1.25rem; padding: 0.5rem 0.75rem;"
+          "  color: inherit; background: light-dark(#ffffff, #1c1c1e); border: 1px solid light-dark(#8a8a8f, #6e6e73);"
+          "  border-radius: 0.375rem; }"
+          ".form input:focus { outline: 2px solid light-dark(#1f5fd0, #8ab4ff); outline-offset: 1px; }"
+          ".form .greeting { font-size: 1.75rem; margin: 1rem 0 0; }"
+          ".form .count { margin: 0; color: light-dark(#5a5a60, #a1a1a8); }");
   cd_close();
 }
 
@@ -71,14 +70,14 @@ void cd_main(void) {
   cd_at(CD_MOUNT, 0);
   style();
 
-  cd_open(L("main")); cd_class(L("form"));
-  cd_open(L("label")); cd_attr(L("for"), L("name")); cd_text(L("Your name")); cd_close();
-  input = cd_open_id(L("input"));
-  cd_attr(L("id"), L("name"));
-  cd_attr(L("autocomplete"), L("off"));
+  cd_open("main"); cd_class("form");
+  cd_open("label"); cd_attr("for", "name"); cd_text("Your name"); cd_close();
+  input = cd_open_id("input");
+  cd_attr("id", "name");
+  cd_attr("autocomplete", "off");
   cd_close();
-  cd_open(L("p")); cd_class(L("greeting")); cd_text(L("Hello, stranger!")); cd_name_text(greeting_text = cd_id_new()); cd_close();
-  cd_open(L("p")); cd_class(L("count")); cd_text(L("0 characters")); cd_name_text(count_text = cd_id_new()); cd_close();
+  cd_open("p"); cd_class("greeting"); cd_text("Hello, stranger!"); cd_name_text(greeting_text = cd_id_new()); cd_close();
+  cd_open("p"); cd_class("count"); cd_text("0 characters"); cd_name_text(count_text = cd_id_new()); cd_close();
   cd_close();
 
   /* The handler is registered after the field is closed, so the id names the input element. */

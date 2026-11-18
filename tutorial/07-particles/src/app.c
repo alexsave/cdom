@@ -4,7 +4,6 @@
 #include "cdom.h"
 #include <stdio.h>
 
-#define L(s) CD_LIT(s)
 
 /* The world is a fixed 320x200 of logical pixels. The canvas is drawn at that size and CSS scales it up, and
  * the simulation never looks at the CSS size: a click is converted to world pixels once, when it arrives. */
@@ -138,8 +137,8 @@ static void paint_particles(void) {
   }
 }
 
-/* The count text: one write, and only when the count changed. The text changes with the count, so it is a
- * one-off string (cd_tmp), and interning it would grow the string table with every count. */
+/* The count text: one write, and only when the count changed. The text changes with the count, so it
+ * is bytes with a length (cd_tmp), read when it is used. */
 static void show_count(void) {
   if (nparts == shown_count) return;
   shown_count = nparts;
@@ -205,27 +204,27 @@ static void on_pause(const cd_event_rec *e, void *ctx) {
   } else {
     cd_frames(0);
   }
-  cd_set_text_node(pause_text, playing ? L("Pause") : L("Play"));
+  cd_set_text_node(pause_text, playing ? cd_s("Pause") : cd_s("Play"));
 }
 
 /* The page's look. The canvas keeps its night colour in both schemes: the page around it follows them. */
 static void style(void) {
-  cd_open(L("style"));
-  cd_text(L(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
-            "body { margin: 0; }"
-            "button { font: inherit; color: inherit; cursor: pointer; background: light-dark(#ffffff, #2a2a2e);"
-            "  border: 1px solid light-dark(#8a8a8f, #6e6e73); border-radius: 0.375rem; }"
-            "button:focus-visible { outline: 2px solid light-dark(#1f5fd0, #8ab4ff); outline-offset: 1px; }"
-            ".sky { max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }"
-            ".sky h1 { margin: 0 0 1rem; font-size: 1.75rem; font-weight: 600; }"
+  cd_open("style");
+  cd_text(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
+          "body { margin: 0; }"
+          "button { font: inherit; color: inherit; cursor: pointer; background: light-dark(#ffffff, #2a2a2e);"
+          "  border: 1px solid light-dark(#8a8a8f, #6e6e73); border-radius: 0.375rem; }"
+          "button:focus-visible { outline: 2px solid light-dark(#1f5fd0, #8ab4ff); outline-offset: 1px; }"
+          ".sky { max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }"
+          ".sky h1 { margin: 0 0 1rem; font-size: 1.75rem; font-weight: 600; }"
             /* The canvas is 320 px wide in its attributes, so it is 16:10 at any width. box-shadow draws its edge
              * without taking any space, so the picture keeps its exact 16:10 box. */
-            ".view { display: block; width: 100%; max-width: 40rem; height: auto; aspect-ratio: 16 / 10;"
-            "  image-rendering: pixelated; background: #0b1020; border-radius: 0.5rem;"
-            "  box-shadow: 0 0 0 1px light-dark(#c9c9d1, #3a3a3e); }"
-            ".controls { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; }"
-            ".controls button { min-width: 6rem; font-size: 1.125rem; padding: 0.5rem 1rem; }"
-            ".count { color: light-dark(#5a5a60, #a1a1a8); font-variant-numeric: tabular-nums; }"));
+          ".view { display: block; width: 100%; max-width: 40rem; height: auto; aspect-ratio: 16 / 10;"
+          "  image-rendering: pixelated; background: #0b1020; border-radius: 0.5rem;"
+          "  box-shadow: 0 0 0 1px light-dark(#c9c9d1, #3a3a3e); }"
+          ".controls { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; }"
+          ".controls button { min-width: 6rem; font-size: 1.125rem; padding: 0.5rem 1rem; }"
+          ".count { color: light-dark(#5a5a60, #a1a1a8); font-variant-numeric: tabular-nums; }");
   cd_close();
 }
 
@@ -235,16 +234,16 @@ void cd_main(void) {
   cd_at(CD_MOUNT, 0);
   style();
 
-  cd_open(L("main")); cd_class(L("sky"));
-  cd_open(L("h1")); cd_text(L("Particles")); cd_close();
-  canvas = cd_open_id(L("canvas")); cd_class(L("view"));
-  cd_attr(L("width"), L("320")); cd_attr(L("height"), L("200"));
+  cd_open("main"); cd_class("sky");
+  cd_open("h1"); cd_text("Particles"); cd_close();
+  canvas = cd_open_id("canvas"); cd_class("view");
+  cd_attr("width", "320"); cd_attr("height", "200");
   cd_close();
-  cd_open(L("div")); cd_class(L("controls"));
-  pause_btn = cd_open_id(L("button")); cd_class(L("pause"));
-  cd_text(L("Pause")); cd_name_text(pause_text = cd_id_new()); cd_close();
-  cd_open(L("output")); cd_class(L("count"));
-  cd_text(L("0 particles")); cd_name_text(count_text = cd_id_new()); cd_close();
+  cd_open("div"); cd_class("controls");
+  pause_btn = cd_open_id("button"); cd_class("pause");
+  cd_text("Pause"); cd_name_text(pause_text = cd_id_new()); cd_close();
+  cd_open("output"); cd_class("count");
+  cd_text("0 particles"); cd_name_text(count_text = cd_id_new()); cd_close();
   cd_close();
   cd_close();
 

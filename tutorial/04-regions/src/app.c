@@ -4,7 +4,6 @@
  * diffed: the disclosure builds its section when it opens, and the tabs rebuild their panel on each change. */
 #include "cdom.h"
 
-#define L(s) CD_LIT(s)
 
 /* Two regions, of the two kinds. The disclosure's region is one element (its root), so its parent stays 0.
  * The panel's region is all the children of the panel, so its parent is the panel, set once it exists.
@@ -19,12 +18,12 @@ static uint32_t selected; /* 0 Overview, 1 Usage, 2 Notes */
  * lands right after the button, so the button is never moved and no placeholder node is needed. */
 static void build_details(void) {
   cd_at(disclosure, 0);
-  cd_open(L("section")); cd_attr(L("id"), L("details")); cd_class(L("details"));
+  cd_open("section"); cd_attr("id", "details"); cd_class("details");
   /* cd_name_open names the section as the region's root: hiding the region removes it in one step. */
   cd_name_open(details_region.root);
-  cd_open(L("h2")); cd_text(L("What a region is")); cd_close();
-  cd_open(L("p")); cd_text(L("A region is a part of the page that comes and goes. It is built when it is shown and taken away when it is hidden.")); cd_close();
-  cd_open(L("p")); cd_text(L("Taking a region away removes its nodes and frees every id it recorded, so nothing is left behind.")); cd_close();
+  cd_open("h2"); cd_text("What a region is"); cd_close();
+  cd_open("p"); cd_text("A region is a part of the page that comes and goes. It is built when it is shown and taken away when it is hidden."); cd_close();
+  cd_open("p"); cd_text("Taking a region away removes its nodes and frees every id it recorded, so nothing is left behind."); cd_close();
   cd_close();
 }
 
@@ -37,8 +36,8 @@ static void on_toggle(const cd_event_rec *e, void *ctx) {
     build_details();
     cd_region_end(&details_region);
   }
-  cd_set_text_node(toggle_text, open ? L("Hide details") : L("Show details"));
-  cd_set_attr(toggle, L("aria-expanded"), open ? L("true") : L("false"));
+  cd_set_text_node(toggle_text, open ? cd_s("Hide details") : cd_s("Show details"));
+  cd_set_attr(toggle, "aria-expanded", open ? cd_s("true") : cd_s("false"));
 }
 
 /* One panel per tab. Any id made while a region builds (cd_id_new, cd_open_id) is recorded and freed with
@@ -46,20 +45,20 @@ static void on_toggle(const cd_event_rec *e, void *ctx) {
 static void build_panel(uint32_t k) {
   cd_at(panel, 0);
   if (k == 0) {
-    cd_open(L("h2")); cd_text(L("Overview")); cd_close();
-    cd_open(L("p")); cd_text(L("Each tab builds its own panel. Only the selected tab's content is in the page.")); cd_close();
+    cd_open("h2"); cd_text("Overview"); cd_close();
+    cd_open("p"); cd_text("Each tab builds its own panel. Only the selected tab's content is in the page."); cd_close();
   } else if (k == 1) {
-    cd_open(L("h2")); cd_text(L("Usage")); cd_close();
-    cd_open(L("p"));
-    cd_text(L("Call "));
-    cd_open(L("code")); cd_text(L("cd_region_show")); cd_close();
-    cd_text(L(" to build a region, and "));
-    cd_open(L("code")); cd_text(L("cd_region_hide")); cd_close();
-    cd_text(L(" to take it away."));
+    cd_open("h2"); cd_text("Usage"); cd_close();
+    cd_open("p");
+    cd_text("Call ");
+    cd_open("code"); cd_text("cd_region_show"); cd_close();
+    cd_text(" to build a region, and ");
+    cd_open("code"); cd_text("cd_region_hide"); cd_close();
+    cd_text(" to take it away.");
     cd_close();
   } else {
-    cd_open(L("h2")); cd_text(L("Notes")); cd_close();
-    cd_open(L("p")); cd_text(L("The panel has no diff. Its old nodes go and the new ones are built, which is a few nodes and cheap.")); cd_close();
+    cd_open("h2"); cd_text("Notes"); cd_close();
+    cd_open("p"); cd_text("The panel has no diff. Its old nodes go and the new ones are built, which is a few nodes and cheap."); cd_close();
   }
 }
 
@@ -68,8 +67,8 @@ static void build_panel(uint32_t k) {
 static void select_tab(uint32_t k) {
   selected = k;
   for (uint32_t i = 0; i < 3; i++) {
-    cd_set_attr(tabs[i], L("aria-selected"), i == k ? L("true") : L("false"));
-    cd_set_class(tabs[i], i == k ? L("tab active") : L("tab"));
+    cd_set_attr(tabs[i], "aria-selected", i == k ? cd_s("true") : cd_s("false"));
+    cd_set_class(tabs[i], i == k ? cd_s("tab active") : cd_s("tab"));
   }
   cd_region_hide(&panel_region);
   if (cd_region_show(&panel_region, 1)) {
@@ -86,34 +85,34 @@ static void on_tab(const cd_event_rec *e, void *ctx) {
 }
 
 static cd_id tab_button(cd_str label) {
-  cd_id id = cd_open_id(L("button"));
-  cd_attr(L("role"), L("tab"));
+  cd_id id = cd_open_id("button");
+  cd_attr("role", "tab");
   cd_text(label);
   cd_close();
   return id;
 }
 
 static void style(void) {
-  cd_open(L("style"));
-  cd_text(L(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
-            "body { margin: 0; }"
-            ".page { max-width: 40rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }"
-            ".toggle { font: inherit; padding: 0.5rem 1rem; color: inherit; cursor: pointer;"
-            "  background: light-dark(#ffffff, #1c1c1e); border: 1px solid light-dark(#8a8a8f, #6e6e73);"
-            "  border-radius: 0.375rem; }"
-            ".toggle:focus-visible, .tab:focus-visible { outline: 2px solid light-dark(#1f5fd0, #8ab4ff); outline-offset: 2px; }"
-            ".details { margin-top: 1rem; padding: 1rem 1.25rem; border-radius: 0.5rem;"
-            "  background: light-dark(#f2f2f5, #2a2a2e); }"
-            ".details h2, .panel h2 { margin: 0; font-size: 1.25rem; }"
-            ".details p, .panel p { margin: 0.5rem 0 0; color: light-dark(#3a3a40, #c7c7cc); }"
-            ".tabs { display: flex; gap: 0.25rem; margin-top: 2rem; border-bottom: 1px solid light-dark(#c7c7cc, #3a3a3e); }"
-            ".tab { font: inherit; padding: 0.5rem 1rem; color: light-dark(#5a5a60, #a1a1a8); cursor: pointer;"
-            "  background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; }"
-            ".tab.active { color: light-dark(#1c1c1e, #f2f2f5); border-bottom-color: light-dark(#1f5fd0, #8ab4ff);"
-            "  font-weight: 600; }"
-            ".panel { padding: 1rem 0; }"
-            ".panel code { font-family: ui-monospace, monospace; font-size: 0.9em; padding: 0.1em 0.3em;"
-            "  border-radius: 0.25rem; background: light-dark(#ececf0, #3a3a3e); }"));
+  cd_open("style");
+  cd_text(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
+          "body { margin: 0; }"
+          ".page { max-width: 40rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }"
+          ".toggle { font: inherit; padding: 0.5rem 1rem; color: inherit; cursor: pointer;"
+          "  background: light-dark(#ffffff, #1c1c1e); border: 1px solid light-dark(#8a8a8f, #6e6e73);"
+          "  border-radius: 0.375rem; }"
+          ".toggle:focus-visible, .tab:focus-visible { outline: 2px solid light-dark(#1f5fd0, #8ab4ff); outline-offset: 2px; }"
+          ".details { margin-top: 1rem; padding: 1rem 1.25rem; border-radius: 0.5rem;"
+          "  background: light-dark(#f2f2f5, #2a2a2e); }"
+          ".details h2, .panel h2 { margin: 0; font-size: 1.25rem; }"
+          ".details p, .panel p { margin: 0.5rem 0 0; color: light-dark(#3a3a40, #c7c7cc); }"
+          ".tabs { display: flex; gap: 0.25rem; margin-top: 2rem; border-bottom: 1px solid light-dark(#c7c7cc, #3a3a3e); }"
+          ".tab { font: inherit; padding: 0.5rem 1rem; color: light-dark(#5a5a60, #a1a1a8); cursor: pointer;"
+          "  background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; }"
+          ".tab.active { color: light-dark(#1c1c1e, #f2f2f5); border-bottom-color: light-dark(#1f5fd0, #8ab4ff);"
+          "  font-weight: 600; }"
+          ".panel { padding: 1rem 0; }"
+          ".panel code { font-family: ui-monospace, monospace; font-size: 0.9em; padding: 0.1em 0.3em;"
+          "  border-radius: 0.25rem; background: light-dark(#ececf0, #3a3a3e); }");
   cd_close();
 }
 
@@ -121,25 +120,25 @@ void cd_main(void) {
   cd_at(CD_MOUNT, 0);
   style();
 
-  cd_open(L("main")); cd_class(L("page"));
+  cd_open("main"); cd_class("page");
 
   /* The disclosure is a wrapper around the button. The section, while it is open, is its second child. */
-  disclosure = cd_open_id(L("div")); cd_class(L("disclosure"));
-  toggle = cd_open_id(L("button"));
-  cd_class(L("toggle"));
-  cd_attr(L("aria-expanded"), L("false"));
-  cd_attr(L("aria-controls"), L("details"));
-  cd_text(L("Show details")); cd_name_text(toggle_text = cd_id_new());
+  disclosure = cd_open_id("div"); cd_class("disclosure");
+  toggle = cd_open_id("button");
+  cd_class("toggle");
+  cd_attr("aria-expanded", "false");
+  cd_attr("aria-controls", "details");
+  cd_text("Show details"); cd_name_text(toggle_text = cd_id_new());
   cd_close();
   cd_close();
 
-  cd_open(L("div")); cd_attr(L("role"), L("tablist")); cd_class(L("tabs"));
-  tabs[0] = tab_button(L("Overview"));
-  tabs[1] = tab_button(L("Usage"));
-  tabs[2] = tab_button(L("Notes"));
+  cd_open("div"); cd_attr("role", "tablist"); cd_class("tabs");
+  tabs[0] = tab_button(cd_s("Overview"));
+  tabs[1] = tab_button(cd_s("Usage"));
+  tabs[2] = tab_button(cd_s("Notes"));
   cd_close();
 
-  panel = cd_open_id(L("div")); cd_class(L("panel")); cd_attr(L("role"), L("tabpanel")); cd_close();
+  panel = cd_open_id("div"); cd_class("panel"); cd_attr("role", "tabpanel"); cd_close();
   cd_close();
 
   /* The panel's region holds all of the panel's children, so it names the panel as its parent. */

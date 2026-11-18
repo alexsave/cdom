@@ -47,9 +47,9 @@ static void on_input(const cd_event_rec *e, void *ctx) {
 
 void cd_main(void) {
   ...
-  input = cd_open_id(L("input"));
-  cd_attr(L("id"), L("name"));
-  cd_attr(L("autocomplete"), L("off"));
+  input = cd_open_id("input");
+  cd_attr("id", "name");
+  cd_attr("autocomplete", "off");
   cd_close();
   ...
   cd_on(input, CD_EV_INPUT, on_input, 0);
@@ -63,8 +63,9 @@ void cd_main(void) {
   Nothing is kept in sync, and the cursor never jumps, because C never writes the field.
 - **Derived state is computed in the handler.** React computes `count` and the greeting during render from `name`.
   Here the one handler that changes the value also writes the two text nodes, so there is no derived-state hook and nothing can be stale.
-- **`cd_tmp` for strings that change every keystroke.** Each greeting is a new string.
-  `cd_intern` would add one entry to the string table per keystroke, forever, so `cd_tmp` sends the bytes with the next operation and keeps nothing.
+- **`cd_tmp` for strings that change every keystroke.** Each greeting is a new string, built in a buffer with a length.
+  A literal lives in the page's string table, but a string like this is not one, so `cd_tmp(greeting, len)` hands cdom the bytes and cdom reads them when the call runs.
+  Nothing is kept, so the next keystroke can overwrite the buffer.
 - **Bytes are not characters.** `cd_input_text` returns UTF-8 bytes, so "Zoë" is four bytes.
   The count takes the characters by skipping continuation bytes (`(b & 0xC0) == 0x80`).
   The buffer is fixed at 256 bytes; a longer value is cut to whole characters, and `cd_input_text` still reports its full length.
