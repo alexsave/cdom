@@ -204,7 +204,7 @@ static void on_pause(const cd_event_rec *e, void *ctx) {
   } else {
     cd_frames(0);
   }
-  cd_set_text_node(pause_text, playing ? cd_s("Pause") : cd_s("Play"));
+  cd_set_text_node(pause_text, playing ? "Pause" : "Play");
 }
 
 /* The page's look. The canvas keeps its night colour in both schemes: the page around it follows them. */

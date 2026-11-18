@@ -192,7 +192,19 @@ cd_str cd_tmp(const char *s, uint32_t len) {
   tmp.r[tmp.n] = (tmp_rec){(uint32_t)(uintptr_t)s, len};
   return (cd_str){0x80000000u | ((tmp.serial0 + tmp.n++) & 0x7fffffffu)};
 }
+#ifndef CDOM_RO
+#define CDOM_RO 1
+#endif
+#if CDOM_RO
+/* strings-plain-c prototype: a pointer into the module's read-only data is its own id (the shim caches
+ * the string by address); wasm-ld defines the two symbols, weak so an older linker leaves the range empty. */
+extern const char __rodata_start[] __attribute__((weak)), __rodata_end[] __attribute__((weak));
+#endif
 cd_str cd_tmpz(const char *s) {
+#if CDOM_RO
+  if ((uintptr_t)s - (uintptr_t)__rodata_start < (uintptr_t)__rodata_end - (uintptr_t)__rodata_start)
+    return (cd_str){(uint32_t)(uintptr_t)s};
+#endif
   if (!s) __builtin_trap();
   uint32_t n = 0;
   while (s[n]) n++;

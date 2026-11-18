@@ -1,0 +1,152 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>strings plain C micro</title></head>
+<body><script>
+// bench/plainc/micro.c through one of the string resolvers below. Query: build=base|ro, opt=today|romap|
+// roarr|roobj|val|shimro|ptr, test=lit8|tern8|terns8|help8|buf1|bufnew, len=bytes.
+// Sets window.RESULT = {ns: median ns per cd_text, lo, hi, n}. The imports only resolve the string.
+const q = new URLSearchParams(location.search);
+const build = q.get('build'), opt = q.get('opt'), test = q.get('test'), len = +(q.get('len') || 12);
+const td = new TextDecoder(), F = String.fromCharCode;
+let acc = 0, exports, memory, u8, u32;
+function views() { u8 = new Uint8Array(memory.buffer); u32 = new Uint32Array(memory.buffer); }
+let lits = [], litBase = 0, roBase = 0, roEnd = 0, tmpSerial0, tmpCount, tmpRecords, recWords, recP, recLen;
+let aheadText = null; // never set here; the shim's test for it is kept, as every page pays it
+// shim/cdom.js's ascii and readString, verbatim
+function ascii(p, n) {
+  const b = u8;
+  let v = "";
+  for (; n >= 8; p += 8, n -= 8) v += F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5], b[p + 6], b[p + 7]);
+  switch (n) {
+    case 0: return v;
+    case 1: return v + F(b[p]);
+    case 2: return v + F(b[p], b[p + 1]);
+    case 3: return v + F(b[p], b[p + 1], b[p + 2]);
+    case 4: return v + F(b[p], b[p + 1], b[p + 2], b[p + 3]);
+    case 5: return v + F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4]);
+    case 6: return v + F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5]);
+    default: return v + F(b[p], b[p + 1], b[p + 2], b[p + 3], b[p + 4], b[p + 5], b[p + 6]);
+  }
+}
+function readString(p, n) {
+  if (n <= 32) {
+    let high = 0;
+    for (let k = 0; k < n; k++) high |= u8[p + k];
+    if (high < 128) return ascii(p, n);
+  }
+  return td.decode(u8.subarray(p, p + n));
+}
+function cString(p) { let e = p; while (u8[e]) e++; return readString(p, e - p); }
+// today's str(): a slot, or a record read on use
+function record(s) {
+  if (u8.length === 0) views();
+  const k = ((s & 0x7fffffff) - u32[tmpSerial0]) & 0x7fffffff;
+  if (k >= u32[tmpCount]) throw new Error("stale");
+  return (tmpRecords >> 2) + k * recWords;
+}
+function runtime(s) {
+  const at = record(s), p = u32[at + recP], n = u32[at + recLen];
+  if (aheadText !== null && p >= 0) throw new Error("no range here");
+  return readString(p, n);
+}
+const roMap = new Map();
+let roArr = [], roObj = {};
+const dmKey = new Int32Array(256), dmVal = new Array(256).fill("");
+const valMap = new Map(); // pointer -> {n, bytes, v}: a hit only when the bytes in memory still match
+function validated(s) {
+  const at = record(s), p = u32[at + recP], n = u32[at + recLen];
+  let e = valMap.get(p);
+  if (e !== undefined && e.n === n) {
+    const b = e.b;
+    let k = 0;
+    while (k < n && u8[p + k] === b[k]) k++;
+    if (k === n) return e.v;
+  }
+  if (n > 64) return readString(p, n);
+  if (e === undefined) { if (valMap.size >= 4096) valMap.clear(); valMap.set(p, e = { n: 0, b: new Uint8Array(64), v: "" }); }
+  e.n = n; e.b.set(u8.subarray(p, p + n)); e.v = readString(p, n);
+  return e.v;
+}
+const resolvers = {
+  // today: slots and reads
+  today(s) { return s > 0 ? lits[(s - litBase) >> 2] : runtime(s); },
+  // rodata pointers are ids (C, -DCDOM_RO=1): a Map by address; slots lie above the read-only data
+  romap(s) {
+    if (s >= litBase) return lits[(s - litBase) >> 2];
+    if (s > 0) { let v = roMap.get(s); if (v === undefined) { if (u8.length === 0) views(); roMap.set(s, v = cString(s)); } return v; }
+    return runtime(s);
+  },
+  // the same, an array indexed by the offset into the read-only data, made that long at start
+  roarr(s) {
+    if (s >= litBase) return lits[(s - litBase) >> 2];
+    if (s > 0) { let v = roArr[s - roBase]; if (v === undefined) { if (u8.length === 0) views(); roArr[s - roBase] = v = cString(s); } return v; }
+    return runtime(s);
+  },
+  // the same, a plain object keyed by address (what a browser without Map would run)
+  roobj(s) {
+    if (s >= litBase) return lits[(s - litBase) >> 2];
+    if (s > 0) { let v = roObj[s]; if (v === undefined) { if (u8.length === 0) views(); roObj[s] = v = cString(s); } return v; }
+    return runtime(s);
+  },
+  // the same, a 256-entry direct-mapped cache by the address's low bits in front of the Map: fixed memory
+  rodm(s) {
+    if (s >= litBase) return lits[(s - litBase) >> 2];
+    if (s > 0) {
+      const h = s & 255;
+      if (dmKey[h] === s) return dmVal[h];
+      let v = roMap.get(s); if (v === undefined) { if (u8.length === 0) views(); roMap.set(s, v = cString(s)); }
+      dmKey[h] = s; dmVal[h] = v;
+      return v;
+    }
+    return runtime(s);
+  },
+  // C unchanged; the shim tests the record's pointer against the read-only range and caches those by address
+  shimro(s) {
+    if (s > 0) return lits[(s - litBase) >> 2];
+    const at = record(s), p = u32[at + recP], n = u32[at + recLen];
+    if (p >= roBase && p < roEnd) { let v = roMap.get(p); if (v === undefined) roMap.set(p, v = readString(p, n)); return v; }
+    return readString(p, n);
+  },
+  // C unchanged; every runtime string goes through a cache by address that is checked against the bytes
+  val(s) { return s > 0 ? lits[(s - litBase) >> 2] : validated(s); },
+  // C unchanged; a cache by address with no check at all: unsound (a reused buffer shows old text), the floor
+  ptr(s) {
+    if (s > 0) return lits[(s - litBase) >> 2];
+    const at = record(s), p = u32[at + recP];
+    let v = roMap.get(p); if (v === undefined) roMap.set(p, v = readString(p, u32[at + recLen])); return v;
+  },
+};
+const resolve = resolvers[opt];
+const mine = { text(s) { acc += resolve(s).length; } };
+async function run() {
+  const bytes = await (await fetch(`out/micro-${build}.wasm`)).arrayBuffer();
+  const cdom = new Proxy(mine, { get: (o, k) => o[k] || (() => 0) });
+  const { instance } = await WebAssembly.instantiate(bytes, { cdom, env: {} });
+  exports = instance.exports; memory = exports.memory; views();
+  let at = (exports.cd_layout() >> 2) + 1;
+  const block = u32[at++];
+  tmpSerial0 = (block + u32[at++]) >> 2; tmpCount = (block + u32[at++]) >> 2; tmpRecords = block + u32[at++];
+  recWords = u32[at++] >> 2; recP = u32[at++] >> 2; recLen = u32[at++] >> 2;
+  // the table, as cdlits would bake it: every slot's spelling here is one plain literal
+  const s0 = exports.__start_cd_lits.value, s1 = exports.__stop_cd_lits.value;
+  litBase = s0;
+  for (let a = s0; a < s1; a += 4) lits.push(cString(u32[a >> 2]).slice(1, -1));
+  roBase = exports.ro0(); roEnd = exports.ro1();
+  if (!(roBase > 0 && roEnd > roBase && roEnd <= litBase)) throw new Error(`rodata ${roBase} ${roEnd} lits ${litBase}`);
+  roArr = new Array(roEnd - roBase);
+  exports.cd_start(1);
+  const per = test === 'buf1' || test === 'bufnew' ? 1 : 8;
+  const go = per === 1 ? (n) => exports[test](n, len) : (n) => exports[test](n);
+  const sample = (n) => { const t0 = performance.now(); go(n); return performance.now() - t0; };
+  // correctness: the strings this resolver returns for one pass of the test, to compare across resolvers
+  const seen = []; const keep = mine.text; mine.text = (s) => { seen.push(resolve(s)); }; go(3); mine.text = keep;
+  let n = 64;
+  for (let i = 0; i < 4; i++) sample(n);
+  while (sample(n) < 10 && n < 1 << 26) n *= 2;
+  for (let i = 0; i < 5; i++) sample(n);
+  const v = [];
+  for (let i = 0; i < 21; i++) v.push(sample(n) * 1e6 / (n * per));
+  const s = [...v].sort((a, b) => a - b);
+  window.RESULT = { ns: s[10], lo: s[5], hi: s[15], n, acc, seen: seen.join('|'), cached: roMap.size + valMap.size, ro: roEnd - roBase };
+}
+run().catch((e) => { window.RESULT = { error: String(e.stack || e) }; });
+</script></body></html>

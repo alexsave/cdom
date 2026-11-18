@@ -1,0 +1,54 @@
+# Chrome/157.0.8103.79
+build	opt	test	len	ns	q1	q3	n	cached	same
+base	today	lit8		7.75	7.71	8.04	262144	0	yes
+base	val	lit8		7.62	7.59	7.65	262144	0	yes
+base	shimro	lit8		7.59	7.57	7.61	262144	0	yes
+base	ptr	lit8		7.66	7.64	7.67	262144	0	yes
+ro	romap	lit8		8.11	7.69	8.13	262144	0	yes
+ro	roarr	lit8		7.66	7.63	7.69	262144	0	yes
+ro	roobj	lit8		7.64	7.62	7.68	262144	0	yes
+base	today	terns8		6.88	6.85	6.90	262144	0	yes
+base	val	terns8		6.90	6.89	6.91	262144	0	yes
+base	shimro	terns8		6.88	6.83	6.92	262144	0	yes
+base	ptr	terns8		6.90	6.89	6.91	262144	0	yes
+ro	romap	terns8		6.86	6.85	6.86	262144	0	yes
+ro	roarr	terns8		6.83	6.82	6.84	262144	0	yes
+ro	roobj	terns8		6.80	6.79	6.82	262144	0	yes
+base	today	tern8		46.48	46.33	46.56	32768	0	yes
+base	val	tern8		40.72	40.63	40.89	32768	16	yes
+base	shimro	tern8		25.93	25.77	26.15	65536	16	yes
+base	ptr	tern8		24.99	24.70	25.35	65536	16	yes
+ro	romap	tern8		17.12	16.93	17.59	131072	16	yes
+ro	roarr	tern8		7.98	7.98	8.00	262144	0	yes
+ro	roobj	tern8		15.88	15.77	15.94	131072	0	yes
+base	today	help8		40.61	40.47	40.66	32768	0	yes
+base	val	help8		34.07	34.02	34.19	65536	8	yes
+base	shimro	help8		22.46	22.42	22.54	65536	8	yes
+base	ptr	help8		21.58	21.53	22.23	65536	8	yes
+ro	romap	help8		11.89	11.87	11.95	131072	8	yes
+ro	roarr	help8		8.81	8.81	8.84	262144	0	yes
+ro	roobj	help8		14.22	14.15	14.45	131072	0	yes
+base	today	buf1	5	37.86	37.52	38.24	262144	0	yes
+base	val	buf1	5	29.25	29.18	29.35	524288	1	yes
+base	shimro	buf1	5	36.59	36.02	36.92	524288	0	yes
+ro	romap	buf1	5	35.65	35.59	36.35	524288	0	yes
+base	today	buf1	12	58.80	58.69	58.99	262144	0	yes
+base	val	buf1	12	42.78	42.69	42.90	262144	1	yes
+base	shimro	buf1	12	59.11	58.96	59.36	262144	0	yes
+ro	romap	buf1	12	59.22	59.09	59.43	262144	0	yes
+base	today	buf1	15	58.80	58.61	58.94	262144	0	yes
+base	val	buf1	15	42.65	42.53	42.78	262144	1	yes
+base	shimro	buf1	15	59.28	59.17	59.43	262144	0	yes
+ro	romap	buf1	15	59.15	59.07	59.45	262144	0	yes
+base	today	bufnew	5	33.85	33.70	33.87	524288	0	yes
+base	val	bufnew	5	73.76	73.60	74.12	262144	1	yes
+base	shimro	bufnew	5	33.96	33.92	34.01	524288	0	yes
+ro	romap	bufnew	5	33.63	33.57	33.90	524288	0	yes
+base	today	bufnew	12	56.97	56.88	57.28	262144	0	yes
+base	val	bufnew	12	96.02	95.83	96.28	131072	1	yes
+base	shimro	bufnew	12	57.89	57.77	58.14	262144	0	yes
+ro	romap	bufnew	12	57.18	57.11	57.45	262144	0	yes
+base	today	bufnew	15	57.16	57.05	57.37	262144	0	yes
+base	val	bufnew	15	96.17	95.86	96.36	131072	1	yes
+base	shimro	bufnew	15	57.07	56.93	57.37	262144	0	yes
+ro	romap	bufnew	15	57.56	57.33	57.85	262144	0	yes

@@ -1,0 +1,26 @@
+# Chrome/157.0.8103.79
+build	opt	test	len	ns	q1	q3	n	cached	same
+base	today	lit8		7.98	7.96	8.21	262144	0	yes
+base	val	lit8		7.57	7.56	7.67	262144	0	yes
+base	shimro	lit8		7.61	7.59	7.63	262144	0	yes
+base	ptr	lit8		7.59	7.59	7.60	262144	0	yes
+ro	romap	lit8		8.10	7.76	8.13	262144	0	yes
+ro	roarr	lit8		7.63	7.59	7.67	262144	0	yes
+ro	roobj	lit8		7.69	7.59	7.71	262144	0	yes
+ro	rodm	lit8		7.54	7.53	7.55	262144	0	yes
+base	today	tern8		47.05	46.60	47.40	32768	0	yes
+base	val	tern8		40.72	40.55	40.93	32768	16	yes
+base	shimro	tern8		25.97	25.80	26.12	65536	16	yes
+base	ptr	tern8		25.14	25.01	25.32	65536	16	yes
+ro	romap	tern8		16.71	16.47	17.05	131072	16	yes
+ro	roarr	tern8		8.01	7.98	8.04	262144	0	yes
+ro	roobj	tern8		15.93	15.78	16.21	131072	0	yes
+ro	rodm	tern8		8.40	8.36	8.45	262144	16	yes
+base	today	help8		40.57	40.40	40.74	32768	0	yes
+base	val	help8		34.10	33.90	34.23	65536	8	yes
+base	shimro	help8		22.54	22.45	22.69	65536	8	yes
+base	ptr	help8		21.71	21.61	21.82	65536	8	yes
+ro	romap	help8		11.82	11.81	11.85	131072	8	yes
+ro	roarr	help8		8.88	8.86	8.93	262144	0	yes
+ro	roobj	help8		14.26	14.21	14.35	131072	0	yes
+ro	rodm	help8		8.71	8.69	8.73	262144	8	yes

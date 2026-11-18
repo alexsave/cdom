@@ -54,6 +54,9 @@ var cdom = (() => {
   let checkAhead = false;   // options.checkAhead: every read from the range is compared with the bytes
   let lits;                 // the page's string table (cdomLits), one entry per literal slot
   let litBase;              // the address of slot 0: a literal's id is litBase + 4 * its index
+  const roMap = new Map();  // strings of read-only data by address (strings-plain-c prototype)
+  const roKey = new Int32Array(256);
+  const roVal = new Array(256).fill("");
   let buffer;               // memory.buffer when the views below were made (compared on the wasm2js tier only)
   let copiedOnGrow = false; // the module is wasm2js, whose grow leaves the old buffer attached
   let u8;
@@ -167,8 +170,30 @@ var cdom = (() => {
   // indexes the page's table; a runtime string's serial has the top bit set (negative), and its record
   // in C's block says where its bytes are right now. CD_NONE (0) is no string and never reaches here.
   function str(s) {
-    if (s > 0) {
+    if (s >= litBase) {
       return lits[(s - litBase) >> 2];
+    }
+    if (s > 0) {
+      // strings-plain-c prototype: a pointer into the module's read-only data (cd_tmpz, -DCDOM_RO) is its own
+      // id. Its bytes never change, so the string is kept by address: a small direct-mapped cache, then a Map.
+      const h = s & 255;
+      if (roKey[h] === s) {
+        return roVal[h];
+      }
+      let v = roMap.get(s);
+      if (v === undefined) {
+        if (stale()) {
+          views();
+        }
+        let end = s;
+        while (u8[end]) {
+          end++;
+        }
+        roMap.set(s, v = readString(s, end - s));
+      }
+      roKey[h] = s;
+      roVal[h] = v;
+      return v;
     }
     if (stale()) {
       views();
@@ -1333,7 +1358,7 @@ var cdom = (() => {
     }
     checkAhead = !!(options && options.checkAhead);
     lits = table[3].split("\0");
-    litBase = table[0];
+    litBase = table[0] || 0x7fffffff; // no slot: every positive id is a read-only pointer
     views();
     readLayout(instance.exports.cd_layout() >> 2);
     if (exports.cd_url_changed) {
