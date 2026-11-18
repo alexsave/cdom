@@ -9,13 +9,17 @@ import { launch, sleep } from '../../tools/cdp.mjs';
 import { serve } from './serve.mjs';
 const R = +(process.env.R || 15), CYCLES = +(process.env.CYCLES || 0);
 const pages = process.argv.slice(2).map((a) => a.split('='));
+// litsms here: from the module's instantiation resolving to cd_start, for every design alike (the
+// shim's own work before cd_main: the exports wrapper, on this branch the table install, the views and
+// the layout read). The shim has no install timer of its own, so the install is this minus A's.
 const HOOK = `(() => {
   const wrap = (p) => p.then((r) => {
+    window.__instT = performance.now();
     const inst = r.instance || r;
     const ex = {};
     for (const k of Object.keys(inst.exports)) ex[k] = inst.exports[k];
     const start = ex.cd_start;
-    ex.cd_start = (...a) => { const t0 = performance.now(); try { return start(...a); } finally { window.__main = [t0, performance.now()]; } };
+    ex.cd_start = (...a) => { const t0 = performance.now(); if (window.__cdomLitsMs === undefined) window.__cdomLitsMs = t0 - window.__instT; try { return start(...a); } finally { window.__main = [t0, performance.now()]; } };
     window.__mem = ex.memory;
     const instance = { exports: ex };
     return r.instance ? { instance, module: r.module } : instance;
