@@ -44,8 +44,8 @@ void cd_on_event(const cd_event_rec *e) {
   ev(e->type, e->id, e->x, e->y, e->pointer, e->buttons);
   if (e->type == CD_EV_INPUT && id == ids[TEXT]) {
     /* The value comes in through encodeInto and goes back out through the decoder, as the echo's text. */
-    uint32_t n = cd_input_text(id, io, sizeof io);
-    if (n > sizeof io) n = cd_get_str(id, "value", io, sizeof io);
+    uint32_t n;
+    if (!cd_input_whole(id, io, sizeof io, &n)) n = cd_get_str(id, "value", io, sizeof io);
     cd_set_text_node(ids[ECHO], cd_tmp(io, n));
   } else if (e->type == CD_EV_CLICK && id == ids[ERR]) {
     /* A method that does not exist: reported, and the text set after it still applies. */
@@ -69,6 +69,9 @@ EXPORT("grow") void grow(void) {
 EXPORT("ro") void ro(uint32_t i) { cd_set_text_node(ids[ECHO], i ? "ro-one \xc3\xa9" : "ro-zero"); cd_flush(); }
 EXPORT("id") cd_id id_of(uint32_t k) { return k < NIDS ? ids[k] : CD_DETACHED; }
 /* The input's value read into cap bytes: encodeInto must stop before a character that does not fit
- * (cut: the bytes written), and cd_input_text says the whole length however much fits (whole). */
+ * (cut: the bytes written), and cd_input_whole says the whole length however much fits (whole). */
 EXPORT("cut") uint32_t cut(uint32_t cap) { return cd_get_str(ids[TEXT], "value", io, cap < sizeof io ? cap : sizeof io); }
-EXPORT("whole") uint32_t whole(uint32_t cap) { return cd_input_text(ids[TEXT], io, cap < sizeof io ? cap : sizeof io); }
+EXPORT("whole") uint32_t whole(uint32_t cap) { /* 1 << 16 when it fitted, and the length */
+  uint32_t n, fits = (uint32_t)cd_input_whole(ids[TEXT], io, cap < sizeof io ? cap : sizeof io, &n);
+  return fits << 16 | n;
+}

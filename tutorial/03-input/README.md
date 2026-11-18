@@ -35,7 +35,9 @@ static cd_id input, greeting_text, count_text;
 
 static void on_input(const cd_event_rec *, void *) {
   char name[NAME_CAP];
-  uint32_t n = cd_input_text(input, name, sizeof name);   /* the value, as UTF-8 */
+  uint32_t n;
+  if (!cd_input_whole(input, name, sizeof name, &n))     /* the whole value, as UTF-8 */
+    n = cd_get_str(input, "value", name, sizeof name);   /* too long: the whole characters that fit */
   ...
   char greeting[7 + NAME_CAP + 1];
   memcpy(greeting, "Hello, ", 7);
@@ -66,6 +68,7 @@ void cd_main(void) {
 - **`cd_tmp` for strings that change every keystroke.** Each greeting is a new string, built in a buffer with a length.
   A literal lives in the page's string table, but a string like this is not one, so `cd_tmp(greeting, len)` hands cdom the bytes and cdom reads them when the call runs.
   Nothing is kept, so the next keystroke can overwrite the buffer.
-- **Bytes are not characters.** `cd_input_text` returns UTF-8 bytes, so "Zoë" is four bytes.
+- **Bytes are not characters.** `cd_input_whole` reads UTF-8 bytes, so "Zoë" is four bytes.
   The count takes the characters by skipping continuation bytes (`(b & 0xC0) == 0x80`).
-  The buffer is fixed at 256 bytes; a longer value is cut to whole characters, and `cd_input_text` still reports its full length.
+  The buffer is fixed at 256 bytes, and `cd_input_whole` reads the whole value or none of it.
+  When the value does not fit, it reports the full length, and `cd_get_str` of `"value"` reads as many whole characters as fit, so a longer value is shown cut.

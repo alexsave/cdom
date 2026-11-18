@@ -14,7 +14,9 @@
  * complete event, not its request's success), so a page reloaded after it still has the bytes. */
 void cd_store_put(uint32_t token, const char *key, uint32_t klen, const void *p, uint32_t len);
 /* Ask for the bytes under key; the answer is cd_on_store(token, p, len), p valid until it returns,
- * or len -1 for a miss, an error, or no answer within deadline_ms (indexedDB.open can hang). */
+ * or len -1 for a miss, an error, or no answer within deadline_ms (indexedDB.open can hang).
+ * deadline_ms 0 is not "no deadline", as it is for cd_http and cd_fonts_wait: it answers a miss
+ * at once, from the event loop, before the database can answer. Pass CD_STORE_DEADLINE_MS. */
 void cd_store_get(uint32_t token, const char *key, uint32_t klen, uint32_t deadline_ms);
 #define CD_STORE_DEADLINE_MS 1500
 /* Forget whatever is under key; the answer is cd_on_store_del(token, ok), as a put's: 1 when the

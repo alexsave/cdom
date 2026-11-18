@@ -130,8 +130,8 @@ static int is_space(char c) { return c == ' ' || c == '\t' || c == '\n' || c == 
 static void on_submit(const cd_event_rec *, void *) {
   cd_prevent_default();
   char text[TEXT_CAP];
-  uint32_t n = cd_input_text(input, text, sizeof text);
-  if (n > sizeof text) n = cd_get_str(input, "value", text, sizeof text);
+  uint32_t n;
+  if (!cd_input_whole(input, text, sizeof text, &n)) n = cd_get_str(input, "value", text, sizeof text);
 
   uint32_t a = 0, b = n;
   while (a < b && is_space(text[a])) a++;

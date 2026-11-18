@@ -312,13 +312,14 @@ Templates matter more than interning: without them every row is 25 ops instead o
 
 ## The library
 
-C owns the model, the view state and the diff, and emits ops into three buffers in linear memory: one byte per op, a u32 argument stream and a string section.
-A flush hands the shim the four lengths in one import call, either at the end of an event or when a buffer fills.
-Strings are interned in C; the first use of a string sends its bytes with an id, and later uses send only the id.
-Each flush decodes all its new strings with one TextDecoder call (a char loop below 64 bytes) and slices them by UTF-16 length, which C counts when it interns.
-Tag and attribute names always go through the intern table, which is how they become the enum; numbers cross as u32 and the browser formats them.
+This section describes cdom as it is now; the measurements above were taken on its first design, a batched op stream (C wrote one byte per op, a u32 argument stream and a string section into linear memory, and one import applied a whole buffer), which direct calls replaced on 2026-11-08 (the head to head above, and PERF_LOG.md, "The two lines merged").
+C owns the model, the view state and the diff, and calls the shim once per DOM operation, each operation its own wasm import (module "cdom"), the moment C makes it (src/cdom.c, "calls").
+Only a walk (cd_sel, cd_down, cd_next, cd_up) is held in C, and it crosses as one call with the value it leads to or before the next operation.
+Strings are not interned: a string literal crosses as its slot, whose text is in the page's table (`tools/cdlits`), a pointer into read-only data is read once and kept by address, and any other string is read from C memory by the call that uses it ([docs/strings-design.md](docs/strings-design.md)).
+Every entry from JS (cd_start, cd_event, a timer, a frame, an answer) ends in cd_flush, which runs the renders asked for (cd_dirty) and sends a walk still held.
+Numbers cross as u32 and the browser formats them.
 "Last node" is implicit: open, close, text, class, attr, name, listen and the walk ops (down, next, up, sel) all act on it, as in sledgehammer.
-Templates are built once with the same ops and deep-cloned per row; the row's id and label are set by walking into the clone.
+Templates are built once with the same ops and deep-cloned per row; the row's id and label are set in the template's slots before the clone (cd_tpl_text), so a clone needs no walk (PERF_LOG.md, change 3; the first version walked into each clone).
 Only list roots get node ids; inner nodes are reached by a path from their root (sel then down and next), so 10,000 rows hold 10,000 JS references; the first version named four nodes per row.
 Events are delegated: one listener per event type on the mount element, and each listening node carries one expando with its id.
 The shim writes a fixed record into the C inbox: the type, the listening ancestor's id, coordinates, button, key, modifiers and the element-child path from that ancestor down to the target, one byte per level.

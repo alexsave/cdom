@@ -78,6 +78,17 @@ enum { CD_MOD_SHIFT = 1, CD_MOD_CTRL = 2, CD_MOD_ALT = 4, CD_MOD_META = 8, CD_MO
 void *cd_alloc(uint32_t n);
 void *cd_realloc(void *p, uint32_t n);
 void cd_free(void *p);
+/* cd_alloc and cd_realloc trap when there is no room, and so do malloc, realloc and calloc on cdom's
+ * heap: in wasm a pointer 0 is ordinary memory, so code that does not check would write over it.
+ * The _try forms are for code that does check (a large buffer it can do without, a file it can say
+ * is too big): cd_alloc_try answers 0 when there is no room; cd_realloc_try answers 0 and leaves p
+ * as it was, still the caller's to use and to cd_free. What they answer is freed with cd_free and
+ * grown with cd_realloc or cd_realloc_try, as any block. On an app's own allocator (all four
+ * strong) they answer what its malloc and realloc do. Building with -DCDOM_HEAP_PAGES_MAX=N bounds
+ * the heap to N pages of 64 KB in all (an app's own cap, and how the tests run out of room); unset,
+ * the heap grows until memory.grow refuses. */
+void *cd_alloc_try(uint32_t n);
+void *cd_realloc_try(void *p, uint32_t n);
 
 /* ---- strings ----
  * A string argument is written as plain C: cd_open("div"), cd_text(name), cd_text(cd_tmp(buf, n)).
@@ -242,7 +253,98 @@ void cd_attach(cd_id id);            /* put it back where it was */
 /* Sends any held walk. Every entry from JS (start, events, timers, frames, the network) flushes on
  * its way out, so an app calls this only from an export of its own. */
 void cd_flush(void);
-uint32_t cd_pending(void);           /* nonzero while a walk waits to cross (for tests) */
+uint32_t cd_pending(void);           /* nonzero while a walk waits to cross, or a runtime string waits for the call that reads it (for tests) */
+
+/* ---- renders: the setter half of state ----
+ * State stays plain C. A setter changes it and asks for the view that shows it to be drawn again:
+ *   static void count_view(void *ctx) { cd_set_text_node_num(count_txt, count); }
+ *   static void add(void) { count++; cd_dirty(count_view, 0); }
+ * fn(ctx) then runs once before this entry from JS returns (the event, the timer, the frame, the
+ * answer: every one ends in cd_flush), however often it was asked, in the order first asked. A render
+ * that asks for renders runs them in the same pass, as another round, and one asked again after it
+ * ran runs again; past 16 rounds it traps (renders that keep asking for each other). It is for views
+ * (a handful per entry: the queue is scanned to dedup), not for rows: a list's rows are cd_list_update's.
+ * cd_undirty drops a pending (fn, ctx), even one later in the round running now: a cleanup of the
+ * region a view drew calls it, so a render never runs on state that went. cd_render_now runs what is
+ * pending now (inside a render, or a cleanup, it does nothing: the pass takes it).
+ * Every call that hands host code the DOM runs what is pending first, as cd_render_now does: the reads
+ * (cd_get_num, cd_get_str, cd_get_id, cd_input_whole), the layout reads (cd_rect, cd_hit, cd_viewport),
+ * cd_set and cd_call_args. So a handler that sets state and then measures, focuses or scrolls sees the
+ * DOM the state draws. The building and updating calls do not: they are made as issued. A cleanup
+ * that reads sees the DOM as it is (the pending renders run in the flush after it). */
+typedef void (*cd_render_fn)(void *ctx);
+void cd_dirty(cd_render_fn fn, void *ctx);
+void cd_undirty(cd_render_fn fn, void *ctx);
+void cd_render_now(void);
+
+/* ---- request slots: one request's life ----
+ * An answer comes from the event loop, maybe after the app moved on (a run restarted, the region that
+ * asked went), so it is checked before it is used. cd_req_begin starts a new generation (LOADING)
+ * and returns the ctx to hand a _cb form (cd_http_cb, cd_store_get_cb, ...): the generation and an
+ * index of the app's (a line of a run, a row), as plain bits. The answer passes that ctx back to
+ * cd_req_current, which says whether it is still this slot's latest request and gives the index
+ * back. Several requests of one generation may be out at once (a run of lines). An answer to an
+ * older generation is dropped, and so is every answer once cd_req_end (OK or FAILED) said the
+ * generation is over, or once cd_req_drop (IDLE: nothing is current until the next begin) did.
+ * A region's cleanup calls cd_req_drop, so an answer that comes after its view went is never
+ * applied. The slot is the app's memory: the callback reaches it by a static or by the index, never
+ * by a pointer the answer carries. The generation is 16 bits, so it wraps after 65,536 begins. */
+typedef struct { uint16_t gen; uint8_t state; } cd_req;
+enum { CD_REQ_IDLE, CD_REQ_LOADING, CD_REQ_OK, CD_REQ_FAILED };
+void *cd_req_begin(cd_req *r, uint16_t index);
+int cd_req_current(const cd_req *r, void *ctx, uint16_t *index);
+void cd_req_end(cd_req *r, int ok);
+void cd_req_drop(cd_req *r);
+
+/* ---- bound values: skip-if-same ----
+ * A node property that remembers what it last sent, so setting it writes to the DOM only when the
+ * value changed: a view can set every bound value it shows each time it runs, and only the changes
+ * cross. Bind once the node is named, then set:
+ *   cd_text(""); cd_name_text(t = cd_id_new()); cd_bind_text(&label, t);
+ *   cd_bound_set(&label, busy ? "Saving" : "Save");
+ * text sets a text node's value (cd_set_text_node), attr an attribute, class the class, style one
+ * style property, and bool a boolean property such as "disabled" or "checked" (cd_set_bool, the
+ * property, not the attribute, so it holds after the user changed it). name and prop are kept, so
+ * each is a string good for the page: a literal, or a pointer into read-only data (a ternary of
+ * literals, a const table entry; see strings above). cd_bound_set takes such a value, the same when
+ * its cd_str is; a runtime string read on use traps there. A literal's cd_str is its slot, one per
+ * call site, so the same text set from two call sites is two values (the second writes once): a view
+ * sets a bound value from one place, or takes it from a const table. cd_bound_set_bytes takes bytes (a
+ * label made with cd_fmt or snprintf each time), the same when the bytes are: unchanged, nothing is
+ * made and nothing crosses; changed, they cross as a cd_tmp. cd_bound_set_num takes a number
+ * (for a bool, 0 or not: 1 and 5 are the same true). The first set after a bind always writes,
+ * unless cd_bound_shows said what the node was built with.
+ * Node ids carry no generation, so a binding must not outlive its node: one bound while a region
+ * builds is unbound when the region goes (a cleanup cdom registers), and one bound elsewhere (a list
+ * row's create) is the app's to cd_unbind. Setting an unbound value traps; cd_bound_live tells.
+ * A cd_bound starts zeroed (static, or cleared memory), and is zeroed again by cd_unbind.
+ * It is 36 bytes: for a list's rows a hand-written last value is smaller and faster (the keyed bench
+ * with its row class bound selects about 6% slower per click, PERF_LOG.md); it is meant for views. */
+typedef void (*cd_bound_write)(cd_id id, cd_str name, cd_str value);
+typedef struct {
+  cd_id id; cd_str name; uint32_t kind, seen, last; /* cdom's: the node, and what it last sent */
+  cd_bound_write write;                              /* cdom's: how its kind writes a string */
+  uint8_t *bytes; uint32_t blen, bcap;               /* cdom's: a cd_tmp value's bytes */
+} cd_bound;
+void cd_bind_text(cd_bound *b, cd_id text_node);
+void cd_bind_attr(cd_bound *b, cd_id el, cd_str name);
+void cd_bind_class(cd_bound *b, cd_id el);
+void cd_bind_style(cd_bound *b, cd_id el, cd_str prop);
+void cd_bind_bool(cd_bound *b, cd_id el, cd_str prop);
+/* a string good for the page; a runtime one traps. The unchanged case is inline (two compares, no call): a list patching a
+ * thousand bound rows per event skips as fast as a hand-written last-value check. */
+void cd_bound_set_(cd_bound *b, cd_str value);
+static inline void cd_bound_set(cd_bound *b, cd_str value) {
+  if (b->seen != 1 || b->last != value.v) cd_bound_set_(b, value); /* 1: such a string was sent */
+}
+void cd_bound_set_bytes(cd_bound *b, const char *p, uint32_t len);
+void cd_bound_set_num(cd_bound *b, uint32_t n);
+/* The node already shows value (it was built with it): the binding records it without writing, so
+ * the first set of the same value writes nothing. value is a string good for the page. */
+void cd_bound_shows(cd_bound *b, cd_str value);
+void cd_bound_shows_num(cd_bound *b, uint32_t n);
+void cd_unbind(cd_bound *b);
+int cd_bound_live(const cd_bound *b);
 
 /* ---- events: delivered to a cd_on handler, else to cd_on_event; the shim fills the record ----
  * id is the nearest listening ancestor-or-self of the target, or the host object listened on.
@@ -291,10 +393,11 @@ extern uint32_t cd_seed;
  * units, not scaled by a size the run's screen decides, and the same seed gives the same scene on any
  * screen. Not for secrets: cd_random_bytes (cdom_random.h) is the one for those. */
 uint32_t cd_rand(void);
-/* An input's value now, as UTF-8 into dst: returns its whole length in bytes. When that is more than
- * cap the value did not fit, and dst holds only the whole characters that fit in cap bytes (cd_get_str
- * of "value" returns how many bytes those are). */
-uint32_t cd_input_text(cd_id id, char *dst, uint32_t cap);
+/* An input's whole value now, as UTF-8 into dst, or none of it. When it fits in cap bytes: 1, and *len
+ * its length. When it does not: 0, *len the whole length (so the caller can make that much room and
+ * ask again), and dst holds nothing to use. A part of a value (a search box read into a fixed buffer)
+ * is cd_get_str(id, "value", dst, cap), which returns the bytes it wrote, whole characters. */
+int cd_input_whole(cd_id id, char *dst, uint32_t cap, uint32_t *len);
 /* Whole-page delivery, as cd_listen on the host object that has the event: CD_EV_RESIZE on CD_WINDOW,
  * every other type on CD_DOCUMENT (keys, and the moves and release of a drag). */
 void cd_listen_window(uint32_t ev);
@@ -405,6 +508,16 @@ void cd_timer_stop(uint32_t token);
  * requests, cd_ws_open_cb sockets and store _cb answers are pending at once (traps past that). */
 typedef void (*cd_timer_fn)(void *ctx);
 uint32_t cd_timer_cb(uint32_t ms, cd_timer_fn fn, void *ctx);
+/* A timer slot: at most one timer pending in it. cd_timer_set stops the slot's pending timer, if any,
+ * and starts fn(ctx) after ms, so setting it on every keystroke is a debounce. When it fires the slot
+ * is empty again before fn runs (fn may set it again: a repeat). cd_timer_clear stops what is pending
+ * and may be called any time, from a cd_on_free cleanup too, on a slot that fired or never ran. The
+ * slot is the app's memory and must stay where it is while a timer is pending in it (cdom holds its
+ * address until then); a zeroed slot is empty. cd_timer_pending says whether one waits. */
+typedef struct { uint32_t token; cd_timer_fn fn; void *ctx; } cd_timer_slot;
+void cd_timer_set(cd_timer_slot *t, uint32_t ms, cd_timer_fn fn, void *ctx);
+void cd_timer_clear(cd_timer_slot *t);
+static inline int cd_timer_pending(const cd_timer_slot *t) { return t->token != 0; }
 void cd_raf_request(uint32_t token);              /* cd_on_raf(token, t) before the next frame */
 void cd_on_timer(uint32_t token);
 void cd_on_raf(uint32_t token, double t);
@@ -421,11 +534,46 @@ double cd_now(void);                              /* performance.now(), for work
  * - r->parent == 0: the region is one element, which the builder names cd_name_open(r->root)
  *   (cd_region_show makes r->root); taking it away is one remove.
  * Lists updated while a region builds keep their own ids (cd_list_update does not record);
- * drop a list that lived inside a region with cd_list_forget. Regions do not nest (traps). */
-typedef struct cd_region { cd_id parent, root; cd_id *ids; uint32_t n, cap; int shown; } cd_region;
+ * drop a list that lived inside a region with cd_list_forget (from a cd_on_free cleanup, say).
+ *
+ * Regions nest. A region shown while another builds is that region's child; a region shown when
+ * none builds (from a timer or an answer, filled in later) is the child of r->up when the app set
+ * it, so one module can hand its region to another module's view, which shows its own region in it
+ * whenever its data comes. r->up, once set or taken from the region building, stays: a child lives
+ * in one parent (traps if shown while another region builds), and its parent must be shown (traps).
+ * A child's nodes are inside its parent's nodes. Builds nest at most 8 deep (traps past that).
+ * Taking a region away, by cd_region_hide or as an ancestor goes, is in this order:
+ *   1. its child regions, newest first, each taken away the same way, but with no DOM op of its own
+ *      (the parent's one clear or remove takes their nodes);
+ *   2. its cleanups (cd_on_free), newest first: one registered after the state it releases runs
+ *      before the cleanup that frees that state;
+ *   3. its one DOM op: a clear of r->parent, or a remove of its root;
+ *   4. its ids are freed.
+ * So cleanups run children first, and before any id of their region goes. Cleanups release what
+ * the region held, and change no DOM: inside one, every call that changes the DOM traps (building,
+ * updating, cd_remove, cd_move, cd_clear, the regions' shows and hides, cd_set and cd_call_args).
+ * What a cleanup is for works: reads, stops and frees, such as cd_timer_stop,
+ * cd_audio_stop, cd_undirty, cd_id_free, cd_unbind, cd_list_forget and cd_region_forget.
+ * A region taken away owns no heap memory (its id and cleanup lists are freed with it), so the
+ * struct it lives in may be freed or reused once it is hidden; showing it again allocates again. */
+typedef void (*cd_cleanup_fn)(void *ctx);
+typedef struct { cd_cleanup_fn fn; void *ctx; } cd_cleanup;
+typedef struct cd_region {
+  cd_id parent, root; cd_id *ids; uint32_t n, cap; int shown;
+  struct cd_region *up;                 /* the parent region (set by the app, or by showing inside one) */
+  struct cd_region *kids, *next;        /* cdom's: the child regions shown now, newest first */
+  cd_cleanup *fns; uint32_t nfns, fcap; /* cdom's: the cleanups */
+} cd_region;
 int cd_region_show(cd_region *r, int want);
 void cd_region_end(cd_region *r);
 void cd_region_hide(cd_region *r);   /* = cd_region_show(r, 0) */
+/* fn(ctx) runs when r is taken away (step 2 above); r 0 is the region building now. Traps when no
+ * region builds, on a region not shown, and inside a cleanup. */
+void cd_on_free(cd_region *r, cd_cleanup_fn fn, void *ctx);
+/* The region's DOM already went (a list row it lived in was removed, an ancestor node was cleared):
+ * take it away as an ancestor would, children and cleanups included, with no DOM op. A region not
+ * shown is left as it is. */
+void cd_region_forget(cd_region *r);
 
 /* ---- keyed list ---- */
 typedef struct { uint32_t key; cd_id node; uint32_t data; } cd_item;
@@ -440,7 +588,10 @@ typedef struct {
   cd_id (*create)(void *ctx, uint32_t i, uint32_t *data);
   /* item i survived: emit only what changed */
   void (*patch)(void *ctx, uint32_t i, cd_item *it);
-  /* item is gone (its root id is already freed): free the sub ids it named */
+  /* item is going: free the sub ids it named, and cd_region_forget a region its create opened (which
+   * runs that region's cleanups). It runs before the item's root id is freed and its node removed, so
+   * what the item holds goes before its ids, as in a region. A region opened in create is no outer
+   * region's child (the list's ids are the list's), so the item owns it. */
   void (*destroy)(void *ctx, cd_item *it);
 } cd_list_fns;
 void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_fns *f);
@@ -480,6 +631,11 @@ void cd_list_forget(cd_list *L, const cd_list_fns *f);
 #define cd_get_num(id, path) (cd_get_num)(id, cd_s(path))
 #define cd_get_str(id, path, dst, cap) (cd_get_str)(id, cd_s(path), dst, cap)
 #define cd_get_id(id, path) (cd_get_id)(id, cd_s(path))
+#define cd_bind_attr(b, el, name) (cd_bind_attr)(b, el, cd_s(name))
+#define cd_bind_style(b, el, prop) (cd_bind_style)(b, el, cd_s(prop))
+#define cd_bind_bool(b, el, prop) (cd_bind_bool)(b, el, cd_s(prop))
+#define cd_bound_set(b, value) (cd_bound_set)(b, cd_s(value))
+#define cd_bound_shows(b, value) (cd_bound_shows)(b, cd_s(value))
 #endif
 
 #endif

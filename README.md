@@ -71,7 +71,7 @@ xychart-beta
 
 These runs were of cdom's first design, a batched op stream.
 cdom now makes one import call per DOM operation, which measured about 1.7% faster on the same weighted geometric mean and 16 ms sooner to first paint, paired against the op stream ([PERF_LOG.md, "The two lines merged"](PERF_LOG.md#the-two-lines-merged-2026-11-08), line 342); the current design has not had a full pass against React of its own.
-The shim alone is 17,599 bytes minified and 6,672 brotli on 2026-11-17 ([docs/strings-results.md](docs/strings-results.md)), and the per-operation tables, script times and the other entries (wasm-bindgen, dioxus) are in RESULTS.md.
+The shim alone is 17,612 bytes minified and 6,682 brotli on 2026-11-18 (6,672 at the strings change, [docs/strings-results.md](docs/strings-results.md)), and the per-operation tables, script times and the other entries (wasm-bindgen, dioxus) are in RESULTS.md.
 
 A hello world against a modern stack, measured on 2026-11-09: the same small app (a page with a name field that greets you through a one-route server) was built once on cdom, with its server also in C, and once on Next.js with create-next-app's defaults.
 
@@ -154,6 +154,8 @@ flowchart LR
 ```
 
 - The API is `src/cdom.h`, with the network in `src/cdom_net.h`, the store in `src/cdom_store.h`, and the other platform modules beside them.
+- A timer slot (`cd_timer_slot`, `cd_timer_set`, `cd_timer_clear`) holds at most one pending timer: setting it again replaces the one that waits (a debounce), and clearing it from a region's cleanup stops it. `cd_input_whole(id, dst, cap, &len)` reads an input's whole value or none of it, with its whole length either way.
+- Memory: `cd_alloc` and `cd_realloc`, like `malloc` on cdom's heap, trap when there is no room (in wasm a pointer 0 is ordinary memory, so unchecked code would write over it); `cd_alloc_try` and `cd_realloc_try` answer 0 instead, for code that checks (a large buffer it can do without), and a refused `cd_realloc_try` leaves the block as it was. `-DCDOM_HEAP_PAGES_MAX=N` bounds the heap to N pages of 64 KB.
 - URL helpers are in `src/cdom_url.h` (module `url`): `cd_url_encode` percent-encodes bytes as `encodeURIComponent` does (for a query value), and `cd_url_decode` reverses it; both are plain C, with no shim call.
 - A program's libc comes from cdom: `src/libc/string.h`, `src/libc/stdio.h` (`snprintf` and `vsnprintf`, integers and strings, no floats) and `src/mini.c` (add `-isystem cdom/src/libc`).
 - The I/O calls external adapters build on (the `_cb` forms, the socket calls, `cd_page_origin`, `cd_random_bytes`, `cd_timer_stop`, `cd_epoch_ms`, `cd_now` and the program's libc) are a stable contract, written at the top of `src/cdom.h`: they change only additively, and `tests/link/contract.c` fails to compile if one changes in place.
@@ -258,7 +260,9 @@ flowchart TB
 
 - `CDOM_CFLAGS` and `CDOM_LDFLAGS` are the flags every cdom module needs: wasm32 with no C library but cdom's (`src/libc`, `src/mini.c`), bulk memory, no entry point, the memory exported and the stack placed first.
 - `CDOM_SRC` is the core every app links, and the APP_WASM rule adds it.
-- `APP_MODULES` names the optional modules the app uses (`net`, `store`, `random`, `audio`, `url`, `locale`, `share`, `fonts`, each `src/cdom_<name>.h`), and the rule links them; a name that is not a module stops make.
+- `APP_MODULES` names the optional modules the app uses (`net`, `store`, `random`, `audio`, `url`, `locale`, `share`, `fonts`, `ui`, each `src/cdom_<name>.h`), and the rule links them; a name that is not a module stops make.
+- `ui` (`src/cdom_ui.h`) is shorthand an app would otherwise write itself: `cd_el`, `cd_el_id` and `cd_el_text`, `cd_button`, the `CD_ON_EVENT`, `CD_CTX_OF` and `CD_CTX_INDEX` macros, and `cd_buf`, a string builder over the caller's buffer with 64-bit numbers. Each call costs only when used.
+- `src/cdom_callbacks_only.h`, included after the other cdom headers, makes the token forms and the app-wide hooks a compile error (`#pragma GCC poison`), so an app or a library inside one uses only `cd_on` and the `_cb` forms. It costs no bytes.
 - Each module's source is also a variable (`CDOM_NET_SRC`, `CDOM_STORE_SRC` and so on) for an app that writes its own rule.
 - The APP_WASM rule compiles with `$(CDOM_OPT)` (`-Oz` unless the app sets it), `CDOM_CFLAGS`, `APP_CFLAGS`, `CDOM_LDFLAGS` and `APP_LDFLAGS`; `WASM_CC` is the clang (Homebrew's llvm by default, since Apple's clang has no wasm32 target).
 - The include may come before or after the `APP_*` variables are set, so a fragment that needs cdom.mk's variables first (to name `CDOM_CFLAGS` or a module's source in its own) is included after it, and `APP_*` after both.
@@ -281,7 +285,7 @@ flowchart TB
 
 ## Working on cdom
 
-- Tests: `tutorial/run.sh` (builds and drives every lesson), `tests/build.sh`, then `node tools/unit.mjs`, `node tools/fuzz.mjs`, `node tools/canvas.mjs`, `node tools/host.mjs`, `tests/link/run.sh` and `node tools/legacy.mjs`; RESULTS.md, "Reproduce", has the benchmark commands.
+- Tests: `tutorial/run.sh` (builds and drives every lesson), `tests/build.sh`, then `node tools/unit.mjs`, `node tools/alloc.mjs`, `node tools/fuzz.mjs`, `node tools/canvas.mjs`, `node tools/host.mjs`, `tests/link/run.sh` and `node tools/legacy.mjs`; RESULTS.md, "Reproduce", has the benchmark commands.
 - `shim/cdom.min.js` is generated by `node tools/minshim.mjs` and committed, and `tests/build.sh` checks it against `cdom.js`.
 - cdom's own builds (`tests/build.sh`, `tests/link/run.sh`, `bench/build.sh`) read the same flag set as cdom.mk through `tools/cdomflags.sh`, which fails when one of them spells a flag of the set itself.
 - cdom and its sibling C library have no cycle: the library may depend on cdom (only its browser adapter does, built against cdom's I/O contract), and cdom never depends on the library.

@@ -5,15 +5,18 @@ on an error. Mutants run in parallel, each worker in a private copy of the track
 tree is never mutated, and an interrupted run leaves nothing behind); the test drivers serve on free
 ports and Chrome takes a free debugging port, so the workers never collide.
 Usage: python3 tools/mutate.py [-j N] [name ...]   (N workers, default half the cores)"""
-import subprocess, sys, pathlib, os, shutil, tempfile, threading, queue
+import subprocess, sys, pathlib, os, shutil, tempfile, threading, queue, signal
 
 top = pathlib.Path(__file__).resolve().parent.parent
+TEST_TIMEOUT = 150 # s: unit.mjs takes about 10 on a passing tree and waits at most 60 for a broken page
+HUNG = -999
 UNIT = ['node', 'tools/unit.mjs']
 FUZZ = ['node', 'tools/fuzz.mjs']
 LINK = ['tests/link/run.sh']
 HOST = ['node', 'tools/host.mjs']
 CANVAS = ['node', 'tools/canvas.mjs']
 FRESH = ['node', 'tools/legacyfresh.mjs']
+ALLOC = ['node', 'tools/alloc.mjs']
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -53,9 +56,9 @@ M = [
   ('no-end-anchor', 'src/cdom.c', 'cd_id end = L->end; /*', 'cd_id end = 0; /*', UNIT, 'FAIL a keyed list with a fixed sibling'),
   ('no-end-anchor-fuzz', 'src/cdom.c', 'cd_id end = L->end; /*', 'cd_id end = 0; /*', FUZZ, 'the anchor is not last'),
   ('end-anchor-moves', 'src/cdom.c', 'cd_move(old[os].node, ne < n ? nw[ne].node : end);\n      nw[--ne]', 'cd_move(old[os].node, ne < n ? nw[ne].node : 0);\n      nw[--ne]', FUZZ, 'the anchor is not last'),
-  ('forget-keeps-ids', 'src/cdom.c', '    cd_id_free(L->items[i].node);\n    f->destroy', '    f->destroy', UNIT, 'FAIL lists and regions'),
-  ('region-keeps-ids', 'src/cdom.c', '      for (uint32_t i = 1; i < r->n; i++) cd_id_free(r->ids[i]);', '', UNIT, 'FAIL lists and regions'),
-  ('region-records-list', 'src/cdom.c', '  recording = 0;\n  cd_id end = L->end;', '  cd_id end = L->end;', UNIT, 'FAIL lists and regions'),
+  ('forget-keeps-ids', 'src/cdom.c', '    f->destroy(f->ctx, &L->items[i]);\n    cd_id_free(L->items[i].node);', '    f->destroy(f->ctx, &L->items[i]);', UNIT, 'FAIL lists and regions'),
+  ('region-keeps-ids', 'src/cdom.c', '  for (; i < r->n; i++) cd_id_free(r->ids[i]);', '  for (; i < r->n && 0; i++) cd_id_free(r->ids[i]);', UNIT, 'FAIL lists and regions'),
+  ('region-records-list', 'src/cdom.c', '  build_push(0); /* the items', '  build_push(recording); /* the items', UNIT, 'FAIL lists and regions'),
   ('double-free-silent', 'src/cdom.c', '  if (id >= next_id || !alive[id]) __builtin_trap();', '', UNIT, 'FAIL freeing a free id traps'),
   ('name-open-is-last', 'shim/cdom.js', '    nodes[id] = stack[depth - 1];', '    nodes[id] = last;', UNIT, 'FAIL cd_name_open'),
   # cd_name_el and cd_name_text (unit.c 10b): each names its own kind, never the last node made
@@ -64,8 +67,8 @@ M = [
   ('name-el-untracked', 'shim/cdom.js', '    last = lastElement = element;', '    last = element;', UNIT, 'FAIL cd_name_el'),
   ('name-text-untracked', 'shim/cdom.js', '    last = lastText = doc.createTextNode(str(id));', '    last = doc.createTextNode(str(id));', UNIT, 'FAIL cd_name_el'),
   ('name-text-num-untracked', 'shim/cdom.js', '    last = lastText = doc.createTextNode(number >>> 0);', '    last = doc.createTextNode(number >>> 0);', UNIT, 'FAIL cd_name_el'),
-  ('name-el-calls-text', 'src/cdom.c', 'void cd_name_el(cd_id id) { walk_done(); j_name_el(id); }', 'void cd_name_el(cd_id id) { walk_done(); j_name_text(id); }', UNIT, 'FAIL cd_name_el'),
-  ('name-text-calls-el', 'src/cdom.c', 'void cd_name_text(cd_id id) { walk_done(); j_name_text(id); }', 'void cd_name_text(cd_id id) { walk_done(); j_name_el(id); }', UNIT, 'FAIL cd_name_el'),
+  ('name-el-calls-text', 'src/cdom.c', 'void cd_name_el(cd_id id) { ready(); j_name_el(id); }', 'void cd_name_el(cd_id id) { ready(); j_name_text(id); }', UNIT, 'FAIL cd_name_el'),
+  ('name-text-calls-el', 'src/cdom.c', 'void cd_name_text(cd_id id) { ready(); j_name_text(id); }', 'void cd_name_text(cd_id id) { ready(); j_name_el(id); }', UNIT, 'FAIL cd_name_el'),
   # strings (docs/strings-design.md): the runtime read, the table's index, the life of a cd_tmp, the macros
   ('str-ascii-any', 'shim/cdom.js', '      if (high < 128) {\n        return ascii(p, n);', '      if (high < 256) {\n        return ascii(p, n);', UNIT, 'FAIL a runtime string of 0 to 300 bytes'),
   ('str-limit-33', 'shim/cdom.js', '    if (n <= ASCII_MAX) {', '    if (n <= ASCII_MAX + 1) {', UNIT, 'FAIL a runtime string of 0 to 300 bytes'),
@@ -73,7 +76,7 @@ M = [
   ('str-ascii-step7', 'shim/cdom.js', 'for (; n >= 8; p += 8, n -= 8) {', 'for (; n >= 8; p += 7, n -= 8) {', UNIT, 'FAIL a runtime string of 0 to 300 bytes'),
   ('str-lits-off-by-one', 'shim/cdom.js', 'return lits[(s - litBase) >> 2];', 'return lits[((s - litBase) >> 2) + 1];', UNIT, 'FAIL'), # the page cannot even start: every slot reads the next entry
   ('str-lifetime-unchecked', 'shim/cdom.js', '    if (k >= u32[tmpCount]) {', '    if (false) {', UNIT, 'FAIL a cd_tmp used after another call'),
-  ('str-tmp-done-missing', 'src/cdom.c', 'void cd_set_class(cd_id id, cd_str v) { walk_done(); j_set_class(id, v.v); tmp_done(); }', 'void cd_set_class(cd_id id, cd_str v) { walk_done(); j_set_class(id, v.v); }', UNIT, 'FAIL a cd_tmp used after another call'),
+  ('str-tmp-done-missing', 'src/cdom.c', 'void cd_set_class(cd_id id, cd_str v) { ready(); j_set_class(id, v.v); tmp_done(); }', 'void cd_set_class(cd_id id, cd_str v) { ready(); j_set_class(id, v.v); }', UNIT, 'FAIL a cd_tmp used after another call'),
   ('str-cap-unchecked', 'src/cdom.c', '  if (tmp.n == CD_TMP_CAP) __builtin_trap();\n', '', UNIT, 'FAIL 32 cd_tmp are alive at once'),
   ('str-litq-always', 'src/cdom.h', '#define CD_LITQ(s) (__builtin_strncmp(CD_SPELL(s), "\\"", 1) == 0 && \\\n                    __builtin_constant_p(__builtin_strlen(CD_CHARP(s))))', '#define CD_LITQ(s) 1', UNIT, 'not a string literal'),
   ('str-evaluated-twice', 'src/cdom.h', 'CD_LIT_(s), cd_tmpz(CD_CHARP(s))))', 'CD_LIT_(s), cd_tmpz(({ const char *a_ = CD_CHARP(s); (void)CD_CHARP(s); a_; }))))', UNIT, 'FAIL a string argument is evaluated once'),
@@ -105,6 +108,14 @@ M = [
   ('fmt-zeros', 'src/cdom.c', '  while (lo < dec && t[lo] == \'0\') lo++;', '', UNIT, 'FAIL cd_fmt'),
   ('fmt-round', 'src/cdom.c', '(v < 0 ? -0.5 : 0.5)', '0.5', UNIT, 'FAIL cd_fmt'),
   ('two-heaps', 'src/cdom.c', 'void *cd_alloc(uint32_t n) {\n  void *p = malloc(n);', 'void *cd_alloc(uint32_t n) {\n  void *p = heap_alloc(n);', LINK, "FAIL the app's heap"),
+  # the _try allocations (tools/alloc.mjs, tests/link/run.sh's size gate)
+  ('try-traps', 'src/cdom.c', '      if (may_fail) return 0;\n', '      (void)may_fail;\n', ALLOC, 'FAIL cd_alloc_try: blocks'),
+  ('malloc-null', 'src/cdom.c', '      __builtin_trap(); /* out of memory */', '      return 0;', ALLOC, 'FAIL malloc still traps'),
+  ('realloc-try-frees', 'src/cdom.c', '  if (!q) return 0; /* p is kept, as it was */', '  if (!q) { free(p); return 0; }', ALLOC, 'FAIL cd_realloc_try'),
+  ('heap-cap-loose', 'src/cdom.c', '  if ((uint32_t)__builtin_wasm_memory_size(0) + pages > (uint32_t)(CDOM_HEAP_PAGES_MAX)) return 0;', '  if ((uint32_t)__builtin_wasm_memory_size(0) + pages > (uint32_t)(CDOM_HEAP_PAGES_MAX) + 8) return 0;', ALLOC, 'FAIL cd_alloc_try: blocks'),
+  ('own-alloc-bypassed', 'src/cdom.c', 'static int heap_is_cdoms(void) { return malloc == cdom_heap_malloc; }', 'static int heap_is_cdoms(void) { return 1; }', ALLOC, 'FAIL cd_alloc_try and cd_realloc_try on an app'),
+  ('try-path-shared', 'src/cdom.c', 'static inline __attribute__((always_inline)) void *heap_alloc_or(', '__attribute__((noinline)) static void *heap_alloc_or(', LINK, 'FAIL the _try path is in an app that never calls it'),
+  ('try-path-heavy', 'src/cdom.c', '  return n >> 31 ? 0 : heap_alloc_or(n, 1);\n}', '  void *p = n >> 31 ? 0 : heap_alloc_or(n, 1);\n  char t[24];\n  if (p) ((uint8_t *)p)[0] = (uint8_t)cd_fmt_len(t, (double)n / 3, CD_UNIT_PX); /* a path that grew: cd_fmt in it */\n  return p;\n}', LINK, 'FAIL calling cd_alloc_try costs'),
   ('foreign-free', 'src/cdom.c', '  if ((uintptr_t)p < heap_lo + 8 || (uintptr_t)p >= heap_ptr) __builtin_trap(); /* not from this heap */', '  (void)heap_lo;', LINK, 'FAIL an app that replaces malloc alone'),
   ('image-pixels', 'shim/cdom.js', 'new Uint8ClampedArray(memory.buffer, pixelsPtr, width * height * channels)', 'new Uint8ClampedArray(memory.buffer, pixelsPtr + 4, width * height * channels)', UNIT, 'FAIL cd_encode_image'),
   ('image-token', 'shim/cdom.js', 'deliver(exports.cd_encoded, token, await blob.arrayBuffer())', 'deliver(exports.cd_encoded, token + 1, await blob.arrayBuffer())', UNIT, 'FAIL cd_encode_image'),
@@ -271,9 +282,9 @@ M = [
   ('host-get-id-result', 'shim/cdom.js', '    return index === RESULT ? nodes.indexOf(value, RESULT + 1) : index;', '    return index;', HOST, 'FAIL id of a node CD_RESULT also holds'),
   ('host-path-cache-shared', 'shim/cdom.js', 'return segments[(path - litBase) >> 2] ??= str(path).split(".");', 'return segments[0] ??= str(path).split(".");', HOST, 'FAIL'),
   ('host-unlisten-node', 'shim/cdom.js', '      listenMask[id * 2 + (type >> 5)] &= ~(1 << (type & 31));', '', HOST, 'FAIL cd_unlisten: the node no longer hears'),
-  ('host-input-value', 'src/cdom.c', 'get(id, cd_s("value"), GET_STR_LEN, dst, cap)', 'get(id, cd_s("valu"), GET_STR_LEN, dst, cap)', HOST, 'FAIL cd_input_text'),
-  ('input-text-written', 'shim/cdom.js', 'return kind === 1 || read === text.length ? written : written + textEncoder.encode(text.slice(read)).length;', 'return written;', UNIT, 'FAIL cd_input_text: the whole length'),
-  ('input-text-kind', 'src/cdom.c', 'get(id, cd_s("value"), GET_STR_LEN, dst, cap)', 'get(id, cd_s("value"), GET_STR, dst, cap)', UNIT, 'FAIL cd_input_text: the whole length'),
+  ('host-input-value', 'src/cdom.c', 'get(id, cd_s("value"), GET_STR_LEN, dst, cap)', 'get(id, cd_s("valu"), GET_STR_LEN, dst, cap)', HOST, 'FAIL cd_input_whole'),
+  ('input-text-written', 'shim/cdom.js', 'return kind === 1 || read === text.length ? written : written + textEncoder.encode(text.slice(read)).length;', 'return written;', UNIT, 'FAIL cd_input_whole: the whole value'),
+  ('input-text-kind', 'src/cdom.c', 'get(id, cd_s("value"), GET_STR_LEN, dst, cap)', 'get(id, cd_s("value"), GET_STR, dst, cap)', UNIT, 'FAIL cd_input_whole: the whole value'),
   ('seed-state-literal', 'src/cdom.c', 'static uint32_t rand_state;', 'static uint32_t rand_state = 0x9e3779b9u;', LINK, 'FAIL src/cdom.c:'),
   ('seed-app-generator', 'demo/click.c', 'static void put32(', 'static uint32_t g;\n__attribute__((unused)) static void g1(void) { g ^= g << 13; }\nstatic void put32(', LINK, 'FAIL demo/click.c:13: a generator of its own'),
   ('rand-shift', 'src/cdom.c', '  rand_state ^= rand_state >> 17;', '  rand_state ^= rand_state >> 16;', UNIT, 'FAIL cd_rand: the first 8 draws'),
@@ -309,7 +320,9 @@ M = [
   ('on-remove-keeps-listen', 'src/cdom.c', '    if (!pair_any(&handlers, id)) on_ids[id] = 0;\n    cd_unlisten(id, ev);', '    if (!pair_any(&handlers, id)) on_ids[id] = 0;', UNIT, 'FAIL cd_on: a handler'),
   ('on-put-appends', 'src/cdom.c', '  pair_ent *e = pair_find(t, a, b);\n  if (e) { e->p = p; e->q = q; return; }\n', '', UNIT, 'FAIL cd_on: a handler'),
   ('on-flags-after', 'src/cdom.c', '  inbox.flags = 0;\n  uint32_t id = (uint32_t)inbox.id;', '  uint32_t id = (uint32_t)inbox.id;\n  if (!(id < on_cap && on_ids[id])) inbox.flags = 0;', UNIT, 'FAIL cd_on: a handler'),
-  ('on-event-strong', 'src/cdom.c', '__attribute__((weak)) void cd_on_event(const cd_event_rec *) { }\n', '', LINK, 'FAIL an app that uses cd_on alone'),
+  # tests/build.sh links tests/alloc_try.c, an app with no cd_on_event, before tests/link/run.sh's on_only.c can:
+  # either one failing to link is the catch, so the text is the linker's, which both print
+  ('on-event-strong', 'src/cdom.c', '__attribute__((weak)) void cd_on_event(const cd_event_rec *) { }\n', '', LINK, 'undefined symbol: cd_on_event'),
   # app helpers: cd_timer_stop and cd_timer_cb
   ('timer-stop-no-clear', 'shim/cdom.js', '    clearTimeout(handle);\n', '', UNIT, 'FAIL cd_timer_stop and cd_timer_cb'),
   ('timer-stop-one', 'src/cdom.c', 'for (pair_ent *e; (e = pair_any(&timers, token));) {', 'for (pair_ent *e = pair_any(&timers, token); e; e = 0) {', UNIT, 'FAIL cd_timer_stop and cd_timer_cb'),
@@ -398,7 +411,8 @@ M = [
   ('page-none-taken', 'tools/page.awk', '  if (marks != 1)\n', '  if (marks > 1)\n', LINK, 'FAIL cdom_page (first) took the none page'),
   ('page-partial-kept', 'cdom.mk', '> $(call cdom_mk_q,$(2).tmp) \\\n  && mv $(call cdom_mk_q,$(2).tmp) $(call cdom_mk_q,$(2)) ||', '> $(call cdom_mk_q,$(2)) ||', LINK, 'FAIL cdom_page (first) refused the inline page but left a file'),
   ('mk-wasm-no-libc', 'cdom.mk', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -I$(CDOM)/src', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
-  ('mk-wasm-no-cdom', 'cdom.mk', 'cdom_mk_app_src = $(APP_SRC) $(CDOM_SRC)', 'cdom_mk_app_src = $(APP_SRC)', LINK, "FAIL cdom.mk's APP_WASM rule (first): the module exports no memory or no cd_start"),
+  # cdlits, which the rule runs on the linked module, refuses a module with no cdom in it before run.sh can look at its exports
+  ('mk-wasm-no-cdom', 'cdom.mk', 'cdom_mk_app_src = $(APP_SRC) $(CDOM_SRC)', 'cdom_mk_app_src = $(APP_SRC)', LINK, "cdlits: not a cdom module"),
   ('mk-modules-dropped', 'cdom.mk', ' $(addprefix $(CDOM)/src/cdom_,$(addsuffix .c,$(APP_MODULES)))', '', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   ('mk-modules-unchecked', 'cdom.mk', 'cdom_mk_known = $(if $(cdom_mk_unknown),', 'cdom_mk_known = $(if ,', LINK, 'FAIL cdom.mk (first) refused APP_MODULES for another reason'),  # make still stops, at the missing file, without saying why
   ('mk-goal-taken', 'cdom.mk', '\n.cdom-mk-sources:', '\ncdom-mk-sources:', LINK, 'FAIL cdom.mk (first) took the default goal'),
@@ -433,6 +447,68 @@ M = [
   ('flags-hardcoded', 'tests/build.sh', 'W=(-Wall -Wextra -Werror)', 'W=(-Wall -Wextra -Werror -mbulk-memory)', LINK, 'FAIL tests/build.sh:15 hardcodes -mbulk-memory'),
   ('flags-hardcoded-link', 'tests/link/run.sh', 'C=(-O2 "${CDOM_CFLAGS[@]}"', 'C=(--target=wasm32 -O2 "${CDOM_CFLAGS[@]}"', LINK, 'FAIL tests/link/run.sh:'),
   ('mini-fill-strong', 'src/mini.c', '__attribute__((weak)) void *memset', 'void *memset', LINK, "FAIL an app's own libc"),
+  ('region-kids-after', 'src/cdom.c', '  for (cd_region *k = r->kids, *next; k; k = next) {\n    next = k->next;\n    take(k, 0);\n  }\n  r->kids = 0;\n  while (r->nfns) {\n    cd_cleanup c = r->fns[--r->nfns];\n    releasing++;\n    c.fn(c.ctx);\n    releasing--;\n  }\n', '  while (r->nfns) {\n    cd_cleanup c = r->fns[--r->nfns];\n    releasing++;\n    c.fn(c.ctx);\n    releasing--;\n  }\n  for (cd_region *k = r->kids, *next; k; k = next) {\n    next = k->next;\n    take(k, 0);\n  }\n  r->kids = 0;\n', UNIT, 'FAIL nested regions: taking'),
+  ('region-cleanups-oldest-first', 'src/cdom.c', '  while (r->nfns) {\n    cd_cleanup c = r->fns[--r->nfns];', '  for (uint32_t f = 0; f < r->nfns || (r->nfns = 0); f++) {\n    cd_cleanup c = r->fns[f];', UNIT, 'FAIL nested regions: taking'),
+  ('region-no-cleanup', 'src/cdom.c', '    c.fn(c.ctx);\n', '    (void)c;\n', UNIT, 'FAIL nested regions: taking'),
+  ('region-cleanups-after-free', 'src/cdom.c', '  while (r->nfns) {\n    cd_cleanup c = r->fns[--r->nfns];\n    releasing++;\n    c.fn(c.ctx);\n    releasing--;\n  }\n  uint32_t i = 0;\n  if (dom && r->parent) cd_clear(r->parent);\n  else if (dom) { cd_remove(r->root); i = 1; } /* the root is ids[0] */\n  for (; i < r->n; i++) cd_id_free(r->ids[i]);\n', '  uint32_t i = 0;\n  if (dom && r->parent) cd_clear(r->parent);\n  else if (dom) { cd_remove(r->root); i = 1; } /* the root is ids[0] */\n  for (; i < r->n; i++) cd_id_free(r->ids[i]);\n  while (r->nfns) {\n    cd_cleanup c = r->fns[--r->nfns];\n    releasing++;\n    c.fn(c.ctx);\n    releasing--;\n  }\n', UNIT, 'FAIL nested regions: taking'),
+  ('region-kid-dom', 'src/cdom.c', '    take(k, 0);\n', '    take(k, 1);\n', UNIT, 'FAIL nested regions: taking'),
+  ('region-no-unlink', 'src/cdom.c', '    region_unlink(r);\n    take(r, 1);', '    take(r, 1);', UNIT, 'FAIL nested regions: a child hidden alone'),
+  ('region-up-ignored', 'src/cdom.c', '  if (r->up) {\n    if (!r->up->shown)', '  if (in) {\n    if (!r->up->shown)', UNIT, 'FAIL t_region_handoff'),
+  ('region-forget-dom', 'src/cdom.c', '  region_unlink(r);\n  take(r, 0);\n}', '  region_unlink(r);\n  take(r, 1);\n}', UNIT, 'FAIL cd_region_forget'),
+  ('region-cleanup-dom-ok', 'src/cdom.c', '  if (releasing) __builtin_trap(); /* a cleanup changed the DOM */\n', '', UNIT, 'FAIL traps: '),
+  ('region-depth-unchecked', 'src/cdom.c', '  if (nbuilding == CD_REGION_DEPTH) __builtin_trap(); /* nested deeper than CD_REGION_DEPTH */\n', '', UNIT, 'FAIL traps: '),
+  ('region-on-free-idle', 'src/cdom.c', '  if (!r || !r->shown || releasing) __builtin_trap();', '  if (!r) return;\n  if (!r->shown || releasing) __builtin_trap();', UNIT, 'FAIL traps: '),
+  ('region-up-other-ok', 'src/cdom.c', '    if (r->up && r->up != in) __builtin_trap(); /* r lives in another region */\n', '', UNIT, 'FAIL traps: '),
+  ('region-up-hidden-ok', 'src/cdom.c', '    if (!r->up->shown) __builtin_trap(); /* its parent is not shown */\n', '', UNIT, 'FAIL traps: '),
+  ('list-destroy-after-free', 'src/cdom.c', '  f->destroy(f->ctx, it);\n  if (dom) cd_remove(it->node); else cd_id_free(it->node);', '  if (dom) cd_remove(it->node); else cd_id_free(it->node);\n  f->destroy(f->ctx, it);', UNIT, 'FAIL regions in list rows'),
+  ('list-forget-destroy-after-free', 'src/cdom.c', '    f->destroy(f->ctx, &L->items[i]);\n    cd_id_free(L->items[i].node);', '    cd_id_free(L->items[i].node);\n    f->destroy(f->ctx, &L->items[i]);', UNIT, 'FAIL regions in list rows'),
+  ('dirty-no-dedup', 'src/cdom.c', '    if (renders[i].fn == fn && renders[i].ctx == ctx) return;\n', '', UNIT, 'FAIL cd_dirty: each'),
+  ('dirty-dedup-by-fn', 'src/cdom.c', '    if (renders[i].fn == fn && renders[i].ctx == ctx) return;\n', '    if (renders[i].fn == fn) return;\n', UNIT, 'FAIL cd_dirty: each'),
+  ('dirty-not-flushed', 'src/cdom.c', 'void cd_flush(void) { renders_now(); walk_done(); }', 'void cd_flush(void) { walk_done(); }', UNIT, 'FAIL cd_dirty: each'),
+  ('dirty-render-now-nests', 'src/cdom.c', '  if (render_at == nrenders || rendering || releasing) return;', '  if (render_at == nrenders || (rendering && 0) || releasing) return;', UNIT, 'FAIL cd_dirty: a render that asks'),
+  ('undirty-not-in-round', 'src/cdom.c', '    if (renders[i].fn == fn && renders[i].ctx == ctx) renders[i].fn = 0;', '    if (renders[i].fn == fn && renders[i].ctx == ctx && i > render_at) renders[i].fn = 0;', UNIT, 'FAIL cd_undirty'),
+  ('undirty-noop', 'src/cdom.c', '  for (uint32_t i = render_at; i < nrenders; i++)\n    if (renders[i].fn == fn && renders[i].ctx == ctx) renders[i].fn = 0;', '  (void)fn; (void)ctx;', UNIT, 'FAIL cd_undirty'),
+  ('render-now-noop', 'src/cdom.c', 'void cd_render_now(void) { renders_now(); }', 'void cd_render_now(void) {}', UNIT, 'FAIL cd_render_now'),
+  ('render-rounds-unbounded', 'src/cdom.c', '#define CD_RENDER_ROUNDS 16', '#define CD_RENDER_ROUNDS 1000', UNIT, 'FAIL traps: renders that keep'),
+  ('render-pass-everywhere', 'src/cdom.c', 'static void (*volatile render_pass)(void);', 'static void (*render_pass)(void);', LINK, 'FAIL an app that never calls cd_dirty carries the render pass'),
+  ('sync-get', 'src/cdom.c', 'static double get(cd_id id, cd_str path, uint32_t kind, void *dst, uint32_t cap) {\n  renders_now();\n', 'static double get(cd_id id, cd_str path, uint32_t kind, void *dst, uint32_t cap) {\n', UNIT, 'FAIL the reads, the layout reads'),
+  ('sync-set', 'src/cdom.c', '  if (v.tag == CD_V_OBJ) __builtin_trap(); /* its pairs cannot follow a value passed alone */\n  renders_now();\n', '  if (v.tag == CD_V_OBJ) __builtin_trap(); /* its pairs cannot follow a value passed alone */\n', UNIT, 'FAIL the reads, the layout reads'),
+  ('sync-call', 'src/cdom.c', 'void cd_call_args(cd_id id, cd_str method, uint32_t n, const cd_val *a) {\n  renders_now();\n', 'void cd_call_args(cd_id id, cd_str method, uint32_t n, const cd_val *a) {\n', UNIT, 'FAIL the reads, the layout reads'),
+  ('sync-hit', 'src/cdom.c', 'cd_id cd_hit(int32_t x, int32_t y) { renders_now(); return', 'cd_id cd_hit(int32_t x, int32_t y) { return', UNIT, 'FAIL the reads, the layout reads'),
+  ('sync-viewport', 'src/cdom.c', 'void cd_viewport(cd_viewport_rec *v) { renders_now(); j_viewport', 'void cd_viewport(cd_viewport_rec *v) { j_viewport', UNIT, 'FAIL the reads, the layout reads'),
+  ('sync-rect', 'src/cdom.c', 'int cd_rect(cd_id id, double out[4]) { renders_now(); return', 'int cd_rect(cd_id id, double out[4]) { return', UNIT, 'FAIL the reads, the layout reads'),
+  ('sync-in-cleanup', 'src/cdom.c', '  if (render_at == nrenders || rendering || releasing) return;', '  if (render_at == nrenders || rendering || (releasing && 0)) return;', UNIT, 'FAIL a cleanup that reads'),
+  ('bound-no-skip-id', 'src/cdom.h', '  if (b->seen != 1 || b->last != value.v) cd_bound_set_(b, value);', '  cd_bound_set_(b, value);', UNIT, 'FAIL cd_bound: a set writes'),
+  ('bound-bytes-no-skip', 'src/cdom.c', '  if (b->seen == SEEN_BYTES && b->blen == len', '  if (0 && b->seen == SEEN_BYTES && b->blen == len', UNIT, 'FAIL cd_bound: a set writes'),
+  ('bound-bytes-made-anyway', 'src/cdom.c', '  if (!b->id || b->kind == BOUND_BOOL) __builtin_trap();\n  if (b->seen == SEEN_BYTES', '  if (!b->id || b->kind == BOUND_BOOL) __builtin_trap();\n  cd_tmp(p, len);\n  if (b->seen == SEEN_BYTES', UNIT, 'FAIL cd_bound: unchanged bytes'),
+  ('bound-num-no-skip', 'src/cdom.c', '  if (b->seen == SEEN_NUM && b->last == n) return;\n', '', UNIT, 'FAIL cd_bound: a set writes'),
+  ('bound-bool-not-truth', 'src/cdom.c', '  if (b->kind == BOUND_BOOL) n = n != 0; /* 1 and 5 are the same true */\n', '', UNIT, 'FAIL cd_bound: a set writes'),
+  ('bound-no-auto-unbind', 'src/cdom.c', '  if (recording) cd_on_free(0, unbind_cleanup, b);', '  if (0 && recording) cd_on_free(0, unbind_cleanup, b);', UNIT, 'FAIL cd_bound: values bound while'),
+  ('bound-unbound-ok', 'src/cdom.c', '  if (!b->id) __builtin_trap(); /* unbound */', '', UNIT, 'FAIL traps: a set on an unbound'),
+  ('bound-tmp-accepted', 'src/cdom.c', '  if (s.v >> 31) __builtin_trap(); /* a runtime string', '  if (0) __builtin_trap(); /* a runtime string', UNIT, 'FAIL traps: cd_bound_set given a runtime string'),
+  ('req-no-gen-check', 'src/cdom.c', '  if (r->state != CD_REQ_LOADING || (v >> 16) != r->gen) return 0;', '  if (r->state != CD_REQ_LOADING) return 0;', UNIT, 'FAIL cd_req: the latest'),
+  ('req-no-state-check', 'src/cdom.c', '  if (r->state != CD_REQ_LOADING || (v >> 16) != r->gen) return 0;', '  if ((v >> 16) != r->gen) return 0;', UNIT, 'FAIL cd_req: the latest'),
+  ('req-index-lost', 'src/cdom.c', '  if (index) *index = (uint16_t)v;', '  if (index) *index = 0;', UNIT, 'FAIL cd_req: the latest'),
+  ('req-begin-no-bump', 'src/cdom.c', 'void *cd_req_begin(cd_req *r, uint16_t index) {\n  r->gen++;\n', 'void *cd_req_begin(cd_req *r, uint16_t index) {\n', UNIT, 'FAIL cd_req: the latest'),
+  ('req-drop-noop', 'src/cdom.c', 'void cd_req_drop(cd_req *r) { r->state = CD_REQ_IDLE; }', 'void cd_req_drop(cd_req *r) { (void)r; }', UNIT, 'FAIL cd_req: the latest'),
+  ('bound-shows-noop', 'src/cdom.c', '  b->seen = SEEN_ID;\n  b->last = s.v;\n}\nvoid cd_bound_shows_num', '  (void)s;\n}\nvoid cd_bound_shows_num', UNIT, 'FAIL cd_bound_shows'),
+  ('tslot-no-stop', 'src/cdom.c', '  cd_timer_clear(t);\n  t->fn = fn;', '  t->fn = fn;', UNIT, 'FAIL cd_timer_set'),
+  ('tslot-cleared-after', 'src/cdom.c', '  t->token = 0;\n  t->fn(t->ctx);', '  t->fn(t->ctx);\n  t->token = 0;', UNIT, 'FAIL cd_timer_set'),
+  ('tslot-clear-noop', 'src/cdom.c', '  if (t->token) cd_timer_stop(t->token);\n', '', UNIT, 'FAIL cd_timer_set'),
+  ('input-whole-fits', 'src/cdom.c', '  return n <= cap;\n}', '  return n < cap;\n}', UNIT, 'FAIL cd_input_whole: the whole value'),
+  ('input-whole-len', 'src/cdom.c', '  *len = n;\n  return n <= cap;', '  *len = n <= cap ? n : 0;\n  return n <= cap;', UNIT, 'FAIL cd_input_whole: the whole value'),
+  ('ui-el-no-class', 'src/cdom_ui.c', '  cd_open(tag);\n  if (cls.v) cd_class(cls);', '  cd_open(tag);\n  (void)cls;', UNIT, 'FAIL cd_el,'),
+  ('ui-button-type', 'src/cdom_ui.c', '  cd_attr("type", "button");\n', '', UNIT, 'FAIL cd_button'),
+  ('ui-button-ctx', 'src/cdom_ui.c', '  cd_on(b, CD_EV_CLICK, fn, ctx);', '  cd_on(b, CD_EV_CLICK, fn, 0);\n  (void)ctx;', UNIT, 'FAIL cd_button'),
+  ('ui-button-label', 'src/cdom_ui.c', '  if (label_text) cd_name_text(*label_text = cd_id_new());\n', '  (void)label_text;\n', UNIT, 'FAIL cd_button'),
+  ('ui-buf-partial', 'src/cdom_ui.c', '  if (b->over || n > b->cap - b->len) { b->over = 1; return; }', '  if (b->over) return;\n  if (n > b->cap - b->len) { b->over = 1; n = b->cap - b->len; }', UNIT, 'FAIL cd_buf'),
+  ('ui-buf-not-sticky', 'src/cdom_ui.c', '  if (b->over || n > b->cap - b->len)', '  if (n > b->cap - b->len)', UNIT, 'FAIL cd_buf'),
+  ('ui-i64-sign', 'src/cdom_ui.c', "  if (v < 0) t[--k] = '-';\n", '', UNIT, 'FAIL cd_buf'),
+  ('ui-linked-always', 'src/cdom_ui.c', 'void (cd_el)(cd_str tag, cd_str cls) {', '__attribute__((export_name("cd_el"))) void (cd_el)(cd_str tag, cd_str cls) {', LINK, 'FAIL cdom_ui linked and not called'),
+  ('callbacks-only-http', 'src/cdom_callbacks_only.h', '#pragma GCC poison cd_http cd_on_http', '#pragma GCC poison cd_on_http', LINK, 'FAIL the callbacks-only profile let a poisoned call through (USE_HTTP)'),
+  ('regbuf-all-kept', 'src/cdom.c', '  cd_free(r->ids);\n  cd_free(r->fns);\n  r->ids = 0;\n  r->fns = 0;\n  r->n = r->cap = r->nfns = r->fcap = 0;', '  r->n = 0;', UNIT, 'FAIL a region taken away frees'),
+  ('regbuf-fns-kept', 'src/cdom.c', '  cd_free(r->ids);\n  cd_free(r->fns);\n  r->ids = 0;\n  r->fns = 0;\n  r->n = r->cap = r->nfns = r->fcap = 0;', '  cd_free(r->ids);\n  r->ids = 0;\n  r->n = r->cap = 0;', UNIT, 'FAIL a region taken away frees'),
+  ('cleanup-stop-traps', 'src/cdom.c', 'void cd_timer_stop(uint32_t token) {\n', 'void cd_timer_stop(uint32_t token) {\n  if (releasing) __builtin_trap();\n', UNIT, 'FAIL t_region_handoff'),  # the handoff case stops B's timer from a cleanup first; the stop case after it pins the header's words
 ]
 
 def build_and_run(root, cmd, minify=False):
@@ -443,8 +519,33 @@ def build_and_run(root, cmd, minify=False):
     if m.returncode: return 1, 'MINSHIM FAILED ' + m.stderr[-400:]
   b = subprocess.run(['tests/build.sh'], cwd=root, capture_output=True, text=True)
   if b.returncode: return 1, 'BUILD FAILED ' + b.stderr[-400:]
-  r = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
-  return r.returncode, r.stdout + r.stderr
+  # A mutant can make C loop forever (a cycle in a list it walks): the page then never answers, and
+  # the run would wait on it for good. The test runs in a process group of its own (Chrome with it),
+  # killed whole past TEST_TIMEOUT; a hang is a broken module, so it counts as caught (HUNG).
+  t = subprocess.Popen(cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+  try:
+    out, _ = t.communicate(timeout=TEST_TIMEOUT)
+  except subprocess.TimeoutExpired:
+    os.killpg(t.pid, signal.SIGKILL)
+    out, _ = t.communicate()
+    return HUNG, f'HUNG: killed after {TEST_TIMEOUT} s\n' + (out or '')
+  return t.returncode, out
+
+# A mutant's test may write into the tree it runs in (mk-any-wasm makes cdom.mk's page rule apply to every
+# .html, so make rebuilds shim/page.html and tests/link/page/marker.html in place). Restoring only the
+# mutated file left those for every later mutant of that worker, whose pages then failed for that
+# reason, not their own (seven link mutants missed). So after each mutant every tracked file goes back
+# to the copy's index, which holds the real tree's files; the generated minified shim is among them.
+# Files a test created outside the ignored build directories (tests/out and the rest of .gitignore stay:
+# every build writes them afresh) go too, so no mutant reads what an earlier one left; the node_modules
+# link copy_tree made is kept.
+def restore_tree(root):
+  changed = subprocess.run(['git', 'diff', '--name-only'], cwd=root, capture_output=True, text=True, check=True).stdout.split()
+  if changed: subprocess.run(['git', 'checkout', '--', *changed], cwd=root, check=True)
+  clean = ['git', 'clean', '-d', '-e', 'node_modules']
+  made = [l.removeprefix('Would remove ') for l in subprocess.run(clean + ['-n'], cwd=root, capture_output=True, text=True, check=True).stdout.splitlines()]
+  if made: subprocess.run(clean + ['-f', '-q'], cwd=root, check=True)
+  return [f for f in changed if f != 'shim/cdom.min.js'] + [f + ' (new)' for f in made] # the min shim is rebuilt by every shim mutant: not news
 
 def copy_tree(dst):
   files = subprocess.run(['git', 'ls-files', '-z'], cwd=top, capture_output=True, text=True, check=True).stdout.split('\0')
@@ -462,12 +563,15 @@ args = sys.argv[1:]
 jobs = max(1, (os.cpu_count() or 2) // 2)
 if args[:1] == ['-j']: jobs, args = int(args[1]), args[2:]
 only = set(args)
+unknown = sorted(only - {m[0] for m in M})
+if unknown: sys.exit('mutate.py: no mutant named ' + ', '.join(unknown)) # else a mistyped list runs nothing and passes
 todo = [m for m in M if not only or m[0] in only]
 results = {}
 lock = threading.Lock()
 work = queue.Queue()
 for k, m in enumerate(todo): work.put((k, m))
 base = pathlib.Path(tempfile.mkdtemp(prefix='cdom-mutants-'))
+missed_dir = pathlib.Path(tempfile.mkdtemp(prefix='cdom-missed-'))
 
 def worker(w):
   root = base / f'w{w}'
@@ -485,8 +589,15 @@ def worker(w):
         code, out = build_and_run(root, cmd, minify=True)
       finally:
         p.write_text(src)
-      ok = code != 0 and want in out
-      line = ('caught ' if ok else 'MISSED ') + name + ('' if ok else '\n  ' + out[-600:].replace('\n', '\n  '))
+        touched = restore_tree(root)
+      ok = code == HUNG or (code != 0 and want in out)
+      why = '' if ok else f' (exit {code}; ' + ('the FAIL text is there' if want in out else 'no ' + repr(want)) + ')'
+      if not ok: # the whole output, kept past the run, since the tail shown here may not hold the cause
+        (missed_dir / f'{name}.log').write_text(out)
+        why += f' full output: {missed_dir / (name + ".log")}'
+      if touched: # a mutant whose test rewrote tracked files: they are back, so the next mutant runs on the real tree
+        why += ' (its test changed ' + ', '.join(touched) + '; restored)'
+      line = ('caught (HUNG, killed) ' if code == HUNG else 'caught ' if ok else 'MISSED ') + name + why + ('' if ok else '\n  ' + out[-600:].replace('\n', '\n  '))
     with lock:
       results[k] = ok
       print(line, flush=True)
@@ -502,6 +613,6 @@ print(f'{len(results) - bad} of {len(todo)} caught', flush=True)
 code = 0
 for label, cmd in (('unit', UNIT), ('host', HOST), ('canvas', CANVAS)):
   c, out = build_and_run(top, cmd)
-  print(f'restored: {label} ' + ('ok' if c == 0 else 'FAIL'), flush=True)
+  print(f'restored: {label} ' + ('ok' if c == 0 else 'FAIL\n  ' + out[-1500:].replace('\n', '\n  ')), flush=True)
   code |= c
 sys.exit(1 if bad or code else 0)

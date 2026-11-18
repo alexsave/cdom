@@ -25,10 +25,11 @@ static uint32_t characters_in(const char *s, uint32_t n) {
  * from the value now, so they are never stale. */
 static void on_input(const cd_event_rec *, void *) {
   char name[NAME_CAP];
-  uint32_t n = cd_input_text(input, name, sizeof name);
-  /* cd_input_text returns the whole length in bytes. When that is more than the buffer, the value was cut:
-   * cd_get_str of "value" says how many bytes of whole characters did fit. */
-  if (n > sizeof name) n = cd_get_str(input, "value", name, sizeof name);
+  uint32_t n;
+  /* cd_input_whole reads the whole value, or none of it when it does not fit (and then n is its whole length
+   * in bytes). A value longer than the buffer is shown cut: cd_get_str of "value" writes as many whole
+   * characters as fit, and returns how many bytes those are. */
+  if (!cd_input_whole(input, name, sizeof name, &n)) n = cd_get_str(input, "value", name, sizeof name);
 
   if (n == 0) {
     cd_set_text_node(greeting_text, "Hello, stranger!");

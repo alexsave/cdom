@@ -7,6 +7,11 @@
 #ifndef CDOM_TEMPLATES
 #define CDOM_TEMPLATES 1
 #endif
+/* CDOM_BOUND=1 (the cdom-bound entry): the row's class through a cd_bound instead of the view's own
+ * last value, to measure the helper against the hand-written skip. */
+#ifndef CDOM_BOUND
+#define CDOM_BOUND 0
+#endif
 
 static const char *ADJ[] = {"pretty", "large", "big", "small", "tall", "short", "long", "handsome",
   "plain", "quaint", "clean", "elegant", "easy", "angry", "crazy", "helpful", "mushy", "odd",
@@ -73,7 +78,11 @@ static void build(uint32_t count) {
 }
 
 /* ---- view ---- */
+#if CDOM_BOUND
+typedef struct { uint32_t rev; cd_bound cls; } RowView;
+#else
 typedef struct { uint32_t rev; uint8_t sel; } RowView;
+#endif
 static RowView *views;
 static uint32_t nviews, views_cap, *free_views, nfree_views;
 static cd_list list;
@@ -90,24 +99,37 @@ static uint32_t view_new(void) {
   return nviews++;
 }
 
+/* The row's class: one call site per literal, so a bound value set from create and from patch is the
+ * same slot (cd_bound compares ids). */
+static cd_str row_class(uint8_t sel) { return sel ? cd_s("danger") : cd_s(""); }
+
 static cd_id row_create(void *, uint32_t i, uint32_t *data) {
   Row *r = &rows[i];
   uint32_t vi = view_new();
   RowView *v = &views[vi];
+#if CDOM_BOUND
+  __builtin_memset(&v->cls, 0, sizeof v->cls); /* a cd_bound starts zeroed */
+#endif
   cd_id tr = cd_id_new();
   v->rev = r->rev;
-  v->sel = r->id == selected;
+  uint8_t sel = r->id == selected;
+#if CDOM_BOUND
+  cd_bind_class(&v->cls, tr);
+  cd_bound_shows(&v->cls, row_class(sel)); /* the class is set below, at build */
+#else
+  v->sel = sel;
+#endif
   cd_tag_set(tr, K_ROW | r->id); /* a click reports which cell: 1 label, 2 remove */
 #if CDOM_TEMPLATES
   cd_tpl_text_num(T_ROW, 0, r->id);                       /* td.col-md-1 > id */
   cd_tpl_text(T_ROW, 1, LABEL(r));                       /* td.col-md-4 > a > label */
   cd_clone(T_ROW);
   cd_listen(tr, CD_EV_CLICK);
-  if (v->sel) cd_class("danger");
+  if (sel) cd_class("danger");
   cd_close();
 #else
   cd_open("tr"); cd_listen(tr, CD_EV_CLICK);
-  if (v->sel) cd_class("danger");
+  if (sel) cd_class("danger");
   cd_open("td"); cd_class("col-md-1"); cd_text_num(r->id); cd_close();
   cd_open("td"); cd_class("col-md-4");
   cd_open("a"); cd_text(LABEL(r)); cd_close();
@@ -134,13 +156,20 @@ static void row_patch(void *, uint32_t i, cd_item *it) {
     cd_value(LABEL(r));
   }
   uint8_t sel = r->id == selected;
+#if CDOM_BOUND
+  cd_bound_set(&v->cls, row_class(sel));
+#else
   if (v->sel != sel) {
     v->sel = sel;
-    cd_set_class(it->node, sel ? cd_s("danger") : cd_s(""));
+    cd_set_class(it->node, row_class(sel));
   }
+#endif
 }
 
 static void row_destroy(void *, cd_item *it) {
+#if CDOM_BOUND
+  cd_unbind(&views[it->data].cls);
+#endif
   free_views[nfree_views++] = it->data;
 }
 

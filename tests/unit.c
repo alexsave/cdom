@@ -9,6 +9,7 @@
 #include "../src/cdom_locale.h"
 #include "../src/cdom_share.h"
 #include "../src/cdom_fonts.h"
+#include "../src/cdom_ui.h"
 
 #define EXPORT(n) __attribute__((export_name(n)))
 
@@ -1163,7 +1164,10 @@ EXPORT("t_host_checked") double t_host_checked(void) { return cd_get_num(host_bo
 EXPORT("t_host_length") double t_host_length(void) { return cd_get_num(host_input, "value.length"); }
 EXPORT("t_host_missing") double t_host_missing(void) { return cd_get_num(host_input, "no.such.thing"); }
 EXPORT("t_host_value") uint32_t t_host_value(uint32_t cap) { return cd_get_str(host_input, "value", host_out, cap); }
-EXPORT("t_host_text") uint32_t t_host_text(uint32_t cap) { return cd_input_text(host_input, host_out, cap); }
+EXPORT("t_host_text") uint32_t t_host_text(uint32_t cap) { /* 1 << 16 when it fitted, and the length */
+  uint32_t n, fits = (uint32_t)cd_input_whole(host_input, host_out, cap, &n);
+  return fits << 16 | n;
+}
 EXPORT("t_host_accent") uint32_t t_host_accent(void) { return cd_get_str(host_div, "style.--accent", host_out, sizeof host_out); }
 EXPORT("t_host_out") char *t_host_out(void) { return host_out; }
 EXPORT("t_host_bad_set") void t_host_bad_set(void) { cd_set_str(host_div, "no.such.thing", "x"); }
@@ -1691,3 +1695,518 @@ EXPORT("t_page_origin") uint32_t t_page_origin(uint32_t cap) {
   return cd_page_origin(origin_buf, cap);
 }
 EXPORT("t_origin_buf") char *t_origin_buf(void) { return origin_buf; }
+
+/* 20. Nested regions and cd_on_free (cdom.h, regions). A parent-mode region A holds a root-mode
+ * child B, built inside A's build, and B a parent-mode grandchild C. Each cleanup logs its name and
+ * how many ids were live when it ran, so the order (children first, newest first) and the time
+ * (before any id of its region goes) are both visible. */
+static cd_region nest_a, nest_b, nest_c;
+static cd_id nest_box, nest_c_box;
+static uint32_t nest_log[8], nest_live[8], nest_n;
+enum { NEST_A1 = 1, NEST_A2, NEST_B1, NEST_C1 };
+static void nest_cleanup(void *ctx) {
+  if (nest_n < 8) { nest_log[nest_n] = (uint32_t)(uintptr_t)ctx; nest_live[nest_n++] = cd_ids_live(); }
+}
+static void nest_show_b(void) { /* B inside the region that builds now (A), or in nest_b.up when none builds */
+  if (!cd_region_show(&nest_b, 1)) return;
+  cd_at(nest_box, CD_APPEND);
+  cd_open("p"); cd_name_open(nest_b.root); cd_attr("class", "b");
+  cd_open("span"); cd_name_open(nest_c_box = cd_id_new()); cd_close();
+  cd_close();
+  cd_on_free(0, nest_cleanup, (void *)NEST_B1);
+  nest_c.parent = nest_c_box;
+  if (cd_region_show(&nest_c, 1)) {
+    cd_at(nest_c_box, CD_APPEND);
+    cd_open("i"); cd_name_open(cd_id_new()); cd_text("c"); cd_close();
+    cd_on_free(&nest_c, nest_cleanup, (void *)NEST_C1);
+    cd_region_end(&nest_c);
+  }
+  cd_region_end(&nest_b);
+}
+EXPORT("t_nest_section") void t_nest_section(void) {
+  cd_id s = section("nest");
+  cd_at(s, CD_APPEND); cd_open("div"); cd_name_open(nest_a.parent = cd_id_new()); cd_close();
+}
+EXPORT("t_nest_build") void t_nest_build(void) {
+  nest_n = 0;
+  if (!cd_region_show(&nest_a, 1)) return;
+  cd_at(nest_a.parent, CD_APPEND);
+  cd_open("div"); cd_name_open(nest_box = cd_id_new()); cd_attr("class", "a"); cd_close();
+  cd_on_free(0, nest_cleanup, (void *)NEST_A1);
+  nest_show_b();
+  cd_on_free(0, nest_cleanup, (void *)NEST_A2);
+  cd_region_end(&nest_a);
+}
+EXPORT("t_nest_hide") void t_nest_hide(uint32_t k) { cd_region_hide(k == 0 ? &nest_a : k == 1 ? &nest_b : &nest_c); }
+EXPORT("t_nest_show_b") void t_nest_show_b(void) { nest_show_b(); }
+EXPORT("t_nest_log") uint32_t t_nest_log(uint32_t i, uint32_t live) { return live ? nest_live[i] : i < nest_n ? nest_log[i] : 0; }
+EXPORT("t_nest_shown") uint32_t t_nest_shown(void) { return nest_a.shown | nest_b.shown << 1 | nest_c.shown << 2; }
+EXPORT("t_nest_kids") uint32_t t_nest_kids(void) { /* A's children, a cycle capped at 9 */
+  uint32_t n = 0;
+  for (cd_region *k = nest_a.kids; k && n < 9; k = k->next) n++;
+  return n;
+}
+
+/* 20b. Handing a region to another module (Alex's case): module A builds its region with an empty
+ * box and hands the region and the box to module B's view, which fills the box later, from a timer,
+ * in a region of its own whose up is A's. B's C state (a slot it holds) goes when A's region goes,
+ * through cd_on_free, as does B's timer when A goes before it fired. */
+typedef struct { cd_region r; uint32_t timer, holding; } b_view;  /* module B's state */
+static b_view b_views[2];
+static uint32_t b_released, b_stopped;
+static void b_release(void *ctx) { b_view *v = ctx; v->holding = 0; b_released++; }
+static void b_stop(void *ctx) { b_view *v = ctx; if (v->timer) { cd_timer_stop(v->timer); v->timer = 0; b_stopped++; } }
+static void b_fill(void *ctx) { /* the timer: no region builds now */
+  b_view *v = ctx;
+  v->timer = 0;
+  if (!cd_region_show(&v->r, 1)) return;
+  cd_at(v->r.parent, CD_APPEND);
+  cd_open("span"); cd_name_open(cd_id_new()); cd_text("loaded"); cd_close();
+  v->holding = 1;
+  cd_on_free(0, b_release, v);
+  cd_region_end(&v->r);
+}
+static void b_mount(b_view *v, cd_region *up, cd_id box, uint32_t ms) { /* module B's entry */
+  v->r.up = up;
+  v->r.parent = box;
+  v->timer = cd_timer_cb(ms, b_fill, v);
+  cd_on_free(up, b_stop, v);
+}
+static cd_region hand_a[2];
+static cd_id hand_sec;
+EXPORT("t_handoff_section") void t_handoff_section(void) { hand_sec = section("handoff"); }
+EXPORT("t_handoff") void t_handoff(uint32_t k, uint32_t ms) { /* module A */
+  cd_id sec = hand_sec;
+  cd_region *a = &hand_a[k];
+  if (!cd_region_show(a, 1)) return;
+  cd_at(sec, CD_APPEND);
+  cd_open("div"); cd_name_open(a->root); cd_attr("class", k ? "a1" : "a0");
+  cd_id box = cd_open_id("section"); cd_close();
+  cd_close();
+  cd_region_end(a);
+  b_mount(&b_views[k], a, box, ms);
+}
+EXPORT("t_handoff_hide") void t_handoff_hide(uint32_t k) { cd_region_hide(&hand_a[k]); }
+EXPORT("t_handoff_state") uint32_t t_handoff_state(uint32_t k) {
+  return b_views[k].holding | b_views[k].r.shown << 1 | (b_views[k].timer != 0) << 2 | b_released << 4 | b_stopped << 8;
+}
+
+/* 20c. cd_region_forget: no DOM op, cleanups and ids as a hide. */
+static cd_region forget_r;
+static uint32_t forget_ran;
+static void forget_cleanup(void *) { forget_ran++; }
+EXPORT("t_forget_build") void t_forget_build(void) {
+  cd_id s = section("forget");
+  forget_r.parent = s;
+  if (cd_region_show(&forget_r, 1)) {
+    cd_at(s, CD_APPEND);
+    cd_open("b"); cd_name_open(cd_id_new()); cd_text("kept"); cd_close();
+    cd_on_free(0, forget_cleanup, 0);
+    cd_region_end(&forget_r);
+  }
+}
+EXPORT("t_forget") uint32_t t_forget(void) { cd_region_forget(&forget_r); return forget_ran | forget_r.shown << 8; }
+
+/* 20d. What traps (unit.html runs these last: a trap leaves cdom's state as it was mid-call). */
+static cd_region trap_r[10], trap_other;
+static void trap_dom_cleanup(void *ctx) { cd_set_class((cd_id)(uintptr_t)ctx, "late"); }
+EXPORT("t_trap_on_free_idle") void t_trap_on_free_idle(void) { cd_on_free(0, forget_cleanup, 0); }
+EXPORT("t_trap_up_other") void t_trap_up_other(void) { /* r->up names A, but B builds */
+  static cd_region in, other, r;
+  cd_id s = section("trapup");
+  in.parent = other.parent = r.parent = s;
+  if (cd_region_show(&other, 1)) cd_region_end(&other);
+  r.up = &other;
+  if (cd_region_show(&in, 1)) { cd_region_show(&r, 1); }
+}
+EXPORT("t_trap_up_hidden") void t_trap_up_hidden(void) {
+  static cd_region r;
+  r.up = &trap_other; /* never shown */
+  r.parent = CD_BODY;
+  cd_region_show(&r, 1);
+}
+EXPORT("t_trap_cleanup_dom") void t_trap_cleanup_dom(void) {
+  cd_id s = section("trapdom");
+  static cd_region r;
+  r.parent = s;
+  if (cd_region_show(&r, 1)) { cd_on_free(0, trap_dom_cleanup, (void *)(uintptr_t)s); cd_region_end(&r); }
+  cd_region_hide(&r);
+}
+static uint32_t trap_depth_shown;
+EXPORT("t_trap_depth") void t_trap_depth(void) { /* nested builds: the 9th traps */
+  for (uint32_t n = 0; n < 10; n++) { trap_r[n].parent = CD_BODY; cd_region_show(&trap_r[n], 1); trap_depth_shown++; }
+}
+EXPORT("t_trap_depth_shown") uint32_t t_trap_depth_shown(void) { return trap_depth_shown; }
+
+/* 21. Regions inside list rows: each row's create opens a region of its own in the row (no outer
+ * region's child), with a cleanup; destroy forgets it. The list lives in an outer region, which
+ * forgets the list from a cleanup when it goes. Each cleanup logs its key and the ids live when it
+ * ran, so "before any of the row's ids" is visible. */
+static cd_list rows_list;
+static cd_region rows_outer, rows_r[16];
+static cd_id rows_box[16];
+static uint32_t rows_log[32], rows_live_at[32], rows_n, rows_before;
+static void rows_cleanup(void *ctx) {
+  if (rows_n < 32) { rows_log[rows_n] = (uint32_t)(uintptr_t)ctx; rows_live_at[rows_n++] = cd_ids_live(); }
+}
+static cd_id rows_create(void *ctx, uint32_t i, uint32_t *data) {
+  uint32_t k = ((const uint32_t *)ctx)[i];
+  cd_id li = cd_open_id("li");
+  cd_open("span"); cd_name_open(rows_box[k] = cd_id_new()); cd_close();
+  cd_close();
+  cd_region *r = &rows_r[k];
+  r->parent = rows_box[k];
+  if (cd_region_show(r, 1)) {
+    cd_at(rows_box[k], CD_APPEND);
+    cd_open("b"); cd_name_open(cd_id_new()); cd_text_num(k); cd_close();
+    cd_on_free(0, rows_cleanup, (void *)(uintptr_t)k);
+    cd_region_end(r);
+  }
+  *data = k;
+  return li;
+}
+static void rows_destroy(void *, cd_item *it) {
+  cd_region_forget(&rows_r[it->data]);
+  cd_id_free(rows_box[it->data]);
+}
+static uint32_t rows_keys[8];
+static const cd_list_fns ROWS = {rows_keys, rows_create, nop_patch, rows_destroy};
+static void rows_forget_list(void *ctx) { cd_list_forget(ctx, &ROWS); }
+static cd_id rows_sec;
+EXPORT("t_rows_section") void t_rows_section(void) { rows_sec = section("rows"); rows_outer.parent = rows_sec; }
+EXPORT("t_rows") void t_rows(uint32_t step) {
+  static const uint32_t K[4][5] = {{4, 1, 2, 3, 4}, {3, 1, 3, 4}, {3, 4, 3, 1}, {2, 5, 6}};
+  rows_before = cd_ids_live();
+  if (step == 4) { cd_region_hide(&rows_outer); return; }
+  if (step == 0 && cd_region_show(&rows_outer, 1)) {
+    cd_at(rows_sec, CD_APPEND);
+    cd_open("ul"); cd_name_open(rows_list.parent = cd_id_new()); cd_close();
+    rows_list.owns_parent = 1;
+    cd_on_free(0, rows_forget_list, &rows_list);
+    cd_region_end(&rows_outer);
+  }
+  for (uint32_t i = 0; i < K[step][0]; i++) rows_keys[i] = K[step][i + 1];
+  cd_list_update(&rows_list, rows_keys, K[step][0], &ROWS);
+}
+EXPORT("t_rows_log") uint32_t t_rows_log(uint32_t i, uint32_t live) { return live ? rows_live_at[i] : rows_log[i]; }
+EXPORT("t_rows_n") uint32_t t_rows_n(void) { return rows_n; }
+EXPORT("t_rows_before") uint32_t t_rows_before(void) { return rows_before; }
+
+/* 22. cd_dirty: renders run once each, in the order asked, before the entry from JS returns (here a
+ * click through cd_on, so cd_event's flush runs them); rounds, cd_undirty, cd_render_now. Each render
+ * logs one letter. */
+static char dlog[32];
+static uint32_t dlog_n, dmode, dcount, d_e;
+static cd_id dtext, dbtn;
+static void dput(char c) { if (dlog_n < 31) dlog[dlog_n++] = c; }
+static void dv(void *ctx) { /* A and C draw the count */
+  char c = (char)(uintptr_t)ctx;
+  dput(c);
+  if (c == 'A' || c == 'C') cd_set_text_node_num(dtext, ++dcount);
+}
+static void d_r2(void *ctx);
+static void d_r1(void *) { dput('D'); cd_dirty(d_r2, 0); cd_render_now(); dput('d'); }
+static void d_r2(void *) { dput('E'); if (++d_e == 1) cd_dirty(d_r1, 0); }
+static void d_x(void *) { dput('X'); cd_undirty(dv, (void *)'Y'); }
+static void d_loop(void *) { dput('L'); cd_dirty(d_loop, 0); }
+#define DV(c) cd_dirty(dv, (void *)(uintptr_t)(c))
+static void dirty_click(const cd_event_rec *, void *) {
+  if (dmode == 1) { DV('A'); DV('A'); DV('B'); DV('A'); DV('C'); DV('B'); }
+  if (dmode == 2) cd_dirty(d_r1, 0);
+  if (dmode == 3) { DV('A'); DV('B'); cd_undirty(dv, (void *)'B'); cd_dirty(d_x, 0); DV('Y'); }
+  if (dmode == 4) { DV('A'); cd_render_now(); dput('H'); }
+}
+EXPORT("t_dirty_section") void t_dirty_section(void) {
+  cd_id s = section("dirty");
+  cd_at(s, CD_APPEND);
+  dbtn = cd_open_id("button"); cd_close();
+  cd_open("b"); cd_text_num(0); cd_name_text(dtext = cd_id_new()); cd_close();
+  cd_on(dbtn, CD_EV_CLICK, dirty_click, 0);
+}
+EXPORT("t_dirty_mode") void t_dirty_mode(uint32_t m) { dmode = m; dlog_n = 0; d_e = 0; __builtin_memset(dlog, 0, sizeof dlog); }
+EXPORT("t_dirty_log") const char *t_dirty_log(void) { return dlog; }
+EXPORT("t_dirty_loop") void t_dirty_loop(void) { cd_dirty(d_loop, 0); cd_render_now(); }
+EXPORT("t_dirty_n") uint32_t t_dirty_n(void) { return dlog_n; }
+
+/* 23. The reads, the layout reads, cd_set and the calls run the pending renders first. The render
+ * widens a box from 50 to 120 px and logs R; each read logs r after it. A region's cleanup that
+ * reads does not run them (they would change the DOM inside it), and they run after. */
+static cd_id sync_box, sync_input;
+static char slog[8];
+static uint32_t slog_n;
+static void sput(char c) { if (slog_n < 7) slog[slog_n++] = c; }
+static void sync_view(void *) { sput('R'); cd_set_style_num(sync_box, "width", 120, CD_UNIT_PX); }
+EXPORT("t_sync_section") void t_sync_section(void) {
+  cd_id s = section("sync");
+  cd_at(s, CD_APPEND);
+  sync_box = cd_open_id("div");
+  cd_attr("style", "width: 50px; height: 10px; position: fixed; left: 0; top: 0");
+  cd_listen(sync_box, CD_EV_CLICK);
+  cd_close();
+  sync_input = cd_open_id("input"); cd_close();
+}
+static double sync_w;
+EXPORT("t_sync") const char *t_sync(uint32_t k) {
+  char buf[16];
+  double r[4] = {0};
+  cd_viewport_rec v;
+  slog_n = 0;
+  __builtin_memset(slog, 0, sizeof slog);
+  cd_set_style_num(sync_box, "width", 50, CD_UNIT_PX);
+  cd_dirty(sync_view, 0);
+  switch (k) {
+  case 0: sync_w = cd_get_num(sync_box, "offsetWidth"); break;
+  case 1: cd_get_str(sync_box, "style.width", buf, sizeof buf); break;
+  case 2: cd_get_id(CD_DOCUMENT, "activeElement"); break;
+  case 3: { uint32_t n; cd_input_whole(sync_input, buf, sizeof buf, &n); } break;
+  case 4: cd_rect(sync_box, r); sync_w = r[2]; break;
+  case 5: cd_hit(1, 1); break;
+  case 6: cd_viewport(&v); break;
+  case 7: cd_set_num(sync_input, "value", 1); break;
+  case 8: cd_call(sync_input, "blur"); break;
+  }
+  sput('r');
+  cd_render_now(); /* a case that did not run it leaves it pending: run it so the next starts clean */
+  return slog;
+}
+EXPORT("t_sync_w") double t_sync_w(void) { return sync_w; }
+static cd_region sync_r;
+static void sync_cleanup(void *) { sput('c'); sync_w = cd_get_num(sync_box, "offsetWidth"); }
+EXPORT("t_sync_cleanup") const char *t_sync_cleanup(void) {
+  slog_n = 0;
+  __builtin_memset(slog, 0, sizeof slog);
+  cd_set_style_num(sync_box, "width", 50, CD_UNIT_PX);
+  sync_r.parent = sync_input;
+  if (cd_region_show(&sync_r, 1)) { cd_on_free(0, sync_cleanup, 0); cd_region_end(&sync_r); }
+  cd_dirty(sync_view, 0);
+  cd_region_hide(&sync_r);
+  sput('h');
+  cd_render_now();
+  return slog;
+}
+
+/* 24. Bound values: a set writes only when the value changed (unit.html counts the mutations each
+ * step makes). Bound inside a region, they are unbound when it goes. A literal's id is its slot, one
+ * per call site, so a value set again is set from the same call site (a loop, or two steps that share
+ * a case). */
+static cd_region bound_r;
+static cd_bound bt, ba, bc, bs, bb;
+EXPORT("t_bound_section") void t_bound_section(void) {
+  cd_id s = section("bound");
+  bound_r.parent = s;
+  if (!cd_region_show(&bound_r, 1)) return;
+  cd_at(s, CD_APPEND);
+  cd_id t, el, in;
+  cd_open("p"); cd_text(""); cd_name_text(t = cd_id_new()); cd_close();
+  el = cd_open_id("b"); cd_close();
+  in = cd_open_id("input"); cd_close();
+  cd_bind_text(&bt, t);
+  cd_bind_attr(&ba, el, "data-x");
+  cd_bind_class(&bc, el);
+  cd_bind_style(&bs, el, "width");
+  cd_bind_bool(&bb, in, "disabled");
+  cd_region_end(&bound_r);
+}
+static uint32_t bound_pend; /* cd_pending() at the end of the last step: a walk, or a runtime string made and not read */
+static void bset_tmp(cd_bound *b, const char *s) { uint32_t n = 0; while (s[n]) n++; cd_bound_set_bytes(b, s, n); }
+EXPORT("t_bound") void t_bound(uint32_t step) {
+  switch (step) {
+  case 0: case 1: cd_bound_set(&bt, "a"); break; /* 1, then 0 */
+  case 2: cd_bound_set(&bt, "b"); break;          /* 1 */
+  case 3: bset_tmp(&bt, "x5"); break;                /* 1 */
+  case 4: bset_tmp(&bt, "x5"); break;                /* 0, and nothing left to cross */
+  case 5: bset_tmp(&bt, "x6"); break;                /* 1 */
+  case 6: cd_bound_set_num(&bt, 7); cd_bound_set_num(&bt, 7); break; /* 1 */
+  case 7: /* 2 */
+    for (int k = 0; k < 2; k++) cd_bound_set(&ba, "on");
+    for (int k = 0; k < 2; k++) cd_bound_set_num(&ba, 3);
+    break;
+  case 8: for (int k = 0; k < 2; k++) cd_bound_set(&bc, "k"); break; /* 1 */
+  case 9: cd_bound_set(&bs, "10px"); bset_tmp(&bs, "10px"); bset_tmp(&bs, "10px"); break; /* 1: the browser records no change for the same style, set again by bytes */
+  case 10: cd_bound_set_num(&bb, 1); cd_bound_set_num(&bb, 5); cd_bound_set_num(&bb, 0); break; /* 2: 5 is the same true as 1 */
+  case 11: cd_region_hide(&bound_r); break;
+  }
+  bound_pend = cd_pending(); /* read inside the step: the shim ends what a call left when it returns */
+}
+EXPORT("t_bound_pending") uint32_t t_bound_pending(void) { return bound_pend; }
+EXPORT("t_bound_live") uint32_t t_bound_live(void) {
+  return cd_bound_live(&bt) | cd_bound_live(&ba) << 1 | cd_bound_live(&bc) << 2 | cd_bound_live(&bs) << 3 | cd_bound_live(&bb) << 4;
+}
+static cd_bound trap_b;
+static char trap_bytes[] = "a"; /* mutable, so it is a runtime string, read on use */
+EXPORT("t_trap_bound_unbound") void t_trap_bound_unbound(void) { cd_bound_set_num(&trap_b, 1); } /* the node would be id 0 */
+EXPORT("t_trap_bound_tmp") void t_trap_bound_tmp(void) { /* cd_bound_set given a runtime string */
+  cd_id s = section("trapbound"), t;
+  cd_at(s, CD_APPEND);
+  cd_text(""); cd_name_text(t = cd_id_new());
+  cd_bind_text(&trap_b, t);
+  cd_bound_set(&trap_b, trap_bytes);
+}
+
+/* 25. Request slots. The answers here are timers (cd_timer_cb), which carry the ctx as cd_http_cb's
+ * would; a region's cleanup drops the slot, so an answer after the region went is not applied. */
+static cd_req rq;
+static uint32_t rq_heard[4], rq_applied[4];
+static uint32_t rq_check(uint32_t, void *ctx) { /* one synchronous check: 1 current, plus the index */
+  uint16_t i = 0xffff;
+  return cd_req_current(&rq, ctx, &i) ? 0x10000u | i : 0;
+}
+EXPORT("t_req_sync") uint32_t t_req_sync(void) {
+  /* each bit one fact, all must be 1 */
+  uint32_t ok = 0, b = 0;
+  void *a = cd_req_begin(&rq, 3);
+  ok |= (rq_check(0, a) == (0x10000u | 3)) << b++;        /* the latest, its index back */
+  ok |= (rq.state == CD_REQ_LOADING) << b++;
+  void *c = cd_req_begin(&rq, 4);
+  ok |= (rq_check(0, a) == 0) << b++;                      /* an older generation */
+  ok |= (rq_check(0, c) == (0x10000u | 4)) << b++;
+  cd_req_end(&rq, 1);
+  ok |= (rq.state == CD_REQ_OK && rq_check(0, c) == 0) << b++; /* over: its answers are dropped */
+  void *d = cd_req_begin(&rq, 5);
+  cd_req_end(&rq, 0);
+  ok |= (rq.state == CD_REQ_FAILED && rq_check(0, d) == 0) << b++;
+  void *e = cd_req_begin(&rq, 6);
+  cd_req_drop(&rq);
+  ok |= (rq.state == CD_REQ_IDLE && rq_check(0, e) == 0) << b++;
+  void *f = cd_req_begin(&rq, 7);
+  ok |= (rq_check(0, f) == (0x10000u | 7)) << b++;        /* begins again after a drop */
+  cd_req_drop(&rq);
+  return ok == (1u << b) - 1 ? 1 : ok;
+}
+static cd_req rq_run;
+static cd_region rq_r;
+static void rq_answer(void *ctx) {
+  uint16_t i;
+  uint32_t v = (uint32_t)(uintptr_t)ctx & 0xffff;
+  rq_heard[v]++;
+  if (cd_req_current(&rq_run, ctx, &i)) rq_applied[i]++;
+}
+static void rq_drop(void *ctx) { cd_req_drop(ctx); }
+EXPORT("t_req_async") void t_req_async(void) {
+  cd_id s = section("req");
+  rq_r.parent = s;
+  if (cd_region_show(&rq_r, 1)) { cd_on_free(0, rq_drop, &rq_run); cd_region_end(&rq_r); }
+  cd_timer_cb(10, rq_answer, cd_req_begin(&rq_run, 0)); /* an older run: dropped by the next begin */
+  void *run = cd_req_begin(&rq_run, 1);
+  cd_timer_cb(10, rq_answer, run);
+  cd_timer_cb(10, rq_answer, (void *)((uintptr_t)run + 1)); /* two lines of one run, both current */
+  cd_timer_cb(60, rq_answer, (void *)((uintptr_t)run + 2)); /* after the region went: dropped */
+}
+EXPORT("t_req_hide") void t_req_hide(void) { cd_region_hide(&rq_r); }
+EXPORT("t_req_seen") uint32_t t_req_seen(uint32_t i, uint32_t applied) { return applied ? rq_applied[i] : rq_heard[i]; }
+/* 24b. cd_bound_shows: what a node was built with is recorded, so the first set of it writes nothing.
+ * The values come from a const table, so "a" is one read-only address wherever it is passed. */
+static cd_bound bshow;
+static const char *const SHOW[] = {"a", "b"};
+EXPORT("t_bound_shows") void t_bound_shows(uint32_t step) {
+  if (step == 0) {
+    cd_id s = section("boundshows"), t;
+    cd_at(s, CD_APPEND);
+    cd_text("a"); cd_name_text(t = cd_id_new());
+    cd_bind_text(&bshow, t);
+    cd_bound_shows(&bshow, SHOW[0]);
+  } else cd_bound_set(&bshow, SHOW[step - 1]);
+}
+
+/* 26. Timer slots: a set replaces the pending timer (a debounce); a fired slot is empty before its fn
+ * runs, which may set it again; a clear, from a region's cleanup too, stops what is pending. */
+static cd_timer_slot ts[4];
+static uint32_t ts_heard[8], ts_pending_inside;
+static void ts_fn(void *ctx) {
+  uint32_t k = (uint32_t)(uintptr_t)ctx;
+  ts_heard[k]++;
+  if (k == 2) { if (!ts_pending_inside) ts_pending_inside = cd_timer_pending(&ts[1]) + 1; /* at the first fire */ if (ts_heard[2] == 1) cd_timer_set(&ts[1], 5, ts_fn, (void *)2); }
+}
+static cd_region ts_r;
+static void ts_clear(void *ctx) { cd_timer_clear(ctx); }
+EXPORT("t_tslot") uint32_t t_tslot(void) {
+  uint32_t pend = 0;
+  cd_timer_set(&ts[0], 20, ts_fn, (void *)0); /* replaced before it fires */
+  cd_timer_set(&ts[0], 20, ts_fn, (void *)1);
+  pend |= (uint32_t)cd_timer_pending(&ts[0]);
+  cd_timer_set(&ts[1], 5, ts_fn, (void *)2);  /* fires, and sets itself once more */
+  cd_timer_set(&ts[2], 5, ts_fn, (void *)3);  /* cleared before it fires */
+  cd_timer_clear(&ts[2]);
+  pend |= (uint32_t)!cd_timer_pending(&ts[2]) << 1;
+  cd_timer_clear(&ts[3]);                       /* a slot that never ran */
+  cd_id s = section("tslot");
+  ts_r.parent = s;
+  if (cd_region_show(&ts_r, 1)) { cd_on_free(0, ts_clear, &ts[3]); cd_region_end(&ts_r); }
+  cd_timer_set(&ts[3], 5, ts_fn, (void *)4);  /* its region goes first */
+  cd_region_hide(&ts_r);
+  pend |= (uint32_t)!cd_timer_pending(&ts[3]) << 2;
+  return pend;
+}
+EXPORT("t_tslot_heard") uint32_t t_tslot_heard(uint32_t k) { return k == 7 ? ts_pending_inside : ts_heard[k]; }
+EXPORT("t_tslot_after") uint32_t t_tslot_after(void) { /* every slot empty, and clearing one that fired is nothing */
+  cd_timer_clear(&ts[0]);
+  return (uint32_t)(cd_timer_pending(&ts[0]) | cd_timer_pending(&ts[1]) | cd_timer_pending(&ts[2]) | cd_timer_pending(&ts[3]));
+}
+
+/* 27. cdom_ui: elements, a button and the string builder. */
+static cd_id ui_label;
+static uint32_t ui_clicks, ui_click_ctx;
+CD_ON_EVENT(ui_clicked) { ui_clicks++; ui_click_ctx = CD_CTX_INDEX(ctx); }
+EXPORT("t_ui_build") void t_ui_build(void) {
+  cd_id s = section("ui");
+  cd_at(s, CD_APPEND);
+  cd_el("div", "box");
+  cd_el_text("p", CD_NONE, "plain");
+  cd_id named = cd_el_id("span", "named");
+  cd_close();
+  cd_close();
+  cd_set_attr(named, "data-n", "1");
+  cd_button("go", "Go", ui_clicked, CD_CTX_OF(7), &ui_label);
+  cd_button(CD_NONE, "Plain", ui_clicked, CD_CTX_OF(8), nullptr);
+}
+EXPORT("t_ui_relabel") void t_ui_relabel(void) { cd_set_text_node(ui_label, "Going"); }
+EXPORT("t_ui_clicks") uint32_t t_ui_clicks(uint32_t k) { return k ? ui_click_ctx : ui_clicks; }
+static char ui_room[48];
+EXPORT("t_ui_buf") uint32_t t_ui_buf(uint32_t cap) { /* b.len, with 1 << 16 when over */
+  cd_buf b = cd_buf_in(ui_room, cap);
+  cd_buf_putz(&b, "u");
+  cd_buf_u64(&b, 18446744073709551615ull);
+  cd_buf_put(&b, " i", 2);
+  cd_buf_i64(&b, -9223372036854775807ll - 1);
+  cd_buf_putz(&b, " ");
+  cd_buf_u64(&b, 0);
+  cd_buf_putz(&b, "!"); /* after an over, nothing more: the buffer holds whole pieces, the first ones */
+  return (uint32_t)b.over << 16 | b.len;
+}
+EXPORT("t_ui_room") char *t_ui_room(void) { return ui_room; }
+/* 28. A region taken away owns no heap memory: an array of regions, each shown with ids and cleanups,
+ * hidden and the array freed, round after round, keeps the ids live and the memory where they were.
+ * And a stop inside a cleanup works (amgi's chip stops its voice as its region goes). */
+static uint32_t rb_cleaned;
+static void rb_cleanup(void *) { rb_cleaned++; }
+EXPORT("t_regbuf") void t_regbuf(uint32_t rounds) {
+  static cd_id sec;
+  if (!sec) sec = section("regbuf");
+  for (uint32_t k = 0; k < rounds; k++) {
+    cd_region *rs = cd_alloc(8 * sizeof(cd_region));
+    __builtin_memset(rs, 0, 8 * sizeof(cd_region));
+    for (int i = 0; i < 8; i++) {
+      if (!cd_region_show(&rs[i], 1)) continue;
+      cd_at(sec, CD_APPEND);
+      cd_open("i"); cd_name_open(rs[i].root);
+      for (int j = 0; j < 10; j++) { cd_open("b"); cd_name_open(cd_id_new()); cd_close(); }
+      cd_close();
+      for (int j = 0; j < 6; j++) cd_on_free(0, rb_cleanup, 0);
+      cd_region_end(&rs[i]);
+    }
+    for (int i = 0; i < 8; i++) cd_region_hide(&rs[i]);
+    cd_free(rs);
+  }
+}
+EXPORT("t_regbuf_cleaned") uint32_t t_regbuf_cleaned(void) { return rb_cleaned; }
+static cd_region rb_stop_r;
+static uint32_t rb_timer, rb_fired;
+static void rb_fire(void *) { rb_fired++; }
+static void rb_stop(void *) { cd_timer_stop(rb_timer); }
+EXPORT("t_regbuf_stop") void t_regbuf_stop(void) {
+  if (!rb_stop_r.parent) rb_stop_r.parent = section("regbufstop");
+  if (cd_region_show(&rb_stop_r, 1)) { cd_on_free(0, rb_stop, 0); cd_region_end(&rb_stop_r); }
+  rb_timer = cd_timer_cb(10, rb_fire, 0);
+  cd_region_hide(&rb_stop_r);
+}
+EXPORT("t_regbuf_fired") uint32_t t_regbuf_fired(void) { return rb_fired; }

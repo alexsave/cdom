@@ -148,7 +148,10 @@ EXPORT("g_str") uint32_t g_str(cd_id id, uint32_t len) { return cd_get_str(id, P
 EXPORT("g_strcap") uint32_t g_strcap(cd_id id, uint32_t len, uint32_t cap) { return cd_get_str(id, P(len), io, cap); }
 EXPORT("g_id") cd_id g_id(cd_id id, uint32_t len) { return cd_get_id(id, P(len)); }
 EXPORT("g_rect") int g_rect(cd_id id) { return cd_rect(id, rect); }
-EXPORT("g_value") uint32_t g_value(cd_id id, uint32_t cap) { return cd_input_text(id, io, cap); }
+EXPORT("g_value") uint32_t g_value(cd_id id, uint32_t cap) { /* 1 << 16 when it fitted, and the length */
+  uint32_t n, fits = (uint32_t)cd_input_whole(id, io, cap, &n);
+  return fits << 16 | n;
+}
 /* Sets take the path at io[0, len) and a string value at io[len, len + vlen). */
 EXPORT("s_num") void s_num(cd_id id, uint32_t len, double v) { cd_set_num(id, P(len), v); cd_flush(); }
 EXPORT("s_bool") void s_bool(cd_id id, uint32_t len, int v) { cd_set_bool(id, P(len), v); cd_flush(); }
