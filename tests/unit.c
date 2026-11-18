@@ -2566,6 +2566,66 @@ EXPORT("t_state_l") const char *t_state_l(uint32_t step) {
 }
 EXPORT("t_state_l_rows") uint32_t t_state_l_rows(void) { return ll.n * 10 + l_rows[1].shown + l_rows[2].shown + l_rows[3].shown; }
 
+/* W: a region opened in a keyed-list row's create is under what updates the list, with no r->up. The
+ * page (depth 1) watches the items, and its view updates the list; each row's create opens a region
+ * that watches the shared state and logs its key, or X when its item is gone. In the page's build, the
+ * list's first rows (depth 2) and then the note n (depth 2, watching sw_note); from the entry, after
+ * that build, m with m.up = the page (depth 2, watching the shared state). Deleting row 2 and changing
+ * the shared state in one entry: the page's view removes row 2 first, so its view never runs. Row 4,
+ * made by the page's view in a later entry, is depth 2 too. */
+static cd_state sw_items, sw_shared, sw_note;
+static cd_list wl;
+static cd_region rw_page, rw_n, rw_m, rw_free, rw_rows[5];
+static uint32_t w_live[5] = {0, 1, 1, 1, 0}, w_keys[4];
+static void st_w_row(void *ctx) { uint32_t k = CD_CTX_INDEX(ctx); stput(w_live[k] ? (char)('0' + k) : 'X'); }
+static cd_id w_create(void *, uint32_t i, uint32_t *) {
+  uint32_t k = w_keys[i];
+  cd_region *r = &rw_rows[k];
+  cd_id li = cd_open_id("li");
+  if (cd_region_show(r, 1)) { /* no r->up: the list's level is no region's */
+    cd_open("b"); cd_name_open(r->root); cd_close();
+    cd_watch(&sw_shared, st_w_row, CD_CTX_OF(k));
+    cd_region_end(r);
+  }
+  cd_close();
+  return li;
+}
+static void w_patch(void *, uint32_t, cd_item *) {}
+static void w_destroy(void *, cd_item *it) { cd_region_forget(&rw_rows[it->key]); }
+static const cd_list_fns w_fns = {0, w_create, w_patch, w_destroy};
+static void w_update(void) {
+  uint32_t n = 0;
+  for (uint32_t k = 1; k < 5; k++) if (w_live[k]) w_keys[n++] = k;
+  cd_list_update(&wl, w_keys, n, &w_fns);
+}
+static void st_w_list(void *) { stput('L'); w_update(); }
+EXPORT("t_state_w") const char *t_state_w(uint32_t step) {
+  st_begin();
+  if (step == 0) {
+    if (st_open(&rw_page)) {
+      cd_watch(&sw_items, st_w_list, 0);
+      wl.parent = cd_open_id("ol"); cd_close();
+      w_update(); /* the first rows, in the page's build */
+      if (st_show(&rw_n)) { cd_watch(&sw_note, st_letter, ST_L('n')); cd_region_end(&rw_n); }
+      cd_close();
+      cd_region_end(&rw_page);
+    }
+    rw_m.up = &rw_page; /* shown with no build open: its depth is its r->up's + 1 */
+    if (st_show(&rw_m)) { cd_watch(&sw_shared, st_letter, ST_L('m')); cd_region_end(&rw_m); }
+  }
+  if (step == 1) { w_live[2] = 0; cd_changed(&sw_note); cd_changed(&sw_shared); cd_changed(&sw_items); }
+  if (step == 2) { w_live[4] = 1; cd_changed(&sw_items); } /* row 4, made in the page's view */
+  if (step == 3) { w_live[4] = 0; cd_changed(&sw_shared); cd_changed(&sw_items); }
+  return st_end();
+}
+/* After the passes: a region shown with no build open, no view running and no r->up is at depth 1. */
+EXPORT("t_state_w_free") uint32_t t_state_w_free(void) {
+  uint32_t d = 0;
+  if (st_show(&rw_free)) { d = rw_free.depth; cd_region_end(&rw_free); }
+  cd_region_hide(&rw_free);
+  return d * 100 + wl.n * 10 + rw_rows[2].shown + rw_rows[4].shown;
+}
+
 /* M: the reads run the pending views first: the view widens a box, and cd_get_num reads it. */
 static cd_state sm;
 static cd_region rm;

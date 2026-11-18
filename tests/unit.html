@@ -1431,6 +1431,9 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
     const l = [0, 1].map((k) => run(() => x.t_state_l(k))), lRows = x.t_state_l_rows(), l2 = run(() => x.t_state_l(2));
     check('cd_state: views in regions opened in keyed-list rows: a row removed in the entry of a change does not run, its region gone with it; the kept rows run', () =>
       (!threw && l.join() === ',13' && lRows === 22 && l2 === '13') || JSON.stringify({ l, lRows, l2, threw }));
+    const w = [0, 1, 2, 3].map((k) => run(() => x.t_state_w(k))), wFree = x.t_state_w_free();
+    check('cd_state: a region opened in a keyed-list row\'s create is under what updates the list: the list\'s view (depth 1) removes a row before the row\'s view (depth 2, no r->up), found first, can run for an item that is gone, for rows made in the page\'s build and by its view; a region shown in the build, and one shown later with r->up, are depth 2; one shown after the passes alone is depth 1', () =>
+      (!threw && w.join() === ',Ln13m,L,L13m' && wFree === 120) || JSON.stringify({ w, wFree, threw }));
     const m = run(() => x.t_state_m());
     check('cd_state: a read (cd_get_num) runs the pending views first', () => (!threw && m === 'm3') || JSON.stringify({ m, threw }));
     let nRuns = 0, nGrew = -1, nLive = -1;

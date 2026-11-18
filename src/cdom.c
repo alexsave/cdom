@@ -566,10 +566,13 @@ int cd_input_whole(cd_id id, char *dst, uint32_t cap, uint32_t *len) {
 
 /* ---- regions ----
  * building is the stack of regions whose builds are open, innermost last; recording mirrors its top
- * (0 when nothing builds, or inside cd_list_update, which pushes 0 so a list's ids stay the list's). */
+ * (0 when nothing builds, or inside cd_list_update, which pushes 0 so a list's ids stay the list's).
+ * open_depth is the depth of the innermost region building or view of shared state running, whichever
+ * opened last (0 for neither); a list's level keeps it, so a region opened in a row's create counts
+ * under the region or view that updates the list. open_was keeps it across each build. */
 #define CD_REGION_DEPTH 8
 static cd_region *building[CD_REGION_DEPTH];
-static uint32_t nbuilding;
+static uint32_t nbuilding, open_depth, open_was[CD_REGION_DEPTH];
 #ifdef CD_STATE_CHECK
 static const cd_state **reads[CD_REGION_DEPTH]; /* the check build's: the states each open build read */
 static uint32_t nreads[CD_REGION_DEPTH], reads_cap[CD_REGION_DEPTH];
@@ -579,11 +582,14 @@ static void build_push(cd_region *r) {
 #ifdef CD_STATE_CHECK
   nreads[nbuilding] = 0;
 #endif
+  open_was[nbuilding] = open_depth;
+  if (r) open_depth = r->depth;
   building[nbuilding++] = r;
   recording = r;
 }
 static void build_pop(void) {
   nbuilding--;
+  open_depth = open_was[nbuilding];
   recording = nbuilding ? building[nbuilding - 1] : 0;
 }
 
@@ -647,6 +653,11 @@ int cd_region_show(cd_region *r, int want) {
     r->next = r->up->kids;
     r->up->kids = r;
   }
+  /* One deeper than what it opens in (a region building or a view running, with any list between) and
+   * than its parent: every view that may take it away runs before its views (shared state). */
+  uint32_t d = open_depth;
+  if (r->up && r->up->depth > d) d = r->up->depth;
+  r->depth = d + 1;
   r->shown = 1;
   r->n = 0;
   build_push(r);
@@ -697,7 +708,7 @@ typedef struct cd_view {
   struct cd_view *next;      /* the region's next view; once dead, the next dead view */
   struct cd_link *links;     /* what it watches */
   uint32_t ran;              /* the tick it last ran at, or was made at, in this pass; 0 outside one */
-  uint16_t depth;            /* its region's: 1 for a region with no parent region */
+  uint16_t depth;            /* its region's (r->depth) */
   uint8_t queued;            /* in the round being collected */
 } cd_view;
 typedef struct cd_link {
@@ -774,6 +785,8 @@ static void views_run(int end) {
     v->queued = 0;
     if (!v->fn) continue; /* its region went, earlier in this round */
     v->ran = ++tick;
+    uint32_t depth_was = open_depth;
+    open_depth = v->depth; /* a region it shows, or a list it updates, is under its region */
 #ifdef CD_STATE_CHECK
     cd_view *was = running;
     uint32_t base = running_base;
@@ -785,6 +798,7 @@ static void views_run(int end) {
 #else
     v->fn(v->ctx);
 #endif
+    open_depth = depth_was;
   }
 }
 
@@ -832,11 +846,9 @@ void cd_watch(cd_state *s, cd_render_fn fn, void *ctx) {
     for (cd_link *l = v->links; l; l = l->vnext)
       if (l->s == s) return; /* it watches s already */
   } else {
-    uint32_t d = 1;
-    for (cd_region *u = r->up; u; u = u->up) d++;
-    if (d > 0xffff) __builtin_trap();
+    if (r->depth > 0xffff) __builtin_trap();
     v = cd_alloc(sizeof *v);
-    *v = (cd_view){fn, ctx, r->views, 0, 0, (uint16_t)d, 0};
+    *v = (cd_view){fn, ctx, r->views, 0, 0, (uint16_t)r->depth, 0};
     r->views = v;
     if (rendering) { /* made in a pass: it drew in its build, so only a change after now runs it */
       v->ran = ++tick;
