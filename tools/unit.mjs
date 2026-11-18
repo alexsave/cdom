@@ -62,10 +62,12 @@ srv.on('upgrade', (req, sock) => { // a minimal RFC 6455 echo: binary frames und
   sock.on('error', () => {});
   sock.on('data', (d) => {
     buf = Buffer.concat([buf, d]);
-    while (buf.length >= 6) {
+    while (buf.length >= 2) {
       const op = buf[0] & 15;
       let len = buf[1] & 127, at = 2;
-      if (len === 126) { len = buf.readUInt16BE(2); at = 4; } else if (len === 127) { len = Number(buf.readBigUInt64BE(2)); at = 10; }
+      // the extended length is read only once its bytes are here: a large frame's header can arrive split
+      if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); at = 4; }
+      else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); at = 10; }
       if (buf.length < at + 4 + len) return;
       const mask = buf.subarray(at, at + 4), body = Buffer.from(buf.subarray(at + 4, at + 4 + len));
       buf = buf.subarray(at + 4 + len);

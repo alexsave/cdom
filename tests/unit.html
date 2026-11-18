@@ -1443,6 +1443,9 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
     } catch (err) { threw += String(err); }
     check('cd_state: 3,050 rounds of a region with three views on two states, hidden by one of them inside the pass and from outside it, keep the memory and the live ids as they were, and nothing watches after', () =>
       (!threw && nRuns === 3050 && nGrew === 0 && nLive === 0 && x.t_state_n_watched() === 0) || JSON.stringify({ nRuns, nGrew, nLive, threw }));
+    const rr = [0, 1, 2].map((k) => run(() => x.t_state_r(k)));
+    check('cd_state: states changed in the order r1, r2, r1 in one entry run both views once, in the order they first changed; a later change of r2 runs its view', () =>
+      (!threw && rr.join() === ',12,2') || JSON.stringify({ rr, threw }));
     let o = 0n;
     try { o = x.t_state_o(); } catch (err) { threw += String(err); }
     check('cd_state: the version is 64 bits (0xffffffff moves on to 0x100000000)', () => (!threw && o === 0x100000000n) || JSON.stringify({ o: String(o), threw }));

@@ -2620,6 +2620,18 @@ EXPORT("t_state_n") uint32_t t_state_n(uint32_t rounds) {
 }
 EXPORT("t_state_n_watched") uint32_t t_state_n_watched(void) { return sn1.first != 0 || sn2.first != 0; }
 
+/* R: two states, each with a view of its own; one entry changes r1, r2, then r1 again: both views run,
+ * in the order their states first changed; the next entry's change of r2 runs its view. */
+static cd_state sr1, sr2;
+static cd_region rr;
+EXPORT("t_state_r") const char *t_state_r(uint32_t step) {
+  st_begin();
+  if (step == 0 && st_show(&rr)) { cd_watch(&sr1, st_letter, ST_L('1')); cd_watch(&sr2, st_letter, ST_L('2')); cd_region_end(&rr); }
+  if (step == 1) { cd_changed(&sr1); cd_changed(&sr2); cd_changed(&sr1); }
+  if (step == 2) cd_changed(&sr2);
+  return st_end();
+}
+
 /* O: the version is 64 bits. */
 static cd_state so = {.ver = 0xffffffffu};
 EXPORT("t_state_o") uint64_t t_state_o(void) { cd_changed(&so); cd_flush(); return so.ver; }

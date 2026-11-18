@@ -519,7 +519,7 @@ M = [
   ('list-destroy-after-free', 'src/cdom.c', '  f->destroy(f->ctx, it);\n  if (dom) cd_remove(it->node); else cd_id_free(it->node);', '  if (dom) cd_remove(it->node); else cd_id_free(it->node);\n  f->destroy(f->ctx, it);', UNIT, 'FAIL regions in list rows'),
   ('list-forget-destroy-after-free', 'src/cdom.c', '    f->destroy(f->ctx, &L->items[i]);\n    cd_id_free(L->items[i].node);', '    cd_id_free(L->items[i].node);\n    f->destroy(f->ctx, &L->items[i]);', UNIT, 'FAIL regions in list rows'),
   ('dirty-no-dedup', 'src/cdom.c', '  if (asked_find(fn, ctx)) return; /* pending */\n', '', UNIT, 'FAIL cd_dirty: each'),
-  ('dirty-dedup-by-fn', 'src/cdom.c', '  pair_ent *e = pair_find(&asked, (uint32_t)(uintptr_t)ctx ^ f * 0x9e3779b1u, f);', '  pair_ent *e = pair_find(&asked, f * 0x9e3779b1u, f);', UNIT, 'FAIL cd_dirty: 100 distinct'), # a key of fn alone: one function's many ctx are one ask
+  ('dirty-dedup-by-fn', 'src/cdom.c', '  pair_ent *e = pair_find(&asked, (uint32_t)(uintptr_t)ctx ^ f * 0x9e3779b1u, f);', '  pair_ent *e = pair_find(&asked, f * 0x9e3779b1u + 0 * (uint32_t)(uintptr_t)ctx, f);', UNIT, 'FAIL cd_dirty: 100 distinct'), # a key of fn alone: one function's many ctx are one ask
   ('dirty-not-flushed', 'src/cdom.c', 'void cd_flush(void) { renders_now(); walk_done(); }', 'void cd_flush(void) { walk_done(); }', UNIT, 'FAIL cd_dirty: each'),
   ('dirty-render-now-nests', 'src/cdom.c', '  if ((render_at == nrenders && !changed) || rendering || releasing) return;', '  if ((render_at == nrenders && !changed) || (rendering && 0) || releasing) return;', UNIT, 'FAIL cd_dirty: a render that asks'),
   ('undirty-not-in-round', 'src/cdom.c', '  if (e) renders[(uintptr_t)e->p].fn = 0;', '  if (e && (uintptr_t)e->p > render_at) renders[(uintptr_t)e->p].fn = 0;', UNIT, 'FAIL cd_undirty'),
@@ -530,19 +530,19 @@ M = [
   # cd_dirty's table (cdom.c, renders: cd_dirty's asks)
   ('dirty-ran-counts-pending', 'src/cdom.c', '  return e && (uintptr_t)e->p >= render_at && renders[(uintptr_t)e->p].fn ? e : 0;', '  return e && renders[(uintptr_t)e->p].fn ? e : 0;', UNIT, 'FAIL cd_dirty: a render that asks'),
   ('dirty-dropped-counts-pending', 'src/cdom.c', '  return e && (uintptr_t)e->p >= render_at && renders[(uintptr_t)e->p].fn ? e : 0;', '  return e && (uintptr_t)e->p >= render_at ? e : 0;', UNIT, 'FAIL cd_dirty: 100 distinct'),
-  ('dirty-table-kept', 'src/cdom.c', '  asked_reset();\n}', '}', UNIT, 'FAIL cd_dirty: each'),
+  ('dirty-table-kept', 'src/cdom.c', '  asked_reset();\n}', '  (void)asked_reset;\n}', UNIT, 'FAIL cd_undirty'), # last pass's asks look pending: a render asked again is dropped
   # shared state (cdom.c, shared state; cdom.h)
   ('state-runs-per-state', 'src/cdom.c', '      if (v->queued || v->ran > s->tick) continue;', '      if (v->ran > s->tick) continue;', UNIT, 'FAIL cd_state: a view of two states'),
-  ('state-changed-relisted', 'src/cdom.c', '  if (s->changed) return; /* on the list already */\n', '', UNIT, 'FAIL cd_state: a view of two states'), # the list loops on itself: HUNG, or this
+  ('state-changed-relisted', 'src/cdom.c', '  if (s->changed) return; /* on the list already */\n', '', UNIT, 'FAIL cd_state: states changed in the order'), # a state listed twice cuts the one after it off the list
   ('state-ver-32', 'src/cdom.c', '  s->ver++;\n  s->tick', '  s->ver = (uint32_t)(s->ver + 1);\n  s->tick', UNIT, 'FAIL cd_state: the version is 64 bits'),
   ('state-no-tick-skip', 'src/cdom.c', '      if (v->queued || v->ran > s->tick) continue;', '      if (v->queued) continue;', UNIT, 'FAIL cd_state: a view that ran after'),
   ('state-skip-any-ran', 'src/cdom.c', '      if (v->queued || v->ran > s->tick) continue;', '      if (v->queued || v->ran) continue;', UNIT, 'FAIL cd_state: a view that ran after'),
   ('state-change-tick-zero', 'src/cdom.c', '  s->tick = rendering ? ++tick : 0;', '  s->tick = 0;', UNIT, 'FAIL cd_state: a view that ran after'),
   ('state-made-not-ran', 'src/cdom.c', '      v->ran = ++tick;\n      pv_push(v);', '      pv_push(v);', UNIT, 'FAIL cd_state: a view shows a region'),
-  ('state-made-not-reset', 'src/cdom.c', '      v->ran = ++tick;\n      pv_push(v);', '      v->ran = ++tick;', UNIT, 'FAIL cd_state: a view shows a region'),
+  ('state-made-not-reset', 'src/cdom.c', '      v->ran = ++tick;\n      pv_push(v);', '      v->ran = ++tick;', UNIT, 'FAIL cd_state: two views of one state'),
   ('state-ran-not-reset', 'src/cdom.c', '    for (uint32_t i = 0; i < npv; i++) pv[i]->ran = 0;\n', '', UNIT, 'FAIL cd_state: a view shows a region'),
   ('state-pass-not-ended', 'src/cdom.c', '  if (views_pass) views_pass(1);\n', '', UNIT, 'FAIL cd_state: a view shows a region'),
-  ('state-no-order', 'src/cdom.c', '  if (in_order) return;\n', '  return;\n', UNIT, 'FAIL cd_state: outermost region first'),
+  ('state-no-order', 'src/cdom.c', '  if (in_order) return;\n', '  (void)in_order;\n  return;\n', UNIT, 'FAIL cd_state: outermost region first'),
   ('state-depth-flat', 'src/cdom.c', '    for (cd_region *u = r->up; u; u = u->up) d++;\n', '', UNIT, 'FAIL cd_state: outermost region first'),
   ('state-order-unstable', 'src/cdom.c', '  for (uint32_t i = a; i < b; i++) pv_tmp[depth_n[pv[i]->depth]++] = pv[i];', '  for (uint32_t i = b; i-- > a;) pv_tmp[depth_n[pv[i]->depth]++] = pv[i];', UNIT, 'FAIL cd_state: views found at depths'),
   ('state-views-after-renders', 'src/cdom.c', '    if (changed) views_pass(0);\n    renders_round();', '    renders_round();\n    if (changed) views_pass(0);', UNIT, 'FAIL cd_state: a view that changes a state and asks'),
