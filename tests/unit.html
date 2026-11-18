@@ -114,6 +114,7 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
       stateLoop: ['views that keep changing what they watch (16 rounds)', () => x.t_state_loop(), () => x.t_state_loop_n() === 16],
       stateIdle: ['cd_watch with no region building', () => x.t_state_idle_watch(), () => true],
       stateRow: ['cd_watch in a list row\'s create (rows do not watch)', () => x.t_state_row_watch(), () => true],
+      stateCleanup: ['cd_watch in a cleanup, while another region builds', () => x.t_state_cleanup_watch(), () => true],
       stateUnwatched: ['cd_state on a fresh page: a state that no view ever watched changes, and the pass runs nothing', () => x.t_state_unwatched(), () => true, 'no trap'],
       stateMadeByRender: ['cd_state on a fresh page: a view made by a render, before any state changed, runs at a later change of its state', () => x.t_state_render_made(), () => x.t_state_render_made() === 2, 'no trap'],
       // unit_check.html, the check build: each case checks first that the page runs that build

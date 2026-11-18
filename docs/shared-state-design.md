@@ -1008,6 +1008,38 @@ The pass over unchanged rows is cheap enough at the sizes a page holds (S13), an
 Alex's decisions (2026-11-18): `cd_state`, `cd_changed` and `cd_watch` in cdom's core; the check build, with its build half; views outermost region first; the amendments to `docs/list-design.md` written in, the list design itself not built; `cd_bind_prop` and `cd_bound_shows_bytes` now; about 0.5 ms per single-row change at 100,000 rows accepted, no key lookup; `ver` 64-bit and no `cd_watch_key`; `cd_state` on its own, before the list design.
 It is in `src/cdom.h` ("shared state") and `src/cdom.c` ("shared state: cd_state, cd_changed, cd_watch"), with its cases in `tests/unit.c` (29) and its mutants in `tools/mutate.py`.
 
+### What landed, and where it differs from the sketch
+
+The API is the sketch's, with `ver` 64-bit and `cd_read` an inline nothing outside the check build.
+Where the code differs from "How it sits in cdom.c", and why:
+
+1. **The order within one depth is the order the views were found, not the order they were registered.**
+   A round finds its views by walking each changed state's watches, in the order the states changed, and puts them in order of depth with a stable counting sort: one pass over the round, and none at all when the round is in order already (one view, or one depth).
+   Registration order within a depth would need a sort by a sequence number, O(n log n) a round.
+   The order is still fixed, and `cdom.h` says which it is; the promise Alex decided on, outermost region first, is kept.
+2. **The tick counts within a pass, and is put back to 0 at the pass's end.**
+   A global 32-bit counter would wrap after four billion changes and runs, and a view that last ran before the wrap would then be skipped.
+   The pass keeps the views it touched (queued, or made in the pass) and zeroes their `ran` at its end, so no count outlives its pass.
+3. **A view taken away during a pass is unlinked at once and freed at the pass's end.**
+   The sketch had a slot per view to clear a pending run; here a round skips a view whose `fn` is 0, and since its memory is not reused before the pass ends, a view made later in the same pass cannot take its place in the round (a case covers it).
+   A view is 24 bytes and a watch 20, each in the heap's 32-byte class.
+4. **Views and renders share one pass and its 16 rounds.**
+   A round runs the views of the states changed before it, then the renders asked before it.
+   A view may ask for a render and a render may change a state; both run in the same flush.
+5. **`cd_watch` also traps inside a cleanup**, as `cd_on_free` does: a cleanup releases, it does not subscribe.
+6. **A region's depth is its `r->up` chain.**
+   A region opened in a list row's create is no region's child, so it is depth 1 unless the app set its `r->up`.
+7. **The check build's build half looks in two places**: the region's own `r->up` chain, and the regions building under it.
+   The second covers a region opened in a list row's create, inside another region's build, which has no `r->up`.
+   A read in a region shown by a running view is that build's read, checked at its end, not the view's.
+8. **`cd_dirty` changed after all.**
+   The sketch kept its scan; the scan is now a lookup in cdom's pair table (the one that holds `cd_on`'s handlers and the timers), keyed by `(ctx ^ fn * K, fn)`, emptied at the pass's end.
+   It costs 70 bytes over the scan at `-Oz` (a table of its own cost 415), and S12 below gives the time.
+9. **Linked only when used**, as the sketch said: the views' pass and their takedown are reached through two `volatile` pointers that `cd_changed` and `cd_watch` set, and `tests/link/run.sh` checks that an app which renders and hides regions but never uses `cd_state` is 1,456 bytes smaller than the same app with one view.
+10. **No tutorial lesson changed.**
+    Lesson 5 builds with no region, and a watch needs one; lesson 4's state lives in its handlers and has one reader.
+    The amendment's lesson 5 (with a page region, `todos_state` and `filter_state`) is written in `docs/list-design.md`, for the lesson the list design rewrites.
+
 ### Predictions for the implementation
 
 Written before the implementation was measured, from the prototype's numbers above.
@@ -1034,6 +1066,66 @@ Where the real API changes the shape (`EI`'s rows, each a region with a view and
 | S12 | `cd_dirty`'s table: `LI` 0.02 to 0.06 ms for 1,000 distinct asks and 0.2 to 0.6 for 10,000 (ratio 8 to 14), against the scan's 0.27 and 25.6 in `L`; for 4 asks, `LI` within 1.5 of `L` | `LI` at 10,000 over 1 ms, a ratio over 20, or 4 asks over 1.5 of `L` |
 | S13 (i) | `LI` as `L` (0.038, 0.383) | over 1.2 of `L` |
 
+### Measurements, implemented
+
+Run 2026-11-18, alone on this Mac, headless Chrome 157, the same harness as above: 5 passes, `E`, `L`, `EI` and `LI` rotated within each scenario and pass, each in a fresh navigation, loads 2.59 to 3.93 at the navigations.
+`E` and `L` are the prototype again, in the same passes, so the columns side by side ran under the same conditions; their earlier numbers are in the tables above.
+A number is the median of the 5 pass medians, with the lowest and highest pass median in brackets; the raw numbers are `bench/shared-state/results/implemented/` (`times.tsv`, `memory.tsv`, `summary.tsv`, `run.log`).
+
+| # | Scenario | E, prototype | EI, implemented | L, prototype | LI, implemented |
+| --- | --- | ---: | ---: | ---: | ---: |
+| S1 | 10,000 rows, the currency changes | 1.865 (1.693-1.950) | 1.830 (1.693-1.945) | 1.825 (1.695-1.925) | 1.860 (1.720-1.990) |
+| S2 | 10,000 rows, the selection moves | 0.0639 (0.0638-0.0648) | 0.0858 (0.0845-0.0867) | 0.0390 (0.0388-0.0391) | 0.0390 (0.0389-0.0399) |
+| S3 | one row of 10,000 changes | 0.00046 (0.00043-0.00082) | 0.00048 (0.00043-0.00084) | 0.0396 (0.0393-0.0413) | 0.0397 (0.0394-0.0403) |
+| S3 | one row of 100,000 changes | 0.00104 (0.00100-0.00115) | 0.00132 (0.00115-0.00150) | 0.404 (0.389-0.614) | 0.574 (0.391-0.588) |
+| S4 | 1,000 views, one field of 100 set | 0.00209 (0.00192-0.00210) | 0.00211 (0.00196-0.00222) | 0.00209 (0.00195-0.00225) | 0.00211 (0.00204-0.00219) |
+| S5 | 1,000 views, all 100 fields set | 0.186 (0.178-0.192) | 0.189 (0.177-0.192) | 0.184 (0.175-0.193) | 0.192 (0.189-0.254) |
+| S6 | the currency set 1,000 times in one entry | 1.833 (1.775-1.903) | 1.873 (1.815-1.893) | 1.860 (1.738-1.978) | 1.823 (1.785-1.923) |
+| S7 | build 10,000 rows | 9.97 (9.10-11.34) | 10.63 (9.46-11.50) | 9.71 (9.55-11.63) | 10.05 (9.59-10.41) |
+| S7 | take 10,000 rows away | 1.285 (1.215-1.350) | 1.360 (1.330-1.405) | 1.190 (1.115-1.280) | 1.190 (1.160-1.290) |
+| S7 | bytes a row beyond L, touched | 131.5 | 224.9 | 0 | -0.8 |
+| S8 | a keystroke in the draft | 0.00029 | 0.00029 | 0.00030 | 0.00029 |
+| S9 | (a1) reset, then build; for E and EI (c) | 11.03 (10.59-11.95) | 11.31 (10.69-12.44) | 12.19 (10.99-12.97) | 11.27 (10.33-11.91) |
+| S9 | (a2) one update to disjoint keys | | | 12.47 (11.47-12.73) | 13.25 (11.50-13.37) |
+| S9 | (b) the same keys, every row patched | | | 1.800 (1.605-1.865) | 1.765 (1.680-1.985) |
+| S9 | (d) the table's region hidden and shown | | | 11.94 (11.17-12.36) | 11.59 (10.89-12.34) |
+| S10 | 1 MB mirror, one keystroke | 0.695 (0.690-0.720) | 0.705 (0.695-0.850) | | |
+| S11 | 1 MB mirror live, an unrelated field set | 0.00203 | 0.00208 | | |
+| S13 (i) | the list's view over 10,000 unchanged rows | | | 0.0384 (0.0382-0.0389) | 0.0384 (0.0382-0.0386) |
+| S13 (i) | the same over 100,000 | | | 0.387 (0.384-0.404) | 0.399 (0.388-0.586) |
+
+S3 at 100,000 rows is bimodal by pass in both `L` and `LI`, as it was in the first run: each has passes near 0.39 and passes near 0.58, so their medians differ by which mode three passes fell in.
+S10's memory: `E` 63 pages after five keystrokes, `EI` 62.
+
+`cd_dirty`, with `L` on the scan as it was and `LI` on cdom's pair table (S12, n distinct asks of an empty function, then the flush):
+
+| n | L, the scan | LI, the table |
+| ---: | ---: | ---: |
+| 4 | 0.00015 (0.00014-0.00015) | 0.00018 (0.00017-0.00018) |
+| 1,000 | 0.274 (0.273-0.278) | 0.0164 (0.0163-0.0167) |
+| 10,000 | 26.28 (26.15-26.34) | 0.334 (0.330-0.345) |
+
+### Each prediction's verdict, implemented
+
+| # | Verdict | Predicted | Measured |
+| --- | --- | --- | --- |
+| S1 | holds | `LI` 1.6 to 1.9, `EI` 1.9 to 2.3 | 1.86 (1.02 of `L`); 1.83, a little under the range (0.98 of `E`) |
+| S2 | **refuted for `EI`**, holds for `LI` | `LI` 0.035 to 0.045; `EI` 0.07 to 0.10 and within 1.3 of `E` | 0.0390 (1.00 of `L`); 0.0858, in the range, but **1.34 of `E`** with no overlap of the spreads: the implementation costs 2.2 ns more a view than the prototype when 10,000 views run (the round's array, the depth check, the stored tick and its reset at the pass's end) |
+| S3 | holds, `EI` a little over the range at 100,000 | `LI` 0.035 to 0.045 and 0.38 to 0.6; `EI` 0.0003 to 0.001 | 0.0397 and 0.574 (bimodal, as `L`); 0.00048 and 0.00132 (a little over at 100,000) |
+| S4, S5 | holds | `EI` 0.0019 to 0.003 and 0.17 to 0.22 | 0.00211 and 0.189 |
+| S6 | holds | S1 plus under 0.02 ms | `EI` S1 plus 0.04, `LI` S1 minus 0.04: within the spread of S1 |
+| S7 build | holds | `LI` as `L`; `EI` 10.5 to 12 | 10.05 (1.04 of `L`, inside its spread); 10.63, 0.09 us a row over `L` |
+| S7 take away | holds, faster than the range | `EI` 2 to 2.5 | 1.36: a row's forget, three unlinks and four frees are 0.017 us |
+| S7 memory | holds | `LI` 0; `EI` 210 to 240 | -0.8; 224.9 |
+| S8 | holds | under 0.0005 | 0.00029 |
+| S9 | holds, `EI` faster than the range | `LI` as `L`; `EI` (c) 13 to 16 | (a1) 11.27, (a2) 13.25, (b) 1.765, (d) 11.59, each inside `L`'s spread or under it; `EI` 11.31 |
+| S10, S11 | holds | as `E` | 0.705 and 0.00208 |
+| S12 | **refuted on the ratio**, faster than the range at 1,000 | `LI` 0.02 to 0.06 and 0.2 to 0.6, ratio 8 to 14; 4 asks within 1.5 of `L` | 0.0164 and 0.334, **ratio 20.4** (the falsifier was 20); 4 asks 1.2 of `L`. The table for 10,000 asks is 640 KB, probed at random, and grows from 64 entries in every pass (the pass's end drops a grown table), so the large case pays cache misses and nine rehashes; it is still 79 times faster than the scan |
+| S13 (i) | holds | as `L` | 0.0384 and 0.399 |
+
+The hypothesis holds where the shape is the prototype's: `LI` is within the spread of `L` everywhere, and `EI`'s views in regions (S4, S5, S10, S11) are within 0.03 of `E`.
+Rows as views (`EI`) cost what the real API makes them cost: 93 bytes a row more than the prototype's intrusive watchers (a region and a heap view with three watches), and 2.2 ns a view more when ten thousand run; the design's answer, a list as one view, does not pay either.
+
 ## What is in `bench/shared-state/`
 
 | Path | What |
@@ -1043,6 +1135,6 @@ Where the real API changes the shape (`EI`'s rows, each a region with a view and
 | `test/` | its eight checks (`test.mjs`) and `mutate.sh`: four mutants, each caught by the check written for it |
 | `bench/src/` | the benchmark app: one model and DOM, the entries A, B, C, CL, E, L |
 | `bench/check.mjs`, `mutate-dom.sh` | every entry leaves the same DOM after every step; three mutants caught |
-| `bench/run.mjs`, `summarize.mjs`, `results/` | the timed passes and their TSVs |
+| `bench/run.mjs`, `summarize.mjs`, `results/` | the timed passes and their TSVs; `results/implemented/` is the implementation's run (`E`, `L`, `EI`, `LI`) |
 | `caret/` | S14 |
 | `run.sh` | everything, or `run.sh one S2 L` for one scenario of one entry |

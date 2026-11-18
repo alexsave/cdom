@@ -823,7 +823,7 @@ static void views_drop(cd_region *r) {
 
 void cd_watch(cd_state *s, cd_render_fn fn, void *ctx) {
   cd_region *r = recording;
-  if (!r) __builtin_trap(); /* no region builds: a handler, a timer, or a list row's create */
+  if (!r || releasing) __builtin_trap(); /* no region builds (a handler, a timer, a list row's create), or a cleanup */
   views_gone = views_drop;
   views_pass = views_run; /* a view made in a pass is in pv, which the pass's end empties */
   cd_view *v = r->views;

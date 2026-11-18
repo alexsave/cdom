@@ -304,8 +304,9 @@ void cd_render_now(void);
  *   already ran after the last change of every changed state it watches is not run again; a view made
  *   during the pass (a region shown by a view) drew in its build, so it runs only for a change after
  *   it; past 16 rounds it traps (views that keep changing what they watch).
- * A cd_state starts zeroed and must stay where it is while anything watches it: a static, or a field
- * of a struct that outlives the regions that watch it. It is 24 bytes.
+ * A cd_state starts zeroed and must stay where it is while anything watches it, and from a cd_changed
+ * until the pass after it: a static, or a field of a struct that outlives the regions that watch it.
+ * It is 24 bytes.
  *
  * s->ver only goes up. So the sum of the versions of everything a value is made from is a version of
  * that value: a list row's revision, or the key of a cached derived value. */
@@ -324,9 +325,9 @@ void cd_changed(cd_state *s);
  * region's cleanups run. The same (fn, ctx) watched again in the same region is the same view,
  * watching one state more (found among the region's views: a region holds a handful). cd_watch does
  * not call fn: the build draws the first time itself, once its nodes are named. Traps when no region
- * builds, a list row's create included: a list's rows do not watch, the list's own view does, and a
- * region opened in a row's create may. A view and a watch are 24 bytes each, on the heap, freed with
- * the region. */
+ * builds, a list row's create included (a list's rows do not watch, the list's own view does, and a
+ * region opened in a row's create may), and inside a cleanup. A view and each of its watches take 32
+ * bytes of the heap, freed with the region. */
 void cd_watch(cd_state *s, cd_render_fn fn, void *ctx);
 
 /* The check build (-DCD_STATE_CHECK, for the app and cdom alike); nothing otherwise. A module's getter

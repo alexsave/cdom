@@ -555,7 +555,8 @@ M = [
   ('state-forget-keeps-views', 'src/cdom.c', '  if (r->views) views_gone(r);\n', '  if (r->views && dom) views_gone(r);\n', UNIT, 'FAIL cd_state: views in regions opened in keyed-list rows'),
   ('state-same-view-not-found', 'src/cdom.c', '  while (v && (v->fn != fn || v->ctx != ctx)) v = v->next;', '  v = 0;', UNIT, 'FAIL cd_state: one (fn, ctx) watched'),
   ('state-watch-twice', 'src/cdom.c', '      if (l->s == s) return; /* it watches s already */', '      if (l->s == s && 0) return; /* it watches s already */', UNIT, 'FAIL cd_state: a view that watches a state it watches already'),
-  ('state-watch-no-region-ok', 'src/cdom.c', '  if (!r) __builtin_trap(); /* no region builds: a handler, a timer, or a list row\'s create */', '  if (!r) return;', UNIT, 'FAIL traps: cd_watch'),
+  ('state-watch-no-region-ok', 'src/cdom.c', '  if (!r || releasing) __builtin_trap();', '  if (!r) return;\n  if (releasing) __builtin_trap();', UNIT, 'FAIL traps: cd_watch with no region'),
+  ('state-watch-in-cleanup-ok', 'src/cdom.c', '  if (!r || releasing) __builtin_trap();', '  if (!r) __builtin_trap();', UNIT, 'FAIL traps: cd_watch in a cleanup'),
   ('state-changed-no-pass', 'src/cdom.c', '  changed_last = s;\n  render_pass = run_renders;', '  changed_last = s;', UNIT, 'FAIL traps: views that keep changing'), # the trap page asks for no render: only cd_changed starts the pass
   ('state-changed-no-views', 'src/cdom.c', '  render_pass = run_renders;\n  views_pass = views_run;\n}', '  render_pass = run_renders;\n}', UNIT, 'FAIL cd_state on a fresh page: a state that no view ever watched'),
   ('state-watch-no-views', 'src/cdom.c', '  views_pass = views_run; /* a view made in a pass is in pv, which the pass\'s end empties */\n', '', UNIT, 'FAIL cd_state on a fresh page: a view made by a render'),

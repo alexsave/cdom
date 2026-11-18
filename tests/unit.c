@@ -2501,6 +2501,13 @@ EXPORT("t_state_render_made") uint32_t t_state_render_made(void) {
 /* cd_watch with no region building, and in a list row's create, trap (the trap page). */
 static cd_state sk;
 EXPORT("t_state_idle_watch") void t_state_idle_watch(void) { cd_watch(&sk, st_letter, 0); }
+/* A cleanup that watches traps, though a region builds (one hidden while another builds). */
+static cd_region rk_outer, rk_inner;
+static void k_cleanup_watch(void *) { cd_watch(&sk, st_letter, 0); }
+EXPORT("t_state_cleanup_watch") void t_state_cleanup_watch(void) {
+  if (st_show(&rk_inner)) { cd_on_free(0, k_cleanup_watch, 0); cd_region_end(&rk_inner); }
+  if (st_show(&rk_outer)) { cd_region_hide(&rk_inner); cd_region_end(&rk_outer); }
+}
 static cd_id k_create(void *, uint32_t, uint32_t *) {
   cd_id li = cd_open_id("li"); cd_close();
   cd_watch(&sk, st_letter, 0);
