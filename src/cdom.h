@@ -262,11 +262,14 @@ uint32_t cd_pending(void);           /* nonzero while a walk waits to cross, or 
  * fn(ctx) then runs once before this entry from JS returns (the event, the timer, the frame, the
  * answer: every one ends in cd_flush), however often it was asked, in the order first asked. A render
  * that asks for renders runs them in the same pass, as another round, and one asked again after it
- * ran runs again; past 16 rounds it traps (renders that keep asking for each other). It is for views
- * (a handful per entry: the queue is scanned to dedup), not for rows: a list's rows are cd_list_update's.
+ * ran runs again; past 16 rounds it traps (renders that keep asking for each other). An ask is a
+ * lookup in a hash of what is pending, so ten thousand distinct asks cost ten thousand lookups; still,
+ * a list's rows are cd_list_update's, not renders of their own. The views of shared state (cd_watch,
+ * below) run in the same pass, and a view and a render may ask for each other.
  * cd_undirty drops a pending (fn, ctx), even one later in the round running now: a cleanup of the
  * region a view drew calls it, so a render never runs on state that went. cd_render_now runs what is
- * pending now (inside a render, or a cleanup, it does nothing: the pass takes it).
+ * pending now, the views of changed states included (inside a render, a view or a cleanup it does
+ * nothing: the pass takes it).
  * Every call that hands host code the DOM runs what is pending first, as cd_render_now does: the reads
  * (cd_get_num, cd_get_str, cd_get_id, cd_input_whole), the layout reads (cd_rect, cd_hit, cd_viewport),
  * cd_set and cd_call_args. So a handler that sets state and then measures, focuses or scrolls sees the
@@ -276,6 +279,66 @@ typedef void (*cd_render_fn)(void *ctx);
 void cd_dirty(cd_render_fn fn, void *ctx);
 void cd_undirty(cd_render_fn fn, void *ctx);
 void cd_render_now(void);
+
+/* ---- shared state: data one module owns, shown by views anywhere ----
+ * The data stays plain C, private to the module that owns it. Beside it the module keeps a cd_state,
+ * which is what the views of that data watch, and its one setter ends in cd_changed:
+ *   static char name[256]; static uint32_t name_len;        (name.c)
+ *   cd_state name_state;                                     (declared extern in name.h)
+ *   void name_set(const char *p, uint32_t n) { memcpy(name, p, n); name_len = n; cd_changed(&name_state); }
+ * A view says what it draws from while its region builds, and draws itself once:
+ *   cd_watch(&name_state, badge_view, nullptr); badge_view(nullptr);
+ * So grep name_state lists the commit and every view: nothing is wired by name, by type or by a read.
+ *
+ * cd_changed(s) moves s->ver on and puts s on the list of changed states. It does not look at the
+ * watchers, so it costs the same for none or ten thousand, and a thousand calls in one entry are a
+ * thousand increments. In the pass that ends the entry (cd_flush, with cd_dirty's renders), every view
+ * watching a changed state runs once, however many of its states changed and however often:
+ * - outermost region first: a view of a region at depth d (1 for a region with no parent region, its
+ *   child 2) runs after every view at a depth under d, so a view may rely on its region being shown:
+ *   the views of every region around it ran before it and had the chance to hide it. At one depth the
+ *   views run in the order their states changed, and the views of one state in the order they began
+ *   to watch it;
+ * - a view whose region is taken away (by a view before it, or before the pass) does not run;
+ * - a view, or a render, that changes a state causes another round of the same pass, and a view that
+ *   already ran after the last change of every changed state it watches is not run again; a view made
+ *   during the pass (a region shown by a view) drew in its build, so it runs only for a change after
+ *   it; past 16 rounds it traps (views that keep changing what they watch).
+ * A cd_state starts zeroed and must stay where it is while anything watches it: a static, or a field
+ * of a struct that outlives the regions that watch it. It is 24 bytes.
+ *
+ * s->ver only goes up. So the sum of the versions of everything a value is made from is a version of
+ * that value: a list row's revision, or the key of a cached derived value. */
+struct cd_view;
+struct cd_link;
+typedef struct cd_state {
+  uint64_t ver;                     /* moves on at every cd_changed; anyone may read it */
+  struct cd_link *first, *last;     /* cdom's: the views watching, in the order they began to */
+  struct cd_state *changed;         /* cdom's: the next changed state, while it is on that list */
+  uint32_t tick;                    /* cdom's: when in the pass it last changed */
+} cd_state;
+void cd_changed(cd_state *s);
+
+/* The region building now draws fn(ctx) from s. Until that region is taken away, every cd_changed(s)
+ * asks for fn(ctx); when it is taken away the watch goes, with a run still pending, before the
+ * region's cleanups run. The same (fn, ctx) watched again in the same region is the same view,
+ * watching one state more (found among the region's views: a region holds a handful). cd_watch does
+ * not call fn: the build draws the first time itself, once its nodes are named. Traps when no region
+ * builds, a list row's create included: a list's rows do not watch, the list's own view does, and a
+ * region opened in a row's create may. A view and a watch are 24 bytes each, on the heap, freed with
+ * the region. */
+void cd_watch(cd_state *s, cd_render_fn fn, void *ctx);
+
+/* The check build (-DCD_STATE_CHECK, for the app and cdom alike); nothing otherwise. A module's getter
+ * calls cd_read(&its_state). A view running in the pass that reads a state it does not watch traps
+ * there; a region's build that read a state which neither it nor a region around it (one building
+ * under it, or its r->up and theirs) watches traps at its cd_region_end. It is an assertion over the
+ * explicit watches, and it wires nothing. */
+#ifdef CD_STATE_CHECK
+void cd_read(const cd_state *s);
+#else
+static inline void cd_read(const cd_state *) {}
+#endif
 
 /* ---- request slots: one request's life ----
  * An answer comes from the event loop, maybe after the app moved on (a run restarted, the region that
@@ -303,8 +366,9 @@ void cd_req_drop(cd_req *r);
  *   cd_text(""); cd_name_text(t = cd_id_new()); cd_bind_text(&label, t);
  *   cd_bound_set(&label, busy ? "Saving" : "Save");
  * text sets a text node's value (cd_set_text_node), attr an attribute, class the class, style one
- * style property, and bool a boolean property such as "disabled" or "checked" (cd_set_bool, the
- * property, not the attribute, so it holds after the user changed it). name and prop are kept, so
+ * style property, bool a boolean property such as "disabled" or "checked" (cd_set_bool, the
+ * property, not the attribute, so it holds after the user changed it), and prop a string property
+ * such as an input's "value" (cd_set_str, the property again). name and prop are kept, so
  * each is a string good for the page: a literal, or a pointer into read-only data (a ternary of
  * literals, a const table entry; see strings above). cd_bound_set takes such a value, the same when
  * its cd_str is; a runtime string read on use traps there. A literal's cd_str is its slot, one per
@@ -313,7 +377,12 @@ void cd_req_drop(cd_req *r);
  * label made with cd_fmt or snprintf each time), the same when the bytes are: unchanged, nothing is
  * made and nothing crosses; changed, they cross as a cd_tmp. cd_bound_set_num takes a number
  * (for a bool, 0 or not: 1 and 5 are the same true). The first set after a bind always writes,
- * unless cd_bound_shows said what the node was built with.
+ * unless cd_bound_shows said what the node was built with. cd_bound_shows_bytes says the node shows
+ * bytes it was not sent: an input the user typed into. Its handler records what the input holds, the
+ * setter stores the same bytes, and the input's view, setting the stored bytes, writes nothing, so the
+ * caret, the selection and an open composition are left alone:
+ *   on_input: cd_input_whole(in, buf, cap, &n); cd_bound_shows_bytes(&shown, buf, n); name_set(buf, n);
+ *   view:     cd_bound_set_bytes(&shown, name, name_len);     (after cd_bind_prop(&shown, in, "value"))
  * Node ids carry no generation, so a binding must not outlive its node: one bound while a region
  * builds is unbound when the region goes (a cleanup cdom registers), and one bound elsewhere (a list
  * row's create) is the app's to cd_unbind. Setting an unbound value traps; cd_bound_live tells.
@@ -331,6 +400,7 @@ void cd_bind_attr(cd_bound *b, cd_id el, cd_str name);
 void cd_bind_class(cd_bound *b, cd_id el);
 void cd_bind_style(cd_bound *b, cd_id el, cd_str prop);
 void cd_bind_bool(cd_bound *b, cd_id el, cd_str prop);
+void cd_bind_prop(cd_bound *b, cd_id el, cd_str prop);
 /* a string good for the page; a runtime one traps. The unchanged case is inline (two compares, no call): a list patching a
  * thousand bound rows per event skips as fast as a hand-written last-value check. */
 void cd_bound_set_(cd_bound *b, cd_str value);
@@ -343,6 +413,7 @@ void cd_bound_set_num(cd_bound *b, uint32_t n);
  * the first set of the same value writes nothing. value is a string good for the page. */
 void cd_bound_shows(cd_bound *b, cd_str value);
 void cd_bound_shows_num(cd_bound *b, uint32_t n);
+void cd_bound_shows_bytes(cd_bound *b, const char *p, uint32_t len);
 void cd_unbind(cd_bound *b);
 int cd_bound_live(const cd_bound *b);
 
@@ -545,16 +616,17 @@ double cd_now(void);                              /* performance.now(), for work
  * Taking a region away, by cd_region_hide or as an ancestor goes, is in this order:
  *   1. its child regions, newest first, each taken away the same way, but with no DOM op of its own
  *      (the parent's one clear or remove takes their nodes);
- *   2. its cleanups (cd_on_free), newest first: one registered after the state it releases runs
+ *   2. its views (cd_watch) go, with any run of theirs still pending;
+ *   3. its cleanups (cd_on_free), newest first: one registered after the state it releases runs
  *      before the cleanup that frees that state;
- *   3. its one DOM op: a clear of r->parent, or a remove of its root;
- *   4. its ids are freed.
+ *   4. its one DOM op: a clear of r->parent, or a remove of its root;
+ *   5. its ids are freed.
  * So cleanups run children first, and before any id of their region goes. Cleanups release what
  * the region held, and change no DOM: inside one, every call that changes the DOM traps (building,
  * updating, cd_remove, cd_move, cd_clear, the regions' shows and hides, cd_set and cd_call_args).
  * What a cleanup is for works: reads, stops and frees, such as cd_timer_stop,
  * cd_audio_stop, cd_undirty, cd_id_free, cd_unbind, cd_list_forget and cd_region_forget.
- * A region taken away owns no heap memory (its id and cleanup lists are freed with it), so the
+ * A region taken away owns no heap memory (its id and cleanup lists and its views are freed with it), so the
  * struct it lives in may be freed or reused once it is hidden; showing it again allocates again. */
 typedef void (*cd_cleanup_fn)(void *ctx);
 typedef struct { cd_cleanup_fn fn; void *ctx; } cd_cleanup;
@@ -563,6 +635,7 @@ typedef struct cd_region {
   struct cd_region *up;                 /* the parent region (set by the app, or by showing inside one) */
   struct cd_region *kids, *next;        /* cdom's: the child regions shown now, newest first */
   cd_cleanup *fns; uint32_t nfns, fcap; /* cdom's: the cleanups */
+  struct cd_view *views;                /* cdom's: the views its build made (cd_watch), newest first */
 } cd_region;
 int cd_region_show(cd_region *r, int want);
 void cd_region_end(cd_region *r);
@@ -634,6 +707,7 @@ void cd_list_forget(cd_list *L, const cd_list_fns *f);
 #define cd_bind_attr(b, el, name) (cd_bind_attr)(b, el, cd_s(name))
 #define cd_bind_style(b, el, prop) (cd_bind_style)(b, el, cd_s(prop))
 #define cd_bind_bool(b, el, prop) (cd_bind_bool)(b, el, cd_s(prop))
+#define cd_bind_prop(b, el, prop) (cd_bind_prop)(b, el, cd_s(prop))
 #define cd_bound_set(b, value) (cd_bound_set)(b, cd_s(value))
 #define cd_bound_shows(b, value) (cd_bound_shows)(b, cd_s(value))
 #endif

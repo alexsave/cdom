@@ -303,46 +303,92 @@ static inline void ready(void) {
 /* ---- renders: cd_dirty ----
  * renders holds the renders asked for, in the order asked. A pass runs them from the front:
  * renders[0, render_at) have run, and the rest wait, each (fn, ctx) once; a render that asks for
- * more appends them, and the
- * entries past where the round started form the next round. They run in cd_flush, which ends every
- * entry from JS, so one pass per event, timer, frame or answer. */
+ * more appends them, and the entries past where the round started form the next round. They run in
+ * cd_flush, which ends every entry from JS, so one pass per event, timer, frame or answer.
+ * asked finds a pending (fn, ctx) in one probe or a few: an open-addressed table of indexes into
+ * renders, at most half full, whose slots count only when they carry this pass's generation, so the
+ * end of a pass empties it by moving the generation on, not by clearing it. A slot may name an entry
+ * that already ran or that cd_undirty dropped: the entry's own (fn, ctx) and render_at decide. */
 #define CD_RENDER_ROUNDS 16
 typedef struct { cd_render_fn fn; void *ctx; } render_ent;
+typedef struct { uint32_t gen, at; } asked_slot;
 static render_ent *renders;
 static uint32_t nrenders, renders_cap, render_at, rendering;
+static asked_slot *asked;
+static uint32_t asked_cap, asked_gen = 1;
 /* The pass, reached through a pointer cd_dirty sets: an app that never asks for a render does not
  * carry it, and its flush pays one load. volatile, or clang sees the one value the pointer can take,
  * calls run_renders directly and inlines it into every export (236 bytes in the keyed bench app). */
 static void run_renders(void);
 static void (*volatile render_pass)(void);
+/* The views of shared state (cd_state, below), reached the same way: cd_changed sets it, so an app that
+ * renders but never changes a state does not carry them. views_pass(0) runs one round of views, and
+ * views_pass(1) ends the pass. changed is the list of changed states; CHANGED_END ends it, so a state
+ * is on it exactly when its changed is not null. */
+static void (*volatile views_pass)(int end);
+static cd_state *changed, *changed_last;
+#define CHANGED_END ((cd_state *)&changed)
+static uint32_t asked_home(cd_render_fn fn, void *ctx) {
+  uint32_t h = (uint32_t)(uintptr_t)fn * 0x9e3779b1u ^ (uint32_t)(uintptr_t)ctx * 0x85ebca6bu;
+  return (h ^ (h >> 15)) & (asked_cap - 1);
+}
+/* The slot of the pending (fn, ctx), or the empty slot where it goes. */
+static asked_slot *asked_find(cd_render_fn fn, void *ctx) {
+  for (uint32_t m = asked_cap - 1, i = asked_home(fn, ctx);; i = (i + 1) & m) {
+    asked_slot *a = &asked[i];
+    if (a->gen != asked_gen) return a;
+    const render_ent *e = &renders[a->at];
+    if (a->at >= render_at && e->fn == fn && e->ctx == ctx) return a;
+  }
+}
 void cd_dirty(cd_render_fn fn, void *ctx) {
   render_pass = run_renders;
-  for (uint32_t i = render_at; i < nrenders; i++)
-    if (renders[i].fn == fn && renders[i].ctx == ctx) return;
+  if ((nrenders + 1) * 2 > asked_cap) { /* grow, and put the pending entries back */
+    asked_cap = asked_cap ? asked_cap * 2 : 16;
+    cd_free(asked);
+    asked = cd_alloc(asked_cap * sizeof(asked_slot));
+    __builtin_memset(asked, 0, asked_cap * sizeof(asked_slot)); /* generation 0 is never current */
+    for (uint32_t i = render_at; i < nrenders; i++)
+      if (renders[i].fn) *asked_find(renders[i].fn, renders[i].ctx) = (asked_slot){asked_gen, i};
+  }
+  asked_slot *a = asked_find(fn, ctx);
+  if (a->gen == asked_gen) return; /* pending */
   if (nrenders == renders_cap) {
     renders_cap = renders_cap ? renders_cap * 2 : 16;
     renders = cd_realloc(renders, renders_cap * sizeof(render_ent));
   }
+  *a = (asked_slot){asked_gen, nrenders};
   renders[nrenders++] = (render_ent){fn, ctx};
 }
 void cd_undirty(cd_render_fn fn, void *ctx) {
-  for (uint32_t i = render_at; i < nrenders; i++)
-    if (renders[i].fn == fn && renders[i].ctx == ctx) renders[i].fn = 0;
+  if (!asked_cap) return;
+  asked_slot *a = asked_find(fn, ctx);
+  if (a->gen == asked_gen) renders[a->at].fn = 0;
 }
-/* Runs what is waiting; nothing while a pass runs (the pass takes it) or while a region's cleanups run
- * (they may not change the DOM: the flush after them does it). */
-static void run_renders(void) {
-  if (render_at == nrenders || rendering || releasing) return;
-  rendering = 1;
-  for (uint32_t end = nrenders, round = 1; render_at < nrenders;) {
-    if (render_at == end) {
-      if (++round > CD_RENDER_ROUNDS) __builtin_trap(); /* renders that keep asking for renders */
-      end = nrenders;
-    }
+/* One round of renders: those asked before it began. */
+static void renders_round(void) {
+  for (uint32_t end = nrenders; render_at < end;) {
     render_ent e = renders[render_at++];
     if (e.fn) e.fn(e.ctx);
   }
+}
+/* Runs what is waiting, views and renders, in rounds; nothing while a pass runs (the pass takes it) or
+ * while a region's cleanups run (they may not change the DOM: the flush after them does it). */
+static void run_renders(void) {
+  if ((render_at == nrenders && !changed) || rendering || releasing) return;
+  rendering = 1;
+  for (uint32_t round = 1;; round++) {
+    if (round > CD_RENDER_ROUNDS) __builtin_trap(); /* renders or views that keep asking for each other */
+    if (changed) views_pass(0);
+    renders_round();
+    if (render_at == nrenders && !changed) break;
+  }
+  if (views_pass) views_pass(1);
   render_at = nrenders = rendering = 0;
+  if (++asked_gen == 0) { /* every slot's generation is now possibly current: clear them */
+    __builtin_memset(asked, 0, asked_cap * sizeof(asked_slot));
+    asked_gen = 1;
+  }
 }
 static inline void renders_now(void) { if (render_pass) render_pass(); }
 void cd_render_now(void) { renders_now(); }
@@ -568,8 +614,15 @@ int cd_input_whole(cd_id id, char *dst, uint32_t cap, uint32_t *len) {
 #define CD_REGION_DEPTH 8
 static cd_region *building[CD_REGION_DEPTH];
 static uint32_t nbuilding;
+#ifdef CD_STATE_CHECK
+static const cd_state **reads[CD_REGION_DEPTH]; /* the check build's: the states each open build read */
+static uint32_t nreads[CD_REGION_DEPTH], reads_cap[CD_REGION_DEPTH];
+#endif
 static void build_push(cd_region *r) {
   if (nbuilding == CD_REGION_DEPTH) __builtin_trap(); /* nested deeper than CD_REGION_DEPTH */
+#ifdef CD_STATE_CHECK
+  nreads[nbuilding] = 0;
+#endif
   building[nbuilding++] = r;
   recording = r;
 }
@@ -581,6 +634,7 @@ static void build_pop(void) {
 /* Takes r away: its child regions first, newest first, each forgotten (r's own DOM op takes their nodes
  * with it); then r's cleanups, newest first, while the DOM may not change; then, when dom, r's one DOM
  * op (a clear, or a remove of its root); then its ids. It does not unlink r from its parent. */
+static void (*volatile views_gone)(cd_region *r); /* the views' takedown, set by cd_watch */
 static void take(cd_region *r, int dom) {
   for (uint32_t i = 0; i < nbuilding; i++)
     if (building[i] == r) __builtin_trap(); /* taken away while it builds */
@@ -589,6 +643,7 @@ static void take(cd_region *r, int dom) {
     take(k, 0);
   }
   r->kids = 0;
+  if (r->views) views_gone(r);
   while (r->nfns) {
     cd_cleanup c = r->fns[--r->nfns];
     releasing++;
@@ -641,8 +696,14 @@ int cd_region_show(cd_region *r, int want) {
   if (!r->parent) r->root = cd_id_new();
   return 1;
 }
+#ifdef CD_STATE_CHECK
+static void reads_check(uint32_t level);
+#endif
 void cd_region_end(cd_region *r) {
   if (recording != r) __builtin_trap();
+#ifdef CD_STATE_CHECK
+  reads_check(nbuilding - 1);
+#endif
   build_pop();
 }
 void cd_region_forget(cd_region *r) {
@@ -660,6 +721,220 @@ void cd_on_free(cd_region *r, cd_cleanup_fn fn, void *ctx) {
   r->fns[r->nfns++] = (cd_cleanup){fn, ctx};
 }
 void cd_region_hide(cd_region *r) { cd_region_show(r, 0); }
+
+/* ---- shared state: cd_state, cd_changed, cd_watch ----
+ * A view is a (fn, ctx) a region's build made: it hangs off the region (r->views, through next) and
+ * goes with it. A link is one view watching one state: it is in the state's list (prev, next) and in
+ * the view's (vnext). Nothing is searched in the pass: cd_changed puts the state on the changed list,
+ * and a round walks each changed state's links.
+ * A round takes the changed list, collects the views of its states, each once (queued) and none that
+ * ran after the state's last change (ran > tick), orders them by depth, stably, and runs them. tick
+ * counts in the pass: each change, and each view's run or making, moves it on, so "ran after the
+ * change" is one compare. Outside a pass it is 0, and so is every view's ran: the pass's end puts
+ * back to 0 the ran of every view it touched (pv: the views queued or made in the pass), so no count
+ * outlives its pass and none can wrap.
+ * A view taken away during a pass may still be in pv: it is unlinked at once (fn 0, so a round skips
+ * it) and freed at the pass's end (dead); taken away outside a pass it is freed at once. */
+typedef struct cd_view {
+  cd_render_fn fn; void *ctx;
+  struct cd_view *next;      /* the region's next view; once dead, the next dead view */
+  struct cd_link *links;     /* what it watches */
+  uint32_t ran;              /* the tick it last ran at, or was made at, in this pass; 0 outside one */
+  uint16_t depth;            /* its region's: 1 for a region with no parent region */
+  uint8_t queued;            /* in the round being collected */
+} cd_view;
+typedef struct cd_link {
+  cd_state *s; cd_view *v;
+  struct cd_link *prev, *next; /* s's links, in the order they were made */
+  struct cd_link *vnext;       /* v's links */
+} cd_link;
+_Static_assert(sizeof(cd_state) == 24, "cdom.h says a cd_state is 24 bytes");
+_Static_assert(sizeof(cd_view) + 8 <= 32 && sizeof(cd_link) + 8 <= 32, "a view and a link each fit the heap's 32-byte class");
+static cd_view **pv, **pv_tmp, *dead;
+static uint32_t npv, pv_cap, tick, *depth_n, depth_cap;
+#ifdef CD_STATE_CHECK
+static cd_view *running;      /* the view running now */
+static uint32_t running_base; /* the builds open when it began: one opened after it is a build's read */
+#endif
+
+static void pv_push(cd_view *v) {
+  if (npv == pv_cap) {
+    pv_cap = pv_cap ? pv_cap * 2 : 64;
+    pv = cd_realloc(pv, pv_cap * sizeof *pv);
+    pv_tmp = cd_realloc(pv_tmp, pv_cap * sizeof *pv_tmp);
+  }
+  pv[npv++] = v;
+}
+/* pv[a, b) by depth, outermost first, keeping the order within a depth (a counting sort). Most rounds
+ * are in order already (one view, or views of one depth), and are left as they are. */
+static void views_order(uint32_t a, uint32_t b) {
+  uint32_t top = 0, in_order = 1;
+  for (uint32_t i = a; i < b; i++) {
+    uint32_t d = pv[i]->depth;
+    if (d < top) in_order = 0; else top = d;
+  }
+  if (in_order) return;
+  if (top + 1 > depth_cap) {
+    depth_cap = top + 1;
+    depth_n = cd_realloc(depth_n, depth_cap * sizeof *depth_n);
+  }
+  __builtin_memset(depth_n, 0, (top + 1) * sizeof *depth_n);
+  for (uint32_t i = a; i < b; i++) depth_n[pv[i]->depth]++;
+  for (uint32_t d = 0, at = a; d <= top; d++) { uint32_t n = depth_n[d]; depth_n[d] = at; at += n; }
+  for (uint32_t i = a; i < b; i++) pv_tmp[depth_n[pv[i]->depth]++] = pv[i];
+  __builtin_memcpy(pv + a, pv_tmp + a, (b - a) * sizeof *pv);
+}
+/* views_pass: end 0 runs one round; end 1 ends the pass. */
+static void views_run(int end) {
+  if (end) {
+    for (uint32_t i = 0; i < npv; i++) pv[i]->ran = 0;
+    npv = tick = 0;
+    while (dead) {
+      cd_view *v = dead;
+      dead = v->next;
+      cd_free(v);
+    }
+    return;
+  }
+  uint32_t a = npv;
+  cd_state *s = changed;
+  changed = changed_last = 0;
+  while (s != CHANGED_END) {
+    cd_state *next = s->changed;
+    s->changed = 0;
+    for (cd_link *l = s->first; l; l = l->next) {
+      cd_view *v = l->v;
+      if (v->queued || v->ran > s->tick) continue; /* collected, or ran after the change */
+      v->queued = 1;
+      pv_push(v);
+    }
+    s = next;
+  }
+  uint32_t b = npv;
+  views_order(a, b);
+  for (uint32_t i = a; i < b; i++) {
+    cd_view *v = pv[i];
+    v->queued = 0;
+    if (!v->fn) continue; /* its region went, earlier in this round */
+    v->ran = ++tick;
+#ifdef CD_STATE_CHECK
+    cd_view *was = running;
+    uint32_t base = running_base;
+    running = v;
+    running_base = nbuilding;
+    v->fn(v->ctx);
+    running = was;
+    running_base = base;
+#else
+    v->fn(v->ctx);
+#endif
+  }
+}
+
+void cd_changed(cd_state *s) {
+  s->ver++;
+  s->tick = rendering ? ++tick : 0;
+  if (s->changed) return; /* on the list already */
+  s->changed = CHANGED_END;
+  if (changed_last) changed_last->changed = s; else changed = s;
+  changed_last = s;
+  render_pass = run_renders;
+  views_pass = views_run;
+}
+
+/* Every link of r's views out of its state's list, and the views freed (or, in a pass, dead). */
+static void views_drop(cd_region *r) {
+  for (cd_view *v = r->views, *next; v; v = next) {
+    next = v->next;
+    for (cd_link *l = v->links, *ln; l; l = ln) {
+      ln = l->vnext;
+      cd_state *s = l->s;
+      if (l->prev) l->prev->next = l->next; else s->first = l->next;
+      if (l->next) l->next->prev = l->prev; else s->last = l->prev;
+      cd_free(l);
+    }
+    if (rendering) { /* pv may hold it: the pass's end frees it */
+      v->fn = 0;
+      v->next = dead;
+      dead = v;
+    } else {
+      cd_free(v);
+    }
+  }
+  r->views = 0;
+}
+
+void cd_watch(cd_state *s, cd_render_fn fn, void *ctx) {
+  cd_region *r = recording;
+  if (!r) __builtin_trap(); /* no region builds: a handler, a timer, or a list row's create */
+  views_gone = views_drop;
+  views_pass = views_run; /* a view made in a pass is in pv, which the pass's end empties */
+  cd_view *v = r->views;
+  while (v && (v->fn != fn || v->ctx != ctx)) v = v->next;
+  if (v) {
+    for (cd_link *l = v->links; l; l = l->vnext)
+      if (l->s == s) return; /* it watches s already */
+  } else {
+    uint32_t d = 1;
+    for (cd_region *u = r->up; u; u = u->up) d++;
+    if (d > 0xffff) __builtin_trap();
+    v = cd_alloc(sizeof *v);
+    *v = (cd_view){fn, ctx, r->views, 0, 0, (uint16_t)d, 0};
+    r->views = v;
+    if (rendering) { /* made in a pass: it drew in its build, so only a change after now runs it */
+      v->ran = ++tick;
+      pv_push(v);
+    }
+  }
+  cd_link *l = cd_alloc(sizeof *l);
+  *l = (cd_link){s, v, s->last, 0, v->links};
+  if (s->last) s->last->next = l; else s->first = l;
+  s->last = l;
+  v->links = l;
+}
+
+#ifdef CD_STATE_CHECK
+/* The check build. A read while a build opened after the running view began (or with no view running)
+ * is that build's, kept by the innermost region building; it is checked when that region's build ends.
+ * Any other read, while a view runs, is the view's, checked now. */
+static int view_watches(const cd_view *v, const cd_state *s) {
+  for (const cd_link *l = v->links; l; l = l->vnext)
+    if (l->s == s) return 1;
+  return 0;
+}
+static int region_watches(const cd_region *r, const cd_state *s) {
+  for (const cd_view *v = r->views; v; v = v->next)
+    if (view_watches(v, s)) return 1;
+  return 0;
+}
+void cd_read(const cd_state *s) {
+  uint32_t lv = nbuilding;
+  while (lv > running_base && !building[lv - 1]) lv--; /* a list's level is no region's */
+  if (lv > running_base) {
+    uint32_t i = lv - 1;
+    if (nreads[i] == reads_cap[i]) {
+      reads_cap[i] = reads_cap[i] ? reads_cap[i] * 2 : 8;
+      reads[i] = cd_realloc(reads[i], reads_cap[i] * sizeof *reads[i]);
+    }
+    reads[i][nreads[i]++] = s;
+  } else if (running && !view_watches(running, s)) {
+    __builtin_trap(); /* a view read a state it does not watch */
+  }
+}
+/* At the end of the build at level: each state it read is watched by its region, a region building
+ * under it, or one of its r->up chain. */
+static void reads_check(uint32_t level) {
+  const cd_region *r = building[level];
+  for (uint32_t k = 0; k < nreads[level]; k++) {
+    const cd_state *s = reads[level][k];
+    int ok = 0;
+    for (const cd_region *u = r; u && !ok; u = u->up) ok = region_watches(u, s);
+    for (uint32_t j = 0; j < level && !ok; j++) ok = building[j] && region_watches(building[j], s);
+    if (!ok) __builtin_trap(); /* a build read a state that nothing around it watches */
+  }
+  nreads[level] = 0;
+}
+#endif
 
 /* ---- pairs: a hash of (a, b) entries, open addressing on a alone ----
  * The one table type for cdom's own maps from a pair: cd_on's handlers by (id, event type). Every entry
@@ -1157,7 +1432,7 @@ void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_
  * seen says what last holds: 0 nothing yet, 1 a string good for the page (a literal's slot or a
  * read-only pointer, the same text whenever the id is), 2 a number, 3 bytes given to
  * cd_bound_set_bytes, kept in b->bytes (compared exactly: a hash could collide and leave the DOM wrong). */
-enum { BOUND_TEXT, BOUND_ATTR, BOUND_CLASS, BOUND_STYLE, BOUND_BOOL };
+enum { BOUND_TEXT, BOUND_ATTR, BOUND_CLASS, BOUND_STYLE, BOUND_BOOL, BOUND_PROP };
 enum { SEEN_NONE, SEEN_ID, SEEN_NUM, SEEN_BYTES };
 _Static_assert(SEEN_ID == 1, "cdom.h's inline cd_bound_set reads seen 1 as an id");
 void cd_unbind(cd_bound *b) {
@@ -1170,6 +1445,7 @@ static void write_text(cd_id id, cd_str, cd_str v) { cd_set_text_node(id, v); }
 static void write_attr(cd_id id, cd_str name, cd_str v) { cd_set_attr(id, name, v); }
 static void write_class(cd_id id, cd_str, cd_str v) { cd_set_class(id, v); }
 static void write_style(cd_id id, cd_str name, cd_str v) { cd_set_style(id, name, v); }
+static void write_prop(cd_id id, cd_str name, cd_str v) { cd_set_str(id, name, v); }
 static void bind(cd_bound *b, cd_id id, cd_str name, uint32_t kind, cd_bound_write write) {
   if (!id || name.v >> 31) __builtin_trap(); /* no node, or a runtime name read on use (it is kept) */
   b->id = id;
@@ -1185,6 +1461,7 @@ void cd_bind_attr(cd_bound *b, cd_id el, cd_str name) { bind(b, el, name, BOUND_
 void cd_bind_class(cd_bound *b, cd_id el) { bind(b, el, CD_NONE, BOUND_CLASS, write_class); }
 void cd_bind_style(cd_bound *b, cd_id el, cd_str prop) { bind(b, el, prop, BOUND_STYLE, write_style); }
 void cd_bind_bool(cd_bound *b, cd_id el, cd_str prop) { bind(b, el, prop, BOUND_BOOL, 0); }
+void cd_bind_prop(cd_bound *b, cd_id el, cd_str prop) { bind(b, el, prop, BOUND_PROP, write_prop); }
 int cd_bound_live(const cd_bound *b) { return b->id != 0; }
 
 static void bound_write(cd_bound *b, cd_str s) { b->write(b->id, b->name, s); }
@@ -1196,9 +1473,8 @@ void cd_bound_set_(cd_bound *b, cd_str s) {
   b->seen = SEEN_ID;
   b->last = s.v;
 }
-void cd_bound_set_bytes(cd_bound *b, const char *p, uint32_t len) {
-  if (!b->id || b->kind == BOUND_BOOL) __builtin_trap();
-  if (b->seen == SEEN_BYTES && b->blen == len && !__builtin_memcmp(b->bytes, p, len)) return; /* nothing crosses */
+/* b->bytes becomes p[0, len): what the node shows now. */
+static void bound_keep(cd_bound *b, const char *p, uint32_t len) {
   if (len > b->bcap) {
     b->bcap = len;
     b->bytes = cd_realloc(b->bytes, len);
@@ -1206,7 +1482,16 @@ void cd_bound_set_bytes(cd_bound *b, const char *p, uint32_t len) {
   __builtin_memcpy(b->bytes, p, len);
   b->blen = len;
   b->seen = SEEN_BYTES;
+}
+void cd_bound_set_bytes(cd_bound *b, const char *p, uint32_t len) {
+  if (!b->id || b->kind == BOUND_BOOL) __builtin_trap();
+  if (b->seen == SEEN_BYTES && b->blen == len && !__builtin_memcmp(b->bytes, p, len)) return; /* nothing crosses */
+  bound_keep(b, p, len);
   bound_write(b, cd_tmp(p, len));
+}
+void cd_bound_shows_bytes(cd_bound *b, const char *p, uint32_t len) {
+  if (!b->id || b->kind == BOUND_BOOL) __builtin_trap(); /* unbound, or a bool */
+  bound_keep(b, p, len);
 }
 void cd_bound_shows(cd_bound *b, cd_str s) {
   if (!b->id || s.v >> 31) __builtin_trap(); /* unbound, or a runtime string */
