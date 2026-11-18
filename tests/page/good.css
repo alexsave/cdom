@@ -1,0 +1,9 @@
+/* A stylesheet the scanner must take: @import "in-a-comment.css"; { } " ' url( */
+.a::before { content: "@import \"x\"; } {"; }
+.b { background: url(data:image/gif;base64,R0lGOD/*not-a-comment*/lhAQ==); }
+.c::after { content: 'it\'s'; }
+.d::after { content: "one \
+two"; }
+.e\{ { order: 1; }
+@media (min-width: 1px) { .f { order: 2; } }
+.last-of-good { order: 9; }

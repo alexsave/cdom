@@ -124,5 +124,153 @@ usage "--page twice" --page "$pages/ok.html" --page "$pages/ok.html" --out "$out
 usage "--wasm and --wasm-url" --page "$pages/ok.html" --out "$out/u.html" --shim "$out/shim.js" --lits "$out/app.lits" --wasm "$out/m1.wasm" --wasm-url x
 usage "a flag with no value" --page "$pages/ok.html" --out "$out/u.html" --shim "$out/shim.js" --lits
 
+# ---- the stylesheets: discovery, order, the list file, the escape, the refusals and the edges ----
+# The tree is tests/link/apps/css/src (the fixture app's): seven stylesheets in subfolders, beside a dot-file,
+# a dot-folder, notes.css.bak, UPPER.CSS and a link to the folder a. Each file starts with /* its path */.
+tree="$top/tests/link/apps/css/src"
+cpage="$top/tests/link/apps/css/css.html"
+order="10.css 9.css Z.css a.css a/b/deep.css a/x.css b/00.css "
+# heads page: the /* path */ lines the page holds, in order
+heads() { grep -oE '^/\* [^ ]+\.(css|CSS|bak) \*/$' "$1" | sed -E 's|^/\* (.*) \*/$|\1|' | tr '\n' ' '; }
+css_page() { # out flags...: the fixture page with the tree's stylesheets, its module by URL
+  local o="$1"; shift
+  "$CDPAGE" --page "$cpage" --out "$o" --shim "$out/shim.js" --lits "$out/app.lits" --wasm-url x.wasm "$@" 2> "$o.log"
+}
+o="$out/css_order.html"
+if ! css_page "$o" --css-dir "$tree"; then bad "discovery: refused the fixture tree:"; cat "$o.log"
+elif [ "$(heads "$o")" != "$order" ]; then bad "discovery: the page holds [$(heads "$o")], not [$order]"
+elif [ "$(grep -c -- '--last' "$o")" != 8 ] || grep -q -- '--hidden' "$o"; then bad "discovery: a stylesheet twice, or a skipped one in the page"
+elif [ "$(grep -n 'b/00' "$o" | tail -1 | cut -d: -f1)" -ge "$(grep -n 'var cdomLits' "$o" | cut -d: -f1)" ]; then bad "discovery: a stylesheet after the table's script"
+elif [ "$(sed -n '7p' "$o")" != '#probe { --first: "page"; --last: "page"; }' ] || [ "$(sed -n '8p' "$o")" != '/* 10.css */' ]; then bad "discovery: the page's own rules before the marker are not first"
+else ok "discovery: the seven stylesheets in byte order of their paths ($order), each once; dot-names, .css.bak, .CSS and the linked folder skipped; all where the marker was, before the table"; fi
+# The same tree, its files made in the reverse order (another directory order): the same page.
+rev="$out/rev/src"; rm -rf "$out/rev"; mkdir -p "$rev"
+for f in $(echo "$order" | tr ' ' '\n' | sed '/^$/d' | sort -r); do mkdir -p "$rev/$(dirname "$f")"; cp "$tree/$f" "$rev/$f"; done
+mkdir -p "$rev/.dir"; cp "$tree/.dir/in.css" "$rev/.dir/"; cp "$tree/.hidden.css" "$tree/notes.css.bak" "$tree/UPPER.CSS" "$rev/"; ln -s a "$rev/linked"
+if css_page "$out/css_rev.html" --css-dir "$rev" && cmp -s "$o" "$out/css_rev.html"; then ok "discovery: the tree made in the reverse order gives the same page"
+else bad "discovery: the tree made in the reverse order gives another page"; diff "$o" "$out/css_rev.html" | head -6; fi
+# A link to a file is read as that file.
+ln -s ../9.css "$rev/b/link.css"
+if css_page "$out/css_link.html" --css-dir "$rev" && [ "$(heads "$out/css_link.html")" = "${order}9.css " ]; then ok "discovery: a link to a file is read as that file, at its own path (b/link.css)"
+else bad "discovery: a link to a file: [$(heads "$out/css_link.html")]"; fi
+rm "$rev/b/link.css"
+
+# The list file: the seven paths in order with the FNV-1a 64 of their bytes; replaced only when its text
+# changes (a rename gives a new inode), so a touch or a second run leaves it, and an edit, an added file,
+# a removed one and a rename each replace it.
+fnv() { python3 -c 'import sys
+h = 0xcbf29ce484222325
+for b in open(sys.argv[1], "rb").read(): h = ((h ^ b) * 0x100000001b3) & 0xffffffffffffffff
+print("%016x" % h)' "$1"; }
+L="$out/app.csslist"
+want=""; for f in $order; do want+="$f	$(fnv "$tree/$f")"$'\n'; done
+"$CDPAGE" --css-list "$tree" "$L"
+if [ "$(cat "$L"; echo .)" = "$want." ]; then ok "the list file: the seven paths in byte order, a tab, the FNV-1a 64 of each file's bytes"
+else bad "the list file is not the seven paths and their hashes:"; diff <(printf '%s' "$want") "$L"; fi
+ino() { stat -f '%i' "$L"; }
+listed() { # name, then whether the list must be replaced (1) or left (0), after the step before it
+  local was="$1" name="$2" want="$3"
+  "$CDPAGE" --css-list "$rev" "$L"
+  local now; now="$(ino)"
+  if [ "$want" = 1 ] && [ "$now" = "$was" ]; then bad "the list file: $name did not replace it"
+  elif [ "$want" = 0 ] && [ "$now" != "$was" ]; then bad "the list file: $name replaced it"
+  else ok "the list file: $name $([ "$want" = 1 ] && echo replaces it || echo leaves it as it is)"; fi
+}
+"$CDPAGE" --css-list "$rev" "$L"
+i="$(ino)"; listed "$i" "a second run" 0
+i="$(ino)"; touch "$rev/a.css"; listed "$i" "a touch" 0
+i="$(ino)"; echo '.e { order: 2; }' >> "$rev/a.css"; listed "$i" "an edit" 1
+i="$(ino)"; printf '.n { order: 3; }\n' > "$rev/a/new.css"; listed "$i" "an added file" 1
+i="$(ino)"; rm "$rev/a/new.css"; listed "$i" "a removed file" 1
+i="$(ino)"; mv "$rev/Z.css" "$rev/b/Z.css"; listed "$i" "a rename" 1
+if grep -q '^b/Z.css	' "$L" && ! grep -q '^Z.css	' "$L"; then ok "the list file: a renamed file is listed at its new path"; else bad "the list file: the rename is not in it"; cat "$L"; fi
+for d in "$out/no-such-dir" ""; do
+  rm -f "$L"; "$CDPAGE" --css-list "$d" "$L"
+  if [ -f "$L" ] && [ ! -s "$L" ]; then ok "the list file: $([ -n "$d" ] && echo 'a missing directory' || echo 'an empty DIR argument') gives an empty list"; else bad "the list file for [${d}] is not an empty file"; fi
+done
+
+# </style, in any case, cannot end the page's <style>: the page holds exactly one, its own.
+if [ "$(grep -oi '</style' "$o" | wc -l | tr -d ' ')" = 1 ] && grep -qF '#probe::before { content: "<\/style><script>window.pwned=1</script>"; }' "$o" &&
+   grep -qF 'The <\/STYLE> in this comment' "$o"; then ok "the escape: </style in a string and </STYLE in a comment are written <\\/, and the page has one </style, its own"
+else bad "the escape: the page holds $(grep -oi '</style' "$o" | wc -l | tr -d ' ') </style"; fi
+
+# The refusals, each with its message and no file. A stylesheet's own faults: each file of tests/page/bad
+# alone in a directory, and two made here (a NUL, bytes that are not UTF-8).
+sheet_refused() { # name message: the directory $out/bad_name holds the one file
+  local name="$1" msg="$2"
+  local d="$out/bad_$name" o="$out/refused_css_$name.html" rc=0
+  css_page "$o" --css-dir "$d" || rc=$?
+  if [ "$rc" -ne 1 ]; then bad "refuses the stylesheet $name: exit $rc"
+  elif compgen -G "$o" > /dev/null || compgen -G "$o.tmp*" > /dev/null; then bad "refuses the stylesheet $name but left a file"
+  elif ! grep -qxF -- "$msg" "$o.log"; then bad "refuses the stylesheet $name with another message (wanted: $msg):"; cat "$o.log"
+  else ok "refuses the stylesheet $name: ${msg#"$d/"}"; fi
+}
+for f in "$here"/bad/*.css; do
+  n="$(basename "$f" .css)"; mkdir -p "$out/bad_$n"; cp "$f" "$out/bad_$n/"
+done
+b="$out/bad_"
+sheet_refused comment "${b}comment/comment.css:2: a comment that never ends"
+sheet_refused string "${b}string/string.css:2: a string that never ends (a newline before its closing quote)"
+sheet_refused string_end "${b}string_end/string_end.css:3: a string that never ends"
+sheet_refused url "${b}url/url.css:2: a url( that never ends"
+sheet_refused open "${b}open/open.css:2: a { that is never closed"
+sheet_refused close "${b}close/close.css:3: a } with no { before it"
+sheet_refused import "${b}import/import.css:2: @import; put the file in the same folder instead (every .css file there is in the page, in byte order of its path)"
+mkdir -p "${b}nul" "${b}utf8"
+printf '.a { order: 1; }\n.b\0 { order: 2; }\n' > "${b}nul/nul.css"
+printf '.a { order: 1; }\n\n.b { content: "\xc3\x28"; }\n' > "${b}utf8/utf8.css"
+sheet_refused nul "${b}nul/nul.css:2: a NUL byte"
+sheet_refused utf8 "${b}utf8/utf8.css:3: bytes that are not UTF-8 (a page is UTF-8)"
+mkdir -p "${b}unreadable"; printf '.a { order: 1; }\n' > "${b}unreadable/u.css"; chmod 000 "${b}unreadable/u.css"
+sheet_refused unreadable "cdpage: cannot read the stylesheet ${b}unreadable/u.css"
+chmod 644 "${b}unreadable/u.css"
+# What looks like a fault and is not: @import in a comment and in a string, a } in a string, /* in an
+# unquoted url(), an escaped quote, a string continued past a newline by a backslash, braces in a comment.
+good="$out/good"; mkdir -p "$good"; cp "$here/good.css" "$good/"
+if css_page "$out/css_good.html" --css-dir "$good" && grep -qF "$(tail -1 "$here/good.css")" "$out/css_good.html"; then ok "a stylesheet with every corner the scanner must pass (good.css) is taken"
+else bad "good.css is refused:"; cat "$out/css_good.html.log"; fi
+# The page's faults with the marker: no marker and files found; the marker outside a <style>, after the
+# shim, twice, beside other text.
+mk_css_page() { # name, then the page's lines
+  local n="$1"; shift; printf '%s\n' "$@" > "$e/css_$n.html"; }
+mk_css_page outside '<style></style>' '/*CDOM_CSS*/' '<script>' '/*CDOM_SHIM*/' '</script>'
+mk_css_page after '<script>' '/*CDOM_SHIM*/' '</script>' '<style>' '/*CDOM_CSS*/' '</style>'
+mk_css_page twice '<style>' '/*CDOM_CSS*/' '/*CDOM_CSS*/' '</style>' '<script>' '/*CDOM_SHIM*/' '</script>'
+mk_css_page beside '<style>' '/*CDOM_CSS*/ p {}' '</style>' '<script>' '/*CDOM_SHIM*/' '</script>'
+mk_css_page none '<style>' '</style>' '<script>' '/*CDOM_SHIM*/' '</script>'
+mk_css_page attrs '<STYLE media="all">' '/*CDOM_CSS*/' '</STYLE>' '<script>' '/*CDOM_SHIM*/' '</script>'
+refused css_outside "$e/css_outside.html" "$e/css_outside.html:2: /*CDOM_CSS*/ outside a <style> element" --css-dir "$tree"
+refused css_after "$e/css_after.html" "$e/css_after.html:5: /*CDOM_CSS*/ after /*CDOM_SHIM*/ (the styles come before the shim's script)" --css-dir "$tree"
+refused css_twice "$e/css_twice.html" "$e/css_twice.html:3: a second /*CDOM_CSS*/ (the page takes the stylesheets once)" --css-dir "$tree"
+refused css_beside "$e/css_beside.html" "$e/css_beside.html:2: /*CDOM_CSS*/ must be alone on its line" --css-dir "$tree"
+refused css_none "$e/css_none.html" "$e/css_none.html: $tree/ holds 10.css (and 6 more), and this page has no /*CDOM_CSS*/ line (a <style> whose line is only the marker, before the shim's script); add it, or move the files out of $tree/" --css-dir "$tree/"
+refused css_none_one "$e/css_none.html" "$e/css_none.html: $good/ holds good.css, and this page has no /*CDOM_CSS*/ line (a <style> whose line is only the marker, before the shim's script); add it, or move the files out of $good/" --css-dir "$good"
+refused css_baddir "$e/css_none.html" "cdpage: cannot read the directory $cpage" --css-dir "$cpage"
+o="$out/css_attrs.html"
+if "$CDPAGE" --page "$e/css_attrs.html" --out "$o" --shim "$out/shim.js" --lits "$out/app.lits" --css-dir "$tree" 2> "$o.log" && [ "$(heads "$o")" = "$order" ]; then
+  ok "the marker in a <STYLE> with attributes (any letter case) takes the stylesheets"
+else bad "the marker in a <STYLE> with attributes:"; cat "$o.log"; fi
+
+# The edges: a byte order mark dropped; a newline after a file that has none; an empty file adds nothing;
+# no --css-dir, a missing directory, or one with no stylesheet: the marker line removed and nothing else.
+ed="$out/edges"; mkdir -p "$ed/s"
+printf '\xef\xbb\xbf.bom { order: 1; }\n' > "$ed/s/1-bom.css"
+printf '.nonl { order: 2; }' > "$ed/s/2-nonl.css"
+: > "$ed/s/3-empty.css"
+printf '.last { order: 4; }\n' > "$ed/s/4-last.css"
+o="$out/css_edges.html"
+{ sed -n '1,6p' "$cpage"; sed -n '7p' "$cpage"; printf '.bom { order: 1; }\n.nonl { order: 2; }\n.last { order: 4; }\n'; sed -n '9,15p' "$cpage"; table_shim '<script>'
+  echo 'cdom.start("x.wasm", "app");'; sed -n '18,$p' "$cpage"; } > "$o.want"
+if css_page "$o" --css-dir "$ed/s" && cmp -s "$o.want" "$o"; then ok "the edges: the byte order mark dropped, a newline after a file with none, an empty file adds nothing"
+else bad "the edges:"; diff "$o.want" "$o" | head -8; fi
+mkdir -p "$ed/none"; printf 'not a stylesheet\n' > "$ed/none/notes.txt"
+{ sed -n '1,7p' "$cpage"; sed -n '9,15p' "$cpage"; table_shim '<script>'; echo 'cdom.start("x.wasm", "app");'; sed -n '18,$p' "$cpage"; } > "$out/css_empty.want"
+for c in "no --css-dir:" "a missing directory:--css-dir $ed/missing" "a directory with no stylesheet:--css-dir $ed/none" "an empty --css-dir:--css-dir "; do
+  name="${c%%:*}"; flags="${c#*:}"; o="$out/css_empty.html"
+  if [ -z "$flags" ]; then css_page "$o"; elif [ "$flags" = "--css-dir " ]; then css_page "$o" --css-dir ""; else css_page "$o" --css-dir "${flags#--css-dir }"; fi
+  if cmp -s "$out/css_empty.want" "$o"; then ok "the edges: $name, the marker line removed and nothing else changed"
+  else bad "the edges: $name"; cat "$o.log"; diff "$out/css_empty.want" "$o" | head -4; fi
+done
+
 echo "tests/page: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

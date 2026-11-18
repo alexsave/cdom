@@ -442,6 +442,37 @@ M = [
   ('cdpage-table-after-shim', 'tools/cdpage.c', '      put_lines(o, lits.p, lits.n);\n      bstr(o, "</script>\\n");\n      bput(o, script.p, script.n);\n      bbyte(o, \'\\n\');\n      if (!slurp(a->shim, &shim)) die("%s: cannot read the shim %s", page_name, a->shim);\n      put_lines(o, shim.p, shim.n);\n', '      if (!slurp(a->shim, &shim)) die("%s: cannot read the shim %s", page_name, a->shim);\n      put_lines(o, shim.p, shim.n);\n      put_lines(o, lits.p, lits.n);\n      bstr(o, "</script>\\n");\n      bput(o, script.p, script.n);\n      bbyte(o, \'\\n\');\n', PAGE, 'FAIL the default page, bundled (8-byte module), titled and escaped: the page is not its parts'),
   ('cdpage-no-final-newline', 'tools/cdpage.c', "  if (n && p[n - 1] != '\\n') bbyte(o, '\\n');\n", '', PAGE, 'FAIL the default page, bundled (8-byte module), titled and escaped: the page is not its parts'),
   ('cdpage-b64-unpadded', 'tools/cdpage.c', "    char q[4] = { A[v >> 18], A[v >> 12 & 63], '=', '=' };\n    bput(o, q, 4);", "    char q[4] = { A[v >> 18], A[v >> 12 & 63], '=', '=' };\n    bput(o, q, 2);", PAGE, 'FAIL the default page, bundled (10-byte module), titled and escaped: the page is not its parts'),
+  # tools/cdpage, the stylesheets (tests/page/run.sh): discovery and its order, the list file, the </style escape,
+  # every refusal of a stylesheet or of the marker, and the edges
+  ('css-sort-reversed', 'tools/cdpage.c', 'return strcmp(((const Sheet *)a)->rel, ((const Sheet *)b)->rel);', 'return strcmp(((const Sheet *)b)->rel, ((const Sheet *)a)->rel);', PAGE, 'FAIL discovery: the page holds'),
+  ('css-no-sort', 'tools/cdpage.c', '  qsort(s.v, s.n, sizeof *s.v, by_path);\n', '  if (0) qsort(s.v, s.n, sizeof *s.v, by_path);\n', PAGE, 'FAIL discovery:'),
+  ('css-sort-case-blind', 'tools/cdpage.c', 'return strcmp(((const Sheet *)a)->rel, ((const Sheet *)b)->rel);', 'const char *x = ((const Sheet *)a)->rel, *y = ((const Sheet *)b)->rel;\n  while (*x && lower((uint8_t)*x) == lower((uint8_t)*y)) x++, y++;\n  return lower((uint8_t)*x) - lower((uint8_t)*y);', PAGE, 'FAIL discovery: the page holds'),
+  ('css-no-subfolders', 'tools/cdpage.c', '    if (S_ISDIR(st.st_mode) && !link) walk(dir, r, out);', '    if (S_ISDIR(st.st_mode) && !link) {}', PAGE, 'FAIL discovery: the page holds'),
+  ('css-dot-names-taken', 'tools/cdpage.c', "    if (e->d_name[0] == '.') continue;", '    if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;', PAGE, 'FAIL discovery: the page holds'),
+  ('css-suffix-anywhere', 'tools/cdpage.c', '  return n > 4 && !memcmp(name + n - 4, ".css", 4);', '  return n > 4 && strstr(name, ".css");', PAGE, 'FAIL discovery: the page holds'),
+  ('css-link-entered', 'tools/cdpage.c', '    if (S_ISDIR(st.st_mode) && !link) walk(dir, r, out);', '    if (S_ISDIR(st.st_mode)) walk(dir, r, out);', PAGE, 'FAIL discovery: the page holds'),
+  ('csslist-always-written', 'tools/cdpage.c', '  if (slurp(out, &old) && old.n == o.n && (!o.n || !memcmp(old.p, o.p, o.n))) return;', '  (void)old;', PAGE, 'FAIL the list file: a second run replaced it'),
+  ('csslist-hash-path', 'tools/cdpage.c', 'fnv1a(b.p, b.n)', 'fnv1a((const uint8_t *)s.v[f].rel, strlen(s.v[f].rel))', PAGE, 'FAIL the list file: an edit did not replace it'),
+  ('css-unescaped', 'tools/cdpage.c', '      if (p[i] == \'<\' && i + 1 < n && p[i + 1] == \'/\' && starts_ci(p + i + 2, n - i - 2, "style")) { bstr(o, "<\\\\/"); i++; continue; }\n', '', PAGE, 'FAIL the escape'),
+  ('css-escape-case', 'tools/cdpage.c', 'starts_ci(p + i + 2, n - i - 2, "style")) { bstr(o, "<\\\\/");', 'n - i - 2 >= 5 && !memcmp(p + i + 2, "style", 5)) { bstr(o, "<\\\\/");', PAGE, 'FAIL the escape'),
+  ('css-comment-open-ok', 'tools/cdpage.c', '  if (state == COMMENT) die(', '  if (0) die(', PAGE, 'FAIL refuses the stylesheet comment'),
+  ('css-string-newline-ok', 'tools/cdpage.c', "      if (c == '\\n') die(", '      if (0) die(', PAGE, 'FAIL refuses the stylesheet string'),
+  ('css-string-open-ok', 'tools/cdpage.c', '  if (state == DQ || state == SQ) die(', '  if (0) die(', PAGE, 'FAIL refuses the stylesheet string_end'),
+  ('css-url-open-ok', 'tools/cdpage.c', '  if (state == URL) die(', '  if (0) die(', PAGE, 'FAIL refuses the stylesheet url'),
+  ('css-brace-open-ok', 'tools/cdpage.c', '  if (depth) die(', '  if (0) die(', PAGE, 'FAIL refuses the stylesheet open'),
+  ('css-brace-stray-ok', 'tools/cdpage.c', '        if (!depth) die(', '        if (0) die(', PAGE, 'FAIL refuses the stylesheet close'),
+  ('css-import-ok', 'tools/cdpage.c', '      } else if (c == \'@\' && starts_ci(p + i + 1, n - i - 1, "import")) {', '      } else if (0) {', PAGE, 'FAIL refuses the stylesheet import'),
+  ('css-nul-ok', 'tools/cdpage.c', '    if (!c) die(', '    if (0) die(', PAGE, 'FAIL refuses the stylesheet nul'),
+  ('css-utf8-ok', 'tools/cdpage.c', '    if (!k) die(', '    if (!k) k = 1;\n    if (0) die(', PAGE, 'FAIL refuses the stylesheet utf8'),
+  ('css-unreadable-ok', 'tools/cdpage.c', '    if (!slurp(s->v[f].path, &b)) die(', '    if (!slurp(s->v[f].path, &b) && 0) die(', PAGE, 'FAIL refuses the stylesheet unreadable'),
+  ('css-no-comments', 'tools/cdpage.c', "      if (c == '/' && i + 1 < n && p[i + 1] == '*') { state = COMMENT;", '      if (0) { state = COMMENT;', PAGE, 'FAIL good.css is refused'),
+  ('css-mark-beside-ok', 'tools/cdpage.c', '      if (!alone(l, n, CSS)) die(', '      if (0) die(', PAGE, 'FAIL refuses css_beside'),
+  ('css-mark-twice-ok', 'tools/cdpage.c', '      if (++css_marks > 1) die(', '      if (++css_marks > 2) die(', PAGE, 'FAIL refuses css_twice'),
+  ('css-mark-outside-ok', 'tools/cdpage.c', '      if (!in_style) die(', '      if (0) die(', PAGE, 'FAIL refuses css_outside'),
+  ('css-mark-after-ok', 'tools/cdpage.c', '      if (marks) die("%s:%zu: /*CDOM_CSS*/ after', '      if (0) die("%s:%zu: /*CDOM_CSS*/ after', PAGE, 'FAIL refuses css_after'),
+  ('css-no-mark-ok', 'tools/cdpage.c', '  if (sheets.n && !css_marks) {', '  if (0) {', PAGE, 'FAIL refuses css_none'),
+  ('css-bom-kept', 'tools/cdpage.c', '    if (n >= 3 && p[0] == 0xef && p[1] == 0xbb && p[2] == 0xbf) p += 3, n -= 3;\n', '', PAGE, 'FAIL the edges:'),
+  ('css-no-last-newline', 'tools/cdpage.c', "    if (n && p[n - 1] != '\\n') bbyte(o, '\\n');\n    free(b.p);", '    free(b.p);', PAGE, 'FAIL the edges:'),
   # The starter (make new, tools/new.sh), built and opened from disk (tests/link/run.sh, tools/starter.mjs)
   ('new-not-centered', 'tools/new.sh', ' justify-content: center; }', ' }', LINK, 'FAIL "cdom" is centered'),
   ('new-separate', 'tools/new.sh', 'APP_PAGE := build/index.html\n', 'APP_PAGE := build/index.html\nAPP_WASM_SEPARATE := 1\n', LINK, "FAIL the starter's page does not start its bundled module"),
@@ -556,9 +587,10 @@ def copy_tree(dst):
   files = subprocess.run(['git', 'ls-files', '-z'], cwd=top, capture_output=True, text=True, check=True).stdout.split('\0')
   for f in filter(None, files):
     src = top / f
-    if not src.exists(): continue
+    if not src.exists() and not src.is_symlink(): continue
     (dst / f).parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst / f)
+    if src.is_symlink(): os.symlink(os.readlink(src), dst / f) # a link as git tracks it (tests/link/apps/css/src/linked)
+    else: shutil.copy2(src, dst / f)
   # A repo of its own, tracking what the real tree tracks, for the gates that read git ls-files (tools/edges.mjs).
   subprocess.run(['git', 'init', '-q'], cwd=dst, check=True)
   subprocess.run(['git', 'add', '-A'], cwd=dst, check=True)
