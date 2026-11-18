@@ -76,7 +76,7 @@ M = [
   ('str-tmp-done-missing', 'src/cdom.c', 'void cd_set_class(cd_id id, cd_str v) { walk_done(); j_set_class(id, v.v); tmp_done(); }', 'void cd_set_class(cd_id id, cd_str v) { walk_done(); j_set_class(id, v.v); }', UNIT, 'FAIL a cd_tmp used after another call'),
   ('str-cap-unchecked', 'src/cdom.c', '  if (tmp.n == CD_TMP_CAP) __builtin_trap();\n', '', UNIT, 'FAIL 32 cd_tmp are alive at once'),
   ('str-litq-always', 'src/cdom.h', '#define CD_LITQ(s) (__builtin_strncmp(CD_SPELL(s), "\\"", 1) == 0 && \\\n                    __builtin_constant_p(__builtin_strlen(CD_CHARP(s))))', '#define CD_LITQ(s) 1', UNIT, 'not a string literal'),
-  ('str-evaluated-twice', 'src/cdom.h', 'cd_tmpz(CD_CHARP(s))))\n/* temporary', 'cd_tmpz(({ const char *a_ = CD_CHARP(s); (void)CD_CHARP(s); a_; }))))\n/* temporary', UNIT, 'FAIL a string argument is evaluated once'),
+  ('str-evaluated-twice', 'src/cdom.h', 'CD_LIT_(s), cd_tmpz(CD_CHARP(s))))', 'CD_LIT_(s), cd_tmpz(({ const char *a_ = CD_CHARP(s); (void)CD_CHARP(s); a_; }))))', UNIT, 'FAIL a string argument is evaluated once'),
   ('str-macro-dropped', 'src/cdom.h', '#define cd_call_args(id, method, n, a) (cd_call_args)(id, cd_s(method), n, a)', '#define cd_call_args(id, method, n, a) (cd_call_args)(id, method, n, a)', UNIT, 'note: passing argument to parameter'),
   # the batched read and the window's end (docs/strings-design.md, cd_tmp_ahead)
   ('ahead-ignored', 'shim/cdom.js', '    if (aheadText !== null && q >= aheadAt && q + n <= aheadEnd) {', '    if (false) {', UNIT, 'FAIL checkAhead on: a byte changed inside a live range throws'),

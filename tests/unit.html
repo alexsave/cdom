@@ -356,6 +356,12 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef, che
         if (got !== want) r.push(`${len} bytes, kind ${kind}: ${JSON.stringify(got)} for ${JSON.stringify(want)}`);
       }
     }
+    // The edge of the fast path: 32 ASCII bytes skip TextDecoder and 33 use it (the text is the same either way).
+    const realDecode = TextDecoder.prototype.decode, used = [];
+    let calls = 0;
+    TextDecoder.prototype.decode = function (...a) { calls++; return realDecode.apply(this, a); };
+    try { for (const len of [32, 33]) { calls = 0; x.t_read(len, 0); used.push(calls); } } finally { TextDecoder.prototype.decode = realDecode; }
+    if (used.join() !== '0,1') r.push(`TextDecoder calls for 32 and 33 ASCII bytes: ${used}`);
     return (!r.length && n === 80) || (r.join('; ') || `${n} strings, not 80`); // 15 ASCII, 13 for each of the two-byte positions, the three-byte and the astral one
   });
   check('every string position takes a literal, a cd_tmp, a cd_tmpz and a chosen cd_s: tag, text, attribute, class, style, path, method, cd_v_str', () => {
