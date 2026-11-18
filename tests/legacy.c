@@ -58,6 +58,14 @@ void cd_on_event(const cd_event_rec *e) {
   }
 }
 
+/* Memory grows, then a new string crosses: the shim must see its views are stale. On wasm2js the old buffer
+ * keeps its length (a grow copies into a bigger ArrayBuffer), so the shim cannot test for length 0 there. */
+EXPORT("grow") void grow(void) {
+  uint8_t *big = cd_alloc(4u << 20);
+  big[0] = 1;
+  cd_set_text_node(ids[ECHO], cd_tmpz("read after the memory grew \xc3\xa9"));
+  cd_flush();
+}
 EXPORT("id") cd_id id_of(uint32_t k) { return k < NIDS ? ids[k] : CD_DETACHED; }
 /* The input's value read into cap bytes: encodeInto must stop before a character that does not fit
  * (cut: the bytes written), and cd_input_text says the whole length however much fits (whole). */

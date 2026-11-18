@@ -50,7 +50,8 @@ var cdom = (() => {
   let busy = 0;             // how many calls into C are on the stack
   let exports;              // the wasm module's exports
   let memory;
-  let buffer;               // memory.buffer when the views below were made
+  let buffer;               // memory.buffer when the views below were made (compared on the wasm2js tier only)
+  let copiedOnGrow = false; // the module is wasm2js, whose grow leaves the old buffer attached
   let u8;
   let u32;
   let i32;
@@ -105,6 +106,13 @@ var cdom = (() => {
     i32 = new Int32Array(buffer);
     f32 = new Float32Array(buffer);
     f64 = new Float64Array(buffer);
+  }
+  // True when the views are of a memory that has grown. WebAssembly detaches the old buffer on a grow,
+  // so a stale view has length 0 and the test reads no memory.buffer (a getter that costs a call).
+  // wasm2js has no detaching: it copies into a bigger ArrayBuffer and the old one keeps its length, so
+  // that tier compares the buffer, as the shim always did.
+  function stale() {
+    return u8.length === 0 || (copiedOnGrow && buffer !== memory.buffer);
   }
   // A view of length bytes of C memory at ptr, good until the memory grows.
   function bytes(ptr, length) {
@@ -195,7 +203,7 @@ var cdom = (() => {
       }
       return;
     }
-    if (buffer !== memory.buffer) {
+    if (stale()) {
       views();
     }
     const key = event.key;
@@ -270,7 +278,7 @@ var cdom = (() => {
 
   // C sends a batch of new strings.
   function strings(count, byteCount) {
-    if (buffer !== memory.buffer) {
+    if (stale()) {
       views();
     }
     decode(count, byteCount);
@@ -557,7 +565,7 @@ var cdom = (() => {
   }
   // The viewport into C memory: width, height, hidden, device pixel ratio times 100.
   function viewport(recordPtr) {
-    if (buffer !== memory.buffer) {
+    if (stale()) {
       views();
     }
     const record = recordPtr >> 2;
@@ -1119,7 +1127,7 @@ var cdom = (() => {
   // Sets the value at valuePtr on the path's last segment. A failure is reported, not thrown, so C
   // goes on.
   function set(id, path, valuePtr) {
-    if (buffer !== memory.buffer) {
+    if (stale()) {
       views();
     }
     const value = valueAt(valuePtr, 0)[0];
@@ -1139,7 +1147,7 @@ var cdom = (() => {
   // Calls the method at the path's last segment with count values from argsPtr; the result is kept
   // as CD_RESULT, a returned promise's rejection is swallowed and a thrown error is reported.
   function call(id, method, count, argsPtr) {
-    if (buffer !== memory.buffer) {
+    if (stale()) {
       views();
     }
     const args = [];
@@ -1228,6 +1236,7 @@ var cdom = (() => {
     };
     let instance;
     if (typeof url === "function") {
+      copiedOnGrow = true;
       instance = { exports: url(imports) };
     } else {
       const response = fetch(url);

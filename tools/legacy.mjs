@@ -51,6 +51,13 @@ try {
     ok(shim && app && app[0] < shim[1], `legacy.wasm.js requested before cdom.legacy.js had arrived: ${JSON.stringify({ shim, app })}`);
   }
 
+  // The memory grows and a new string is read right after it: the views are stale, on wasm and on wasm2js.
+  const before = await E('X.memory.buffer.byteLength');
+  await E('X.grow()');
+  ok(await E('X.memory.buffer.byteLength') > before, 'the memory grew');
+  ok(await E('document.getElementById("echo").textContent') === 'read after the memory grew \u00e9',
+    `a string read after the memory grew: ${await E('document.getElementById("echo").textContent')}`);
+
   // Pointer events: one press, a drag and a release on the pad, each delivered exactly once.
   let n = (await E('LOG')).length;
   await mouse('mouseMoved', 50, 50); await mouse('mousePressed', 50, 50, 1, 'left');

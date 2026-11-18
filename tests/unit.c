@@ -387,6 +387,39 @@ EXPORT("t_units") uint32_t t_units(void) {
   cd_flush();
   return CD_UNITS;
 }
+/* The shim's views go stale (length 0) when memory grows, and each import that reads or writes C memory
+ * must make them again first. cd_alloc of 8 MiB or more grows memory (the page checks that it did); which picks
+ * the import: 0 a batch of new strings, 1 the viewport record, 2 a property set, 3 a method call. */
+static cd_id grown_el;
+EXPORT("t_grow") int32_t t_grow(uint32_t which) {
+  if (!grown_el) {
+    cd_at(section("grow"), 0);
+    cd_open(L("div")); cd_name_open(grown_el = cd_id_new()); cd_close();
+    cd_flush();
+  }
+  /* The strings of the set and the call cross first: a batch of new strings would make the views fresh
+   * itself, and the set or the call then would not be what the test sees. */
+  cd_val a[2] = {cd_v_str(L("data-called")), cd_v_str(L("yes"))};
+  if (which == 2) cd_set_num(CD_BODY, L("tabIndex"), 1); /* on the body: the page reads grown_el */
+  if (which == 3) cd_call_args(CD_BODY, L("setAttribute"), 2, a);
+  cd_flush();
+  uint8_t *big = cd_alloc((8u << 20) * (which + 1)); /* kept, so each call grows memory again */
+  big[0] = 1;
+  int32_t r = 0;
+  if (which == 0) {
+    cd_set_attr(grown_el, L("data-grown"), cd_tmpz("read after the memory grew \xc3\xa9"));
+  } else if (which == 1) {
+    cd_viewport_rec v;
+    cd_viewport(&v);
+    r = v.w;
+  } else if (which == 2) {
+    cd_set_num(grown_el, L("tabIndex"), 7);
+  } else {
+    cd_call_args(grown_el, L("setAttribute"), 2, a);
+  }
+  cd_flush();
+  return r;
+}
 EXPORT("t_tmp_stale") void t_tmp_stale(void) {
   cd_str t = cd_tmpz("stale");
   cd_set_class(styled, L("x")); /* another op crosses first */

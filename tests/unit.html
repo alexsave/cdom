@@ -302,6 +302,18 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     }
     return r.length === 1 && r[0] || r.join('; ');
   });
+  check('after the memory grew, a string batch, the viewport, a set and a call each see fresh views', () => {
+    const r = [], el = () => $('#grow > div');
+    for (let which = 0; which < 4; which++) {
+      const pages = x.memory.buffer.byteLength;
+      const got = x.t_grow(which);
+      if (x.memory.buffer.byteLength <= pages) r.push(which + ': memory did not grow');
+      const want = [() => el().getAttribute('data-grown') === 'read after the memory grew é', () => got === innerWidth,
+        () => el().tabIndex === 7, () => el().getAttribute('data-called') === 'yes'][which];
+      if (!want()) r.push(which + ': stale');
+    }
+    return !r.length || r.join('; ');
+  });
   check('a transient used after another op crossed traps', () => {
     try { x.t_tmp_stale(); return 'no trap'; } catch (e) { return e instanceof WebAssembly.RuntimeError || String(e); }
   });
