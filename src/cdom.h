@@ -370,10 +370,10 @@ cd_id cd_get_id(cd_id id, cd_str path);
 /* Copy w*h RGBA pixels (bytes R,G,B,A; a uint32 0xAABBGGRR) from C memory into the canvas at 0,0 with
  * putImageData, read during the call. The canvas's width and height attributes are the app's to set. */
 void cd_blit(cd_id canvas, const void *rgba, uint32_t w, uint32_t h);
-/* 1 starts a loop that calls cd_on_frame before every frame, 0 stops it. It is cd_raf_request asked again
- * each frame under a token of cdom's own (CD_FRAMES_TOKEN, never passed to cd_on_raf), so starting twice
- * is one loop. */
-void cd_frames(int on);
+/* true starts a loop that calls cd_on_frame before every frame, false stops it. It is cd_raf_request
+ * asked again each frame under a token of cdom's own (CD_FRAMES_TOKEN, never passed to cd_on_raf), so
+ * starting twice is one loop. */
+void cd_frames(bool on);
 void cd_on_frame(double ms);         /* the app's hook (empty weak default); ms is the frame's timestamp */
 #define CD_FRAMES_TOKEN 0xffffffffu
 

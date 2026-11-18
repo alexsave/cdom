@@ -162,7 +162,7 @@ static int32_t to_fixed(double v, int32_t max_px) {
   return (int32_t)(v * ONE);
 }
 
-/* Runs before each paint while cd_frames(1) is on. It adds the time since the last frame, runs the whole steps
+/* Runs before each paint while cd_frames(true) is on. It adds the time since the last frame, runs the whole steps
  * that time holds, and draws. */
 void cd_on_frame(double ms) {
   if (!have_last) {
@@ -198,9 +198,9 @@ static void on_pause(const cd_event_rec *, void *) {
   playing = !playing;
   if (playing) {
     have_last = 0;
-    cd_frames(1);
+    cd_frames(true);
   } else {
-    cd_frames(0);
+    cd_frames(false);
   }
   cd_set_text_node(pause_text, playing ? "Pause" : "Play");
 }
@@ -250,5 +250,5 @@ void cd_main(void) {
   /* One burst in the middle, so the page is never empty when it opens. */
   burst(to_fixed(WORLD_W / 2.0, WORLD_W - 1), to_fixed(WORLD_H / 2.0, WORLD_H - 1));
   draw();
-  cd_frames(1);
+  cd_frames(true);
 }

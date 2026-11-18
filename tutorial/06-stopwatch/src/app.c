@@ -59,7 +59,7 @@ static void show(uint32_t cs) {
   shown_cs = cs;
 }
 
-/* cd_on_frame runs before each paint while cd_frames(1) is on. It reads the clock now, and writes only when
+/* cd_on_frame runs before each paint while cd_frames(true) is on. It reads the clock now, and writes only when
  * the hundredths changed. A hundredth lasts 10 ms, so a screen faster than 100 Hz has frames that land in the
  * hundredth already on the screen, and those skip the write. The frame's own timestamp is not used: the clock
  * is read at the moment of the draw. */
@@ -127,12 +127,12 @@ static void on_start_stop(const cd_event_rec *, void *) {
   if (running) {
     accumulated_ms = elapsed_ms(); /* still running here, so this adds the run that ends now */
     running = 0;
-    cd_frames(0);
+    cd_frames(false);
     show(hundredths(accumulated_ms)); /* the last draw, so the display ends on the stop time */
   } else {
     started_ms = cd_now();
     running = 1;
-    cd_frames(1);
+    cd_frames(true);
   }
   sync();
 }

@@ -165,7 +165,7 @@ void cd_main(void) {
   ...
   cd_on(canvas, CD_EV_POINTERDOWN, on_click, nullptr);
   cd_on(pause_btn, CD_EV_CLICK, on_pause, nullptr);
-  cd_frames(1);
+  cd_frames(true);
 }
 ```
 
@@ -184,6 +184,6 @@ void cd_main(void) {
   A 60 Hz screen and a 120 Hz screen run the same steps for the same time.
   The React version does the same arithmetic in JS, so the two agree only as far as the floating point does.
 - **No effect to clean up.** The React version starts the loop in `useEffect`, cancels it in the cleanup, and keys it on `playing`.
-  In cdom, `cd_frames(0)` sits in the handler that pauses, and nothing else has to stop the loop.
+  In cdom, `cd_frames(false)` sits in the handler that pauses, and nothing else has to stop the loop.
 - **Pause keeps the picture.** While the frames are off, the last blit stays on the canvas, so nothing has to redraw it.
   Play clears `have_last`, so the first frame after it takes no time, and the paused time is not played back as a jump.

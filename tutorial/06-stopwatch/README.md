@@ -109,7 +109,7 @@ static double elapsed_ms(void) {
   return accumulated_ms + (running ? cd_now() - started_ms : 0.0);
 }
 
-/* Runs before each paint while cd_frames(1) is on. It writes only when the hundredths changed. */
+/* Runs before each paint while cd_frames(true) is on. It writes only when the hundredths changed. */
 void cd_on_frame(double) {
   uint32_t cs = hundredths(elapsed_ms());
   if (cs != shown_cs) show(cs);
@@ -119,12 +119,12 @@ static void on_start_stop(const cd_event_rec *, void *) {
   if (running) {
     accumulated_ms = elapsed_ms();
     running = 0;
-    cd_frames(0);                         /* no frame is asked for after this: nothing to clean up later */
+    cd_frames(false);                         /* no frame is asked for after this: nothing to clean up later */
     show(hundredths(accumulated_ms));
   } else {
     started_ms = cd_now();
     running = 1;
-    cd_frames(1);
+    cd_frames(true);
   }
   sync();
 }
@@ -140,7 +140,7 @@ static void on_reset(const cd_event_rec *, void *) {
 ## What to notice
 
 - **No effect to clean up.** The React version starts a frame loop in `useEffect` and cancels it in the returned cleanup, keyed on `running`.
-  In cdom, `cd_frames(0)` sits in the handler where `running` changes to 0.
+  In cdom, `cd_frames(false)` sits in the handler where `running` changes to 0.
   There is no cleanup function to forget, because the loop is stopped at the one place that stops the watch.
 - **The time comes from the clock.** Adding 10 ms per tick drifts, and a background tab that slows its timers makes the watch fall behind.
   Here `cd_now()` is read at each draw, so a late frame shows the right time, at any frame rate.

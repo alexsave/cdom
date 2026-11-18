@@ -48,20 +48,20 @@ EXPORT("blit_grown") uint32_t blit_grown(uint32_t salt) {
 EXPORT("frames_for") void frames_for(uint32_t n) {
   frames = 0;
   stop_after = n;
-  cd_frames(1);
-  cd_frames(1); /* starting twice must not double the loop */
+  cd_frames(true);
+  cd_frames(true); /* starting twice must not double the loop */
   cd_flush();
 }
 
 void cd_on_frame(double ms) {
   frames++;
   frame_seen(frames, ms);
-  if (frames >= stop_after) cd_frames(0);
+  if (frames >= stop_after) cd_frames(false);
 }
 
 EXPORT("frame_count") uint32_t frame_count(void) { return frames; }
 /* A stop from outside a frame (an event, a timer) while the next frame is already asked for: that frame must
  * not reach cd_on_frame. */
-EXPORT("frames_stop") void frames_stop(void) { cd_frames(0); cd_flush(); }
+EXPORT("frames_stop") void frames_stop(void) { cd_frames(false); cd_flush(); }
 EXPORT("call_ping") void call_ping(void) { cd_call(target, "ping"); cd_flush(); }
 EXPORT("target_id") uint32_t target_id(void) { return target; }

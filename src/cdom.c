@@ -672,13 +672,13 @@ __attribute__((weak)) void cd_on_raf(uint32_t, double) { }
 __attribute__((weak)) void cd_on_frame(double) { }
 /* cd_frames' loop: frames_on is what the app asked for, frames_asked that a frame is requested, so a
  * second start (or a stop and start inside one frame) never requests a second one. */
-static int frames_on, frames_asked;
-void cd_frames(int on) {
-  frames_on = on != 0;
-  if (frames_on && !frames_asked) { frames_asked = 1; j_raf(CD_FRAMES_TOKEN); }
+static bool frames_on, frames_asked;
+void cd_frames(bool on) {
+  frames_on = on;
+  if (frames_on && !frames_asked) { frames_asked = true; j_raf(CD_FRAMES_TOKEN); }
 }
 static void frame(double t) {
-  frames_asked = 0;
+  frames_asked = false;
   if (!frames_on) return;
   cd_on_frame(t);
   cd_frames(frames_on);
