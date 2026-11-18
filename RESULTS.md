@@ -289,6 +289,20 @@ Firefox is not installed on this Mac.
 Safari is installed, but driving it needs "Allow remote automation" turned on in its settings, and it was already running as Alex's own process, so it was not touched.
 No Firefox or Safari numbers exist yet.
 
+## Strings without interning (2026-11-17)
+
+cdom no longer interns: a string literal moves out of the module into the page's table at build time (`tools/cdlits`, `tools/page.awk`), a pointer into read-only data is read once and kept by address, and any other string is read from C memory by the op that uses it, with `cd_tmp_ahead` for a burst of them.
+The section below is the history it replaces.
+The measurements are in three files:
+
+- [docs/strings-bench.md](docs/strings-bench.md) (branch `strings-bench`): the designs compared in Chrome before any was built, with predictions, and the five changes that went into the design.
+- [docs/strings-plain-c.md](docs/strings-plain-c.md): the options for literals a macro cannot see (ternaries, helpers, `const` tables); option B, a pointer into read-only data as its own id, is the one built.
+- [docs/strings-results.md](docs/strings-results.md): the built change against `tutorial` (e35056c), prediction by prediction.
+
+In short, against A and A2 built from `tutorial`: every lesson's page is smaller (hello 8,942 to 8,810 bytes of brotli, todo 15,119 to 14,370) and its module 1,578 to 3,699 bytes smaller; a page with 2,000 literal sites is 20,573 to 15,831 bytes and its `cd_main` 3.2 to 1.8 ms; the keyed entry starts with 3 pages of wasm memory instead of 8 and touches 116 KB instead of 408 after five create-and-clear cycles; run-clear memory is 0.85 to 0.79 MB.
+The jfb totals are within 3% of A except swap (1.055 and 1.075 in two passes); create 10k script is 19.9 against 20.4 ms, and create 1k 2.2 against 2.6.
+The shim grew 742 bytes of brotli (6,672), and a literal lookup costs 12.8 ns where the prototype measured 6.8, because the bigger `str` is no longer inlined (docs/strings-results.md has the profiles).
+
 ## Interned strings against per-op strings
 
 Interning wins on partial update (16.0 ms against 20.4 ms, and 16.7 against 19.6 in pass 1) and ties elsewhere.

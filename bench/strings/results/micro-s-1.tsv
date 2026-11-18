@@ -1,39 +1,38 @@
 # Chrome/157.0.8103.79
 mode	test	kind	len	ns	q1	q3	n
-resolve	lit8			12.58	12.41	12.99	131072
-resolve	ternary8			12.31	12.27	12.35	131072
-resolve	helper8			13.16	13.15	13.19	131072
-resolve	table8			13.33	13.28	13.76	131072
-resolve	tmp	ascii	1	20.91	20.84	21.07	524288
-resolve	tmp	ascii	9	46.14	46.04	46.46	262144
-resolve	ahead	ascii	9	28.74	28.66	30.24	524288
-resolve	tmp	ascii	12	51.29	51.25	51.46	262144
-resolve	ahead	ascii	12	29.99	29.98	30.04	524288
-resolve	tmp	ascii	13	49.59	49.51	49.78	262144
-resolve	ahead	ascii	13	22.39	22.22	22.50	524288
-resolve	tmp	ascii	30	88.31	87.89	89.19	131072
-resolve	ahead	ascii	30	24.06	23.92	24.28	524288
-resolve	tmp	ascii	64	132.71	131.99	133.74	131072
-#ERROR mode=resolve&test=tmp&len=200&kind=ascii RangeError: offset is out of bounds
-    at Uint8Array.set (<anonymous>)
-    at fill (http://127.0.0.1:53072/bench/strings/micro-s.html?mode=resolve&test=tmp&len=200&kind=ascii:27:8)
-    at run (http://127.0.0.1:53072/bench/strings/micro-s.html?mode=resolve&test=tmp&len=200&kind=ascii:41:44)
-resolve	tmp	utf8	9	153.35	152.74	154.04	65536
-resolve	ahead	utf8	9	64.43	63.84	67.46	262144
-resolve	tmp	utf8	12	162.43	161.74	162.58	65536
-resolve	ahead	utf8	12	77.59	76.83	77.90	131072
-resolve	tmp	utf8	13	167.39	167.08	167.92	65536
-resolve	ahead	utf8	13	80.15	79.42	80.91	131072
-resolve	tmp	utf8	30	206.68	205.61	207.60	65536
-resolve	ahead	utf8	30	144.23	143.62	147.40	131072
-resolve	tmp	utf8	64	272.22	269.62	273.74	32768
-#ERROR mode=resolve&test=tmp&len=200&kind=utf8 RangeError: offset is out of bounds
-    at Uint8Array.set (<anonymous>)
-    at fill (http://127.0.0.1:53072/bench/strings/micro-s.html?mode=resolve&test=tmp&len=200&kind=utf8:27:8)
-    at run (http://127.0.0.1:53072/bench/strings/micro-s.html?mode=resolve&test=tmp&len=200&kind=utf8:41:44)
-dom	lit8			188.75	119.48	192.41	4096
-dom	ternary8			119.93	116.27	127.56	4096
-dom	tmp	ascii	9	168.15	165.41	194.40	16384
-dom	ahead	ascii	9	158.69	154.11	178.99	32768
-dom	tmp	ascii	30	240.48	233.61	262.30	32768
-dom	ahead	ascii	30	148.32	146.18	168.91	32768
+resolve	lit8			12.88	12.69	13.14	131072
+resolve	ternary8			12.57	12.55	12.62	131072
+resolve	helper8			13.41	13.35	13.57	131072
+resolve	table8			14.06	14.02	14.14	131072
+resolve	tmp	ascii	1	23.03	22.82	24.05	524288
+resolve	tmp	ascii	9	50.33	49.67	53.35	262144
+resolve	ahead	ascii	9	31.55	31.46	31.67	524288
+resolve	tmp	ascii	12	58.52	58.12	60.08	262144
+resolve	ahead	ascii	12	33.84	33.74	33.92	524288
+resolve	tmp	ascii	13	58.31	58.06	59.76	262144
+resolve	ahead	ascii	13	23.37	23.26	23.45	524288
+resolve	tmp	ascii	30	96.47	96.13	96.70	131072
+resolve	ahead	ascii	30	24.80	24.77	24.89	524288
+resolve	tmp	ascii	64	136.76	136.45	138.21	131072
+resolve	tmp	ascii	200	152.51	152.05	153.81	65536
+resolve	tmp	utf8	9	165.41	165.02	165.94	65536
+resolve	ahead	utf8	9	68.84	68.34	69.18	262144
+resolve	tmp	utf8	12	173.19	172.20	174.87	65536
+resolve	ahead	utf8	12	81.60	80.99	81.83	131072
+resolve	tmp	utf8	13	172.50	172.20	173.34	65536
+resolve	ahead	utf8	13	85.18	84.46	85.68	131072
+resolve	tmp	utf8	30	216.14	215.91	217.44	65536
+resolve	ahead	utf8	30	145.65	143.85	146.87	131072
+resolve	tmp	utf8	64	272.60	271.91	274.51	65536
+resolve	tmp	utf8	200	625.00	621.64	628.36	16384
+resolve/split	lit8			8.02	7.96	8.08	262144
+resolve/split	ternary8			12.48	12.46	12.51	131072
+resolve/split	helper8			13.57	13.52	13.63	131072
+resolve/split	tmp	ascii	9	49.80	49.46	50.22	262144
+resolve/split	tmp	ascii	30	98.08	97.69	98.65	131072
+dom	lit8			138.40	129.09	199.58	4096
+dom	ternary8			122.53	121.61	140.53	4096
+dom	tmp	ascii	9	187.07	180.05	196.99	32768
+dom	ahead	ascii	9	170.29	167.54	207.37	32768
+dom	tmp	ascii	30	245.51	229.95	248.87	32768
+dom	ahead	ascii	30	159.76	155.49	169.53	32768
