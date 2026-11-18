@@ -493,11 +493,12 @@ M = [
   ('cdpage-no-css', 'tools/cdpage.c', '      bput(o, css.p, css.n);\n      continue;\n', '      continue;\n', TUT, 'FAIL 01-hello: styled before the app started'),
   ('lesson-builds-style', 'tutorial/01-hello/src/app.c', 'void cd_main(void) {\n', 'void cd_main(void) {\n  cd_open("style"); cd_text("body { margin: 0; }"); cd_close();\n', TUT, 'FAIL 01-hello: the app builds no <style>'),
   # The starter (make new, tools/new.sh), built and opened from disk (tests/link/run.sh, tools/starter.mjs)
-  ('new-not-centered', 'tools/new.sh', ' justify-content: center; }', ' }', LINK, 'FAIL "cdom" is centered'),
+  ('new-not-centered', 'tools/new.sh', '  justify-content: center;\n', '', LINK, 'FAIL "cdom" is centered'),
   ('new-separate', 'tools/new.sh', 'APP_PAGE := build/index.html\n', 'APP_PAGE := build/index.html\nAPP_WASM_SEPARATE := 1\n', LINK, "FAIL the starter's page does not start its bundled module"),
+  ('new-css-outside-src', 'tools/new.sh', 'cat > "$dir/src/app.css" <<', 'cat > "$dir/app.css" <<', LINK, 'FAIL make new wrote other files than'),  # the stylesheet beside the Makefile is not bundled
   ('new-into-full-dir', 'tools/new.sh', 'if [ -e "$dir" ] && [ -n "$(ls -A "$dir")" ]; then', 'if false; then', LINK, 'FAIL make new wrote into a directory that is not empty'),
   ('new-relative-to-cdom', 'tools/new.sh', '    dir="$from/$dir" ;;', '    ;;', LINK, 'FAIL make new wrote other files than'),
-  ('new-hint-off-center', 'tools/new.sh', '.hint { position: fixed; left: 0; right: 0;', '.hint { position: fixed; width: 100%;', LINK, 'FAIL the hint "edit src/app.c" is on screen, centered'),
+  ('new-hint-off-center', 'tools/new.sh', '.hint {\n  position: fixed;\n  left: 0;\n  right: 0;\n', '.hint {\n  position: fixed;\n  width: 100%;\n', LINK, 'FAIL the hint "edit src/app.c" is on screen, centered'),
   ('new-cdom-fixed', 'tools/new.sh', 'CDOM ?= $cdom\n', 'CDOM := $cdom\n', LINK, 'FAIL the starter copied elsewhere ignored CDOM from the environment'),
   ('flags-hardcoded', 'tests/build.sh', 'W=(-Wall -Wextra -Werror)', 'W=(-Wall -Wextra -Werror -mbulk-memory)', LINK, 'FAIL tests/build.sh:15 hardcodes -mbulk-memory'),
   ('flags-hardcoded-link', 'tests/link/run.sh', 'C=(-O2 "${CDOM_CFLAGS[@]}"', 'C=(--target=wasm32 -O2 "${CDOM_CFLAGS[@]}"', LINK, 'FAIL tests/link/run.sh:'),

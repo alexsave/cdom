@@ -336,7 +336,7 @@ co="$out/apps/css-own"; rm -rf "$co"
 if ! ak "$apps/css" OUT="$co" PAGE=css.html 2> "$co.log"; then echo "FAIL the css app with css.html does not build:"; cat "$co.log"; fail=1
 else node "$here/css.mjs" "$co/index.html" || fail=1; fi
 # The starter (make new, tools/new.sh), against rot: generated into a fresh directory (relative to where
-# make was run, as a user types it), it is three files; make builds build/index.html, one file with the
+# make was run, as a user types it), it is four files; make builds build/index.html, one file with the
 # shim and the bundled module and no URL of a module, and a second make finds it up to date; opened from
 # disk in headless Chrome it shows "cdom" centered (tools/starter.mjs). make new refuses a directory
 # that is not empty.
@@ -344,8 +344,8 @@ st="$out/starter"
 rm -rf "$st"; mkdir -p "$st"
 if ! (cd "$st" && make -s --no-print-directory -C "$here/../.." new DIR=app > "$st/new.log" 2>&1); then
   echo "FAIL make new did not write the starter:"; cat "$st/new.log"; fail=1
-elif [ "$(cd "$st/app" && find . -type f | sort | tr '\n' ' ')" != "./.gitignore ./Makefile ./src/app.c " ]; then
-  echo "FAIL make new wrote other files than Makefile, src/app.c and .gitignore: $(cd "$st/app" && find . -type f | sort | tr '\n' ' ')"; fail=1
+elif [ "$(cd "$st/app" && find . -type f | sort | tr '\n' ' ')" != "./.gitignore ./Makefile ./src/app.c ./src/app.css " ]; then
+  echo "FAIL make new wrote other files than Makefile, src/app.c, src/app.css and .gitignore: $(cd "$st/app" && find . -type f | sort | tr '\n' ' ')"; fail=1
 elif ! nice -n 10 make -s --no-print-directory -C "$st/app" > "$st/make.log" 2>&1; then
   echo "FAIL the starter does not build:"; cat "$st/make.log"; fail=1
 elif ! grep -qF "$(head -1 "$src/../shim/cdom.min.js")" "$st/app/build/index.html"; then echo "FAIL the starter's page has no shim"; fail=1
@@ -353,7 +353,9 @@ elif ! grep -qxF "cdom.start(\"data:application/wasm;base64,$(base64 < "$st/app/
   echo "FAIL the starter's page does not start its bundled module"; fail=1
 elif grep -qE "\.wasm['\"\`]" "$st/app/build/index.html"; then echo "FAIL the starter's page names a .wasm by URL: $(grep -oE ".{20}\.wasm['\"\`]" "$st/app/build/index.html" | head -1)"; fail=1
 elif ! make -q -C "$st/app"; then echo "FAIL a second make in the starter builds again"; fail=1
-else echo "ok   make new writes Makefile, src/app.c and .gitignore; make builds one page with the shim and the module bundled, then finds it up to date"; fi
+elif ! grep -qxF '  justify-content: center;' "$st/app/build/index.html" || grep -q 'cd_open("style")' "$st/app/src/app.c"; then
+  echo "FAIL the starter's page does not hold src/app.css, or its app.c still builds a <style>"; fail=1
+else echo "ok   make new writes Makefile, src/app.c, src/app.css and .gitignore; make builds one page with the stylesheet, the shim and the module bundled, then finds it up to date"; fi
 node "$here/../../tools/starter.mjs" "$st/app/build/index.html" || fail=1
 if make -s --no-print-directory -C "$here/../.." new DIR="$st/app" > "$st/again.log" 2>&1; then echo "FAIL make new wrote into a directory that is not empty"; fail=1
 elif ! grep -q "app is not empty" "$st/again.log"; then echo "FAIL make new refused a directory for another reason:"; cat "$st/again.log"; fail=1

@@ -11,12 +11,12 @@ On macOS, with Homebrew (on Debian or Ubuntu, `apt install clang lld` and set `W
 ```sh
 brew install llvm lld                      # a clang that targets wasm32, and wasm-ld
 git clone https://github.com/alexsave/cdom
-make -C cdom new DIR=$PWD/myapp            # writes myapp/Makefile, myapp/src/app.c, myapp/.gitignore
+make -C cdom new DIR=$PWD/myapp            # writes myapp/Makefile, myapp/src/app.c, myapp/src/app.css, myapp/.gitignore
 make -C myapp                              # builds myapp/build/index.html
 open myapp/build/index.html                # one file, opens from disk: it says "cdom" in the middle of the page
 ```
 
-Edit `myapp/src/app.c` and run `make -C myapp` again.
+Edit `myapp/src/app.c` (the app) or `myapp/src/app.css` (its look) and run `make -C myapp` again.
 [`tutorial/`](tutorial/) has seven small apps, each a lesson, with the same app in React beside each one.
 "Starting an app", below, has the details, and `src/cdom.h` is the API.
 
@@ -171,9 +171,9 @@ make -C path/to/cdom new DIR=path/to/myapp
 make -C path/to/myapp
 ```
 
-- `make new` (`tools/new.sh`) writes three files into `DIR`, which must be new or empty: a `Makefile` (`CDOM ?=`, `APP_WASM := build/app.wasm`, `APP_SRC := src/app.c`, `APP_PAGE := build/index.html`, the include of `cdom.mk`, and `all: $(APP_PAGE)`), `src/app.c` (about ten lines that put "cdom" in the middle of the page), and a `.gitignore` of `build/`.
+- `make new` (`tools/new.sh`) writes four files into `DIR`, which must be new or empty: a `Makefile` (`CDOM ?=`, `APP_WASM := build/app.wasm`, `APP_SRC := src/app.c`, `APP_PAGE := build/index.html`, the include of `cdom.mk`, and `all: $(APP_PAGE)`), `src/app.c` (a few lines that put "cdom" in the middle of the page), `src/app.css` (its look, which the build writes into the page's `<head>`), and a `.gitignore` of `build/`.
 - `make` in `DIR` builds `build/index.html`: one file, with the shim and the module inside it, that opens from disk (double-click it; no server).
-- Edit `src/app.c` and run `make` again; the page says so at its foot.
+- Edit `src/app.c` or `src/app.css` and run `make` again; the page says so at its foot.
 - The generator writes nothing `cdom.mk` could own: the page is cdom.mk's default page and every rule is cdom.mk's, so updating cdom updates the app's build.
 - `CDOM ?=` defaults to this checkout's absolute path, and `make CDOM=...` or a `CDOM` environment variable overrides it, for another clone, CI or a moved folder: `make new` runs no git, and works offline at any commit.
   To vendor cdom with the app instead (`make new` prints this), run `git init && git submodule add https://github.com/alexsave/cdom cdom` in `DIR` and set `CDOM ?= cdom` (and clone with `--recurse-submodules`).
@@ -237,7 +237,7 @@ From sources to one page, with make, clang and a host C compiler, and no Node:
 
 ```mermaid
 flowchart TB
-  new["make -C path/to/cdom new DIR=myapp<br>(tools/new.sh: once, offline)<br>writes myapp/Makefile, myapp/src/app.c, myapp/.gitignore"]
+  new["make -C path/to/cdom new DIR=myapp<br>(tools/new.sh: once, offline)<br>writes myapp/Makefile, myapp/src/app.c, myapp/src/app.css, myapp/.gitignore"]
   mk["make -C myapp<br>(its Makefile includes cdom.mk)"]
   new --> mk
   mk --> appsrc["APP_SRC (src/app.c)"]
@@ -253,6 +253,8 @@ flowchart TB
   lits -->|"a script before the shim"| cdpage
   wasm -->|"base64, at /*CDOM_WASM*/"| cdpage["tools/cdpage (CDOM_PAGE_TOOL, built with HOST_CC)<br>writes the page"]
   page["shim/page.html or APP_PAGE_SRC"] --> cdpage
+  mk --> css["src/**/*.css, every stylesheet under src/"]
+  css -->|"at /*CDOM_CSS*/, in a #lt;style#gt;"| cdpage
   shim["shim/cdom.min.js"] -->|"at /*CDOM_SHIM*/"| cdpage
   cdpage --> out["APP_PAGE (build/index.html): one file that opens from file://,<br>starting the module bundled in it:<br>cdom.start(#quot;data:application/wasm;base64,...#quot;, #quot;app#quot;)"]
   wasm -.->|"APP_WASM_SEPARATE := 1 skips base64:<br>/*CDOM_WASM*/ becomes the URL #quot;app.wasm#quot; (APP_WASM_URL),<br>served beside the page"| out
@@ -270,9 +272,20 @@ flowchart TB
 - They turn on `.SECONDEXPANSION` for the rest of the app's Makefile, so a `$$` in a later rule's prerequisites is expanded twice.
 - An unknown `APP_MODULES` name, or a source that is not there, stops make when it builds `APP_WASM`, naming it; cdom.mk never takes the default goal from the app's first rule.
 - The APP_PAGE rule writes the page from cdom's default page (`shim/page.html`), or from the app's own, `APP_PAGE_SRC`.
-  The default page is a contract, stated in cdom.mk's header: a doctype, the charset and viewport metas, a `<title>` of `APP_TITLE` (the base name of `APP_WASM` unless set), `<div id="app"></div>` as the mount, and one `<script>` that holds the shim and `cdom.start(<the module>, "app")`.
+  The default page is a contract, stated in cdom.mk's header: a doctype, the charset and viewport metas, a `<title>` of `APP_TITLE` (the base name of `APP_WASM` unless set), a `<style>` that holds the app's stylesheets (empty when it has none), `<div id="app"></div>` as the mount, and one `<script>` that holds the shim and `cdom.start(<the module>, "app")`.
   An app that needs its own `<head>`, `env` or `options` brings its own page.
 - The page markers are API: the page has a `<script>` with a line that holds only `/*CDOM_SHIM*/`, which becomes `shim/cdom.min.js`, and `/*CDOM_WASM*/` stands for `cdom.start`'s first argument.
+  The `<script ...>` tag before `/*CDOM_SHIM*/` must be whole on one line, since the build writes it again after the string table's script.
+- Every file whose name ends in `.css` under the app's `src/` directory, in any subfolder, is written into the page's `<style>`, in byte order of its path, so `00-base.css` comes before `10-layout.css`, and that before `theme/dark.css`; a file or folder whose name starts with a dot is skipped, and nothing else is.
+  No variable names them, and none turns this off.
+  They go at a line that holds only `/*CDOM_CSS*/`, inside a `<style>` and before the `/*CDOM_SHIM*/` line; the default page has that `<style>` in its `<head>`, so an app on it only adds a file.
+  An app's own page with no such line fails the build while `src/` holds a `.css` file, so a page that loads a stylesheet of its own with a `<link>` keeps that file outside `src/` (`static/app.css`, say).
+  The files are written as they are, but for four things: `</style` is escaped, a comment that fills its lines is left out with them (one beside a rule is kept), a byte order mark is dropped, and a file that does not end in a newline gains one.
+  Each file must be whole by itself: a comment, string or `url(` that never ends, a `{` never closed or a `}` never opened, an `@import`, a NUL or bytes that are not UTF-8 stop the build, naming the file and the line.
+  A relative `url()` resolves against the page, not the `.css` file, since the sheet is inline.
+  The sheet is the page's HTML, before every script, so it styles the first paint in every tier, the IE 9 and 10 fallback too.
+  The page is made again when a `.css` file is added, removed, renamed or edited, and for nothing else: `build/index.html.csslist` lists what went in, in order, with a hash of each file.
+  Inline styles (`cd_attr("style", ...)`, `cd_set_style`) and a `<style>` built from C still work.
 - By default the module is bundled: `/*CDOM_WASM*/` becomes `"data:application/wasm;base64,..."` of `APP_WASM`, so an app is one html file.
   It costs about 30% more bytes after compression (a hello world 9.5 to 12.3 KB brotli, amgi 29.9 to 39.2 KB), and in exchange the page is one request, the page and its module are never from two builds, and it opens from disk (`file://`).
   A bundled page under a Content-Security-Policy needs `data:` in `connect-src`, besides `'wasm-unsafe-eval'`; what needs a real origin (IndexedDB, so the store module, in some browsers) needs the page served over HTTP.
