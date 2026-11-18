@@ -1,0 +1,3 @@
+benchmark	metric	st-a	st-a2	st-s	noise (a2/a)	st-s/a
+05_swap1k	total	18.7	18.1	18.0	0.968	0.963
+05_swap1k	script	0.10	0.10	0.30	1.000	3.000
