@@ -19,6 +19,8 @@ FRESH = ['node', 'tools/legacyfresh.mjs']
 ALLOC = ['node', 'tools/alloc.mjs']
 PAGE = ['tests/page/run.sh']
 TUT = ['tutorial/run.sh']
+FILE = ['node', 'tools/file.mjs']
+LEG = ['node', 'tools/legacy.mjs']
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -636,6 +638,41 @@ M = [
   ('regbuf-all-kept', 'src/cdom.c', '  cd_free(r->ids);\n  cd_free(r->fns);\n  r->ids = 0;\n  r->fns = 0;\n  r->n = r->cap = r->nfns = r->fcap = 0;', '  r->n = 0;', UNIT, 'FAIL a region taken away frees'),
   ('regbuf-fns-kept', 'src/cdom.c', '  cd_free(r->ids);\n  cd_free(r->fns);\n  r->ids = 0;\n  r->fns = 0;\n  r->n = r->cap = r->nfns = r->fcap = 0;', '  cd_free(r->ids);\n  r->ids = 0;\n  r->n = r->cap = 0;', UNIT, 'FAIL a region taken away frees'),
   ('cleanup-stop-traps', 'src/cdom.c', 'void cd_timer_stop(uint32_t token) {\n', 'void cd_timer_stop(uint32_t token) {\n  if (releasing) __builtin_trap();\n', UNIT, 'FAIL t_region_handoff'),  # the handoff case stops B's timer from a cleanup first; the stop case after it pins the header's words
+  # picked files (src/cdom_file.c, tools/file.mjs; the old tiers in tools/legacy.mjs) and the encoder's quality
+  ('file-no-unsupported', 'shim/cdom.js', '    if (typeof FileReader === "undefined") {', '    if (false) {', LEG, 'FAIL IE 9'),
+  ('fit-no-unsupported', 'shim/cdom.js', '    if (typeof createImageBitmap === "undefined") {', '    if (false) {', LEG, 'FAIL IE 10'),
+  ('file-nofile-sync', 'shim/cdom.js', '      setTimeout(() => answer(1, 0, 0));', '      answer(1, 0, 0);', FILE, 'FAIL every answer comes from the event loop'),
+  ('file-toobig-sync', 'shim/cdom.js', '      setTimeout(() => answer(2, 0, Math.min(file.size, 4294967295)));', '      answer(2, 0, Math.min(file.size, 4294967295));', FILE, 'FAIL every answer comes from the event loop'),
+  ('file-toobig-read', 'shim/cdom.js', '      setTimeout(() => answer(2, 0, Math.min(file.size, 4294967295)));\n      return;', '      const peek = new FileReader();\n      peek.onload = () => answer(2, 0, file.size);\n      peek.readAsArrayBuffer(file);\n      return;', FILE, 'FAIL a file over max_bytes is never read'),
+  ('file-toobig-no-size', 'shim/cdom.js', 'answer(2, 0, Math.min(file.size, 4294967295))', 'answer(2, 0, 0)', FILE, 'FAIL TOO_BIG'),
+  ('file-max-exclusive', 'shim/cdom.js', '    if (file.size > maxBytes >>> 0) {', '    if (file.size >= maxBytes >>> 0) {', FILE, 'FAIL OK: the file'),
+  ('file-error-status', 'shim/cdom.js', '    reader.onerror = () => answer(3, 0, 0);', '    reader.onerror = () => answer(1, 0, 0);', FILE, 'FAIL UNREADABLE: a picked file'),
+  ('file-index-ignored', 'shim/cdom.js', '    return (files && files[index >>> 0]) || null;', '    return (files && files[0]) || null;', FILE, 'FAIL NO_FILE: nothing at the index'),
+  ('file-no-room-unchecked', 'shim/cdom.js', '    if (!ptr) {\n      answer(5, 0, data.length);', '    if (false) {\n      answer(5, 0, data.length);', FILE, 'FAIL NO_ROOM'),
+  ('file-no-room-no-size', 'shim/cdom.js', '      answer(5, 0, data.length);', '      answer(5, 0, 0);', FILE, 'FAIL NO_ROOM'),
+  ('file-bytes-kept', 'src/cdom_file.c', '  else if (cd_cb_take(token, &fn, &ctx)) ((cd_file_fn)fn)(ctx, status, p, len);\n  cd_flush();\n  cd_free((void *)p);', '  else if (cd_cb_take(token, &fn, &ctx)) ((cd_file_fn)fn)(ctx, status, p, len);\n  cd_flush();', FILE, 'FAIL nothing holds a file'),
+  ('file-room-traps', 'src/cdom_file.c', 'return cd_alloc_try(n ? n : 1); }', 'return cd_alloc(n ? n : 1); }', FILE, 'FAIL'),
+  ('file-no-flush', 'src/cdom_file.c', '((cd_file_fn)fn)(ctx, status, p, len);\n  cd_flush();', '((cd_file_fn)fn)(ctx, status, p, len);', FILE, 'FAIL every answer\'s export flushes'),
+  ('fit-no-flush', 'src/cdom_file.c', '((cd_fit_fn)fn)(ctx, status, p, len, w, h, type);\n  cd_flush();', '((cd_fit_fn)fn)(ctx, status, p, len, w, h, type);', FILE, 'FAIL every answer\'s export flushes'),
+  ('file-token-hook', 'src/cdom_file.c', '  if (token < CD_TOKEN_CDOM) cd_on_file(token, status, p, len);', '  if (0) cd_on_file(token, status, p, len);', FILE, 'FAIL cd_file_read with a token'),
+  ('file-token-unchecked', 'src/cdom_file.c', '  if (token >= CD_TOKEN_CDOM) __builtin_trap();\n  j_file_read', '  j_file_read', FILE, 'FAIL traps'),
+  ('fit-quality-unchecked', 'src/cdom_file.c', '|| quality > 100) __builtin_trap();\n}', ') __builtin_trap();\n}', FILE, 'FAIL traps'),
+  ('fit-no-orientation', 'shim/cdom.js', '{ imageOrientation: "from-image" }', '{ imageOrientation: "none" }', FILE, 'FAIL a JPEG with EXIF orientation 6'),
+  ('fit-upscales', 'shim/cdom.js', '      if (w > maxWidth || h > maxHeight) {', '      if (true) {', FILE, 'FAIL cd_file_fit: small.png'),
+  ('fit-long-side', 'shim/cdom.js', '        if (w * maxHeight >= h * maxWidth) {', '        if (w >= h) {', FILE, 'FAIL cd_file_fit: land.png into 200 x 50'),
+  ('fit-floor', 'shim/cdom.js', '          height = Math.max(1, Math.round(h * maxWidth / w));', '          height = Math.max(1, Math.floor(h * maxWidth / w));', FILE, 'FAIL cd_file_fit: land.png into 100 x 100'),
+  ('fit-zero-high', 'shim/cdom.js', '          height = Math.max(1, Math.round(h * maxWidth / w));', '          height = Math.round(h * maxWidth / w);', FILE, 'FAIL cd_file_fit: thin.png'),
+  ('fit-answer-source-size', 'shim/cdom.js', 'answer(0, ptr, length, width, height, kind)', 'answer(0, ptr, length, w, h, kind)', FILE, 'FAIL cd_file_fit: land.png'),
+  ('fit-no-fallback', 'shim/cdom.js', 'canvas.toBlob((blob) => blob && blob.type !== mime', 'canvas.toBlob((blob) => false', FILE, 'FAIL a browser that cannot encode WebP'),
+  ('fit-fallback-type', 'shim/cdom.js', '(jpeg) => encoded(jpeg, 0)', '(jpeg) => encoded(jpeg, type)', FILE, 'FAIL a browser that cannot encode WebP'),
+  ('fit-quality-ignored', 'shim/cdom.js', '        : encoded(blob, type), mime, quality / 100);', '        : encoded(blob, type), mime, 0.92);', FILE, 'FAIL JPEG out at its quality'),
+  ('fit-not-image-status', 'shim/cdom.js', '      reader.onload = () => answer(6, 0, 0, 0, 0, 0);', '      reader.onload = () => answer(3, 0, 0, 0, 0, 0);', FILE, 'FAIL NOT_IMAGE'),
+  ('fit-unreadable-status', 'shim/cdom.js', '      reader.onerror = () => answer(3, 0, 0, 0, 0, 0);', '      reader.onerror = () => answer(6, 0, 0, 0, 0, 0);', FILE, 'FAIL UNREADABLE: a file gone'),
+  ('fit-empty-probe', 'shim/cdom.js', 'file.size ? file.slice(0, 1) : file', 'file.slice(0, 1)', FILE, 'FAIL UNREADABLE: a file gone'),
+  ('fit-bytes-kept', 'src/cdom_file.c', '((cd_fit_fn)fn)(ctx, status, p, len, w, h, type);\n  cd_flush();\n  cd_free((void *)p);', '((cd_fit_fn)fn)(ctx, status, p, len, w, h, type);\n  cd_flush();', ALLOC, 'FAIL cd_file_fitted frees'),
+  ('fit-token-hook', 'src/cdom_file.c', '  if (token < CD_TOKEN_CDOM) cd_on_file_fit(', '  if (0) cd_on_file_fit(', FILE, 'FAIL cd_file_fit with a token'),
+  ('encode-quality-ignored', 'shim/cdom.js', 'str(mime), quality / 100);', 'str(mime), 0.92);', UNIT, "FAIL cd_encode_image's quality"),
+  ('encode-quality-unchecked', 'src/cdom.c', '|| y + h > H || quality > 100) __builtin_trap();', '|| y + h > H) __builtin_trap();', UNIT, "FAIL cd_encode_image's quality"),
 ]
 
 def build_and_run(root, cmd, minify=False):

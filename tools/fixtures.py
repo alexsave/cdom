@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Writes the picked-file fixtures of tests/file.c (tools/file.mjs) into tests/fixtures, the same bytes on every
 run: no randomness and no clock (PIL writes no time into a PNG or a JPEG). Run it again only to change them.
-- land.png 300 x 200, port.png 200 x 300, small.png 50 x 30, odd.png 333 x 101: the fit's cases. Each is red on
+- land.png 300 x 200, port.png 200 x 300, small.png 50 x 30, odd.png 333 x 101, thin.png 300 x 2: the fit's
+  cases. Each is red on
   its left half and blue on its right, so a picture turned or mirrored shows.
 - rot6.jpg: stored 60 x 40, red on the top half and blue on the bottom, with EXIF orientation 6 (turn 90 degrees
   clockwise to show): upright it is 40 x 60, blue on the left and red on the right, as a phone's portrait photo.
@@ -20,7 +21,7 @@ def halves(w, h, split_x):
   else: im.paste(BLUE, (0, h // 2, w, h))
   return im
 
-for name, w, h in [('land', 300, 200), ('port', 200, 300), ('small', 50, 30), ('odd', 333, 101)]:
+for name, w, h in [('land', 300, 200), ('port', 200, 300), ('small', 50, 30), ('odd', 333, 101), ('thin', 300, 2)]:
   halves(w, h, True).save(out / f'{name}.png', optimize=True)
 exif = Image.Exif()
 exif[0x0112] = 6

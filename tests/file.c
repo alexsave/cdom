@@ -39,7 +39,14 @@ typedef struct {
 } record;
 #define RECORDS 32
 static record rec[RECORDS];
+/* Each answer finds no walk pending (the export before it flushed) and leaves one (cd_sel then cd_up), for the
+ * export to flush: stale counts answers that found one. */
+static uint32_t stale;
+EXPORT("stale") uint32_t stale_n(void) { return stale + (cd_pending() != 0); }
 static void land(uint32_t k, uint32_t status, const uint8_t *p, uint32_t len, uint32_t w, uint32_t h, uint32_t type) {
+  stale += cd_pending() != 0;
+  cd_sel(plain);
+  cd_up();
   record *r = &rec[k];
   r->status = (int32_t)status;
   r->calls++;

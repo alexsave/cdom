@@ -20,8 +20,8 @@ for (let i = 0; i < BIG; i++) bigBytes[i] = (i * 131 + 7) & 255;
 fs.writeFileSync(big, bigBytes);
 fs.writeFileSync(gone, 'soon gone');
 fs.copyFileSync(path.join(fixtures, 'land.png'), goneImage);
-const FILES = ['data.bin', 'land.png', 'port.png', 'small.png', 'odd.png', 'rot6.jpg', 'notimage.png'].map((f) => path.join(fixtures, f)).concat([big, gone, goneImage]);
-const [DATA, LAND, PORT, SMALL, ODD, ROT6, NOTIMAGE, BIGF, GONE, GONE_IMAGE] = FILES.keys();
+const FILES = ['data.bin', 'land.png', 'port.png', 'small.png', 'odd.png', 'rot6.jpg', 'notimage.png', 'thin.png'].map((f) => path.join(fixtures, f)).concat([big, gone, goneImage]);
+const [DATA, LAND, PORT, SMALL, ODD, ROT6, NOTIMAGE, THIN, BIGF, GONE, GONE_IMAGE] = FILES.keys();
 const S = { OK: 0, NO_FILE: 1, TOO_BIG: 2, UNREADABLE: 3, UNSUPPORTED: 4, NO_ROOM: 5, NOT_IMAGE: 6 };
 const T = { JPEG: 0, WEBP: 1, PNG: 2 };
 
@@ -113,7 +113,7 @@ try {
   // cd_file_fit: the box's sizes, landscape and portrait, one that fits already (never scaled up), odd sizes,
   // a box of another shape; PNG out, so the colours are exact.
   const fits = [[LAND, 100, 100, 100, 67], [PORT, 100, 100, 67, 100], [SMALL, 100, 100, 50, 30], [ODD, 100, 100, 100, 30],
-    [LAND, 200, 50, 75, 50], [ODD, 333, 101, 333, 101], [ODD, 101, 7, 23, 7]];
+    [LAND, 200, 50, 75, 50], [ODD, 333, 101, 333, 101], [ODD, 101, 7, 23, 7], [THIN, 20, 20, 20, 1]];
   await E(fits.map(([i, mw, mh], k) => `X.fit(${i}, ${mw}, ${mh}, ${T.PNG}, 0, ${10 + k})`).join(';'));
   ok(await answered(fits.map((_, k) => 10 + k)), 'every fit answered');
   for (const [k, [i, mw, mh, w, h]] of fits.entries()) {
@@ -154,6 +154,7 @@ try {
   ok(m25.status === S.NO_FILE, 'NO_FILE: nothing at the index', JSON.stringify(m25));
   ok(t26.status === S.OK && t26.w === 30 && t26.h === 20 && t26.type === T.JPEG, 'cd_file_fit with a token answers through cd_on_file_fit', JSON.stringify(t26));
   // A stale fit is dropped.
+  ok(await E('X.stale()') === 0, 'every answer\'s export flushes after the callback (no answer found a walk the one before left)', String(await E('X.stale()')));
   await E(`X.stale_fits(${LAND}, ${PORT}, 27, 28)`);
   ok(await answered([28]), 'the current fit answered');
   await sleep(200);
