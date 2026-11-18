@@ -20,7 +20,6 @@ static void fill(uint8_t *p, uint32_t w, uint32_t h, uint32_t salt) {
 }
 
 void cd_main(void) {
-  cd_at(CD_MOUNT, 0);
   cd_open("canvas"); cd_attr("width", "7"); cd_attr("height", "5");
   canvas = cd_id_new(); cd_name_el(canvas); cd_close();
   cd_open("div"); cd_attr("id", "target");

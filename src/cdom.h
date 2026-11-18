@@ -41,6 +41,7 @@ typedef uint32_t cd_id;  /* node id; 0 is the mount element */
 #define CD_EVENT 4u    /* the DOM event being delivered; valid inside cd_on_event or a cd_on handler only */
 #define CD_RESULT 5u   /* what the last cd_call_args returned (undefined if it threw) */
 #define CD_FIRST_ID 6u
+#define CD_APPEND 0u /* cd_at's before: no child, so append at the end */
 #define CD_DETACHED 0xffffffffu
 
 /* Event types. The numbers are stable: new ones are only appended, and there are at most 64.
@@ -157,7 +158,7 @@ uint32_t cd_ids_live(void);          /* ids handed out and not freed (the reserv
 uint32_t cd_ids_high(void);          /* the highest id ever handed out: the size of the shim's node table */
 
 /* ---- building: nodes go to (parent, before) when their root closes ---- */
-void cd_at(cd_id parent, cd_id before); /* before 0 = append; parent CD_DETACHED = keep off-DOM */
+void cd_at(cd_id parent, cd_id before); /* before CD_APPEND = append; an app starts at (CD_MOUNT, CD_APPEND); parent CD_DETACHED = keep off-DOM */
 /* An <svg>, and everything opened inside it, is made in the SVG namespace (C keeps the depth). */
 void cd_open(cd_str tag);
 void cd_close(void);

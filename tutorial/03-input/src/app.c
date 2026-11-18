@@ -67,7 +67,6 @@ static void style(void) {
 }
 
 void cd_main(void) {
-  cd_at(CD_MOUNT, 0);
   style();
 
   cd_open("main"); cd_class("form");

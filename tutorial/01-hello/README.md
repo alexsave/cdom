@@ -31,7 +31,6 @@ export default function App() {
 [`src/app.c`](src/app.c) builds the same tree:
 
 ```c
-cd_at(CD_MOUNT, 0);                       /* build into <div id="app">, appending */
 cd_open("main"); cd_class("card");
 cd_open("h1"); cd_text("Hello, cdom"); cd_close();
 cd_open("ul");
@@ -54,6 +53,8 @@ cd_close();                               /* the whole tree enters the page here
   A string the compiler keeps in read-only data (`FRUITS[i]` from a `const` table, a literal inside a ternary or passed through a helper) stays in the module and is read from C memory once, the first time it is used.
   Anything else, a buffer or a name typed by the user, is read from C memory every time a call uses it, so it is never stale.
   `cd_tmp(p, len)` is the same for bytes that have a length and no terminator, such as the result of `cd_fmt`.
+- `cd_main` starts building at the end of the mount (`<div id="app">`).
+  `cd_at(parent, before)` is only for building somewhere else; `CD_APPEND` is its `before` for "at the end".
 - The tree is built off the page and enters it in one step, when its root (`main`) closes.
 - The CSS is a `<style>` element the app builds like any other, so the lesson is one C file.
   A larger app brings its own page instead (`APP_PAGE_SRC`, see the main README).

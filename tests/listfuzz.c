@@ -72,7 +72,6 @@ static void next_keys(void) {
 void cd_on_event(const cd_event_rec *e) { (void)e; }
 
 void cd_main(void) {
-  cd_at(CD_MOUNT, 0);
   cd_open("ul");
   list.parent = cd_id_new();
   list.owns_parent = 1;
@@ -97,7 +96,7 @@ __attribute__((export_name("run_fuzz"))) void run_fuzz(uint32_t seed, uint32_t r
 __attribute__((export_name("run_fuzz_end"))) void run_fuzz_end(uint32_t seed, uint32_t rounds) {
   rng = seed | 1;
   nkeys = 0;
-  cd_at(CD_MOUNT, 0);
+  cd_at(CD_MOUNT, CD_APPEND);
   cd_open("ul");
   cd_class("tail");
   cd_name_open(tlist.parent = cd_id_new());
@@ -116,7 +115,7 @@ __attribute__((export_name("run_fuzz_end"))) void run_fuzz_end(uint32_t seed, ui
  * TextDecoder call sliced by UTF-16 length). The page reads them back. */
 static const char *STRS[] = {"plain", "h\xc3\xa9llo", "\xe6\x97\xa5\xe6\x9c\xac", "\xf0\x9f\x98\x80x", ""};
 __attribute__((export_name("run_strings"))) void run_strings(uint32_t big) {
-  cd_at(CD_MOUNT, 0);
+  cd_at(CD_MOUNT, CD_APPEND);
   cd_open("p");
   for (uint32_t r = 0; r < (big ? 20 : 1); r++)
     for (uint32_t i = 0; i < 5; i++) {
@@ -150,7 +149,7 @@ __attribute__((export_name("run_freeruns"))) void run_freeruns(uint32_t seed, ui
       if (ids[k] + 1 == ids[i]) { y = ids[k]; z = ids[i]; } else if (ids[i] + 1 == ids[k]) { y = ids[i]; z = ids[k]; }
   }
   w = cd_id_new();
-  cd_at(CD_MOUNT, 0);
+  cd_at(CD_MOUNT, CD_APPEND);
   cd_open("li"); cd_name_el(z); cd_close();
   cd_flush();
   cd_id_free(w);         /* op 0: a run (w, 1) */
@@ -160,7 +159,7 @@ __attribute__((export_name("run_freeruns"))) void run_freeruns(uint32_t seed, ui
   cd_set_class(z, "x");
   cd_flush();
   for (int j = 0; j < 2; j++) {
-    cd_at(CD_MOUNT, 0);
+    cd_at(CD_MOUNT, CD_APPEND);
     cd_open("ul"); L[j].parent = cd_id_new(); L[j].owns_parent = 1; cd_name_el(L[j].parent); cd_close();
   }
   for (uint32_t round = 0; round < rounds; round++) {
@@ -187,7 +186,7 @@ __attribute__((export_name("run_freeruns"))) void run_freeruns(uint32_t seed, ui
  * checks where each class landed. */
 __attribute__((export_name("run_walks"))) void run_walks(void) {
   cd_id root = cd_id_new();
-  cd_at(CD_MOUNT, 0);
+  cd_at(CD_MOUNT, CD_APPEND);
   cd_open("div"); cd_name_el(root);
   for (int d = 0; d < 20; d++) cd_open("div");
   cd_text("deep");

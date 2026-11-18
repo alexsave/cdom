@@ -20,8 +20,8 @@ static void style(void) {
   cd_close();
 }
 
+/* cd_main starts building at the end of the mount (<div id="app">); cd_at is for building elsewhere. */
 void cd_main(void) {
-  cd_at(CD_MOUNT, 0); /* build into the mount (<div id="app">), appending */
   style();
 
   cd_open("main"); cd_class("card");

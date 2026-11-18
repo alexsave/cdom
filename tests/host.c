@@ -28,7 +28,6 @@ static cd_id el(const char *tag, const char *idattr, const char *style) {
 static const char *GIF = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
 void cd_main(void) {
-  cd_at(CD_MOUNT, 0);
   ids[BOX] = el("div", "box", "position:fixed;left:10px;top:10px;width:100px;height:100px;background:#888");
   cd_close();
   ids[OTHER] = el("div", "other", "position:fixed;left:300px;top:10px;width:100px;height:100px;background:#aaa");
@@ -219,7 +218,7 @@ EXPORT("c_play") void c_play(void) {
 /* focus() dispatches focus events while the batch is being applied. The p before it must be created once,
  * and the handler's set must still land. */
 EXPORT("c_focus") void c_focus(void) {
-  cd_at(CD_MOUNT, 0);
+  cd_at(CD_MOUNT, CD_APPEND);
   cd_open("p"); cd_class("mark"); cd_close();
   cd_call_args(ids[TEXT], "focus", 0, 0);
   cd_set_str(ids[TEXT], "dataset.after", "yes");

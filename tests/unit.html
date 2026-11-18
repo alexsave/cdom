@@ -303,6 +303,10 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef, che
     const got = [...$('#clone').childNodes].map((n) => n.outerHTML).join('');
     return got === '<p><b>one</b><b>two</b></p><b>two</b>' || got;
   });
+  check('an app that calls no cd_at builds at the end of the mount', () => {
+    const el = document.getElementById('default-at'), mount = document.getElementById('m');
+    return (el && el.parentNode === mount && mount.firstChild === el) || 'not the mount\'s first child';
+  });
   check('a template slot set from a cd_tmp shows that text in every batch, a literal after it too', () => {
     for (let i = 0; i < 6; i++) x.t_tpl_tmp(i);
     const got = [...$('#tpltmp').children].map((n) => n.textContent).join();

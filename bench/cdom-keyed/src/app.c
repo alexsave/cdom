@@ -238,7 +238,7 @@ static void button(const char *id, const char *label, uint32_t k) {
 void cd_main(void) {
   rng = cd_seed | 1;
 #if CDOM_TEMPLATES
-  cd_at(CD_DETACHED, 0);
+  cd_at(CD_DETACHED, CD_APPEND);
   cd_open("tr");
   cd_open("td"); cd_class("col-md-1"); cd_text(" "); cd_slot(0); cd_close();
   cd_open("td"); cd_class("col-md-4"); cd_open("a"); cd_text(" "); cd_slot(1); cd_close(); cd_close();
@@ -250,7 +250,7 @@ void cd_main(void) {
   cd_tpl_save(T_ROW);
 #endif
 
-  cd_at(CD_MOUNT, 0);
+  cd_at(CD_MOUNT, CD_APPEND);
   cd_open("div"); cd_class("container");
   cd_open("div"); cd_class("jumbotron");
   cd_open("div"); cd_class("row");

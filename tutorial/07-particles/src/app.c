@@ -231,7 +231,6 @@ static void style(void) {
 void cd_main(void) {
   /* The seed comes before anything draws, so the first burst is the same for the same seed. */
   rng = cd_seed | 1; /* xorshift32 stays at 0 from 0 */
-  cd_at(CD_MOUNT, 0);
   style();
 
   cd_open("main"); cd_class("sky");

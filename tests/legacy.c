@@ -23,7 +23,6 @@ static cd_id el(const char *tag, const char *idattr, const char *style) {
 }
 
 void cd_main(void) {
-  cd_at(CD_MOUNT, 0);
   ids[PAD] = el("div", "pad", "position:fixed;left:10px;top:10px;width:200px;height:100px;background:#888");
   cd_close();
   ids[TEXT] = el("input", "text", "position:fixed;left:10px;top:150px;width:200px"); cd_close();

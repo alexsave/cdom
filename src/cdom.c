@@ -696,6 +696,7 @@ EXPORT("cd_lits") uint32_t cd_lits(void) { return cd_lits_stamp; }
 uint32_t cd_seed;
 EXPORT("cd_start") void cd_start(uint32_t seed) {
   cd_seed = seed;
+  cd_at(CD_MOUNT, CD_APPEND); /* so an app starts building at the end of its mount, and calls cd_at only to build somewhere else */
   cd_main();
   cd_flush();
 }

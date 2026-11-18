@@ -69,6 +69,6 @@ EXPORT("dom_reset") void dom_reset(void) {
   cd_flush();
 }
 void cd_main(void) {
-  cd_at(CD_DETACHED, 0);
+  cd_at(CD_DETACHED, CD_APPEND);
   cd_open("div");
 }

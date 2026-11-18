@@ -100,6 +100,7 @@ M = [
   ('ro-path-by-slot-only', 'shim/cdom.js', '    if (path < litBase || path >= litEnd) {', '    if (path < 0) {', HOST, 'FAIL two read-only paths a word apart'),
   ('str-none-is-one', 'src/cdom.h', '#define CD_NONE ((cd_str){0})', '#define CD_NONE ((cd_str){1})', HOST, 'FAIL'),
   ('str-tpl-runtime-kept', 'src/cdom.c', '  if (s.v >> 31) { /* a runtime string: the same text can be new bytes, so it is never skipped as unchanged */\n    if (t >= CD_TPLS || k >= CD_SLOTS) __builtin_trap();\n    slot_kind[t][k] = 0;\n  } else if', '  if (s.v >> 31) {\n    if (t >= CD_TPLS || k >= CD_SLOTS) __builtin_trap();\n  } else if', UNIT, 'FAIL a template slot set from a cd_tmp'),
+  ('at-default-missing', 'src/cdom.c', '  cd_at(CD_MOUNT, CD_APPEND); /* so an app starts building at the end of its mount, and calls cd_at only to build somewhere else */\n', '', UNIT, 'FAIL an app that calls no cd_at'),
   ('str-tpl-same-text', 'src/cdom.c', 'if (slot_kind[t][k] == kind && slot_val[t][k] == v) return 1;', 'if (slot_kind[t][k] == kind) return 1;', UNIT, 'FAIL clone inside'),
   ('fmt-zeros', 'src/cdom.c', '  while (lo < dec && t[lo] == \'0\') lo++;', '', UNIT, 'FAIL cd_fmt'),
   ('fmt-round', 'src/cdom.c', '(v < 0 ? -0.5 : 0.5)', '0.5', UNIT, 'FAIL cd_fmt'),

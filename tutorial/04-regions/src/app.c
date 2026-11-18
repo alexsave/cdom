@@ -17,7 +17,7 @@ static uint32_t selected; /* 0 Overview, 1 Usage, 2 Notes */
 /* The section is built into the disclosure, which holds only the button before it. A node appended there
  * lands right after the button, so the button is never moved and no placeholder node is needed. */
 static void build_details(void) {
-  cd_at(disclosure, 0);
+  cd_at(disclosure, CD_APPEND);
   cd_open("section"); cd_attr("id", "details"); cd_class("details");
   /* cd_name_open names the section as the region's root: hiding the region removes it in one step. */
   cd_name_open(details_region.root);
@@ -43,7 +43,7 @@ static void on_toggle(const cd_event_rec *e, void *ctx) {
 /* One panel per tab. Any id made while a region builds (cd_id_new, cd_open_id) is recorded and freed with
  * the region; these nodes need none, so they have none. */
 static void build_panel(uint32_t k) {
-  cd_at(panel, 0);
+  cd_at(panel, CD_APPEND);
   if (k == 0) {
     cd_open("h2"); cd_text("Overview"); cd_close();
     cd_open("p"); cd_text("Each tab builds its own panel. Only the selected tab's content is in the page."); cd_close();
@@ -117,7 +117,6 @@ static void style(void) {
 }
 
 void cd_main(void) {
-  cd_at(CD_MOUNT, 0);
   style();
 
   cd_open("main"); cd_class("page");

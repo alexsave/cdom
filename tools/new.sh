@@ -50,7 +50,6 @@ cat > "$dir/src/app.c" <<'EOF'
 
 /* The app: "cdom", centered in the page. Edit this file and run make again. */
 void cd_main(void) {
-  cd_at(CD_MOUNT, 0);
   cd_open("style");
   cd_text(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
           ".page { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }"

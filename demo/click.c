@@ -48,7 +48,6 @@ void cd_main(void) {
   rng = cd_seed | 1; /* xorshift32 stays at 0 from 0 */
   make_click();
   cd_audio_load(1, click_wav, sizeof click_wav);
-  cd_at(CD_MOUNT, 0);
   cd_open("p"); cd_text("tap for sound"); cd_name_text(hint = cd_id_new()); cd_close();
   cd_open("button");
   cd_attr("style", "font: 24px sans-serif; padding: 24px 48px; touch-action: manipulation;");
