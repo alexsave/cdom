@@ -22,7 +22,7 @@ wasm() { # wasm <opt> <out.wasm> <sources and extra flags...>: a cdom module, as
 # shim/cdom.min.js, which apps inline, must be what cdom.js makes now (tools/minshim.mjs).
 node "$here/../tools/minshim.mjs" check
 wasm -O2 "$here/out/listfuzz.wasm" "$here/listfuzz.c" "$here/../src/cdom.c" "$here/../src/mini.c"
-wasm -O2 "$here/out/unit.wasm" "$here/unit.c" "$here/../src/cdom.c" "$here/../src/cdom_net.c" "$here/../src/cdom_store.c" "$here/../src/cdom_audio.c" "$here/../src/cdom_random.c" "$here/../src/cdom_url.c" "$here/../src/cdom_locale.c" "$here/../src/cdom_share.c" "$here/../src/cdom_fonts.c" "$here/../src/cdom_ui.c" "$here/../src/mini.c"
+wasm -O2 "$here/out/unit.wasm" "$here/unit.c" "$here/../src/cdom.c" "$here/../src/cdom_net.c" "$here/../src/cdom_store.c" "$here/../src/cdom_audio.c" "$here/../src/cdom_random.c" "$here/../src/cdom_url.c" "$here/../src/cdom_locale.c" "$here/../src/cdom_share.c" "$here/../src/cdom_fonts.c" "$here/../src/cdom_ui.c" "$here/../src/cdom_file.c" "$here/../src/mini.c"
 wasm -Oz "$here/out/click.wasm" -Wl,--strip-all "$here/../demo/click.c" "$here/../src/cdom.c" "$here/../src/cdom_audio.c" "$here/../src/mini.c"
 # Every page inlines the unminified shim at its /*CDOM_SHIM*/ line (tools/cdpage), so the tests run the
 # readable shim/cdom.js that tools/mutate.py mutates.
@@ -31,7 +31,7 @@ shim="$here/../shim/cdom.js"
 page() { "$CDOM_PAGE_TOOL" --page "$1" --out "$2" --shim "$shim" --lits "$3.lits"; }
 page "$here/unit.html" "$here/out/unit.html" "$here/out/unit.wasm"
 # The same cases in cd_state's check build (-DCD_STATE_CHECK), whose trap cases unit.mjs opens on unit_check.html.
-wasm -O2 "$here/out/unit_check.wasm" -DCD_STATE_CHECK "$here/unit.c" "$here/../src/cdom.c" "$here/../src/cdom_net.c" "$here/../src/cdom_store.c" "$here/../src/cdom_audio.c" "$here/../src/cdom_random.c" "$here/../src/cdom_url.c" "$here/../src/cdom_locale.c" "$here/../src/cdom_share.c" "$here/../src/cdom_fonts.c" "$here/../src/cdom_ui.c" "$here/../src/mini.c"
+wasm -O2 "$here/out/unit_check.wasm" -DCD_STATE_CHECK "$here/unit.c" "$here/../src/cdom.c" "$here/../src/cdom_net.c" "$here/../src/cdom_store.c" "$here/../src/cdom_audio.c" "$here/../src/cdom_random.c" "$here/../src/cdom_url.c" "$here/../src/cdom_locale.c" "$here/../src/cdom_share.c" "$here/../src/cdom_fonts.c" "$here/../src/cdom_ui.c" "$here/../src/cdom_file.c" "$here/../src/mini.c"
 page "$here/unit.html" "$here/out/unit_check.html" "$here/out/unit_check.wasm"
 page "$here/../demo/click.html" "$here/out/click.html" "$here/out/click.wasm"
 # The fuzz page and the legacy page go through the boot, so LEGACY=1 runs them on the wasm2js build.
@@ -46,6 +46,11 @@ wasm -O2 "$here/out/alloc_own.wasm" -DOWN_ALLOC "$here/alloc_try.c" "$here/../sr
 wasm -O2 "$here/out/alloc_mem.wasm" "$here/alloc_mem.c" "$here/../src/cdom.c" "$here/../src/cdom_net.c" "$here/../src/cdom_store.c" "$here/../src/cdom_url.c" "$here/../src/mini.c"
 wasm -O2 "$here/out/canvas.wasm" "$here/canvas.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 page "$here/canvas.html" "$here/out/canvas.html" "$here/out/canvas.wasm"
+# cd_file_read and cd_file_fit (tools/file.mjs), and the same with the heap capped at 12.5 MB, for NO_ROOM.
+wasm -O2 "$here/out/file.wasm" "$here/file.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/mini.c"
+page "$here/file.html" "$here/out/file.html" "$here/out/file.wasm"
+wasm -O2 "$here/out/file_cap.wasm" -DCDOM_HEAP_PAGES_MAX=200 "$here/file.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/mini.c"
+page "$here/file.html" "$here/out/file_cap.html" "$here/out/file_cap.wasm"
 wasm -O2 "$here/out/host.wasm" "$here/host.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 page "$here/host.html" "$here/out/host.html" "$here/out/host.wasm"
 wasm -O2 "$here/out/legacy.wasm" "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/mini.c"

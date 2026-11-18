@@ -230,13 +230,17 @@ void cd_set_style(cd_id id, cd_str prop, cd_str value);
 void cd_set_style_num(cd_id id, cd_str prop, double v, uint32_t unit);
 /* Pixels to an image file: px is w * h * n bytes in C memory, n = 4 (RGBA) or 3 (RGB, opaque: a
  * third less room for a picture with no alpha), read during the call (reuse it after). The shim
- * encodes them as mime ("image/png", or "image/jpeg" at quality 0.92) off the
- * call; the file's bytes arrive in cd_on_encoded(token, p, len), valid until it returns. */
-void cd_encode_image(const uint8_t *px, uint32_t w, uint32_t h, uint32_t n, cd_str mime, uint32_t token);
+ * encodes them as mime ("image/png", "image/jpeg", "image/webp") off the call (canvas.toBlob); the
+ * file's bytes arrive in cd_on_encoded(token, p, len), valid until it returns. quality is 0 to 100
+ * (traps over 100), toBlob's quality times 100: for the lossy types (JPEG, WebP) higher keeps more
+ * detail in more bytes (80 to 92 is the usual range for photos); PNG is lossless and ignores it. A
+ * browser that cannot encode mime gives PNG instead (Safari has no WebP encoder). */
+void cd_encode_image(const uint8_t *px, uint32_t w, uint32_t h, uint32_t n, cd_str mime, uint32_t quality,
+                     uint32_t token);
 /* The same, the pixels placed at (x, y) in an image of W x H whose rest is transparent (black in a
  * JPEG): for a picture of which only a part is ever shown, but whose size the page lays out by. */
 void cd_encode_image_in(const uint8_t *px, uint32_t w, uint32_t h, uint32_t n, uint32_t W, uint32_t H, uint32_t x,
-                        uint32_t y, cd_str mime, uint32_t token);
+                        uint32_t y, cd_str mime, uint32_t quality, uint32_t token);
 void cd_on_encoded(uint32_t token, const uint8_t *p, uint32_t len); /* the app's hook (empty weak default) */
 /* An image file's bytes (len of them at p, read during the call) as a CSS image: style property
  * prop of node id becomes url(blob:...) once the image has decoded, so no frame paints the
@@ -694,9 +698,9 @@ void cd_list_forget(cd_list *L, const cd_list_fns *f);
 #define cd_set_class(id, value) (cd_set_class)(id, cd_s(value))
 #define cd_set_style(id, prop, value) (cd_set_style)(id, cd_s(prop), cd_s(value))
 #define cd_set_style_num(id, prop, v, unit) (cd_set_style_num)(id, cd_s(prop), v, unit)
-#define cd_encode_image(px, w, h, n, mime, token) (cd_encode_image)(px, w, h, n, cd_s(mime), token)
-#define cd_encode_image_in(px, w, h, n, W, H, x, y, mime, token) \
-  (cd_encode_image_in)(px, w, h, n, W, H, x, y, cd_s(mime), token)
+#define cd_encode_image(px, w, h, n, mime, quality, token) (cd_encode_image)(px, w, h, n, cd_s(mime), quality, token)
+#define cd_encode_image_in(px, w, h, n, W, H, x, y, mime, quality, token) \
+  (cd_encode_image_in)(px, w, h, n, W, H, x, y, cd_s(mime), quality, token)
 #define cd_set_image_bytes(id, prop, p, len, mime, token) \
   (cd_set_image_bytes)(id, cd_s(prop), p, len, cd_s(mime), token)
 #define cd_v_str(s) (cd_v_str)(cd_s(s))

@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><title>file</title></head><body><div id="m"></div>
+<script>
+/*CDOM_SHIM*/
+</script>
+<script>
+// tools/file.mjs drives this page. Every FileReader read is logged (the size of what it was asked to read),
+// so a file answered TOO_BIG can be seen never to have been read. The module is the page's own name:
+// file.html runs file.wasm, file_cap.html file_cap.wasm (each page has its module's string table).
+window.READS = [];
+const readAs = FileReader.prototype.readAsArrayBuffer;
+FileReader.prototype.readAsArrayBuffer = function (blob) { READS.push(blob.size); return readAs.call(this, blob); };
+cdom.start(location.pathname.replace(/\.html$/, '.wasm'), 'm').then((x) => { window.X = x; window.READY = true; });
+</script></body></html>
