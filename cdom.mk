@@ -211,8 +211,10 @@ cdom_mk_toolchain = printf 'void f(void) {}\n' | $(WASM_CC) --target=wasm32 -nos
 # late), the rule still applies and make stops at the missing source, naming it. APP_WASM is named too:
 # a bundled page is built from it through the two pattern rules, and make deletes such an intermediate
 # file once the page is made unless a rule names it. So are cdom's two tools, CDOM_LITS and CDOM_PAGE_TOOL,
-# made by pattern rules as well: as intermediate files, make would remove the one it had to build once the
-# build is done, and not build it again while what was made from it is newer, so the page's stylesheet
-# list, which the tool brings up to date as make starts, would go stale. Nothing builds this target, and
-# one that starts with a dot is never the default goal.
-.cdom-mk-sources: $$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(CDOM_LITS)) $$(if $$(APP_PAGE),$$(cdom_mk_page_src) $$(CDOM_PAGE_TOOL))
+# and the page's stylesheet list, all made by pattern rules as well: as intermediate files, make would
+# remove a tool it had to build once the build is done, and not build it again while what was made from it
+# is newer (so the list, which the tool brings up to date as make starts, would go stale), and it would
+# remove the list after every page it writes, so the next make would always write the page again. Nothing
+# builds this target, and one that starts with a dot is never the default goal.
+.cdom-mk-sources: $$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(CDOM_LITS)) \
+  $$(if $$(APP_PAGE),$$(cdom_mk_page_src) $$(CDOM_PAGE_TOOL) $$(APP_PAGE).csslist)

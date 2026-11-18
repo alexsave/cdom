@@ -54,12 +54,12 @@ b64() { base64 < "$1" | tr -d '\n\r'; }
 t="$top/shim/page.html"
 for m in m0 m1 m2; do
   o="$out/default_$m.html"
-  { sed -n '1,5p' "$t"; echo '<title>a&lt;b &amp; c&gt;</title>'; sed -n '7,10p' "$t"; table_shim '<script>'
-    echo "cdom.start(\"data:application/wasm;base64,$(b64 "$out/$m.wasm")\", \"app\");"; sed -n '13,$p' "$t"; } > "$o.want"
+  { sed -n '1,5p' "$t"; echo '<title>a&lt;b &amp; c&gt;</title>'; sed -n '7p' "$t"; sed -n '9,13p' "$t"; table_shim '<script>'
+    echo "cdom.start(\"data:application/wasm;base64,$(b64 "$out/$m.wasm")\", \"app\");"; sed -n '16,$p' "$t"; } > "$o.want"
   golden "the default page, bundled ($(wc -c < "$out/$m.wasm" | tr -d ' ')-byte module), titled and escaped" "$t" "$o" --wasm "$out/$m.wasm" --title 'a<b & c>'
 done
 o="$out/default_url.html"
-{ sed -n '1,10p' "$t"; table_shim '<script>'; printf '%s\n' 'cdom.start("/w/\"x\\y\x3c/script>\x0a\u2028.wasm", "app");'; sed -n '13,$p' "$t"; } > "$o.want"
+{ sed -n '1,7p' "$t"; sed -n '9,13p' "$t"; table_shim '<script>'; printf '%s\n' 'cdom.start("/w/\"x\\y\x3c/script>\x0a\u2028.wasm", "app");'; sed -n '16,$p' "$t"; } > "$o.want"
 golden "the default page, separate: the URL a JavaScript string with \\, \", <, a newline and U+2028 escaped, no title given" "$t" "$o" --wasm-url "$(printf '/w/"x\\y</script>\n\xe2\x80\xa8.wasm')"
 o="$out/ok.html"
 { sed -n '1,3p' "$pages/ok.html"; table_shim '<script>'; sed -n '5,$p' "$pages/ok.html"; } > "$o.want"
