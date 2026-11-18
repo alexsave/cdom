@@ -163,7 +163,7 @@ for bad in inline:'must be alone on its line' none:'no /\*CDOM_SHIM\*/ line' two
   name="${bad%%:*}" why="${bad#*:}"
   if mk "$mo/$name.html" PAGE="$here/page/$name.html" APP_WASM_SEPARATE=1 2> "$mo/mk_$name.log"; then
     echo "FAIL cdom_page ($inc) took the $name page"; fail=1
-  elif [ -e "$mo/$name.html" ] || [ -e "$mo/$name.html.tmp" ]; then
+  elif compgen -G "$mo/$name.html*" > /dev/null; then # the page, or the tool's temporary file
     echo "FAIL cdom_page ($inc) refused the $name page but left a file"; fail=1
   elif ! grep -q "$name.html.*$why" "$mo/mk_$name.log"; then
     echo "FAIL cdom_page ($inc) refused the $name page for another reason:"; cat "$mo/mk_$name.log"; fail=1
@@ -188,7 +188,7 @@ else echo "ok   cdom_page ($inc) writes the table as a script of its own before 
 rm -f "$mo/ok.html"
 line="$here/page/ok.html: this page loads mk_app.wasm; set APP_WASM_SEPARATE := 1, or start with the bundled module (the /*CDOM_WASM*/ marker)"
 if mk "$mo/ok.html" PAGE="$here/page/ok.html" 2> "$mo/mk_url.log"; then echo "FAIL APP_PAGE ($inc) bundled into a page that loads its module by URL"; fail=1
-elif [ -e "$mo/ok.html" ] || [ -e "$mo/ok.html.tmp" ]; then echo "FAIL APP_PAGE ($inc) refused a page that loads its module by URL but left a file"; fail=1
+elif compgen -G "$mo/ok.html*" > /dev/null; then echo "FAIL APP_PAGE ($inc) refused a page that loads its module by URL but left a file"; fail=1
 elif ! grep -qxF "$line" "$mo/mk_url.log"; then echo "FAIL APP_PAGE ($inc) refused a page that loads its module by URL with another message:"; cat "$mo/mk_url.log"; fail=1
 else echo "ok   APP_PAGE ($inc), bundling, refuses a page of the app's own that loads mk_app.wasm, with the line that says what to do"; fi
 # The default page (no APP_PAGE_SRC), bundled: shim/page.html with the title, the shim, and the module as

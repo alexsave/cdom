@@ -2,7 +2,7 @@
 # cdom.mk, the one place the set an app builds with is written, so cdom's tests, demo, micro and benchmark
 # builds use exactly what apps use; and cdom_flags_gate, which fails when one of those scripts spells a
 # flag of that set itself (a copy that would drift from cdom.mk when the set changes). CDOM_LITS is the
-# built tools/cdlits that every link goes through.
+# built tools/cdlits that every link goes through, and CDOM_PAGE_TOOL the built tools/cdpage that writes pages.
 cdom_top="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cdom_mk_var() { # the value of one of cdom.mk's variables, for this checkout
   printf 'cdom-print-var:\n\t@echo $(%s)\n' "$1" |
@@ -17,6 +17,10 @@ fi
 # runs it as: "$CDOM_LITS" linked.wasm out.wasm out.wasm.lits
 CDOM_LITS="$(cdom_mk_var CDOM_LITS)"
 make -s --no-print-directory -f "$cdom_top/cdom.mk" CDOM="$cdom_top" "$CDOM_LITS" || { echo "FAIL cannot build $CDOM_LITS" >&2; exit 1; }
+# CDOM_PAGE_TOOL: the tool that writes a page (tools/cdpage.c), built here the same way. A script runs it as:
+# "$CDOM_PAGE_TOOL" --page in.html --out out.html --shim cdom.min.js --lits app.wasm.lits [--wasm app.wasm]
+CDOM_PAGE_TOOL="$(cdom_mk_var CDOM_PAGE_TOOL)"
+make -s --no-print-directory -f "$cdom_top/cdom.mk" CDOM="$cdom_top" "$CDOM_PAGE_TOOL" || { echo "FAIL cannot build $CDOM_PAGE_TOOL" >&2; exit 1; }
 # The scripts that build cdom modules. Each must take the set from here, never write a flag of it.
 CDOM_FLAG_USERS=(tests/build.sh tests/link/run.sh bench/build.sh)
 cdom_flags_gate() {

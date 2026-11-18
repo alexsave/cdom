@@ -100,10 +100,15 @@ CDOM_SHIM       := $(CDOM)/shim/cdom.min.js
 
 CDOM_PAGE       := $(CDOM)/shim/page.html
 CDOM_LITS       := $(CDOM)/tools/out/cdlits
+CDOM_PAGE_TOOL  := $(CDOM)/tools/out/cdpage
 
 # The tool that moves the literals out of a linked module. Built to a temporary name and renamed, since
 # several apps may build it at once. A pattern rule, so it never becomes the app's default goal.
 %/out/cdlits: %/cdlits.c
+	@mkdir -p $(@D)
+	$(HOST_CC) -std=c23 -O2 -Wall -Wextra -Werror -o $@.tmp$$$$ $< && mv $@.tmp$$$$ $@
+# The tool that writes the page (tools/cdpage.c), built the same way.
+%/out/cdpage: %/cdpage.c
 	@mkdir -p $(@D)
 	$(HOST_CC) -std=c23 -O2 -Wall -Wextra -Werror -o $@.tmp$$$$ $< && mv $@.tmp$$$$ $@
 
@@ -112,17 +117,16 @@ CDOM_LITS       := $(CDOM)/tools/out/cdlits
 cdom_lits = $(CDOM_LITS) $(1) $(2) $(2).lits
 
 # $(call cdom_page,in.html,out.html[,module.wasm[,lits]]): the page with the string table and the shim at
-# its /*CDOM_SHIM*/ line and, when a module is named, that module bundled at its /*CDOM_WASM*/ (tools/page.awk); out.html
-# is written only when the page holds its markers as the APP_PAGE rule needs them (the header above).
+# its /*CDOM_SHIM*/ line and, when a module is named, that module bundled at its /*CDOM_WASM*/ (tools/cdpage);
+# out.html is written only when the page holds its markers as the APP_PAGE rule needs them (the header
+# above). Make the rule depend on $(CDOM_PAGE_TOOL).
 cdom_page = $(call cdom_mk_page,$(1),$(2),$(3),,,$(if $(3),$(3).lits,$(4)))
 # $(call cdom_mk_page,in,out,module to bundle,URL for /*CDOM_WASM*/,title for /*CDOM_TITLE*/,lits file): the recipe
-# of cdom_page and the APP_PAGE rule. base64's output is joined into one line (macOS's base64 writes one,
-# GNU's wraps at 76 columns). cdom_mk_q quotes a value for the shell.
+# of cdom_page and the APP_PAGE rule, one run of tools/cdpage, which writes out only once the whole page is
+# made. cdom_mk_q quotes a value for the shell.
 cdom_mk_q = '$(subst ','\'',$(1))'
-cdom_mk_page = $(if $(3),base64 < $(call cdom_mk_q,$(3)) | tr -d '\n\r' | )CDOM_WASM_URL=$(call cdom_mk_q,$(4)) \
-  CDOM_TITLE=$(call cdom_mk_q,$(5)) awk -v shim=$(call cdom_mk_q,$(CDOM_SHIM)) $(if $(6),-v lits=$(call cdom_mk_q,$(6)) )-v wasm=$(if $(3),bundle,$(if $(4),url)) \
-  $(if $(5),-v title=1 )-f $(call cdom_mk_q,$(CDOM)/tools/page.awk) $(call cdom_mk_q,$(1)) > $(call cdom_mk_q,$(2).tmp) \
-  && mv $(call cdom_mk_q,$(2).tmp) $(call cdom_mk_q,$(2)) || { rm -f $(call cdom_mk_q,$(2).tmp); exit 1; }
+cdom_mk_page = $(CDOM_PAGE_TOOL) --page $(call cdom_mk_q,$(1)) --out $(call cdom_mk_q,$(2)) --shim $(call cdom_mk_q,$(CDOM_SHIM)) \
+  --lits $(call cdom_mk_q,$(6))$(if $(3), --wasm $(call cdom_mk_q,$(3)))$(if $(4), --wasm-url $(call cdom_mk_q,$(4)))$(if $(5), --title $(call cdom_mk_q,$(5)))
 
 CDOM_MODULES := net store random audio url locale share fonts ui
 
@@ -153,7 +157,7 @@ cdom_mk_page_src = $(or $(APP_PAGE_SRC),$(CDOM_PAGE))
 cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))
 cdom_mk_wasm_url = $(if $(APP_WASM_SEPARATE),$(or $(APP_WASM_URL),$(notdir $(APP_WASM))))
 cdom_mk_title = $(if $(APP_PAGE_SRC),,$(or $(APP_TITLE),$(basename $(notdir $(APP_WASM)))))
-%.html: $$(call cdom_mk_for,$$(APP_PAGE),$$@,$$(cdom_mk_page_src) $$(CDOM_SHIM) $$(CDOM)/tools/page.awk $$(APP_WASM))
+%.html: $$(call cdom_mk_for,$$(APP_PAGE),$$@,$$(cdom_mk_page_src) $$(CDOM_SHIM) $$(CDOM_PAGE_TOOL) $$(APP_WASM))
 	$(if $(APP_PAGE_SRC)$(APP_WASM),,$(error cdom.mk: the default page starts APP_WASM, and APP_WASM is unset))
 	@mkdir -p $(@D)
 	$(call cdom_mk_page,$(cdom_mk_page_src),$@,$(cdom_mk_bundled),$(cdom_mk_wasm_url),$(cdom_mk_title),$(APP_WASM).lits)
