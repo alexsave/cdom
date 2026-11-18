@@ -81,6 +81,16 @@ EXPORT("s7") uint32_t s7(void) {
   cd_free(top);
   return d == a ? grown : grown | 0x80000000u;
 }
+/* S8: a free run right under the top block, then the top block freed: both go back to the top, so
+ * 25.6 MB of small blocks fit in their 40 MB. */
+EXPORT("s8") uint32_t s8(void) {
+  uint8_t *a = take(FILE20), *b = take(FILE20);
+  cd_free(a);
+  cd_free(b);
+  uint32_t p0 = pages();
+  for (int i = 0; i < 100000; i++) take(200);
+  return pages() - p0;
+}
 /* S6: small blocks after a large one is freed at the top take its room, so the memory does not grow. */
 EXPORT("s6") uint32_t s6(void) {
   cd_free(take(PHOTO));

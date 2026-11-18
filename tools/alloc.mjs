@@ -44,13 +44,14 @@ for (const [f, what] of [['malloc_full', 'malloc'], ['alloc_full', 'cd_alloc'], 
 // two would be 1,024.
 {
   const pagesOf = async (name) => { const x = await fresh('alloc_mem.wasm'); return call(() => x[name]() >>> 0); };
-  const [s1, s2, s3, s4, s5, s6, s7] = await Promise.all(['s1', 's2', 's3', 's4', 's5', 's6', 's7'].map(pagesOf));
+  const [s1, s2, s3, s4, s5, s6, s7, s8] = await Promise.all(['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8'].map(pagesOf));
   check('a large block costs its size rounded up to 4 KiB, and a freed one serves the next: 36.6 MB taken and freed twice grows the memory 558 pages, not 1,024', s1 === 558, `${s1} pages`);
   check('a freed large block serves a smaller large one: 36.6 MB, 20 MB, 36.6 MB, each freed first, take 558 pages', s2 === 558, `${s2} pages`);
   check('a large block freed below the top serves the next large request that fits, at its address, and the rest of it comes back with that block', s3 === 558, `${s3 & 0x7fffffff} pages${s3 >>> 31 ? ', not at its address' : ''}`);
   check('a block at the top grows where it is: cd_realloc doubling from 1 MiB to 64 MiB takes 1,024 pages, not 4,064', s4 === 1024, `${s4} pages`);
   check('two freed large blocks side by side merge: one of both their sizes takes their place', s5 === 610, `${s5 & 0x7fffffff} pages${s5 >>> 31 ? ', not at their place' : ''}`);
   check('a freed large block merges with free neighbours on both sides: three of 20 MB, the middle one freed last, hold one of 60 MB', s7 === 915, `${s7 & 0x7fffffff} pages${s7 >>> 31 ? ', not at their place' : ''}`);
+  check('a free run under the top goes back with the top block freed after it: 100,000 small blocks fit in their room', s8 === 0, `${s8} pages`);
   check('a large block freed at the top gives its room back: 100,000 small blocks after it grow nothing', s6 === 0, `${s6} pages`);
 }
 // An answer's bytes, as the shim delivers them (cd_bytes_buf, then cd_net_http): freed once the callback
