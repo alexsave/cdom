@@ -43,6 +43,7 @@ EXPORT("cd_store_got") void cd_store_got(uint32_t token, const uint8_t *p, int32
   if (token < CD_TOKEN_CDOM) cd_on_store(token, p, len);
   else if (cd_cb_take(token, &fn, &ctx)) ((cd_store_fn)fn)(ctx, p, len);
   cd_flush();
+  cd_free((void *)p); /* the block cd_bytes_buf gave the value (0 for a miss) */
 }
 __attribute__((weak)) void cd_on_store_put(uint32_t, uint32_t) { }
 EXPORT("cd_store_put_done") void cd_store_put_done(uint32_t token, uint32_t ok) {

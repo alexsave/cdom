@@ -59,7 +59,8 @@ __attribute__((weak)) void cd_on_ws_msg(uint32_t, const uint8_t *, uint32_t) { }
 __attribute__((weak)) void cd_on_ws_close(uint32_t, uint32_t) { }
 __attribute__((weak)) void cd_on_http(uint32_t, uint32_t, const uint8_t *, uint32_t) { }
 
-/* The shim copies a message into cdom's room for incoming bytes (cd_bytes_buf), then calls these. A
+/* The shim copies a message into a block of cd_bytes_buf's, then calls these, which free it after the
+ * hook or callback and the flush (cdom.c, cd_bytes_buf; an http answer that never arrived has none). A
  * socket of cd_ws_open's goes to the hooks, one of cd_ws_open_cb's to its callback; at the close the
  * id leaves ws_cb and its slot is freed before the callback runs, so the id (free in the shim by then)
  * may be opened again of either kind from there. */
@@ -78,6 +79,7 @@ EXPORT("cd_net_msg") void cd_net_msg(uint32_t id, const uint8_t *p, uint32_t len
   if (!t) cd_on_ws_msg(id, p, len);
   else if (cd_cb_get(t, &fn, &ctx)) ((cd_ws_fn)fn)(ctx, id, CD_WS_MSG, p, len);
   cd_flush();
+  cd_free((void *)p);
 }
 EXPORT("cd_net_close") void cd_net_close(uint32_t id, uint32_t code) {
   cd_cb_fn fn;
@@ -106,4 +108,5 @@ EXPORT("cd_net_http") void cd_net_http(uint32_t token, uint32_t status, const ui
   if (token < CD_TOKEN_CDOM) cd_on_http(token, status, p, len);
   else if (cd_cb_take(token, &fn, &ctx)) ((cd_http_fn)fn)(ctx, status, p, len);
   cd_flush();
+  cd_free((void *)p);
 }

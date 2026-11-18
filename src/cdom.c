@@ -13,14 +13,28 @@ void *calloc(size_t n, size_t sz);
 #define EXPORT(n) __attribute__((export_name(n)))
 
 
-/* ---- memory: power-of-two size classes over memory.grow ----
+/* ---- memory: power-of-two size classes for small blocks, 4 KiB grains for large ones, over memory.grow ----
  * These are malloc, realloc, free and calloc for an app that has none (weak: an app's own, all
  * four strong, replaces them), and cd_alloc goes through malloc either way, so cdom and the app
  * share one heap. free and realloc trap on a pointer this heap did not hand out: an app that
- * replaced malloc alone would otherwise feed its pointers to this free list. */
+ * replaced malloc alone would otherwise feed its pointers to this free list.
+ * Every block has an 8-byte header before the pointer handed out. A small block (n + 8 up to 64 KiB) is
+ * one of the power-of-two classes 16 to 65,536 bytes, its header the class; a freed one goes on its
+ * class's list and serves the next request of that class. A large block (above that) is n + 8 rounded up
+ * to 4 KiB, its header BIG and its size, so it costs its size and at most 4 KiB more. A freed large block
+ * goes back where it came from: at the top of the heap it lowers the top (and so does a freed large block
+ * right under it), so the room serves any block, small or large; below the top it joins an address-ordered
+ * list of free large runs, merged with a free neighbour on either side, from which a large request takes
+ * the first run that fits, split. The memory itself never shrinks (wasm has no memory.shrink). */
 extern unsigned char __heap_base;
 static uintptr_t heap_lo, heap_ptr, heap_end;
 static void *free_lists[32];
+#define HEAP_SMALL_MAX 65536u /* the largest small block, header included */
+#define HEAP_GRAIN 4096u      /* a large block's size is a multiple of this */
+#define HEAP_BIG 0xffffffffu  /* a large block's header word 0: no class is this */
+/* A large block at its start: in use, the header (tag, size); free, the same and the next free run. */
+typedef struct heap_run { uint32_t tag, size; struct heap_run *next; } heap_run;
+static heap_run *runs; /* the free large runs below the top, by address */
 
 /* CDOM_HEAP_PAGES_MAX, when an app (or a test) defines it, bounds the memory the heap grows to, in
  * 64 KB pages; unset, the heap grows until memory.grow refuses, and the check is not compiled. */
@@ -30,10 +44,58 @@ static int heap_grow(uint32_t pages) {
 #endif
   return __builtin_wasm_memory_grow(0, pages) >= 0;
 }
+/* Room up to need at the top: the memory grown when need is past its end. 0: memory.grow refused. */
+static inline __attribute__((always_inline)) int heap_room(uintptr_t need) {
+  if (need > heap_end) {
+    uint32_t pages = (uint32_t)((need - heap_end + 65535) >> 16);
+    if (!heap_grow(pages)) return 0;
+    heap_end += (uintptr_t)pages << 16;
+  }
+  return 1;
+}
+static inline __attribute__((always_inline)) void heap_init(void) {
+  if (!heap_ptr) {
+    heap_lo = heap_ptr = ((uintptr_t)&__heap_base + 15) & ~(uintptr_t)15;
+    heap_end = (uintptr_t)__builtin_wasm_memory_size(0) << 16;
+  }
+}
+/* A large block of n bytes (n + 8 over HEAP_SMALL_MAX, n under 2^31): the first free run that fits, the
+ * rest of it left a run of its own, else room at the top. 0: no room. */
+static __attribute__((noinline)) void *heap_big(uint32_t n) {
+  uint32_t size = (n + 8 + HEAP_GRAIN - 1) & ~(HEAP_GRAIN - 1);
+  for (heap_run **at = &runs; *at; at = &(*at)->next) {
+    heap_run *r = *at;
+    if (r->size < size) continue;
+    if (r->size == size) *at = r->next;
+    else {
+      heap_run *rest = (heap_run *)((uintptr_t)r + size);
+      rest->tag = HEAP_BIG;
+      rest->size = r->size - size;
+      rest->next = r->next;
+      *at = rest;
+      r->size = size;
+    }
+    return (uint32_t *)r + 2;
+  }
+  heap_init();
+  uintptr_t need = heap_ptr + size;
+  if (!heap_room(need)) return 0;
+  uint32_t *h = (uint32_t *)heap_ptr;
+  heap_ptr = need;
+  h[0] = HEAP_BIG;
+  h[1] = size;
+  return h + 2;
+}
 /* may_fail 0 (malloc and everything on it): no room traps, as it always has, since in wasm a
  * pointer 0 is ordinary memory and code that does not check would write over it. may_fail 1
- * (cd_alloc_try alone): no room answers 0. Inlined, so malloc's code is what it was. */
+ * (cd_alloc_try alone): no room answers 0. Inlined, so malloc's code is what it was, but for the one
+ * compare that sends a large block to heap_big. */
 static inline __attribute__((always_inline)) void *heap_alloc_or(uint32_t n, int may_fail) {
+  if (n > HEAP_SMALL_MAX - 8) {
+    void *b = heap_big(n);
+    if (!b && !may_fail) __builtin_trap(); /* out of memory */
+    return b;
+  }
   uint32_t c = 4;
   while ((1u << c) < n + 8) c++;
   void *p = free_lists[c];
@@ -41,18 +103,11 @@ static inline __attribute__((always_inline)) void *heap_alloc_or(uint32_t n, int
     free_lists[c] = *(void **)p;
     return p;
   }
-  if (!heap_ptr) {
-    heap_lo = heap_ptr = ((uintptr_t)&__heap_base + 15) & ~(uintptr_t)15;
-    heap_end = (uintptr_t)__builtin_wasm_memory_size(0) << 16;
-  }
+  heap_init();
   uintptr_t need = heap_ptr + (1u << c);
-  if (need > heap_end) {
-    uint32_t pages = (uint32_t)((need - heap_end + 65535) >> 16);
-    if (!heap_grow(pages)) {
-      if (may_fail) return 0;
-      __builtin_trap(); /* out of memory */
-    }
-    heap_end += (uintptr_t)pages << 16;
+  if (!heap_room(need)) {
+    if (may_fail) return 0;
+    __builtin_trap(); /* out of memory */
   }
   uint32_t *h = (uint32_t *)heap_ptr;
   heap_ptr = need;
@@ -65,6 +120,58 @@ static uint32_t heap_class(void *p) {
   if ((uintptr_t)p < heap_lo + 8 || (uintptr_t)p >= heap_ptr) __builtin_trap(); /* not from this heap */
   return ((uint32_t *)p)[-2];
 }
+/* The bytes a block holds, past its header. */
+static uint32_t heap_cap(void *p) {
+  uint32_t c = heap_class(p);
+  return (c == HEAP_BIG ? ((uint32_t *)p)[-1] : 1u << c) - 8;
+}
+/* A freed large block: the top lowered when it is the top (and again when a free run then ends there),
+ * else into the runs by address, merged with the run that ends where it starts and the one that starts
+ * where it ends. */
+static __attribute__((noinline)) void heap_big_free(void *p) {
+  heap_run *b = (heap_run *)((uint32_t *)p - 2), *prev = 0, *next = runs;
+  while (next && next < b) prev = next, next = next->next;
+  if ((uintptr_t)b + b->size == heap_ptr) { /* the top: then prev is the last run, the only one that may end at b */
+    heap_ptr = (uintptr_t)b;
+    if (prev && (uintptr_t)prev + prev->size == heap_ptr) {
+      heap_ptr = (uintptr_t)prev;
+      heap_run **at = &runs;
+      while (*at != prev) at = &(*at)->next;
+      *at = 0;
+    }
+    return;
+  }
+  if (next && (uintptr_t)b + b->size == (uintptr_t)next) b->size += next->size, next = next->next;
+  b->next = next;
+  if (prev && (uintptr_t)prev + prev->size == (uintptr_t)b) prev->size += b->size, prev->next = next;
+  else if (prev) prev->next = b;
+  else runs = b;
+}
+/* A block at the top grown where it is to a large one of n bytes: p, its header now BIG and the new
+ * size; 0 when it is not at the top or the memory cannot grow (then nothing changed). */
+static void *heap_grow_top(void *p, uint32_t n) {
+  uint32_t *h = (uint32_t *)p - 2;
+  uint32_t size = (n + 8 + HEAP_GRAIN - 1) & ~(HEAP_GRAIN - 1);
+  if ((uintptr_t)h + heap_cap(p) + 8 != heap_ptr || !heap_room((uintptr_t)h + size)) return 0;
+  heap_ptr = (uintptr_t)h + size;
+  h[0] = HEAP_BIG;
+  h[1] = size;
+  return p;
+}
+/* realloc and cd_realloc_try: p kept while it holds n; a block at the top grown in place to a large size;
+ * else a new block, the bytes copied and p freed. 0 (p kept) when there is no room and may_fail. */
+static inline __attribute__((always_inline)) void *heap_realloc_or(void *p, size_t n, int may_fail) {
+  uint32_t cap = p ? heap_cap(p) : 0;
+  if (p && cap >= n) return p;
+  if (n >> 31) return 0;
+  if (p && n > HEAP_SMALL_MAX - 8 && heap_grow_top(p, (uint32_t)n)) return p;
+  void *q = heap_alloc_or((uint32_t)n, may_fail);
+  if (p && q) {
+    __builtin_memcpy(q, p, cap);
+    free(p);
+  }
+  return q;
+}
 
 /* malloc is cdom_heap_malloc, weakly: cd_alloc_try tells cdom's heap from an app's own by comparing them. */
 void *cdom_heap_malloc(size_t n) { return n >> 31 ? 0 : heap_alloc((uint32_t)n); }
@@ -73,20 +180,15 @@ void *malloc(size_t n) __attribute__((weak, alias("cdom_heap_malloc")));
 __attribute__((weak)) void free(void *p) {
   if (!p) return;
   uint32_t c = heap_class(p);
+  if (c == HEAP_BIG) {
+    heap_big_free(p);
+    return;
+  }
   *(void **)p = free_lists[c];
   free_lists[c] = p;
 }
 
-__attribute__((weak)) void *realloc(void *p, size_t n) {
-  uint32_t cap = p ? (1u << heap_class(p)) - 8 : 0;
-  if (p && cap >= n) return p;
-  void *q = malloc(n);
-  if (p && q) {
-    __builtin_memcpy(q, p, cap);
-    free(p);
-  }
-  return q;
-}
+__attribute__((weak)) void *realloc(void *p, size_t n) { return heap_realloc_or(p, n, 0); }
 
 __attribute__((weak)) void *calloc(size_t n, size_t sz) {
   size_t t = n * sz;
@@ -119,15 +221,7 @@ void *cd_alloc_try(uint32_t n) {
 }
 void *cd_realloc_try(void *p, uint32_t n) {
   if (!heap_is_cdoms()) return realloc(p, n);
-  uint32_t cap = p ? (1u << heap_class(p)) - 8 : 0;
-  if (p && cap >= n) return p;
-  void *q = n >> 31 ? 0 : heap_alloc_or(n, 1);
-  if (!q) return 0; /* p is kept, as it was */
-  if (p) {
-    __builtin_memcpy(q, p, cap);
-    free(p);
-  }
-  return q;
+  return heap_realloc_or(p, n, 1);
 }
 
 /* ---- calls ----
@@ -1209,14 +1303,17 @@ EXPORT("cd_raf") void cd_raf(uint32_t token, double t) {
   cd_flush();
 }
 
-/* Bytes from JS (an encoded image, a network message, a stored value): the shim asks for room
- * here, copies them in, then calls the export that hands them to the app. */
-static uint8_t *inbytes;
-EXPORT("cd_bytes_buf") void *cd_bytes_buf(uint32_t n) { return inbytes = cd_realloc(inbytes, n ? n : 1); }
+/* Bytes from JS (an encoded image, a network message, a stored value, a path): the shim asks for a
+ * block of their size here, copies them in, then calls the export that hands them to the app, and that
+ * export frees the block once the app's hook (or callback) and the flush after it returned. So nothing of
+ * cdom's holds an answer's bytes past its answer: each is a block of its own, at most 4 KiB over its size
+ * when large (memory, above), and its room serves the next block. */
+EXPORT("cd_bytes_buf") void *cd_bytes_buf(uint32_t n) { return cd_alloc(n ? n : 1); }
 __attribute__((weak)) void cd_on_encoded(uint32_t, const uint8_t *, uint32_t) { }
 EXPORT("cd_encoded") void cd_encoded(uint32_t token, const uint8_t *p, uint32_t len) {
   cd_on_encoded(token, p, len);
   cd_flush();
+  cd_free((void *)p);
 }
 __attribute__((weak)) void cd_on_image(uint32_t, uint32_t) { }
 EXPORT("cd_image") void cd_image(uint32_t token, uint32_t ok) {

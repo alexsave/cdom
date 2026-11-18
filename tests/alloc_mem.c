@@ -30,17 +30,20 @@ EXPORT("s2") uint32_t s2(void) {
   cd_free(take(PHOTO));
   return pages() - p0;
 }
-/* S3: 36 MB freed with a small block above it, then 30 MB: the freed block is not at the top. */
+/* S3: 36 MB freed with a small block above it, then 30 MB: the freed block is not at the top. Then the
+ * 30 MB freed: it merges with the rest of the 36 MB it was split from, so 36 MB fits there again. */
 EXPORT("s3") uint32_t s3(void) {
   uint32_t p0 = pages();
   uint8_t *a = take(PHOTO);
   uint8_t *small = take(100);
   cd_free(a);
   uint8_t *b = take(30000000u);
-  uint32_t grown = pages() - p0;
   cd_free(b);
+  uint8_t *c = take(PHOTO);
+  uint32_t grown = pages() - p0;
+  cd_free(c);
   cd_free(small);
-  return b == a ? grown : grown | 0x80000000u; /* the high bit: b did not take a's place */
+  return b == a && c == a ? grown : grown | 0x80000000u; /* the high bit: b or c did not take a's place */
 }
 /* S4: a buffer grown by doubling from 1 MiB to 64 MiB with cd_realloc, then freed. */
 EXPORT("s4") uint32_t s4(void) {
@@ -65,6 +68,19 @@ EXPORT("s5") uint32_t s5(void) {
   cd_free(top);
   return c == a ? grown : grown | 0x80000000u;
 }
+/* S7: three 20 MB blocks, the outer two freed first, then the middle one, which merges with both. */
+EXPORT("s7") uint32_t s7(void) {
+  uint32_t p0 = pages();
+  uint8_t *a = take(FILE20), *b = take(FILE20), *c = take(FILE20), *top = take(100);
+  cd_free(a);
+  cd_free(c);
+  cd_free(b);
+  uint8_t *d = take(3 * FILE20);
+  uint32_t grown = pages() - p0;
+  cd_free(d);
+  cd_free(top);
+  return d == a ? grown : grown | 0x80000000u;
+}
 /* S6: small blocks after a large one is freed at the top take its room, so the memory does not grow. */
 EXPORT("s6") uint32_t s6(void) {
   cd_free(take(PHOTO));
@@ -74,7 +90,9 @@ EXPORT("s6") uint32_t s6(void) {
 }
 /* The bytes of an answer (cdom.c, cd_bytes_buf): tools/alloc.mjs answers two requests of 20 MB as the shim
  * does (room from cd_bytes_buf, the bytes copied in, then cd_net_http), and then the app takes 20 MB of its
- * own; the pages all that took. */
+ * own; the pages all that took. It delivers 20 MB twice the same way through every other export that takes
+ * cd_bytes_buf's block (a message, an encoded image, a stored value, a path), which reach the modules' weak
+ * hooks. */
 #include "../src/cdom_net.h"
 static uint32_t answered;
 static void got(void *, uint32_t status, const uint8_t *p, uint32_t len) {
@@ -84,3 +102,45 @@ EXPORT("ask") void ask(void) { cd_http_cb(got, 0, "GET", 3, "/big", 4, "", 0, 0,
 EXPORT("answered") uint32_t answered_n(void) { return answered; }
 EXPORT("pages") uint32_t pages_now(void) { return pages(); }
 EXPORT("take20") void take20(void) { take(FILE20); }
+/* Blocks of every kind taken, grown and freed in a seeded order (cd_rand, seeded by cd_start), each filled
+ * with a byte of its own and checked before it goes: 0 when every block held its bytes, else the step
+ * that found another block's bytes in one (two blocks that overlap, or a run handed out twice). */
+#define SLOTS 64
+static uint8_t *blk[SLOTS];
+static uint32_t len[SLOTS];
+static uint8_t mark[SLOTS];
+static int intact(int k) {
+  for (uint32_t i = 0; i < len[k]; i += 997) if (blk[k][i] != mark[k]) return 0;
+  return !len[k] || blk[k][len[k] - 1] == mark[k];
+}
+static uint32_t size_of(uint32_t r) { /* small blocks, blocks around the 64 KiB edge, and large ones */
+  switch (r % 4) {
+  case 0: return 1 + (r >> 2) % 5000;
+  case 1: return 65000 + (r >> 2) % 1100;
+  default: return 70000 + (r >> 2) % 3000000;
+  }
+}
+EXPORT("churn") uint32_t churn(uint32_t steps) {
+  for (uint32_t s = 1; s <= steps; s++) {
+    uint32_t r = cd_rand(), k = r % SLOTS, op = (r >> 8) % 3, n = size_of(cd_rand());
+    if (blk[k] && !intact(k)) return s;
+    if (op == 0 && blk[k]) { cd_free(blk[k]); blk[k] = 0; continue; }
+    if (op == 1 && blk[k]) { /* grown or shrunk: the bytes it had stay */
+      uint32_t keep = len[k] < n ? len[k] : n;
+      blk[k] = cd_realloc(blk[k], n);
+      for (uint32_t i = 0; i < keep; i += 997) if (blk[k][i] != mark[k]) return s;
+    } else {
+      cd_free(blk[k]);
+      blk[k] = cd_alloc(n);
+    }
+    len[k] = n;
+    mark[k] = (uint8_t)(s * 31 + k);
+    __builtin_memset(blk[k], mark[k], n);
+  }
+  for (int k = 0; k < SLOTS; k++) {
+    if (blk[k] && !intact(k)) return steps + 1;
+    cd_free(blk[k]);
+    blk[k] = 0;
+  }
+  return 0;
+}
