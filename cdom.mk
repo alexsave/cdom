@@ -54,8 +54,9 @@
 # src/ is the directory named src where make runs (where APP_SRC := src/app.c points), and no variable
 # names a file, the directory, or a way to turn this off. The files go at the line that holds only the
 # marker /*CDOM_CSS*/, inside a <style> and before the /*CDOM_SHIM*/ line (the default page has that
-# <style> in its <head>), written as they are but for </style, which is escaped; a byte order mark is
-# dropped, and a file that does not end in a newline gains one. Each file must be whole by itself: a
+# <style> in its <head>), written as they are but for </style, which is escaped; a comment that fills its
+# lines is left out with them (one beside a rule is kept), a byte order mark is dropped, and a file that
+# does not end in a newline gains one. Each file must be whole by itself: a
 # comment, string or url( that never ends, a { never closed or a } never opened, an @import, a NUL or
 # bytes that are not UTF-8 stop the build, naming the file and the line. An app's own page with no
 # /*CDOM_CSS*/ line fails while src/ holds a .css file, so a page that loads a stylesheet of its own with

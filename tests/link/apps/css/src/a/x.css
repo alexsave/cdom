@@ -1,4 +1,2 @@
-/* a/x.css */
-/* The </STYLE> in this comment, and the one in the string below, are written <\/ in the page. */
-#probe::before { content: "</style><script>window.pwned=1</script>"; }
-#probe { --last: "a/x"; }
+#probe::before { content: "</style><script>window.pwned=1</script>"; } /* a/x.css */
+#probe { --last: "a/x"; } /* The </STYLE> in this comment, and the one in the string above, are written <\/ in the page. */

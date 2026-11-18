@@ -11,9 +11,10 @@
 // 10-layout.css, and that before theme/dark.css; a file or folder whose name starts with a dot is skipped,
 // and nothing else is. A symbolic link to a file is read as that file; one to a folder is not entered. The
 // files go at the line that holds only /*CDOM_CSS*/, inside a <style> and before /*CDOM_SHIM*/, byte for
-// byte but for three things: a byte order mark at a file's start is dropped, a file that does not end in a
-// newline gains one, and every </style (any letter case) is written <\/style, so no file can end the
-// element. Each file must be whole by itself, or the page is refused, naming the file and the line: a
+// byte but for four things: a comment that fills its lines is left out with them (one beside a rule is
+// kept, since removing it could join two tokens), a byte order mark at a file's start is dropped, a file
+// that does not end in a newline gains one, and every </style (any letter case) is written <\/style, so no
+// file can end the element. Each file must be whole by itself, or the page is refused, naming the file and the line: a
 // comment, string or url( that never ends, a { never closed or a } never opened, an @import, a NUL, or
 // bytes that are not UTF-8. With no files, the marker line is removed; with files and no marker, the page
 // is refused.
@@ -275,24 +276,44 @@ static int utf8_at(const uint8_t *p, size_t n) { /* the length of the UTF-8 sequ
   return (int)k;
 }
 
+/* The byte ranges of a stylesheet that the page leaves out: its whole-line comments. */
+typedef struct { size_t (*v)[2]; size_t n, cap; } Spans;
+
 /* One stylesheet, refused unless it is whole by itself: the scanner's states are plain text, a comment,
- * a string in " or ', and an unquoted url( ... ). */
-static void check_sheet(const char *name, const uint8_t *p, size_t n) {
+ * a string in " or ', and an unquoted url( ... ). It also finds the comments that fill their lines (only
+ * spaces and tabs before the comment on its first line, and only spaces, tabs and a CR after it on its
+ * last), and adds each, with its lines, to drop. A comment beside other text is kept: removing it could
+ * join two tokens or part a compound selector (a, a comment, .b is a.b; with a space, a descendant), and a
+ * whole line holds no token to join. */
+static void check_sheet(const char *name, const uint8_t *p, size_t n, Spans *drop) {
   enum { TEXT, COMMENT, DQ, SQ, URL } state = TEXT;
   size_t line = 1, opened = 0, *opens = 0, depth = 0, cap = 0;
+  /* where this line starts, and where the comment being scanned would be left out from (SIZE_MAX: it is kept) */
+  size_t line_at = 0, from = SIZE_MAX;
+  int blank = 1;                        /* only spaces and tabs so far on this line, outside a comment */
   for (size_t i = 0; i < n;) {
     uint8_t c = p[i];
     if (!c) die("%s:%zu: a NUL byte", name, line);
     int k = utf8_at(p + i, n - i);
     if (!k) die("%s:%zu: bytes that are not UTF-8 (a page is UTF-8)", name, line);
     if (c == '\n') line++;
+    if (state == TEXT && c == '\n') line_at = i + 1, blank = 1;
+    else if (state == TEXT && c != ' ' && c != '\t' && !(c == '/' && i + 1 < n && p[i + 1] == '*')) blank = 0;
     switch (state) {
     case TEXT:
-      if (c == '/' && i + 1 < n && p[i + 1] == '*') { state = COMMENT; opened = line; i += 2; continue; }
+      if (c == '/' && i + 1 < n && p[i + 1] == '*') { state = COMMENT; opened = line;
+        from = blank ? line_at : SIZE_MAX; /* it may fill its lines: then they go from this line's start */
+        i += 2;
+        continue;
+      }
       if (c == '"' || c == '\'') { state = c == '"' ? DQ : SQ; opened = line; break; }
       if (c == '\\' && i + 1 < n) { i++; if (p[i] == '\n') line++; break; } /* an escape: the next byte is text */
       if (c == '{') {
-        if (depth == cap) { cap = cap * 2 + 16; opens = realloc(opens, cap * sizeof *opens); if (!opens) die("cdpage: out of memory"); }
+        if (depth == cap) {
+          cap = cap * 2 + 16;
+          opens = realloc(opens, cap * sizeof *opens);
+          if (!opens) die("cdpage: out of memory");
+        }
         opens[depth++] = line;
       } else if (c == '}') {
         if (!depth) die("%s:%zu: a } with no { before it", name, line);
@@ -306,7 +327,22 @@ static void check_sheet(const char *name, const uint8_t *p, size_t n) {
       }
       break;
     case COMMENT:
-      if (c == '*' && i + 1 < n && p[i + 1] == '/') { state = TEXT; i += 2; continue; }
+      if (c == '*' && i + 1 < n && p[i + 1] == '/') {
+        state = TEXT;
+        i += 2;
+        size_t j = i;
+        while (j < n && (p[j] == ' ' || p[j] == '\t' || p[j] == '\r')) j++;
+        if (from != SIZE_MAX && (j == n || p[j] == '\n')) { /* it fills its lines: they go, with the newline */
+          if (drop->n == drop->cap) {
+            drop->cap = drop->cap * 2 + 16;
+            drop->v = realloc(drop->v, drop->cap * sizeof *drop->v);
+            if (!drop->v) die("cdpage: out of memory");
+          }
+          drop->v[drop->n][0] = from;
+          drop->v[drop->n++][1] = j < n ? j + 1 : n;
+        } else blank = 0;
+        continue;
+      }
       break;
     case DQ:
     case SQ:
@@ -328,21 +364,24 @@ static void check_sheet(const char *name, const uint8_t *p, size_t n) {
   free(opens);
 }
 
-/* The stylesheets as the page holds them: each checked, its byte order mark dropped, every </style
- * written <\/style, and a newline after a file that does not end in one. */
+/* The stylesheets as the page holds them: each checked, its byte order mark dropped, its whole-line
+ * comments left out, every </style written <\/style, and a newline after a file that does not end in one. */
 static void sheets_text(const Sheets *s, Buf *o) {
   for (size_t f = 0; f < s->n; f++) {
     Buf b = {0};
     if (!slurp(s->v[f].path, &b)) die("cdpage: cannot read the stylesheet %s", s->v[f].path);
     const uint8_t *p = b.p;
-    size_t n = b.n;
+    size_t n = b.n, at = o->n, d = 0;
     if (n >= 3 && p[0] == 0xef && p[1] == 0xbb && p[2] == 0xbf) p += 3, n -= 3;
-    check_sheet(s->v[f].path, p, n);
+    Spans drop = {0};
+    check_sheet(s->v[f].path, p, n, &drop);
     for (size_t i = 0; i < n; i++) {
+      if (d < drop.n && i == drop.v[d][0]) { i = drop.v[d++][1] - 1; continue; }
       if (p[i] == '<' && i + 1 < n && p[i + 1] == '/' && starts_ci(p + i + 2, n - i - 2, "style")) { bstr(o, "<\\/"); i++; continue; }
       bbyte(o, p[i]);
     }
-    if (n && p[n - 1] != '\n') bbyte(o, '\n');
+    if (o->n > at && o->p[o->n - 1] != '\n') bbyte(o, '\n');
+    free(drop.v);
     free(b.p);
   }
 }

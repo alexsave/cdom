@@ -473,7 +473,9 @@ M = [
   ('css-mark-after-ok', 'tools/cdpage.c', '      if (marks) die("%s:%zu: /*CDOM_CSS*/ after', '      if (0) die("%s:%zu: /*CDOM_CSS*/ after', PAGE, 'FAIL refuses css_after'),
   ('css-no-mark-ok', 'tools/cdpage.c', '  if (sheets.n && !css_marks) {', '  if (0) {', PAGE, 'FAIL refuses css_none'),
   ('css-bom-kept', 'tools/cdpage.c', '    if (n >= 3 && p[0] == 0xef && p[1] == 0xbb && p[2] == 0xbf) p += 3, n -= 3;\n', '', PAGE, 'FAIL the edges:'),
-  ('css-no-last-newline', 'tools/cdpage.c', "    if (n && p[n - 1] != '\\n') bbyte(o, '\\n');\n    free(b.p);", '    free(b.p);', PAGE, 'FAIL the edges:'),
+  ('css-no-last-newline', 'tools/cdpage.c', "    if (o->n > at && o->p[o->n - 1] != '\\n') bbyte(o, '\\n');\n", "    if (0 && o->n > at && o->p[o->n - 1] != '\\n') bbyte(o, '\\n');\n", PAGE, 'FAIL the edges:'),
+  ('css-comments-kept', 'tools/cdpage.c', "        if (from != SIZE_MAX && (j == n || p[j] == '\\n')) {", "        if (0 && from != SIZE_MAX && (j == n || p[j] == '\\n')) {", PAGE, 'FAIL comments:'),
+  ('css-inline-comments-dropped', 'tools/cdpage.c', '        from = blank ? line_at : SIZE_MAX;', '        from = line_at;', PAGE, 'FAIL comments:'),  # a comment beside a rule goes with its line, and the rule with it
   # cdom.mk and the stylesheets (tests/link/run.sh, the fixture apps of tests/link/apps, and tests/link/css.mjs in Chrome):
   # discovery through make, rebuilding on a stylesheet change only, the first build, an own page, the cascade
   ('mk-css-dir-dropped', 'cdom.mk', ' \\\n  --css-dir src\n', '\n', LINK, 'FAIL discovery: the css app'),

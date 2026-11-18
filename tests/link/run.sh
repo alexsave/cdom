@@ -263,11 +263,12 @@ apps="$here/apps"
 top="$(cd "$here/../.." && pwd)"
 ak() { local app="$1"; shift; make -s --no-print-directory -C "$app" CDOM="$top" "$@"; }
 order="10.css 9.css Z.css a.css a/b/deep.css a/x.css b/00.css"
-sheets() { # dir files...: the files as the page holds them: </style escaped, a newline after a last line without one
+sheets() { # dir files...: the files as the page holds them: the comments that fill their lines left out,
+  # </style escaped, a newline after a last line without one
   local d="$1" f; shift
-  for f in "$@"; do perl -pe 's{</(style)}{<\\/$1}gi' "$d/$f"; [ -n "$(tail -c1 "$d/$f")" ] && echo; done
+  for f in "$@"; do perl -0pe 's{^[ \t]*/\*.*?\*/[ \t\r]*(\n|\z)}{}gms; s{</(style)}{<\\/$1}gi' "$d/$f"; [ -n "$(tail -c1 "$d/$f")" ] && echo; done
 }
-heads() { grep -oE '^/\* [^ ]+\.css \*/$' "$1" | sed -E 's|^/\* (.*) \*/$|\1|' | tr '\n' ' ' | sed 's/ $//'; }
+heads() { grep -oE '/\* [^ ]+\.css \*/$' "$1" | sed -E 's|^/\* (.*) \*/$|\1|' | tr '\n' ' ' | sed 's/ $//'; }
 # Discovery: the default page holds the seven stylesheets of tests/link/apps/css/src, in byte order of
 # their paths, and nothing else of that tree.
 mo="$out/apps/css-default"; rm -rf "$mo"
@@ -301,7 +302,7 @@ if ! rk 2> "$rb.log" || ! { sleep 1; rk -q; }; then echo "FAIL rebuilding: the c
 else
   sleep 1; printf '#probe { --edited: "yes"; }\n' >> "$rb/src/a.css"; step "a.css edited" "$order"
   if ! grep -q -- '--edited' "$rb/build/index.html"; then echo "FAIL rebuilding: the edit is not in the page"; fail=1; fi
-  sleep 1; printf '/* a/new.css */\n.n-new { order: 1; }\n' > "$rb/src/a/new.css"; touch -t 200001010000 "$rb/src/a/new.css"
+  sleep 1; printf '.n-new { order: 1; } /* a/new.css */\n' > "$rb/src/a/new.css"; touch -t 200001010000 "$rb/src/a/new.css"
   step "a/new.css added, dated 2000" "10.css 9.css Z.css a.css a/b/deep.css a/new.css a/x.css b/00.css"
   sleep 1; rm "$rb/src/a/new.css"; step "a/new.css removed" "$order"
   sleep 1; mv "$rb/src/10.css" "$rb/src/zz.css"; step "10.css renamed zz.css (last now)" "9.css Z.css a.css a/b/deep.css a/x.css b/00.css 10.css"

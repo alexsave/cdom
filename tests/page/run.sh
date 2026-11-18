@@ -126,12 +126,12 @@ usage "a flag with no value" --page "$pages/ok.html" --out "$out/u.html" --shim 
 
 # ---- the stylesheets: discovery, order, the list file, the escape, the refusals and the edges ----
 # The tree is tests/link/apps/css/src (the fixture app's): seven stylesheets in subfolders, beside a dot-file,
-# a dot-folder, notes.css.bak, UPPER.CSS and a link to the folder a. Each file starts with /* its path */.
+# a dot-folder, notes.css.bak, UPPER.CSS and a link to the folder a. Each file's first line ends in a comment, /* its path */.
 tree="$top/tests/link/apps/css/src"
 cpage="$top/tests/link/apps/css/css.html"
 order="10.css 9.css Z.css a.css a/b/deep.css a/x.css b/00.css "
-# heads page: the /* path */ lines the page holds, in order
-heads() { grep -oE '^/\* [^ ]+\.(css|CSS|bak) \*/$' "$1" | sed -E 's|^/\* (.*) \*/$|\1|' | tr '\n' ' '; }
+# heads page: the /* path */ comments that end lines of the page, in order
+heads() { grep -oE '/\* [^ ]+\.(css|CSS|bak) \*/$' "$1" | sed -E 's|^/\* (.*) \*/$|\1|' | tr '\n' ' '; }
 css_page() { # out flags...: the fixture page with the tree's stylesheets, its module by URL
   local o="$1"; shift
   "$CDPAGE" --page "$cpage" --out "$o" --shim "$out/shim.js" --lits "$out/app.lits" --wasm-url x.wasm "$@" 2> "$o.log"
@@ -141,7 +141,7 @@ if ! css_page "$o" --css-dir "$tree"; then bad "discovery: refused the fixture t
 elif [ "$(heads "$o")" != "$order" ]; then bad "discovery: the page holds [$(heads "$o")], not [$order]"
 elif [ "$(grep -c -- '--last' "$o")" != 8 ] || grep -q -- '--hidden' "$o"; then bad "discovery: a stylesheet twice, or a skipped one in the page"
 elif [ "$(grep -n 'b/00' "$o" | tail -1 | cut -d: -f1)" -ge "$(grep -n 'var cdomLits' "$o" | cut -d: -f1)" ]; then bad "discovery: a stylesheet after the table's script"
-elif [ "$(sed -n '7p' "$o")" != '#probe { --first: "page"; --last: "page"; }' ] || [ "$(sed -n '8p' "$o")" != '/* 10.css */' ]; then bad "discovery: the page's own rules before the marker are not first"
+elif [ "$(sed -n '7p' "$o")" != '#probe { --first: "page"; --last: "page"; }' ] || [ "$(sed -n '8p' "$o")" != '.n-10 { order: 1; } /* 10.css */' ]; then bad "discovery: the page's own rules before the marker are not first"
 else ok "discovery: the seven stylesheets in byte order of their paths ($order), each once; dot-names, .css.bak, .CSS and the linked folder skipped; all where the marker was, before the table"; fi
 # The same tree, its files made in the reverse order (another directory order): the same page.
 rev="$out/rev/src"; rm -rf "$out/rev"; mkdir -p "$rev"
@@ -193,6 +193,16 @@ done
 if [ "$(grep -oi '</style' "$o" | wc -l | tr -d ' ')" = 1 ] && grep -qF '#probe::before { content: "<\/style><script>window.pwned=1</script>"; }' "$o" &&
    grep -qF 'The <\/STYLE> in this comment' "$o"; then ok "the escape: </style in a string and </STYLE in a comment are written <\\/, and the page has one </style, its own"
 else bad "the escape: the page holds $(grep -oi '</style' "$o" | wc -l | tr -d ' ') </style"; fi
+
+# Comments: one that fills its lines (spaces and tabs before it, spaces, tabs and a CR after it) is left
+# out with its lines; one beside other text is kept, so no two tokens are joined (a, a comment, .b is a.b).
+cm="$out/comments"; mkdir -p "$cm"
+printf '/* gone */\n.a { order: 1; }\n  \t/* gone, over\n two lines */ \t\r\n.b { order: 2; } /* kept: after a rule */\n/* kept: before a rule */ .c { order: 3; }\n.d/**/.e { order: 4; }\n.f::before { content: "/* in a string */"; }\n/* the last line, gone */' > "$cm/c.css"
+printf '.a { order: 1; }\n.b { order: 2; } /* kept: after a rule */\n/* kept: before a rule */ .c { order: 3; }\n.d/**/.e { order: 4; }\n.f::before { content: "/* in a string */"; }\n' > "$out/comments.want"
+o="$out/css_comments.html"
+if css_page "$o" --css-dir "$cm" && sed -n '8,/^#probe { --after/p' "$o" | sed '$d' | cmp -s - "$out/comments.want"; then
+  ok "comments: one that fills its lines is left out with them; one beside a rule, and one in a string, are kept"
+else bad "comments:"; sed -n '8,/^#probe { --after/p' "$o" | sed '$d' | diff "$out/comments.want" - | head -8; fi
 
 # The refusals, each with its message and no file. A stylesheet's own faults: each file of tests/page/bad
 # alone in a directory, and two made here (a NUL, bytes that are not UTF-8).
