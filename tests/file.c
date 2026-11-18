@@ -4,7 +4,6 @@
  * (-DCDOM_HEAP_PAGES_MAX=200, 12.5 MB) for NO_ROOM. */
 #include "../src/cdom.h"
 #include "../src/cdom_file.h"
-#include <stdio.h>
 #define EXPORT(n) __attribute__((export_name(n)))
 
 static cd_id pick, plain;
@@ -22,8 +21,11 @@ void cd_main(void) {
 EXPORT("pick") cd_id pick_id(void) { return pick; }
 EXPORT("plain") cd_id plain_id(void) { return plain; }
 EXPORT("size_of") double size_of(uint32_t i) {
-  char path[24];
-  uint32_t n = (uint32_t)snprintf(path, sizeof path, "files.%u.size", i);
+  char path[24] = "files.", digits[10]; /* no stdio.h: tests/build.sh builds this without libc headers too */
+  uint32_t n = 6, d = 0;
+  do digits[d++] = (char)('0' + i % 10); while (i /= 10);
+  while (d) path[n++] = digits[--d];
+  for (const char *t = ".size"; *t; t++) path[n++] = *t;
   return cd_get_num(pick, cd_tmp(path, n));
 }
 EXPORT("pages") uint32_t pages(void) { return (uint32_t)__builtin_wasm_memory_size(0); }
