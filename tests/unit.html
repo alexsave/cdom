@@ -1460,8 +1460,8 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
     let q = 0;
     try { q = x.t_state_q(); } catch (err) { threw += String(err); }
     const qGot = Array.from({ length: q }, (_, k) => x.t_state_q_at(k)).join();
-    const qWant = [...Array(100).keys()].filter((k) => k !== 50).concat([...Array(10).keys()], [...Array(40).keys()].map((k) => k + 100)).join();
-    check('cd_dirty: 100 distinct asks, each three times, one dropped: 99 runs once each in the order first asked; asks from a render for 10 that ran and 40 new (the table grows mid-pass) run in the next round, once each', () =>
+    const qWant = [...Array(100).keys()].filter((k) => k !== 50 && k !== 60).concat([60], [...Array(10).keys()], [...Array(40).keys()].map((k) => k + 100)).join();
+    check('cd_dirty: 100 distinct asks, each three times, one dropped, one dropped and asked again: 99 runs once each in the order asked (the one asked again last); asks from a render for 10 that ran and 40 new (the table grows mid-pass) run in the next round, once each', () =>
       (!threw && q === 149 && qGot === qWant) || JSON.stringify({ q, qGot, threw }));
     let plain = '';
     try { x.t_check_build_bad(); x.t_check_view_bad(); plain = 'ran'; } catch (err) { plain = String(err); }
