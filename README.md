@@ -24,7 +24,8 @@ Edit `myapp/src/app.c` and run `make -C myapp` again.
 
 cdom runs as fast as hand-written vanilla JS, and much faster than React, while shipping far fewer bytes.
 The four charts come from [RESULTS.md](RESULTS.md), measured on 2026-10-27 with [krausest/js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) (at ca8715d, keyed, its default puppeteer runner, headless) on an Apple M1 (16 GB), macOS 27.0.1, Chrome 156.
-The entries are vanillajs, cdom (its default: interned strings and templates) and react-hooks (React 19.2.0).
+The entries are vanillajs, cdom (its default then: interned strings and templates) and react-hooks (React 19.2.0).
+Since 2026-11-17 cdom has no interning: a literal is in the page's string table and any other string is read when it is used ([docs/strings-results.md](docs/strings-results.md)).
 Lower is better on every chart.
 
 CPU: the weighted geometric mean of the nine CPU benchmarks (create, replace, update, select, swap, remove and clear rows), each a factor against the fastest entry in the pass, median of 15 runs ([RESULTS.md, "Every operation"](RESULTS.md#every-operation-pass-2-median-of-15), line 54):
@@ -70,7 +71,7 @@ xychart-beta
 
 These runs were of cdom's first design, a batched op stream.
 cdom now makes one import call per DOM operation, which measured about 1.7% faster on the same weighted geometric mean and 16 ms sooner to first paint, paired against the op stream ([PERF_LOG.md, "The two lines merged"](PERF_LOG.md#the-two-lines-merged-2026-11-08), line 342); the current design has not had a full pass against React of its own.
-The shim alone is 14,891 bytes minified and 5,626 brotli ([PERF_LOG.md](PERF_LOG.md), line 421), and the per-operation tables, script times and the other entries (wasm-bindgen, dioxus) are in RESULTS.md.
+The shim alone is 17,599 bytes minified and 6,672 brotli on 2026-11-17 ([docs/strings-results.md](docs/strings-results.md)), and the per-operation tables, script times and the other entries (wasm-bindgen, dioxus) are in RESULTS.md.
 
 A hello world against a modern stack, measured on 2026-11-09: the same small app (a page with a name field that greets you through a one-route server) was built once on cdom, with its server also in C, and once on Next.js with create-next-app's defaults.
 
@@ -92,19 +93,21 @@ Calls go down, one wasm import per DOM operation, and events come back up as cal
 flowchart TB
   subgraph wasm["your app's wasm module: all the logic, all the state"]
     app["app.c: cd_main, cd_on / cd_on_event handlers, cd_on_timer, ..."]
-    lib["cdom.c: node ids, the string table, the builder, the keyed list, the heap<br>mini.c: the program's libc"]
+    lib["cdom.c: node ids, runtime string records, the builder, the keyed list, the heap<br>mini.c: the program's libc"]
   end
   subgraph shim["shim/cdom.js (fixed; pages inline cdom.min.js)"]
-    tables["nodes[id] and interned[id] tables, one listener per event type"]
+    tables["nodes[id], the page's string table (lits) and the read-only string cache, one listener per event type"]
   end
   dom["the browser's DOM"]
-  lib -->|"imports (module #quot;cdom#quot;), one per op:<br>strings, open, close, text, attr, set_text,<br>set_attr, style, move, remove, listen, ..."| tables
+  lib -->|"imports (module #quot;cdom#quot;), one per op:<br>open, close, text, attr, set_text, ahead,<br>set_attr, style, move, remove, listen, ..."| tables
   tables -->|"createElement, setAttribute,<br>nodeValue, insertBefore, ..."| dom
   dom -.->|"click, input, keydown, resize, ...<br>(DOM events)"| tables
   tables -.->|"exports, the only ways in:<br>cd_start, cd_event, cd_timer, cd_raf,<br>cd_net_*, cd_store_*, ..."| lib
 ```
 
-An interned string crosses once: `strings` copies the new ones into the shim's table before the op that needs them, and every later op names it by id.
+A string literal never crosses: the build moves it out of the module into the page's table (`tools/cdlits`, then `tools/page.awk`), and the op passes its slot.
+A pointer into read-only data (a ternary, a helper's `const char *`, a `const` table entry) is read from C memory once and kept by address.
+Any other string is read from C memory by the op that uses it, and `cd_tmp_ahead` lets an app have a burst of them decoded in one call.
 The life of one click, with the real names on each side:
 
 ```mermaid
@@ -228,7 +231,7 @@ APP_PAGE := out/index.html
 build: $(APP_WASM) $(APP_PAGE)
 ```
 
-From sources to one page, with make, clang, awk and `base64`, and no Node:
+From sources to one page, with make, clang, a host C compiler, awk and `base64`, and no Node:
 
 ```mermaid
 flowchart TB
@@ -242,7 +245,10 @@ flowchart TB
   core --> cc
   mods --> cc
   cc["$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS)<br>$(APP_CFLAGS) $(CDOM_LDFLAGS) ...<br>(clang --target=wasm32 -nostdlib)"]
-  cc --> wasm["APP_WASM (build/app.wasm)"]
+  cc --> cdlits["tools/cdlits (CDOM_LITS, built with HOST_CC)<br>takes the literals out of the module"]
+  cdlits --> wasm["APP_WASM (build/app.wasm)"]
+  cdlits --> lits["APP_WASM.lits (the string table)"]
+  lits -->|"a script before the shim"| awk
   wasm -->|"base64"| awk["tools/page.awk"]
   page["shim/page.html or APP_PAGE_SRC"] --> awk
   shim["shim/cdom.min.js"] -->|"at /*CDOM_SHIM*/"| awk
@@ -269,7 +275,9 @@ flowchart TB
 - `APP_WASM_SEPARATE := 1` keeps the module a file of its own, for large apps, hosts that cache a hashed `.wasm`, or the no-WebAssembly fallback: `/*CDOM_WASM*/` becomes its URL, `APP_WASM_URL` (the base name of `APP_WASM`, beside the page, unless set), or the page names it itself (`cdom.start("app.wasm", "app")`).
 - Bundling, an app's own page must start the bundled module: a page that names its module by URL fails the build with `this page loads app.wasm; set APP_WASM_SEPARATE := 1, or start with the bundled module (the /*CDOM_WASM*/ marker)`, and cdom never rewrites the app's call.
 - The rule fails, and writes nothing, when the page has no `/*CDOM_SHIM*/` line, has two, or has the marker beside other text, or has two `/*CDOM_WASM*/`; `$(call cdom_page,in.html,out.html)` does the same inside an app's own recipe, and `$(call cdom_page,in.html,out.html,module.wasm)` bundles that module too.
-- Nothing on this path needs Node: it is make, awk (`tools/page.awk`), `base64` and clang.
+- The build needs a host C compiler as well as clang: every link goes through `tools/cdlits` (`CDOM_LITS`, built from `tools/cdlits.c` with `HOST_CC`, `cc` unless set), which takes the string literals out of the module and writes them beside it as `$(APP_WASM).lits`.
+- The page gets its string table from `tools/page.awk`: it writes the `.lits` file as a script of its own before the shim, at the `/*CDOM_SHIM*/` line, so a page needs no marker for it, and `cdom.start` throws on a page with no table or a table from another build.
+- Nothing on this path needs Node: it is make, awk (`tools/page.awk`), `base64`, clang and the host compiler.
 
 ## Working on cdom
 

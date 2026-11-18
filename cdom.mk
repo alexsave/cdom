@@ -5,7 +5,10 @@
 #
 # Included once, before or after the app sets APP_*: it defines variables and the rules for the files
 # APP_WASM and APP_PAGE name, which read APP_* when make builds, not where cdom.mk is included (see the
-# rules below). It never changes the app's default goal. Plain make, awk and clang: no Node on this path.
+# rules below). It never changes the app's default goal. Plain make, awk, clang and a host C compiler
+# (HOST_CC, for tools/cdlits): no Node on this path. Every link goes through tools/cdlits, which moves the
+# module's string literals into $(APP_WASM).lits; tools/page.awk writes that table into the page as a
+# script of its own before the shim (docs/strings-design.md).
 #
 #   CDOM_CFLAGS   the compile flags every file of a cdom module needs
 #   CDOM_LDFLAGS  the link flags of a cdom module
