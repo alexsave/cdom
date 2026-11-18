@@ -1,0 +1,13 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>caret</title></head>
+<body><div id="app"></div>
+<script>
+// S14 (caret.c) on the real shim; query v=a|c|g. Sets window.X to the exports, or window.LOADERR.
+const v = new URLSearchParams(location.search).get('v');
+async function load(src) { const s = document.createElement('script'); s.text = await (await fetch(src)).text(); document.head.appendChild(s); }
+(async () => {
+  await load(`out/caret-${v}.wasm.lits`);
+  await load('../../../shim/cdom.js');
+  window.X = await cdom.start(`out/caret-${v}.wasm`, 'app', null, { seed: 1 });
+})().catch((e) => { window.LOADERR = String(e.stack || e); });
+</script></body></html>
