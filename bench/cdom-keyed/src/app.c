@@ -60,6 +60,7 @@ static uint32_t cpy(char *d, const char *s) {
 static void build(uint32_t count) {
   reserve_rows(nrows + count);
   char buf[64];
+  uint32_t first = arena_len;
   for (uint32_t i = 0; i < count; i++) {
     uint32_t n = cpy(buf, ADJ[rnd(25)]);
     buf[n++] = ' ';
@@ -68,6 +69,8 @@ static void build(uint32_t count) {
     n += cpy(buf + n, NOUN[rnd(13)]);
     rows[nrows++] = (Row){next_id++, arena_put(buf, n), n, next_rev++};
   }
+  /* The new labels sit together and render() shows them in this call: one decode for all of them. */
+  cd_tmp_ahead(arena + first, arena_len - first);
 }
 
 /* ---- view ---- */
@@ -174,7 +177,8 @@ static void act(uint32_t k, uint32_t cell) {
   case K_RUN: nrows = 0; arena_len = live_bytes = 0; build(1000); selected = 0; break;
   case K_RUNLOTS: nrows = 0; arena_len = live_bytes = 0; build(10000); selected = 0; break;
   case K_ADD: build(1000); break;
-  case K_UPDATE:
+  case K_UPDATE: {
+    uint32_t first = arena_len;
     for (uint32_t i = 0; i < nrows; i += 10) {
       uint32_t len = rows[i].len;
       char buf[256];
@@ -184,8 +188,11 @@ static void act(uint32_t k, uint32_t cell) {
       live_bytes -= len; /* the old bytes are dead now */
       rows[i].off = arena_put(buf, len + 4); rows[i].len = len + 4; rows[i].rev = next_rev++;
     }
+    /* A compaction rewrites the arena, so the appended labels are announced only when it did not run. */
     if (arena_len - live_bytes > live_bytes) arena_compact();
+    else cd_tmp_ahead(arena + first, arena_len - first);
     break;
+  }
   case K_CLEAR: nrows = 0; arena_len = live_bytes = 0; selected = 0; break;
   case K_SWAP:
     if (nrows > 998) { Row t = rows[1]; rows[1] = rows[998]; rows[998] = t; }

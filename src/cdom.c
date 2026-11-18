@@ -116,6 +116,7 @@ IMPORTS("value_num") void j_value_num(uint32_t n);
 IMPORTS("tpl_save") void j_tpl_save(uint32_t t);
 IMPORTS("clone") void j_clone(uint32_t t);
 IMPORTS("slot") void j_slot(uint32_t k);
+IMPORTS("ahead") void j_ahead(uint32_t p, uint32_t len);
 IMPORTS("tpl_text") void j_tpl_text(uint32_t t, uint32_t k, uint32_t s);
 IMPORTS("tpl_text_num") void j_tpl_text_num(uint32_t t, uint32_t k, uint32_t n);
 IMPORTS("walk") void j_walk(cd_id from, uint32_t steps, uint32_t n);
@@ -197,6 +198,8 @@ cd_str cd_tmpz(const char *s) {
   while (s[n]) n++;
   return cd_tmp(s, n);
 }
+/* The shim keeps the range; C holds no state for it. */
+void cd_tmp_ahead(const char *p, uint32_t len) { j_ahead((uint32_t)(uintptr_t)p, len); }
 /* Every function that takes a cd_str ends with this: its runtime strings are dead now. */
 static void tmp_done(void) {
   tmp.serial0 += tmp.n;

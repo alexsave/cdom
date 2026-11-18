@@ -36,9 +36,49 @@ const until = async (f, ms = 3000) => { for (let i = 0; i < ms / 10; i++) { if (
 let storeOpenedAt = -1;
 const realOpen = indexedDB.open.bind(indexedDB);
 indexedDB.open = (...a) => { if (storeOpenedAt < 0) storeOpenedAt = performance.now(); return realOpen(...a); };
-cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).then(async (x) => {
+const aheadOff = new URLSearchParams(location.search).get('checkahead') === 'off'; // the second run: the option off
+// The batched read (cd_tmp_ahead) and the life of a cd_tmp after a throw. Run at the end of the page, and
+// alone on the page with options.checkAhead off (?checkahead=off, which tools/unit.mjs opens last).
+function aheadChecks(x) {
+  const SUF = [['', 'a', 'bc', 'def'], ['', 'é', '日', '\u{1F600}'], ['\u{1F600}', '\u{1F600}', '\u{1F600}', '\u{1F600}']];
+  const expect = (kind, poked) => Array.from({ length: 1024 }, (_, i) =>
+    kind === 1 && i === 1023 ? '' : (poked && i === 5 ? 'Z' : String(i)) + SUF[kind][i & 3]);
+  const shown = (id) => [...document.querySelector(`#ah${String(id).padStart(3, '0')}`).childNodes].map((n) => n.data);
+  const diff = (got, exp) => { for (let i = 0; i < 1024; i++) if (got[i] !== exp[i]) return `[${i}] ${JSON.stringify(got[i])}, wanted ${JSON.stringify(exp[i])}`; return true; };
+  const run = (kind, mode) => { x.t_ahead_fill(kind); return shown(x.t_ahead_show(mode)); };
+  if (aheadOff) {
+    check('checkAhead off: a byte changed inside a live range shows the old text', () => {
+      const got = run(1, 5);
+      return got[5] === '5' + SUF[1][1] || `string 5 shows ${JSON.stringify(got[5])}`;
+    });
+  }
+  for (const kind of [0, 1, 2]) {
+    check(`cd_tmp_ahead, kind ${kind}: each of 1024 strings shown from the range equals a read on use of the same bytes, and the text expected`, () => {
+      const plain = run(kind, 0), all = run(kind, 1);
+      return diff(plain, expect(kind, false)) === true ? diff(all, plain) : 'read on use: ' + diff(plain, expect(kind, false));
+    });
+    check(`cd_tmp_ahead, kind ${kind}: a range from inside string 100 to inside string 900 leaves 100 and 900 right`, () => diff(run(kind, 2), expect(kind, false)));
+  }
+  check('cd_tmp_ahead: the range is gone when the call into C returns (a byte changed in a later call shows)', () => {
+    x.t_ahead_fill(1);
+    x.t_ahead_show(6);       // announces, shows nothing, returns
+    x.t_ahead_poke();        // a later call changes string 5
+    return diff(shown(x.t_ahead_show(0)), expect(1, true));
+  });
+  check('cd_tmp_ahead(0, 0) ends the range, and a second cd_tmp_ahead replaces the first', () => {
+    const r = [diff(run(1, 3), expect(1, true)), diff(run(1, 4), expect(1, true))];
+    return r.every((v) => v === true) || r.join(' | ');
+  });
+  if (aheadOff) return;
+  check('checkAhead on: a byte changed inside a live range throws, naming the rule', () => {
+    x.t_ahead_fill(1);
+    try { x.t_ahead_show(5); return 'no throw'; } catch (e) { return /^cdom: bytes inside a cd_tmp_ahead range changed/.test(e.message) || String(e); }
+  });
+}
+cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef, checkAhead: !aheadOff }).then(async (x) => {
   check('options.openStore opens the store before the module starts', () => (storeOpenedAt >= 0 && storeOpenedAt <= x.t_started()) || `opened at ${storeOpenedAt}, started at ${x.t_started()}`);
   window.__x = x;
+  if (aheadOff) { aheadChecks(x); return; }
   {
     // 22. Host access.
     x.t_host_section();
@@ -1038,5 +1078,6 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     const r = [whole === want.length, wholeOut === want, /^http:\/\/127\.0\.0\.1:\d+$/.test(wholeOut), cut === want.length, cutOut === 'http**'];
     return r.every(Boolean) || JSON.stringify(r) + ` ${wholeOut} ${cutOut}`;
   });
+  aheadChecks(x);
 }).catch((e) => errors.push('start: ' + e)).finally(() => { window.RESULT = { errors, passed }; });
 </script></body></html>

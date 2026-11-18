@@ -12,10 +12,32 @@ static uint32_t keys[64], nkeys;
 static const uint32_t *cur = keys; /* the key array create() reads */
 static cd_list list, tlist; /* tlist shares its <ul> with a fixed last <li>: its end anchor */
 
+/* The rounds of run_fuzz and run_fuzz_end show each key as a runtime label (the number, then a suffix of
+ * 0, 2, 3 or 4 UTF-8 bytes by key % 4), all in one buffer that cd_tmp_ahead announces before the update:
+ * the shim cuts the labels from one decode. The page checks the text. Every seventh round does not
+ * announce (it ends the old range), so those labels are read on use. */
+static char arena[64 * 16];
+static uint32_t aoff[65], labels;
+static void announce(uint32_t round) {
+  static const char *const SUFFIX[4] = {"", "\xc3\xa9", "\xe6\x97\xa5", "\xf0\x9f\x98\x80"};
+  uint32_t n = 0;
+  for (uint32_t i = 0; i < nkeys; i++) {
+    aoff[i] = n;
+    uint32_t k = keys[i];
+    if (k >= 10) arena[n++] = (char)('0' + k / 10);
+    arena[n++] = (char)('0' + k % 10);
+    for (const char *c = SUFFIX[k % 4]; *c; c++) arena[n++] = *c;
+  }
+  aoff[nkeys] = n;
+  if (round % 7 != 3) cd_tmp_ahead(arena, n); else cd_tmp_ahead(0, 0); /* the old range's bytes just changed */
+}
+
 static cd_id create(void *ctx, uint32_t i, uint32_t *data) {
   (void)ctx;
   cd_id id = cd_id_new();
-  cd_open(CD_LIT("li")); cd_name_el(id); cd_text_num(cur[i]); cd_close();
+  cd_open(CD_LIT("li")); cd_name_el(id);
+  if (labels) cd_text(cd_tmp(arena + aoff[i], aoff[i + 1] - aoff[i])); else cd_text_num(cur[i]);
+  cd_close();
   *data = 0;
   return id;
 }
@@ -60,8 +82,10 @@ void cd_main(void) {
 
 __attribute__((export_name("run_fuzz"))) void run_fuzz(uint32_t seed, uint32_t rounds) {
   rng = seed | 1;
+  labels = 1;
   for (uint32_t round = 0; round < rounds; round++) {
     next_keys();
+    announce(round);
     cd_list_update(&list, keys, nkeys, &FNS);
     cd_flush();
     check(keys, nkeys, round);
@@ -81,6 +105,7 @@ __attribute__((export_name("run_fuzz_end"))) void run_fuzz_end(uint32_t seed, ui
   cd_close();
   for (uint32_t round = 0; round < rounds; round++) {
     next_keys();
+    announce(round);
     cd_list_update(&tlist, keys, nkeys, &FNS);
     cd_flush();
     check_end(keys, nkeys, round);
@@ -114,6 +139,7 @@ __attribute__((export_name("run_freeruns"))) void run_freeruns(uint32_t seed, ui
   static cd_list L[2];
   static uint32_t K[2][64], nk[2];
   rng = seed | 1;
+  labels = 0;
   /* A flush closes the open run: after it, op 0 is a new op whose args must not be taken for
    * the run's (first id, count). Needs a freed id y right below a live id z. */
   cd_flush();

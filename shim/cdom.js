@@ -47,6 +47,11 @@ var cdom = (() => {
   let busy = 0;             // how many calls into C are on the stack
   let exports;              // the wasm module's exports
   let memory;
+  let aheadText = null;     // the cd_tmp_ahead range decoded as one string, while a range is alive
+  let aheadAt = 0;          // its first byte's address
+  let aheadEnd = 0;         // and the address just past its last byte
+  let aheadIndex = null;    // the UTF-16 offset of each of its bytes, or null when it is all ASCII
+  let checkAhead = false;   // options.checkAhead: every read from the range is compared with the bytes
   let lits;                 // the page's string table (cdomLits), one entry per literal slot
   let litBase;              // the address of slot 0: a literal's id is litBase + 4 * its index
   let buffer;               // memory.buffer when the views below were made (compared on the wasm2js tier only)
@@ -173,7 +178,49 @@ var cdom = (() => {
       throw new Error("cdom: a cd_tmp string used after the call it was made for");
     }
     const at = (tmpRecords >> 2) + k * recWords;
-    return readString(u32[at + recP], u32[at + recLen]);
+    const q = u32[at + recP];
+    const n = u32[at + recLen];
+    if (aheadText !== null && q >= aheadAt && q + n <= aheadEnd) {
+      const a = q - aheadAt;
+      const text = aheadIndex === null ? aheadText.substring(a, a + n) : aheadText.substring(aheadIndex[a], aheadIndex[a + n]);
+      if (checkAhead && text !== readString(q, n)) {
+        throw new Error("cdom: bytes inside a cd_tmp_ahead range changed");
+      }
+      return text;
+    }
+    return readString(q, n);
+  }
+  // cd_tmp_ahead: decodes [p, p + len) once, so the runtime strings inside it are cut from the result (str).
+  // The range holds until the outermost call into C ends (callEnded), the next ahead, or ahead(0, 0).
+  function ahead(p, len) {
+    if (!len) {
+      aheadText = null;
+      return;
+    }
+    p >>>= 0;
+    if (stale()) {
+      views();
+    }
+    aheadText = textDecoder.decode(u8.subarray(p, p + len));
+    aheadAt = p;
+    aheadEnd = p + len;
+    if (aheadText.length === len) {
+      aheadIndex = null; // all ASCII: a byte offset is a character offset
+      return;
+    }
+    aheadIndex = new Uint32Array(len + 1);
+    let u = 0;
+    for (let i = 0; i < len; i++) {
+      aheadIndex[i] = u;
+      const c = u8[p + i];
+      u += (c & 0xc0) !== 0x80; // a lead byte or an ASCII byte: one unit
+      u += c >= 0xf0;           // an astral lead byte: a surrogate pair
+    }
+    aheadIndex[len] = u;
+  }
+  // The outermost call into C has returned or thrown: its range is dead.
+  function callEnded() {
+    aheadText = null;
   }
 
   // Puts a new top-level node where at() said, or into the open element.
@@ -1224,7 +1271,7 @@ var cdom = (() => {
     }
     const imports = {
       cdom: {
-        at, open, close, text, text_num, attr, class: setClass, name_el, name_text, name_open,
+        ahead, at, open, close, text, text_num, attr, class: setClass, name_el, name_text, name_open,
         listen, value, value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num,
         set_text, set_text_num, set_attr, set_class, style, style_num, encode, image_bytes, remove, free, move, clear,
         detach, attach, unlisten, hit, viewport, rect, blit, set, call, get, timer, timer_stop, raf, now, ws_open, ws_send, ws_close, ws_buffered, http, epoch, origin,
@@ -1268,18 +1315,21 @@ var cdom = (() => {
         try {
           return raw(...args);
         } finally {
-          busy--;
+          if (--busy === 0) {
+            callEnded();
+          }
         }
       };
     }
     memory = exports.memory;
-    if (!exports.cd_lits || exports.cd_lits() >>> 0 !== table[1] >>> 0) {
+    if (!exports.cd_lits || instance.exports.cd_lits() >>> 0 !== table[1] >>> 0) {
       throw new Error("cdom: the page's string table is not this module's (the page and the module are from different builds, or the module did not go through cdlits)");
     }
+    checkAhead = !!(options && options.checkAhead);
     lits = table[3].split("\0");
     litBase = table[0];
     views();
-    readLayout(exports.cd_layout() >> 2);
+    readLayout(instance.exports.cd_layout() >> 2);
     if (exports.cd_url_changed) {
       addEventListener("popstate", urlChanged);
     }

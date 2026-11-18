@@ -100,6 +100,17 @@ typedef struct { uint32_t v; } cd_str;  /* a slot address, or 0x80000000 | a ser
 cd_str cd_tmp(const char *s, uint32_t len);
 cd_str cd_tmpz(const char *s);          /* traps on a null pointer */
 
+/* A burst of fresh runtime strings (a list's labels, built into one buffer and about to be shown):
+ * cd_tmp_ahead(p, len) says the bytes [p, p + len) will not change until the range ends. The shim
+ * decodes the range once, now, and until it ends a runtime string that lies wholly inside it is cut
+ * from that decode instead of being read on its own; any other runtime string is read as always.
+ * The range ends, and the shim drops the decoded text, when the outermost call into C returns
+ * (cd_main, an event, a timer, a frame, a network answer), at the next cd_tmp_ahead, or at
+ * cd_tmp_ahead(0, 0). It changes no result, only the time: use it for a few hundred strings or more.
+ * The bytes must be valid UTF-8 and must not change while the range lives. The shim reports a changed
+ * byte only under start's options.checkAhead (the tests set it): otherwise the page shows the old text. */
+void cd_tmp_ahead(const char *p, uint32_t len);
+
 /* cd_s(x): the cd_str of x. Call it yourself only to keep a literal in a variable or to choose between
  * literals: cd_set_class(id, sel ? cd_s("danger") : cd_s("")). It is a statement expression, so it
  * works inside a function, not in a file-scope initializer. */

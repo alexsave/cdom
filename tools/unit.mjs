@@ -239,6 +239,13 @@ try {
     if (want ? got.startsWith(want) : got === 'tap for sound') passed.push(`start, the ${name} page: ${want ? `throws "${want}..."` : 'starts the app'}`);
     else errors.push(`start, the ${name} page: wanted ${want ? `"${want}"` : 'the app started'}, got "${got}"`);
   }
+  // The same page with options.checkAhead off: it runs only the cd_tmp_ahead cases, and a changed byte
+  // inside a live range shows the old text instead of throwing.
+  await b.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/unit.html?checkahead=off` });
+  let off;
+  for (let i = 0; i < 400 && !off; i++) { await sleep(50); off = await b.evaluate('window.RESULT').catch(() => undefined); }
+  if (!off) errors.push('the checkahead=off page never finished');
+  else { errors.push(...off.errors); passed.push(...off.passed.map((n) => `${n} (checkAhead off page)`)); }
 } catch (e) { errors.push('threw: ' + String(e.message || e).slice(0, 300)); } finally { await b.close(); srv.close(); }
 // The shim hardcodes no offset into C memory: every one comes from cd_layout (tools/offsets.mjs).
 const shimSource = fs.readFileSync(path.join(root, '../../shim/cdom.js'), 'utf8');

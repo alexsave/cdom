@@ -492,6 +492,51 @@ EXPORT("t_tmp_cap") double t_tmp_cap(uint32_t n) {
   cd_call_args(CD_WINDOW, "Math.max", n, a); /* the numbers as strings: the largest is n */
   return cd_get_num(CD_RESULT, CD_NONE);
 }
+/* 11f. The batched read. 1024 strings sit in one buffer, each its number and a suffix: kind 0 is ASCII, 1
+ * mixes 0, 2, 3 and 4 byte characters (and ends in an empty string), 2 is all astral. t_ahead_show shows
+ * every one as a cd_tmp text node in a section of its own (its number is returned) after the announcement the mode
+ * says; the page compares with the same strings read on use and with the text it expects. */
+static char ah[1024 * 8];
+static uint32_t ah_at[1025], ah_sections;
+EXPORT("t_ahead_fill") uint32_t t_ahead_fill(uint32_t kind) {
+  static const char *const SUFFIX[3][4] = {
+    {"", "a", "bc", "def"},
+    {"", "\xc3\xa9", "\xe6\x97\xa5", "\xf0\x9f\x98\x80"},
+    {"\xf0\x9f\x98\x80", "\xf0\x9f\x98\x80", "\xf0\x9f\x98\x80", "\xf0\x9f\x98\x80"},
+  };
+  uint32_t n = 0;
+  for (uint32_t i = 0; i < 1024; i++) {
+    ah_at[i] = n;
+    if (kind == 1 && i == 1023) break; /* the last string is empty, at the range's last byte */
+    char d[4]; uint32_t k = 0;
+    for (uint32_t v = i;; v /= 10) { d[k++] = (char)('0' + v % 10); if (v < 10) break; }
+    while (k) ah[n++] = d[--k];
+    for (const char *c = SUFFIX[kind][i & 3]; *c; c++) ah[n++] = *c;
+  }
+  ah_at[1024] = n;
+  return n;
+}
+EXPORT("t_ahead_poke") void t_ahead_poke(void) { ah[ah_at[5]] = 'Z'; } /* string 5's first byte, a digit */
+EXPORT("t_ahead_end") void t_ahead_end(void) { cd_tmp_ahead(0, 0); }
+/* Modes: 0 no announcement; 1 all of it; 2 from one byte into string 100 to one byte into string 900, so
+ * string 100 starts before the range, 900 ends past it, and the rest of the strings lie outside or inside;
+ * 3 all, then ended by (0, 0), then string 5 changed; 4 all, string 5 changed, then another range
+ * announced over string 700 only; 5 all, then string 5 changed; 6 all, and nothing shown. */
+EXPORT("t_ahead_show") uint32_t t_ahead_show(uint32_t mode) {
+  uint32_t end = ah_at[1024];
+  if (mode == 1 || mode == 3 || mode == 4 || mode == 5 || mode == 6) cd_tmp_ahead(ah, end);
+  if (mode == 2) cd_tmp_ahead(ah + ah_at[100] + 1, ah_at[900] + 1 - (ah_at[100] + 1));
+  if (mode == 3) { cd_tmp_ahead(0, 0); t_ahead_poke(); }
+  if (mode == 4) { t_ahead_poke(); cd_tmp_ahead(ah + ah_at[700], ah_at[701] - ah_at[700]); }
+  if (mode == 5) t_ahead_poke();
+  if (mode == 6) return 0;
+  char name[8] = "ah";
+  uint32_t id = ++ah_sections;
+  name[2] = (char)('0' + id / 100 % 10); name[3] = (char)('0' + id / 10 % 10); name[4] = (char)('0' + id % 10);
+  cd_at(section(name), 0);
+  for (uint32_t i = 0; i < 1024; i++) cd_text(cd_tmp(ah + ah_at[i], ah_at[i + 1] - ah_at[i])); /* no open element: a throw leaves none */
+  return id;
+}
 /* A string argument is evaluated once, whichever kind it is. */
 static uint32_t once_calls;
 static const char *once_next(void) { once_calls++; return "once"; }
