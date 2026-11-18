@@ -179,6 +179,7 @@ cat > "$e.ok.c" <<'EOT'
 EX(k) void k(void) { cd_text("fine"); }
 EOT
 for c in plus wide nul utf8; do bw "$e.$c.wasm" -Oz -Wno-string-plus-int "$e.$c.c" "$here/stub.c" || { bad "error case $c does not build:"; cat "$e.$c.wasm.log"; }; done
+rm -f "$e.plus.o.wasm" "$e.plus.o.lits"
 expect_err '"abc" + 1' 'not a string literal: "abc" + 1, write the literal itself or pass cd_tmpz(...)' "$CDLITS" "$e.plus.wasm" "$e.plus.o.wasm" "$e.plus.o.lits"
 expect_err 'L"x"' 'not a string literal: L"x"' "$CDLITS" "$e.wide.wasm" "$e.wide.o.wasm" "$e.wide.o.lits"
 expect_err 'a NUL inside a literal' 'a NUL inside a literal' "$CDLITS" "$e.nul.wasm" "$e.nul.o.wasm" "$e.nul.o.lits"
