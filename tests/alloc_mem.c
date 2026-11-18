@@ -154,3 +154,21 @@ EXPORT("churn") uint32_t churn(uint32_t steps) {
   }
   return 0;
 }
+/* P: raceclub's photo path. tools/alloc.mjs answers cd_file_read_cb as the shim does (cd_file_room, the
+ * file's bytes, cd_file_got); in the callback, while the bytes are live, the app takes a decode buffer of
+ * w x h x 4 and a 900 x 675 x 4 output, frees the decode buffer and then the output; cdom then frees the
+ * file's block. photo_bad counts answers that were not the file. */
+#include "../src/cdom_file.h"
+static uint32_t photo_w, photo_h, photo_bad;
+static void photo_got(void *, uint32_t status, const uint8_t *p, uint32_t len) {
+  if (status != CD_FILE_OK || !len || p[0] != 7 || p[len - 1] != 7) { photo_bad++; return; }
+  uint8_t *decoded = take(photo_w * photo_h * 4);
+  uint8_t *out = take(900 * 675 * 4);
+  cd_free(decoded);
+  cd_free(out);
+}
+EXPORT("photo_ask") void photo_ask(uint32_t w, uint32_t h) {
+  photo_w = w, photo_h = h;
+  cd_file_read_cb(CD_MOUNT, 0, 1u << 30, photo_got, nullptr);
+}
+EXPORT("photo_bad") uint32_t photo_bad_n(void) { return photo_bad; }

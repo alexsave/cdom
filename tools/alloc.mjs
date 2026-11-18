@@ -86,6 +86,32 @@ for (const [name, answer, room] of [['cd_net_msg', (x, p, n) => x.cd_net_msg(3, 
   const r = call(() => { for (let i = 0; i < 2; i++) answer(x, x[room || 'cd_bytes_buf'](n), n); return x.pages() - p0; });
   check(`${name} frees the bytes it was handed once its hook returned: two 20 MB deliveries grow the memory 305 pages`, r === 305, `${r} pages`);
 }
+// Raceclub's photo path (tests/alloc_mem.c, P): a photo read with cd_file_read as the shim answers it, a
+// decode buffer and an output taken and freed in the callback, twice. The memory never shrinks, so the room
+// is given back when the second photo grows it by nothing. Predictions: docs/file-read-design.md.
+const photo = (file, w, h, wasm = 'alloc_mem.wasm') => {
+  let token = -1;
+  const mod = new WebAssembly.Module(fs.readFileSync(path.join(out, wasm)));
+  const imports = {};
+  for (const { module } of WebAssembly.Module.imports(mod)) imports[module] = new Proxy({}, { get: (_, k) => k === 'file_read' ? (t) => { token = t; } : () => 0 });
+  const x = new WebAssembly.Instance(mod, imports).exports;
+  const p0 = x.pages(), grown = [];
+  for (let i = 0; i < 2; i++) {
+    const before = x.pages();
+    x.photo_ask(w, h);
+    const ptr = x.cd_file_room(file);
+    new Uint8Array(x.memory.buffer, ptr, file).fill(7);
+    x.cd_file_got(token, 0, ptr, file);
+    grown.push(x.pages() - before);
+  }
+  return { first: grown[0], second: grown[1], peak: x.memory.buffer.byteLength, pages: x.pages(), start: p0, bad: x.photo_bad() };
+};
+for (const [name, file, w, h, first] of [['12 MP', 5000000, 4032, 3024, 857], ['24 MP', 10000000, 5664, 4248, 1658]]) {
+  const r = call(() => photo(file, w, h));
+  check(`a ${name} photo read with cd_file_read, decoded and scaled in its callback, grows the memory ${first} pages (each block its size), and a second photo reuses all of it: 0 pages`,
+    r.bad === 0 && r.first === first && r.second === 0, JSON.stringify(r));
+  if (process.env.ALLOC_PHOTO) console.log('     ' + name + ': ' + JSON.stringify(r));
+}
 // Blocks of every size taken, grown and freed in a seeded order: none ever holds another's bytes.
 {
   const x = await fresh('alloc_mem.wasm');
