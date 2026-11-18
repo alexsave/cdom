@@ -90,7 +90,7 @@ static void render(void) {
   ...                                          /* then the footer's count */
 }
 
-static void item_patch(void *ctx, uint32_t i, cd_item *it) {
+static void item_patch(void *, uint32_t, cd_item *it) {
   Todo *t = find(it->key);
   ItemView *v = &views[it->data];
   if (v->done == t->done) return;              /* nothing changed: the row stays as it is */
@@ -99,7 +99,7 @@ static void item_patch(void *ctx, uint32_t i, cd_item *it) {
   cd_set_bool(v->check, "checked", t->done);
 }
 
-static void item_destroy(void *ctx, cd_item *it) {
+static void item_destroy(void *, cd_item *it) {
   ItemView *v = &views[it->data];
   cd_id_free(v->check);                        /* also drops the handlers on them */
   cd_id_free(v->remove);

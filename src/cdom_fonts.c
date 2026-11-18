@@ -11,7 +11,7 @@ IMPORT("fonts_wait") void j_fonts_wait(uint32_t token, uint32_t deadline_ms);
 
 void cd_fonts_wait(uint32_t token, uint32_t deadline_ms) { j_fonts_wait(token, deadline_ms); }
 
-__attribute__((weak)) void cd_on_fonts(uint32_t token, uint32_t status) { (void)token; (void)status; }
+__attribute__((weak)) void cd_on_fonts(uint32_t, uint32_t) { }
 EXPORT("cd_fonts_done") void cd_fonts_done(uint32_t token, uint32_t status) {
   cd_on_fonts(token, status);
   cd_flush();

@@ -58,13 +58,11 @@ void cd_main(void) {
   show_state();
 }
 
-void cd_on_audio_loaded(uint32_t token, uint32_t loaded) {
-  (void)token;
+void cd_on_audio_loaded(uint32_t, uint32_t loaded) {
   clip = loaded;
 }
 
-void cd_on_audio_state(uint32_t state) {
-  (void)state;
+void cd_on_audio_state(uint32_t) {
   show_state();
 }
 
@@ -75,8 +73,7 @@ void cd_on_event(const cd_event_rec *e) {
   cd_audio_play(clip, 0.8, rate, 0);
 }
 
-void cd_on_audio_ended(uint32_t voice) {
-  (void)voice;
+void cd_on_audio_ended(uint32_t) {
   played++;
   cd_set_text_node_num(played_txt, played);
 }

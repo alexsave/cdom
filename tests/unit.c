@@ -214,14 +214,14 @@ void cd_on_event(const cd_event_rec *e) {
 /* 7. A keyed list followed by a fixed sibling: tail inserts land before it. */
 static cd_list tail_list;
 static uint32_t tail_keys[8];
-static cd_id tail_create(void *ctx, uint32_t i, uint32_t *data) {
-  (void)ctx; *data = 0;
+static cd_id tail_create(void *, uint32_t i, uint32_t *data) {
+  *data = 0;
   cd_id id = cd_id_new();
   cd_open("li"); cd_name_open(id); cd_text_num(tail_keys[i]); cd_close();
   return id;
 }
-static void nop_patch(void *ctx, uint32_t i, cd_item *it) { (void)ctx; (void)i; (void)it; }
-static void nop_destroy(void *ctx, cd_item *it) { (void)ctx; (void)it; }
+static void nop_patch(void *, uint32_t, cd_item *) { }
+static void nop_destroy(void *, cd_item *) { }
 static const cd_list_fns TAIL = {0, tail_create, nop_patch, nop_destroy};
 EXPORT("t_tail") void t_tail(uint32_t step) {
   static const uint32_t K[][4] = {{1, 2}, {1, 2, 3}, {3, 1, 2, 4}, {4}, {0}};
@@ -244,8 +244,7 @@ EXPORT("t_tail") void t_tail(uint32_t step) {
 static cd_list leak_list, inner[2];
 static uint32_t leak_keys[64];
 static cd_id sub_of[128];
-static cd_id leak_create(void *ctx, uint32_t i, uint32_t *data) {
-  (void)ctx;
+static cd_id leak_create(void *, uint32_t i, uint32_t *data) {
   cd_id id = cd_id_new();
   cd_open("li"); cd_name_open(id);
   cd_open("b"); cd_name_open(sub_of[leak_keys[i]] = cd_id_new()); cd_text_num(leak_keys[i]); cd_close();
@@ -253,7 +252,7 @@ static cd_id leak_create(void *ctx, uint32_t i, uint32_t *data) {
   *data = leak_keys[i];
   return id;
 }
-static void leak_destroy(void *ctx, cd_item *it) { (void)ctx; cd_id_free(sub_of[it->data]); }
+static void leak_destroy(void *, cd_item *it) { cd_id_free(sub_of[it->data]); }
 static const cd_list_fns LEAK = {0, leak_create, nop_patch, leak_destroy};
 static cd_region opt[2]; /* opt[0] parent mode, opt[1] root mode */
 static cd_id root_box;
@@ -825,7 +824,6 @@ void cd_on_ws_close(uint32_t id, uint32_t code) {
   enter();
   ws_hook_heard++;
   if (ws_mode == WS_PAIR) { wp_hook(CD_WS_CLOSE, id, 0, code); return; }
-  (void)id; (void)code;
   if (ws_mode == WS_ECHO) echo_closed = 1;
   if (ws_mode != WS_CYCLE) return;
   cycles_done++;
@@ -1305,7 +1303,7 @@ EXPORT("t_on_last") int32_t t_on_last(uint32_t k, uint32_t type) { return type ?
 static uint32_t on_many_calls[ON_MANY];
 static cd_id on_many_id[ON_MANY], on_reused[ON_MANY / 2];
 static cd_id on_many_box;
-static void on_count(const cd_event_rec *e, void *ctx) { (void)e; enter(); ++*(uint32_t *)ctx; }
+static void on_count(const cd_event_rec *, void *ctx) { enter(); ++*(uint32_t *)ctx; }
 EXPORT("t_on_many") void t_on_many(void) {
   cd_id s = section("onmany");
   cd_at(s, CD_APPEND);
@@ -1414,7 +1412,7 @@ EXPORT("t_http_cb_seen") int32_t t_http_cb_seen(uint32_t k, uint32_t f) {
 
 /* A free callback slot's index: a timer callback started and stopped at once takes the free list's top
  * and gives it back, so two probes around work that frees every slot it took name the same slot. */
-static void slot_probe_fire(void *ctx) { (void)ctx; }
+static void slot_probe_fire(void *) { }
 static uint32_t slot_probe(void) {
   uint32_t t = cd_timer_cb(1000, slot_probe_fire, 0);
   cd_timer_stop(t);
@@ -1557,9 +1555,8 @@ EXPORT("t_ws_pair_seen") uint32_t t_ws_pair_seen(uint32_t k, uint32_t f) {
 }
 
 static uint32_t wcy_left, wcy_done, wcy_lo = ~0u, wcy_hi, wcy_probe[2], wcy_ctx_ok;
-static void wcy_cb(void *ctx, uint32_t id, uint32_t ev, const uint8_t *p, uint32_t len) {
+static void wcy_cb(void *ctx, uint32_t id, uint32_t ev, const uint8_t *, uint32_t) {
   enter();
-  (void)p; (void)len;
   wcy_ctx_ok += ctx == &wcy_left;
   if (ev == CD_WS_OPEN) {
     if (id < wcy_lo) wcy_lo = id;
@@ -1591,8 +1588,7 @@ EXPORT("t_ws_cb_cycle") uint32_t t_ws_cb_cycle(uint32_t f) {
  * every kind of cd_val (an object's pairs among them) to a page function, and reads the viewport. */
 static cd_event_rec layout_rec;
 static cd_id layout_box;
-static void layout_heard(const cd_event_rec *e, void *ctx) {
-  (void)ctx;
+static void layout_heard(const cd_event_rec *e, void *) {
   __builtin_memcpy(&layout_rec, e, sizeof layout_rec);
 }
 EXPORT("t_layout") cd_id t_layout(void) {
@@ -1640,9 +1636,8 @@ EXPORT("t_layout_viewport") int32_t t_layout_viewport(int32_t k) {
 typedef struct { uint32_t seq, n, code, id, inside, own, buffered; } rf_sink;
 static rf_sink rf[3];
 static uint32_t rf_ids[3], rf_probe[2], rf_opening, rf_left;
-static void rf_cb(void *ctx, uint32_t id, uint32_t ev, const uint8_t *p, uint32_t len) {
+static void rf_cb(void *ctx, uint32_t id, uint32_t ev, const uint8_t *, uint32_t len) {
   enter();
-  (void)p;
   rf_sink *s = ctx;
   s->own += s == &rf[0] || s == &rf[1] || s == &rf[2];
   s->inside += rf_opening;

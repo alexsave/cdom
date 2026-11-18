@@ -33,7 +33,7 @@ export default function Greeting() {
 ```c
 static cd_id input, greeting_text, count_text;
 
-static void on_input(const cd_event_rec *e, void *ctx) {
+static void on_input(const cd_event_rec *, void *) {
   char name[NAME_CAP];
   uint32_t n = cd_input_text(input, name, sizeof name);   /* the value, as UTF-8 */
   ...

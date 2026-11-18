@@ -667,9 +667,9 @@ void cd_viewport(cd_viewport_rec *v) { j_viewport(v); }
 int cd_rect(cd_id id, double out[4]) { return (int)j_rect(id, out); }
 void cd_raf_request(uint32_t token) { j_raf(token); }
 double cd_now(void) { return j_now(); }
-__attribute__((weak)) void cd_on_timer(uint32_t token) { (void)token; }
-__attribute__((weak)) void cd_on_raf(uint32_t token, double t) { (void)token; (void)t; }
-__attribute__((weak)) void cd_on_frame(double ms) { (void)ms; }
+__attribute__((weak)) void cd_on_timer(uint32_t) { }
+__attribute__((weak)) void cd_on_raf(uint32_t, double) { }
+__attribute__((weak)) void cd_on_frame(double) { }
 /* cd_frames' loop: frames_on is what the app asked for, frames_asked that a frame is requested, so a
  * second start (or a stop and start inside one frame) never requests a second one. */
 static int frames_on, frames_asked;
@@ -703,7 +703,7 @@ EXPORT("cd_start") void cd_start(uint32_t seed) {
 
 /* Every entry from JS ends in a flush, here and in cdom_net.c: an app never calls cd_flush.
  * cd_event returns the flags the handler set, which the shim acts on once C has returned. */
-__attribute__((weak)) void cd_on_event(const cd_event_rec *e) { (void)e; }
+__attribute__((weak)) void cd_on_event(const cd_event_rec *) { }
 EXPORT("cd_event") uint32_t cd_event(void) {
   inbox.flags = 0;
   uint32_t id = (uint32_t)inbox.id;
@@ -733,12 +733,12 @@ EXPORT("cd_raf") void cd_raf(uint32_t token, double t) {
  * here, copies them in, then calls the export that hands them to the app. */
 static uint8_t *inbytes;
 EXPORT("cd_bytes_buf") void *cd_bytes_buf(uint32_t n) { return inbytes = cd_realloc(inbytes, n ? n : 1); }
-__attribute__((weak)) void cd_on_encoded(uint32_t token, const uint8_t *p, uint32_t len) { (void)token; (void)p; (void)len; }
+__attribute__((weak)) void cd_on_encoded(uint32_t, const uint8_t *, uint32_t) { }
 EXPORT("cd_encoded") void cd_encoded(uint32_t token, const uint8_t *p, uint32_t len) {
   cd_on_encoded(token, p, len);
   cd_flush();
 }
-__attribute__((weak)) void cd_on_image(uint32_t token, uint32_t ok) { (void)token; (void)ok; }
+__attribute__((weak)) void cd_on_image(uint32_t, uint32_t) { }
 EXPORT("cd_image") void cd_image(uint32_t token, uint32_t ok) {
   cd_on_image(token, ok);
   cd_flush();
@@ -814,10 +814,9 @@ static void lis_mark(const int32_t *src, uint32_t m, int32_t *tails, int32_t *pr
   }
 }
 
-static void drop(cd_list *L, cd_item *it, const cd_list_fns *f, int dom) {
+static void drop(cd_list *, cd_item *it, const cd_list_fns *f, int dom) {
   if (dom) cd_remove(it->node); else cd_id_free(it->node);
   f->destroy(f->ctx, it);
-  (void)L;
 }
 
 void cd_list_forget(cd_list *L, const cd_list_fns *f) {

@@ -23,14 +23,12 @@ static void show(void) {
 }
 
 /* Handlers: (event, ctx). ctx is whatever was passed to cd_on; here it carries the step. */
-static void step(const cd_event_rec *e, void *ctx) {
-  (void)e;
+static void step(const cd_event_rec *, void *ctx) {
   count += (int32_t)(intptr_t)ctx;
   show();
 }
 
-static void on_reset(const cd_event_rec *e, void *ctx) {
-  (void)e; (void)ctx;
+static void on_reset(const cd_event_rec *, void *) {
   count = 0;
   show();
 }

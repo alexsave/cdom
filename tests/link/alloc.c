@@ -8,7 +8,7 @@ void *malloc(size_t n);
 void *calloc(size_t n, size_t sz);
 void free(void *p);
 
-void cd_on_event(const cd_event_rec *e) { (void)e; }
+void cd_on_event(const cd_event_rec *) { }
 void cd_main(void) {}
 
 #define N 600

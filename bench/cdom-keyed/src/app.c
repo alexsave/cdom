@@ -90,8 +90,7 @@ static uint32_t view_new(void) {
   return nviews++;
 }
 
-static cd_id row_create(void *ctx, uint32_t i, uint32_t *data) {
-  (void)ctx;
+static cd_id row_create(void *, uint32_t i, uint32_t *data) {
   Row *r = &rows[i];
   uint32_t vi = view_new();
   RowView *v = &views[vi];
@@ -125,8 +124,7 @@ static cd_id row_create(void *ctx, uint32_t i, uint32_t *data) {
   return tr;
 }
 
-static void row_patch(void *ctx, uint32_t i, cd_item *it) {
-  (void)ctx;
+static void row_patch(void *, uint32_t i, cd_item *it) {
   Row *r = &rows[i];
   RowView *v = &views[it->data];
   if (v->rev != r->rev) {
@@ -142,8 +140,7 @@ static void row_patch(void *ctx, uint32_t i, cd_item *it) {
   }
 }
 
-static void row_destroy(void *ctx, cd_item *it) {
-  (void)ctx;
+static void row_destroy(void *, cd_item *it) {
   free_views[nfree_views++] = it->data;
 }
 

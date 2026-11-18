@@ -64,8 +64,7 @@ static void on_remove(const cd_event_rec *e, void *ctx);
 
 /* create: a new id gets its whole row. cd_at is already set to the list, so the row lands in place.
  * The handlers are registered after the row closes, and their ctx is the todo's id, so an event finds its todo. */
-static cd_id item_create(void *ctx, uint32_t i, uint32_t *data) {
-  (void)ctx;
+static cd_id item_create(void *, uint32_t i, uint32_t *data) {
   Todo *t = find(keys[i]);
   uint32_t vi = view_new();
   ItemView *v = &views[vi];
@@ -87,8 +86,7 @@ static cd_id item_create(void *ctx, uint32_t i, uint32_t *data) {
 
 /* patch: the row survived. Only what changed is written: here the class of the row and the checkbox, and
  * only when done flipped. The text of a todo never changes, so it is not compared. */
-static void item_patch(void *ctx, uint32_t i, cd_item *it) {
-  (void)ctx; (void)i;
+static void item_patch(void *, uint32_t, cd_item *it) {
   Todo *t = find(it->key);
   ItemView *v = &views[it->data];
   if (v->done == t->done) return;
@@ -99,8 +97,7 @@ static void item_patch(void *ctx, uint32_t i, cd_item *it) {
 
 /* destroy: the row's root is already removed from the page. Freeing the checkbox's and the button's ids
  * drops their handlers too, so a freed control can never send a click to a todo that is gone. */
-static void item_destroy(void *ctx, cd_item *it) {
-  (void)ctx;
+static void item_destroy(void *, cd_item *it) {
   ItemView *v = &views[it->data];
   cd_id_free(v->check);
   cd_id_free(v->remove);
@@ -130,8 +127,7 @@ static int is_space(char c) { return c == ' ' || c == '\t' || c == '\n' || c == 
 
 /* The form's submit: Enter in the field, or a click on Add. The page would reload on a submit, so the form's
  * default is stopped and the todo is added here. */
-static void on_submit(const cd_event_rec *e, void *ctx) {
-  (void)e; (void)ctx;
+static void on_submit(const cd_event_rec *, void *) {
   cd_prevent_default();
   char text[TEXT_CAP];
   uint32_t n = cd_input_text(input, text, sizeof text);
@@ -156,16 +152,14 @@ static void on_submit(const cd_event_rec *e, void *ctx) {
   render();
 }
 
-static void on_check(const cd_event_rec *e, void *ctx) {
-  (void)e;
+static void on_check(const cd_event_rec *, void *ctx) {
   Todo *t = find((uint32_t)(uintptr_t)ctx);
   if (!t) return;
   t->done = !t->done;
   render();
 }
 
-static void on_remove(const cd_event_rec *e, void *ctx) {
-  (void)e;
+static void on_remove(const cd_event_rec *, void *ctx) {
   uint32_t id = (uint32_t)(uintptr_t)ctx;
   for (uint32_t i = 0; i < ntodos; i++) {
     if (todos[i].id == id) { remove_at(i); break; }
@@ -173,8 +167,7 @@ static void on_remove(const cd_event_rec *e, void *ctx) {
   render();
 }
 
-static void on_filter(const cd_event_rec *e, void *ctx) {
-  (void)e;
+static void on_filter(const cd_event_rec *, void *ctx) {
   uint32_t k = (uint32_t)(uintptr_t)ctx;
   filter = k;
   for (uint32_t i = 0; i < 3; i++) {
@@ -183,8 +176,7 @@ static void on_filter(const cd_event_rec *e, void *ctx) {
   render();
 }
 
-static void on_clear(const cd_event_rec *e, void *ctx) {
-  (void)e; (void)ctx;
+static void on_clear(const cd_event_rec *, void *) {
   uint32_t kept = 0;
   for (uint32_t i = 0; i < ntodos; i++) {
     if (!todos[i].done) todos[kept++] = todos[i];

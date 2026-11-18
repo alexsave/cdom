@@ -64,7 +64,7 @@ export default function Regions() {
 ```c
 static cd_region details_region, panel_region;  /* shown says whether a region is built now */
 
-static void on_toggle(const cd_event_rec *e, void *ctx) {
+static void on_toggle(const cd_event_rec *, void *) {
   int open = !details_region.shown;
   if (cd_region_show(&details_region, open)) {    /* 1: build the section now */
     build_details();                              /* cd_name_open(details_region.root) names it */

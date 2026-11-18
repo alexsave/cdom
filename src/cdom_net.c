@@ -54,12 +54,10 @@ void cd_http_cb(cd_http_fn fn, void *ctx, const char *method, uint32_t mlen, con
 double cd_epoch_ms(void) { return j_epoch(); }
 uint32_t cd_page_origin(char *dst, uint32_t cap) { return j_origin(dst, cap); }
 
-__attribute__((weak)) void cd_on_ws_open(uint32_t id) { (void)id; }
-__attribute__((weak)) void cd_on_ws_msg(uint32_t id, const uint8_t *p, uint32_t len) { (void)id; (void)p; (void)len; }
-__attribute__((weak)) void cd_on_ws_close(uint32_t id, uint32_t code) { (void)id; (void)code; }
-__attribute__((weak)) void cd_on_http(uint32_t token, uint32_t status, const uint8_t *p, uint32_t len) {
-  (void)token; (void)status; (void)p; (void)len;
-}
+__attribute__((weak)) void cd_on_ws_open(uint32_t) { }
+__attribute__((weak)) void cd_on_ws_msg(uint32_t, const uint8_t *, uint32_t) { }
+__attribute__((weak)) void cd_on_ws_close(uint32_t, uint32_t) { }
+__attribute__((weak)) void cd_on_http(uint32_t, uint32_t, const uint8_t *, uint32_t) { }
 
 /* The shim copies a message into cdom's room for incoming bytes (cd_bytes_buf), then calls these. A
  * socket of cd_ws_open's goes to the hooks, one of cd_ws_open_cb's to its callback; at the close the

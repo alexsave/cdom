@@ -176,7 +176,7 @@ M = [
   ('audio-no-suspend', 'shim/cdom.js', '      audioContext.suspend();', '', UNIT, 'FAIL hidden, the context suspends'),
   ('audio-no-resume-shown', 'shim/cdom.js', '    } else {\n      audioContext.resume().catch(() => {});', '    } else {', UNIT, 'FAIL hidden, the context suspends'),
   ('demo-silent', 'demo/click.c', '  cd_audio_play(clip, 0.8, rate, 0);', '  (void)rate;', UNIT, 'FAIL demo'),
-  ('demo-hint-stuck', 'demo/click.c', '  (void)state;\n  show_state();', '  (void)state;', UNIT, 'FAIL demo'),
+  ('demo-hint-stuck', 'demo/click.c', 'void cd_on_audio_state(uint32_t) {\n  show_state();', 'void cd_on_audio_state(uint32_t) {', UNIT, 'FAIL demo'),
   ('random-one-call', 'src/cdom_random.c', '    uint32_t n = len < CD_RANDOM_CHUNK ? len : CD_RANDOM_CHUNK;', '    uint32_t n = len;', UNIT, 'FAIL cd_random_bytes: 200,000 bytes'),
   ('random-chunk-small', 'src/cdom_random.h', '#define CD_RANDOM_CHUNK 65536', '#define CD_RANDOM_CHUNK 32768', UNIT, 'FAIL cd_random_bytes: 200,000 bytes'),
   ('random-no-advance', 'src/cdom_random.c', '    p += n;\n', '', UNIT, 'FAIL cd_random_bytes: 200,000 bytes'),
@@ -306,7 +306,7 @@ M = [
   ('on-remove-keeps-listen', 'src/cdom.c', '    if (!pair_any(&handlers, id)) on_ids[id] = 0;\n    cd_unlisten(id, ev);', '    if (!pair_any(&handlers, id)) on_ids[id] = 0;', UNIT, 'FAIL cd_on: a handler'),
   ('on-put-appends', 'src/cdom.c', '  pair_ent *e = pair_find(t, a, b);\n  if (e) { e->p = p; e->q = q; return; }\n', '', UNIT, 'FAIL cd_on: a handler'),
   ('on-flags-after', 'src/cdom.c', '  inbox.flags = 0;\n  uint32_t id = (uint32_t)inbox.id;', '  uint32_t id = (uint32_t)inbox.id;\n  if (!(id < on_cap && on_ids[id])) inbox.flags = 0;', UNIT, 'FAIL cd_on: a handler'),
-  ('on-event-strong', 'src/cdom.c', '__attribute__((weak)) void cd_on_event(const cd_event_rec *e) { (void)e; }\n', '', LINK, 'FAIL an app that uses cd_on alone'),
+  ('on-event-strong', 'src/cdom.c', '__attribute__((weak)) void cd_on_event(const cd_event_rec *) { }\n', '', LINK, 'FAIL an app that uses cd_on alone'),
   # app helpers: cd_timer_stop and cd_timer_cb
   ('timer-stop-no-clear', 'shim/cdom.js', '    clearTimeout(handle);\n', '', UNIT, 'FAIL cd_timer_stop and cd_timer_cb'),
   ('timer-stop-one', 'src/cdom.c', 'for (pair_ent *e; (e = pair_any(&timers, token));) {', 'for (pair_ent *e = pair_any(&timers, token); e; e = 0) {', UNIT, 'FAIL cd_timer_stop and cd_timer_cb'),
@@ -394,7 +394,7 @@ M = [
   ('page-two-taken', 'tools/page.awk', '  if (++marks > 1) fail(', '  if (++marks > 2) fail(', LINK, 'FAIL cdom_page (first) refused the two page for another reason'),
   ('page-none-taken', 'tools/page.awk', '  if (marks != 1)\n', '  if (marks > 1)\n', LINK, 'FAIL cdom_page (first) took the none page'),
   ('page-partial-kept', 'cdom.mk', '> $(call cdom_mk_q,$(2).tmp) \\\n  && mv $(call cdom_mk_q,$(2).tmp) $(call cdom_mk_q,$(2)) ||', '> $(call cdom_mk_q,$(2)) ||', LINK, 'FAIL cdom_page (first) refused the inline page but left a file'),
-  ('mk-wasm-no-libc', 'cdom.mk', 'CDOM_CFLAGS := --target=wasm32 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src', 'CDOM_CFLAGS := --target=wasm32 -nostdlib -mbulk-memory -I$(CDOM)/src', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
+  ('mk-wasm-no-libc', 'cdom.mk', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -I$(CDOM)/src', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   ('mk-wasm-no-cdom', 'cdom.mk', 'cdom_mk_app_src = $(APP_SRC) $(CDOM_SRC)', 'cdom_mk_app_src = $(APP_SRC)', LINK, "FAIL cdom.mk's APP_WASM rule (first): the module exports no memory or no cd_start"),
   ('mk-modules-dropped', 'cdom.mk', ' $(addprefix $(CDOM)/src/cdom_,$(addsuffix .c,$(APP_MODULES)))', '', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   ('mk-modules-unchecked', 'cdom.mk', 'cdom_mk_known = $(if $(cdom_mk_unknown),', 'cdom_mk_known = $(if ,', LINK, 'FAIL cdom.mk (first) refused APP_MODULES for another reason'),  # make still stops, at the missing file, without saying why

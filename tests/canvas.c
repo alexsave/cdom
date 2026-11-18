@@ -26,7 +26,7 @@ void cd_main(void) {
   target = cd_id_new(); cd_name_el(target); cd_close();
 }
 
-void cd_on_event(const cd_event_rec *e) { (void)e; }
+void cd_on_event(const cd_event_rec *) { }
 
 static uint8_t small[7 * 5 * 4];
 EXPORT("blit_small") uint32_t blit_small(uint32_t salt) {

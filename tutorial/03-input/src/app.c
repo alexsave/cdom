@@ -23,8 +23,7 @@ static uint32_t characters_in(const char *s, uint32_t n) {
 
 /* The one handler: every keystroke, paste or deletion lands here. The greeting and the count are computed
  * from the value now, so they are never stale. */
-static void on_input(const cd_event_rec *e, void *ctx) {
-  (void)e; (void)ctx;
+static void on_input(const cd_event_rec *, void *) {
   char name[NAME_CAP];
   uint32_t n = cd_input_text(input, name, sizeof name);
   /* cd_input_text returns the whole length in bytes. When that is more than the buffer, the value was cut:

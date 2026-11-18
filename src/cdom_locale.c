@@ -13,7 +13,7 @@ IMPORT("prefs") uint32_t j_prefs(void);
 uint32_t cd_language(uint32_t i, char *dst, uint32_t cap) { return j_language(i, dst, cap); }
 uint32_t cd_prefs(void) { return j_prefs(); }
 
-__attribute__((weak)) void cd_on_prefs(uint32_t prefs) { (void)prefs; }
+__attribute__((weak)) void cd_on_prefs(uint32_t) { }
 EXPORT("cd_prefs_changed") void cd_prefs_changed(uint32_t prefs) {
   cd_on_prefs(prefs);
   cd_flush();

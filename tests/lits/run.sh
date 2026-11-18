@@ -193,12 +193,12 @@ if [ ! -e "$e.plus.o.wasm" ] && [ ! -e "$e.plus.o.lits" ]; then ok "error: a fai
 # ---- the compile errors: a non-string is not a string argument ----
 ce() { # name body message: the file must not compile, and the compiler's message is the one expected
   local f="$out/ce_$1.c"
-  printf '#include "stub.h"\nEX(k) void k(uint32_t some_id) { (void)some_id; %s }\n' "$2" > "$f"
+  printf '#include "stub.h"\nEX(k) void k(uint32_t some_id) { %s }\n' "$2" > "$f"
   if "$CC" "${CDOM_CFLAGS[@]}" -I"$here" -c -o "$f.o" "$f" 2> "$f.log"; then bad "compile error: $1 compiles"
   elif grep -qF -- "$3" "$f.log"; then ok "compile error: $1 ($3)"
   else bad "compile error: $1 fails for another reason:"; head -5 "$f.log"; fi
 }
-printf '#include "stub.h"\nEX(k) void k(uint32_t some_id) { (void)some_id; cd_text("fine"); cd_str a = cd_s("x"), b = cd_s("y"); (void)(a.v != b.v); }\n' > "$out/ce_control.c"
+printf '#include "stub.h"\nEX(k) void k(uint32_t) { cd_text("fine"); cd_str a = cd_s("x"), b = cd_s("y"); (void)(a.v != b.v); }\n' > "$out/ce_control.c"
 if "$CC" "${CDOM_CFLAGS[@]}" -I"$here" -Wall -Wextra -Werror -c -o "$out/ce_control.o" "$out/ce_control.c" 2> "$out/ce_control.log"; then ok "compile errors: the control file compiles"
 else bad "compile errors: the control file does not compile:"; cat "$out/ce_control.log"; fi
 ce id 'cd_text(some_id);' 'incompatible integer to pointer conversion'

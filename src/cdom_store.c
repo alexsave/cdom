@@ -36,7 +36,7 @@ void cd_store_del_cb(cd_store_done_fn fn, void *ctx, const char *key, uint32_t k
 }
 
 /* An app's token goes to its hook, cdom's to the callback that asked. */
-__attribute__((weak)) void cd_on_store(uint32_t token, const uint8_t *p, int32_t len) { (void)token; (void)p; (void)len; }
+__attribute__((weak)) void cd_on_store(uint32_t, const uint8_t *, int32_t) { }
 EXPORT("cd_store_got") void cd_store_got(uint32_t token, const uint8_t *p, int32_t len) {
   cd_cb_fn fn;
   void *ctx;
@@ -44,7 +44,7 @@ EXPORT("cd_store_got") void cd_store_got(uint32_t token, const uint8_t *p, int32
   else if (cd_cb_take(token, &fn, &ctx)) ((cd_store_fn)fn)(ctx, p, len);
   cd_flush();
 }
-__attribute__((weak)) void cd_on_store_put(uint32_t token, uint32_t ok) { (void)token; (void)ok; }
+__attribute__((weak)) void cd_on_store_put(uint32_t, uint32_t) { }
 EXPORT("cd_store_put_done") void cd_store_put_done(uint32_t token, uint32_t ok) {
   cd_cb_fn fn;
   void *ctx;
@@ -52,7 +52,7 @@ EXPORT("cd_store_put_done") void cd_store_put_done(uint32_t token, uint32_t ok) 
   else if (cd_cb_take(token, &fn, &ctx)) ((cd_store_done_fn)fn)(ctx, ok);
   cd_flush();
 }
-__attribute__((weak)) void cd_on_store_del(uint32_t token, uint32_t ok) { (void)token; (void)ok; }
+__attribute__((weak)) void cd_on_store_del(uint32_t, uint32_t) { }
 EXPORT("cd_store_del_done") void cd_store_del_done(uint32_t token, uint32_t ok) {
   cd_cb_fn fn;
   void *ctx;

@@ -63,8 +63,7 @@ static void show(uint32_t cs) {
  * the hundredths changed. A hundredth lasts 10 ms, so a screen faster than 100 Hz has frames that land in the
  * hundredth already on the screen, and those skip the write. The frame's own timestamp is not used: the clock
  * is read at the moment of the draw. */
-void cd_on_frame(double ms) {
-  (void)ms;
+void cd_on_frame(double) {
   uint32_t cs = hundredths(elapsed_ms());
   if (cs != shown_cs) show(cs);
 }
@@ -80,8 +79,7 @@ static void sync(void) {
 /* The lap rows are built from the keys, and the keys are the lap numbers, newest first. A row is created
  * once, when its lap is taken, and its text is fixed from then on. The text is read from C memory when
  * the row is created, so no lap is kept anywhere else. */
-static cd_id lap_create(void *ctx, uint32_t i, uint32_t *data) {
-  (void)ctx;
+static cd_id lap_create(void *, uint32_t i, uint32_t *data) {
   uint32_t n = keys[i];
   char name[16], split[16];
   uint32_t name_len = (uint32_t)snprintf(name, sizeof name, "Lap %u", n);
@@ -98,14 +96,12 @@ static cd_id lap_create(void *ctx, uint32_t i, uint32_t *data) {
 /* patch: a lap survived, and there is nothing to write. A lap's number and its split are fixed when it is
  * taken, so a row that is kept is already right. The keyed list still calls patch for each kept key, and it
  * returns at once. */
-static void lap_patch(void *ctx, uint32_t i, cd_item *it) {
-  (void)ctx; (void)i; (void)it;
+static void lap_patch(void *, uint32_t, cd_item *) {
 }
 
 /* destroy: the row's root is already removed from the page. The row has no ids of its own, so there is
  * nothing else to free. */
-static void lap_destroy(void *ctx, cd_item *it) {
-  (void)ctx; (void)it;
+static void lap_destroy(void *, cd_item *) {
 }
 
 static const cd_list_fns LAP_FNS = {0, lap_create, lap_patch, lap_destroy};
@@ -117,8 +113,7 @@ static void render_laps(void) {
 }
 
 /* The note's timer: it clears the note after NOTE_MS. A timer that fired is done, so the token is dropped. */
-static void clear_note(void *ctx) {
-  (void)ctx;
+static void clear_note(void *) {
   note_timer = 0;
   cd_set_text_node(note_text, "");
 }
@@ -128,8 +123,7 @@ static void clear_note(void *ctx) {
 /* Start and Stop share one button. Stop folds the run that is ending into the accumulated time, and it is
  * where the frame loop is turned off: there is no effect to clean up later, because no frame is asked for
  * after this point. */
-static void on_start_stop(const cd_event_rec *e, void *ctx) {
-  (void)e; (void)ctx;
+static void on_start_stop(const cd_event_rec *, void *) {
   if (running) {
     accumulated_ms = elapsed_ms(); /* still running here, so this adds the run that ends now */
     running = 0;
@@ -143,8 +137,7 @@ static void on_start_stop(const cd_event_rec *e, void *ctx) {
   sync();
 }
 
-static void on_lap(const cd_event_rec *e, void *ctx) {
-  (void)e; (void)ctx;
+static void on_lap(const cd_event_rec *, void *) {
   if (!running || nlaps == LAP_CAP) return;
   /* The split is taken from whole hundredths, so the splits add up to the time shown. */
   uint32_t cs = hundredths(elapsed_ms());
@@ -153,8 +146,7 @@ static void on_lap(const cd_event_rec *e, void *ctx) {
   render_laps();
 }
 
-static void on_reset(const cd_event_rec *e, void *ctx) {
-  (void)e; (void)ctx;
+static void on_reset(const cd_event_rec *, void *) {
   accumulated_ms = 0.0;
   nlaps = 0;
   lap_mark_cs = 0;

@@ -32,8 +32,7 @@ static void announce(uint32_t round) {
   if (round % 7 != 3) cd_tmp_ahead(arena, n); else cd_tmp_ahead(0, 0); /* the old range's bytes just changed */
 }
 
-static cd_id create(void *ctx, uint32_t i, uint32_t *data) {
-  (void)ctx;
+static cd_id create(void *, uint32_t i, uint32_t *data) {
   cd_id id = cd_id_new();
   cd_open("li"); cd_name_el(id);
   if (labels) cd_text(cd_tmp(arena + aoff[i], aoff[i + 1] - aoff[i])); else cd_text_num(cur[i]);
@@ -41,8 +40,8 @@ static cd_id create(void *ctx, uint32_t i, uint32_t *data) {
   *data = 0;
   return id;
 }
-static void patch(void *ctx, uint32_t i, cd_item *it) { (void)ctx; (void)i; (void)it; }
-static void destroy(void *ctx, cd_item *it) { (void)ctx; (void)it; }
+static void patch(void *, uint32_t, cd_item *) { }
+static void destroy(void *, cd_item *) { }
 static const cd_list_fns FNS = {0, create, patch, destroy};
 
 static void next_keys(void) {
@@ -69,7 +68,7 @@ static void next_keys(void) {
   }
 }
 
-void cd_on_event(const cd_event_rec *e) { (void)e; }
+void cd_on_event(const cd_event_rec *) { }
 
 void cd_main(void) {
   cd_open("ul");

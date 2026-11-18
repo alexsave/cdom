@@ -110,13 +110,12 @@ static double elapsed_ms(void) {
 }
 
 /* Runs before each paint while cd_frames(1) is on. It writes only when the hundredths changed. */
-void cd_on_frame(double ms) {
-  (void)ms;
+void cd_on_frame(double) {
   uint32_t cs = hundredths(elapsed_ms());
   if (cs != shown_cs) show(cs);
 }
 
-static void on_start_stop(const cd_event_rec *e, void *ctx) {
+static void on_start_stop(const cd_event_rec *, void *) {
   if (running) {
     accumulated_ms = elapsed_ms();
     running = 0;
@@ -130,7 +129,7 @@ static void on_start_stop(const cd_event_rec *e, void *ctx) {
   sync();
 }
 
-static void on_reset(const cd_event_rec *e, void *ctx) {
+static void on_reset(const cd_event_rec *, void *) {
   ...
   if (note_timer) cd_timer_stop(note_timer); /* a Reset before the note clears replaces its timer */
   cd_set_text_node(note_text, "Reset");

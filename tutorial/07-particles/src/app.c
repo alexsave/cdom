@@ -183,8 +183,7 @@ void cd_on_frame(double ms) {
 
 /* A click bursts particles where it was. The canvas's box on the screen maps the click to world pixels. cd_rect
  * is asked once per click, because the layout can change between clicks. */
-static void on_click(const cd_event_rec *e, void *ctx) {
-  (void)ctx;
+static void on_click(const cd_event_rec *e, void *) {
   double box[4];
   if (!cd_rect(canvas, box) || box[2] <= 0 || box[3] <= 0) return;
   double wx = ((double)e->x - box[0]) * WORLD_W / box[2];
@@ -195,8 +194,7 @@ static void on_click(const cd_event_rec *e, void *ctx) {
 
 /* Pause stops the frames and keeps the picture on the canvas. Play starts them again, and the first frame
  * after Play has no elapsed time, so the paused time is not simulated as a jump. */
-static void on_pause(const cd_event_rec *e, void *ctx) {
-  (void)e; (void)ctx;
+static void on_pause(const cd_event_rec *, void *) {
   playing = !playing;
   if (playing) {
     have_last = 0;

@@ -153,7 +153,7 @@ void cd_on_frame(double ms) {
   draw();                                 /* fade, paint, cd_blit(canvas, px, 320, 200) */
 }
 
-static void on_click(const cd_event_rec *e, void *ctx) {
+static void on_click(const cd_event_rec *e, void *) {
   double box[4];
   if (!cd_rect(canvas, box)) return;
   burst(to_fixed((e->x - box[0]) * WORLD_W / box[2], WORLD_W - 1),

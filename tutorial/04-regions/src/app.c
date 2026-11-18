@@ -29,8 +29,7 @@ static void build_details(void) {
 
 /* The click flips the state: shown is 1 while the section is there, so the next state is its opposite.
  * cd_region_show returns 1 only when the region must be built now; with 0 it takes the section away. */
-static void on_toggle(const cd_event_rec *e, void *ctx) {
-  (void)e; (void)ctx;
+static void on_toggle(const cd_event_rec *, void *) {
   int open = !details_region.shown;
   if (cd_region_show(&details_region, open)) {
     build_details();
@@ -78,8 +77,7 @@ static void select_tab(uint32_t k) {
 }
 
 /* The tab's index is the ctx. Clicking the tab that is already selected does nothing: its panel is built. */
-static void on_tab(const cd_event_rec *e, void *ctx) {
-  (void)e;
+static void on_tab(const cd_event_rec *, void *ctx) {
   uint32_t k = (uint32_t)(uintptr_t)ctx;
   if (k != selected) select_tab(k);
 }
