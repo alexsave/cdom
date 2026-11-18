@@ -476,7 +476,8 @@ EXPORT("t_pos") void t_pos(uint32_t k) {
 /* 11d. The life of a cd_tmp: good for the next call that takes a string. Used after another such call it
  * throws out of the call that uses it. 32 are alive at once (here as the arguments of one call); the 33rd traps. */
 EXPORT("t_tmp_stale") void t_tmp_stale(void) {
-  cd_str t = cd_tmpz("stale");
+  static char stale_buf[] = "stale"; /* mutable: a pointer into read-only data is its own id and never dies */
+  cd_str t = cd_tmpz(stale_buf);
   cd_set_class(styled, "x"); /* another call that takes a string: t is dead */
   cd_set_class(styled, t);       /* throws out of this call */
 }
@@ -496,9 +497,10 @@ EXPORT("t_tmp_cap") double t_tmp_cap(uint32_t n) {
  * threw. The first export throws with `kept` alive; the second, a later call, uses it. */
 static cd_str kept_tmp;
 EXPORT("t_tmp_throw") void t_tmp_throw(void) {
-  cd_str dead = cd_tmpz("dead");
+  static char dead_buf[] = "dead", kept_buf[] = "kept"; /* mutable, so they are runtime strings */
+  cd_str dead = cd_tmpz(dead_buf);
   cd_set_class(styled, "x"); /* dead is stale now */
-  kept_tmp = cd_tmpz("kept");   /* alive: in the window when the next line throws */
+  kept_tmp = cd_tmpz(kept_buf);   /* alive: in the window when the next line throws */
   cd_set_class(styled, dead);   /* throws out of the call, with kept alive */
 }
 EXPORT("t_tmp_after_throw") void t_tmp_after_throw(void) { cd_set_class(styled, kept_tmp); }

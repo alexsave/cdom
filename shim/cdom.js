@@ -54,6 +54,15 @@ var cdom = (() => {
   let checkAhead = false;   // options.checkAhead: every read from the range is compared with the bytes
   let lits;                 // the page's string table (cdomLits), one entry per literal slot
   let litBase;              // the address of slot 0: a literal's id is litBase + 4 * its index
+  let litEnd;               // the address just past the last slot (0 when the page has no slots)
+  // Strings of read-only data by address (cd_tmpz): the module's const bytes never change, so one address is
+  // one string for the life of the page. A 256-entry direct-mapped cache sits in front of the table; the
+  // table is a Map, or a plain object on the ES5 tier, which has no Map.
+  const roKey = new Int32Array(256);
+  const roVal = [];
+  const roMap = typeof Map === "function" ? new Map() : null;
+  const roObj = roMap ? null : {};
+  let onRoRead = null;      // options.onRoRead: a test hook, called with an address each time one is read from memory
   let buffer;               // memory.buffer when the views below were made (compared on the wasm2js tier only)
   let copiedOnGrow = false; // the module is wasm2js, whose grow leaves the old buffer attached
   let u8;
@@ -167,8 +176,37 @@ var cdom = (() => {
   // indexes the page's table; a runtime string's serial has the top bit set (negative), and its record
   // in C's block says where its bytes are right now. CD_NONE (0) is no string and never reaches here.
   function str(s) {
-    if (s > 0) {
+    if (s >= litBase && s < litEnd) {
       return lits[(s - litBase) >> 2];
+    }
+    if (s > 0) {
+      // A pointer into read-only data is its own id. Any other positive id is not a slot, so it is one of these.
+      const h = s & 255;
+      if (roKey[h] === s) {
+        return roVal[h];
+      }
+      let v = roMap ? roMap.get(s) : roObj[s];
+      if (v === undefined) {
+        if (stale()) {
+          views();
+        }
+        let end = s;
+        while (u8[end]) {
+          end++;
+        }
+        v = readString(s, end - s);
+        if (roMap) {
+          roMap.set(s, v);
+        } else {
+          roObj[s] = v;
+        }
+        if (onRoRead) {
+          onRoRead(s);
+        }
+      }
+      roKey[h] = s;
+      roVal[h] = v;
+      return v;
     }
     if (stale()) {
       views();
@@ -1130,13 +1168,14 @@ var cdom = (() => {
   }
 
   // Host access along dotted paths (cdom.h); a "--" segment is a custom property of the style object
-  // before it. A literal path is split once and kept by its slot; a runtime path is split each time.
+  // before it. A literal path is split once and kept by its slot; any other path is split each time.
   const segments = []; // a literal path's segments by slot index
   function segmentsOf(path) {
     if (!path) {
       return [];
     }
-    if (path < 0) {
+    if (path < litBase || path >= litEnd) {
+      // A runtime string or a read-only pointer (a path through a helper): split each time.
       return str(path).split(".");
     }
     return segments[(path - litBase) >> 2] ??= str(path).split(".");
@@ -1334,6 +1373,8 @@ var cdom = (() => {
     checkAhead = !!(options && options.checkAhead);
     lits = table[3].split("\0");
     litBase = table[0];
+    litEnd = litBase ? litBase + 4 * lits.length : 0;
+    onRoRead = (options && options.onRoRead) || null;
     views();
     readLayout(instance.exports.cd_layout() >> 2);
     if (exports.cd_url_changed) {

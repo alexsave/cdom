@@ -192,7 +192,15 @@ cd_str cd_tmp(const char *s, uint32_t len) {
   tmp.r[tmp.n] = (tmp_rec){(uint32_t)(uintptr_t)s, len};
   return (cd_str){0x80000000u | ((tmp.serial0 + tmp.n++) & 0x7fffffffu)};
 }
+/* A pointer into read-only data is its own id: the shim keeps its string by address.
+ * C never writes const data, so one address names one string for the life of the page.
+ * Mutable statics, the stack and the heap lie outside the range and are read on every use.
+ * wasm-ld defines the two symbols from LLVM 22; the weak declarations leave the range empty on an older
+ * linker, and then every string takes the path below: the same page, slower. */
+extern const char __rodata_start[] __attribute__((weak)), __rodata_end[] __attribute__((weak));
 cd_str cd_tmpz(const char *s) {
+  if ((uintptr_t)s - (uintptr_t)__rodata_start < (uintptr_t)__rodata_end - (uintptr_t)__rodata_start)
+    return (cd_str){(uint32_t)(uintptr_t)s};
   if (!s) __builtin_trap();
   uint32_t n = 0;
   while (s[n]) n++;
