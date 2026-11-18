@@ -31,6 +31,28 @@ const OLD = `(() => {
 // The scripts a page fetched, by file name, to prove which path it took.
 export const FETCHED = "performance.getEntriesByType('resource').map(r => r.name.split('/').pop().split('?')[0])";
 
+// Every Chrome this process started and that has not exited. Node does not take its children with it,
+// so a run that ended without close() (a throw, a process.exit on a failure, a SIGTERM from a harness's
+// timeout, a Ctrl-C) left its headless Chrome running, orphaned, with its profile in the temp dir. Now
+// they are killed, and their profiles removed, when this process exits, however it exits short of a
+// SIGKILL (whose senders kill the process group: tools/mutate.py). tools/cdpself.mjs checks each way.
+const live = new Map(); // proc -> profile dir
+const killAll = () => {
+  for (const [p, dir] of live) {
+    try { p.kill('SIGKILL'); } catch {}
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+  }
+  live.clear();
+};
+let hooked = false;
+const hook = () => {
+  if (hooked) return;
+  hooked = true;
+  process.on('exit', killAll); // a normal end, process.exit and an uncaught throw
+  for (const [sig, n] of [['SIGINT', 2], ['SIGTERM', 15], ['SIGHUP', 1]])
+    process.on(sig, () => { killAll(); process.exit(128 + n); }); // a signal ends the process without 'exit'
+};
+
 export async function launch(args = []) { // args: Chrome flags of the caller's own
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cdom-chrome-'));
   // Port 0: the OS gives this Chrome a free port, which it writes to DevToolsActivePort in its own
@@ -47,7 +69,9 @@ export async function launch(args = []) { // args: Chrome flags of the caller's 
     // fails can say why: the error below quotes its tail.
     { stdio: ['ignore', process.env.CHROME_LOG ? fs.openSync(process.env.CHROME_LOG, 'w') : 'ignore', fs.openSync(errFile, 'w')] });
   let exited = false, spawnErr = '';
-  proc.on('exit', () => { exited = true; });
+  live.set(proc, dir);
+  hook();
+  proc.on('exit', () => { exited = true; live.delete(proc); });
   proc.on('error', (e) => { exited = true; spawnErr = e.message; }); // no such binary: say so, don't crash the run
   const portFile = path.join(dir, 'DevToolsActivePort');
   // One deadline for the whole start, not a loop count: a cold CI runner's first Chrome (a new profile,
@@ -59,12 +83,13 @@ export async function launch(args = []) { // args: Chrome flags of the caller's 
   while (!dbg && !exited && performance.now() < deadline) {
     try { dbg = +fs.readFileSync(portFile, 'utf8').split('\n')[0]; } catch { await sleep(100); }
   }
-  if (!dbg) throw new Error(`cdp: Chrome ${exited ? 'exited' : 'wrote no DevToolsActivePort'} (profile ${dir})\n${why()}`);
+  const fail = (msg) => { proc.kill('SIGKILL'); return new Error(msg); }; // a launch that fails leaves no Chrome
+  if (!dbg) throw fail(`cdp: Chrome ${exited ? 'exited' : 'wrote no DevToolsActivePort'} (profile ${dir})\n${why()}`);
   let ver;
   while (!ver && !exited && performance.now() < deadline) {
     try { ver = await (await fetch(`http://127.0.0.1:${dbg}/json/version`)).json(); } catch { await sleep(200); }
   }
-  if (!ver) throw new Error(`cdp: no answer from Chrome on port ${dbg}${exited ? ' (it exited)' : ''}\n${why()}`);
+  if (!ver) throw fail(`cdp: no answer from Chrome on port ${dbg}${exited ? ' (it exited)' : ''}\n${why()}`);
   const ws = new WebSocket(ver.webSocketDebuggerUrl);
   await new Promise(r => ws.onopen = r);
   let id = 0; const pend = new Map();
@@ -90,5 +115,5 @@ export async function launch(args = []) { // args: Chrome flags of the caller's 
     await sleep(300);
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   };
-  return Object.assign(api, { version: ver.Browser, send: s, sendBrowser: send, targetId, evaluate, close });
+  return Object.assign(api, { pid: proc.pid, version: ver.Browser, send: s, sendBrowser: send, targetId, evaluate, close });
 }
