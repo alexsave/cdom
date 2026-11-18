@@ -2,8 +2,7 @@
  * diffs it against what is on screen and emits only the changes. */
 #include "../../../src/cdom.h"
 
-/* A literal is a CD_LIT slot, interned once per call site. */
-#define z(s) CD_LIT(s)
+/* A literal goes to the page's string table; a runtime string is read when it is used. */
 
 #ifndef CDOM_TEMPLATES
 #define CDOM_TEMPLATES 1
@@ -105,21 +104,21 @@ static cd_id row_create(void *ctx, uint32_t i, uint32_t *data) {
   cd_tpl_text(T_ROW, 1, LABEL(r));                       /* td.col-md-4 > a > label */
   cd_clone(T_ROW);
   cd_listen(tr, CD_EV_CLICK);
-  if (v->sel) cd_class(z("danger"));
+  if (v->sel) cd_class("danger");
   cd_close();
 #else
-  cd_open(z("tr")); cd_listen(tr, CD_EV_CLICK);
-  if (v->sel) cd_class(z("danger"));
-  cd_open(z("td")); cd_class(z("col-md-1")); cd_text_num(r->id); cd_close();
-  cd_open(z("td")); cd_class(z("col-md-4"));
-  cd_open(z("a")); cd_text(LABEL(r)); cd_close();
+  cd_open("tr"); cd_listen(tr, CD_EV_CLICK);
+  if (v->sel) cd_class("danger");
+  cd_open("td"); cd_class("col-md-1"); cd_text_num(r->id); cd_close();
+  cd_open("td"); cd_class("col-md-4");
+  cd_open("a"); cd_text(LABEL(r)); cd_close();
   cd_close();
-  cd_open(z("td")); cd_class(z("col-md-1"));
-  cd_open(z("a"));
-  cd_open(z("span")); cd_class(z("glyphicon glyphicon-remove")); cd_attr(z("aria-hidden"), z("true")); cd_close();
+  cd_open("td"); cd_class("col-md-1");
+  cd_open("a");
+  cd_open("span"); cd_class("glyphicon glyphicon-remove"); cd_attr("aria-hidden", "true"); cd_close();
   cd_close();
   cd_close();
-  cd_open(z("td")); cd_class(z("col-md-6")); cd_close();
+  cd_open("td"); cd_class("col-md-6"); cd_close();
   cd_close();
 #endif
   *data = vi;
@@ -139,7 +138,7 @@ static void row_patch(void *ctx, uint32_t i, cd_item *it) {
   uint8_t sel = r->id == selected;
   if (v->sel != sel) {
     v->sel = sel;
-    cd_set_class(it->node, sel ? z("danger") : z(""));
+    cd_set_class(it->node, sel ? cd_s("danger") : cd_s(""));
   }
 }
 
@@ -223,15 +222,15 @@ void cd_on_event(const cd_event_rec *e) {
 
 /* ---- the page ---- */
 static void button(const char *id, const char *label, uint32_t k) {
-  cd_open(z("div")); cd_class(z("col-sm-6 smallpad"));
-  cd_open(z("button"));
-  cd_attr(z("type"), z("button"));
-  cd_class(z("btn btn-primary btn-block"));
-  cd_attr(z("id"), cd_tmpz(id));
+  cd_open("div"); cd_class("col-sm-6 smallpad");
+  cd_open("button");
+  cd_attr("type", "button");
+  cd_class("btn btn-primary btn-block");
+  cd_attr("id", id);
   cd_id b = cd_id_new();
   cd_listen(b, CD_EV_CLICK);
   cd_tag_set(b, k);
-  cd_text(cd_tmpz(label));
+  cd_text(label);
   cd_close();
   cd_close();
 }
@@ -240,26 +239,26 @@ void cd_main(void) {
   rng = cd_seed | 1;
 #if CDOM_TEMPLATES
   cd_at(CD_DETACHED, 0);
-  cd_open(z("tr"));
-  cd_open(z("td")); cd_class(z("col-md-1")); cd_text(z(" ")); cd_slot(0); cd_close();
-  cd_open(z("td")); cd_class(z("col-md-4")); cd_open(z("a")); cd_text(z(" ")); cd_slot(1); cd_close(); cd_close();
-  cd_open(z("td")); cd_class(z("col-md-1"));
-  cd_open(z("a")); cd_open(z("span")); cd_class(z("glyphicon glyphicon-remove")); cd_attr(z("aria-hidden"), z("true")); cd_close(); cd_close();
+  cd_open("tr");
+  cd_open("td"); cd_class("col-md-1"); cd_text(" "); cd_slot(0); cd_close();
+  cd_open("td"); cd_class("col-md-4"); cd_open("a"); cd_text(" "); cd_slot(1); cd_close(); cd_close();
+  cd_open("td"); cd_class("col-md-1");
+  cd_open("a"); cd_open("span"); cd_class("glyphicon glyphicon-remove"); cd_attr("aria-hidden", "true"); cd_close(); cd_close();
   cd_close();
-  cd_open(z("td")); cd_class(z("col-md-6")); cd_close();
+  cd_open("td"); cd_class("col-md-6"); cd_close();
   cd_close();
   cd_tpl_save(T_ROW);
 #endif
 
   cd_at(CD_MOUNT, 0);
-  cd_open(z("div")); cd_class(z("container"));
-  cd_open(z("div")); cd_class(z("jumbotron"));
-  cd_open(z("div")); cd_class(z("row"));
-  cd_open(z("div")); cd_class(z("col-md-6"));
-  cd_open(z("h1")); cd_text(z("cdom-keyed")); cd_close();
+  cd_open("div"); cd_class("container");
+  cd_open("div"); cd_class("jumbotron");
+  cd_open("div"); cd_class("row");
+  cd_open("div"); cd_class("col-md-6");
+  cd_open("h1"); cd_text("cdom-keyed"); cd_close();
   cd_close();
-  cd_open(z("div")); cd_class(z("col-md-6"));
-  cd_open(z("div")); cd_class(z("row"));
+  cd_open("div"); cd_class("col-md-6");
+  cd_open("div"); cd_class("row");
   button("run", "Create 1,000 rows", K_RUN);
   button("runlots", "Create 10,000 rows", K_RUNLOTS);
   button("add", "Append 1,000 rows", K_ADD);
@@ -267,14 +266,14 @@ void cd_main(void) {
   button("clear", "Clear", K_CLEAR);
   button("swaprows", "Swap Rows", K_SWAP);
   cd_close(); cd_close(); cd_close(); cd_close();
-  cd_open(z("table")); cd_class(z("table table-hover table-striped test-data"));
-  cd_open(z("tbody"));
+  cd_open("table"); cd_class("table table-hover table-striped test-data");
+  cd_open("tbody");
   list.parent = cd_id_new();
   list.owns_parent = 1;
   cd_name_el(list.parent);
   cd_close();
   cd_close();
-  cd_open(z("span")); cd_class(z("preloadicon glyphicon glyphicon-remove")); cd_attr(z("aria-hidden"), z("true"));
+  cd_open("span"); cd_class("preloadicon glyphicon glyphicon-remove"); cd_attr("aria-hidden", "true");
   cd_close();
   cd_close();
 }

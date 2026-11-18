@@ -11,7 +11,6 @@
 #include "../src/cdom_fonts.h"
 
 #define EXPORT(n) __attribute__((export_name(n)))
-#define L(s) CD_LIT(s)
 
 /* When the module started (the store's early open is checked against it). */
 static double started_at;
@@ -22,8 +21,8 @@ EXPORT("t_started") double t_started(void) { return started_at; }
 static cd_id section(const char *name) {
   cd_id id = cd_id_new();
   cd_at(CD_MOUNT, 0);
-  cd_open(L("section"));
-  cd_attr(L("id"), name);
+  cd_open("section");
+  cd_attr("id", name);
   cd_name_open(id);
   cd_close();
   return id;
@@ -33,11 +32,11 @@ static cd_id section(const char *name) {
 EXPORT("t_clone_inside") void t_clone_inside(void) {
   cd_id s = section("clone");
   cd_at(CD_DETACHED, 0);
-  cd_open(L("b")); cd_text(L(" ")); cd_slot(0); cd_close();
+  cd_open("b"); cd_text(" "); cd_slot(0); cd_close();
   cd_tpl_save(3);
   cd_at(s, 0);
-  cd_open(L("p"));
-  for (int i = 0; i < 2; i++) { cd_tpl_text(3, 0, i ? L("two") : L("one")); cd_clone(3); cd_close(); }
+  cd_open("p");
+  for (int i = 0; i < 2; i++) { cd_tpl_text(3, 0, i ? cd_s("two") : cd_s("one")); cd_clone(3); cd_close(); }
   cd_close();
   cd_clone(3); cd_close(); /* a root clone, as before */
 }
@@ -49,11 +48,11 @@ EXPORT("t_tpl_tmp") void t_tpl_tmp(uint32_t step) {
   if (step == 0) {
     s = section("tpltmp");
     cd_at(CD_DETACHED, 0);
-    cd_open(L("i")); cd_text(L(" ")); cd_slot(0); cd_close();
+    cd_open("i"); cd_text(" "); cd_slot(0); cd_close();
     cd_tpl_save(5);
   }
   static const char *const T[] = {"alpha", "beta", 0, 0, "gamma", 0};
-  cd_tpl_text(5, 0, T[step] ? cd_tmpz(T[step]) : L("lit"));
+  cd_tpl_text(5, 0, T[step] ? cd_tmpz(T[step]) : cd_s("lit"));
   cd_at(s, 0);
   cd_clone(5);
   cd_close();
@@ -63,16 +62,16 @@ EXPORT("t_tpl_tmp") void t_tpl_tmp(uint32_t step) {
 EXPORT("t_svg") void t_svg(void) {
   cd_id s = section("svg");
   cd_at(CD_DETACHED, 0);
-  cd_open(L("g")); cd_close(); /* outside an svg: a template of an HTML <g> */
+  cd_open("g"); cd_close(); /* outside an svg: a template of an HTML <g> */
   cd_tpl_save(4);
   cd_at(s, 0);
-  cd_open(L("div"));
-  cd_open(L("svg")); cd_attr(L("viewBox"), L("0 0 4 4"));
-  cd_open(L("g")); cd_open(L("path")); cd_attr(L("d"), L("M0 0 L4 4")); cd_close(); cd_close();
+  cd_open("div");
+  cd_open("svg"); cd_attr("viewBox", "0 0 4 4");
+  cd_open("g"); cd_open("path"); cd_attr("d", "M0 0 L4 4"); cd_close(); cd_close();
   cd_clone(4); cd_close();
-  cd_open(L("circle")); cd_close();
+  cd_open("circle"); cd_close();
   cd_close();
-  cd_open(L("span")); cd_close();
+  cd_open("span"); cd_close();
   cd_close();
 }
 
@@ -89,8 +88,8 @@ static cd_id timer_txt, raf_txt;
 EXPORT("t_time") void t_time(void) {
   cd_id s = section("time");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text(L("waiting")); cd_name_text(timer_txt = cd_id_new()); cd_close();
-  cd_open(L("i")); cd_text(L("waiting")); cd_name_text(raf_txt = cd_id_new()); cd_close();
+  cd_open("i"); cd_text("waiting"); cd_name_text(timer_txt = cd_id_new()); cd_close();
+  cd_open("i"); cd_text("waiting"); cd_name_text(raf_txt = cd_id_new()); cd_close();
   cd_timer_start(5, 41);
   cd_raf_request(42);
   cd_flush();
@@ -119,7 +118,7 @@ static int32_t resized_w = -1, resized_h = -1, hidden = -1;
 EXPORT("t_window") void t_window(void) {
   cd_id s = section("window");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text_num(0); cd_name_text(vw_txt = cd_id_new()); cd_close();
+  cd_open("i"); cd_text_num(0); cd_name_text(vw_txt = cd_id_new()); cd_close();
   cd_listen_window(CD_EV_RESIZE);
   cd_listen_window(CD_EV_VISIBILITY);
   cd_flush();
@@ -135,12 +134,12 @@ static double rect_at[8];
 EXPORT("t_rect") void t_rect(void) {
   cd_id s = section("rect"), id = cd_id_new();
   cd_at(s, 0);
-  cd_open(L("div"));
-  cd_attr(L("style"), L("position: fixed; left: 10px; top: 20px; width: 30px; height: 40px;"));
+  cd_open("div");
+  cd_attr("style", "position: fixed; left: 10px; top: 20px; width: 30px; height: 40px;");
   cd_name_open(id);
   cd_close();
   cd_rect(id, rect_at);
-  cd_set_style(id, L("transform"), L("scale(2)"));
+  cd_set_style(id, "transform", "scale(2)");
   cd_rect(id, rect_at + 4);
 }
 EXPORT("t_rect_at") double t_rect_at(int32_t k) { return rect_at[k]; }
@@ -152,28 +151,28 @@ static int32_t ev_rec[9], ev_count, prevent_next;
 EXPORT("t_input") void t_input(void) {
   cd_id s = section("input");
   cd_at(s, 0);
-  cd_open(L("div"));
-  cd_attr(L("style"), L("position: fixed; left: 100px; top: 100px; width: 100px; height: 50px;"));
+  cd_open("div");
+  cd_attr("style", "position: fixed; left: 100px; top: 100px; width: 100px; height: 50px;");
   cd_listen(input_box = cd_id_new(), CD_EV_MOUSEDOWN);
   cd_listen(input_box, CD_EV_TOUCHSTART);
-  cd_open(L("span")); cd_text(L("inside")); cd_close();
+  cd_open("span"); cd_text("inside"); cd_close();
   cd_close();
-  cd_open(L("div")); /* over the box, and seen through */
-  cd_attr(L("style"), L("position: fixed; left: 90px; top: 90px; width: 200px; height: 80px; pointer-events: none;"));
+  cd_open("div"); /* over the box, and seen through */
+  cd_attr("style", "position: fixed; left: 90px; top: 90px; width: 200px; height: 80px; pointer-events: none;");
   cd_close();
-  cd_open(L("div"));
-  cd_attr(L("style"), L("position: fixed; left: 300px; top: 100px; width: 40px; height: 40px;"));
+  cd_open("div");
+  cd_attr("style", "position: fixed; left: 300px; top: 100px; width: 40px; height: 40px;");
   cd_listen(input_other = cd_id_new(), CD_EV_CLICK);
   cd_close();
-  cd_open(L("div")); /* over input_other's left half, taking pointer events; it listened, and listens no more */
-  cd_attr(L("style"), L("position: fixed; left: 300px; top: 100px; width: 20px; height: 40px;"));
+  cd_open("div"); /* over input_other's left half, taking pointer events; it listened, and listens no more */
+  cd_attr("style", "position: fixed; left: 300px; top: 100px; width: 20px; height: 40px;");
   cd_listen(input_layer = cd_id_new(), CD_EV_CLICK);
   cd_close();
   cd_unlisten(input_layer, CD_EV_CLICK);
-  cd_open(L("input")); cd_close();
+  cd_open("input"); cd_close();
   cd_id freed = cd_id_new(); /* listened, then its id freed with the node left in place: no longer a target */
-  cd_open(L("div"));
-  cd_attr(L("style"), L("position: fixed; left: 400px; top: 100px; width: 40px; height: 40px;"));
+  cd_open("div");
+  cd_attr("style", "position: fixed; left: 400px; top: 100px; width: 40px; height: 40px;");
   cd_listen(freed, CD_EV_CLICK);
   cd_close();
   cd_id_free(freed);
@@ -212,7 +211,7 @@ static uint32_t tail_keys[8];
 static cd_id tail_create(void *ctx, uint32_t i, uint32_t *data) {
   (void)ctx; *data = 0;
   cd_id id = cd_id_new();
-  cd_open(L("li")); cd_name_open(id); cd_text_num(tail_keys[i]); cd_close();
+  cd_open("li"); cd_name_open(id); cd_text_num(tail_keys[i]); cd_close();
   return id;
 }
 static void nop_patch(void *ctx, uint32_t i, cd_item *it) { (void)ctx; (void)i; (void)it; }
@@ -224,8 +223,8 @@ EXPORT("t_tail") void t_tail(uint32_t step) {
   if (step == 0) {
     cd_id s = section("tail");
     cd_at(s, 0);
-    cd_open(L("ul")); cd_name_open(tail_list.parent = cd_id_new());
-    cd_open(L("li")); cd_name_open(tail_list.end = cd_id_new()); cd_text(L("end")); cd_close();
+    cd_open("ul"); cd_name_open(tail_list.parent = cd_id_new());
+    cd_open("li"); cd_name_open(tail_list.end = cd_id_new()); cd_text("end"); cd_close();
     cd_close();
   }
   for (uint32_t i = 0; i < N[step]; i++) tail_keys[i] = K[step][i];
@@ -242,8 +241,8 @@ static cd_id sub_of[128];
 static cd_id leak_create(void *ctx, uint32_t i, uint32_t *data) {
   (void)ctx;
   cd_id id = cd_id_new();
-  cd_open(L("li")); cd_name_open(id);
-  cd_open(L("b")); cd_name_open(sub_of[leak_keys[i]] = cd_id_new()); cd_text_num(leak_keys[i]); cd_close();
+  cd_open("li"); cd_name_open(id);
+  cd_open("b"); cd_name_open(sub_of[leak_keys[i]] = cd_id_new()); cd_text_num(leak_keys[i]); cd_close();
   cd_close();
   *data = leak_keys[i];
   return id;
@@ -259,9 +258,9 @@ EXPORT("t_leak") void t_leak(uint32_t rounds) {
     rng = cd_seed | 1; /* unit.html fixes cd_seed, so the rounds are the same every run */
     cd_id s = section("leak");
     cd_at(s, 0);
-    cd_open(L("ul")); cd_name_open(leak_list.parent = cd_id_new()); leak_list.owns_parent = 1; cd_close();
-    cd_open(L("div")); cd_name_open(opt[0].parent = cd_id_new()); cd_close();
-    cd_open(L("div")); cd_name_open(root_box = cd_id_new()); cd_close();
+    cd_open("ul"); cd_name_open(leak_list.parent = cd_id_new()); leak_list.owns_parent = 1; cd_close();
+    cd_open("div"); cd_name_open(opt[0].parent = cd_id_new()); cd_close();
+    cd_open("div"); cd_name_open(root_box = cd_id_new()); cd_close();
   }
   for (uint32_t r = 0; r < rounds; r++) {
     rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
@@ -274,12 +273,12 @@ EXPORT("t_leak") void t_leak(uint32_t rounds) {
       if (o->shown && (!want || rebuild)) { cd_list_forget(&inner[k], &LEAK); cd_region_hide(o); }
       if (cd_region_show(o, want)) {
         cd_at(k ? root_box : o->parent, 0);
-        cd_open(L("div"));
+        cd_open("div");
         if (k) cd_name_open(o->root);
-        cd_open(L("i")); cd_name_open(cd_id_new()); cd_text(L("x")); cd_name_text(cd_id_new()); cd_close();
-        cd_open(L("ol")); cd_name_open(inner[k].parent = cd_id_new()); cd_close();
+        cd_open("i"); cd_name_open(cd_id_new()); cd_text("x"); cd_name_text(cd_id_new()); cd_close();
+        cd_open("ol"); cd_name_open(inner[k].parent = cd_id_new()); cd_close();
         cd_close();
-        if (!k) { cd_open(L("hr")); cd_name_open(cd_id_new()); cd_close(); } /* parent mode: a second root */
+        if (!k) { cd_open("hr"); cd_name_open(cd_id_new()); cd_close(); } /* parent mode: a second root */
         /* the inner list, filled while the region records: its ids stay the list's own */
         for (uint32_t i = 0; i < 3; i++) leak_keys[i] = 100 + 10 * (uint32_t)k + i;
         cd_list_update(&inner[k], leak_keys, 3, &LEAK);
@@ -300,11 +299,11 @@ EXPORT("t_free_twice") void t_free_twice(void) { cd_id a = cd_id_new(); cd_id_fr
 EXPORT("t_name_open") void t_name_open(void) {
   cd_id s = section("nameopen"), el = cd_id_new();
   cd_at(s, 0);
-  cd_open(L("div"));
-  cd_open(L("b")); cd_text(L("child")); cd_close();
+  cd_open("div");
+  cd_open("b"); cd_text("child"); cd_close();
   cd_name_open(el);
   cd_close();
-  cd_set_class(el, L("named"));
+  cd_set_class(el, "named");
   cd_flush();
 }
 
@@ -315,19 +314,19 @@ static cd_id name_kinds_el;
 EXPORT("t_name_kinds") void t_name_kinds(void) {
   cd_id s = section("namekinds"), el = cd_id_new(), txt = cd_id_new(), num = cd_id_new();
   cd_at(s, 0);
-  cd_open(L("div"));
-  cd_open(L("b")); cd_close();
-  cd_text(L("after the b"));
+  cd_open("div");
+  cd_open("b"); cd_close();
+  cd_text("after the b");
   cd_name_el(el);
-  cd_text(L("text"));
-  cd_open(L("i")); cd_close();
+  cd_text("text");
+  cd_open("i"); cd_close();
   cd_name_text(txt);
   cd_text_num(7);
-  cd_open(L("u")); cd_close();
+  cd_open("u"); cd_close();
   cd_name_text(num);
   cd_close();
-  cd_set_class(el, L("named"));
-  cd_set_text_node(txt, L("renamed"));
+  cd_set_class(el, "named");
+  cd_set_text_node(txt, "renamed");
   cd_set_text_node_num(num, 8);
   cd_flush();
   name_kinds_el = el;
@@ -335,12 +334,12 @@ EXPORT("t_name_kinds") void t_name_kinds(void) {
 /* 10c. The same calls given the element (which: 0 cd_set_text_node, 1 cd_set_text_node_num) or an id that
  * names nothing (2): each throws, and the page is as it was. */
 EXPORT("t_set_text_el") void t_set_text_el(uint32_t which) {
-  if (which == 0) cd_set_text_node(name_kinds_el, L("lost"));
+  if (which == 0) cd_set_text_node(name_kinds_el, "lost");
   else if (which == 1) cd_set_text_node_num(name_kinds_el, 9);
   else {
     cd_id unbound = cd_id_new(); /* handed back first, so the throw leaks no id */
     cd_id_free(unbound);
-    cd_set_text_node(unbound, L("lost"));
+    cd_set_text_node(unbound, "lost");
   }
 }
 
@@ -349,17 +348,17 @@ static cd_id styled;
 EXPORT("t_style") void t_style(uint32_t n) {
   cd_id s = section("style");
   cd_at(s, 0);
-  cd_open(L("div")); cd_name_open(styled = cd_id_new()); cd_close();
+  cd_open("div"); cd_name_open(styled = cd_id_new()); cd_close();
   char buf[32];
   for (uint32_t i = 0; i < n; i++) {
     uint32_t k = cd_fmt(buf, (int32_t)i, 0, CD_UNIT_PX);
-    cd_set_style(styled, L("left"), cd_tmp(buf, k));
-    cd_set_style_num(styled, L("top"), i + 0.5, CD_UNIT_PX);
+    cd_set_style(styled, "left", cd_tmp(buf, k));
+    cd_set_style_num(styled, "top", i + 0.5, CD_UNIT_PX);
   }
-  cd_set_style(styled, L("color"), L("red"));
-  cd_set_style_num(styled, L("width"), 12.25, CD_UNIT_EM);
-  cd_set_style_num(styled, L("opacity"), 0.5, CD_UNIT_NONE);
-  cd_set_attr(styled, L("data-t"), cd_tmpz("one-off \xc3\xa9"));
+  cd_set_style(styled, "color", "red");
+  cd_set_style_num(styled, "width", 12.25, CD_UNIT_EM);
+  cd_set_style_num(styled, "opacity", 0.5, CD_UNIT_NONE);
+  cd_set_attr(styled, "data-t", cd_tmpz("one-off \xc3\xa9"));
   cd_flush();
 }
 /* Each unit through cd_set_style_num, on a custom property so the browser keeps the text as given.
@@ -369,7 +368,7 @@ static cd_id unit_el;
 EXPORT("t_units") uint32_t t_units(void) {
   cd_id s = section("units");
   cd_at(s, 0);
-  cd_open(L("div")); cd_name_open(unit_el = cd_id_new()); cd_close();
+  cd_open("div"); cd_name_open(unit_el = cd_id_new()); cd_close();
   char prop[16], attr[16], val[16];
   for (uint32_t u = 0; u < CD_UNITS; u++) {
     uint32_t n = cd_fmt(prop + 3, (int32_t)u, 0, CD_UNIT_NONE);
@@ -390,28 +389,28 @@ static cd_id grown_el;
 EXPORT("t_grow") int32_t t_grow(uint32_t which) {
   if (!grown_el) {
     cd_at(section("grow"), 0);
-    cd_open(L("div")); cd_name_open(grown_el = cd_id_new()); cd_close();
+    cd_open("div"); cd_name_open(grown_el = cd_id_new()); cd_close();
     cd_flush();
   }
   /* The values of the set and the call are literals, so no string read makes the views fresh first and the
    * set or the call is what the test sees. */
-  cd_val a[2] = {cd_v_str(L("data-called")), cd_v_str(L("yes"))};
-  if (which == 2) cd_set_num(CD_BODY, L("tabIndex"), 1); /* on the body: the page reads grown_el */
-  if (which == 3) cd_call_args(CD_BODY, L("setAttribute"), 2, a);
+  cd_val a[2] = {cd_v_str("data-called"), cd_v_str("yes")};
+  if (which == 2) cd_set_num(CD_BODY, "tabIndex", 1); /* on the body: the page reads grown_el */
+  if (which == 3) cd_call_args(CD_BODY, "setAttribute", 2, a);
   cd_flush();
   uint8_t *big = cd_alloc((8u << 20) * (which + 1)); /* kept, so each call grows memory again */
   big[0] = 1;
   int32_t r = 0;
   if (which == 0) {
-    cd_set_attr(grown_el, L("data-grown"), cd_tmpz("read after the memory grew \xc3\xa9"));
+    cd_set_attr(grown_el, "data-grown", cd_tmpz("read after the memory grew \xc3\xa9"));
   } else if (which == 1) {
     cd_viewport_rec v;
     cd_viewport(&v);
     r = v.w;
   } else if (which == 2) {
-    cd_set_num(grown_el, L("tabIndex"), 7);
+    cd_set_num(grown_el, "tabIndex", 7);
   } else {
-    cd_call_args(grown_el, L("setAttribute"), 2, a);
+    cd_call_args(grown_el, "setAttribute", 2, a);
   }
   cd_flush();
   return r;
@@ -431,7 +430,7 @@ EXPORT("t_read") uint32_t t_read(uint32_t len, uint32_t kind) {
   if (!read_txt) {
     cd_id s = section("read");
     cd_at(s, 0);
-    cd_text(L(""));
+    cd_text("");
     cd_name_text(read_txt = cd_id_new());
   }
   for (uint32_t i = 0; i < len; i++) read_buf[i] = (char)('a' + i % 26);
@@ -458,7 +457,7 @@ EXPORT("t_pos") void t_pos(uint32_t k) {
   cd_open(V(k, "mark", "kbd", "samp", "var"));                                  /* a tag */
   cd_attr(V(k, "data-a", "data-b", "data-c", "data-d"), V(k, "va", "vb", "vc", "vd")); /* an attribute's name and value */
   cd_name_open(e);
-  cd_open(L("span")); cd_class(V(k, "ca", "cb", "cc", "cd")); cd_close();       /* a class */
+  cd_open("span"); cd_class(V(k, "ca", "cb", "cc", "cd")); cd_close();       /* a class */
   cd_text(V(k, "ta", "tb", "tc", "td"));                                        /* a text */
   cd_name_text(t);
   cd_close();
@@ -478,7 +477,7 @@ EXPORT("t_pos") void t_pos(uint32_t k) {
  * throws out of the call that uses it. 32 are alive at once (here as the arguments of one call); the 33rd traps. */
 EXPORT("t_tmp_stale") void t_tmp_stale(void) {
   cd_str t = cd_tmpz("stale");
-  cd_set_class(styled, L("x")); /* another call that takes a string: t is dead */
+  cd_set_class(styled, "x"); /* another call that takes a string: t is dead */
   cd_set_class(styled, t);       /* throws out of this call */
 }
 EXPORT("t_tmp_cap") double t_tmp_cap(uint32_t n) {
@@ -498,7 +497,7 @@ EXPORT("t_tmp_cap") double t_tmp_cap(uint32_t n) {
 static cd_str kept_tmp;
 EXPORT("t_tmp_throw") void t_tmp_throw(void) {
   cd_str dead = cd_tmpz("dead");
-  cd_set_class(styled, L("x")); /* dead is stale now */
+  cd_set_class(styled, "x"); /* dead is stale now */
   kept_tmp = cd_tmpz("kept");   /* alive: in the window when the next line throws */
   cd_set_class(styled, dead);   /* throws out of the call, with kept alive */
 }
@@ -557,7 +556,7 @@ EXPORT("t_once") uint32_t t_once(void) {
   uint32_t i = 0;
   once_calls = 0;
   cd_at(section("once"), 0);
-  cd_open(L("p"));
+  cd_open("p");
   cd_text(once_next());
   cd_text(names[i++]);
   cd_text(cd_tmp(names[i++], 2));
@@ -581,9 +580,9 @@ static uint8_t pix[3 * 2 * 4];
 EXPORT("t_image") void t_image(void) {
   cd_id s = section("image");
   cd_at(s, 0);
-  cd_open(L("div")); cd_name_open(imaged = cd_id_new()); cd_close();
+  cd_open("div"); cd_name_open(imaged = cd_id_new()); cd_close();
   for (uint32_t i = 0; i < 6; i++) { pix[i * 4] = (uint8_t)(40 * i); pix[i * 4 + 1] = (uint8_t)(255 - 30 * i); pix[i * 4 + 2] = (uint8_t)(7 * i); pix[i * 4 + 3] = 255; }
-  cd_encode_image(pix, 3, 2, 4, L("image/png"), 77);
+  cd_encode_image(pix, 3, 2, 4, "image/png", 77);
   __builtin_memset(pix, 0, sizeof pix); /* the shim copied them during the call */
 }
 /* The same pixels as RGB, at (1, 1) in a 5 x 4 PNG: its bytes kept for the page to decode. */
@@ -592,7 +591,7 @@ static uint32_t rgb_len;
 EXPORT("t_image_rgb") void t_image_rgb(void) {
   uint8_t rgb[3 * 2 * 3];
   for (uint32_t i = 0; i < 6; i++) { rgb[i * 3] = (uint8_t)(40 * i); rgb[i * 3 + 1] = (uint8_t)(255 - 30 * i); rgb[i * 3 + 2] = (uint8_t)(7 * i); }
-  cd_encode_image_in(rgb, 3, 2, 3, 5, 4, 1, 1, L("image/png"), 78);
+  cd_encode_image_in(rgb, 3, 2, 3, 5, 4, 1, 1, "image/png", 78);
 }
 EXPORT("t_rgb_png") uint8_t *t_rgb_png(void) { return rgb_png; }
 EXPORT("t_rgb_len") uint32_t t_rgb_len(void) { return rgb_len; }
@@ -602,7 +601,7 @@ void cd_on_encoded(uint32_t token, const uint8_t *p, uint32_t len) {
   loaded_key = (int32_t)token;
   loaded_id = (int32_t)len;
   /* a PNG starts 0x89 'P' 'N' 'G' */
-  if (len > 4 && p[0] == 0x89 && p[1] == 'P') cd_set_image_bytes(imaged, L("background-image"), p, len, L("image/png"), 79);
+  if (len > 4 && p[0] == 0x89 && p[1] == 'P') cd_set_image_bytes(imaged, "background-image", p, len, "image/png", 79);
   hold(imaged); /* no cd_flush: the export does it */
 }
 EXPORT("t_loaded") int32_t t_loaded(int32_t which) { return which ? loaded_key : loaded_id > 8; }
@@ -614,13 +613,13 @@ EXPORT("t_image_bad") void t_image_bad(void) {
   static const uint8_t junk[8] = {0x89, 'P', 'N', 'G', 1, 2, 3, 4};
   cd_id s = section("imagebad");
   cd_at(s, 0);
-  cd_open(L("div")); cd_name_open(unimaged = cd_id_new()); cd_close();
-  cd_set_image_bytes(unimaged, L("background-image"), junk, sizeof junk, L("image/png"), 80);
+  cd_open("div"); cd_name_open(unimaged = cd_id_new()); cd_close();
+  cd_set_image_bytes(unimaged, "background-image", junk, sizeof junk, "image/png", 80);
 }
 void cd_on_image(uint32_t token, uint32_t ok) {
   enter();
   if (token == 79 || token == 80) image_answer[token - 79] = (int32_t)ok;
-  if (token == 79) cd_set_style(imaged, L("--landed"), L("1"));
+  if (token == 79) cd_set_style(imaged, "--landed", "1");
   hold(imaged); /* no cd_flush: the export does it */
 }
 EXPORT("t_image_answer") int32_t t_image_answer(int32_t k) { return image_answer[k]; }
@@ -716,7 +715,7 @@ static uint32_t ws_open_here(void) {
 EXPORT("t_net") void t_net(uint32_t port) {
   cd_id s = section("net");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text(L("waiting")); cd_name_text(net_txt = cd_id_new()); cd_close();
+  cd_open("i"); cd_text("waiting"); cd_name_text(net_txt = cd_id_new()); cd_close();
   net_port = port;
   ws_mode = WS_ECHO;
   ws_open_here();
@@ -840,7 +839,7 @@ static cd_id audio_txt;
 EXPORT("t_audio_section") void t_audio_section(void) {
   cd_id s = section("audio");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text(L("audio")); cd_name_text(audio_txt = cd_id_new()); cd_close();
+  cd_open("i"); cd_text("audio"); cd_name_text(audio_txt = cd_id_new()); cd_close();
 }
 /* A WAV file of ms milliseconds (ms <= 1000): 8 kHz, 16-bit mono, +0.25 for the first half and
  * -0.25 for the second. ms 0: eight bytes that are no sound. */
@@ -965,7 +964,7 @@ static cd_id url_txt;
 EXPORT("t_url_section") void t_url_section(void) {
   cd_id s = section("url");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text(L("url")); cd_name_text(url_txt = cd_id_new()); cd_close();
+  cd_open("i"); cd_text("url"); cd_name_text(url_txt = cd_id_new()); cd_close();
 }
 EXPORT("t_url_in") char *t_url_in(void) { return url_in; }
 EXPORT("t_url_out") char *t_url_out(void) { return url_out; }
@@ -999,7 +998,7 @@ static cd_id prefs_txt;
 EXPORT("t_locale_section") void t_locale_section(void) {
   cd_id s = section("locale");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text(L("prefs")); cd_name_text(prefs_txt = cd_id_new()); cd_close();
+  cd_open("i"); cd_text("prefs"); cd_name_text(prefs_txt = cd_id_new()); cd_close();
 }
 EXPORT("t_lang_out") char *t_lang_out(void) { return lang_out; }
 EXPORT("t_language") uint32_t t_language(uint32_t i, uint32_t cap) {
@@ -1029,7 +1028,7 @@ static cd_id share_txt;
 EXPORT("t_share_section") void t_share_section(void) {
   cd_id s = section("share");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text(L("share")); cd_name_text(share_txt = cd_id_new()); cd_close();
+  cd_open("i"); cd_text("share"); cd_name_text(share_txt = cd_id_new()); cd_close();
   for (int i = 0; i < 16; i++) clipboard_status[i] = share_status[i] = -1;
 }
 EXPORT("t_share_text") char *t_share_text(void) { return share_text; }
@@ -1062,7 +1061,7 @@ static cd_id fonts_txt;
 EXPORT("t_fonts_section") void t_fonts_section(void) {
   cd_id s = section("fonts");
   cd_at(s, 0);
-  cd_open(L("i")); cd_text(L("fonts")); cd_name_text(fonts_txt = cd_id_new()); cd_close();
+  cd_open("i"); cd_text("fonts"); cd_name_text(fonts_txt = cd_id_new()); cd_close();
   for (int i = 0; i < 16; i++) fonts_status[i] = -1;
 }
 EXPORT("t_fonts_wait") void t_fonts_wait(uint32_t token, uint32_t deadline_ms) { cd_fonts_wait(token, deadline_ms); }
@@ -1090,30 +1089,30 @@ static char host_out[64];
 EXPORT("t_host_section") void t_host_section(void) {
   cd_id s = section("host");
   cd_at(s, 0);
-  cd_open(L("input")); cd_attr(L("type"), L("text")); cd_name_el(host_input = cd_id_new()); cd_close();
-  cd_open(L("input")); cd_attr(L("type"), L("checkbox")); cd_name_el(host_box = cd_id_new()); cd_close();
-  cd_open(L("button")); cd_text(L("b")); cd_name_open(host_button = cd_id_new()); cd_close();
-  cd_open(L("div")); cd_name_el(host_div = cd_id_new()); cd_close();
+  cd_open("input"); cd_attr("type", "text"); cd_name_el(host_input = cd_id_new()); cd_close();
+  cd_open("input"); cd_attr("type", "checkbox"); cd_name_el(host_box = cd_id_new()); cd_close();
+  cd_open("button"); cd_text("b"); cd_name_open(host_button = cd_id_new()); cd_close();
+  cd_open("div"); cd_name_el(host_div = cd_id_new()); cd_close();
 }
 EXPORT("t_host_set") void t_host_set(void) {
-  cd_set_str(host_input, L("value"), L("한국어 값"));
-  cd_set_bool(host_box, L("checked"), 1);
-  cd_set_bool(host_button, L("disabled"), 1);
-  cd_set_num(host_input, L("maxLength"), 12);
-  cd_set_str(host_div, L("style.--accent"), L("rgb(1, 2, 3)"));
-  cd_set_str(host_div, L("dataset.mark"), L("set"));
+  cd_set_str(host_input, "value", "한국어 값");
+  cd_set_bool(host_box, "checked", 1);
+  cd_set_bool(host_button, "disabled", 1);
+  cd_set_num(host_input, "maxLength", 12);
+  cd_set_str(host_div, "style.--accent", "rgb(1, 2, 3)");
+  cd_set_str(host_div, "dataset.mark", "set");
 }
-EXPORT("t_host_enable") void t_host_enable(void) { cd_set_bool(host_button, L("disabled"), 0); }
-EXPORT("t_host_focus") void t_host_focus(void) { cd_call(host_input, L("focus")); }
-EXPORT("t_host_blur") void t_host_blur(void) { cd_call(host_input, L("blur")); }
-EXPORT("t_host_checked") double t_host_checked(void) { return cd_get_num(host_box, L("checked")); }
-EXPORT("t_host_length") double t_host_length(void) { return cd_get_num(host_input, L("value.length")); }
-EXPORT("t_host_missing") double t_host_missing(void) { return cd_get_num(host_input, L("no.such.thing")); }
-EXPORT("t_host_value") uint32_t t_host_value(uint32_t cap) { return cd_get_str(host_input, L("value"), host_out, cap); }
+EXPORT("t_host_enable") void t_host_enable(void) { cd_set_bool(host_button, "disabled", 0); }
+EXPORT("t_host_focus") void t_host_focus(void) { cd_call(host_input, "focus"); }
+EXPORT("t_host_blur") void t_host_blur(void) { cd_call(host_input, "blur"); }
+EXPORT("t_host_checked") double t_host_checked(void) { return cd_get_num(host_box, "checked"); }
+EXPORT("t_host_length") double t_host_length(void) { return cd_get_num(host_input, "value.length"); }
+EXPORT("t_host_missing") double t_host_missing(void) { return cd_get_num(host_input, "no.such.thing"); }
+EXPORT("t_host_value") uint32_t t_host_value(uint32_t cap) { return cd_get_str(host_input, "value", host_out, cap); }
 EXPORT("t_host_text") uint32_t t_host_text(uint32_t cap) { return cd_input_text(host_input, host_out, cap); }
-EXPORT("t_host_accent") uint32_t t_host_accent(void) { return cd_get_str(host_div, L("style.--accent"), host_out, sizeof host_out); }
+EXPORT("t_host_accent") uint32_t t_host_accent(void) { return cd_get_str(host_div, "style.--accent", host_out, sizeof host_out); }
 EXPORT("t_host_out") char *t_host_out(void) { return host_out; }
-EXPORT("t_host_bad_set") void t_host_bad_set(void) { cd_set_str(host_div, L("no.such.thing"), L("x")); }
+EXPORT("t_host_bad_set") void t_host_bad_set(void) { cd_set_str(host_div, "no.such.thing", "x"); }
 
 /* 23. An event the browser dispatches while C runs waits for a microtask, and must not then reach a node
  * that is gone. Each input listens for keydown and focusout; the page focuses one and presses a key on it.
@@ -1126,13 +1125,13 @@ static int32_t def_heard[4]; /* focusouts on: the new input, the gone id, the al
 EXPORT("t_deferred_section") void t_deferred_section(void) {
   def_sec = section("deferred");
   cd_at(def_sec, 0);
-  cd_open(L("input")); cd_attr(L("class"), L("reuse"));
+  cd_open("input"); cd_attr("class", "reuse");
   cd_listen(def_reuse = cd_id_new(), CD_EV_KEYDOWN); cd_listen(def_reuse, CD_EV_FOCUSOUT); cd_close();
-  cd_open(L("input")); cd_attr(L("class"), L("gone"));
+  cd_open("input"); cd_attr("class", "gone");
   cd_listen(def_gone = cd_id_new(), CD_EV_KEYDOWN); cd_listen(def_gone, CD_EV_FOCUSOUT); cd_close();
-  cd_open(L("input")); cd_attr(L("class"), L("alive"));
+  cd_open("input"); cd_attr("class", "alive");
   cd_listen(def_alive = cd_id_new(), CD_EV_KEYDOWN); cd_listen(def_alive, CD_EV_FOCUSOUT); cd_close();
-  cd_open(L("input")); cd_attr(L("class"), L("other"));
+  cd_open("input"); cd_attr("class", "other");
   cd_listen(def_other = cd_id_new(), CD_EV_FOCUSOUT); cd_close();
   def_new = CD_DETACHED;
 }
@@ -1144,11 +1143,11 @@ static void deferred_event(const cd_event_rec *e) {
     cd_remove(def_reuse);
     def_new = cd_id_new();
     cd_at(def_sec, 0);
-    cd_open(L("input")); cd_attr(L("class"), L("new")); cd_listen(def_new, CD_EV_FOCUSOUT); cd_close();
+    cd_open("input"); cd_attr("class", "new"); cd_listen(def_new, CD_EV_FOCUSOUT); cd_close();
   } else if (e->type == CD_EV_KEYDOWN && id == def_gone) {
     cd_remove(def_gone);
   } else if (e->type == CD_EV_KEYDOWN && id == def_alive) {
-    cd_call(def_other, L("focus"));
+    cd_call(def_other, "focus");
   } else if (e->type == CD_EV_FOCUSOUT) {
     def_heard[0] += id == def_new;
     def_heard[1] += id == def_gone;
@@ -1162,16 +1161,16 @@ static cd_id dialog_node;
 EXPORT("t_dialog_section") cd_id t_dialog_section(void) {
   cd_id s = section("dialog");
   cd_at(s, 0);
-  cd_open(L("dialog"));
+  cd_open("dialog");
   dialog_node = cd_id_new();
   cd_listen(dialog_node, CD_EV_CANCEL);
   cd_listen(dialog_node, CD_EV_CLOSE);
-  cd_open(L("button")); cd_text(L("ok")); cd_close();
+  cd_open("button"); cd_text("ok"); cd_close();
   cd_close();
   return dialog_node;
 }
-EXPORT("t_dialog_show") void t_dialog_show(void) { cd_call(dialog_node, L("showModal")); }
-EXPORT("t_dialog_close") void t_dialog_close(void) { cd_call(dialog_node, L("close")); }
+EXPORT("t_dialog_show") void t_dialog_show(void) { cd_call(dialog_node, "showModal"); }
+EXPORT("t_dialog_close") void t_dialog_close(void) { cd_call(dialog_node, "close"); }
 EXPORT("t_ev_close") int32_t t_ev_close(void) { return CD_EV_CLOSE; }
 
 /* 25. cd_open_id: an element opened and named in one call, the id naming it after children were built
@@ -1182,20 +1181,20 @@ static uint32_t open_live[3];
 EXPORT("t_open_id") void t_open_id(void) {
   cd_id s = section("openid");
   cd_at(s, 0);
-  open_outer = cd_open_id(L("ul"));
-  open_inner = cd_open_id(L("li")); cd_text(L("a")); cd_close();
-  cd_open(L("li")); cd_text(L("b")); cd_close();
+  open_outer = cd_open_id("ul");
+  open_inner = cd_open_id("li"); cd_text("a"); cd_close();
+  cd_open("li"); cd_text("b"); cd_close();
   cd_close();
-  cd_set_class(open_outer, L("outer"));
-  cd_set_class(open_inner, L("inner"));
+  cd_set_class(open_outer, "outer");
+  cd_set_class(open_inner, "inner");
   open_live[0] = cd_ids_live();
   if (cd_region_show(&open_region, 1)) {
     cd_at(s, 0);
-    cd_open(L("p")); cd_name_open(open_region.root);
-    cd_id in = cd_open_id(L("b")); cd_text(L("c")); cd_close();
+    cd_open("p"); cd_name_open(open_region.root);
+    cd_id in = cd_open_id("b"); cd_text("c"); cd_close();
     cd_close();
     cd_region_end(&open_region);
-    cd_set_class(in, L("in-region"));
+    cd_set_class(in, "in-region");
   }
   open_live[1] = cd_ids_live();
 }
@@ -1225,7 +1224,7 @@ static void on_hit_r(const cd_event_rec *e, void *ctx) { on_hit(e, ctx); } /* a 
 EXPORT("t_on_section") void t_on_section(void) {
   cd_id s = section("on");
   cd_at(s, 0);
-  for (int k = 0; k < 3; k++) { on_btn[k] = cd_open_id(L("button")); cd_text_num((uint32_t)k); cd_close(); }
+  for (int k = 0; k < 3; k++) { on_btn[k] = cd_open_id("button"); cd_text_num((uint32_t)k); cd_close(); }
   on_b.prevent = 1;
   cd_on(on_btn[0], CD_EV_CLICK, on_hit, &on_a);
   cd_on(on_btn[1], CD_EV_CLICK, on_hit, &on_b);
@@ -1255,9 +1254,9 @@ static void on_count(const cd_event_rec *e, void *ctx) { (void)e; enter(); ++*(u
 EXPORT("t_on_many") void t_on_many(void) {
   cd_id s = section("onmany");
   cd_at(s, 0);
-  on_many_box = cd_open_id(L("div"));
+  on_many_box = cd_open_id("div");
   for (int i = 0; i < ON_MANY; i++) {
-    on_many_id[i] = cd_open_id(L("span"));
+    on_many_id[i] = cd_open_id("span");
     cd_on(on_many_id[i], CD_EV_INPUT, on_count, &on_many_calls[i]);
     cd_on(on_many_id[i], CD_EV_CLICK, on_count, &on_many_calls[i]);
     cd_close();
@@ -1269,7 +1268,7 @@ EXPORT("t_on_many_free") uint32_t t_on_many_free(void) {
   uint32_t same = 0;
   cd_at(on_many_box, 0);
   for (int i = 0; i < ON_MANY / 2; i++) {
-    cd_open(L("b"));
+    cd_open("b");
     cd_listen(on_reused[i] = cd_id_new(), CD_EV_CLICK);
     cd_close();
     for (int k = 0; k < ON_MANY; k += 2) same += on_reused[i] == on_many_id[k];
@@ -1544,11 +1543,11 @@ static void layout_heard(const cd_event_rec *e, void *ctx) {
 EXPORT("t_layout") cd_id t_layout(void) {
   cd_id s = section("layout");
   cd_at(s, 0);
-  cd_open(L("div")); cd_name_open(layout_box = cd_id_new());
-  cd_open(L("i")); cd_close();
-  cd_open(L("p"));
-  cd_open(L("b")); cd_close(); cd_open(L("b")); cd_close();
-  cd_open(L("b")); cd_text(L("target")); cd_close();
+  cd_open("div"); cd_name_open(layout_box = cd_id_new());
+  cd_open("i"); cd_close();
+  cd_open("p");
+  cd_open("b"); cd_close(); cd_open("b"); cd_close();
+  cd_open("b"); cd_text("target"); cd_close();
   cd_close();
   cd_close();
   cd_on(layout_box, CD_EV_POINTERDOWN, layout_heard, 0);
@@ -1564,10 +1563,10 @@ EXPORT("t_layout_field") int32_t t_layout_field(int32_t k) {
   return v[k];
 }
 EXPORT("t_layout_vals") void t_layout_vals(void) {
-  const cd_val v[] = {cd_v_num(2.5), cd_v_str(L("two")), cd_v_bool(1), cd_v_id(layout_box), cd_v_null(),
-                      cd_v_obj(2), cd_v_str(L("a")), cd_v_num(-1.25), cd_v_str(L("b")), cd_v_bool(0),
+  const cd_val v[] = {cd_v_num(2.5), cd_v_str("two"), cd_v_bool(1), cd_v_id(layout_box), cd_v_null(),
+                      cd_v_obj(2), cd_v_str("a"), cd_v_num(-1.25), cd_v_str("b"), cd_v_bool(0),
                       cd_v_num(1e300)};
-  cd_call_args(CD_WINDOW, L("layoutVals"), 7, v);
+  cd_call_args(CD_WINDOW, "layoutVals", 7, v);
 }
 EXPORT("t_layout_viewport") int32_t t_layout_viewport(int32_t k) {
   cd_viewport_rec v;

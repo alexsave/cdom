@@ -21,9 +21,9 @@ static void fill(uint8_t *p, uint32_t w, uint32_t h, uint32_t salt) {
 
 void cd_main(void) {
   cd_at(CD_MOUNT, 0);
-  cd_open(CD_LIT("canvas")); cd_attr(CD_LIT("width"), CD_LIT("7")); cd_attr(CD_LIT("height"), CD_LIT("5"));
+  cd_open("canvas"); cd_attr("width", "7"); cd_attr("height", "5");
   canvas = cd_id_new(); cd_name_el(canvas); cd_close();
-  cd_open(CD_LIT("div")); cd_attr(CD_LIT("id"), CD_LIT("target"));
+  cd_open("div"); cd_attr("id", "target");
   target = cd_id_new(); cd_name_el(target); cd_close();
 }
 
@@ -64,5 +64,5 @@ EXPORT("frame_count") uint32_t frame_count(void) { return frames; }
 /* A stop from outside a frame (an event, a timer) while the next frame is already asked for: that frame must
  * not reach cd_on_frame. */
 EXPORT("frames_stop") void frames_stop(void) { cd_frames(0); cd_flush(); }
-EXPORT("call_ping") void call_ping(void) { cd_call(target, CD_LIT("ping")); cd_flush(); }
+EXPORT("call_ping") void call_ping(void) { cd_call(target, "ping"); cd_flush(); }
 EXPORT("target_id") uint32_t target_id(void) { return target; }

@@ -35,7 +35,7 @@ static void announce(uint32_t round) {
 static cd_id create(void *ctx, uint32_t i, uint32_t *data) {
   (void)ctx;
   cd_id id = cd_id_new();
-  cd_open(CD_LIT("li")); cd_name_el(id);
+  cd_open("li"); cd_name_el(id);
   if (labels) cd_text(cd_tmp(arena + aoff[i], aoff[i + 1] - aoff[i])); else cd_text_num(cur[i]);
   cd_close();
   *data = 0;
@@ -73,7 +73,7 @@ void cd_on_event(const cd_event_rec *e) { (void)e; }
 
 void cd_main(void) {
   cd_at(CD_MOUNT, 0);
-  cd_open(CD_LIT("ul"));
+  cd_open("ul");
   list.parent = cd_id_new();
   list.owns_parent = 1;
   cd_name_el(list.parent);
@@ -98,10 +98,10 @@ __attribute__((export_name("run_fuzz_end"))) void run_fuzz_end(uint32_t seed, ui
   rng = seed | 1;
   nkeys = 0;
   cd_at(CD_MOUNT, 0);
-  cd_open(CD_LIT("ul"));
-  cd_class(CD_LIT("tail"));
+  cd_open("ul");
+  cd_class("tail");
   cd_name_open(tlist.parent = cd_id_new());
-  cd_open(CD_LIT("li")); cd_name_open(tlist.end = cd_id_new()); cd_text(CD_LIT("end")); cd_close();
+  cd_open("li"); cd_name_open(tlist.end = cd_id_new()); cd_text("end"); cd_close();
   cd_close();
   for (uint32_t round = 0; round < rounds; round++) {
     next_keys();
@@ -117,10 +117,10 @@ __attribute__((export_name("run_fuzz_end"))) void run_fuzz_end(uint32_t seed, ui
 static const char *STRS[] = {"plain", "h\xc3\xa9llo", "\xe6\x97\xa5\xe6\x9c\xac", "\xf0\x9f\x98\x80x", ""};
 __attribute__((export_name("run_strings"))) void run_strings(uint32_t big) {
   cd_at(CD_MOUNT, 0);
-  cd_open(CD_LIT("p"));
+  cd_open("p");
   for (uint32_t r = 0; r < (big ? 20 : 1); r++)
     for (uint32_t i = 0; i < 5; i++) {
-      cd_open(CD_LIT("b"));
+      cd_open("b");
       char buf[32]; uint32_t n = 0;
       for (const char *c = STRS[i]; *c; c++) buf[n++] = *c;
       buf[n++] = (char)('a' + r % 26);
@@ -151,17 +151,17 @@ __attribute__((export_name("run_freeruns"))) void run_freeruns(uint32_t seed, ui
   }
   w = cd_id_new();
   cd_at(CD_MOUNT, 0);
-  cd_open(CD_LIT("li")); cd_name_el(z); cd_close();
+  cd_open("li"); cd_name_el(z); cd_close();
   cd_flush();
   cd_id_free(w);         /* op 0: a run (w, 1) */
   cd_flush();
-  cd_set_class(z, CD_LIT("x"));  /* op 0 again: (z, CD_LIT("x")) */
+  cd_set_class(z, "x");  /* op 0 again: (z, "x") */
   cd_id_free(y);         /* must be its own run, not an edit of op 0 (y names no node) */
-  cd_set_class(z, CD_LIT("x"));
+  cd_set_class(z, "x");
   cd_flush();
   for (int j = 0; j < 2; j++) {
     cd_at(CD_MOUNT, 0);
-    cd_open(CD_LIT("ul")); L[j].parent = cd_id_new(); L[j].owns_parent = 1; cd_name_el(L[j].parent); cd_close();
+    cd_open("ul"); L[j].parent = cd_id_new(); L[j].owns_parent = 1; cd_name_el(L[j].parent); cd_close();
   }
   for (uint32_t round = 0; round < rounds; round++) {
     /* grow both lists a few items at a time, alternating, so their ids interleave in runs */
@@ -175,7 +175,7 @@ __attribute__((export_name("run_freeruns"))) void run_freeruns(uint32_t seed, ui
     nk[c] = 0;
     cur = K[c];
     cd_list_update(&L[c], K[c], 0, &FNS);
-    for (uint32_t i = 0; i < L[1 - c].n; i++) cd_set_class(L[1 - c].items[i].node, CD_LIT("x"));
+    for (uint32_t i = 0; i < L[1 - c].n; i++) cd_set_class(L[1 - c].items[i].node, "x");
     cd_flush();
   }
   for (int j = 0; j < 2; j++) { nk[j] = 0; cd_list_update(&L[j], K[j], 0, &FNS); }
@@ -188,15 +188,15 @@ __attribute__((export_name("run_freeruns"))) void run_freeruns(uint32_t seed, ui
 __attribute__((export_name("run_walks"))) void run_walks(void) {
   cd_id root = cd_id_new();
   cd_at(CD_MOUNT, 0);
-  cd_open(CD_LIT("div")); cd_name_el(root);
-  for (int d = 0; d < 20; d++) cd_open(CD_LIT("div"));
-  cd_text(CD_LIT("deep"));
-  cd_up(); cd_class(CD_LIT("w20"));          /* from the last node (the text) up to its div */
+  cd_open("div"); cd_name_el(root);
+  for (int d = 0; d < 20; d++) cd_open("div");
+  cd_text("deep");
+  cd_up(); cd_class("w20");          /* from the last node (the text) up to its div */
   for (int d = 0; d < 20; d++) cd_close();
-  cd_open(CD_LIT("i")); cd_text(CD_LIT("a")); cd_close();
-  cd_open(CD_LIT("i")); cd_open(CD_LIT("i")); cd_text(CD_LIT("b")); cd_close(); cd_close();
+  cd_open("i"); cd_text("a"); cd_close();
+  cd_open("i"); cd_open("i"); cd_text("b"); cd_close(); cd_close();
   cd_close();
-  cd_sel(root); cd_down(); cd_next(); cd_next(); cd_down(); cd_class(CD_LIT("w"));   /* the inner i */
-  cd_sel(root); for (int d = 0; d < 19; d++) cd_down(); cd_class(CD_LIT("w19")); /* 19 steps: one split */
+  cd_sel(root); cd_down(); cd_next(); cd_next(); cd_down(); cd_class("w");   /* the inner i */
+  cd_sel(root); for (int d = 0; d < 19; d++) cd_down(); cd_class("w19"); /* 19 steps: one split */
     cd_flush();
 }

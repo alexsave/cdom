@@ -5,7 +5,6 @@
 #include "../src/cdom.h"
 #include "../src/cdom_audio.h"
 
-#define L(s) CD_LIT(s)
 #define RATE 22050
 #define SAMPLES (RATE * 30 / 1000)
 
@@ -42,7 +41,7 @@ static cd_id hint, button, played_txt;
 
 static void show_state(void) {
   uint32_t state = cd_audio_state();
-  cd_set_text_node(hint, state == CD_AUDIO_RUNNING ? L("sound on") : L("tap for sound"));
+  cd_set_text_node(hint, state == CD_AUDIO_RUNNING ? cd_s("sound on") : cd_s("tap for sound"));
 }
 
 void cd_main(void) {
@@ -50,13 +49,13 @@ void cd_main(void) {
   make_click();
   cd_audio_load(1, click_wav, sizeof click_wav);
   cd_at(CD_MOUNT, 0);
-  cd_open(L("p")); cd_text(L("tap for sound")); cd_name_text(hint = cd_id_new()); cd_close();
-  cd_open(L("button"));
-  cd_attr(L("style"), L("font: 24px sans-serif; padding: 24px 48px; touch-action: manipulation;"));
+  cd_open("p"); cd_text("tap for sound"); cd_name_text(hint = cd_id_new()); cd_close();
+  cd_open("button");
+  cd_attr("style", "font: 24px sans-serif; padding: 24px 48px; touch-action: manipulation;");
   cd_listen(button = cd_id_new(), CD_EV_POINTERDOWN);
-  cd_text(L("Tap"));
+  cd_text("Tap");
   cd_close();
-  cd_open(L("p")); cd_text(L("clicks played: ")); cd_text_num(0); cd_name_text(played_txt = cd_id_new()); cd_close();
+  cd_open("p"); cd_text("clicks played: "); cd_text_num(0); cd_name_text(played_txt = cd_id_new()); cd_close();
   show_state();
 }
 

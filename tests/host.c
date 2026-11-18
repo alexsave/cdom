@@ -16,9 +16,9 @@ static char io[16384];
 static double rect[4];
 
 static cd_id el(const char *tag, const char *idattr, const char *style) {
-  cd_open(cd_tmpz(tag));
-  cd_attr(CD_LIT("id"), cd_tmpz(idattr));
-  if (style) cd_attr(CD_LIT("style"), cd_tmpz(style));
+  cd_open(tag);
+  cd_attr("id", idattr);
+  if (style) cd_attr("style", style);
   cd_id id = cd_id_new();
   cd_name_el(id);
   return id;
@@ -35,19 +35,19 @@ void cd_main(void) {
   cd_close();
   ids[TEXT] = el("input", "text", "position:fixed;left:10px;top:150px;width:200px"); cd_close();
   ids[CHECK] = el("input", "check", "position:fixed;left:250px;top:150px");
-  cd_attr(CD_LIT("type"), CD_LIT("checkbox")); cd_close();
-  ids[FILE_IN] = el("input", "file", 0); cd_attr(CD_LIT("type"), CD_LIT("file")); cd_close();
+  cd_attr("type", "checkbox"); cd_close();
+  ids[FILE_IN] = el("input", "file", 0); cd_attr("type", "file"); cd_close();
   ids[MEDIA] = el("audio", "media", 0); cd_close();
   ids[GOOD] = el("img", "good", 0); cd_close();
   ids[BAD] = el("img", "bad", 0); cd_close();
   ids[SCROLLER] = el("div", "scroller", "position:fixed;left:450px;top:10px;width:100px;height:50px;overflow:auto");
-  cd_open(CD_LIT("div")); cd_attr(CD_LIT("style"), CD_LIT("height:500px")); cd_close();
+  cd_open("div"); cd_attr("style", "height:500px"); cd_close();
   ids[DEEP] = el("div", "deep", "height:10px"); cd_close();
-  cd_open(CD_LIT("div")); cd_attr(CD_LIT("style"), CD_LIT("height:500px")); cd_close();
+  cd_open("div"); cd_attr("style", "height:500px"); cd_close();
   cd_close();
-  ids[PARA] = el("p", "para", 0); cd_text(CD_LIT("a")); cd_text(CD_LIT("b")); cd_text(CD_LIT("c")); cd_close();
+  ids[PARA] = el("p", "para", 0); cd_text("a"); cd_text("b"); cd_text("c"); cd_close();
   ids[FSBTN] = el("button", "fs", "position:fixed;left:10px;top:200px;width:80px;height:30px");
-  cd_text(CD_LIT("fs")); cd_close();
+  cd_text("fs"); cd_close();
   ids[ALL] = el("div", "all", 0);
   ids[ALL_CHILD] = el("span", "allchild", 0); cd_close();
   cd_close();
@@ -56,7 +56,7 @@ void cd_main(void) {
   ids[ITEM_A] = el("li", "a", 0); cd_close();
   ids[ITEM_B] = el("li", "b", 0); cd_close();
   cd_close();
-  ids[FOCUSER] = el("button", "focuser", 0); cd_text(CD_LIT("focus the text")); cd_close();
+  ids[FOCUSER] = el("button", "focuser", 0); cd_text("focus the text"); cd_close();
 
   /* Listen: the box for pointer capture, the menu and the wheel; the media and images through capture. */
   static const uint32_t box_evs[] = {CD_EV_POINTERDOWN, CD_EV_POINTERMOVE, CD_EV_POINTERUP, CD_EV_POINTEROVER,
@@ -90,8 +90,8 @@ void cd_main(void) {
   cd_listen(CD_WINDOW, CD_EV_RESIZE); /* twice must not double the listener */
 
   /* Images load and fail after the batch, so their listeners are already in place. */
-  cd_set_attr(ids[GOOD], CD_LIT("src"), cd_tmpz(GIF));
-  cd_set_attr(ids[BAD], CD_LIT("src"), CD_LIT("data:image/png;base64,AAAA"));
+  cd_set_attr(ids[GOOD], "src", GIF);
+  cd_set_attr(ids[BAD], "src", "data:image/png;base64,AAAA");
 
 }
 
@@ -101,38 +101,38 @@ void cd_on_event(const cd_event_rec *e) {
   double a = 0, b = 0;
   cd_id id = (cd_id)e->id;
   switch (e->type) {
-  case CD_EV_RESIZE: a = cd_get_num(CD_WINDOW, CD_LIT("innerWidth")); b = cd_get_num(CD_WINDOW, CD_LIT("innerHeight")); break;
+  case CD_EV_RESIZE: a = cd_get_num(CD_WINDOW, "innerWidth"); b = cd_get_num(CD_WINDOW, "innerHeight"); break;
   case CD_EV_FULLSCREENCHANGE: {
-    cd_id f = cd_get_id(CD_DOCUMENT, CD_LIT("fullscreenElement"));
+    cd_id f = cd_get_id(CD_DOCUMENT, "fullscreenElement");
     a = f == CD_DETACHED ? -1.0 : (double)f;
-    if (f != CD_DETACHED) cd_call(CD_DOCUMENT, CD_LIT("exitFullscreen"));
+    if (f != CD_DETACHED) cd_call(CD_DOCUMENT, "exitFullscreen");
     break;
   }
-  case CD_EV_VISIBILITY: pass_str(CD_DOCUMENT, CD_LIT("visibilityState")); break;
-  case CD_EV_KEYDOWN: case CD_EV_KEYUP: a = e->key; pass_str(CD_EVENT, CD_LIT("key")); break;
+  case CD_EV_VISIBILITY: pass_str(CD_DOCUMENT, cd_s("visibilityState")); break;
+  case CD_EV_KEYDOWN: case CD_EV_KEYUP: a = e->key; pass_str(CD_EVENT, cd_s("key")); break;
   case CD_EV_CONTEXTMENU: if (id == ids[BOX]) cd_prevent_default(); break;
   case CD_EV_WHEEL:
-    a = e->dy; b = cd_get_num(CD_EVENT, CD_LIT("deltaY"));
+    a = e->dy; b = cd_get_num(CD_EVENT, "deltaY");
     if (id == ids[BOX]) cd_prevent_default();
     break;
   case CD_EV_POINTERDOWN:
     a = e->pointer; b = e->buttons;
-    if (id == ids[BOX]) { cd_val p = cd_v_num(e->pointer); cd_call_args(id, CD_LIT("setPointerCapture"), 1, &p); }
+    if (id == ids[BOX]) { cd_val p = cd_v_num(e->pointer); cd_call_args(id, "setPointerCapture", 1, &p); }
     break;
   case CD_EV_POINTERMOVE: case CD_EV_POINTERUP: a = e->x; b = e->buttons; break;
-  case CD_EV_LOADEDMETADATA: if (id == ids[MEDIA]) a = cd_get_num(id, CD_LIT("duration")); break;
-  case CD_EV_SCROLL: if (id == ids[SCROLLER]) a = cd_get_num(id, CD_LIT("scrollTop")); break;
-  case CD_EV_DROP: if (id == ids[BOX]) { pass_str(CD_EVENT, CD_LIT("dataTransfer.files.0.name")); cd_prevent_default(); } break;
-  case CD_EV_FOCUSIN: if (id == ids[TEXT]) cd_set_str(id, CD_LIT("dataset.focused"), CD_LIT("yes")); break;
+  case CD_EV_LOADEDMETADATA: if (id == ids[MEDIA]) a = cd_get_num(id, "duration"); break;
+  case CD_EV_SCROLL: if (id == ids[SCROLLER]) a = cd_get_num(id, "scrollTop"); break;
+  case CD_EV_DROP: if (id == ids[BOX]) { pass_str(CD_EVENT, cd_s("dataTransfer.files.0.name")); cd_prevent_default(); } break;
+  case CD_EV_FOCUSIN: if (id == ids[TEXT]) cd_set_str(id, "dataset.focused", "yes"); break;
   case CD_EV_CLICK:
     if (id == ids[FSBTN]) {
-      cd_val opt[3] = {cd_v_obj(1), cd_v_str(CD_LIT("navigationUI")), cd_v_str(CD_LIT("hide"))};
-      cd_call_args(id, CD_LIT("requestFullscreen"), 1, opt);
+      cd_val opt[3] = {cd_v_obj(1), cd_v_str("navigationUI"), cd_v_str("hide")};
+      cd_call_args(id, "requestFullscreen", 1, opt);
     }
     if (id == ids[ALL]) cd_stop_propagation(); /* the body listener must not hear it */
     /* focus() fires focusin while this handler runs: delivered then, it would reset this click's flags
      * and overwrite the record that e points to, so the log below would read focusin's type */
-    if (id == ids[FOCUSER]) { cd_prevent_default(); cd_call(ids[TEXT], CD_LIT("focus")); }
+    if (id == ids[FOCUSER]) { cd_prevent_default(); cd_call(ids[TEXT], "focus"); }
     break;
   }
   if (id == ids[ALL]) { a = e->path; b = e->depth; }
@@ -161,74 +161,74 @@ EXPORT("s_str") void s_str(cd_id id, uint32_t len, uint32_t vlen) {
 
 /* ---- calls ---- */
 EXPORT("c_select") void c_select(void) { /* number, number, string */
-  cd_val a[3] = {cd_v_num(1), cd_v_num(3), cd_v_str(CD_LIT("backward"))};
-  cd_call_args(ids[TEXT], CD_LIT("setSelectionRange"), 3, a);
+  cd_val a[3] = {cd_v_num(1), cd_v_num(3), cd_v_str("backward")};
+  cd_call_args(ids[TEXT], "setSelectionRange", 3, a);
   cd_flush();
 }
 EXPORT("c_attr") void c_attr(void) { /* a string and a number */
-  cd_val a[2] = {cd_v_str(CD_LIT("data-n")), cd_v_num(42.5)};
-  cd_call_args(ids[BOX], CD_LIT("setAttribute"), 2, a);
+  cd_val a[2] = {cd_v_str("data-n"), cd_v_num(42.5)};
+  cd_call_args(ids[BOX], "setAttribute", 2, a);
   cd_flush();
 }
 EXPORT("c_toggle") void c_toggle(int on) { /* a method on a path, with a string and a boolean */
-  cd_val a[2] = {cd_v_str(CD_LIT("on")), cd_v_bool(on)};
-  cd_call_args(ids[BOX], CD_LIT("classList.toggle"), 2, a);
+  cd_val a[2] = {cd_v_str("on"), cd_v_bool(on)};
+  cd_call_args(ids[BOX], "classList.toggle", 2, a);
   cd_flush();
 }
-EXPORT("c_flag") void c_flag(int on) { cd_set_bool(ids[BOX], CD_LIT("dataset.flag"), on); cd_flush(); }
+EXPORT("c_flag") void c_flag(int on) { cd_set_bool(ids[BOX], "dataset.flag", on); cd_flush(); }
 EXPORT("c_insert") void c_insert(void) { /* a node and null: move item a after item b */
   cd_val a[2] = {cd_v_id(ids[ITEM_A]), cd_v_null()};
-  cd_call_args(ids[LIST], CD_LIT("insertBefore"), 2, a);
+  cd_call_args(ids[LIST], "insertBefore", 2, a);
   cd_flush();
 }
 EXPORT("c_contains") double c_contains(void) { /* a result read back through CD_RESULT */
   cd_val a = cd_v_id(ids[BOX]);
-  cd_call_args(CD_BODY, CD_LIT("contains"), 1, &a);
+  cd_call_args(CD_BODY, "contains", 1, &a);
   return cd_get_num(CD_RESULT, CD_NONE);
 }
 EXPORT("c_getattr") uint32_t c_getattr(void) {
-  cd_val a = cd_v_str(CD_LIT("id"));
-  cd_call_args(ids[BOX], CD_LIT("getAttribute"), 1, &a);
+  cd_val a = cd_v_str("id");
+  cd_call_args(ids[BOX], "getAttribute", 1, &a);
   return cd_get_str(CD_RESULT, CD_NONE, io, sizeof io);
 }
 /* CD_RESULT holds a named node; cd_get_id still names it by its own id. */
 EXPORT("c_query") cd_id c_query(void) {
-  cd_val a = cd_v_str(CD_LIT("#b"));
-  cd_call_args(ids[LIST], CD_LIT("querySelector"), 1, &a);
-  return cd_get_id(ids[LIST], CD_LIT("firstElementChild"));
+  cd_val a = cd_v_str("#b");
+  cd_call_args(ids[LIST], "querySelector", 1, &a);
+  return cd_get_id(ids[LIST], "firstElementChild");
 }
 EXPORT("c_scroll") void c_scroll(void) { /* an object argument */
-  cd_val a[3] = {cd_v_obj(1), cd_v_str(CD_LIT("block")), cd_v_str(CD_LIT("end"))};
-  cd_call_args(ids[DEEP], CD_LIT("scrollIntoView"), 1, a);
+  cd_val a[3] = {cd_v_obj(1), cd_v_str("block"), cd_v_str("end")};
+  cd_call_args(ids[DEEP], "scrollIntoView", 1, a);
   cd_flush();
 }
 /* A call that throws and a method that does not exist are reported; the set after them still applies. */
 EXPORT("c_bad") void c_bad(void) {
   cd_val p = cd_v_num(9999);
-  cd_call_args(ids[BOX], CD_LIT("setPointerCapture"), 1, &p);
-  cd_call_args(ids[BOX], CD_LIT("noSuchMethod"), 0, 0);
-  cd_set_str(CD_DOCUMENT, CD_LIT("nowhere.at.all"), CD_LIT("x"));
-  cd_set_str(ids[BOX], CD_LIT("dataset.after"), CD_LIT("bad"));
+  cd_call_args(ids[BOX], "setPointerCapture", 1, &p);
+  cd_call_args(ids[BOX], "noSuchMethod", 0, 0);
+  cd_set_str(CD_DOCUMENT, "nowhere.at.all", "x");
+  cd_set_str(ids[BOX], "dataset.after", "bad");
   cd_flush();
 }
 EXPORT("c_play") void c_play(void) {
-  cd_set_bool(ids[MEDIA], CD_LIT("muted"), 1);
-  cd_call_args(ids[MEDIA], CD_LIT("play"), 0, 0);
+  cd_set_bool(ids[MEDIA], "muted", 1);
+  cd_call_args(ids[MEDIA], "play", 0, 0);
   cd_flush();
 }
 /* focus() dispatches focus events while the batch is being applied. The p before it must be created once,
  * and the handler's set must still land. */
 EXPORT("c_focus") void c_focus(void) {
   cd_at(CD_MOUNT, 0);
-  cd_open(CD_LIT("p")); cd_class(CD_LIT("mark")); cd_close();
-  cd_call_args(ids[TEXT], CD_LIT("focus"), 0, 0);
-  cd_set_str(ids[TEXT], CD_LIT("dataset.after"), CD_LIT("yes"));
+  cd_open("p"); cd_class("mark"); cd_close();
+  cd_call_args(ids[TEXT], "focus", 0, 0);
+  cd_set_str(ids[TEXT], "dataset.after", "yes");
   cd_flush();
 }
 /* A read sees ops emitted before it in the same batch, including a path never sent before. */
 EXPORT("c_rw") uint32_t c_rw(void) {
-  cd_set_str(ids[BOX], CD_LIT("title"), CD_LIT("fresh title"));
-  return cd_get_str(ids[BOX], CD_LIT("title"), io, sizeof io);
+  cd_set_str(ids[BOX], "title", "fresh title");
+  return cd_get_str(ids[BOX], "title", io, sizeof io);
 }
 /* Ids: a thousand new ones never hit the reserved range, and freeing a reserved id does nothing. */
 EXPORT("c_ids") uint32_t c_ids(void) {
