@@ -492,6 +492,18 @@ EXPORT("t_tmp_cap") double t_tmp_cap(uint32_t n) {
   cd_call_args(CD_WINDOW, "Math.max", n, a); /* the numbers as strings: the largest is n */
   return cd_get_num(CD_RESULT, CD_NONE);
 }
+/* 11e. A cd_tmp made before a throw is dead when the next call into C starts: the throw leaves the
+ * window the cd_tmp were made in, and the shim ends it when the outermost call ends, whether it returned or
+ * threw. The first export throws with `kept` alive; the second, a later call, uses it. */
+static cd_str kept_tmp;
+EXPORT("t_tmp_throw") void t_tmp_throw(void) {
+  cd_str dead = cd_tmpz("dead");
+  cd_set_class(styled, L("x")); /* dead is stale now */
+  kept_tmp = cd_tmpz("kept");   /* alive: in the window when the next line throws */
+  cd_set_class(styled, dead);   /* throws out of the call, with kept alive */
+}
+EXPORT("t_tmp_after_throw") void t_tmp_after_throw(void) { cd_set_class(styled, kept_tmp); }
+
 /* 11f. The batched read. 1024 strings sit in one buffer, each its number and a suffix: kind 0 is ASCII, 1
  * mixes 0, 2, 3 and 4 byte characters (and ends in an empty string), 2 is all astral. t_ahead_show shows
  * every one as a cd_tmp text node in a section of its own (its number is returned) after the announcement the mode

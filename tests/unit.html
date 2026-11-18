@@ -74,6 +74,12 @@ function aheadChecks(x) {
     x.t_ahead_fill(1);
     try { x.t_ahead_show(5); return 'no throw'; } catch (e) { return /^cdom: bytes inside a cd_tmp_ahead range changed/.test(e.message) || String(e); }
   });
+  check('a cd_tmp made before a throw is dead in the next call into C, which throws on it', () => {
+    const r = [];
+    try { x.t_tmp_throw(); r.push('no throw'); } catch (e) { r.push(/^cdom: a cd_tmp string used after/.test(e.message) || String(e)); }
+    try { x.t_tmp_after_throw(); r.push('no throw on the later use'); } catch (e) { r.push(/^cdom: a cd_tmp string used after the call it was made for/.test(e.message) || String(e)); }
+    return r.every((v) => v === true) || r.join(' | ');
+  });
 }
 cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef, checkAhead: !aheadOff }).then(async (x) => {
   check('options.openStore opens the store before the module starts', () => (storeOpenedAt >= 0 && storeOpenedAt <= x.t_started()) || `opened at ${storeOpenedAt}, started at ${x.t_started()}`);

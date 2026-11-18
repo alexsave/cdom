@@ -218,9 +218,15 @@ var cdom = (() => {
     }
     aheadIndex[len] = u;
   }
-  // The outermost call into C has returned or thrown: its range is dead.
+  // The outermost call into C has returned or thrown: its range and its runtime strings are dead. One rule
+  // for both, so a cd_str made before a throw is no longer readable by the next call.
   function callEnded() {
     aheadText = null;
+    if (stale()) {
+      views();
+    }
+    u32[tmpSerial0] += u32[tmpCount];
+    u32[tmpCount] = 0;
   }
 
   // Puts a new top-level node where at() said, or into the open element.

@@ -86,6 +86,7 @@ M = [
   ('ahead-not-reset-at-end', 'shim/cdom.js', '  function callEnded() {\n    aheadText = null;\n', '  function callEnded() {\n', UNIT, 'FAIL cd_tmp_ahead: the range is gone when the call into C returns'),
   ('ahead-zero-keeps', 'shim/cdom.js', '    if (!len) {\n      aheadText = null;\n      return;\n    }', '    if (!len) {\n      return;\n    }', UNIT, 'FAIL cd_tmp_ahead(0, 0) ends the range'),
   ('ahead-check-off', 'shim/cdom.js', 'if (checkAhead && text !== readString(q, n)) {', 'if (false) {', UNIT, 'FAIL checkAhead on: a byte changed inside a live range throws'),
+  ('tmp-window-kept-after-throw', 'shim/cdom.js', '    u32[tmpSerial0] += u32[tmpCount];\n    u32[tmpCount] = 0;\n', '', UNIT, 'FAIL a cd_tmp made before a throw is dead in the next call'),
   ('str-none-is-one', 'src/cdom.h', '#define CD_NONE ((cd_str){0})', '#define CD_NONE ((cd_str){1})', HOST, 'FAIL'),
   ('str-tpl-runtime-kept', 'src/cdom.c', '  if (s.v >> 31) { /* a runtime string: the same text can be new bytes, so it is never skipped as unchanged */\n    if (t >= CD_TPLS || k >= CD_SLOTS) __builtin_trap();\n    slot_kind[t][k] = 0;\n  } else if', '  if (s.v >> 31) {\n    if (t >= CD_TPLS || k >= CD_SLOTS) __builtin_trap();\n  } else if', UNIT, 'FAIL a template slot set from a cd_tmp'),
   ('str-tpl-same-text', 'src/cdom.c', 'if (slot_kind[t][k] == kind && slot_val[t][k] == v) return 1;', 'if (slot_kind[t][k] == kind) return 1;', UNIT, 'FAIL clone inside'),
