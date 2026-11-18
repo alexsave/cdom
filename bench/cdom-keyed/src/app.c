@@ -2,6 +2,9 @@
  * diffs it against what is on screen and emits only the changes. */
 #include "../../../src/cdom.h"
 
+/* A literal is a CD_LIT slot, interned once per call site. */
+#define z(s) CD_LIT(s)
+
 #ifndef CDOM_TEMPLATES
 #define CDOM_TEMPLATES 1
 #endif
@@ -21,7 +24,22 @@ static uint32_t rnd(uint32_t max) { /* xorshift32, like Math.round(Math.random()
 }
 
 /* ---- model ---- */
-typedef struct { uint32_t id; cd_str label; } Row;
+typedef struct { uint32_t id, off, len, rev; } Row;
+/* Labels live in one byte arena the app owns. A row's rev changes when its label does, so the
+ * patch compares revs, not text. Every use is a cd_tmp over the arena bytes. */
+static char *arena;
+static uint32_t arena_len, arena_cap, live_bytes, next_rev = 1;
+static uint32_t arena_put(const char *s, uint32_t n) {
+  if (arena_len + n > arena_cap) {
+    while (arena_len + n > arena_cap) arena_cap = arena_cap ? arena_cap * 2 : 65536;
+    arena = cd_realloc(arena, arena_cap);
+  }
+  for (uint32_t i = 0; i < n; i++) arena[arena_len + i] = s[i];
+  arena_len += n;
+  live_bytes += n;
+  return arena_len - n;
+}
+#define LABEL(r) cd_tmp(arena + (r)->off, (r)->len)
 static Row *rows;
 static uint32_t nrows, rows_cap, next_id = 1, selected;
 static uint32_t *keys;
@@ -48,20 +66,15 @@ static void build(uint32_t count) {
     n += cpy(buf + n, COL[rnd(11)]);
     buf[n++] = ' ';
     n += cpy(buf + n, NOUN[rnd(13)]);
-    rows[nrows++] = (Row){next_id++, cd_intern(buf, n)};
+    rows[nrows++] = (Row){next_id++, arena_put(buf, n), n, next_rev++};
   }
 }
 
 /* ---- view ---- */
-typedef struct { cd_str label; uint8_t sel; } RowView;
+typedef struct { uint32_t rev; uint8_t sel; } RowView;
 static RowView *views;
 static uint32_t nviews, views_cap, *free_views, nfree_views;
 static cd_list list;
-static cd_str S_TR, S_TD, S_A, S_SPAN, S_DANGER, S_EMPTY, S_COL1, S_COL4, S_COL6, S_REMOVE,
-  S_ARIA, S_TRUE;
-#if CDOM_TEMPLATES
-static cd_str S_SPACE; /* placeholder text in the row template */
-#endif
 enum { T_ROW = 1 };
 enum { K_RUN = 1, K_RUNLOTS, K_ADD, K_UPDATE, K_CLEAR, K_SWAP, K_ROW = 0x80000000u };
 
@@ -81,29 +94,29 @@ static cd_id row_create(void *ctx, uint32_t i, uint32_t *data) {
   uint32_t vi = view_new();
   RowView *v = &views[vi];
   cd_id tr = cd_id_new();
-  v->label = r->label;
+  v->rev = r->rev;
   v->sel = r->id == selected;
   cd_tag_set(tr, K_ROW | r->id); /* a click reports which cell: 1 label, 2 remove */
 #if CDOM_TEMPLATES
   cd_tpl_text_num(T_ROW, 0, r->id);                       /* td.col-md-1 > id */
-  cd_tpl_text(T_ROW, 1, r->label);                        /* td.col-md-4 > a > label */
+  cd_tpl_text(T_ROW, 1, LABEL(r));                       /* td.col-md-4 > a > label */
   cd_clone(T_ROW);
   cd_listen(tr, CD_EV_CLICK);
-  if (v->sel) cd_class(S_DANGER);
+  if (v->sel) cd_class(z("danger"));
   cd_close();
 #else
-  cd_open(S_TR); cd_listen(tr, CD_EV_CLICK);
-  if (v->sel) cd_class(S_DANGER);
-  cd_open(S_TD); cd_class(S_COL1); cd_text_num(r->id); cd_close();
-  cd_open(S_TD); cd_class(S_COL4);
-  cd_open(S_A); cd_text(r->label); cd_close();
+  cd_open(z("tr")); cd_listen(tr, CD_EV_CLICK);
+  if (v->sel) cd_class(z("danger"));
+  cd_open(z("td")); cd_class(z("col-md-1")); cd_text_num(r->id); cd_close();
+  cd_open(z("td")); cd_class(z("col-md-4"));
+  cd_open(z("a")); cd_text(LABEL(r)); cd_close();
   cd_close();
-  cd_open(S_TD); cd_class(S_COL1);
-  cd_open(S_A);
-  cd_open(S_SPAN); cd_class(S_REMOVE); cd_attr(S_ARIA, S_TRUE); cd_close();
+  cd_open(z("td")); cd_class(z("col-md-1"));
+  cd_open(z("a"));
+  cd_open(z("span")); cd_class(z("glyphicon glyphicon-remove")); cd_attr(z("aria-hidden"), z("true")); cd_close();
   cd_close();
   cd_close();
-  cd_open(S_TD); cd_class(S_COL6); cd_close();
+  cd_open(z("td")); cd_class(z("col-md-6")); cd_close();
   cd_close();
 #endif
   *data = vi;
@@ -114,16 +127,16 @@ static void row_patch(void *ctx, uint32_t i, cd_item *it) {
   (void)ctx;
   Row *r = &rows[i];
   RowView *v = &views[it->data];
-  if (v->label != r->label) {
-    v->label = r->label;
+  if (v->rev != r->rev) {
+    v->rev = r->rev;
     cd_sel(it->node); /* tr > td[1] > a > text */
     cd_down(); cd_next(); cd_down(); cd_down();
-    cd_value(r->label);
+    cd_value(LABEL(r));
   }
   uint8_t sel = r->id == selected;
   if (v->sel != sel) {
     v->sel = sel;
-    cd_set_class(it->node, sel ? S_DANGER : S_EMPTY);
+    cd_set_class(it->node, sel ? z("danger") : z(""));
   }
 }
 
@@ -140,23 +153,40 @@ static void render(void) {
 }
 
 /* ---- actions ---- */
+/* Dead bytes are labels that were replaced or whose row was removed. Slide the live ones down
+ * once the dead outweigh them. A row keeps its rev, so the view does not see a change. */
+static void arena_compact(void) {
+  uint32_t to = 0;
+  /* Rows can be in any order in the arena, so copy through a second buffer. */
+  char *fresh = cd_alloc(live_bytes ? live_bytes : 1);
+  for (uint32_t i = 0; i < nrows; i++) {
+    for (uint32_t j = 0; j < rows[i].len; j++) fresh[to + j] = arena[rows[i].off + j];
+    rows[i].off = to;
+    to += rows[i].len;
+  }
+  for (uint32_t j = 0; j < to; j++) arena[j] = fresh[j];
+  cd_free(fresh);
+  arena_len = to;
+}
+
 static void act(uint32_t k, uint32_t cell) {
   switch (k) {
-  case K_RUN: nrows = 0; build(1000); selected = 0; break;
-  case K_RUNLOTS: nrows = 0; build(10000); selected = 0; break;
+  case K_RUN: nrows = 0; arena_len = live_bytes = 0; build(1000); selected = 0; break;
+  case K_RUNLOTS: nrows = 0; arena_len = live_bytes = 0; build(10000); selected = 0; break;
   case K_ADD: build(1000); break;
   case K_UPDATE:
     for (uint32_t i = 0; i < nrows; i += 10) {
-      uint32_t len;
-      const char *b = cd_bytes(rows[i].label, &len);
+      uint32_t len = rows[i].len;
       char buf[256];
       if (len + 4 > sizeof buf) continue;
-      for (uint32_t j = 0; j < len; j++) buf[j] = b[j];
+      for (uint32_t j = 0; j < len; j++) buf[j] = arena[rows[i].off + j];
       buf[len] = ' '; buf[len + 1] = '!'; buf[len + 2] = '!'; buf[len + 3] = '!';
-      rows[i].label = cd_intern(buf, len + 4);
+      live_bytes -= len; /* the old bytes are dead now */
+      rows[i].off = arena_put(buf, len + 4); rows[i].len = len + 4; rows[i].rev = next_rev++;
     }
+    if (arena_len - live_bytes > live_bytes) arena_compact();
     break;
-  case K_CLEAR: nrows = 0; selected = 0; break;
+  case K_CLEAR: nrows = 0; arena_len = live_bytes = 0; selected = 0; break;
   case K_SWAP:
     if (nrows > 998) { Row t = rows[1]; rows[1] = rows[998]; rows[998] = t; }
     break;
@@ -166,8 +196,10 @@ static void act(uint32_t k, uint32_t cell) {
       if (cell == 2) {
         for (uint32_t i = 0; i < nrows; i++)
           if (rows[i].id == id) {
+            live_bytes -= rows[i].len;
             for (uint32_t j = i + 1; j < nrows; j++) rows[j - 1] = rows[j];
             nrows--;
+            if (arena_len - live_bytes > live_bytes) arena_compact();
             break;
           }
       } else if (cell == 1) {
@@ -183,39 +215,31 @@ void cd_on_event(const cd_event_rec *e) {
 }
 
 /* ---- the page ---- */
-static cd_str z(const char *s) { return cd_internz(s); }
-
 static void button(const char *id, const char *label, uint32_t k) {
   cd_open(z("div")); cd_class(z("col-sm-6 smallpad"));
   cd_open(z("button"));
   cd_attr(z("type"), z("button"));
   cd_class(z("btn btn-primary btn-block"));
-  cd_attr(z("id"), z(id));
+  cd_attr(z("id"), cd_tmpz(id));
   cd_id b = cd_id_new();
   cd_listen(b, CD_EV_CLICK);
   cd_tag_set(b, k);
-  cd_text(z(label));
+  cd_text(cd_tmpz(label));
   cd_close();
   cd_close();
 }
 
 void cd_main(void) {
   rng = cd_seed | 1;
-  S_TR = z("tr"); S_TD = z("td"); S_A = z("a"); S_SPAN = z("span");
-  S_DANGER = z("danger"); S_EMPTY = z("");
-  S_COL1 = z("col-md-1"); S_COL4 = z("col-md-4"); S_COL6 = z("col-md-6");
-  S_REMOVE = z("glyphicon glyphicon-remove"); S_ARIA = z("aria-hidden"); S_TRUE = z("true");
-
 #if CDOM_TEMPLATES
-  S_SPACE = z(" ");
   cd_at(CD_DETACHED, 0);
-  cd_open(S_TR);
-  cd_open(S_TD); cd_class(S_COL1); cd_text(S_SPACE); cd_slot(0); cd_close();
-  cd_open(S_TD); cd_class(S_COL4); cd_open(S_A); cd_text(S_SPACE); cd_slot(1); cd_close(); cd_close();
-  cd_open(S_TD); cd_class(S_COL1);
-  cd_open(S_A); cd_open(S_SPAN); cd_class(S_REMOVE); cd_attr(S_ARIA, S_TRUE); cd_close(); cd_close();
+  cd_open(z("tr"));
+  cd_open(z("td")); cd_class(z("col-md-1")); cd_text(z(" ")); cd_slot(0); cd_close();
+  cd_open(z("td")); cd_class(z("col-md-4")); cd_open(z("a")); cd_text(z(" ")); cd_slot(1); cd_close(); cd_close();
+  cd_open(z("td")); cd_class(z("col-md-1"));
+  cd_open(z("a")); cd_open(z("span")); cd_class(z("glyphicon glyphicon-remove")); cd_attr(z("aria-hidden"), z("true")); cd_close(); cd_close();
   cd_close();
-  cd_open(S_TD); cd_class(S_COL6); cd_close();
+  cd_open(z("td")); cd_class(z("col-md-6")); cd_close();
   cd_close();
   cd_tpl_save(T_ROW);
 #endif
@@ -243,7 +267,7 @@ void cd_main(void) {
   cd_name_el(list.parent);
   cd_close();
   cd_close();
-  cd_open(S_SPAN); cd_class(z("preloadicon glyphicon glyphicon-remove")); cd_attr(S_ARIA, S_TRUE);
+  cd_open(z("span")); cd_class(z("preloadicon glyphicon glyphicon-remove")); cd_attr(z("aria-hidden"), z("true"));
   cd_close();
   cd_close();
 }

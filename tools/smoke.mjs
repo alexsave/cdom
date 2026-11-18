@@ -45,8 +45,10 @@ try {
   await click('#run'); ok(await rows() === 1000, 'run after clear');
   await click('#run'); ok(await rows() === 1000, 'run replaces');
   ok(await E('document.querySelector("tbody tr td").textContent') === '13001', 'run replace ids: ' + await E('document.querySelector("tbody tr td").textContent'));
-  for (let i = 0; i < 5; i++) await click('#update');
-  ok(await E('document.querySelector("tbody tr td:nth-child(2) a").textContent.endsWith(" !!! !!! !!! !!! !!!")'), 'repeated update');
+  // Thirty updates: the replaced labels outweigh the live ones twice over, so the app compacts its label arena and then reads labels from the moved bytes.
+  for (let i = 0; i < 30; i++) await click('#update');
+  ok(await E(`document.querySelector("tbody tr td:nth-child(2) a").textContent.endsWith(${JSON.stringify(' !!!'.repeat(30))})`), 'repeated update');
+  ok(await E('[...document.querySelectorAll("tbody tr")].every((r, i) => /^\\w+ \\w+ \\w+( !!!)*$/.test(r.children[1].textContent) && (r.children[1].textContent.split("!!!").length - 1 === (i % 10 === 0 ? 30 : 0)))'), 'labels intact after compaction');
 } finally { await b.close(); }
 console.log(fails ? `${fails} FAILED` : 'all ok');
 process.exit(fails ? 1 : 0);
