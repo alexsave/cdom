@@ -8,7 +8,10 @@ const types = { '.html': 'text/html; charset=utf-8', '.wasm': 'application/wasm'
 export function serve() {
   const srv = http.createServer((q, r) => {
     let u = decodeURIComponent(q.url.split('?')[0]);
-    const f = u.startsWith('/css/') ? path.join(top, 'jfb', u) : path.join(top, u);
+    // /css from the harness; /keyed/<entry>/ is the harness's frameworks/keyed (KEYED, default the main checkout's)
+    const keyed = process.env.KEYED || '/Users/alex/Dev/cdom/jfb/frameworks/keyed';
+    const f = u.startsWith('/css/') ? path.join(path.dirname(path.dirname(keyed)), u)
+      : u.startsWith('/keyed/') ? path.join(keyed, u.slice(7)) : path.join(top, u);
     fs.readFile(f, (e, b) => {
       if (e) { r.writeHead(404); r.end(); return; }
       r.writeHead(200, { 'content-type': types[path.extname(f)] || 'application/octet-stream', 'cache-control': 'no-store',
