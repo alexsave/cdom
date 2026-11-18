@@ -42,6 +42,23 @@ EXPORT("t_clone_inside") void t_clone_inside(void) {
   cd_clone(3); cd_close(); /* a root clone, as before */
 }
 
+/* 1b. A template slot set from a cd_tmp: a transient id is reused by every batch, so the same id in
+ * the next batch is another text. Each step is its own call, so its own batch. */
+EXPORT("t_tpl_tmp") void t_tpl_tmp(uint32_t step) {
+  static cd_id s;
+  if (step == 0) {
+    s = section("tpltmp");
+    cd_at(CD_DETACHED, 0);
+    cd_open(L("i")); cd_text(L(" ")); cd_slot(0); cd_close();
+    cd_tpl_save(5);
+  }
+  static const char *const T[] = {"alpha", "beta", 0, 0, "gamma", 0};
+  cd_tpl_text(5, 0, T[step] ? cd_tmpz(T[step]) : L("lit"));
+  cd_at(s, 0);
+  cd_clone(5);
+  cd_close();
+}
+
 /* 2. <svg> and what is inside it are SVG; the namespace ends where the svg closes, clones included. */
 EXPORT("t_svg") void t_svg(void) {
   cd_id s = section("svg");

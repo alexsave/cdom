@@ -254,6 +254,11 @@ cdom.start('unit.wasm', 'm', undefined, { openStore: true, seed: 0xdeadbeef }).t
     const got = [...$('#clone').childNodes].map((n) => n.outerHTML).join('');
     return got === '<p><b>one</b><b>two</b></p><b>two</b>' || got;
   });
+  check('a template slot set from a cd_tmp shows that text in every batch, a literal after it too', () => {
+    for (let i = 0; i < 6; i++) x.t_tpl_tmp(i);
+    const got = [...$('#tpltmp').children].map((n) => n.textContent).join();
+    return got === 'alpha,beta,lit,lit,gamma,lit' || got;
+  });
   check('svg and its descendants in the SVG namespace, the namespace popped on close', () => {
     x.t_svg();
     const ns = (s) => $('#svg ' + s).namespaceURI;

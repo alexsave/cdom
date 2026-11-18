@@ -446,7 +446,10 @@ static int slot_same(uint32_t t, uint32_t k, uint8_t kind, uint32_t v) {
   return 0;
 }
 void cd_tpl_text(uint32_t t, uint32_t k, cd_str s) {
-  if (slot_same(t, k, 1, s)) return;
+  if (s >= TRANSIENT) { /* a transient id is reused by the next batch, so equal ids do not mean equal text */
+    if (t >= CD_TPLS || k >= CD_SLOTS) __builtin_trap();
+    slot_kind[t][k] = 0;
+  } else if (slot_same(t, k, 1, s)) return;
   uint32_t v = ref_text(s); ready(); j_tpl_text(t, k, v);
 }
 void cd_tpl_text_num(uint32_t t, uint32_t k, uint32_t n) {

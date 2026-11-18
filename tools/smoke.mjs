@@ -18,6 +18,10 @@ try {
   await click('#run'); ok(await rows() === 1000, 'run -> 1000 rows');
   ok(await E('document.querySelector("tbody tr td").textContent') === '1', 'first id is 1');
   ok(await E('/^\\w+ \\w+ \\w+$/.test(document.querySelector("tbody tr td:nth-child(2) a").textContent)'), 'label shape');
+  // The shape alone passes when every row shows one label (a stale template slot did): 1,000 random
+  // labels are about 850 distinct, so require most of them to differ.
+  const distinct = await E('new Set([...document.querySelectorAll("tbody tr td:nth-child(2) a")].map(a => a.textContent)).size');
+  ok(distinct >= 500, `labels differ across rows: ${distinct} distinct of 1000`);
   ok(await E('document.querySelector("tbody tr").outerHTML'), 'row html: ' + await E('document.querySelector("tbody tr").outerHTML'));
   await click('#add'); ok(await rows() === 2000, 'add -> 2000');
   ok(await E('document.querySelector("tbody tr:nth-child(1001) td").textContent') === '1001', 'appended ids continue');
