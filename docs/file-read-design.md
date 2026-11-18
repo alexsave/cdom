@@ -27,6 +27,17 @@ A falsifier for every row: the measured pages differ from the prediction by more
 | S6 | 36.6 MB freed at the top, then 100,000 blocks of 200 bytes | 390 | 0 (the freed top goes back to the bump pointer) |
 | H | two 20 MB HTTP answers through cd_bytes_buf and cd_net_http, then the app takes 20 MB | 512 after the answers, 1,024 after the app's 20 MB | 305 after the answers, still 305 after the app's 20 MB |
 
+Added later (raceclub's photo path, before it was measured): case P reads a photo with cd_file_read as the shim does (cd_file_room, then cd_file_got), and in the callback, while the file's bytes are live, takes a decode buffer of width x height x 4 and a 900-pixel output of 900 x 675 x 4 (2,430,000 bytes), frees the decode buffer, then the output, then returns (and cdom frees the file's block); then it does the same for a second photo.
+The "before" runs the same harness on main's src/cdom.c (b59e476).
+Wasm memory never shrinks, so the test that the first photo's room is given back is that the second photo grows the memory by 0 pages.
+
+| case | photo | before: pages for the first, the second, peak memory | after: pages for the first, the second, peak memory |
+| --- | --- | --- | --- |
+| P12 | 12 MP (4032 x 3024), a 5,000,000-byte file, a 48,771,072-byte decode buffer | 1,216 (8 + 64 + 4 MiB), 0, 79.8 MB (1,218 pages) | 857 (the three sizes rounded to 4 KiB: 56,209,408 bytes), 0, 56.3 MB (859 pages) |
+| P24 | 24 MP (5664 x 4248, raceclub's cap), a 10,000,000-byte file, a 96,242,688-byte decode buffer | 2,368 (16 + 128 + 4 MiB), 0, 155.3 MB (2,370 pages) | 1,658 (108,683,264 bytes), 0, 108.8 MB (1,660 pages) |
+
+Falsifier: a page count off by more than 2, or a second photo that grows the memory at all.
+
 For a file read through the new `cd_file_read_cb` in Chrome (tools/file.mjs), with a 20,000,000-byte file read twice and then 20 MB taken by the app:
 
 - The first read grows the memory by 305 to 307 pages (the bytes, plus the module's small blocks).
