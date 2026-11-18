@@ -77,11 +77,13 @@ for (const [f, what] of [['malloc_full', 'malloc'], ['alloc_full', 'cd_alloc'], 
 }
 // The same for every other export the shim hands cd_bytes_buf's block to: two 20 MB deliveries take one
 // block's room (305 pages; 610 if the first were kept).
-for (const [name, answer] of [['cd_net_msg', (x, p, n) => x.cd_net_msg(3, p, n)], ['cd_encoded', (x, p, n) => x.cd_encoded(1, p, n)],
-  ['cd_store_got', (x, p, n) => x.cd_store_got(1, p, n)], ['cd_url_changed', (x, p, n) => x.cd_url_changed(p, n)]]) {
+// cd_file_got takes cd_file_room's block (src/cdom_file.c) the same way.
+for (const [name, answer, room] of [['cd_net_msg', (x, p, n) => x.cd_net_msg(3, p, n)], ['cd_encoded', (x, p, n) => x.cd_encoded(1, p, n)],
+  ['cd_store_got', (x, p, n) => x.cd_store_got(1, p, n)], ['cd_url_changed', (x, p, n) => x.cd_url_changed(p, n)],
+  ['cd_file_got', (x, p, n) => x.cd_file_got(1, 0, p, n), 'cd_file_room']]) {
   const x = await fresh('alloc_mem.wasm');
   const p0 = x.pages(), n = 20000000;
-  const r = call(() => { for (let i = 0; i < 2; i++) answer(x, x.cd_bytes_buf(n), n); return x.pages() - p0; });
+  const r = call(() => { for (let i = 0; i < 2; i++) answer(x, x[room || 'cd_bytes_buf'](n), n); return x.pages() - p0; });
   check(`${name} frees the bytes it was handed once its hook returned: two 20 MB deliveries grow the memory 305 pages`, r === 305, `${r} pages`);
 }
 // Blocks of every size taken, grown and freed in a seeded order: none ever holds another's bytes.

@@ -675,6 +675,17 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
       want.push(...(x >= 1 && x < 4 && y >= 1 && y < 3 ? [40 * i, 255 - 30 * i, 7 * i, 255] : [0, 0, 0, 0])); }
     return JSON.stringify(rgbGot) === JSON.stringify(want) || `got ${JSON.stringify(rgbGot)}`;
   });
+  // The quality: the same noise as JPEG at 20 and at 95 (95 keeps more, in more bytes), and as PNG at 0 and
+  // 100 (lossless: the same bytes); a quality over 100 traps.
+  x.t_quality();
+  await until(() => [0, 1, 2, 3].every((k) => x.t_quality_len(k) > 0));
+  let qBad = 'no trap';
+  try { x.t_quality_bad(); } catch (e) { qBad = e instanceof WebAssembly.RuntimeError ? 'trap' : String(e); }
+  check('cd_encode_image\'s quality: JPEG at 95 is larger than at 20, PNG ignores it, and over 100 traps', () => {
+    const q = [0, 1, 2, 3].map((k) => x.t_quality_len(k)), h = [0, 1, 2, 3].map((k) => x.t_quality_head(k));
+    const r = [h[0] === 0xffd8 && h[1] === 0xffd8, q[1] > q[0] * 1.5, h[2] === 0x8950 && q[2] === q[3], qBad === 'trap'];
+    return r.every(Boolean) || JSON.stringify({ r, q, h, qBad });
+  });
   // The store: put then get round-trips the bytes; a missing key answers -1; so does a get whose
   // deadline passes first (a readwrite transaction held open on the store keeps the read waiting).
   x.t_store_put();

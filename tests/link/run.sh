@@ -64,9 +64,9 @@ else echo "FAIL dirty_pass.c does not build with cdom_ui.c"; fail=1; fi
 # token form or the listening it replaces does not.
 PROF=(-O2 "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror)
 if "$CC" "${PROF[@]}" -c -o "$out/callbacks_only.o" "$here/callbacks_only.c" 2> "$out/callbacks_only.log"; then
-  echo "ok   the callbacks-only profile takes cd_on, cd_timer_cb, cd_http_cb and cd_store_get_cb"
+  echo "ok   the callbacks-only profile takes cd_on, cd_timer_cb, cd_http_cb, cd_store_get_cb and cd_file_read_cb"
 else echo "FAIL the callbacks-only profile refused cd_on or a _cb form:"; cat "$out/callbacks_only.log"; fail=1; fi
-for u in LISTEN HTTP TIMER STORE; do
+for u in LISTEN HTTP TIMER STORE FILE; do
   if "$CC" "${PROF[@]}" -DUSE_$u -c -o "$out/callbacks_only_$u.o" "$here/callbacks_only.c" 2> "$out/callbacks_only_$u.log"; then
     echo "FAIL the callbacks-only profile let a poisoned call through (USE_$u)"; fail=1
   elif ! grep -q 'poisoned' "$out/callbacks_only_$u.log"; then
@@ -74,7 +74,7 @@ for u in LISTEN HTTP TIMER STORE; do
   else echo "ok   the callbacks-only profile refuses USE_$u ($(grep -o "attempt to use a poisoned identifier" "$out/callbacks_only_$u.log" | head -1))"; fi
 done
 # The _try allocations' path is linked only into an app that calls them: alloc_try_size.c built with
-# cd_alloc and with cd_alloc_try differs by the path itself, 273 bytes at -Oz now. Under 150 the path is
+# cd_alloc and with cd_alloc_try differs by the path itself, 311 bytes at -Oz now (90 with malloc sharing it). Under 150 the path is
 # in every app (malloc sharing it); over 400 it has grown past its budget. Z is the -Oz set above.
 if "$CC" "${Z[@]}" -o "$out/try_none.wasm" "$here/alloc_try_size.c" "$src/cdom.c" "$src/mini.c" &&
    "$CC" "${Z[@]}" -DTRY -o "$out/try_asks.wasm" "$here/alloc_try_size.c" "$src/cdom.c" "$src/mini.c"; then
@@ -159,6 +159,13 @@ elif exports="$(wasm-dis "$mo/mk_app.wasm" | grep -oE '\(export "(memory|cd_star
   echo "FAIL cdom.mk's APP_WASM rule ($inc): the module exports no memory or no cd_start"; fail=1
 elif ! mk -q "$mo/mk_app.wasm" PAGE=; then echo "FAIL cdom.mk's APP_WASM rule ($inc): a second make builds the module again"; fail=1
 else echo "ok   cdom.mk's APP_WASM rule ($inc) builds an app from APP_SRC, CDOM_SRC and APP_MODULES, memory and entries exported, then finds it up to date"; fi
+# APP_MODULES file links cdom_file.c, and an app without it carries none of it: none of its two exports
+# (its imports go with the calls an app makes; this app makes none).
+filebits() { wasm-dis "$1" | grep -oE '\(export "cd_file_(room|got)"' | sort -u | wc -l | tr -d ' '; }
+if ! mk "$mo/mk_app.wasm" PAGE= APP_MODULES='random file' -B 2> "$mo/mk_file.log"; then echo "FAIL cdom.mk ($inc) did not build with APP_MODULES file:"; cat "$mo/mk_file.log"; fail=1
+elif [ "$(filebits "$mo/mk_app.wasm")" != 2 ]; then echo "FAIL cdom.mk ($inc): APP_MODULES file did not link cdom_file.c ($(filebits "$mo/mk_app.wasm") of its 2 exports)"; fail=1
+elif ! mk "$mo/mk_app.wasm" PAGE= -B 2> "$mo/mk_file.log" || [ "$(filebits "$mo/mk_app.wasm")" != 0 ]; then echo "FAIL cdom.mk ($inc): an app without APP_MODULES file carries some of cdom_file"; fail=1
+else echo "ok   cdom.mk ($inc): APP_MODULES file links cdom_file.c (its 2 exports), and an app without it has none of them"; fi
 if [ "$(mk PAGE= 2>&1)" != app-goal ]; then echo "FAIL cdom.mk ($inc) took the default goal from the app's first rule"; fail=1
 else echo "ok   cdom.mk ($inc) leaves the app's first rule its default goal"; fi
 if mk "$mo/mk_app.wasm" PAGE= APP_MODULES='random bogus' -B > "$mo/mk_bogus.log" 2>&1; then echo "FAIL cdom.mk ($inc) took APP_MODULES naming no module"; fail=1

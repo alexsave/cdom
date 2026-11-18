@@ -545,9 +545,9 @@ var cdom = (() => {
     nodes[id].style.setProperty(str(property), number + UNITS[unit]);
   }
   // Pixels in C memory (channels bytes each: RGBA, or RGB and opaque), at (x, y) in an image of
-  // fullWidth x fullHeight, to an image file: copied now, encoded off the call, the file's bytes
-  // back into C (cd_encoded) with token.
-  function encode(pixelsPtr, width, height, channels, fullWidth, fullHeight, x, y, mime, token) {
+  // fullWidth x fullHeight, to an image file of mime at quality (0 to 100): copied now, encoded off the
+  // call, the file's bytes back into C (cd_encoded) with token.
+  function encode(pixelsPtr, width, height, channels, fullWidth, fullHeight, x, y, mime, quality, token) {
     const canvas = doc.createElement("canvas");
     canvas.width = fullWidth;
     canvas.height = fullHeight;
@@ -563,7 +563,7 @@ var cdom = (() => {
       pixels = rgba;
     }
     canvas.getContext("2d").putImageData(new ImageData(pixels, width, height), x, y);
-    canvas.toBlob(async (blob) => deliver(exports.cd_encoded, token, await blob.arrayBuffer()), str(mime), 0.92);
+    canvas.toBlob(async (blob) => deliver(exports.cd_encoded, token, await blob.arrayBuffer()), str(mime), quality / 100);
   }
   // An image file's bytes in C memory as a url(blob:) on a style property, set once the image has
   // decoded (so no frame paints the property with nothing behind it), then answered with
@@ -811,6 +811,47 @@ var cdom = (() => {
   // The page's scheme and host into C memory (cd_page_origin).
   function origin(destPtr, capacity) {
     return writeString(location.protocol + "//" + location.host, destPtr, capacity);
+  }
+
+  // A picked file into C (src/cdom_file.c). Every answer comes from the event loop, even one known at once;
+  // the statuses are cdom_file.h's CD_FILE_* (0 OK, 1 NO_FILE, 2 TOO_BIG, 3 UNREADABLE, 4 UNSUPPORTED,
+  // 5 NO_ROOM).
+  // The file at index of node id's files list (an input's, or a drop's dataTransfer), or null.
+  function pickedFile(id, index) {
+    const files = nodes[id].files;
+    return (files && files[index >>> 0]) || null;
+  }
+  // Bytes into a block of cd_file_room's, then answer(OK, ptr, length); NO_ROOM, with no block, when C
+  // has no room for them. The export that answers frees the block.
+  function handOver(data, answer) {
+    const ptr = exports.cd_file_room(data.length);
+    if (!ptr) {
+      answer(5, 0, data.length);
+      return;
+    }
+    bytes(ptr, data.length).set(data);
+    answer(0, ptr, data.length);
+  }
+  // A file's bytes (cd_file_read): one over maxBytes is TOO_BIG from its size, never read.
+  function file_read(token, id, index, maxBytes) {
+    const answer = (status, ptr, length) => exports.cd_file_got(token, status, ptr, length);
+    if (typeof FileReader === "undefined") {
+      setTimeout(() => answer(4, 0, 0));
+      return;
+    }
+    const file = pickedFile(id, index);
+    if (!file) {
+      setTimeout(() => answer(1, 0, 0));
+      return;
+    }
+    if (file.size > maxBytes >>> 0) {
+      setTimeout(() => answer(2, 0, Math.min(file.size, 4294967295)));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => handOver(new Uint8Array(reader.result), answer);
+    reader.onerror = () => answer(3, 0, 0);
+    reader.readAsArrayBuffer(file);
   }
 
   // A key/value store over IndexedDB (src/cdom_store.c): bytes in, bytes out, under keys C chooses.
@@ -1325,6 +1366,7 @@ var cdom = (() => {
         listen, value, value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num,
         set_text, set_text_num, set_attr, set_class, style, style_num, encode, image_bytes, remove, free, move, clear,
         detach, attach, unlisten, hit, viewport, rect, blit, set, call, get, timer, timer_stop, raf, now, ws_open, ws_send, ws_close, ws_buffered, http, epoch, origin,
+        file_read,
         store_put, store_get, store_del,
         audio_load, audio_free, audio_play, audio_stop, audio_gain, audio_master, audio_state,
         random,
