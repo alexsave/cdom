@@ -51,18 +51,18 @@ cat > "$dir/src/app.c" <<'EOF'
 /* The app: "cdom", centered in the page. Edit this file and run make again. */
 void cd_main(void) {
   cd_at(CD_MOUNT, 0);
-  cd_open(CD_LIT("style"));
-  cd_text(CD_LIT(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
-                 ".page { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }"
-                 ".page h1 { margin: 0; font-size: 64px; animation: spin 20s linear infinite; }"
-                 "@keyframes spin { to { transform: rotate(360deg); } }"
-                 "@media (prefers-reduced-motion: reduce) { .page h1 { animation: none; } }"
-                 ".hint { position: fixed; left: 0; right: 0; bottom: 24px; margin: 0; text-align: center; opacity: 0.6; }"));
+  cd_open("style");
+  cd_text(":root { color-scheme: light dark; font-family: system-ui, sans-serif; }"
+          ".page { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }"
+          ".page h1 { margin: 0; font-size: 64px; animation: spin 20s linear infinite; }"
+          "@keyframes spin { to { transform: rotate(360deg); } }"
+          "@media (prefers-reduced-motion: reduce) { .page h1 { animation: none; } }"
+          ".hint { position: fixed; left: 0; right: 0; bottom: 24px; margin: 0; text-align: center; opacity: 0.6; }");
   cd_close();
-  cd_open(CD_LIT("div")); cd_class(CD_LIT("page"));
-  cd_open(CD_LIT("h1")); cd_text(CD_LIT("cdom")); cd_close();
+  cd_open("div"); cd_class("page");
+  cd_open("h1"); cd_text("cdom"); cd_close();
   cd_close();
-  cd_open(CD_LIT("p")); cd_class(CD_LIT("hint")); cd_text(CD_LIT("edit src/app.c")); cd_close();
+  cd_open("p"); cd_class("hint"); cd_text("edit src/app.c"); cd_close();
 }
 EOF
 
