@@ -11,3 +11,6 @@ build-js-simd/
 build-copy/
 build-norgba/
 build-unfused/
+build-comb/
+build-combrgba/
+build-simdonly/
