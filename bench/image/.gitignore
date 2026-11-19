@@ -3,3 +3,5 @@ build-js/
 build-eh/
 results/raw/
 __pycache__/
+build-native/
+build-prof/
