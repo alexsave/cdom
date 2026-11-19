@@ -25,8 +25,8 @@ typedef void (*cd_job_fn)(void *ctx, uint32_t status, const uint8_t *p, uint32_t
 
 /* Runs the job module `name` on in (in_len bytes of C memory) and args (args_len bytes of the app's own
  * layout), both read during the call. name is a bundled module's name (APP_JOBS, cdom.mk) or the module's
- * URL; the page compiles it once and keeps it. The input crosses as a transferred ArrayBuffer (one copy out
- * of C memory, none more), and the answer is fn(ctx, status, p, len). */
+ * URL; the page compiles it once and keeps it. The input is copied out of C memory once, into an ArrayBuffer that is
+ * transferred to the worker, not copied again, and the answer is fn(ctx, status, p, len). */
 void cd_job_cb(const char *name, const void *in, uint32_t in_len, const void *args, uint32_t args_len,
                cd_job_fn fn, void *ctx);
 /* The same, the input a picked file (index of node input's files list, as cd_file_read): the worker reads
