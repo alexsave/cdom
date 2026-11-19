@@ -37,9 +37,12 @@ jobs:
       - name: Toolchain (Linux)
         if: runner.os == 'Linux'
         run: |
+          # cdom needs wasm-ld 22 or later (src/cdom.c, cd_tmpz: __rodata_start), which Ubuntu 24.04 does not ship.
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm.list
           sudo apt-get update -qq
-          sudo apt-get install -y -qq clang lld llvm clang-20 lld-20 llvm-20 libjpeg-turbo-progs
-          echo "WASM_CC=/usr/lib/llvm-20/bin/clang" >> "$GITHUB_ENV"
+          sudo apt-get install -y -qq clang-23 lld-23 llvm-23 libjpeg-turbo-progs
+          echo "WASM_CC=/usr/lib/llvm-23/bin/clang" >> "$GITHUB_ENV"
           # Ubuntu's binaryen (116) writes wasm2js output of another shape than tools/legacy/build.mjs reads (brew has 130).
           b=binaryen-version_130-x86_64-linux.tar.gz
           curl -fsSL -o "$RUNNER_TEMP/$b" "https://github.com/WebAssembly/binaryen/releases/download/version_130/$b"
