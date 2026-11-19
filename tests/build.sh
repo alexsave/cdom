@@ -69,3 +69,6 @@ jobwasm -Oz "$here/out/shrink_job.wasm" "$here/shrink_job.c" "$here/../src/cdom.
 jobwasm -Oz "$here/out/shrink_job_cap.wasm" -DCDOM_HEAP_PAGES_MAX=100 "$here/shrink_job.c" "$here/../src/cdom.c" "$here/../src/mini.c" "$here/../src/cdom_job_mod.c"
 wasm -O2 "$here/out/job.wasm" "$here/job.c" "$here/../src/cdom.c" "$here/../src/cdom_job.c" "$here/../src/mini.c"
 page "$here/job.html" "$here/out/job.html" "$here/out/job.wasm"
+# docs/job-worker.md's measurements (tools/shrink.mjs): the page, built -Oz as an app is.
+wasm -Oz "$here/out/shrink.wasm" "$here/shrink.c" "$here/../src/cdom.c" "$here/../src/cdom_job.c" "$here/../src/mini.c"
+page "$here/shrink.html" "$here/out/shrink.html" "$here/out/shrink.wasm"

@@ -104,6 +104,14 @@ try {
   ok(await answered([9]) && (await rec(9)).status === S.NO_ROOM, 'NO_ROOM: a 20 MB file the capped job cannot hold', JSON.stringify(await rec(9)));
   ok(await E('W.live') === 0, 'every worker ended');
 
+  // The answer's room goes back to the heap after the callback: ten more jobs of 64 KB answers (68 KB blocks) leave the app's memory where one left it.
+  await E('X.ask(13, 0, 1, 0, 0, 1, 10)');
+  await answered([13]);
+  const pagesA = await E('X.pages()');
+  for (let i = 1; i <= 10; i++) { await E('X.ask(14, 0, 1, 0, 0, 1, 10)'); for (let t = 0; t < 600 && await E('X.rec(14, 1)') < i; t++) await sleep(25); }
+  const pagesB = await E('X.pages()');
+  ok(await E('X.rec(14, 1)') === 10 && pagesB - pagesA <= 1, 'the answer\'s bytes are freed after the callback: ten more answers leave the app\'s memory (almost) where it was', `pages ${pagesA} -> ${pagesB}`);
+
   // The tiers without Worker, and without WebAssembly: UNSUPPORTED, from the event loop, no worker made.
   const made = await E('W.made.length');
   const un = await E(`(() => { const R = window.Worker; delete window.Worker; X.ask(10, 0, 1, 0, 0, 1, 10); const s = X.rec(10, 0); window.Worker = R; return s; })()`);

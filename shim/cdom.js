@@ -854,7 +854,8 @@ var cdom = (() => {
     reader.readAsArrayBuffer(file);
   }
 
-  // A throwaway job (src/cdom_job.c): the job module compiled once, posted to a fresh worker made from a blob:
+  // A throwaway job (src/cdom_job.c): the job module (a URL, or a name in cdomJobs, the page's bundled ones,
+  // which tools/cdpage writes beside the string table) compiled once, posted to a fresh worker made from a blob:
   // URL (so a bundled page works), the worker ended when it answers. Statuses are cdom_job.h's CD_JOB_*
   // (0 OK, 1 NO_ROOM, 2 FAILED, 3 UNSUPPORTED, 4 NO_FILE). The worker's code, a function of its own that names
   // nothing outside it: it loads the module, puts the args and the input (an ArrayBuffer, or a File read
@@ -881,27 +882,20 @@ var cdom = (() => {
           const argsAt = room(args.byteLength);
           new Uint8Array(exports.memory.buffer, argsAt, args.byteLength).set(new Uint8Array(args));
           const inAt = room(length);
-          let at = inAt;
           const run = () => {
-            if (at !== inAt + length) {
-              throw 2;
-            }
             const code = exports.run(inAt, length, argsAt, args.byteLength) >>> 0;
             status = code > 1 ? 2 : code;
             return status ? undefined : exports.memory.buffer.slice(heard[0], heard[0] + heard[1]);
           };
           if (!isFile) {
             new Uint8Array(exports.memory.buffer, inAt, length).set(new Uint8Array(input));
-            at += length;
             return run();
           }
           const reader = input.stream().getReader();
+          let at = inAt;
           const pump = () => reader.read().then((chunk) => {
             if (chunk.done) {
               return run();
-            }
-            if (at + chunk.value.length > inAt + length) {
-              throw 2;
             }
             new Uint8Array(exports.memory.buffer, at, chunk.value.length).set(chunk.value);
             at += chunk.value.length;
@@ -914,7 +908,6 @@ var cdom = (() => {
     };
   }
   const jobModules = {}; // job name -> promise of its compiled module
-  let jobSources;        // options.jobs: the bundled modules' URLs by name
   let jobScript;         // the blob: URL of jobWorker, made at the first job
   // Answers the job's callback: the output into room C makes (cd_job_room), NO_ROOM when it has none.
   function jobAnswer(token, status, output) {
@@ -945,7 +938,7 @@ var cdom = (() => {
       setTimeout(() => jobAnswer(token, 4));
       return;
     }
-    const module = jobModules[name] || (jobModules[name] = fetch((jobSources && jobSources[name]) || name)
+    const module = jobModules[name] || (jobModules[name] = fetch((globalThis.cdomJobs && cdomJobs[name]) || name)
       .then((response) => response.arrayBuffer()).then((wasm) => WebAssembly.compile(wasm)));
     module.then((compiled) => {
       jobScript = jobScript || URL.createObjectURL(new Blob(["(" + jobWorker + ")()"], { type: "text/javascript" }));
@@ -1465,7 +1458,6 @@ var cdom = (() => {
   // wasm loads while the parser and the stylesheets run, and the app starts once the DOM is ready.
   // options.openStore: an app that reads its store as it starts opens it now, while the wasm is
   // fetched and compiled, so its first get finds the database open. options.seed: cd_seed (seed()).
-  // options.jobs: the bundled job modules' URLs by name (cdom_job.h; cdom.mk's APP_JOBS and /*CDOM_JOBS*/).
   async function start(url, mount, env, options) {
     // The page's string table, written before the shim by the build (tools/cdpage).
     const table = globalThis.cdomLits;
@@ -1533,7 +1525,6 @@ var cdom = (() => {
     if (!exports.cd_lits || instance.exports.cd_lits() >>> 0 !== table[1] >>> 0) {
       throw new Error("cdom: the page's string table is not this module's (the page and the module are from different builds, or the module did not go through cdlits)");
     }
-    jobSources = options && options.jobs;
     checkAhead = !!(options && options.checkAhead);
     lits = table[3].split("\0");
     litBase = table[0];

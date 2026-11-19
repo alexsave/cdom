@@ -3,8 +3,12 @@
 // its /*CDOM_TITLE*/.
 //
 //   cdpage --page in.html --out out.html --shim cdom.min.js --lits app.wasm.lits
-//          [--wasm app.wasm | --wasm-url URL] [--title TITLE] [--css-dir DIR]
+//          [--wasm app.wasm | --wasm-url URL] [--title TITLE] [--css-dir DIR] [--job name=job.wasm]...
 //   cdpage --css-list DIR out.csslist
+//
+// Job modules (--job name=file, once for each; cd_job, src/cdom_job.h): each is bundled as a data:application/wasm;base64 URL in
+// var cdomJobs={"name":"data:..."}, written after the string table in its script, and the shim finds a job by that name before
+// it tries the name as a URL. The page needs no marker for it.
 //
 // The stylesheets (--css-dir, cdom.mk passes src): every file whose name ends in .css under DIR, in any
 // subfolder, is written into the page's <style>, in byte order of its path, so 00-base.css comes before
@@ -416,6 +420,8 @@ static void css_list(const char *dir, const char *out) {
 /* ---- the page ---- */
 typedef struct {
   const char *page, *out, *shim, *lits, *wasm, *wasm_url, *title, *css_dir;
+  const char *jobs[16]; /* --job name=file, each */
+  int njobs;
 } Args;
 
 typedef struct { const uint8_t *p; size_t n; } Tag;
@@ -483,6 +489,25 @@ static void build(const Args *a, Buf *o) {
       if (!script.p) die("%s:%zu: /*CDOM_SHIM*/ with no <script tag before it", page_name, lineno);
       if (!slurp(a->lits, &lits)) die("%s: cannot read the string table %s", page_name, a->lits);
       put_lines(o, lits.p, lits.n);
+      if (a->njobs) { /* the job modules cd_job names, bundled: var cdomJobs={"name":"data:application/wasm;base64,...",...}; */
+        bstr(o, "var cdomJobs={");
+        for (int j = 0; j < a->njobs; j++) {
+          const char *eq = strchr(a->jobs[j], '=');
+          if (!eq || eq == a->jobs[j]) die("--job takes name=file, not %s", a->jobs[j]);
+          char name[256];
+          if ((size_t)(eq - a->jobs[j]) >= sizeof name) die("--job: the name in %s is too long", a->jobs[j]);
+          memcpy(name, a->jobs[j], (size_t)(eq - a->jobs[j]));
+          name[eq - a->jobs[j]] = 0;
+          Buf job = {0};
+          if (!slurp(eq + 1, &job) || !job.n) die("%s: cannot read the job module to bundle %s", page_name, eq + 1);
+          if (j) bbyte(o, ',');
+          js_string(o, name);
+          bstr(o, ":\"data:application/wasm;base64,");
+          base64(o, job.p, job.n);
+          bbyte(o, '"');
+        }
+        bstr(o, "};\n");
+      }
       bstr(o, "</script>\n");
       bput(o, script.p, script.n);
       bbyte(o, '\n');
@@ -540,7 +565,7 @@ static void build(const Args *a, Buf *o) {
 static void usage(void) __attribute__((noreturn));
 static void usage(void) {
   die("usage: cdpage --page in.html --out out.html --shim cdom.min.js --lits app.wasm.lits\n"
-      "              [--wasm app.wasm | --wasm-url URL] [--title TITLE] [--css-dir DIR]\n"
+      "              [--wasm app.wasm | --wasm-url URL] [--title TITLE] [--css-dir DIR] [--job name=job.wasm]...\n"
       "       cdpage --css-list DIR out.csslist");
 }
 
@@ -553,6 +578,11 @@ int main(int argc, char **argv) {
   }
   for (int i = 1; i < argc; i++) {
     const char *f = argv[i];
+    if (!strcmp(f, "--job") && i + 1 < argc) {
+      if (a.njobs == 16) die("--job: at most 16 job modules");
+      a.jobs[a.njobs++] = argv[++i];
+      continue;
+    }
     const char **slot = !strcmp(f, "--page") ? &a.page : !strcmp(f, "--out") ? &a.out : !strcmp(f, "--shim") ? &a.shim
       : !strcmp(f, "--lits") ? &a.lits : !strcmp(f, "--wasm") ? &a.wasm : !strcmp(f, "--wasm-url") ? &a.wasm_url
       : !strcmp(f, "--title") ? &a.title : !strcmp(f, "--css-dir") ? &a.css_dir : 0;
