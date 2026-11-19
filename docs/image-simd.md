@@ -188,3 +188,11 @@ p12.jpg, box 4032 (scale 8/8), 5 runs:
 - The `eh` way is skipped (`IMAGE_EH=0`) on clang 20.
 - tests/image/test_image.c gained `#include <sys/types.h>` (ssize_t on glibc), and the oracle was run with djpeg, cjpeg and jpegtran 3.2.1 built here from the same archive, Python 3.12 with Pillow 10.2 and numpy.
 - The big-input tests (IMAGE_BIG=1) were not run on the SIMD build; the 12 MP and 48 MP bench inputs are checked by hash across arms instead.
+
+## The Mac (Apple Silicon, headless Chrome), the same arms
+
+### Predictions (written before the Mac measurement)
+
+The x86 VM measured about 0 gain, so the prediction is the same on the Mac: each of simd128 and simde within plus or minus 3% of scalar on p12.jpg, p12p.jpg, p48.jpg and p12.png, at -Oz, box 900.
+Falsifier: a ratio outside 0.97 to 1.03 with the two arms' min to max ranges not overlapping.
+One reason to expect a little more on arm64 V8: the NEON-shaped code maps to native NEON there, so the IDCTs and colour conversion may gain a few percent, but Huffman decoding (more than half the time) does not change, so a whole-run gain over 5% is not expected.
