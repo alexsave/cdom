@@ -122,6 +122,7 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
       checkViewBad: ['the check build: a view in the pass that reads a state it does not watch', () => x.t_check_view_bad(), () => x.t_check_build() === 1],
       checkBuildOk: ['the check build: a build that reads what the region building under it, its r->up, or (shown by a view) its r->up watches does not trap', () => x.t_check_build_ok(), () => x.t_check_build() === 1, 'no trap'],
       checkBuildBad: ['the check build: a build that read a state nothing around it watches, at its cd_region_end', () => x.t_check_build_bad(), () => x.t_check_build() === 1],
+      imageTrap: ['the image module\'s guard (js): a trap inside the body goes on as a trap, not as a throw the guard answers', () => x.t_sj(2, 0), () => x.t_sj_ran() === 0],
     };
     const [what, run, after, want = 'trap'] = cases[trapCase];
     const got = traps(run);
@@ -165,6 +166,14 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
       const r = [x.t_host_checked() === 0, (box.checked = true, x.t_host_checked() === 1), x.t_host_length() === 5, Number.isNaN(x.t_host_missing()),
         whole === 13 && out(whole) === '한국어 값', cut === 3 && out(3) === '한', out(x.t_host_accent()) === 'rgb(1, 2, 3)'];
       return r.every(Boolean) || JSON.stringify(r);
+    });
+    check('the image module\'s guard (js, the shim\'s image_call and image_throw): a body that returns answers 0, one that throws from 40 frames down answers 1, and 2,000 throws leave the stack pointer where it was', () => {
+      const sp = x.t_sj_sp();
+      const r = [x.t_sj(0, 7) === 0 && x.t_sj_ran() === 7, x.t_sj(1, 40) === 1 && x.t_sj_ran() === 1];
+      let all = true;
+      for (let i = 0; i < 2000; i++) all = all && x.t_sj(1, 40) === 1;   // 8 KB of frames each: 16 MB, past the 64 KB stack, if none came back
+      r.push(all, x.t_sj_sp() === sp, x.t_sj(0, 3) === 0 && x.t_sj_ran() === 3);
+      return r.every(Boolean) || JSON.stringify(r) + ` sp ${sp} then ${x.t_sj_sp()}`;
     });
     check('cd_input_whole: the whole value when it fits (13 bytes into 13), else none of it and the whole length (into 12, 4 and 0)', () => {
       const W = 1 << 16;
