@@ -307,6 +307,14 @@ def jpeg_cases():
     e6 = exif_bytes(6)
     exif6 = app(0xe1, e6 if e6.startswith(b"Exif\0\0") else b"Exif\0\0" + e6)
     jpeg_case("jpeg-exif-after-xmp", splice_after_soi(f("s420.jpg"), f("xmpexif.jpg"), [xmp, exif6]), 300, 300, o=6)
+    # a fatal libjpeg error raised deep inside the decoder (a quantization table index of 15), baseline and progressive:
+    # the error exit leaves through the guard (tools/image.mjs runs these many times over, in wasm, both ways)
+    for src, name in [("s420.jpg", "dqt-bad.jpg"), ("prog.jpg", "dqt-bad-progressive.jpg")]:
+        d = bytearray(open(f(src), "rb").read())
+        i = d.index(b"\xff\xdb\x00\x43\x00")
+        d[i + 4] = 0x0f
+        open(f(name), "wb").write(d)
+        status_case("jpeg-" + name[:-4], f(name), 300, 300, "CORRUPT")
     base.convert("CMYK").save(f("cmyk.jpg"), "JPEG", quality=88)
     status_case("jpeg-cmyk", f("cmyk.jpg"), 300, 300, "UNSUPPORTED")
     # scans: CD_IMAGE_SCANS_MAX (500) and one more. Extra copies of the last scan (a refinement, which libjpeg takes

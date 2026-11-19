@@ -1,0 +1,50 @@
+<!doctype html><html><head><meta charset="utf-8"><title>image bench</title></head><body><div id="m"></div>
+<script>
+/*CDOM_SHIM*/
+</script>
+<script>
+// bench/image/run.mjs drives this page: arm(name, input, box) runs one arm once on a file and answers the ms, the size
+// and the wasm memory. The browser arms (B1, B2) are bench-only JavaScript, never shipped (tools/resize_ban.sh).
+cdom.start(/*CDOM_WASM*/, 'm').then((x) => { window.X = x; window.READY = true; });
+// The size cdom_image.c's fit_box picks, for the browser arms' target.
+function fit(w, h, bw, bh) {
+  if (w <= bw && h <= bh) return [w, h];
+  if (w * bh >= h * bw) return [bw, Math.max(1, Math.floor((h * bw * 2 + w) / (w * 2)))];
+  return [Math.max(1, Math.floor((w * bh * 2 + h) / (h * 2))), bh];
+}
+window.arm = async (name, input, box) => {
+  const data = new Uint8Array(await (await fetch(input)).arrayBuffer());
+  if (name === 'C') {
+    const p = X.room(data.length);
+    new Uint8Array(X.memory.buffer, p, data.length).set(data);
+    const t0 = performance.now();
+    const status = X.resize(p, data.length, box, box);
+    const ms = performance.now() - t0;
+    const o = new Uint32Array(X.memory.buffer, X.out(), 3);
+    const r = { ms, status, w: o[0], h: o[1], bytes: X.memory.buffer.byteLength };
+    X.drop(o[2]); X.drop(p);
+    return r;
+  }
+  const blob = new Blob([data], { type: input.endsWith('.png') ? 'image/png' : 'image/jpeg' });
+  const t0 = performance.now();
+  let bitmap, w, h;
+  if (name === 'B1') {   // decode and scale in one step
+    const full = await createImageBitmap(blob);
+    [w, h] = fit(full.width, full.height, box, box);
+    full.close();
+    const t1 = performance.now();
+    bitmap = await createImageBitmap(blob, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
+    const c = new OffscreenCanvas(w, h), g = c.getContext('2d');
+    g.drawImage(bitmap, 0, 0);
+    g.getImageData(0, 0, w, h);
+    return { ms: performance.now() - t1, w, h, sizing_ms: t1 - t0 };
+  }
+  bitmap = await createImageBitmap(blob);   // B2: decode, then scale in drawImage
+  [w, h] = fit(bitmap.width, bitmap.height, box, box);
+  const c = new OffscreenCanvas(w, h), g = c.getContext('2d');
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(bitmap, 0, 0, w, h);
+  g.getImageData(0, 0, w, h);
+  return { ms: performance.now() - t0, w, h };
+};
+</script></body></html>

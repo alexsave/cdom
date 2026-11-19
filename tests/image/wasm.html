@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"><title>image</title></head><body><div id="m"></div>
+<script>
+/*CDOM_SHIM*/
+</script>
+<script>
+// tools/image.mjs drives this page (tests/image/wasm.c): run(input, box w, box h, expected) answers the status, the size
+// and the first pixel that differs from the expected .rgba (-1: none).
+cdom.start(/*CDOM_WASM*/, 'm').then((x) => { window.X = x; window.READY = true; });
+async function bytesOf(url) { return new Uint8Array(await (await fetch(url)).arrayBuffer()); }
+window.run = async (input, bw, bh, expected) => {
+  const data = await bytesOf(input);
+  const p = X.room(data.length);
+  if (!p) return { status: 'no room for the file' };
+  new Uint8Array(X.memory.buffer, p, data.length).set(data);
+  const status = X.resize(p, data.length, bw, bh);
+  const o = new Uint32Array(X.memory.buffer, X.out(), 3);
+  const w = o[0], h = o[1], rgba = o[2];
+  let diff = -2;
+  if (status === 0 && expected) {
+    const want = await bytesOf(expected), got = new Uint8Array(X.memory.buffer, rgba, w * h * 4);
+    diff = want.length !== got.length ? -3 : -1;
+    for (let i = 0; diff === -1 && i < got.length; i++) if (got[i] !== want[i]) diff = i >> 2;
+  }
+  X.drop(rgba);
+  X.drop(p);
+  return { status, w, h, diff, pages: X.memory.buffer.byteLength >> 16, sp: X.sp() };
+};
+</script></body></html>
