@@ -17,9 +17,13 @@ const dir = path.resolve(process.argv[2] || path.join(top, 'tests/out/image'));
 const CAP = 400; // pages (64 KiB each): 26 MB, under the 12 MP progressive JPEG's 36 MB of coefficients
 const S = ['OK', 'NOT_IMAGE', 'TOO_BIG', 'UNSUPPORTED', 'CORRUPT', 'NO_ROOM', 'BAD_BOX'];
 const MAXMEM = CAP * 65536; // the same room, as the module's own limit: memory.grow itself refuses past it
-const builds = [['js', '', ''], ['eh', '', ''], ['js', CAP, ''], ['js', '', MAXMEM], ['eh', '', MAXMEM]];
-for (const [sjlj, cap, max] of builds)
-  execFileSync('make', ['-s', '-f', path.join(top, 'tests/image/wasm.mk'), `OUT=${dir}`, `SJLJ=${sjlj}`, ...(cap ? [`CAP=${cap}`] : []), ...(max ? [`MAXMEM=${max}`] : []), 'all'], { stdio: 'inherit' });
+// IMAGE_SIMD=simde[,simd128]: the same cases once more in each SIMD build (docs/image-simd.md), both ways out of an error
+const simds = (process.env.IMAGE_SIMD || '').split(',').filter((x) => x && x !== 'none');
+// IMAGE_EH=0 leaves the eh way out (a clang whose wasm exception handling is not the one cdom.mk's eh flags name, say clang 20)
+const builds = [['js', '', '', 'none'], ['eh', '', '', 'none'], ['js', CAP, '', 'none'], ['js', '', MAXMEM, 'none'], ['eh', '', MAXMEM, 'none'],
+  ...simds.flatMap((m) => [['js', '', '', m], ['eh', '', '', m]])].filter((x) => x[0] !== 'eh' || process.env.IMAGE_EH !== '0');
+for (const [sjlj, cap, max, simd] of builds)
+  execFileSync('make', ['-s', '-f', path.join(top, 'tests/image/wasm.mk'), `OUT=${dir}`, `SJLJ=${sjlj}`, `SIMD=${simd}`, ...(cap ? [`CAP=${cap}`] : []), ...(max ? [`MAXMEM=${max}`] : []), 'all'], { stdio: 'inherit' });
 
 const types = { '.html': 'text/html' };
 const srv = http.createServer((q, r) => {
@@ -34,8 +38,8 @@ let fails = 0;
 const ok = (c, m, why = '') => { if (!c) { fails++; console.log('FAIL', m + (why ? ': ' + why : '')); } else console.log('ok  ', m); };
 const b = await launch();
 try {
-  for (const [sjlj, cap, max] of builds) {
-    const name = `wasm_${sjlj}${cap ? '_cap' : ''}${max ? '_max' : ''}`;
+  for (const [sjlj, cap, max, simd] of builds) {
+    const name = `wasm_${sjlj}${cap ? '_cap' : ''}${max ? '_max' : ''}${simd === 'none' ? '' : '_' + simd}`;
     await b.send('Page.navigate', { url: url(path.join(dir, name + '.html')) });
     for (let i = 0; i < 200 && !(await b.evaluate('!!window.READY')); i++) await sleep(50);
     ok(await b.evaluate('!!window.READY'), `${name}: the page started`);
@@ -70,6 +74,30 @@ try {
       const g = cases.find((c) => c[0] === 'jpeg-420');
       const after = await run(g[1], +g[2], +g[3], g[4]);
       ok(after.status === 0 && after.diff === -1, `${name}: after the errors, a good JPEG decodes exactly`, JSON.stringify(after));
+      if (simd === 'simde') {
+        // The SIMD routines are the ones that ran, not libjpeg's C code behind a dispatch that quietly fell back (a decode
+        // by C is bit-exact too): the steps the cases above need are wired. Bits: 0 ycc_rgb, 4 h2v1 fancy, 5 h2v2 fancy,
+        // 9 islow, 11 idct 2x2, 12 idct 4x4 (src/cdom_image_jsimd.c).
+        const w = await b.evaluate('X.wired()'), need = 1 | 1 << 4 | 1 << 5 | 1 << 9 | 1 << 11 | 1 << 12;
+        ok((w & need) === need, `${name}: the cases wired the NEON steps ycc_rgb, h2v1 and h2v2 fancy upsampling, islow, 2x2 and 4x4`, `wired ${w.toString(2)}, need ${need.toString(2)}`);
+        // Each JPEG case, at its box and at a box that keeps it whole (scale 8/8), with the C routines and with the SIMD ones, for
+        // the module's options and for the ones it never sets (ifast IDCT, merged upsampling, both): the same status and the
+        // same image, to the byte. The C and SIMD runs are the same module, one dispatch off and on.
+        let n = 0, bad2 = 0;
+        for (const [cname, file, bw, bh, want] of cases) {
+          if (!cname.startsWith('jpeg-') || want.startsWith('STATUS') || cname.endsWith('-16mp') || cname.startsWith('jpeg-p12')) continue;
+          for (const mode of [0, 1, 2, 3]) for (const box of [+bw, 4096]) {
+            const c = await b.evaluate(`hashRun(${JSON.stringify(url(file))}, ${box}, ${box}, 1, ${mode})`);
+            const s = await b.evaluate(`hashRun(${JSON.stringify(url(file))}, ${box}, ${box}, 0, ${mode})`);
+            n++;
+            if (c.status !== s.status || c.hash !== s.hash || c.w !== s.w || c.h !== s.h) { bad2++; console.log(`FAIL ${name}: ${cname} box ${box} mode ${mode}: C ${JSON.stringify(c)}, SIMD ${JSON.stringify(s)}`); }
+          }
+        }
+        fails += bad2;
+        ok(bad2 === 0 && n > 0, `${name}: ${n} runs (every JPEG case x box x ifast/merged options) are equal, SIMD against libjpeg's C routines, to the byte`);
+        const w2 = await b.evaluate('X.wired()'), need2 = 1 << 10 | 1 << 7 | 1 << 8;
+        ok((w2 & need2) === need2, `${name}: the ifast IDCT and both merged upsamplers were wired by those runs`, `wired ${w2.toString(2)}`);
+      }
     } else {
       const p12p = cases.find((c) => c[0] === 'jpeg-p12-progressive'), small = cases.find((c) => c[0] === 'jpeg-420');
       if (p12p) {

@@ -30,11 +30,18 @@ enum {
   W_IDCT_IFAST = 1 << 10, W_IDCT_2X2 = 1 << 11, W_IDCT_4X4 = 1 << 12
 };
 unsigned int cd_image_simd_wired;
+#ifdef CDOM_IMAGE_SIMD_TEST   /* tests/image/wasm.mk only: the scalar routines on demand, and the decode options the module never sets */
+unsigned int cd_image_simd_off;         /* nonzero: every jsimd_set_* answers JSIMD_NONE, so libjpeg's own C code runs */
+unsigned int cd_image_simd_test_mode;   /* bit 0: JDCT_IFAST; bit 1: no fancy upsampling (so merged upsampling), cdom_image_jpeg.c */
+#define SIMD_OFF (cd_image_simd_off != 0)
+#else
+#define SIMD_OFF 0
+#endif
 
 HIDDEN unsigned int jpeg_simd_cpu_support(void) { return JSIMD_NEON; }
 
 /* The checks every step of jsimd.c makes first: 8-bit samples and a 4-byte JDIMENSION (the others it makes are below). */
-#define BUILD_OK (BITS_IN_JSAMPLE == 8 && sizeof(JDIMENSION) == 4)
+#define BUILD_OK (BITS_IN_JSAMPLE == 8 && sizeof(JDIMENSION) == 4 && !SIMD_OFF)
 #define IDCT_OK (BUILD_OK && sizeof(JCOEF) == 2 && sizeof(ISLOW_MULT_TYPE) == 2 && cinfo->idct)
 
 HIDDEN unsigned int jsimd_set_ycc_rgb(j_decompress_ptr cinfo) {

@@ -4,6 +4,7 @@
  * the peak cases that the most held at once (with the file) stays under the case's limit.
  * Prints one line per failure, "FAIL <what>", and the counts at the end; exits non-zero on any failure. */
 #include <stdio.h>
+#include <sys/types.h>   /* ssize_t: not in C23 alone on glibc */
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>

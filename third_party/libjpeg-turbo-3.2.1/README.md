@@ -14,13 +14,20 @@ The files the 8-bit lossy Huffman decoder (baseline and progressive) compiles an
 Compiled (cdom.mk, `CDOM_IMAGE_VENDOR_SRC`): `jcomapi.c jdapimin.c jdhuff.c jdinput.c jdmarker.c jdmaster.c jdphuff.c jmemmgr.c jpeg_nbits.c` and the ten 8-bit wrappers in `src/wrapper/` (`jdapistd-8.c` and the rest), which include the precision-dependent files (`jdapistd.c` and the rest) as upstream builds them.
 Everything else here is included by those.
 
-Not here: SIMD, the encoder, arithmetic coding, lossless JPEG, 12 and 16-bit samples, the stdio and memory data sources (`src/cdom_image_jpeg.c` reads the caller's bytes itself), `jerror.c` (its messages are text cdom never shows; `src/cdom_image_jpeg.c` has its own error manager), `jmemnobs.c` (`src/cdom_image_jpeg.c` is the memory layer, over `cd_alloc_try`, with a budget), colour quantization, merged upsampling, and the float and fast IDCTs.
+Not here: the encoder (and its SIMD), arithmetic coding, lossless JPEG, 12 and 16-bit samples, the stdio and memory data sources (`src/cdom_image_jpeg.c` reads the caller's bytes itself), `jerror.c` (its messages are text cdom never shows; `src/cdom_image_jpeg.c` has its own error manager), `jmemnobs.c` (`src/cdom_image_jpeg.c` is the memory layer, over `cd_alloc_try`, with a budget), colour quantization, and the float IDCT.
+
+Here but compiled only in the SIMD build (`CDOM_IMAGE_SIMD=simde`, docs/image-simd.md): the fast IDCT (`jidctfst.c`) and merged upsampling (`jdmerge.c`, `jdmrg565.c`, `jdmrgext.c`) with their wrappers, and `simd/`: the decoder's half of the Arm NEON intrinsics (`simd/arm/jdcolor-neon.c`, `jdcolext-neon.c`, `jdmerge-neon.c`, `jdmrgext-neon.c`, `jdsample-neon.c`, `jidctfst-neon.c`, `jidctint-neon.c`, `jidctred-neon.c`) with the headers they and `src/` include (`simd/jsimd.h`, `jsimdconst.h`, `jsimddct.h`, `jsimdint.h`, `simd/arm/align.h`, and `src/jchuff.h`, which `jsimdint.h` includes).
+Not copied: `simd/jsimd.c`, libjpeg-turbo's dispatch, which holds the encoder's steps as well; the decoder's half is `src/cdom_image_jsimd.c` (cdom's own file, which says what it keeps and changes).
+The NEON files are built for wasm32 as libjpeg-turbo's CMake builds them with `-DWITH_SIMDE=1` (SIMDe, `third_party/simde-0.8.2`, maps each intrinsic to wasm simd128): 32-bit Arm, so `SIMD_ARCHITECTURE` is `ARM`, `HAVE_VLD1_S16_X3` and `HAVE_VLD1_U16_X2` on and `HAVE_VLD1Q_U8_X4` off, SIMDe's own defaults in `simd/CMakeLists.txt`.
 
 ## The edits
 
 1. `src/jmorecfg.h`: seven features switched off, each line marked `cdom: off`: `DCT_IFAST_SUPPORTED`, `DCT_FLOAT_SUPPORTED`, `D_LOSSLESS_SUPPORTED`, `SAVE_MARKERS_SUPPORTED`, `UPSAMPLE_MERGING_SUPPORTED`, `QUANT_1PASS_SUPPORTED`, `QUANT_2PASS_SUPPORTED`; and one line in its copyright header saying so.
 2. `src/jconfig.h` is the archive's `src/jconfig.h.in` filled in as CMake would for this build: `JPEG_LIB_VERSION` 80, version 3.2.1, and every `#cmakedefine` off (no arithmetic coding, no SIMD).
 3. `src/jconfigint.h` is `src/jconfigint.h.in` filled in the same way: `BUILD` "cdom", clang's `visibility("hidden")` and `always_inline`, no thread-local storage, `SIZEOF_SIZE_T` from the compiler, and `HAVE_BUILTIN_CTZL` on (the one `#cmakedefine` that is).
+
+4. The SIMD build's switches, each under `#ifdef CDOM_IMAGE_SIMDE` (set by `CDOM_IMAGE_SIMD=simde`, cdom.mk) and the same as the lines above without it: `src/jmorecfg.h` has `DCT_IFAST_SUPPORTED` and `UPSAMPLE_MERGING_SUPPORTED` on; `src/jconfig.h` and `src/jconfigint.h` have `WITH_SIMD` and `WITH_SIMDE` on and `SIMD_ARCHITECTURE` `ARM`.
+5. `simd/arm/neon-compat.h` is `simd/arm/neon-compat.h.in` filled in as above (the `HAVE_VLD1*` switches).
 
 Built with `-DNO_GETENV -DNO_PUTENV` (the library's own switches: there is no environment) and `-w`, with this `src/` on the include path of the module's files only (cdom.mk, `CDOM_IMAGE_PARTS`).
 The six 12-bit entry points the decoder names (`j12init_*`) are `src/cdom_image_jpeg.c`'s, and are never reached: the module refuses a 12-bit frame from its own header read.

@@ -8,6 +8,8 @@
 #   4. the wasm build, both ways out of a libjpeg error (CDOM_IMAGE_SJLJ js and eh), runs every case in Chrome
 #      (tools/image.mjs, through tools/cdp.mjs): the same statuses and the same bytes as the native build, and a
 #      capped heap answering NO_ROOM.
+#   5. IMAGE_SIMD=simde (docs/image-simd.md): step 4 once more with libjpeg-turbo's NEON routines over SIMDe, each image equal
+#      to the oracle's, the steps wired, and SIMD equal to libjpeg's own C routines on every JPEG case (also for ifast and merged).
 # IMAGE_BIG=0 skips the oracle's big inputs (the 12 MP, 16 MP and 35 MP files) for a quick run.
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"

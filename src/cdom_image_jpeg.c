@@ -91,6 +91,10 @@ void jpeg_open_backing_store(j_common_ptr c, backing_store_ptr info, long total)
 long jpeg_mem_init(j_common_ptr c) { (void)c; return (long)CD_IMAGE_MEM_MAX; }
 void jpeg_mem_term(j_common_ptr c) { (void)c; }
 
+#ifdef CDOM_IMAGE_SIMD_TEST
+extern unsigned int cd_image_simd_test_mode;
+#endif
+
 /* ---- the 12-bit entry points jdmaster.c names: never reached (the probe refuses a 12-bit frame first) ---- */
 
 void j12init_color_deconverter(j_decompress_ptr c) { ERREXIT1(c, JERR_BAD_PRECISION, 12); }
@@ -159,6 +163,10 @@ static void body(void *v) {
   c->do_fancy_upsampling = TRUE;
   c->do_block_smoothing = FALSE;
   c->dct_method = JDCT_ISLOW;
+#ifdef CDOM_IMAGE_SIMD_TEST   /* tests/image/wasm.mk's SIMD builds: the routines the module never selects (cdom_image_jsimd.c) */
+  if (cd_image_simd_test_mode & 1) c->dct_method = JDCT_IFAST;
+  if (cd_image_simd_test_mode & 2) c->do_fancy_upsampling = FALSE;
+#endif
   c->scale_num = pick_num(x->info->width, x->info->height, x->dw, x->dh);
   c->scale_denom = 8;
   jpeg_calc_output_dimensions(c);

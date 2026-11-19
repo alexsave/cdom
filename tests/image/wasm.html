@@ -25,4 +25,19 @@ window.run = async (input, bw, bh, expected) => {
   X.drop(p);
   return { status, w, h, diff, pages: X.memory.buffer.byteLength >> 16, sp: X.sp() };
 };
+// run with the image's FNV-1a (and the SIMD steps wired), for the SIMD builds' C against SIMD (tools/image.mjs): off 1 runs libjpeg's C
+// routines, mode bit 0 the ifast IDCT and bit 1 merged upsampling
+window.hashRun = async (input, bw, bh, off, mode) => {
+  X.set_off(off); X.set_mode(mode);
+  const data = await bytesOf(input);
+  const p = X.room(data.length);
+  new Uint8Array(X.memory.buffer, p, data.length).set(data);
+  const status = X.resize(p, data.length, bw, bh);
+  const o = new Uint32Array(X.memory.buffer, X.out(), 3);
+  const w = o[0], h = o[1], rgba = o[2];
+  let hash = 2166136261;
+  if (status === 0) { const got = new Uint8Array(X.memory.buffer, rgba, w * h * 4); for (let i = 0; i < got.length; i++) hash = Math.imul(hash ^ got[i], 16777619); }
+  X.drop(rgba); X.drop(p); X.set_off(0); X.set_mode(0);
+  return { status, w, h, hash: hash >>> 0, wired: X.wired() };
+};
 </script></body></html>
