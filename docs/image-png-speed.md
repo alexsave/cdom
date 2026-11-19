@@ -39,6 +39,8 @@ Native, x86-64, clang -O2 (the Rust one: cargo's release profile), each library 
 | N4 | libdeflate 1.24 | 45 | 30 to 65 |
 | N5 | fdeflate (the `png` crate's inflate, which Chrome's Rust PNG decoder runs) | 45 | 30 to 70 |
 
+(N5 is withdrawn: its harness, in Rust, was never in this repository, so png-fast-2 removed the arm and its numbers; F2 below is then N1/N4.)
+
 In wasm (Chrome 153, the inflate alone in a test page, cdom.mk's flags at -Oz, scalar):
 
 | id | inflate | predicted ms | range |
@@ -114,7 +116,7 @@ That codec is the `png` crate, whose inflate is the `fdeflate` crate (Rust, with
 (Inferred from the binary's strings, not a trace; `chromium.googlesource.com` is not reachable from this machine, so Chromium's own zlib could not be fetched and built, and zlib-ng stands in for it below.)
 G2 (the Rust codec, not libpng and zlib): confirmed, on that evidence.
 
-The libraries, natively (bench/image/inflate/native.sh, native_round.sh; x86-64, clang 18 -O2, Rust 1.97 release at opt-level 2; 7 rounds of 3 runs each, arms interleaved; median, min to max; p12.png's stream, 15,177,529 bytes in 232 IDAT chunks):
+The libraries, natively (bench/image/inflate/native.sh, native_round.sh; x86-64, clang 18 -O2; 7 rounds of 3 runs each, arms interleaved; median, min to max; p12.png's stream, 15,177,529 bytes in 232 IDAT chunks):
 
 | id | inflate | measured ms | predicted | verdict |
 | --- | --- | --- | --- | --- |
@@ -122,10 +124,8 @@ The libraries, natively (bench/image/inflate/native.sh, native_round.sh; x86-64,
 | N2 | zlib 1.3.1 (64 KB out buffer) | 98.9 (93.8 to 105.2) | 90 (65 to 130) | confirmed |
 | N3 | zlib-ng 2.2.4, its x86 SIMD on (AVX2 chunkset and adler32) | 69.2 (67.9 to 74.8) | 60 (40 to 85) | confirmed |
 | N4 | libdeflate 1.24 (one call, whole-output buffer) | 50.8 (47.9 to 63.7) | 45 (30 to 65) | confirmed |
-| N5 | fdeflate 0.3.7 (streaming as the png crate does: 32 KB kept, the buffer compacted) | 39.0 (38.8 to 49.3) | 45 (30 to 70) | confirmed |
 | | cdom's inflate (this branch, final) | 45.2 (43.6 to 51.0) | (P2) | |
 | | cdom's inflate, fed the 232 IDAT payloads as pieces | 45.2 (43.7 to 54.9) | | |
-| | png 0.18.0, the whole decode (inflate and unfilter, no scaling) | 97.3 (95.3 to 116.4) | not predicted | |
 
 In wasm (Chrome 153, bench/image/inflate/run.mjs, 9 interleaved rounds, each run on a fresh page; the inflate with its rows handed on, nothing else):
 
@@ -134,11 +134,11 @@ In wasm (Chrome 153, bench/image/inflate/run.mjs, 9 interleaved rounds, each run
 | W1 | tinfl, as cdom called it | 117.7 (112.2 to 136.3) | 170 (130 to 220) | refuted (faster) |
 
 - F1, the wasm factor W1/N1: 117.7 / 88.2 = 1.33; predicted 1.5 (1.2 to 2.0): confirmed.
-- F2, the library factor N1/min(N4, N5): 88.2 / 39.0 = 2.26; predicted 2.4 (1.6 to 3.5): confirmed.
-- G1 (F2 > F1): 2.26 against 1.33, confirmed: of the old C arm's inflate time, the library (tinfl against fdeflate) costs more than wasm does.
+- F2, the library factor N1/N4 (N5 withdrawn): 88.2 / 50.8 = 1.74; predicted 2.4 (1.6 to 3.5): confirmed.
+- G1 (F2 > F1): 1.74 against 1.33, confirmed: of the old C arm's inflate time, the library (tinfl against libdeflate) costs more than wasm does.
 
-So the gap, on p12.png's inflate, split: the browser's fdeflate natively takes 39 ms; tinfl natively takes 2.26 times that (88 ms), and wasm adds 1.33 times again (118 ms).
-Inflate is not the whole gap: the png crate's whole decode is 97 ms natively, so Chrome's B1 (about 155 ms here) spends about 60 ms more on its resize, its colour and its copies.
+So the gap, on p12.png's inflate, split: the fastest inflate measured here (libdeflate) natively takes 51 ms; tinfl natively takes 1.74 times that (88 ms), and wasm adds 1.33 times again (118 ms).
+(png-fast-2 removed the fdeflate arm and the png crate's whole decode, and their numbers, with the Rust harness that measured them: it was never in this repository, so no one could run it again.)
 
 ### Step 2: the inflate candidates in wasm
 
@@ -202,7 +202,7 @@ The C arm on p12.png, the bench page (bench/image/run.mjs), 9 interleaved rounds
 ### Step 5: the bench
 
 bench/image/run.mjs, box 900, 9 interleaved rounds, each run on a fresh page, Chrome 153 headless; median (min to max), ms.
-C-old is main (2d20ccd: tinfl, the RGBA row; bench/image/old.sh), C-new this branch scalar, C-new-simd this branch with the inflate (only) at -msimd128 (`make -C bench/image SIMD=1`).
+C-old is main (2d20ccd: tinfl, the RGBA row; `bench/image/old.sh 2d20ccd`, whose default is now main's tip), C-new this branch scalar, C-new-simd this branch with the inflate (only) at -msimd128 (`make -C bench/image SIMD=1`).
 The prediction is under each number; the verdict is confirmed when the median is in its range.
 
 | input | C-old | C-new | C-new-simd | B1 | B2 |

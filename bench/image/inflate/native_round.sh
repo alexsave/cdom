@@ -1,15 +1,15 @@
 #!/bin/bash
 # The native arms interleaved: ROUNDS rounds, each running every arm's process once for RUNS runs, the arm order
 # rotated each round; prints every run (arm, round, run, ms) and then each arm's median, min and max.
-# Usage: native_round.sh <png> <native binary> <fdb binary or -> [arms...]   (ROUNDS=7 RUNS=3)
+# Usage: native_round.sh <png> <native binary> [arms...]   (ROUNDS=7 RUNS=3; the arms: native.c's)
 set -euo pipefail
-png="$1"; nat="$2"; fdb="$3"; shift 3
+png="$1"; nat="$2"; shift 2
 arms=("$@"); R="${ROUNDS:-7}"; N="${RUNS:-3}"
 tmp="$(mktemp)"
 for ((r = 0; r < R; r++)); do
   for ((k = 0; k < ${#arms[@]}; k++)); do
     a="${arms[$(((k + r) % ${#arms[@]}))]}"
-    case "$a" in fdeflate|png) "$fdb" "$png" "$a" "$N";; *) "$nat" "$png" "$a" "$N" | grep -v '^#';; esac | awk -v r=$r '{print $1"\t"r"\t"$2"\t"$3}' >> "$tmp"
+    "$nat" "$png" "$a" "$N" | grep -v '^#' | awk -v r=$r '{print $1"\t"r"\t"$2"\t"$3}' >> "$tmp"
   done
 done
 cat "$tmp"
