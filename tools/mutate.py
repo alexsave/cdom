@@ -656,6 +656,17 @@ M = [
   ('file-token-hook', 'src/cdom_file.c', '  if (token < CD_TOKEN_CDOM) cd_on_file(token, status, p, len);', '  if (0) cd_on_file(token, status, p, len);', FILE, 'FAIL cd_file_read with a token'),
   ('file-token-unchecked', 'src/cdom_file.c', '  if (token >= CD_TOKEN_CDOM) __builtin_trap();\n  j_file_read', '  j_file_read', FILE, 'FAIL traps'),
   ('encode-quality-ignored', 'shim/cdom.js', 'str(mime), quality / 100);', 'str(mime), 0.92);', UNIT, "FAIL cd_encode_image's quality"),
+  # the program's libc for libraries (src/libc/stdlib.h, stdio.h's FILE) and cdom.mk's module parts (tests/link/parts)
+  ('stdlib-abs', 'src/libc/stdlib.h', 'static inline int abs(int v) { return v < 0 ? -v : v; }', 'static inline int abs(int v) { return v; }', LINK, 'FAIL stdlib.h (cdom flags): abs, labs'),
+  ('stdlib-labs', 'src/libc/stdlib.h', 'static inline long labs(long v) { return v < 0 ? -v : v; }', 'static inline long labs(long v) { return v < 0 ? v : v; }', LINK, 'FAIL stdlib.h (cdom flags): abs, labs'),
+  ('stdio-file-complete', 'src/libc/stdio.h', 'typedef struct cd_no_file FILE;', 'typedef struct cd_no_file { int fd; } FILE;', LINK, 'FAIL stdio.h (cdom flags): a FILE could be declared'),
+  ('stdio-no-file', 'src/libc/stdio.h', 'typedef struct cd_no_file FILE;', '', LINK, 'FAIL stdlib.h (cdom flags): a file that uses'),
+  ('part-flags-dropped', 'cdom.mk', '$(APP_CFLAGS) $(call cdom_mk_obj_flags,$@) -c', '$(APP_CFLAGS) -c', LINK, 'FAIL cdom.mk (first): a module with a part does not build'),
+  ('part-flags-leak', 'cdom.mk', '$(cdom_mk_mod_ldflags) $(APP_LDFLAGS) -o $@.linked', '$(cdom_mk_mod_ldflags) $(foreach o,$(cdom_mk_objs),$(call cdom_mk_obj_flags,$(o))) $(APP_LDFLAGS) -o $@.linked', LINK, 'FAIL cdom.mk (first): an app file sees'),
+  ('module-one-file', 'cdom.mk', '$(foreach m,$(APP_MODULES),$(CDOM_$(call cdom_mk_up,$(m))_SRC))', '$(foreach m,$(APP_MODULES),$(firstword $(CDOM_$(call cdom_mk_up,$(m))_SRC)))', LINK, 'FAIL cdom.mk (first): the module'),
+  ('module-ldflags-dropped', 'cdom.mk', '$(CDOM_LDFLAGS) $(cdom_mk_mod_ldflags) $(APP_LDFLAGS)', '$(CDOM_LDFLAGS) $(APP_LDFLAGS)', LINK, 'FAIL cdom.mk (first): the module'),
+  ('part-dup-unchecked', 'cdom.mk', 'not a cdom module ($(CDOM_MODULES))))$(cdom_mk_unique)', 'not a cdom module ($(CDOM_MODULES))))', LINK, 'doubled part'),
+  ('part-objs-intermediate', 'cdom.mk', '$$(APP_WASM) $$(cdom_mk_app_src) $$(cdom_mk_objs) $$(CDOM_LITS)', '$$(APP_WASM) $$(cdom_mk_app_src) $$(CDOM_LITS)', LINK, 'FAIL cdom.mk (first): make deleted'),
   # the browser resize ban (tools/resize_ban.sh): each banned form planted in shim/, src/, cdom.mk and tools/
   ('ban-bitmap-resize', 'shim/cdom.js', '    return Date.now();', '    createImageBitmap(file, { resizeWidth: 900, resizeHeight: 600 });\n    return Date.now();', RESIZE, 'FAIL resize ban: shim/cdom.js'),
   ('ban-bitmap-quality', 'shim/cdom.js', '    return Date.now();', '    createImageBitmap(file, { resizeQuality: "high" });\n    return Date.now();', RESIZE, 'FAIL resize ban: shim/cdom.js'),
