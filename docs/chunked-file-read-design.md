@@ -348,7 +348,7 @@ Native (tests/image/test_image.c, ASan and UBSan, the counted heap), the decoder
 2. A split PNG chunk: bench/chunked/edge.py's PNGs (zero-length chunks before, between and after the IDATs and an empty IDAT; IDATs of 1 to 7 bytes; a 200,000-byte tEXt; a palette with tRNS in 5-byte IDATs) at every size in 1.
    Every split point is covered by the 1-byte run; the 7-byte and random runs cover splits inside a length, a type and a CRC at once.
 3. A JPEG marker split across pieces: edge.py's JPEGs (the largest COM; 5,000 fill bytes before every marker; Exif behind a full APP2; restart markers every MCU row), and for each oracle JPEG, every split point in its first 4 KiB (put i bytes, then the rest, for every i).
-4. A file shorter than claimed (the reader ends early): the glue answers UNREADABLE, the heap is back to its start.
+4. A file shorter than claimed (the reader ends early): the glue answers UNREADABLE, the heap is back to its start; and a reader that answers 0 bytes before `size` is UNREADABLE at once, never a loop (the driver must make progress or stop).
 5. A read error at 1/16, 1/2 and 15/16 of the file: UNREADABLE, the heap back to its start.
 6. Cancel mid-file: `cd_image_end` after k puts, for every k from 0 to the last, on p12.jpg, p12p.jpg and p12.png at 64 KiB: the heap back to its start, and ASan sees no use after free.
 7. A file cut short whose size says so: the same status as whole at half the file and at every cut in its last 16 bytes (which catches a walker that takes a chunk running past the file).
@@ -384,7 +384,7 @@ Results: bench/chunked/results/ (check.txt, time-native.txt, instructions.txt, m
 | B7 | 1-byte pieces finish on p12.jpg and p12p.jpg | 1.9 s and 0.63 s (push), equal | confirmed |
 
 Not predicted, found: libjpeg re-emits a warning when it re-reads a warning marker after a suspension, so warning counts are compared only where no warning marker meets a piece edge (test 1 says where).
-All eight of the prototype's mutants are killed (results/mutate.txt); the one that ignores a short read in the push driver makes no progress and is killed by the run's 600 s timeout, so the build's driver needs a test that a reader making no progress ends (test 4 does it, with a deadline).
+All eight of the prototype's mutants are killed (results/mutate.txt); the one that ignores a short read in the push driver makes no progress and is killed by the run's 600 s timeout, so the build's driver needs a test that a reader making no progress ends (test 4).
 And one mutant of the walker (dropping the check that 12 bytes are left before a chunk's header) is equivalent: the check after the header catches the same files, so the prototype dropped the line.
 
 ## 9. Open questions for Alex
