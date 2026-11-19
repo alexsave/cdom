@@ -7,21 +7,27 @@
 # tools also build with gcc and clang under Alpine 3.20 (gcc 13, clang 17), the oldest compilers that take
 # -std=c2x and refuse -std=c23.
 # Usage: tools/linux.sh   (needs docker and the network; reads the tree, writes nothing in it)
+# Where apt.llvm.org cannot be reached, CDOM_LINUX_LLVM_22 and CDOM_LINUX_LLVM_23 name an LLVM release tree
+# for Linux x86-64 (LLVM-<version>-Linux-X64 from github.com/llvm/llvm-project/releases, unpacked), which
+# the container sees as /usr/lib/llvm-<major> in place of the apt.llvm.org packages.
 set -u
 top="$(cd "$(dirname "$0")/.." && pwd)"
 bad=0
 log="$(mktemp)"
 # ubuntu <llvm major, or distro> <expect: stops or builds>: lesson 1 on Ubuntu 24.04 with that clang and lld.
 ubuntu() {
-  local v="$1" want="$2" cc=clang ld=wasm-ld setup
+  local v="$1" want="$2" cc=clang ld=wasm-ld setup mount=() root
   setup='apt-get update -qq >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq make gcc clang lld curl ca-certificates >/dev/null 2>&1
 cp -r /src /w && find /w/tools/out /w/tutorial/01-hello/build -delete 2>/dev/null'
   if [ "$v" != distro ]; then
     cc="/usr/lib/llvm-$v/bin/clang" ld="/usr/lib/llvm-$v/bin/wasm-ld"
-    setup="$setup
+    root="CDOM_LINUX_LLVM_$v"; root="${!root:-}"
+    if [ -n "$root" ]; then mount=(-v "$(cd "$root" && pwd -P):/usr/lib/llvm-$v:ro")
+    else setup="$setup
 curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key > /etc/apt/trusted.gpg.d/apt.llvm.org.asc
 echo 'deb http://apt.llvm.org/noble/ llvm-toolchain-noble-$v main' > /etc/apt/sources.list.d/llvm.list
 apt-get update -qq >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq clang-$v lld-$v >/dev/null 2>&1"
+    fi
   fi
   local found="$setup
 lld=\"\$($ld --version)\"
@@ -36,10 +42,10 @@ echo \"\$lld\""
 echo \"\$lld\""
   fi
   local out
-  if out=$(docker run --rm -v "$top:/src:ro" ubuntu:24.04 bash -c "$found" 2> "$log"); then
-    echo "ok   ubuntu 24.04, clang $v ($out): lesson 1 $want"
+  if out=$(docker run --rm -v "$top:/src:ro" ${mount[@]+"${mount[@]}"} ubuntu:24.04 bash -c "$found" 2> "$log"); then
+    echo "ok   ubuntu 24.04, clang $v${root:+ ($root)} ($out): lesson 1 $want"
   else
-    echo "FAIL ubuntu 24.04, clang $v: lesson 1 should have $want:"; echo "$out" | head -5; head -5 "$log"; bad=1
+    echo "FAIL ubuntu 24.04, clang $v${root:+ ($root)}: wanted lesson 1 $want:"; echo "$out" | head -5; head -5 "$log"; bad=1
   fi
 }
 ubuntu distro "stops at the toolchain check"

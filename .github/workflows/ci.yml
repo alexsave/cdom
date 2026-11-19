@@ -37,7 +37,7 @@ jobs:
       - name: Toolchain (Linux)
         if: runner.os == 'Linux'
         run: |
-          # cdom needs wasm-ld 22 or later (src/cdom.c, cd_tmpz: __rodata_start), which Ubuntu 24.04 does not ship.
+          # cdom needs wasm-ld 23 or later (src/cdom.c, cd_tmpz: __rodata_start; cdom.mk refuses an older one), which Ubuntu 24.04 does not ship.
           curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
           echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm.list
           sudo apt-get update -qq
