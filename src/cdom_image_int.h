@@ -108,9 +108,10 @@ _Noreturn void cd_image_throw(void *guard);
  * CD_INFLATE_WINDOW (the window the stream may still copy from) or any number up to n when last, or -1 to stop.
  * The adler32 is taken over the bytes before the sink sees them, so the sink may change, in place, the bytes in
  * front of n - CD_INFLATE_WINDOW, which no later match reads (the PNG path unfilters its rows there). cap is at
- * least CD_INFLATE_WINDOW + 1314, and must leave room for the longest match beside what the sink keeps.
+ * least CD_INFLATE_CAP_MIN (less is CORRUPT), and must leave room for the longest match beside what the sink keeps.
  * The answer: OK, CORRUPT (a stream zlib 1.3.1 refuses, one cut short, or an adler32 that differs) or STOPPED. */
 #define CD_INFLATE_WINDOW 32768u
+#define CD_INFLATE_CAP_MIN (CD_INFLATE_WINDOW + 1314u)   /* the window, the longest match and its overshoot, 1 KB more */
 #define CD_INFLATE_LT 2340u   /* the literal/length table: 2^11 first-level entries and the second levels (zlib's enough) */
 #define CD_INFLATE_DT 592u    /* the distance table: 2^9 and the second levels */
 enum { CD_INFLATE_OK = 0, CD_INFLATE_CORRUPT = 1, CD_INFLATE_STOPPED = 2 };

@@ -470,7 +470,8 @@ uint32_t cd_inflate_zlib(cd_inflate *z, uint8_t *buf, uint32_t cap, cd_inflate_i
   bits s = {0, 0, 0, 0, 0, more, ctx, 0};
   sink o = {buf, cap, 0, 0, 1, 0, out, ctx};
   uint32_t st = CD_INFLATE_CORRUPT;
-  if (cap < CD_INFLATE_WINDOW + FAST_OUT + 1024) return CD_INFLATE_CORRUPT;
+  _Static_assert(CD_INFLATE_CAP_MIN == CD_INFLATE_WINDOW + FAST_OUT + 1024, "the header's floor is the fast loop's room and 1 KB");
+  if (cap < CD_INFLATE_CAP_MIN) return CD_INFLATE_CORRUPT;
   uint32_t cmf = take(&s, 8), flg = take(&s, 8);
   if (cut(&s) || (cmf & 15) != 8 || (cmf >> 4) > 7 || (cmf * 256 + flg) % 31 || (flg & 32)) return st;
   for (;;) {

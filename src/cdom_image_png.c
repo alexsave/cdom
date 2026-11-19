@@ -114,8 +114,12 @@ static void to_rgba(const fmt *f, const uint8_t *r, uint8_t *out) {
 }
 
 /* The inflate's output buffer: the window, two rows (the one above, unfiltered, and one being made) and this much
- * more, so that each hand-over to the rows has this much new (docs/image-png-speed.md, P3). */
+ * more, so that each hand-over to the rows has this much new (docs/image-png-speed.md, P3), or the whole image when
+ * it is smaller (a small PNG holds about 32 KB, not 290: docs/image-png-speed.md, "png-fast-2"). A bench may set
+ * another (-DPNG_CHUNK=...). */
+#ifndef PNG_CHUNK
 #define PNG_CHUNK 262144u
+#endif
 
 typedef struct {
   cd_inflate inf;
@@ -181,15 +185,6 @@ uint32_t cd_image_png_resize(const uint8_t *p, uint32_t len, const cd_image_info
   x->f.w = w; x->f.depth = depth; x->f.ctype = ctype;
   for (int i = 0; i < 256; i++) x->f.pal[4 * i + 3] = 255;
   x->p = p; x->len = len; x->h = h; x->stride = stride; x->bpp = bpp; x->row_at = 0; x->done = 0;
-  /* one block: the zero row, the RGBA row, then the inflate's buffer */
-  uint64_t cap = CD_INFLATE_WINDOW + 2 * ((uint64_t)stride + 1) + PNG_CHUNK;
-  uint64_t room = (uint64_t)(stride + 1) + (uint64_t)w * 4 + cap;
-  x->zero = room <= 0xffffffffu ? cd_alloc_try((uint32_t)room) : 0;
-  if (!x->zero) { cd_free(x); return CD_IMAGE_NO_ROOM; }
-  if (!cd_image_scaler_init(&x->sc, w, h, dw, dh, 1)) { cd_free(x->zero); cd_free(x); return CD_IMAGE_NO_ROOM; }
-  memset(x->zero, 0, stride + 1);
-  x->px = x->zero + (stride + 1);
-  uint8_t *buf = x->px + (size_t)w * 4;
 
   /* the chunks before the first IDAT: PLTE and tRNS (after it, they are passed over) */
   int seen_plte = 0, saw_idat = 0;
@@ -214,13 +209,28 @@ uint32_t cd_image_png_resize(const uint8_t *p, uint32_t len, const cd_image_info
     } else if (!memcmp(type, "IEND", 4)) break;
     x->at = at;                                    /* the IDAT pieces start at the first IDAT */
   }
+  if (st != CD_IMAGE_OK || !saw_idat) { cd_free(x); return CD_IMAGE_CORRUPT; }
   /* 8-bit RGB with no colour key, in the scalar build: the rows go to the scaler as they are, with no RGBA row
-   * between. The SIMD build keeps the RGBA row: its RGB to RGBA and across loops in SIMD are faster than the scalar
-   * RGB read (docs/image-png-speed.md, "With image-simd's loops"). */
-  if (!CDOM_IMAGE_SIMD && ctype == 2 && depth == 8 && !x->f.key) x->sc.step = 3;
+   * between (none is allocated). The SIMD build keeps the RGBA row: its RGB to RGBA and across loops in SIMD are
+   * faster than the scalar RGB read (docs/image-png-speed.md, "With image-simd's loops"). */
+  int rgb_read = !CDOM_IMAGE_SIMD && ctype == 2 && depth == 8 && !x->f.key;
+
+  /* one block: the zero row, the RGBA row (unless the rows are read as RGB), then the inflate's buffer: the window,
+   * two rows and the smaller of PNG_CHUNK and the whole image, and never under the inflate's floor */
+  uint64_t row = (uint64_t)stride + 1, all = row * h;
+  uint64_t cap = CD_INFLATE_WINDOW + 2 * row + (all < PNG_CHUNK ? all : PNG_CHUNK);
+  if (cap < CD_INFLATE_CAP_MIN) cap = CD_INFLATE_CAP_MIN;
+  uint64_t px_n = rgb_read ? 0 : (uint64_t)w * 4;
+  uint64_t room = row + px_n + cap;
+  x->zero = room <= 0xffffffffu ? cd_alloc_try((uint32_t)room) : 0;
+  if (!x->zero) { cd_free(x); return CD_IMAGE_NO_ROOM; }
+  if (!cd_image_scaler_init(&x->sc, w, h, dw, dh, 1)) { cd_free(x->zero); cd_free(x); return CD_IMAGE_NO_ROOM; }
+  memset(x->zero, 0, stride + 1);
+  x->px = x->zero + row;
+  uint8_t *buf = x->px + px_n;
+  if (rgb_read) x->sc.step = 3;
   /* the image data: a stream cut short, refused or with a different adler32, or a row with no filter, is CORRUPT */
-  if (st == CD_IMAGE_OK && (!saw_idat || cd_inflate_zlib(&x->inf, buf, (uint32_t)cap, idat, rows, x) != CD_INFLATE_OK))
-    st = CD_IMAGE_CORRUPT;
+  if (cd_inflate_zlib(&x->inf, buf, (uint32_t)cap, idat, rows, x) != CD_INFLATE_OK) st = CD_IMAGE_CORRUPT;
   if (st == CD_IMAGE_OK) {
     uint8_t *o = cd_image_scaler_take(&x->sc);   /* 0 for a stream that ended short of the last row: CORRUPT */
     if (o) { *rgba = o; *ow = x->sc.ow; *oh = x->sc.oh; }
