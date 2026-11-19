@@ -779,7 +779,7 @@ M = [
   ('div-trunc-round', 'src/cdom_image_loops.c', 'wasm_u32x4_trunc_sat_f64x2_zero(wasm_f64x2_div(x, d))', 'wasm_u32x4_trunc_sat_f64x2_zero(wasm_f64x2_nearest(wasm_f64x2_div(x, d)))', SIMD, 'FAIL scaler divide'),  # the quotient is rounded to nearest, not truncated
   ('div-read-past', 'src/cdom_image_loops.c', 'for (; i + 2 <= n; i += 2) {\n    V v = wasm_v128_load(a + i);', 'for (; i + 1 <= n; i += 2) {\n    V v = wasm_v128_load(a + i);', SIMD, 'FAIL scaler divide'),  # the loop reads and writes two sums when one is left (a trap at the top of memory)
   ('simd-flags-everywhere', 'cdom.mk', 'CDOM_IMAGE_OWN_CFLAGS += $(cdom_mk_simd_flags)', 'CDOM_CFLAGS += $(cdom_mk_simd_flags)', LINK, 'FAIL an app that does not call the image module has SIMD instructions'),  # -msimd128 for every file, not the image module's
-  ('simd-scalar-has-simd', 'cdom.mk', 'else ifeq ($(CDOM_IMAGE_SIMD),0)\ncdom_mk_simd_flags :=\n', 'else ifeq ($(CDOM_IMAGE_SIMD),0)\ncdom_mk_simd_flags := -msimd128\n', LINK, 'FAIL CDOM_IMAGE_SIMD:'),  # the scalar default compiled with -msimd128
+  ('simd-default-on', 'cdom.mk', 'CDOM_IMAGE_SIMD ?= 0', 'CDOM_IMAGE_SIMD ?= 1', LINK, 'FAIL CDOM_IMAGE_SIMD:'),  # the default is SIMD, not scalar
   ('simd-emit-alpha', 'src/cdom_image.c', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 255;', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 254;', IMGW, 'FAIL wasm_js_simd: '),  # the SIMD build's emit writes the wrong alpha
   ('sjlj-sp-kept-low', 'src/cdom_image_sjlj.c', '  sp_set(sp);', '  sp_set(sp_get() + 0 * sp);', UNIT, "FAIL the image module's guard"),
   ('sjlj-eh-val-zero', 'src/cdom_image_sjlj_eh.c', 'jb->arg.val = val ? val : 1;', 'jb->arg.val = 0 * val;', IMGW, 'wasm_eh: jpeg-dqt-bad'),
