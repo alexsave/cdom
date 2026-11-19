@@ -28,6 +28,9 @@ for (const f of ['cdom', 'freestanding']) {
   x = await load(`${dir}/libc_printf_${f}.wasm`);
   const line = x.libc_printf();
   ok(line === 0, `stdio.h (${f} flags): snprintf and vsnprintf write every case of tests/link/libc_printf.c${line ? ` (wrong at line ${line})` : ''}`);
+  x = await load(`${dir}/libc_stdlib_${f}.wasm`);
+  const at = x.libc_stdlib();
+  ok(at === 0, `stdlib.h (${f} flags): abs, labs (through their address too), malloc, calloc, realloc and free give the right values${at ? ` (wrong at line ${at})` : ''}`);
 }
 x = await load(`${dir}/ro_range.wasm`);
 ok(x.ro_span() > 0, `the read-only range is not empty with this toolchain (__rodata_end - __rodata_start is ${x.ro_span()}; wasm-ld before LLVM 22 leaves it empty and every string slow)`);
