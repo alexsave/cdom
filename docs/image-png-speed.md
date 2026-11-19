@@ -401,3 +401,17 @@ Each is in tools/mutate.py and was run through it; each is caught by its own cas
 
 zlib's examples/enough.c (zlib 1.3.1) confirms the table sizes: `enough 286 11 15` is 2340 and `enough 30 9 15` is 592 (592 is also the answer at root 6, which is why it looked like one); no constant changed.
 miniz (tinfl) stays in third_party/ only for the inflate bench's baseline arms (bench/image/inflate/native.c and wasm.c, N1 and W1).
+
+## The Mac: Chrome and Safari
+
+Alex's arm64 Mac, nothing else heavy running, `bench/image/png-mac.sh`: 9 interleaved rounds at box 900, in headless Chrome and then in Safari (tools/safari.mjs, through safaridriver).
+The arms: C-old (main at 8eb591b, before this branch, built by `bench/image/old.sh`), C-js (this branch, scalar), C-simd (this branch, SIMD), B1 and B2.
+The Mac's earlier numbers (docs/image-simde.md, the clean rerun) had p12.png at 238.1 ms scalar, 206.8 ms SIMD with the Paeth fix, and B1 at 130.6 ms, in Chrome.
+
+### Predictions (written before the run)
+
+- M1: in Chrome, p12.png's C-simd is within 10% of B1 (at most 1.10 times B1's median). Refuted if it is slower than that.
+- M2: in Chrome, p12.png's C-js is at least 25% faster than C-old. Refuted if C-js is over 0.75 times C-old.
+- M3: the JPEG inputs (p12.jpg, p12p.jpg, p48.jpg) are unchanged: C-js within 5% of C-old in both browsers, since this branch does not touch the JPEG path. Refuted by a gap over 5% either way.
+- M4: in Safari, p12.png's C-simd is faster than B1 (the one-round smoke run had 165 ms against 213). Refuted if B1's median is lower.
+- M5: the wasm memory after p12.png is at most 0.5 MiB above C-old's in both browsers (the inflate's buffer is about 290 KB, against tinfl's). Refuted by more.
