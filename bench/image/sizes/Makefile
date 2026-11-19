@@ -12,6 +12,5 @@ CDOM_OPT := $(if $(filter o2,$(LEVEL)),-O2,$(if $(filter o3,$(LEVEL)),-O3,-Oz))
 include $(CDOM)/cdom.mk
 ifeq ($(LEVEL),mix)
 CDOM_IMAGE_VENDOR_CFLAGS += -O2
-CDOM_IMAGE_MINIZ_CFLAGS += -O2
 endif
 all: $(APP_WASM)
