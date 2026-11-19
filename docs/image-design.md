@@ -1,11 +1,10 @@
 # The image module: decoding and fitting photos in C
 
-The `image` module decodes a JPEG or PNG in C and fits it inside a box, for apps that resize photos before upload.
+The `image` module decodes a JPEG or PNG in C and resizes it to fit inside a box, for apps that resize photos before upload.
 
 It ports raceclub PR #10 (branch photo-low-peak, head a7270e4) into cdom, with every item of the review below fixed.
 
 ## Review of raceclub PR #10
-
 
 How this was checked: I read every file in src/photo, test/photo, fuzz and bench/resize/lowpeak, the PR body, and raceclub main's PERF.md, RESIZE-BENCH.md and tools/resize_inputs.py.
 On the cdom side I read cdom.mk, src/libc, cdom_file.h/.c, cd_encode_image, file-read-design.md, tools/alloc.mjs, tests/link/run.sh and the `file-fit` branch.
