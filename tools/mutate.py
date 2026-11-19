@@ -677,7 +677,7 @@ M = [
   ('stdio-file-complete', 'src/libc/stdio.h', 'typedef struct cd_no_file FILE;', 'typedef struct cd_no_file { int fd; } FILE;', LINK, 'FAIL stdio.h (cdom flags): a FILE could be declared'),
   ('stdio-no-file', 'src/libc/stdio.h', 'typedef struct cd_no_file FILE;', '', LINK, 'FAIL stdlib.h (cdom flags): a file that uses'),
   ('part-flags-dropped', 'cdom.mk', '$(APP_CFLAGS) $(call cdom_mk_obj_flags,$@) -c', '$(APP_CFLAGS) -c', LINK, 'FAIL cdom.mk (first): a module with a part does not build'),
-  ('part-flags-leak', 'cdom.mk', '$(cdom_mk_mod_ldflags) $(APP_LDFLAGS) -o $@.linked', '$(cdom_mk_mod_ldflags) $(foreach o,$(cdom_mk_objs),$(call cdom_mk_obj_flags,$(o))) $(APP_LDFLAGS) -o $@.linked', LINK, 'FAIL cdom.mk (first): an app file sees'),
+  ('part-flags-leak', 'cdom.mk', '$(cdom_mk_mod_ldflags) $(APP_LDFLAGS) -o $@.linked', '$(cdom_mk_mod_ldflags) $(foreach o,$(call cdom_mk_objs,$@),$(call cdom_mk_obj_flags,$(o))) $(APP_LDFLAGS) -o $@.linked', LINK, 'FAIL cdom.mk (first): an app file sees'),
   ('module-one-file', 'cdom.mk', '$(foreach m,$(APP_MODULES),$(CDOM_$(call cdom_mk_up,$(m))_SRC))', '$(foreach m,$(APP_MODULES),$(firstword $(CDOM_$(call cdom_mk_up,$(m))_SRC)))', LINK, 'FAIL cdom.mk (first): the module'),
   ('module-ldflags-dropped', 'cdom.mk', '$(CDOM_LDFLAGS) $(cdom_mk_mod_ldflags) $(APP_LDFLAGS)', '$(CDOM_LDFLAGS) $(APP_LDFLAGS)', LINK, 'FAIL cdom.mk (first): the module'),
   ('part-dup-unchecked', 'cdom.mk', 'not a cdom module ($(CDOM_MODULES))))$(cdom_mk_unique)', 'not a cdom module ($(CDOM_MODULES))))', LINK, 'doubled part'),
