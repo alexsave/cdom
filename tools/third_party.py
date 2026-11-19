@@ -38,7 +38,8 @@ LJT_COPY = ['LICENSE.md', 'README.ijg'] + ['src/' + f for f in [
 LJT_OFF = ['DCT_IFAST_SUPPORTED', 'DCT_FLOAT_SUPPORTED', 'D_LOSSLESS_SUPPORTED', 'SAVE_MARKERS_SUPPORTED',
            'UPSAMPLE_MERGING_SUPPORTED', 'QUANT_1PASS_SUPPORTED', 'QUANT_2PASS_SUPPORTED']
 # Edits 2 and 3, src/jconfig.h and src/jconfigint.h: CMake's templates (jconfig.h.in, jconfigint.h.in) filled in
-# as CMake would for this build: these values, and every #cmakedefine off but HAVE_BUILTIN_CTZL.
+# as CMake would for this build: these values, and every #cmakedefine off but HAVE_BUILTIN_CTZL, and WITH_SIMD,
+# which is on when the compiler is given -DCDOM_JSIMD (cdom.mk, CDOM_IMAGE_SIMD=1) and off otherwise.
 LJT_VARS = {
   'JPEG_LIB_VERSION': '80', 'VERSION': '3.2.1', 'LIBJPEG_TURBO_VERSION_NUMBER': '3002001', 'BUILD': 'cdom',
   'HIDDEN': '__attribute__((visibility("hidden")))', 'INLINE': 'inline __attribute__((always_inline))',
@@ -53,6 +54,9 @@ def cmake_fill(text):
     if line.startswith('#cmakedefine '):
       parts = line.split()
       name = parts[1]
+      if name == 'WITH_SIMD':   # on only when the build says so (cdom.mk, CDOM_IMAGE_SIMD=1 defines CDOM_JSIMD)
+        out.append('#ifdef CDOM_JSIMD'); out.append('#define WITH_SIMD 1'); out.append('#else'); out.append('/* #undef WITH_SIMD */'); out.append('#endif')
+        continue
       line = ('#define ' + ' '.join(parts[1:])) if name in LJT_ON else f'/* #undef {name} */'
     while '@' in line:
       a = line.index('@'); b = line.index('@', a + 1)
