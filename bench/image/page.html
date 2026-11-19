@@ -21,7 +21,8 @@ window.arm = async (name, input, box) => {
     const status = X.resize(p, data.length, box, box);
     const ms = performance.now() - t0;
     const o = new Uint32Array(X.memory.buffer, X.out(), 3);
-    const r = { ms, status, w: o[0], h: o[1], bytes: X.memory.buffer.byteLength };
+    const r = { ms, status, w: o[0], h: o[1], bytes: X.memory.buffer.byteLength, wired: X.wired() };
+    r.hash = status === 0 ? X.hash(o[2], o[0] * o[1] * 4) : -1;   // after the clock stopped
     X.drop(o[2]); X.drop(p);
     return r;
   }

@@ -21,6 +21,11 @@
 #   CDOM_IMAGE_SJLJ  how the image module leaves a fatal libjpeg error (src/cdom_image_sjlj.c): js (the default,
 #                 a try and catch in the shim; plain wasm, every browser cdom runs in, and wasm2js) or eh (wasm
 #                 exception handling: Chrome 95, Firefox 100, Safari 15.2, and no wasm2js)
+#   CDOM_IMAGE_SIMD  wasm simd128 in the image module (docs/image-simd.md): none (the default: scalar wasm, every browser
+#                 cdom runs in), simd128 (the module's files compiled with -msimd128, so clang may vectorize; Chrome 91,
+#                 Firefox 89, Safari 16.4) or simde (that, and libjpeg-turbo's Arm NEON decoder routines, built over SIMDe,
+#                 dispatched through src/cdom_image_jsimd.c). A module's objects are not rebuilt when this changes: give
+#                 each value its own APP_WASM, as bench/image/Makefile does
 #                 one optional module each (src/cdom_<name>.h), for an app's own rules (APP_MODULES below
 #                 adds them to the APP_WASM rule); a module's list may name several files
 #   CDOM_<NAME>_PARTS, CDOM_<NAME>_<PART>_SRC, CDOM_<NAME>_<PART>_CFLAGS, CDOM_<NAME>_DEPS, CDOM_<NAME>_LDFLAGS
@@ -147,20 +152,30 @@ CDOM_IMAGE_SJLJ ?= js
 CDOM_IMAGE_LJT  := $(CDOM)/third_party/libjpeg-turbo-3.2.1/src
 CDOM_IMAGE_MZ   := $(CDOM)/third_party/miniz-3.1.2
 CDOM_IMAGE_SRC  :=
+CDOM_IMAGE_SIMD ?= none
+CDOM_IMAGE_SD   := $(CDOM)/third_party/simde-0.8.2
+cdom_mk_simd_flags := $(if $(filter simd128 simde,$(CDOM_IMAGE_SIMD)),-msimd128)$(if $(filter-out none simd128 simde,$(CDOM_IMAGE_SIMD)),$(error cdom.mk: CDOM_IMAGE_SIMD is $(CDOM_IMAGE_SIMD), not none, simd128 or simde))
+cdom_mk_simde_flags := $(if $(filter simde,$(CDOM_IMAGE_SIMD)),-DCDOM_IMAGE_SIMDE)
 CDOM_IMAGE_PARTS := own vendor miniz sjlj
 CDOM_IMAGE_OWN_SRC := $(CDOM)/src/cdom_image.c $(CDOM)/src/cdom_image_jpeg.c $(CDOM)/src/cdom_image_png.c
-CDOM_IMAGE_OWN_CFLAGS := -isystem $(CDOM_IMAGE_LJT) -isystem $(CDOM_IMAGE_MZ) -DNO_GETENV -DNO_PUTENV
+CDOM_IMAGE_OWN_CFLAGS := -isystem $(CDOM_IMAGE_LJT) -isystem $(CDOM_IMAGE_MZ) -DNO_GETENV -DNO_PUTENV $(cdom_mk_simd_flags) $(cdom_mk_simde_flags)
 CDOM_IMAGE_VENDOR_SRC := $(addprefix $(CDOM_IMAGE_LJT)/,jcomapi.c jdapimin.c jdhuff.c jdinput.c jdmarker.c jdmaster.c \
   jdphuff.c jmemmgr.c jpeg_nbits.c $(addprefix wrapper/,$(addsuffix -8.c,jdapistd jdcoefct jdcolor jddctmgr jdmainct \
   jdpostct jdsample jidctint jidctred jutils)))
-CDOM_IMAGE_VENDOR_CFLAGS := -w -I$(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV
+# CDOM_IMAGE_SIMD=simde: libjpeg-turbo's merged upsampling and ifast IDCT (switched on in jmorecfg.h by -DCDOM_IMAGE_SIMDE),
+# their wrappers, the NEON files (which include their -ext files), and cdom's dispatch (src/cdom_image_jsimd.c)
+CDOM_IMAGE_NEON := jdcolor jdmerge jdsample jidctfst jidctint jidctred
+CDOM_IMAGE_VENDOR_SRC += $(if $(cdom_mk_simde_flags),$(addprefix $(CDOM_IMAGE_LJT)/wrapper/,jdmerge-8.c jidctfst-8.c) \
+  $(addprefix $(CDOM_IMAGE_LJT)/../simd/arm/,$(addsuffix -neon.c,$(CDOM_IMAGE_NEON))) $(CDOM)/src/cdom_image_jsimd.c)
+CDOM_IMAGE_VENDOR_CFLAGS := -w -I$(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV $(cdom_mk_simd_flags) $(cdom_mk_simde_flags) $(if $(cdom_mk_simde_flags),-isystem $(CDOM_IMAGE_SD) -DSIMDE_FLOAT16_API=1)
 CDOM_IMAGE_MINIZ_SRC := $(CDOM_IMAGE_MZ)/tinfl.c
-CDOM_IMAGE_MINIZ_CFLAGS := -w -I$(CDOM_IMAGE_MZ) -include $(CDOM)/src/cdom_image_miniz.h
+CDOM_IMAGE_MINIZ_CFLAGS := -w -I$(CDOM_IMAGE_MZ) -include $(CDOM)/src/cdom_image_miniz.h $(cdom_mk_simd_flags)
 CDOM_IMAGE_SJLJ_SRC = $(CDOM)/src/cdom_image_sjlj.c $(if $(filter eh,$(CDOM_IMAGE_SJLJ)),$(CDOM)/src/cdom_image_sjlj_eh.c)
 cdom_mk_sjlj_js := -DCDOM_IMAGE_SJLJ_JS
 cdom_mk_sjlj_eh := -DCDOM_IMAGE_SJLJ_EH -mexception-handling -mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=true
-CDOM_IMAGE_SJLJ_CFLAGS = $(or $(cdom_mk_sjlj_$(CDOM_IMAGE_SJLJ)),$(error cdom.mk: CDOM_IMAGE_SJLJ is $(CDOM_IMAGE_SJLJ), not js or eh))
-CDOM_IMAGE_DEPS := $(wildcard $(CDOM_IMAGE_LJT)/*.h $(CDOM_IMAGE_LJT)/*.c) $(CDOM_IMAGE_MZ)/tinfl.h
+CDOM_IMAGE_SJLJ_CFLAGS = $(or $(cdom_mk_sjlj_$(CDOM_IMAGE_SJLJ)),$(error cdom.mk: CDOM_IMAGE_SJLJ is $(CDOM_IMAGE_SJLJ), not js or eh)) $(cdom_mk_simd_flags)
+CDOM_IMAGE_DEPS := $(wildcard $(CDOM_IMAGE_LJT)/*.h $(CDOM_IMAGE_LJT)/*.c $(CDOM_IMAGE_LJT)/../simd/*.h $(CDOM_IMAGE_LJT)/../simd/arm/*.[ch]) \
+  $(CDOM_IMAGE_MZ)/tinfl.h $(if $(cdom_mk_simde_flags),$(CDOM_IMAGE_SD)/simde/arm/neon.h)
 CDOM_HEADERS    := $(wildcard $(CDOM)/src/*.h $(CDOM)/src/libc/*.h)
 CDOM_SHIM       := $(CDOM)/shim/cdom.min.js
 

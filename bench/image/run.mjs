@@ -2,7 +2,8 @@
 // tools/cdp.mjs, interleaved: a round runs every (input, arm) once, the arms in an order that rotates each round,
 // each run on a freshly loaded page, so one run's heap and caches never reach the next. Every run waits for the
 // 1-minute load to be under LOADMAX (default 4, bounded at 20 minutes, as tools/pair.sh), and logs the load.
-// Arms: C-js and C-eh (cd_image_resize, the two CDOM_IMAGE_SJLJ builds), B1 (createImageBitmap with resizeWidth,
+// Arms: C-<build> for each page make -C bench/image built (build-<build>/index.html: C-js, C-eh, C-js-simd128,
+// C-js-simde, and each with -O2 as C-js-O2, C-js-simde-O2, ...; cd_image_resize), B1 (createImageBitmap with resizeWidth,
 // resizeHeight and resizeQuality "high") and B2 (createImageBitmap, then drawImage scaled, imageSmoothingQuality
 // "high"); the browser arms end with getImageData, the pixels in hand as C's are.
 // Usage: node bench/image/run.mjs [rounds=9] [box=900] [arms=C-js,C-eh,B1,B2] [inputs=p12.jpg,p12p.jpg,p48.jpg,p12.png]
@@ -36,7 +37,7 @@ const med = (v) => { const s = [...v].sort((a, b) => a - b); return s.length % 2
 fs.mkdirSync(path.join(here, 'results/raw'), { recursive: true });
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');   // a file name, not a random draw or a seed
 const out = path.join(here, 'results/raw', `${stamp}.tsv`);
-fs.writeFileSync(out, 'round\tinput\tarm\tms\tstatus\tw\th\twasm_bytes\tload_before\twaited_s\n');
+fs.writeFileSync(out, 'round\tinput\tarm\tms\tstatus\tw\th\twasm_bytes\tload_before\twaited_s\thash\twired\n');
 const b = await launch();
 const all = {};
 try {
@@ -46,11 +47,11 @@ try {
         const arm = arms[(k + r) % arms.length];
         const waited = await gate();
         const loadBefore = load1();
-        const page = arm === 'C-eh' ? 'build-eh' : 'build-js';
+        const page = arm.startsWith('C-') ? `build-${arm.slice(2)}` : 'build-js';   // B1 and B2 run on any page; the scalar one
         await b.send('Page.navigate', { url: `${base()}/${page}/index.html` });
         for (let i = 0; i < 200 && !(await b.evaluate('!!window.READY')); i++) await sleep(25);
         const res = await b.evaluate(`arm(${JSON.stringify(arm.startsWith('C') ? 'C' : arm)}, ${JSON.stringify(`${base()}/inputs/${input}`)}, ${box})`);
-        fs.appendFileSync(out, [r, input, arm, res.ms.toFixed(2), res.status ?? '', res.w, res.h, res.bytes ?? '', loadBefore.toFixed(2), waited].join('\t') + '\n');
+        fs.appendFileSync(out, [r, input, arm, res.ms.toFixed(2), res.status ?? '', res.w, res.h, res.bytes ?? '', loadBefore.toFixed(2), waited, res.hash ?? '', res.wired ?? ''].join('\t') + '\n');
         (all[`${input}\t${arm}`] ||= []).push(res);
         console.log(`round ${r} ${input} ${arm}: ${res.ms.toFixed(1)} ms ${res.w}x${res.h}${res.bytes ? ` wasm ${(res.bytes / 1048576).toFixed(1)} MiB` : ''} (load ${loadBefore.toFixed(2)})`);
       }
@@ -60,8 +61,17 @@ try {
   await b.close();
   srv.close();
 }
+// Every C arm must give one input one image: the FNV-1a of its RGBA block (the SIMD builds are bit-exact with scalar)
+let bad = 0;
+for (const input of inputs) {
+  const h = new Set();
+  for (const [key, v] of Object.entries(all)) if (key.startsWith(`${input}\tC`)) for (const x of v) h.add(x.hash);
+  if (h.size > 1) { bad++; console.log(`FAIL ${input}: the C arms made ${h.size} different images (${[...h].join(' ')})`); }
+}
+console.log(bad ? 'FAIL the C arms differ' : 'ok   every C arm made the same image on each input, to the byte (FNV-1a of the RGBA)');
 console.log(`\ninput\tarm\tmedian ms\tmin\tmax\twasm MiB\t(${rounds} rounds, box ${box}, ${out})`);
 for (const [key, v] of Object.entries(all)) {
   const ms = v.map((x) => x.ms);
   console.log(`${key}\t${med(ms).toFixed(1)}\t${Math.min(...ms).toFixed(1)}\t${Math.max(...ms).toFixed(1)}\t${v[0].bytes ? (Math.max(...v.map((x) => x.bytes)) / 1048576).toFixed(1) : ''}`);
 }
+process.exitCode = bad ? 1 : 0;

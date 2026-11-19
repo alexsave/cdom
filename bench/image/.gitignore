@@ -1,5 +1,3 @@
 inputs/
-build-js/
-build-eh/
+build-*/
 results/raw/
-__pycache__/

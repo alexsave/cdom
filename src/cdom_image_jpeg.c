@@ -99,6 +99,9 @@ void j12init_inverse_dct(j_decompress_ptr c) { ERREXIT1(c, JERR_BAD_PRECISION, 1
 void j12init_d_coef_controller(j_decompress_ptr c, boolean b) { (void)b; ERREXIT1(c, JERR_BAD_PRECISION, 12); }
 void j12init_d_main_controller(j_decompress_ptr c, boolean b) { (void)b; ERREXIT1(c, JERR_BAD_PRECISION, 12); }
 void j12init_d_post_controller(j_decompress_ptr c, boolean b) { (void)b; ERREXIT1(c, JERR_BAD_PRECISION, 12); }
+#ifdef CDOM_IMAGE_SIMDE   /* the SIMD build switches merged upsampling on (cdom.mk), and jdmaster.c names this one too */
+void j12init_merged_upsampler(j_decompress_ptr c) { ERREXIT1(c, JERR_BAD_PRECISION, 12); }
+#endif
 
 /* ---- the error manager: a fatal error leaves through the guard; a warning is counted ---- */
 

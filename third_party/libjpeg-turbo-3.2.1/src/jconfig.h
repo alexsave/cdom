@@ -19,7 +19,11 @@
 #define MEM_SRCDST_SUPPORTED  1
 
 /* Use accelerated SIMD routines when using 8-bit samples */
+#ifdef CDOM_IMAGE_SIMDE /* cdom: on for CDOM_IMAGE_SIMD=simde */
+#define WITH_SIMD 1
+#else
 /* #undef WITH_SIMD */
+#endif
 
 /* This version of libjpeg-turbo supports run-time selection of data precision,
  * so BITS_IN_JSAMPLE is no longer used to specify the data precision at build

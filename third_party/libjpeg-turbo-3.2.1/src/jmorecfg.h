@@ -237,7 +237,11 @@ typedef int boolean;
 /* Capability options common to encoder and decoder: */
 
 #define DCT_ISLOW_SUPPORTED     /* accurate integer method */
+#ifdef CDOM_IMAGE_SIMDE /* cdom: on for CDOM_IMAGE_SIMD=simde */
+#define DCT_IFAST_SUPPORTED     /* less accurate int method [legacy feature] */
+#else
 /* cdom: off */ /* #define DCT_IFAST_SUPPORTED */     /* less accurate int method [legacy feature] */
+#endif
 /* cdom: off */ /* #define DCT_FLOAT_SUPPORTED */     /* floating-point method [legacy feature] */
 
 /* Encoder capability options: */
@@ -269,7 +273,11 @@ typedef int boolean;
 #define BLOCK_SMOOTHING_SUPPORTED   /* Block smoothing? (Progressive only) */
 #define IDCT_SCALING_SUPPORTED      /* Output rescaling via IDCT?  (Requires
                                        DCT_ISLOW_SUPPORTED) */
+#ifdef CDOM_IMAGE_SIMDE /* cdom: on for CDOM_IMAGE_SIMD=simde */
+#define UPSAMPLE_MERGING_SUPPORTED  /* Fast path for sloppy upsampling? */
+#else
 /* cdom: off */ /* #define UPSAMPLE_MERGING_SUPPORTED */  /* Fast path for sloppy upsampling? */
+#endif
 /* cdom: off */ /* #define QUANT_1PASS_SUPPORTED */       /* 1-pass color quantization? */
 /* cdom: off */ /* #define QUANT_2PASS_SUPPORTED */       /* 2-pass color quantization? */
 

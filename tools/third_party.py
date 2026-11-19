@@ -32,7 +32,13 @@ LJT_COPY = ['LICENSE.md', 'README.ijg'] + ['src/' + f for f in [
   'jpegapicomp.h', 'jpegint.h', 'jpeglib.h', 'jsamplecomp.h', 'jstdhuff.c', 'jutils.c',
   'wrapper/jdapistd-8.c', 'wrapper/jdcoefct-8.c', 'wrapper/jdcolor-8.c', 'wrapper/jddctmgr-8.c',
   'wrapper/jdmainct-8.c', 'wrapper/jdpostct-8.c', 'wrapper/jdsample-8.c', 'wrapper/jidctint-8.c',
-  'wrapper/jidctred-8.c', 'wrapper/jutils-8.c']]
+  'wrapper/jidctred-8.c', 'wrapper/jutils-8.c',
+  # for the SIMD build (CDOM_IMAGE_SIMD=simde): ifast IDCT and merged upsampling, which it switches on, and the headers jsimd.h includes
+  'jchuff.h', 'jdmerge.c', 'jdmrg565.c', 'jdmrgext.c', 'jidctfst.c', 'wrapper/jdmerge-8.c', 'wrapper/jidctfst-8.c']] + [
+  # libjpeg-turbo's Arm NEON intrinsics for the decoder, and the headers they include; the encoder's are not here
+  'simd/' + f for f in ['jsimd.h', 'jsimdconst.h', 'jsimddct.h', 'jsimdint.h', 'arm/align.h', 'arm/jdcolext-neon.c',
+  'arm/jdcolor-neon.c', 'arm/jdmerge-neon.c', 'arm/jdmrgext-neon.c', 'arm/jdsample-neon.c', 'arm/jidctfst-neon.c',
+  'arm/jidctint-neon.c', 'arm/jidctred-neon.c']]
 # Edit 1, src/jmorecfg.h: the features the decoder never uses here, switched off (each line must be there once),
 # and a line in its copyright header that says so.
 LJT_OFF = ['DCT_IFAST_SUPPORTED', 'DCT_FLOAT_SUPPORTED', 'D_LOSSLESS_SUPPORTED', 'SAVE_MARKERS_SUPPORTED',
@@ -46,6 +52,11 @@ LJT_VARS = {
   'SIMD_ARCHITECTURE': 'NONE',
 }
 LJT_ON = {'HAVE_BUILTIN_CTZL'}
+# The SIMD build (CDOM_IMAGE_SIMD=simde, which compiles with -DCDOM_IMAGE_SIMDE): libjpeg-turbo's own WITH_SIMD and WITH_SIMDE
+# on, as CMake -DWITH_SIMDE=1 sets them for wasm32 (32 bits, so SIMD_ARCHITECTURE ARM), and the two features off above that
+# the NEON code has a version of (ifast IDCT and merged upsampling) on. The other builds are as they were.
+LJT_SIMDE_ON = ['DCT_IFAST_SUPPORTED', 'UPSAMPLE_MERGING_SUPPORTED']
+LJT_NEON_HAVE = {'HAVE_VLD1_S16_X3': 1, 'HAVE_VLD1_U16_X2': 1, 'HAVE_VLD1Q_U8_X4': 0}   # simd/CMakeLists.txt's WITH_SIMDE defaults
 
 def cmake_fill(text):
   out = []
@@ -60,6 +71,11 @@ def cmake_fill(text):
     out.append(line)
   return '\n'.join(out)
 
+def simde_gate(text, undef, define):
+  # `/* #undef X */` (CMake's off) becomes: on under CDOM_IMAGE_SIMDE, as it was otherwise
+  if text.count(undef) != 1: sys.exit(f'third_party: {undef!r} is in the template {text.count(undef)} times, not once')
+  return text.replace(undef, f'#ifdef CDOM_IMAGE_SIMDE /* cdom: on for CDOM_IMAGE_SIMD=simde */\n{define}\n#else\n{undef}\n#endif')
+
 def ljt(arch):
   t = tarfile.open(fileobj=io.BytesIO(arch), mode='r:gz')
   get = lambda p: t.extractfile(f'{LJT}/{p}').read()
@@ -73,9 +89,22 @@ def ljt(arch):
   head = ' *           D. R. Commander.\n'
   if cfg.count(head) != 1: sys.exit('third_party: jmorecfg.h has no copyright header to add the notice under')
   cfg = cfg.replace(head, head + ' * cdom Modifications (2026): seven features switched off, each marked "cdom: off" (see ../README.md).\n')
+  for name in LJT_SIMDE_ON:   # the line the loop above turned off is on again under CDOM_IMAGE_SIMDE
+    off = f'/* cdom: off */ /* #define {name} */ '
+    i = cfg.index(off); j = cfg.index('\n', i)
+    cfg = cfg[:i] + f'#ifdef CDOM_IMAGE_SIMDE /* cdom: on for CDOM_IMAGE_SIMD=simde */\n#define {name} {cfg[i + len(off):j]}\n#else\n' + cfg[i:j] + '\n#endif' + cfg[j:]
   files['src/jmorecfg.h'] = cfg.encode()
-  files['src/jconfig.h'] = cmake_fill(get('src/jconfig.h.in').decode()).encode()
-  files['src/jconfigint.h'] = cmake_fill(get('src/jconfigint.h.in').decode()).encode()
+  files['src/jconfig.h'] = simde_gate(cmake_fill(get('src/jconfig.h.in').decode()), '/* #undef WITH_SIMD */', '#define WITH_SIMD 1').encode()
+  ci = cmake_fill(get('src/jconfigint.h.in').decode())
+  ci = simde_gate(ci, '/* #undef WITH_SIMD */', '#define WITH_SIMD 1')
+  ci = simde_gate(ci, '/* #undef WITH_SIMDE */', '#define WITH_SIMDE 0')   # defined is on (#ifdef); upstream's template writes the 0
+  if ci.count('#define SIMD_ARCHITECTURE  NONE') != 1: sys.exit('third_party: jconfigint.h has no SIMD_ARCHITECTURE line')
+  ci = ci.replace('#define SIMD_ARCHITECTURE  NONE', '#ifdef CDOM_IMAGE_SIMDE\n#define SIMD_ARCHITECTURE  ARM\n#else\n#define SIMD_ARCHITECTURE  NONE\n#endif')
+  files['src/jconfigint.h'] = ci.encode()
+  nc = get('simd/arm/neon-compat.h.in').decode()
+  for k, v in LJT_NEON_HAVE.items():
+    nc = nc.replace(f'#cmakedefine {k}', f'#define {k}' if v else f'/* #undef {k} */')
+  files['simd/arm/neon-compat.h'] = nc.encode()
   return files
 
 # ---- miniz 3.1.2: the decompressor (tinfl) only ----
@@ -102,7 +131,19 @@ def mz(arch):
     files[out] = ('\n'.join(cut) + '\n').encode()
   return files
 
-PARTS = [(LJT, LJT_URL, LJT_SHA, ljt), (MZ, MZ_URL, MZ_SHA, mz)]
+# ---- SIMDe 0.8.2: Arm NEON on wasm simd128, the one header ----
+
+SD = 'simde-0.8.2'
+SD_URL = 'https://github.com/simd-everywhere/simde/releases/download/v0.8.2/simde-amalgamated-0.8.2.tar.xz'
+SD_SHA = '59068edc3420e75c5ff85ecfd80a77196fb3a151227a666cc20abb313a5360bf'
+# The release's amalgamated tree: each header is one file with its includes inside it. arm/neon.h is all the NEON code
+# needs (it holds SIMDe's wasm simd128 and its portable code, and its licence text), copied whole and unchanged to
+# simde/arm/neon.h, where `#include <simde/arm/neon.h>` finds it.
+def sd(arch):
+  t = tarfile.open(fileobj=io.BytesIO(arch), mode='r:xz')
+  return {'simde/arm/neon.h': t.extractfile('simde-amalgamated-0.8.2/arm/neon.h').read()}
+
+PARTS = [(LJT, LJT_URL, LJT_SHA, ljt), (MZ, MZ_URL, MZ_SHA, mz), (SD, SD_URL, SD_SHA, sd)]
 
 def archive(url, sha):
   cache.mkdir(parents=True, exist_ok=True)

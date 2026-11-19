@@ -71,11 +71,23 @@
 /* #undef D_ARITH_CODING_SUPPORTED */
 
 /* Use accelerated SIMD routines. */
+#ifdef CDOM_IMAGE_SIMDE /* cdom: on for CDOM_IMAGE_SIMD=simde */
+#define WITH_SIMD 1
+#else
 /* #undef WITH_SIMD */
+#endif
 
+#ifdef CDOM_IMAGE_SIMDE
+#define SIMD_ARCHITECTURE  ARM
+#else
 #define SIMD_ARCHITECTURE  NONE
+#endif
 
+#ifdef CDOM_IMAGE_SIMDE /* cdom: on for CDOM_IMAGE_SIMD=simde */
+#define WITH_SIMDE 0
+#else
 /* #undef WITH_SIMDE */
+#endif
 
 #endif
 
