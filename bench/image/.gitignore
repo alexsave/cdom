@@ -6,3 +6,5 @@ __pycache__/
 build-js-o2/
 build-js-o3/
 build-js-mix/
+build-native/
+build-prof/
