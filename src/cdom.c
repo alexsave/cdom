@@ -3,11 +3,7 @@
 #include "cdom.h"
 #include "cdom_cb.h"
 #include <stddef.h>
-
-void *malloc(size_t n);
-void free(void *p);
-void *realloc(void *p, size_t n);
-void *calloc(size_t n, size_t sz);
+#include <stdlib.h> /* malloc, free, realloc and calloc, which this file defines: the declarations apps see */
 
 #define IMPORT(n) __attribute__((import_module("cdom"), import_name(n)))
 #define EXPORT(n) __attribute__((export_name(n)))

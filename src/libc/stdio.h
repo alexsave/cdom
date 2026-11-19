@@ -1,5 +1,7 @@
 /* stdio.h for a cdom app's program (see string.h beside it: the program's libc is cdom's). It offers
- * snprintf and vsnprintf, and size_t and va_list, nothing more: there is no FILE, no printf, no stream.
+ * snprintf and vsnprintf, and size_t and va_list, nothing more: no printf, no stream. FILE is declared, as an
+ * incomplete type no function takes, so a library whose header names FILE * in a prototype (libjpeg's
+ * jpeg_stdio_src, say) compiles; a FILE can never be made or used.
  * Both are real functions, weak, in mini.c (link it), so a program with its own libc keeps its own,
  * and a program that never calls them carries none of their code (the linker drops what nothing calls).
  *
@@ -19,6 +21,8 @@
 #define __need_NULL
 #include <stddef.h>
 #include <stdarg.h>
+
+typedef struct cd_no_file FILE;
 
 __attribute__((format(printf, 3, 4))) int snprintf(char *restrict s, size_t n, const char *restrict fmt, ...);
 __attribute__((format(printf, 3, 0))) int vsnprintf(char *restrict s, size_t n, const char *restrict fmt, va_list ap);
