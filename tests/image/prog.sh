@@ -6,8 +6,8 @@
 # src/cdom_image_jpegp.c and src/cdom_image_ljt_coef.c), linked into one object whose symbols are all renamed ref_*.
 # With --fuzz SECONDS, it builds tests/image/fuzz_jpegp.c the same way (libFuzzer) and runs it for that long instead,
 # seeded with the corpus's files under 100 KB; the corpus grows in tests/out/image/prog-test/fuzz.
-# Usage: tests/image/prog.sh [--fuzz SECONDS] [DIR...]      HOST_CC: the compiler (default clang); LLVM_BIN: where ld.lld, llvm-nm and
-# llvm-objcopy are (default: next to HOST_CC, else the PATH)
+# Usage: tests/image/prog.sh [--fuzz SECONDS] [DIR...]      HOST_CC: the compiler (default clang); LLVM_BIN: where llvm-nm
+# and llvm-objcopy are (default: next to HOST_CC, else the PATH)
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 top="$(cd "$here/../.." && pwd)"
@@ -24,7 +24,7 @@ LJT="$top/third_party/libjpeg-turbo-3.2.1/src"
 HCC="${HOST_CC:-clang}"
 bin="${LLVM_BIN:-$(dirname "$(readlink -f "$(command -v "$HCC")")")}"
 tool() { if [ -x "$bin/$1" ]; then echo "$bin/$1"; else command -v "$1"; fi; }
-LD="$(tool ld.lld)"; NM="$(tool llvm-nm)"; OBJCOPY="$(tool llvm-objcopy)"
+NM="$(tool llvm-nm)"; OBJCOPY="$(tool llvm-objcopy)"
 fuzz=""
 if [ "${1:-}" = --fuzz ]; then fuzz="$2"; shift 2; fi
 SAN=(-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
@@ -48,8 +48,11 @@ build() {
     "$HCC" "${H[@]}" "${VENDORF[@]}" -c -o "$o/ref/v_$(basename "$f" .c).o" "$f" || return 1
   done
   for f in "${MINIZ[@]}"; do "$HCC" "${H[@]}" "${MINIZF[@]}" -c -o "$o/ref/m_$(basename "$f" .c).o" "$f" || return 1; done
-  "$LD" -r -o "$o/ref.o" "$o"/ref/*.o || return 1
-  "$NM" --defined-only --extern-only "$o/ref.o" | awk 'NF == 3 { print $3 " ref_" $3 }' > "$o/ref.syms"
+  # one relocatable object, through the compiler's own linker (ld.lld reads only ELF; macOS objects are Mach-O)
+  "$HCC" -r -nostdlib -o "$o/ref.o" "$o"/ref/*.o || return 1
+  # ref_ goes after Mach-O's leading underscore (C's ref_x is _ref_x there)
+  local u=""; [ "$(uname)" = Darwin ] && u="_"
+  "$NM" --defined-only --extern-only "$o/ref.o" | awk -v u="$u" 'NF == 3 { n = $3; if (u != "" && substr(n, 1, 1) == u) n = substr(n, 2); print $3 " " u "ref_" n }' > "$o/ref.syms"
   "$OBJCOPY" --redefine-syms="$o/ref.syms" "$o/ref.o" "$o/ref_renamed.o" || return 1
   "$HCC" "${H[@]}" -Wall -Wextra -Werror -c -o "$o/host_alloc.o" "$here/host_alloc.c" || return 1
   if [ -n "$fuzz" ]; then
