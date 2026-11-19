@@ -123,6 +123,17 @@ libc_case() { # name, then the flags
   if ! cmp -s "$w" "$w0"; then
     echo "FAIL stdio.h ($name flags): a program that never calls snprintf is $(wc -c < "$w" | tr -d ' ') bytes, $(wc -c < "$w0" | tr -d ' ') without it in mini.c"; fail=1; return; fi
   echo "ok   stdio.h ($name flags): snprintf links with mini.c alone, and a program that does not call it carries none of it"
+  # stdlib.h: the heap, abs and labs, and stdio.h's FILE in a prototype, compile and link with cdom.c and mini.c
+  # (run.mjs runs libc_stdlib); a FILE cannot be made (libc_file.c, which declares one, does not compile).
+  # The file is built with the case's flags; cdom.c, which it links to for the heap, with cdom's (as an app's library is).
+  local s="$out/libc_stdlib_$name.wasm" so="$out/libc_stdlib_$name.o"; rm -f "$s" "$so"
+  if ! "$CC" "$@" -c -o "$so" "$here/libc_stdlib.c" 2> "$log" ||
+     ! "$CC" "${LIBC_CDOM[@]}" "${CDOM_LDFLAGS[@]}" -o "$s" "$so" "$src/cdom.c" "$src/mini.c" 2> "$log"; then
+    echo "FAIL stdlib.h ($name flags): a file that uses the heap, abs and labs, and FILE does not compile or link:"; cat "$log"; fail=1; return; fi
+  if "$CC" "$@" -c -o "$out/libc_file_$name.o" "$here/libc_file.c" 2> "$log"; then
+    echo "FAIL stdio.h ($name flags): a FILE could be declared, so FILE is not the incomplete type"; fail=1; return
+  elif ! grep -q "never completed" "$log"; then echo "FAIL stdio.h ($name flags): libc_file.c failed for another reason:"; cat "$log"; fail=1; return; fi
+  echo "ok   stdlib.h ($name flags): malloc, calloc, realloc, free, abs and labs compile and link with cdom.c and mini.c; FILE names a prototype's parameter and nothing more"
 }
 libc_case cdom "${LIBC_CDOM[@]}"
 libc_case freestanding "${LIBC_FREESTANDING[@]}"
