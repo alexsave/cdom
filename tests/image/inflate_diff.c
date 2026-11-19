@@ -25,7 +25,7 @@ static uint32_t rnd(void) {   /* splitmix64, from the one seed */
 static uint32_t below(uint32_t n) { return n ? rnd() % n : 0; }
 
 static int fails;
-#define CHECK(c, ...) do { if (!(c)) { if (fails++ < 10) { printf("FAIL inflate_diff: " __VA_ARGS__); printf("\n"); } } } while (0)
+#define CHECK(c, ...) do { if (!(c)) { if (fails++ < 10) { printf("FAIL inflate_diff: " __VA_ARGS__); printf("\n"); fflush(stdout); } } } while (0)
 
 /* ---- zlib's answer ---- */
 static uint8_t *z_out; static size_t z_cap = 1u << 26;
@@ -312,10 +312,232 @@ static void dynamic_codes(void) {
   dynamic_case("dynamic: no end-of-block code", ll, dl, 2, 0, 0);
 }
 
+/* ---- the distance check, in each loop: a match one past the output so far. As one piece into a large buffer, the
+ * match is met in the fast loop (the checked loop only runs in the last 32 bytes of a piece or the last 290 of the
+ * buffer); as pieces of one byte, in the checked loop. The 16 bytes before the buffer are 'Z': a decoder that let the
+ * match through would read them and make "Zab", and the stream's adler32 is of that output, so the only refusal left
+ * is the distance check itself. A distance equal to the output so far is fine. ---- */
+static void dist_edge(void) {
+  static const uint8_t lit[10] = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'};
+  for (int ok = 0; ok < 2; ok++)
+    for (int bytes = 0; bytes < 2; bytes++) {
+      const char *loop = bytes ? "checked loop" : "fast loop";
+      bw w = {0};
+      uint8_t o[100];
+      size_t n = 0;
+      put(&w, 0x78, 8); put(&w, 0x01, 8); put(&w, 1, 1); put(&w, 1, 2);
+      for (int i = 0; i < 10; i++) { fixed_sym(&w, lit[i]); o[n++] = lit[i]; }
+      fixed_match(&w, 3, ok ? 10 : 11);
+      if (ok) for (int i = 0; i < 3; i++, n++) o[n] = o[n - 10];
+      else { o[n++] = 'Z'; o[n++] = 'a'; o[n++] = 'b'; }
+      for (int i = 0; i < 64; i++) { uint8_t c = (uint8_t)('A' + i % 26); fixed_sym(&w, c); o[n++] = c; }
+      fixed_sym(&w, 256);
+      trailer(&w, o, n);
+      size_t zn;
+      int zr = zlib_inflate(w.b, w.n, &zn);
+      CHECK(zr == ok, "%s, a distance %s the output: zlib answers %d", loop, ok ? "equal to" : "one past", zr);
+      uint32_t k = bytes ? (uint32_t)w.n : 1;
+      uint8_t **pp = malloc(sizeof *pp * k);
+      uint32_t *pn = malloc(sizeof *pn * k);
+      for (uint32_t i = 0; i < k; i++) {
+        pn[i] = bytes ? 1 : (uint32_t)w.n;
+        pp[i] = malloc(pn[i]); memcpy(pp[i], w.b + (bytes ? i : 0), pn[i]);
+      }
+      feed f = {0};
+      f.p = pp; f.n = pn; f.k = k;
+      uint32_t cap = 1u << 20;
+      uint8_t *mem = malloc(cap + 16);
+      memset(mem, 'Z', 16);
+      uint32_t st = cd_inflate_zlib(&dec, mem + 16, cap, more, out, &f);
+      if (ok) CHECK(st == CD_INFLATE_OK && f.got_n == n && !memcmp(f.got, o, n), "%s, a distance equal to the output: cdom answers %u", loop, st);
+      else CHECK(st == CD_INFLATE_CORRUPT, "%s, a distance one past the output: cdom answers %u, not CORRUPT", loop, st);
+      for (uint32_t i = 0; i < k; i++) free(pp[i]);
+      free(pp); free(pn); free(mem); free(f.got); free(w.b);
+    }
+}
+
+/* ---- dynamic headers written symbol by symbol: a code-length code of the caller's (cl, lengths of 0 to 18) and the
+ * code lengths as ops (a code-length symbol and its extra bits), so that repeats, a bad HLIT or HDIST and the rest
+ * can be written; the block holds three of one literal and the end, both of one bit ---- */
+typedef struct { uint8_t sym, extra; } clop;
+static void dyn_ops(bw *w, uint32_t btype, uint32_t hlit, uint32_t hdist, const uint8_t *cl, const clop *ops, uint32_t nops) {
+  static const uint8_t order[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
+  uint32_t cc[19] = {0};
+  canon(cl, 19, cc);
+  put(w, 1, 1); put(w, btype, 2);
+  put(w, hlit, 5); put(w, hdist, 5); put(w, 19 - 4, 4);
+  for (int i = 0; i < 19; i++) put(w, cl[order[i]], 3);
+  for (uint32_t i = 0; i < nops; i++) {
+    put_rev(w, cc[ops[i].sym], cl[ops[i].sym]);
+    if (ops[i].sym == 16) put(w, ops[i].extra, 2);
+    else if (ops[i].sym == 17) put(w, ops[i].extra, 3);
+    else if (ops[i].sym == 18) put(w, ops[i].extra, 7);
+  }
+}
+/* runs of zeros as code 18s (11 to 138) and a 17 (3 to 10) for the rest; under 3 as single zeros */
+static uint32_t zeros(clop *ops, uint32_t k, uint32_t n) {
+  while (n >= 11) { uint32_t r = n > 138 ? 138 : n; if (n - r && n - r < 3) r = n - 3 < 11 ? r : n - 3; ops[k].sym = 18; ops[k].extra = (uint8_t)(r - 11); k++; n -= r; }
+  if (n >= 3) { ops[k].sym = 17; ops[k].extra = (uint8_t)(n - 3); k++; n = 0; }
+  while (n--) { ops[k].sym = 0; ops[k].extra = 0; k++; }
+  return k;
+}
+/* one dynamic case: the literal lit and the end at one bit each (so lit's code is 0 when lit < 256, the end's 1),
+ * three of lit then the end, and the adler32 of those three; expect: zlib's answer */
+static void dyn_case(const char *what, uint32_t btype, uint32_t hlit, uint32_t hdist, const clop *ops, uint32_t nops, uint8_t lit, int expect) {
+  static const uint8_t cl[19] = {[0] = 2, [1] = 2, [16] = 2, [17] = 3, [18] = 3};   /* complete: 3/4 + 2/8 */
+  bw w = {0};
+  put(&w, 0x78, 8); put(&w, 0x01, 8);
+  dyn_ops(&w, btype, hlit, hdist, cl, ops, nops);
+  for (int i = 0; i < 3; i++) put(&w, 0, 1);
+  put(&w, 1, 1);
+  uint8_t o[3] = {lit, lit, lit};
+  trailer(&w, o, 3);
+  agree(w.b, w.n, what, expect);
+  if (expect == 1) {
+    feed f = {0};
+    uint32_t st = cdom_inflate(w.b, w.n, 0, &f);
+    CHECK(st == CD_INFLATE_OK && f.got_n == 3 && !memcmp(f.got, o, 3), "%s: not the bytes written", what);
+    free(f.got);
+  }
+  free(w.b);
+}
+/* the code lengths of HLIT + 257 literal/length codes and HDIST + 1 distance codes: 'a' and the end one bit each,
+ * one distance code of one bit, every other length 0; first16: a code 16 first (a repeat of nothing) */
+static uint32_t lens_ops(clop *ops, uint32_t nlen, uint32_t ndist, int first16) {
+  uint32_t k = 0;
+  if (first16) { ops[k].sym = 16; ops[k].extra = 0; k++; k = zeros(ops, k, 'a' - 3); }
+  else k = zeros(ops, k, 'a');
+  ops[k].sym = 1; ops[k].extra = 0; k++;                     /* 'a' */
+  k = zeros(ops, k, 256 - 'a' - 1);
+  ops[k].sym = 1; ops[k].extra = 0; k++;                     /* the end */
+  k = zeros(ops, k, nlen - 257);
+  ops[k].sym = 1; ops[k].extra = 0; k++;                     /* distance code 0 */
+  return zeros(ops, k, ndist - 1);
+}
+static void dynamic_headers(void) {
+  clop ops[64];
+  char what[120];
+  uint32_t k = lens_ops(ops, 257, 1, 0);
+  dyn_case("dynamic ops: HLIT 0, HDIST 0 (a good block)", 2, 0, 0, ops, k, 'a', 1);
+  dyn_case("block type 3 (the good block's bits)", 3, 0, 0, ops, k, 'a', 0);
+  for (uint32_t hlit = 29; hlit <= 31; hlit++) {             /* 286 codes are allowed; 287 and 288 are not */
+    k = lens_ops(ops, 257 + hlit, 1, 0);
+    snprintf(what, sizeof what, "dynamic: HLIT %u (%u literal/length codes)", hlit, 257 + hlit);
+    dyn_case(what, 2, hlit, 0, ops, k, 'a', hlit <= 29);
+  }
+  for (uint32_t hdist = 29; hdist <= 31; hdist++) {          /* 30 distance codes are allowed; 31 and 32 are not */
+    k = lens_ops(ops, 257, hdist + 1, 0);
+    snprintf(what, sizeof what, "dynamic: HDIST %u (%u distance codes)", hdist, hdist + 1);
+    dyn_case(what, 2, 0, hdist, ops, k, 'a', hdist <= 29);
+  }
+  k = lens_ops(ops, 257, 1, 1);
+  dyn_case("dynamic: a code 16 first (a repeat of no length)", 2, 0, 0, ops, k, 'a', 0);
+  /* a repeat one past HLIT + HDIST: 255 zeros, 255's length 1, then a 16 repeating it three times over 256, 257 and
+   * 258 (one past the 258 lengths); the stream is otherwise good */
+  k = zeros(ops, 0, 255);
+  ops[k].sym = 1; ops[k].extra = 0; k++;
+  ops[k].sym = 16; ops[k].extra = 0; k++;
+  dyn_case("dynamic: a repeat one past HLIT + HDIST", 2, 0, 0, ops, k, 255, 0);
+  /* the review's case: HLIT 0 and HDIST 0 (258 lengths), then code 18 repeating 138 zeros three times (414), which
+   * would run past the decoder's 316 lengths */
+  for (k = 0; k < 3; k++) { ops[k].sym = 18; ops[k].extra = 127; }
+  dyn_case("dynamic: three repeats of 138 zeros over 258 lengths", 2, 0, 0, ops, 3, 'a', 0);
+}
+
+/* ---- the zlib header: a good fixed block after headers zlib refuses: CM not 8, CINFO over 7, FCHECK wrong, FDICT
+ * set (FCHECK right in all but its own case); each refused ---- */
+static void header_case(const char *what, uint32_t cmf, int fdict, int fcheck_ok, int expect) {
+  uint32_t flg = fdict ? 32 : 0;
+  while ((cmf * 256 + flg) % 31) flg++;                      /* the smallest FCHECK that makes it a multiple of 31 */
+  if (!fcheck_ok) flg++;
+  bw w = {0};
+  put(&w, cmf, 8); put(&w, flg, 8); put(&w, 1, 1); put(&w, 1, 2);
+  static const uint8_t o[5] = {'h', 'e', 'l', 'l', 'o'};
+  for (int i = 0; i < 5; i++) fixed_sym(&w, o[i]);
+  fixed_sym(&w, 256);
+  trailer(&w, o, 5);
+  agree(w.b, w.n, what, expect);
+  free(w.b);
+}
+static void headers(void) {
+  header_case("header 78 01 (a good one)", 0x78, 0, 1, 1);
+  header_case("header CM 7", 0x77, 0, 1, 0);
+  header_case("header CINFO 8", 0x88, 0, 1, 0);
+  header_case("header FCHECK wrong", 0x78, 0, 0, 0);
+  header_case("header FDICT set", 0x78, 1, 1, 0);
+}
+
+/* ---- the fixed code's literal/length symbols 286 and 287 and distances 30 and 31: they have codes but are not in
+ * the alphabet. "abc", then the symbol (a length 3 for the distances, then the end); the adler32 is of what a decoder
+ * would make that took 286 and 287 as the end and 30 and 31 as distance 1 ("abc", or "abcccc"), so only the refusal
+ * of the symbol itself stands between the stream and OK ---- */
+static void fixed_bad_syms(void) {
+  char what[80];
+  for (uint32_t s = 284; s <= 287; s++) {                    /* 284 and 285 are lengths: the good controls */
+    bw w = {0};
+    uint8_t o[300] = {'a', 'b', 'c'};
+    size_t n = 3;
+    put(&w, 0x78, 8); put(&w, 0x01, 8); put(&w, 1, 1); put(&w, 1, 2);
+    for (int i = 0; i < 3; i++) fixed_sym(&w, o[i]);
+    fixed_sym(&w, s);
+    if (s < 286) {                                           /* 284: 227 + 5 bits (here 0); 285: 258; distance 1 */
+      uint32_t len = s == 284 ? 227 : 258;
+      if (s == 284) put(&w, 0, 5);
+      put_rev(&w, 0, 5);
+      for (uint32_t i = 0; i < len; i++, n++) o[n] = o[n - 1];
+    }
+    if (s < 286) fixed_sym(&w, 256);                        /* none after 286 and 287: to a decoder that took them as the end, the adler32 follows */
+    trailer(&w, o, n);
+    snprintf(what, sizeof what, "fixed literal/length symbol %u", s);
+    agree(w.b, w.n, what, s < 286);
+    free(w.b);
+  }
+  for (uint32_t d = 29; d <= 31; d++) {                      /* 29 is 24577 + 13 bits: the control, refused too (too far) */
+    bw w = {0};
+    uint8_t o[6] = {'a', 'b', 'c', 'c', 'c', 'c'};
+    put(&w, 0x78, 8); put(&w, 0x01, 8); put(&w, 1, 1); put(&w, 1, 2);
+    for (int i = 0; i < 3; i++) fixed_sym(&w, o[i]);
+    fixed_sym(&w, 257);
+    put_rev(&w, d, 5);
+    if (d == 29) put(&w, 0, 13);
+    fixed_sym(&w, 256);
+    trailer(&w, o, 6);
+    snprintf(what, sizeof what, "fixed distance code %u", d);
+    agree(w.b, w.n, what, 0);
+    free(w.b);
+  }
+}
+
+/* ---- the largest tables zlib's examples/enough.c finds (enough 286 11 15: 2340 entries; enough 30 9 15: 592), as
+ * CD_INFLATE_LT and CD_INFLATE_DT hold: a code of each such shape must still build. Literal/length: the end, 'a',
+ * 'b', length 4 (258) and 0 at 1 to 5 bits, then of the other 281 symbols 1 at 12 bits, 229 at 13, 49 at 14 and 2 at
+ * 15. Distance: distance 2 (code 1) and six others at 1 to 7 bits, then 1 at 10, 9 at 11, 9 at 12, 1 at 13, 1 at 14
+ * and 2 at 15 ---- */
+static void worst_tables(void) {
+  uint8_t ll[286], dl[30];
+  ll[256] = 1; ll['a'] = 2; ll['b'] = 3; ll[258] = 4; ll[0] = 5;
+  static const uint8_t lcount[4][2] = {{12, 1}, {13, 229}, {14, 49}, {15, 2}};
+  uint32_t s = 1, c = 0;
+  for (int g = 0; g < 4; g++)
+    for (uint32_t j = 0; j < lcount[g][1]; j++) {
+      while (s == 'a' || s == 'b' || s == 256 || s == 258) s++;
+      ll[s++] = lcount[g][0]; c++;
+    }
+  CHECK(c == 281 && s == 286, "worst tables: %u literal/length codes placed, up to %u", c, s);
+  dl[1] = 1; dl[0] = 2;
+  for (uint32_t i = 2; i < 7; i++) dl[i] = (uint8_t)(i + 1);
+  static const uint8_t dcount[6][2] = {{10, 1}, {11, 9}, {12, 9}, {13, 1}, {14, 1}, {15, 2}};
+  s = 7;
+  for (int g = 0; g < 6; g++) for (uint32_t j = 0; j < dcount[g][1]; j++) dl[s++] = dcount[g][0];
+  CHECK(s == 30, "worst tables: %u distance codes", s);
+  dynamic_case("dynamic: the largest tables (2340 and 592 entries)", ll, dl, 30, 1, 1);
+}
+
 int main(int argc, char **argv) {
   int cases = argc > 1 ? atoi(argv[1]) : 400;
   z_out = malloc(z_cap);
   char what[200];
+  dist_edge();   /* first: a decoder that took the bad match would read before its buffer in later cases */
   /* (the sink checks) */
 /* the code's own checks of its tables: adler32 against zlib's on odd lengths */
   for (int i = 0; i < 200; i++) {
@@ -365,6 +587,10 @@ int main(int argc, char **argv) {
     free(w.b); free(d);
   }
   dynamic_codes();
+  dynamic_headers();
+  headers();
+  fixed_bad_syms();
+  worst_tables();
   greedy();
   /* a distance of exactly the output so far is fine; one more is not */
   for (int ok = 0; ok < 2; ok++) {
