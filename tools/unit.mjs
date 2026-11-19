@@ -214,7 +214,7 @@ try {
   if (after >= 4 << 20 && buffered === 0) passed.push('cd_ws_buffered: the bytes just sent, then 0 once drained'); else errors.push(`buffered: ${after} after the send, ${buffered} later`);
   // What traps, each case on a page of its own: a trap leaves cdom's state as it was in the middle of the call.
   // The check cases run on unit_check.html, the same page built for unit_check.wasm (-DCD_STATE_CHECK).
-  const trapPages = ['idle', 'hiddenUp', 'cleanupDom', 'depth', 'otherUp', 'renderLoop', 'boundUnbound', 'boundTmp', 'stateLoop', 'stateIdle', 'stateRow', 'stateCleanup', 'stateUnwatched', 'stateMadeByRender']
+  const trapPages = ['idle', 'hiddenUp', 'cleanupDom', 'depth', 'otherUp', 'renderLoop', 'boundUnbound', 'boundTmp', 'stateLoop', 'stateIdle', 'stateRow', 'stateCleanup', 'stateUnwatched', 'stateMadeByRender', 'imageTrap']
     .map((n) => ['unit', n]).concat(['checkViewOk', 'checkViewBad', 'checkBuildOk', 'checkBuildBad'].map((n) => ['unit_check', n]));
   for (const [pageName, name] of trapPages) {
     await b.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/${pageName}.html?trap=${name}` });

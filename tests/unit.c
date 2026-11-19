@@ -2843,3 +2843,55 @@ EXPORT("t_check_build_bad") void t_check_build_bad(void) {
     cd_region_end(&rx1);
   }
 }
+
+/* The image module's way out of a libjpeg error, the js way (src/cdom_image_sjlj.c, CDOM_IMAGE_SJLJ_JS; the shim's
+ * image_call and image_throw): a body that returns answers 0 and ran; a body that throws from deep down answers 1,
+ * and the code after the guard runs; the stack pointer is the same after any number of throws; a trap inside the
+ * body is not taken for a throw (a page of its own: ?trap=imageTrap). */
+#include "../src/cdom_image_int.h"
+static void *sj_slot;
+static uint32_t sj_ran;
+static __attribute__((noinline)) void sj_deep(uint32_t n) {
+  volatile char pad[200];
+  pad[0] = (char)n;
+  if (n) sj_deep(n - 1);
+  else cd_image_throw(sj_slot);
+  sj_ran += (uint32_t)pad[0] + 1000;   /* never reached: the throw does not return */
+}
+static void sj_returns(void *ctx) { sj_ran += *(uint32_t *)ctx; }
+static void sj_throws(void *ctx) { sj_ran++; sj_deep(*(uint32_t *)ctx); }
+static void sj_traps(void *ctx) { (void)ctx; __builtin_trap(); }
+/* which: 0 returns, 1 throws from n frames down (each 200 bytes of stack), 2 traps. Answers the guard's answer;
+ * t_sj_ran and t_sj_sp tell the rest. */
+EXPORT("t_sj") uint32_t t_sj(uint32_t which, uint32_t n) {
+  sj_ran = 0;
+  uint32_t r = (uint32_t)cd_image_guard(which == 0 ? sj_returns : which == 1 ? sj_throws : sj_traps, &n, &sj_slot);
+  return r;
+}
+EXPORT("t_sj_ran") uint32_t t_sj_ran(void) { return sj_ran; }
+/* Nested guards (a body that runs a guard of its own: a decode inside a decode): each throw lands at the guard it
+ * names, the innermost, and the outer one goes on. Answers the outer guard's answer times 10 plus the inner's. */
+static void *sj_inner_slot;
+static uint32_t sj_inner, sj_outer_throws;
+static void sj_inner_throws(void *ctx) { (void)ctx; cd_image_throw(sj_inner_slot); }
+static void sj_outer(void *ctx) {
+  (void)ctx;
+  sj_inner = (uint32_t)cd_image_guard(sj_inner_throws, 0, &sj_inner_slot);
+  sj_ran = 7;   /* the outer body goes on after the inner throw */
+  if (sj_outer_throws) cd_image_throw(sj_slot);
+}
+EXPORT("t_sj_nested") uint32_t t_sj_nested(uint32_t outer_throws) {
+  sj_ran = 0; sj_outer_throws = outer_throws;
+  uint32_t outer = (uint32_t)cd_image_guard(sj_outer, 0, &sj_slot);
+  return outer * 10 + sj_inner + (sj_ran == 7 ? 100 : 0);
+}
+/* The stack pointer as a callee sees it: the frame of a function that cannot be inlined. */
+static __attribute__((noinline)) uintptr_t sj_sp(void) { volatile char probe = 0; uintptr_t at = (uintptr_t)&probe; return at + probe; }
+/* count throws from depth frames down, in one call, so no frame of this export's own puts the stack pointer back
+ * between them: answers 1 when every guard answered 1 and the stack pointer after them is where it was before. */
+EXPORT("t_sj_many") uint32_t t_sj_many(uint32_t count, uint32_t depth) {
+  uintptr_t before = sj_sp();
+  uint32_t all = 1;
+  for (uint32_t i = 0; i < count; i++) all &= (uint32_t)cd_image_guard(sj_throws, &depth, &sj_slot);
+  return all && sj_sp() == before;
+}

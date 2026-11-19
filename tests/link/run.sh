@@ -459,6 +459,32 @@ elif [ ! -s "$st/moved/build/index.html" ]; then echo "FAIL the starter copied e
 else echo "ok   the starter copied elsewhere builds with CDOM from the environment overriding the generated default"; fi
 node "$here/run.mjs" "$out" || fail=1
 node "$here/../../tools/edges.mjs" || fail=1
+# The image module (APP_MODULES += image) costs an app nothing it does not call, and its way out of a libjpeg error
+# reaches only the apps that link it: tests/image/wasm.c built by cdom.mk with CDOM_IMAGE_SJLJ eh has wasm exception
+# handling (try, catch, throw), and with js the shim's two imports and no exception handling; the app of app.mk,
+# with no image module and with it but no call, has neither.
+im="$out/image-link"; mkdir -p "$im"
+eh_count() { wasm-dis --all-features "$1" | grep -cE '\b(try|catch|catch_all|throw|rethrow|delegate)\b'; }
+img_imports() { wasm-dis --all-features "$1" | grep -cE '\(import "cdom" "image_(call|throw)"'; }
+if ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=eh "$im/wasm_eh.wasm" 2> "$im/eh.log" ||
+   ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=js "$im/wasm_js.wasm" 2> "$im/js.log"; then
+  echo "FAIL the image module's wasm test app does not build:"; cat "$im/eh.log" "$im/js.log"; fail=1
+elif [ "$(eh_count "$im/wasm_eh.wasm")" = 0 ] || [ "$(img_imports "$im/wasm_eh.wasm")" != 0 ]; then
+  echo "FAIL CDOM_IMAGE_SJLJ eh: $(eh_count "$im/wasm_eh.wasm") exception-handling instructions (wanted some) and $(img_imports "$im/wasm_eh.wasm") of the shim's imports (wanted none)"; fail=1
+elif [ "$(eh_count "$im/wasm_js.wasm")" != 0 ] || [ "$(img_imports "$im/wasm_js.wasm")" != 2 ]; then
+  echo "FAIL CDOM_IMAGE_SJLJ js: $(eh_count "$im/wasm_js.wasm") exception-handling instructions (wanted none) and $(img_imports "$im/wasm_js.wasm") of the shim's 2 imports"; fail=1
+else
+  mo="$out/mk-first"
+  bad=""
+  for mods in 'random' 'random image'; do
+    for sj in js eh; do
+      if ! make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$mo" PAGE= APP_MODULES="$mods" CDOM_IMAGE_SJLJ=$sj -B "$mo/mk_app.wasm" 2> "$im/mk.log"; then bad="$bad [$mods, $sj: no build]"; cat "$im/mk.log"
+      elif [ "$(eh_count "$mo/mk_app.wasm")" != 0 ] || [ "$(img_imports "$mo/mk_app.wasm")" != 0 ]; then bad="$bad [$mods, $sj]"; fi
+    done
+  done
+  if [ -n "$bad" ]; then echo "FAIL an app that does not call the image module carries its exception handling or its imports:$bad"; fail=1
+  else echo "ok   the image module's way out reaches only apps that call it: eh gives them exception handling, js the shim's 2 imports; an app without it, or with it and no call, has neither, either way"; fi
+fi
 node "$here/../../tools/seeds.mjs" || fail=1
 node "$here/../../tools/strings.mjs" || fail=1
 exit $fail
