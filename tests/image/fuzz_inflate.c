@@ -1,5 +1,5 @@
 /* libFuzzer target: any bytes as a zlib stream into cdom's inflate (src/cdom_image_inflate.c) and into zlib, the two
- * compared (tests/image/fuzz.sh): when zlib inflates the whole stream, cdom's must give OK and the same bytes; when
+ * compared (tests/image/fuzz.sh): when zlib inflates the whole stream, cdom's must give OK (not CORRUPT, not STOPPED) and the same bytes; when
  * zlib refuses it, cdom's must answer CORRUPT. The input is cut into pieces at points the data's first byte picks,
  * each piece its own heap block, so a read past one is caught; the buffer is the smallest the contract allows. */
 #include <stdint.h>
@@ -50,7 +50,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   free(pp); free(pn);
   if (zr == Z_STREAM_END) {
     if (st == CD_INFLATE_OK && (got_n != zn || memcmp(got, zbuf, zn))) __builtin_trap();   /* different bytes */
-    if (st == CD_INFLATE_CORRUPT) __builtin_trap();                                         /* refused a good one */
+    if (st != CD_INFLATE_OK) __builtin_trap();                                              /* refused or stopped on a good one */
   } else if (!(zr == Z_BUF_ERROR && !zs.avail_out)) {
     if (st == CD_INFLATE_OK) __builtin_trap();                                              /* took a bad one */
   }
