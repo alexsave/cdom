@@ -441,3 +441,23 @@ On this Mac the clang driver runs Homebrew's `wasm-opt` after the link (it finds
   On the PNG it gains more (1.78x), which is most of the PNG's gain.
 - So on the Mac the PNG would be about 12 ms (5%) faster again with the 3-byte Paeth left scalar; on the VM it would be 34 ms slower.
   A wasm module cannot choose by the CPU it lands on, so this is a choice between the two, not a fix; it is left as it is, and named in the PR for Alex.
+
+## Paeth on the Mac: predictions (written before measuring the fix)
+
+The Mac's profile above has the SIMD Paeth (L5, 3 bytes a pixel) at 0.86x of the scalar one (89.2 against 76.7 ms a p12.png run), where the x86 VM had it 1.50x faster.
+p12.png is the Paeth-heavy input already (3,016 of its 3,024 rows are Paeth), so no other input was made.
+
+What the arm64 code says (`node --print-wasm-code` on `src/cdom_image_loops.c` alone, linked with its name section, TurboFan tier; the same V8 as Chrome's):
+
+- The loop-carried chain, from one pixel's left value to the next, is 10 NEON operations deep: sub, add, abs, smin, cmge, bsl, then `dup` and `uzp1` (in parallel), `mov v.d[1]`, an 8-bit add and `uxtl`.
+- The last five are clang's: it saw that `(pred + raw) & 0xff` in 16-bit lanes is an 8-bit add, and wrote it as an `i8x16.shuffle` that narrows the predictor, an `i8x16.add`, and an extend back to 16 bits; V8 lowers that shuffle to three instructions.
+  The source's own form, a 16-bit add and an `and`, is 2 operations, so the chain could be 8 deep.
+- At about 2 cycles a NEON operation on Apple's cores, 10 deep is about 20 cycles a pixel, 12.2 million pixels, about 76 ms at 3.2 GHz, near the 84 ms a node microbench of the unfilter alone measures (scalar 72 ms in the same bench).
+
+Two candidates, A/B'd against the current SIMD build in Chrome (bench/image/run.mjs, 9 interleaved rounds, p12.png at box 900):
+
+- P1, the SIMD Paeth with the chain kept at 8 (the mask made opaque to clang, so the `and` stays): the unfilter about 67 ms in the microbench (8/10 of 84), 1.08x faster than the scalar Paeth (range 1.00x to 1.20x); in Chrome, the C-simd p12.png run 6 to 14 ms faster than now.
+  Falsified if it is not faster than the scalar Paeth in the microbench, or the chain is not 8 deep in the arm64 code.
+- P2, the SIMD build using the scalar Paeth (the other filters stay SIMD): the unfilter as the scalar build's (76.7 ms, within 3%), so the C-simd p12.png run about 12 ms faster than now (226 to about 214 ms, 0.95x).
+  Falsified if the run is not at least 8 ms faster than now.
+- The pick: the faster of P1 and P2 in the Chrome A/B is kept; P1 also keeps the x86 VM's gain (1.50x) and P2 gives it up, so on a tie (within 2%) P1 is kept.
