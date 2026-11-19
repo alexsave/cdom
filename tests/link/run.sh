@@ -306,13 +306,11 @@ if mk "$mo/other.wasm" "$mo/other.html" PAGE="$here/page/ok.html" > "$mo/mk_othe
   echo "FAIL cdom.mk's rules built a .wasm or .html that is not APP_WASM or APP_PAGE"; cat "$mo/mk_other.log"; fail=1
 elif ! grep -q "No rule to make target .*other.wasm" "$mo/mk_other.log"; then echo "FAIL cdom.mk: other.wasm refused for another reason:"; cat "$mo/mk_other.log"; fail=1
 else echo "ok   cdom.mk's rules leave a .wasm or .html that is not APP_WASM or APP_PAGE alone"; fi
-# The toolchain check: a WASM_CC that cannot build a wasm32 module (Apple's clang, which finds no wasm-ld
-# on a PATH without Homebrew's; a clang that is not there) stops make with the install command, before
-# the compiler runs, and leaves no module.
-# /usr/bin/clang is Apple's only on macOS: on Linux it is a clang that does build wasm32.
-for cc in /usr/bin/clang "$out/no-such-clang"; do
-  [ -x "$cc" ] || [ "$cc" = "$out/no-such-clang" ] || continue
-  [ "$cc" != /usr/bin/clang ] || [ "$(uname -s)" = Darwin ] || continue
+# The toolchain check: a WASM_CC that cannot build a wasm32 module (a clang with no wasm32 target, here
+# tests/link/no_wasm32_clang, the same on every OS: a real system clang may well build wasm32, as Apple's
+# clang 21 and Linux's do; a clang that is not there) stops make with the install command, before the
+# compiler runs, and leaves no module.
+for cc in "$here/no_wasm32_clang" "$out/no-such-clang"; do
   rm -rf "$out/mk-cc"
   if env PATH=/usr/bin:/bin make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$out/mk-cc" PAGE= WASM_CC="$cc" "$out/mk-cc/mk_app.wasm" > "$out/mk_cc.log" 2>&1; then
     echo "FAIL cdom.mk built a module with WASM_CC=$cc, which cannot build wasm32"; fail=1
