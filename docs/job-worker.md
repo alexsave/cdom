@@ -174,3 +174,16 @@ The app's Makefile adds `APP_JOBS := image`, `APP_JOB_image_SRC := src/image_job
 The photo never enters the app's memory, the decode's peak is the worker's, and both go when the worker ends.
 The job's libc is `src/mini.c` plus whatever the image code brings (the `image-libc` branch).
 Encoding in the worker through OffscreenCanvas is not in this change: a job answers bytes from its own C.
+
+## The Mac (written before measuring)
+
+Alex's arm64 Mac, headless Chrome, `node tools/shrink.mjs m0 5` and `m1m3 5` with the meter on macOS: the renderer's phys_footprint (tools/footprint.c, proc_pid_rusage; what Activity Monitor calls Memory), resident size beside it.
+Measured after the fix that copies the answer in cd_job_answer (which touches nothing a run measures but the 64 KB copy).
+
+- MP0a: touching 100 MB raises the footprint by 95 to 105 MiB; MP0b: growing 100 MB without writing raises it by under 5. Either missing means the meter is wrong on macOS, and nothing below counts.
+- MP1b: the nothing arm (42 MB touched in the app, freed) still holds 40 to 46 MiB after 60 s idle, and MP1c after a forced GC: wasm memory never shrinks, on any platform.
+- MP3b: the worker arm holds 0 to 4 MiB at 1 s with no GC (Linux: 2.70); falsifier over 6.
+- MP3c: the worker arm holds 0 to 3 MiB after a forced GC.
+- MP3d: the worker arm's longest main-thread task is under 10 ms; the nothing arm's is the job's whole time.
+- MP3e: a warm job (the module compiled, the blob URL made) adds 5 to 30 ms of wall time over the same work on the main thread; falsifier over 50.
+- MP3f: the nothing arm's cold wall time is within 10% of the worker's job time, and the warm call is faster than the cold one in both arms (Linux: 906.7 cold, 674.5 warm).

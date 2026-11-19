@@ -1,5 +1,6 @@
 // The measurements of docs/job-worker.md: M0 (the meter), M1 and M3 (today's cost, and cd_job), on tests/out/shrink.html.
-// The meter is the renderer process's /proc/<pid>/smaps_rollup, Private_Dirty plus Swap (VmRSS beside it as the cross-check),
+// The meter is the renderer process's /proc/<pid>/smaps_rollup, Private_Dirty plus Swap (VmRSS beside it as the cross-check;
+// on macOS, phys_footprint and the resident size, tools/footprint.c),
 // read every 20 ms. The renderer's pid comes from CDP SystemInfo.getProcessInfo on the browser target; with more than one
 // renderer, the one whose CPU time grows during a 200 ms spin of the page. Each run is a fresh Chrome.
 //   node tools/shrink.mjs m0 [runs]            the meter check: touch 100 MB, then grow 100 MB without writing
@@ -11,7 +12,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { launch, sleep } from './cdp.mjs';
 const top = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const root = path.join(top, 'tests/out');
@@ -26,8 +27,13 @@ const MIB = 1024 * 1024;
 const rows = [];
 const emit = (exp, run, arm, metric, value, unit) => { rows.push([exp, run, arm, metric, typeof value === 'number' ? +value.toFixed(3) : value, unit].join('\t')); };
 
-// The meter: Private_Dirty plus Swap of /proc/<pid>/smaps_rollup, and VmRSS, in MiB.
+// The meter: Private_Dirty plus Swap of /proc/<pid>/smaps_rollup, and VmRSS, in MiB. On macOS: phys_footprint and the
+// resident size (tools/footprint.c), in the same two fields.
+const MAC = os.platform() === 'darwin';
+const FOOT = path.join(top, 'tools/out/footprint');
+if (MAC && !fs.existsSync(FOOT)) { fs.mkdirSync(path.dirname(FOOT), { recursive: true }); execFileSync('cc', ['-O2', '-o', FOOT, path.join(top, 'tools/footprint.c')]); }
 function meter(pid) {
+  if (MAC) { const [fp, rss] = execFileSync(FOOT, [String(pid)]).toString().trim().split(' ').map(Number); return { priv: fp / MIB, rss: rss / MIB }; }
   const roll = fs.readFileSync(`/proc/${pid}/smaps_rollup`, 'utf8'), st = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
   const kb = (t, k) => +new RegExp(`^${k}:\\s+(\\d+) kB`, 'm').exec(t)[1];
   return { priv: (kb(roll, 'Private_Dirty') + kb(roll, 'Swap')) / 1024, rss: kb(st, 'VmRSS') / 1024 };
@@ -44,6 +50,12 @@ async function rendererPid(b) {
 }
 // A sampler of the meter every 20 ms; its samples are [ms, priv, rss].
 function sampler(pid) {
+  if (MAC) {   // one footprint process reading every 20 ms, not a process started per sample
+    const s = [], p = spawn(FOOT, [String(pid), '20'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    let rest = '';
+    p.stdout.on('data', (d) => { const l = (rest + d).split('\n'); rest = l.pop(); for (const x of l) { const [us, fp, rss] = x.split(' ').map(Number); s.push([us / 1000, fp / MIB, rss / MIB]); } });
+    return { stop: () => { p.kill(); return s; }, samples: s };
+  }
   const s = [], t0 = performance.now();
   const id = setInterval(() => { try { const m = meter(pid); s.push([performance.now() - t0, m.priv, m.rss]); } catch {} }, 20);
   return { stop: () => { clearInterval(id); return s; }, samples: s };
@@ -136,9 +148,9 @@ async function arm(run, which) {
   } finally { await b.close(); }
 }
 
-const cpu = (fs.readFileSync('/proc/cpuinfo', 'utf8').match(/model name\s*:\s*(.*)/) || [])[1];
+const cpu = MAC ? os.cpus()[0].model : (fs.readFileSync('/proc/cpuinfo', 'utf8').match(/model name\s*:\s*(.*)/) || [])[1];
 const clang = execFileSync(process.env.WASM_CC || 'clang', ['--version']).toString().split('\n')[0];
-const head = (title) => `# ${title}\n# ${new Date().toISOString().slice(0, 10)} ${cpu}, ${os.cpus().length} cores, ${os.platform()} ${os.release()}, Chrome ${execFileSync(process.env.CHROME || 'google-chrome', ['--version']).toString().trim()}, ${clang}\n# MB=${MB} PASSES=${PASSES} IDLE_S=${IDLE_S} LOADMAX=${LOADMAX}\n# experiment\trun\tarm\tmetric\tvalue\tunit\n`;
+const head = (title) => `# ${title}\n# ${new Date().toISOString().slice(0, 10)} ${cpu}, ${os.cpus().length} cores, ${os.platform()} ${os.release()}, Chrome ${execFileSync(process.env.CHROME || (MAC ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : 'google-chrome'), ['--version']).toString().trim()}, ${clang}\n# MB=${MB} PASSES=${PASSES} IDLE_S=${IDLE_S} LOADMAX=${LOADMAX}\n# experiment\trun\tarm\tmetric\tvalue\tunit\n`;
 try {
   if (mode === 'm0') for (let r = 1; r <= runs; r++) { await gate(); await m0(r); console.log('m0 run', r); }
   else if (mode === 'm1m3') for (let r = 1; r <= runs; r++) for (const w of r % 2 ? ['nothing', 'worker'] : ['worker', 'nothing']) { await arm(r, w); console.log('run', r, w); }
