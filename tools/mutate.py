@@ -738,7 +738,7 @@ M = [
   ('png-no-plte', 'src/cdom_image_png.c', 'if (ctype == 3 && !seen_plte) { st = CD_IMAGE_CORRUPT; break; }', 'if (0 && ctype == 3 && !seen_plte) { st = CD_IMAGE_CORRUPT; break; }', IMG, 'no PLTE'),
   ('png-no-checksum-end', 'src/cdom_image_png.c', 'if (st == CD_IMAGE_OK && !ended) st = CD_IMAGE_CORRUPT;', 'if (0) st = CD_IMAGE_CORRUPT;', IMG, 'png-adler-missing'),
   ('png-stops-at-last-row', 'src/cdom_image_png.c', 'if (ts == TINFL_STATUS_DONE) { ended = 1; break; }', 'if (ts == TINFL_STATUS_DONE || done == h) { ended = 1; break; }', IMG, 'png-adler-missing'),
-  ('png-bad-stream', 'src/cdom_image_png.c', '        if (ts < TINFL_STATUS_DONE) { st = CD_IMAGE_CORRUPT; break; }   /* a bad stream, or its adler32 differs */\n', '', IMG, 'png-adler-mismatch'),
+  ('png-bad-stream', 'src/cdom_image_png.c', '        if (ts < TINFL_STATUS_DONE) { st = CD_IMAGE_CORRUPT; break; }   /* a bad stream, or its adler32 differs */\n', '', IMG, 'png-adler-mismatch', HANGS),  # tinfl keeps answering FAILED and takes no byte, so the inflate loop never ends
   ('png-interlaced', 'src/cdom_image_png.c', 'if (d[12] || bd == 16) return CD_IMAGE_UNSUPPORTED;', 'if (bd == 16) return CD_IMAGE_UNSUPPORTED;', IMG, 'interlaced'),
   ('png-16-bit', 'src/cdom_image_png.c', 'if (d[12] || bd == 16) return CD_IMAGE_UNSUPPORTED;', 'if (d[12]) return CD_IMAGE_UNSUPPORTED;', IMG, '16-bit'),
   ('png-pixels-unchecked', 'src/cdom_image_png.c', '|| (uint64_t)w * h > CD_IMAGE_PIXELS_MAX) return CD_IMAGE_TOO_BIG;', ') return CD_IMAGE_TOO_BIG;', IMG, 'PNG over'),
