@@ -41,6 +41,8 @@ node "$legacy" shim "$here/out/cdom.legacy.js"
 node "$legacy" app "$here/out/listfuzz.wasm" "$here/out/listfuzz.wasm.js"
 # The _try allocations at a small cap, and on an app's own allocator (tools/alloc.mjs, in Node).
 wasm -O2 "$here/out/alloc_try.wasm" -DCDOM_HEAP_PAGES_MAX=40 "$here/alloc_try.c" "$here/../src/cdom.c" "$here/../src/mini.c"
+# The same cases with no cap of cdom's but a memory whose maximum is 40 pages: memory.grow itself refuses.
+wasm -O2 "$here/out/alloc_try_max.wasm" -Wl,--max-memory=2621440 "$here/alloc_try.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 wasm -O2 "$here/out/alloc_own.wasm" -DOWN_ALLOC "$here/alloc_try.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 # The heap's large blocks and an answer's bytes, uncapped (tools/alloc.mjs counts the pages each case takes).
 wasm -O2 "$here/out/alloc_mem.wasm" "$here/alloc_mem.c" "$here/../src/cdom.c" "$here/../src/cdom_net.c" "$here/../src/cdom_store.c" "$here/../src/cdom_url.c" "$here/../src/cdom_file.c" "$here/../src/mini.c"

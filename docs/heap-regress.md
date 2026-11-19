@@ -30,3 +30,24 @@ The differences (0.08 and 0.05 MB) are about one wasm page (65,536 bytes is 0.06
   Falsifier: realloc and cd_realloc_try together grew by under 200 bytes, or un-inlining wins back under 150.
 - Z3: the frees added to the answer exports (cd_encoded, cd_net_msg, cd_net_http, cd_store_got, cd_url_changed) are a call each, under 10 bytes apiece, so under 50 in all.
   Falsifier: they account for over 100 bytes.
+
+### Predictions added before the CPU pass (after the size changes below)
+
+- C1: the changes to the allocator (the bump shared by small and large blocks, with one more store; the grow out of line) move the keyed CPU benchmarks by less than 2% in median against main (7279030), inside the spread.
+  Falsifier: a median slower by 2% or more, outside the spread of both sides.
+
+## Results
+
+### What 22_run-memory counts
+
+tools/heapregress_probe.mjs loads an entry, clicks #run once as the harness does, and reads cdom's heap through cd_heap_probe (results/heapregress/probe.c) and the wasm memory's size.
+
+| entry | pages before the click | pages after | heap_ptr after | free small blocks | free large runs |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| base (b59e476) | 3 | 6 | 359,696 | 0 | 0 |
+| main (7279030) | 3 | 5 | 298,256 | 0 | 0 |
+
+- M1 is refuted: main's wasm memory after the click is 1 page smaller than the base's, not larger.
+- M2 is refuted: nothing is free at the end of the click, small or large; the large-block rules can only have lowered the heap (the arena's 64 KiB is a 68 KiB block now, not a 128 KiB class).
+- And `performance.measureUserAgentSpecificMemory()` does not count wasm memory at all: growing the memory by 16 pages (1 MiB) after the measure and measuring again moved it by 0.5 KB on the base and 6 KB on main, noise of the measure (GROW=16 in the probe).
+  So no change to the allocator can move 22_run-memory, and the cause is in the JS heap or the DOM.
