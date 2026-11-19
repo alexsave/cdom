@@ -228,6 +228,8 @@ static void start_pass(j_decompress_ptr cinfo) {
   }
   for (int ci = 0; ci < cinfo->comps_in_scan; ci++) {
     jpeg_component_info *cp = cinfo->cur_comp_info[ci];
+    int tbl = is_dc ? cp->dc_tbl_no : cp->ac_tbl_no;     /* jpeg_make_d_derived_tbl's own refusal, before the index */
+    if ((!is_dc || cinfo->Ah == 0) && (tbl < 0 || tbl >= NUM_HUFF_TBLS)) ERREXIT1(cinfo, JERR_NO_HUFF_TABLE, tbl);
     if (is_dc) {
       if (cinfo->Ah == 0) {
         jpeg_make_d_derived_tbl(cinfo, TRUE, cp->dc_tbl_no, &x->dct[cp->dc_tbl_no]);
@@ -312,6 +314,20 @@ static void refill(br *b) {
 }
 
 ALWAYS void ensure(br *b, int n) { if (b->bits < n) refill(b); }
+
+/* refill's common case on a loop's local copy of the buffer: eight bytes with no 0xFF among them (and no marker met
+ * yet), taken as whole bytes; 0 when it is not that case and refill must run. */
+ALWAYS int refill_fast(br *b, uint64_t *buf, int *bits, int *real) {
+  if (b->n < 8 || b->cinfo->unread_marker) return 0;
+  uint64_t w;
+  memcpy(&w, b->p, 8);
+  if ((~w - 0x0101010101010101ull) & w & 0x8080808080808080ull) return 0;
+  w = __builtin_bswap64(w);
+  int k = (64 - *bits) >> 3, sh = 64 - *bits - 8 * k;
+  *buf |= (w >> *bits) >> sh << sh;
+  b->p += k; b->n -= (size_t)k; *bits += 8 * k; *real += 8 * k;
+  return 1;
+}
 
 /* The first bit taken past the file's bits (take, take_any, and the loop below) */
 static void crossed(br *b) {
@@ -400,19 +416,28 @@ static void ac_first_block(scan *s, const pcomp *pc, uint64_t *m, int16_t *v, in
   br *b = &s->b;
   const pctx *x = s->x;
   const d_derived_tbl *d = x->act[s->b.cinfo->cur_comp_info[0]->ac_tbl_no];
+  uint64_t buf = b->buf;                                  /* the bit buffer in locals, back in *b around every call */
+  int bits = b->bits, real = b->real;
   for (int k = ss; k <= se; k++) {
-    ensure(b, 32);
-    int32_t fe = x->facv[b->buf >> (64 - LOOK)];
-    if (fe) { take(b, fe & 31); k += (fe >> 8) & 15; put(pc, m, v, k, fe >> 16, al); continue; }
+    if (bits < 32 && !refill_fast(b, &buf, &bits, &real)) { b->buf = buf; b->bits = bits; b->real = real; refill(b); buf = b->buf; bits = b->bits; real = b->real; }
+    int32_t fe = x->facv[buf >> (64 - LOOK)];
+    if (fe && (fe & 31) <= real) {                        /* symbol and value in one, all of it from the file */
+      int n = fe & 31;
+      buf <<= n; bits -= n; real -= n;
+      k += (fe >> 8) & 15;
+      put(pc, m, v, k, fe >> 16, al);
+      continue;
+    }
+    b->buf = buf; b->bits = bits; b->real = real;
     int sym = decode(b, &x->fac, d), r = sym >> 4, z = sym & 15;
     if (z) { k += r; put(pc, m, v, k, extend((int)get(b, z), z), al); }
     else if (r == 15) k += 15;
-    else { uint32_t e = 1u << r; if (r) e += get(b, r); s->eobrun = e - 1; break; }
+    else { uint32_t e = 1u << r; if (r) e += get(b, r); s->eobrun = e - 1; buf = b->buf; bits = b->bits; real = b->real; break; }
+    buf = b->buf; bits = b->bits; real = b->real;
   }
+  b->buf = buf; b->bits = bits; b->real = real;
 }
 
-/* The correction bits of the nonzero coefficients at positions `passed` (one bit each, in zigzag order): a 1 adds the
- * scan's bit to a coefficient that does not have it yet, away from zero. Only the kept ones are stored. */
 /* The bits of `bits` (n of them, the first at the top) put at the positions of `at` (n set bits, the lowest first). */
 ALWAYS uint64_t deposit(uint64_t bits, uint64_t at, int n) {
   if (n == 1) return (bits & 1) << __builtin_ctzll(at);
@@ -440,7 +465,7 @@ static void ac_refine_block(scan *s, const pcomp *pc, uint64_t *m, int16_t *v, i
 #define DROP(n) do { int n_ = (n); buf <<= n_; bits -= n_; if (n_ > real) { OUT(); crossed(b); IN(); } else real -= n_; } while (0)
   if (s->eobrun == 0) {
     while (k <= se) {
-      if (bits < 32) { OUT(); refill(b); IN(); }
+      if (bits < 32 && !refill_fast(b, &buf, &bits, &real)) { OUT(); refill(b); IN(); }
       uint32_t e = x->rtab[buf >> (64 - LOOK)];
       int r, nv;
       if (e) {                                            /* a run and a new coefficient with its sign, or a ZRL */
@@ -476,7 +501,7 @@ static void ac_refine_block(scan *s, const pcomp *pc, uint64_t *m, int16_t *v, i
       int n = __builtin_popcountll(passed);
       if (n > 57) { OUT(); cm |= deposit(get_wide(b, n), passed, n); IN(); }
       else {
-        if (n > bits) { OUT(); refill(b); IN(); }
+        if (n > bits && !(refill_fast(b, &buf, &bits, &real) && n <= bits)) { OUT(); refill(b); IN(); }
         uint64_t w = buf, l0 = passed & (0 - passed), a1 = passed ^ l0, l1 = a1 & (0 - a1), a2 = a1 ^ l1;
         uint64_t l2 = a2 & (0 - a2), a3 = a2 ^ l2, l3 = a3 & (0 - a3), a4 = a3 ^ l3;
         DROP(n);
@@ -536,18 +561,26 @@ static void run_mcus(scan *s, uint32_t i, uint32_t cnt) {
     }
     return;
   }
-  for (; i < end; i++) {                                  /* DC: every block of the MCU */
+  /* DC: every block of the MCU, at the offsets libjpeg's consume_data gives them (by component, then row, then column) */
+  const pcomp *bpc[D_MAX_BLOCKS_IN_MCU];
+  uint32_t by[D_MAX_BLOCKS_IN_MCU], bx[D_MAX_BLOCKS_IN_MCU], mh[D_MAX_BLOCKS_IN_MCU], mw[D_MAX_BLOCKS_IN_MCU];
+  int bci[D_MAX_BLOCKS_IN_MCU], nb = cinfo->blocks_in_MCU;
+  for (int blkn = 0, first = 0; blkn < nb; blkn++) {
+    int ci = cinfo->MCU_membership[blkn];
+    jpeg_component_info *cp = cinfo->cur_comp_info[ci];
+    if (blkn && ci != bci[blkn - 1]) first = 0;
+    bci[blkn] = ci; bpc[blkn] = &x->c[cp->component_index];
+    mh[blkn] = (uint32_t)cp->MCU_height; mw[blkn] = (uint32_t)cp->MCU_width;
+    by[blkn] = (uint32_t)first / mw[blkn]; bx[blkn] = (uint32_t)first % mw[blkn];
+    first++;
+  }
+  for (; i < end; i++) {
     if (ah == 0 && cinfo->entropy->insufficient_data) { if (++col == per_row) { col = 0; row++; } continue; }
-    for (int blkn = 0; blkn < cinfo->blocks_in_MCU; blkn++) {
-      int ci = cinfo->MCU_membership[blkn];
-      jpeg_component_info *cp = cinfo->cur_comp_info[ci];
-      int first = 0;
-      for (int b = 0; b < blkn; b++) if (cinfo->MCU_membership[b] == ci) first++;
-      uint32_t br_ = row * (uint32_t)cp->MCU_height + (uint32_t)first / (uint32_t)cp->MCU_width;
-      uint32_t bc = col * (uint32_t)cp->MCU_width + (uint32_t)first % (uint32_t)cp->MCU_width;
-      const pcomp *pc = &x->c[cp->component_index];
-      int16_t *v = vals_at(pc, br_, bc);
+    for (int blkn = 0; blkn < nb; blkn++) {
+      int ci = bci[blkn];
+      int16_t *v = vals_at(bpc[blkn], row * mh[blkn] + by[blkn], col * mw[blkn] + bx[blkn]);
       if (ah == 0) {
+        jpeg_component_info *cp = cinfo->cur_comp_info[ci];
         int t = decode(&s->b, &x->fdc[cp->dc_tbl_no], x->dct[cp->dc_tbl_no]);
         if (t) t = extend((int)get(&s->b, t), t);
         int last = s->last_dc[ci];

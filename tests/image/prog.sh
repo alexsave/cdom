@@ -4,7 +4,9 @@
 # more directories given (each with a list.txt). The binary holds two builds of the module: this tree's, as cdom.mk
 # lists its files, and libjpeg-turbo's own progressive path (jdphuff.c and jdcoefct.c in place of
 # src/cdom_image_jpegp.c and src/cdom_image_ljt_coef.c), linked into one object whose symbols are all renamed ref_*.
-# Usage: tests/image/prog.sh [DIR...]      HOST_CC: the compiler (default clang); LLVM_BIN: where ld.lld, llvm-nm and
+# With --fuzz SECONDS, it builds tests/image/fuzz_jpegp.c the same way (libFuzzer) and runs it for that long instead,
+# seeded with the corpus's files under 100 KB; the corpus grows in tests/out/image/prog-test/fuzz.
+# Usage: tests/image/prog.sh [--fuzz SECONDS] [DIR...]      HOST_CC: the compiler (default clang); LLVM_BIN: where ld.lld, llvm-nm and
 # llvm-objcopy are (default: next to HOST_CC, else the PATH)
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -23,7 +25,10 @@ HCC="${HOST_CC:-clang}"
 bin="${LLVM_BIN:-$(dirname "$(readlink -f "$(command -v "$HCC")")")}"
 tool() { if [ -x "$bin/$1" ]; then echo "$bin/$1"; else command -v "$1"; fi; }
 LD="$(tool ld.lld)"; NM="$(tool llvm-nm)"; OBJCOPY="$(tool llvm-objcopy)"
+fuzz=""
+if [ "${1:-}" = --fuzz ]; then fuzz="$2"; shift 2; fi
 SAN=(-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
+[ -n "$fuzz" ] && SAN+=(-fsanitize=fuzzer-no-link)
 H=(-std=c2x -O1 -g "${SAN[@]}" -I"$top/src" -I"$here")
 o="$out/obj"
 rm -rf "$o"; mkdir -p "$o/new" "$o/ref"
@@ -47,14 +52,29 @@ build() {
   "$NM" --defined-only --extern-only "$o/ref.o" | awk 'NF == 3 { print $3 " ref_" $3 }' > "$o/ref.syms"
   "$OBJCOPY" --redefine-syms="$o/ref.syms" "$o/ref.o" "$o/ref_renamed.o" || return 1
   "$HCC" "${H[@]}" -Wall -Wextra -Werror -c -o "$o/host_alloc.o" "$here/host_alloc.c" || return 1
-  "$HCC" "${H[@]}" -Wall -Wextra -Werror -c -o "$o/prog.o" "$here/prog.c" || return 1
-  "$HCC" "${H[@]}" -o "$out/prog" "$o"/new/*.o "$o/ref_renamed.o" "$o/host_alloc.o" "$o/prog.o"
+  if [ -n "$fuzz" ]; then
+    "$HCC" "${H[@]}" -Wall -Wextra -Werror -c -o "$o/fuzz.o" "$here/fuzz_jpegp.c" || return 1
+    "$HCC" "${H[@]}" -fsanitize=fuzzer -o "$out/fuzz_jpegp" "$o"/new/*.o "$o/ref_renamed.o" "$o/host_alloc.o" "$o/fuzz.o"
+  else
+    "$HCC" "${H[@]}" -Wall -Wextra -Werror -c -o "$o/prog.o" "$here/prog.c" || return 1
+    "$HCC" "${H[@]}" -o "$out/prog" "$o"/new/*.o "$o/ref_renamed.o" "$o/host_alloc.o" "$o/prog.o"
+  fi
 }
 if ! build > "$out.build.log" 2>&1; then echo "FAIL the progressive differential test does not build:"; tail -20 "$out.build.log"; exit 1; fi
 python3 -I "$here/progcorpus.py" "$out/corpus" || exit 1
 # The two builds define the same globals under two names; ASan's one-definition check reads the names from before the
 # renaming, so it is off for this binary (every other check is on).
 export ASAN_OPTIONS="detect_odr_violation=0${ASAN_OPTIONS:+:$ASAN_OPTIONS}"
+if [ -n "$fuzz" ]; then
+  f="$out/fuzz"; mkdir -p "$f/corpus" "$f/seeds"
+  find "$out/corpus" -name '*.jpg' -size -100k -exec cp {} "$f/seeds/" \;
+  (cd "$f" && "$out/fuzz_jpegp" corpus seeds -max_total_time="$fuzz" -timeout=30 -rss_limit_mb=2048 -max_len=200000 \
+     -artifact_prefix="$f/crash-" > "$f/fuzz.log" 2>&1)
+  tail -n 3 "$f/fuzz.log"
+  if ls "$f"/crash-* > /dev/null 2>&1; then echo "FAIL fuzz_jpegp found: $(ls "$f"/crash-*)"; exit 1; fi
+  echo "ok   fuzz_jpegp: $fuzz s, no difference, crash or leak ($(ls "$f/corpus" | wc -l) inputs in the corpus)"
+  exit 0
+fi
 fail=0
 for d in "$out/corpus" "$@"; do
   if "$out/prog" "$d" > "$out/prog.log" 2>&1; then echo "ok   progressive differential: $(tail -1 "$out/prog.log")"
