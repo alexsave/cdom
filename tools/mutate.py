@@ -765,6 +765,7 @@ M = [
   ('paeth-tie', 'src/cdom_image_loops.c', 'mb = wasm_i16x8_le(pb, pc);', 'mb = wasm_i16x8_lt(pb, pc);', SIMD, 'FAIL unfilter'),  # Paeth takes the up-left byte on a tie of b and c (the order of the tie is the filter)
   ('paeth-upleft', 'src/cdom_image_loops.c', '    c = b;\n', '', SIMD, 'FAIL unfilter'),  # Paeth never moves the up-left pixel along
   ('paeth-min', 'src/cdom_image_loops.c', 'wasm_i16x8_min(pb, pc)', 'wasm_i16x8_max(pb, pc)', SIMD, 'FAIL unfilter'),  # Paeth takes a when pa is at most the larger of pb and pc
+  ('paeth-mask', 'src/cdom_image_loops.c', '  int m = 0xff;\n  __asm__', '  int m = 0x1ff;\n  __asm__', SIMD, 'FAIL unfilter'),  # Paeth's left value is not taken modulo 256
   ('rgba-alpha', 'src/cdom_image_loops.c', '0, 1, 2, 16, 3, 4, 5, 16, 6, 7, 8, 16, 9, 10, 11, 16));', '0, 1, 2, 16, 3, 4, 5, 16, 6, 7, 8, 16, 9, 10, 11, 0));', SIMD, 'FAIL rgb to rgba'),  # the last pixel of 4 gets the red byte of the first as its alpha
   ('rgba-read-past', 'src/cdom_image_loops.c', 'for (; x + 6 <= w; x += 4)', 'for (; x + 5 <= w; x += 4)', SIMD, 'FAIL rgb to rgba'),  # the loop reads a byte past the row (a trap at the top of memory)
   ('across-store-lane', 'src/cdom_image_loops.c', 'wasm_v128_store32_lane(q + 2, sum, 2);', 'wasm_v128_store32_lane(q + 2, sum, 3);', SIMD, 'FAIL scaler across'),  # a pixel's blue sum is stored from its alpha lane

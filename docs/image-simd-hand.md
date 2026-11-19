@@ -461,3 +461,23 @@ Two candidates, A/B'd against the current SIMD build in Chrome (bench/image/run.
 - P2, the SIMD build using the scalar Paeth (the other filters stay SIMD): the unfilter as the scalar build's (76.7 ms, within 3%), so the C-simd p12.png run about 12 ms faster than now (226 to about 214 ms, 0.95x).
   Falsified if the run is not at least 8 ms faster than now.
 - The pick: the faster of P1 and P2 in the Chrome A/B is kept; P1 also keeps the x86 VM's gain (1.50x) and P2 gives it up, so on a tie (within 2%) P1 is kept.
+
+## Paeth on the Mac: results
+
+The microbench of the unfilter alone (node, the same V8 as Chrome, 3,024 Paeth rows of 4,032 RGB pixels, median of 9): the SIMD Paeth before 83.9 ms, P1 67.3 ms, P2 71.5 ms, the scalar Paeth 71.3 ms.
+P1's arm64 chain is 8 deep, as predicted: sub, add, abs, smin, cmge, bsl, then `uaddw` (V8 folds the extend into the add) and `and`.
+
+Chrome, p12.png at box 900, 9 interleaved rounds, the 1-minute load 1.37 to 1.50 before every run (`bench/image/results/2026-11-19-paeth-mac.*`; P0 is main's SIMD build):
+
+| arm | median ms (min to max) | per-round ratio to P0, median (min to max) |
+| --- | --- | --- |
+| C-js (scalar build) | 236.0 (234.9 to 345.6) | |
+| C-simd P0 (before) | 222.8 (222.2 to 284.5) | 1 |
+| C-simd P1 (the SIMD Paeth, chain 8 deep) | 206.8 (205.8 to 266.5) | 0.929 (0.925 to 0.989) |
+| C-simd P2 (the scalar Paeth) | 212.9 (211.6 to 272.5) | 0.955 (0.950 to 0.965) |
+
+- P1: the microbench 67.3 ms (predicted 67, 1.06x over the scalar Paeth, inside 1.00x to 1.20x): confirmed; the Chrome run 16.0 ms faster than P0 (predicted 6 to 14): refuted on the side of a larger gain.
+- P2: 9.9 ms faster than P0 (predicted about 12, at least 8): confirmed.
+- P1 against P2: 0.976 per round (0.963 to 1.034), 6.1 ms faster by the medians, so P1 is kept: the SIMD build's p12.png run is now 0.88x of the scalar build's on the Mac (it was 0.94x).
+- x86: the VM measured the SIMD Paeth at 1.50x over scalar (build 3, above); P1 changes only the chain's last steps, which the x86 code did not have as a shuffle in the same form, and it was not measured there.
+- Bit-exact: tests/image/simd.sh (every filter, 1 to 8 bytes a pixel) and bench/image/equal.mjs (4 inputs, 5 boxes: 20 of 20 equal); the mutant paeth-mask (the mask 0x1ff) is caught, with paeth-tie, paeth-upleft and paeth-min.
