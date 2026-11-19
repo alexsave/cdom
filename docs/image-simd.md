@@ -119,7 +119,7 @@ Full-size decode (box 4032, p12.jpg scale 8/8 and p12p.jpg, 9 rounds; the output
 | T10 | scalar: p12.jpg 65.7, p12p.jpg 200.9, p48.jpg 176.8, p12.png 244.6 | refuted for p12.jpg (below 100), p48.jpg (below 190) and p12.png (below 250); p12p.jpg confirmed |
 | Z1 | simd128 -Oz raw 92,657 against 92,955 (-0.3%), brotli 29,828 against 29,879 | confirmed |
 | Z2 | simde adds 129,068 raw (+139%) and 13,143 brotli (+44%) | brotli confirmed (8 to 24 KB), raw refuted (25 to 70 KB) |
-| Z3 | ifast and merged functions are 82,788 of the 114,140 bytes of NEON and dispatch code, 64% of the added raw bytes (function sizes from the unstripped module) | refuted (20 to 45%); the merged upsampler has fourteen colour-order variants |
+| Z3 | ifast and merged functions are 82,788 of the 114,140 bytes of NEON and dispatch code, 64% of the added raw bytes (function sizes from the unstripped module) | refuted (20 to 45%); the merged upsampler has a routine for each colour order |
 | M1 | wasm memory 6.1, 40.8, 17.1, 17.1 MiB for p12.jpg, p12p.jpg, p48.jpg, p12.png, equal in every arm | confirmed |
 | C1 | every C arm made the same RGBA on each input (FNV-1a, 9 rounds x 6 arms); tests/image's 59 oracle cases equal to the byte in the simde module | confirmed |
 | C2 | 168 runs (every JPEG case x box x ifast/merged option) equal, SIMD against libjpeg's C routines in the same module | confirmed |
@@ -135,7 +135,7 @@ Sizes, stripped (bench/image/sizes/simd.sh, both formats, js):
 | simde | 222,023 | 43,022 | 235,166 | 51,399 |
 | JPEG only, scalar / simde | 81,170 / 210,225 | 25,245 / 38,266 | | |
 
-(The scalar module here is 92,955 where docs/image-design.md has 82,563: that was measured with clang 18's Homebrew successor on the Mac, and the bench app here exports two more functions; the comparison is between rows.)
+(The scalar module here is 92,955 where docs/image-design.md has 82,563: that was measured on the Mac with another clang, and the bench app here exports a few more functions; the comparison is between rows.)
 
 ### The per-function split (bench/image/profile.mjs: V8's CPU profiler, 100 us, a fresh page for each of 9 runs, self time per run)
 
@@ -163,7 +163,7 @@ p12.jpg, box 4032 (scale 8/8), 5 runs:
 | process_data_context_main | 15.87 | not listed |
 
 - F1 confirmed (54.8%, 40 to 60).
-- F2: `jpeg_idct_2x2` 8.9% and the scaler 15.7% confirmed; `h2v2_fancy_upsample` is absent (refuted: at scale 2/8 libjpeg upsamples by replication in its own int upsampler), `ycc_extrgbx_convert` is 2.2% (refuted, 4 to 10).
+- F2: `jpeg_idct_2x2` 8.9% and the scaler 15.7% confirmed; `h2v2_fancy_upsample` is absent (refuted: at scale 2/8 libjpeg takes another upsampling path, which I did not trace), `ycc_extrgbx_convert` is 2.2% (refuted, 4 to 10).
 - F3 refuted: the NEON routines take 75% (2x2), 56% (4x4) and 129% (ycc) of their scalar functions' time at box 900 (predicted 20 to 60%); `decode_mcu` is within 2%, and the scaler is 13% higher in the profile, in cdom code that is identical in both arms (profiler noise).
 - At 8/8 the NEON islow IDCT is 1.3 times slower than the scalar one, NEON colour conversion 3.4 times slower, and only h2v2 fancy upsampling is faster (4.9 times).
 
