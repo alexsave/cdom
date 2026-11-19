@@ -87,7 +87,7 @@ void cd_main(void) {
   ...
   panel_region.parent = panel;                    /* the panel's region is all of the panel's children */
   cd_on(toggle, CD_EV_CLICK, on_toggle, nullptr);
-  for (uint32_t k = 0; k < 3; k++) cd_on(tabs[k], CD_EV_CLICK, on_tab, (void *)(uintptr_t)k);
+  for (uint32_t k = 0; k < 3; k++) cd_on(tabs[k], CD_EV_CLICK, on_tab, CD_CTX_OF(k));
   select_tab(0);
 }
 ```
@@ -104,5 +104,8 @@ void cd_main(void) {
   At this size that is cheap, and it is the simplest code that is correct.
 - **No diff to reason about.** After a click the page holds exactly what the region's last build (or hide) made.
   Each state of the page is one build, so there is no reconciliation step that could keep stale nodes.
+- **A small index as the ctx.** A handler's ctx is a pointer, and a tab's index is carried in it with no allocation.
+  The raw way is two casts, `(void *)(uintptr_t)k` going in and `(uint32_t)(uintptr_t)ctx` coming out.
+  `CD_CTX_OF(k)` and `CD_CTX_INDEX(ctx)` from `cdom_ui.h` (`APP_MODULES := ui`) are those two casts under a name, so `on_tab` reads `uint32_t k = CD_CTX_INDEX(ctx);`.
 - **Two kinds of region.** The disclosure's region is one element, so it names its root and one remove takes it away.
   The panel's region is all of the panel's children, so the parent is the region's owner and one clear takes them away.
