@@ -144,6 +144,42 @@ A "ratio" below is SIMD time over scalar time, so under 1 is faster.
 
 - C1: the SIMD module stays slower than B1 and B2 on p12.png on the Mac, since 48% of its time is inflate, which no SIMD here touches. Falsifier (on the Mac): C within B1's time.
 
+## Results, build 1: the profile of the first SIMD code, against the predictions
+
+The first working SIMD code (commit 2916260), profiled as the scalar one was: `bench/image/profile.mjs`, 8 timed runs after a warm-up, twice (two profiles per input and build, interleaved scalar and SIMD), mean of the two, self time per run in ms; `bench/image/profcmp.py` makes the table (raw profiles in `bench/image/results/profile-v1/`).
+A SIMD helper that V8 did not inline into its caller (`parts4`, `col4`, `unfilter_paeth`) is counted with the loop it belongs to.
+The whole-run times (L-series below are loops; the whole runs are measured once, on the final code, in the section after this one).
+
+| loop | input | scalar ms | SIMD ms | speedup | predicted | verdict |
+| --- | --- | --- | --- | --- | --- | --- |
+| L1 jpeg_idct_4x4 | p12.jpg | 9.2 | 6.0 | 1.53x | 2.5x (2.0 to 3.5) | refuted (under 2.0x) |
+| L1 | p12p.jpg | 9.9 | 6.4 | 1.53x | | refuted |
+| L2 jpeg_idct_2x2 | p12.jpg | 9.1 | 7.2 | 1.27x | 2.0x (1.5 to 3.0) | refuted (under 1.5x) |
+| L2 | p12p.jpg | 9.7 | 7.5 | 1.28x | | refuted |
+| L2 | p48.jpg | 18.8 | 16.1 | 1.17x | | refuted |
+| L3 ycc to RGBA | p12.jpg | 3.0 | 1.1 | 2.77x | 3.0x (2.0 to 5.0) | confirmed |
+| L3 | p12p.jpg | 2.4 | 1.0 | 2.40x | | confirmed |
+| L3 | p48.jpg | 2.1 | 1.1 | 1.83x | | refuted on this input (under 2.0x; 1 ms of self time, a few samples) |
+| L4 scaler (row, across, down) | p12.jpg | 16.6 | 18.2 | 0.91x | 1.4x (1.2 to 1.8) | refuted (slower) |
+| L4 | p12p.jpg | 15.7 | 17.2 | 0.91x | | refuted |
+| L4 | p48.jpg | 14.6 | 18.2 | 0.80x | | refuted |
+| L4 | p12.png | 65.5 | 75.1 | 0.87x | | refuted |
+| L5 PNG unfilter (Paeth) | p12.png | 106.5 | 81.9 | 1.30x | 1.8x (1.4 to 2.5) | refuted (under 1.4x) |
+| L6 RGB to RGBA | p12.png | 1.6 | 0.4 | 3.4x | 4.0x (2.5 to 6.0) | confirmed |
+| T2 decode_mcu, decode_mcu_AC_*, tinfl (not touched) | p12.jpg, p12p.jpg, p48.jpg, p12.png | 65.3, 205.2, 219.2, 173.2 | 68.1, 211.0, 232.2, 178.2 | +4.3%, +2.8%, +5.9%, +2.9% | within 5% | refuted on p48.jpg (5.9%), held on the other three |
+
+What the first build shows, and what it was:
+
+- L4 was slower because of a store-to-load stall.
+  The across loop added into the sums with a 16-byte read-modify-write at a 12-byte stride (three sums of an output pixel and the first of the next), so the load for an output pixel overlapped the previous pixel's store by one word, which a store cannot forward.
+- L1 lost half its gain to calls: `parts4` and `col4` were not inlined (`static inline` at `-Oz`), 3 of the 6 ms.
+- L2 is a loop of about 48 ns a block in scalar, 38 in SIMD: it reads five rows of eight coefficients and eight table words, and the C returns early on a column of zeros.
+  With four lanes and five columns to make, there is little to win; this is the loop the profile picked that SIMD helps least.
+- L5: the Paeth predictor of a pixel depends on the pixel before it, so one pixel is one dependent chain of about 11 vector ops whatever the width of the vector; the scalar code runs three channels of that chain in parallel on an out-of-order core.
+
+Build 2 changes what these say: the helpers always inlined, the across loop keeping the output pixel's sum in a register (one store a pixel, no load), and a shorter Paeth chain (a minimum in place of two compares and an and; the next pixel's left value kept in 16-bit lanes).
+The predictions above are not changed; build 2 is measured against them the same way, below.
+
 ## The design
 
 (Written after the predictions; see below once the code exists.)
