@@ -734,12 +734,16 @@ M = [
   ('png-pixels-unchecked', 'src/cdom_image_png.c', '|| (uint64_t)w * h > CD_IMAGE_PIXELS_MAX) return CD_IMAGE_TOO_BIG;', ') return CD_IMAGE_TOO_BIG;', IMG, 'PNG over'),
   ('png-side-unchecked', 'src/cdom_image_png.c', 'if (w > CD_IMAGE_SIDE_MAX || h > CD_IMAGE_SIDE_MAX || (uint64_t)w * h', 'if ((uint64_t)w * h', IMG, 'PNG side'),
   ('png-rows-kept', 'src/cdom_image_png.c', '  cd_free(x->zero);\n  cd_free(x);\n  return st;', '  cd_free(x);\n  return st;', IMG, 'left'),
-  ('png-whole-image', 'src/cdom_image_png.c', 'uint64_t room = (uint64_t)(stride + 1) + (uint64_t)w * 4 + cap;', 'uint64_t room = (uint64_t)(stride + 1) + (uint64_t)w * 4 + cap + (uint64_t)h * stride;', IMGBIG, 'png-p12: peak'),
+  ('png-whole-image', 'src/cdom_image_png.c', 'uint64_t room = row + px_n + cap;', 'uint64_t room = row + px_n + cap + (uint64_t)h * stride;', IMGBIG, 'png-p12: peak'),
   ('png-idat-not-entered', 'src/cdom_image_png.c', '    if (!memcmp(type, "IDAT", 4)) return 1;', '    if (!memcmp(type, "IDAT", 4)) { x->len = 0; return 1; }', IMG, 'png-rgba'),
   ('png-window-unfiltered', 'src/cdom_image_png.c', 'n > CD_INFLATE_WINDOW ? n - CD_INFLATE_WINDOW : 0;', 'n > CD_INFLATE_WINDOW ? n - CD_INFLATE_WINDOW / 8 : 0;', IMG, 'png-'),
+  # png-fast-2: the inflate's buffer of a small PNG, and no RGBA row on the RGB read (the oracle's small and wide cases)
+  ('png-cap-whole-chunk', 'src/cdom_image_png.c', 'uint64_t cap = CD_INFLATE_WINDOW + 2 * row + (all < PNG_CHUNK ? all : PNG_CHUNK);', 'uint64_t cap = CD_INFLATE_WINDOW + 2 * row + PNG_CHUNK;', IMG, 'png-small16-rgba: peak'),
+  ('png-cap-no-floor', 'src/cdom_image_png.c', '  if (cap < CD_INFLATE_CAP_MIN) cap = CD_INFLATE_CAP_MIN;\n', '', IMG, 'png-small16-rgba: status CORRUPT'),
+  ('png-rgba-row-on-rgb-read', 'src/cdom_image_png.c', 'uint64_t px_n = rgb_read ? 0 : (uint64_t)w * 4;', 'uint64_t px_n = (uint64_t)w * 4;', IMG, 'png-wide8000x3-rgb: peak'),
   # png-fast (docs/image-png-speed.md): the row flow, the fused RGB read, and cdom's inflate against zlib (inflate_diff)
   ('png-prev-row-dropped', 'src/cdom_image_png.c', 'uint32_t drop = x->done ? x->row_at - row : x->row_at;', 'uint32_t drop = x->row_at;', IMG, 'png-'),
-  ('png-rgb-key-fused', 'src/cdom_image_png.c', 'if (!CDOM_IMAGE_SIMD && ctype == 2 && depth == 8 && !x->f.key) x->sc.step = 3;', 'if (!CDOM_IMAGE_SIMD && ctype == 2 && depth == 8) x->sc.step = 3;', IMG, 'png-rgb-key'),
+  ('png-rgb-key-fused', 'src/cdom_image_png.c', 'int rgb_read = !CDOM_IMAGE_SIMD && ctype == 2 && depth == 8 && !x->f.key;', 'int rgb_read = !CDOM_IMAGE_SIMD && ctype == 2 && depth == 8;', IMG, 'png-rgb-key'),
   ('img-step-rgba', 'src/cdom_image_loops.c', '{ across(h, px, sw, dw, 3); }', '{ across(h, px, sw, dw, 4); }', IMG, 'png-rgb'),
   ('inflate-dist-past-start', 'src/cdom_image_inflate.c', 'if (dist > o->total + (uint64_t)(out - out0)) { bad = 1; break; }', 'if (dist > o->total + (uint64_t)(out - out0) + 1) { bad = 1; break; }', IMG, 'fast loop, a distance one past the output: cdom answers 0'),
   ('inflate-dist-past-start-checked', 'src/cdom_image_inflate.c', '    if (dist > o->total) return 0;', '    if (dist > o->total + 1) return 0;', IMG, 'checked loop, a distance one past the output: cdom answers 0'),
