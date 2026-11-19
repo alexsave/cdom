@@ -5,8 +5,8 @@
 #   3. the native build (the module's files as cdom.mk lists them, with AddressSanitizer and UndefinedBehaviorSanitizer,
 #      on tests/image/host_alloc.c's counted heap) runs tests/image/test_image.c: every image equal to the oracle's to
 #      the byte, the refusals, a heap that runs out at every allocation, the peaks;
-#   4. the wasm build, both ways out of a libjpeg error (CDOM_IMAGE_SJLJ js and eh) and with the hand-written SIMD
-#      loops (CDOM_IMAGE_SIMD=1), runs every case in Chrome (tools/image.mjs, through tools/cdp.mjs): the same
+#   4. the wasm build, both ways out of a libjpeg error (CDOM_IMAGE_SJLJ js and eh), each scalar and with the hand-written
+#      SIMD loops (CDOM_IMAGE_SIMD=0 and 1), runs every case in Chrome (tools/image.mjs, through tools/cdp.mjs): the same
 #      statuses and the same bytes as the native build, and a capped heap answering NO_ROOM;
 #   5. the SIMD loops against their scalar counterparts, on random and edge inputs (tests/image/simd.sh, in node);
 #      IMAGE_SIMD=0 skips it.

@@ -17,8 +17,11 @@ const dir = path.resolve(process.argv[2] || path.join(top, 'tests/out/image'));
 const CAP = 400; // pages (64 KiB each): 26 MB, under the 12 MP progressive JPEG's 36 MB of coefficients
 const S = ['OK', 'NOT_IMAGE', 'TOO_BIG', 'UNSUPPORTED', 'CORRUPT', 'NO_ROOM', 'BAD_BOX'];
 const MAXMEM = CAP * 65536; // the same room, as the module's own limit: memory.grow itself refuses past it
-// IMAGE_EH=0 leaves out the eh builds, for a clang whose wasm EH lowering is not clang 23's (the js way and SIMD are plain wasm).
-const builds = [['js', '', ''], ['eh', '', ''], ['js', CAP, ''], ['js', '', MAXMEM], ['eh', '', MAXMEM], ['js', '', '', 1], ['js', CAP, '', 1]]
+// Every build twice: scalar (CDOM_IMAGE_SIMD=0, the default) and with the hand-written wasm SIMD loops (CDOM_IMAGE_SIMD=1),
+// so both pass the whole set. IMAGE_EH=0 leaves out the eh builds, for a clang whose wasm EH lowering is not clang 23's
+// (the js way and SIMD are plain wasm).
+const builds = [['js', '', ''], ['eh', '', ''], ['js', CAP, ''], ['js', '', MAXMEM], ['eh', '', MAXMEM]]
+  .flatMap((x) => [[...x, 0], [...x, 1]])
   .filter((x) => process.env.IMAGE_EH !== '0' || x[0] !== 'eh');
 for (const [sjlj, cap, max, simd] of builds)
   execFileSync('make', ['-s', '-f', path.join(top, 'tests/image/wasm.mk'), `OUT=${dir}`, `SJLJ=${sjlj}`, ...(cap ? [`CAP=${cap}`] : []), ...(max ? [`MAXMEM=${max}`] : []), ...(simd ? ['SIMD=1'] : []), 'all'], { stdio: 'inherit' });

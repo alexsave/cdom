@@ -25,6 +25,7 @@ RESIZE = ['tools/resize_ban.sh']
 IMG = ['env', 'IMAGE_BIG=0', 'IMAGE_WASM=0', 'tests/image/run.sh']   # the image module, native, small inputs
 IMGBIG = ['env', 'IMAGE_WASM=0', 'tests/image/run.sh']               # with the big inputs (budget, peaks)
 IMGW = ['env', 'IMAGE_BIG=0', 'tests/image/run.sh']                  # and in wasm, both ways out (tools/image.mjs)
+SIMD = ['tests/image/simd.sh']                                       # the SIMD loops against their scalar twins, in node
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -673,7 +674,7 @@ M = [
   ('part-dup-unchecked', 'cdom.mk', 'not a cdom module ($(CDOM_MODULES))))$(cdom_mk_unique)', 'not a cdom module ($(CDOM_MODULES))))', LINK, 'doubled part'),
   ('part-objs-intermediate', 'cdom.mk', '$$(APP_WASM) $$(cdom_mk_app_src) $$(cdom_mk_objs) $$(CDOM_LITS)', '$$(APP_WASM) $$(cdom_mk_app_src) $$(CDOM_LITS)', LINK, 'FAIL cdom.mk (first): make deleted'),
   # the image module (tests/image/run.sh, its wasm runs, its unit cases and its link case)
-  ('img-green-as-red', 'src/cdom_image.c', 'q[0] += wgt * px[0]; q[1] += wgt * px[1];', 'q[0] += wgt * px[0]; q[1] += wgt * px[0];', IMG, 'differs from the exact average'),
+  ('img-green-as-red', 'src/cdom_image_loops.c', 'q[0] += wgt * px[0]; q[1] += wgt * px[1];', 'q[0] += wgt * px[0]; q[1] += wgt * px[0];', IMG, 'differs from the exact average'),
   ('img-truncates', 'src/cdom_image.c', 'uint64_t v = (a[k] * 2 + t) / t2;', 'uint64_t v = (a[k] * 2 + 0 * t) / t2;', IMG, 'differs from the exact average'),
   ('img-halves-down', 'src/cdom_image.c', 'uint64_t v = (a[k] * 2 + t) / t2;', 'uint64_t v = (a[k] * 2 + t - 1) / t2;', IMG, 'scaler-2x2-1x1'),
   ('img-down-weight', 'src/cdom_image.c', 'uint64_t wgt = b - s->ypos;', 'uint64_t wgt = b - s->ypos + 1;', IMG, 'scaler-'),
@@ -713,11 +714,11 @@ M = [
   ('jpeg-no-budget', 'src/cdom_image_jpeg.c', 'return cap > already ? cap - already : 0;', '(void)cap; (void)already; return max_needed;', IMGBIG, 'over-budget'),
   ('jpeg-budget-corrupt', 'src/cdom_image_jpeg.c', 'x->too_many_scans || code == JERR_NO_BACKING_STORE ? CD_IMAGE_TOO_BIG', 'x->too_many_scans ? CD_IMAGE_TOO_BIG', IMGBIG, 'over-budget'),
   ('jpeg-no-room-corrupt', 'src/cdom_image_jpeg.c', ': code == JERR_OUT_OF_MEMORY ? CD_IMAGE_NO_ROOM', ': code == JERR_OUT_OF_MEMORY ? CD_IMAGE_CORRUPT', IMG, 'bytes of room'),
-  ('png-paeth-ties', 'src/cdom_image_png.c', 'pa <= pb && pa <= pc ? a : pb <= pc ? b : c', 'pa < pb && pa < pc ? a : pb < pc ? b : c', IMG, 'png-'),
-  ('png-sub-neighbour', 'src/cdom_image_png.c', 'cur[i] = (uint8_t)(cur[i] + cur[i - bpp]); break;', 'cur[i] = (uint8_t)(cur[i] + cur[i - 1]); break;', IMG, 'png-'),
-  ('png-average-up', 'src/cdom_image_png.c', '((cur[i - bpp] + prev[i]) >> 1)', '((cur[i - bpp] + prev[i] + 1) >> 1)', IMG, 'png-'),
-  ('png-up-off', 'src/cdom_image_png.c', 'case 2: for (uint32_t i = 0; i < n; i++) cur[i] = (uint8_t)(cur[i] + prev[i]); break;', 'case 2: break;', IMG, 'png-'),
-  ('png-filter9', 'src/cdom_image_png.c', '    default: return 0;\n  }\n  return 1;', '    default: break;\n  }\n  return 1;', IMG, 'png-filter9'),
+  ('png-paeth-ties', 'src/cdom_image_loops.c', 'pa <= pb && pa <= pc ? a : pb <= pc ? b : c', 'pa < pb && pa < pc ? a : pb < pc ? b : c', IMG, 'png-'),
+  ('png-sub-neighbour', 'src/cdom_image_loops.c', 'cur[i] = (uint8_t)(cur[i] + cur[i - bpp]); break;', 'cur[i] = (uint8_t)(cur[i] + cur[i - 1]); break;', IMG, 'png-'),
+  ('png-average-up', 'src/cdom_image_loops.c', '((cur[i - bpp] + prev[i]) >> 1)', '((cur[i - bpp] + prev[i] + 1) >> 1)', IMG, 'png-'),
+  ('png-up-off', 'src/cdom_image_loops.c', 'case 2: for (uint32_t i = 0; i < n; i++) cur[i] = (uint8_t)(cur[i] + prev[i]); break;', 'case 2: break;', IMG, 'png-'),
+  ('png-filter9', 'src/cdom_image_loops.c', '    default: return 0;\n  }\n  return 1;', '    default: break;\n  }\n  return 1;', IMG, 'png-filter9'),
   ('png-alpha-dropped', 'src/cdom_image_png.c', 'else { out[0] = over(r[0], a); out[1] = over(r[1], a); out[2] = over(r[2], a); }\n        out[3] = 255;\n      }\n      break;\n    case 4:', 'else { out[0] = r[0]; out[1] = r[1]; out[2] = r[2]; }\n        out[3] = 255;\n      }\n      break;\n    case 4:', IMG, 'png-rgba'),
   ('png-over-floor', 'src/cdom_image_png.c', '255u * (255u - a) + 127u) / 255u', '255u * (255u - a)) / 255u', IMG, 'png-'),
   ('png-grey-unscaled', 'src/cdom_image_png.c', 'uint32_t g = d == 8 ? v : v * 255 / mask;', 'uint32_t g = v;', IMG, 'png-grey'),
@@ -738,8 +739,48 @@ M = [
   ('png-idat-not-entered', 'src/cdom_image_png.c', 'if (ts == TINFL_STATUS_NEEDS_MORE_INPUT && in_pos >= n) break;', 'if (ts == TINFL_STATUS_NEEDS_MORE_INPUT && in_pos >= n) { st = CD_IMAGE_CORRUPT; break; }', IMG, 'png-rgba'),
   ('png-window-wrap', 'src/cdom_image_png.c', 'dict_ofs = (dict_ofs + (uint32_t)out_n) & (TINFL_LZ_DICT_SIZE - 1);', 'dict_ofs = (dict_ofs + (uint32_t)out_n) % (TINFL_LZ_DICT_SIZE - 1);', IMG, 'png-'),
   ('png-grey-key', 'src/cdom_image_png.c', '} else if (f->key && v == f->key_g) {', '} else if (0) {', IMG, 'png-grey-key'),
-  ('png-rgb-key', 'src/cdom_image_png.c', 'if (f->key && r[0] == f->key_rgb[0]', 'if (0 && r[0] == f->key_rgb[0]', IMG, 'png-rgb-key'),
+  ('png-rgb-key', 'src/cdom_image_png.c', 'if (r[0] == f->key_rgb[0] && r[1]', 'if (0 && r[0] == f->key_rgb[0] && r[1]', IMG, 'png-rgb-key'),
   ('png-rgb-key-low-byte', 'src/cdom_image_png.c', ' && !data[0] && !data[2] && !data[4]) {', ') {', IMG, 'png-rgb-key-over-255'),
+  # the image module's hand-written wasm SIMD loops (tests/image/simd.sh, docs/image-simd-hand.md): each must make the
+  # differential test FAIL on the line of the loop it breaks; a read past a buffer traps at the top of memory
+  ('idct4-const', 'src/jsimd/jsimd_wasm.c', 'C1_847 = 15137', 'C1_847 = 15138', SIMD, 'FAIL idct4'),  # a rounding constant of the 4x4 IDCT is off by one
+  ('idct4-pass1-round', 'src/jsimd/jsimd_wasm.c', 'V rnd = SPLAT(1 << 11), dc = SHL(z0, 2);', 'V rnd = SPLAT(1 << 10), dc = SHL(z0, 2);', SIMD, 'FAIL idct4'),  # the first pass of the 4x4 rounds with half the right constant
+  ('idct4-lane', 'src/jsimd/jsimd_wasm.c', '0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15);\n  wasm_v128_store32_lane(output_buf[0]', '0, 4, 8, 12, 5, 1, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15);\n  wasm_v128_store32_lane(output_buf[0]', SIMD, 'FAIL idct4'),  # two output pixels of the 4x4 swapped
+  ('idct4-dc-column-shortcut', 'src/jsimd/jsimd_wasm.c', '  w[0] = wasm_v128_bitselect(dc, SHR(ADD(s0, rnd), 12), acz);', '  w[0] = SHR(ADD(s0, rnd), 12);', SIMD, 'FAIL idct4'),  # the 4x4 skips the C's DC-only column shortcut for the first row (they differ when the C wraps)
+  ('idct4-range-mask', 'src/jsimd/jsimd_wasm.c', 'wasm_v128_and(ADD(x, SPLAT(512)), SPLAT(1023))', 'wasm_v128_and(ADD(x, SPLAT(512)), SPLAT(2047))', SIMD, 'FAIL idct4'),  # the range limit does not wrap at 10 bits as the C's table does
+  ('idct4-quant-low-half', 'src/jsimd/jsimd_wasm.c', 'ALWAYS V deqB(const JCOEF *c, const int *q, int r) { return wasm_i32x4_mul(wasm_i32x4_load16x4(c + 8 * r + 4), wasm_v128_load(q + 8 * r + 4)); }', 'ALWAYS V deqB(const JCOEF *c, const int *q, int r) { return wasm_i32x4_mul(wasm_i32x4_load16x4(c + 8 * r + 4), wasm_v128_load(q + 8 * r)); }', SIMD, 'FAIL idct4'),  # the right half of the block is dequantized with the left half's table entries
+  ('idct2-const', 'src/jsimd/jsimd_wasm.c', 'C3_624 = 29692', 'C3_624 = 29693', SIMD, 'FAIL idct2'),  # a constant of the 2x2 IDCT is off by one
+  ('idct2-lane', 'src/jsimd/jsimd_wasm.c', 'wasm_v128_store8_lane(output_buf[1] + output_col, b, 1);', 'wasm_v128_store8_lane(output_buf[1] + output_col, b, 3);', SIMD, 'FAIL idct2'),  # a pixel of the 2x2 goes to the wrong place
+  ('idct2-sign', 'src/jsimd/jsimd_wasm.c', 'wasm_i32x4_make(1, 1, -1, -1)', 'wasm_i32x4_make(1, -1, -1, 1)', SIMD, 'FAIL idct2'),  # the 2x2's second pixel takes the wrong sign on a row
+  ('ycc-const', 'src/jsimd/jsimd_wasm.c', 'MULC(crl, 91881)', 'MULC(crl, 93000)', SIMD, 'FAIL ycc'),  # the red constant is 1.4191 and not 1.4020 in the low half of a vector
+  ('ycc-green-round', 'src/jsimd/jsimd_wasm.c', 'MULC(cbh, -22554), half)', 'MULC(cbh, -22554), SPLAT(30000))', SIMD, 'FAIL ycc'),  # the green channel of the high 4 lanes of 8 rounds with 30000, not 32768
+  ('ycc-order', 'src/jsimd/jsimd_wasm.c', 'wasm_v128_store(o + 16, wasm_i16x8_shuffle(rg0, ba0, 4, 12, 5, 13, 6, 14, 7, 15));\n      wasm_v128_store(o + 32, wasm_i16x8_shuffle(rg1', 'wasm_v128_store(o + 32, wasm_i16x8_shuffle(rg0, ba0, 4, 12, 5, 13, 6, 14, 7, 15));\n      wasm_v128_store(o + 16, wasm_i16x8_shuffle(rg1', SIMD, 'FAIL ycc random'),  # pixels 4 to 7 and 8 to 11 of 16 swapped
+  ('ycc-alpha', 'src/jsimd/jsimd_wasm.c', 'wasm_i8x16_const_splat((int8_t)0xff);\n  while', 'wasm_i8x16_const_splat((int8_t)0xfe);\n  while', SIMD, 'FAIL ycc random'),  # alpha is 254
+  ('ycc-tail', 'src/jsimd/jsimd_wasm.c', 'o[0] = clamp8(y + ((91881 * cr + 32768) >> 16));', 'o[0] = clamp8(y + ((91881 * cr + 30000) >> 16));', SIMD, 'FAIL ycc random'),  # the pixels past the last 16 round the red channel with 30000
+  ('ycc-read-past', 'src/jsimd/jsimd_wasm.c', 'for (; i + 16 <= n; i += 16, o += 64) {', 'for (; i + 15 <= n; i += 16, o += 64) {', SIMD, 'FAIL ycc random'),  # the loop reads and writes 16 pixels when only 15 are left (a trap at the top of memory)
+  ('up-saturate', 'src/cdom_image_loops.c', 'wasm_v128_store(cur + i, wasm_i8x16_add(wasm_v128_load(cur + i), wasm_v128_load(prev + i)));', 'wasm_v128_store(cur + i, wasm_u8x16_add_sat(wasm_v128_load(cur + i), wasm_v128_load(prev + i)));', SIMD, 'FAIL unfilter'),  # Up adds with saturation, not modulo 256
+  ('sub4-carry', 'src/cdom_image_loops.c', 'carry = wasm_i8x16_shuffle(v, v, 12, 13, 14, 15, 12, 13, 14, 15, 12, 13, 14, 15, 12, 13, 14, 15);', 'carry = wasm_i8x16_shuffle(v, v, 8, 9, 10, 11, 8, 9, 10, 11, 8, 9, 10, 11, 8, 9, 10, 11);', SIMD, 'FAIL unfilter'),  # Sub (4 bytes) carries the wrong pixel to the next 4
+  ('sub3-store', 'src/cdom_image_loops.c', 'wasm_v128_store32_lane(cur + i + 8, v, 2);', 'wasm_v128_store32_lane(cur + i + 8, v, 3);', SIMD, 'FAIL unfilter'),  # Sub (3 bytes) stores its last pixel's bytes from the wrong lane
+  ('avg-rounds-up', 'src/cdom_image_loops.c', '  const V one = wasm_i8x16_const_splat(1);\n  V a = wasm_i8x16_const_splat(0);\n  uint32_t i = 0;\n  for (; i + 4 <= n; i += bpp) {\n    V b = ld_px(prev + i);', '  const V one = wasm_i8x16_const_splat(0);\n  V a = wasm_i8x16_const_splat(0);\n  uint32_t i = 0;\n  for (; i + 4 <= n; i += bpp) {\n    V b = ld_px(prev + i);', SIMD, 'FAIL unfilter'),  # Avg rounds the half up (the floor is the filter)
+  ('paeth-tie', 'src/cdom_image_loops.c', 'mb = wasm_i16x8_le(pb, pc);', 'mb = wasm_i16x8_lt(pb, pc);', SIMD, 'FAIL unfilter'),  # Paeth takes the up-left byte on a tie of b and c (the order of the tie is the filter)
+  ('paeth-upleft', 'src/cdom_image_loops.c', '    c = b;\n', '', SIMD, 'FAIL unfilter'),  # Paeth never moves the up-left pixel along
+  ('paeth-min', 'src/cdom_image_loops.c', 'wasm_i16x8_min(pb, pc)', 'wasm_i16x8_max(pb, pc)', SIMD, 'FAIL unfilter'),  # Paeth takes a when pa is at most the larger of pb and pc
+  ('rgba-alpha', 'src/cdom_image_loops.c', '0, 1, 2, 16, 3, 4, 5, 16, 6, 7, 8, 16, 9, 10, 11, 16));', '0, 1, 2, 16, 3, 4, 5, 16, 6, 7, 8, 16, 9, 10, 11, 0));', SIMD, 'FAIL rgb to rgba'),  # the last pixel of 4 gets the red byte of the first as its alpha
+  ('rgba-read-past', 'src/cdom_image_loops.c', 'for (; x + 6 <= w; x += 4)', 'for (; x + 5 <= w; x += 4)', SIMD, 'FAIL rgb to rgba'),  # the loop reads a byte past the row (a trap at the top of memory)
+  ('across-store-lane', 'src/cdom_image_loops.c', 'wasm_v128_store32_lane(q + 2, sum, 2);', 'wasm_v128_store32_lane(q + 2, sum, 3);', SIMD, 'FAIL scaler across'),  # a pixel's blue sum is stored from its alpha lane
+  ('across-no-reset', 'src/cdom_image_loops.c', '        sum = wasm_i32x4_const_splat(0);\n        ox++; hend += sw;', '        ox++; hend += sw;', SIMD, 'FAIL scaler across'),  # a finished pixel's sum carries into the next
+  ('across-weight', 'src/cdom_image_loops.c', 'wasm_i32x4_splat((int32_t)(uint32_t)(b - pos))', 'wasm_i32x4_splat((int32_t)(uint32_t)(b - pos) + 1)', SIMD, 'FAIL scaler across'),  # every weight one too big
+  ('down-halves', 'src/cdom_image_loops.c', 'wasm_u64x2_extmul_low_u32x4(v, w)));\n      wasm_v128_store(a + i + 2, wasm_i64x2_add(wasm_v128_load(a + i + 2), wasm_u64x2_extmul_high_u32x4(v, w)));', 'wasm_u64x2_extmul_high_u32x4(v, w)));\n      wasm_v128_store(a + i + 2, wasm_i64x2_add(wasm_v128_load(a + i + 2), wasm_u64x2_extmul_low_u32x4(v, w)));', SIMD, 'FAIL scaler down'),  # the two halves of 4 sums take each other's products
+  ('down-big-weight', 'src/cdom_image_loops.c', 'if (!(wgt >> 32)) {', 'if (1) {', SIMD, 'FAIL scaler down'),  # a weight over 32 bits is cut to 32 bits
+  ('down-read-past', 'src/cdom_image_loops.c', 'for (; i + 4 <= n; i += 4) {\n      V v = wasm_v128_load(h + i);', 'for (; i + 3 <= n; i += 4) {\n      V v = wasm_v128_load(h + i);', SIMD, 'FAIL scaler down'),  # the loop reads and writes 4 sums when 3 are left (a trap at the top of memory)
+  ('div-round', 'src/cdom_image_loops.c', 'V x = wasm_f64x2_add(wasm_f64x2_add(wasm_f64x2_mul(hi, k33), wasm_f64x2_add(lo, lo)), tt);', 'V x = wasm_f64x2_add(wasm_f64x2_add(wasm_f64x2_mul(hi, k33), wasm_f64x2_add(lo, lo)), wasm_f64x2_sub(tt, tt));', SIMD, 'FAIL scaler divide'),  # the divide does not add the half (t) before dividing
+  ('div-halves', 'src/cdom_image_loops.c', 'V hi = wasm_f64x2_convert_low_u32x4(wasm_i32x4_shuffle(v, v, 1, 3, 1, 3));', 'V hi = wasm_f64x2_convert_low_u32x4(wasm_i32x4_shuffle(v, v, 1, 1, 1, 3));', SIMD, 'FAIL scaler divide'),  # the high half of the second sum is read as the first's
+  ('div-cap', 'src/cdom_image_loops.c', 'const V cap = wasm_i32x4_const_splat(255);', 'const V cap = wasm_i32x4_const_splat(254);', SIMD, 'FAIL scaler divide'),  # the quotient is capped at 254, not 255
+  ('div-trunc-round', 'src/cdom_image_loops.c', 'wasm_u32x4_trunc_sat_f64x2_zero(wasm_f64x2_div(x, d))', 'wasm_u32x4_trunc_sat_f64x2_zero(wasm_f64x2_nearest(wasm_f64x2_div(x, d)))', SIMD, 'FAIL scaler divide'),  # the quotient is rounded to nearest, not truncated
+  ('div-read-past', 'src/cdom_image_loops.c', 'for (; i + 2 <= n; i += 2) {\n    V v = wasm_v128_load(a + i);', 'for (; i + 1 <= n; i += 2) {\n    V v = wasm_v128_load(a + i);', SIMD, 'FAIL scaler divide'),  # the loop reads and writes two sums when one is left (a trap at the top of memory)
+  ('simd-flags-everywhere', 'cdom.mk', 'CDOM_IMAGE_OWN_CFLAGS += $(cdom_mk_simd_flags)', 'CDOM_CFLAGS += $(cdom_mk_simd_flags)', LINK, 'FAIL an app that does not call the image module has SIMD instructions'),  # -msimd128 for every file, not the image module's
+  ('simd-scalar-has-simd', 'cdom.mk', 'else ifeq ($(CDOM_IMAGE_SIMD),0)\ncdom_mk_simd_flags :=\n', 'else ifeq ($(CDOM_IMAGE_SIMD),0)\ncdom_mk_simd_flags := -msimd128\n', LINK, 'FAIL CDOM_IMAGE_SIMD:'),  # the scalar default compiled with -msimd128
+  ('simd-emit-alpha', 'src/cdom_image.c', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 255;', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 254;', IMGW, 'FAIL wasm_js_simd: '),  # the SIMD build's emit writes the wrong alpha
   ('sjlj-sp-kept-low', 'src/cdom_image_sjlj.c', '  sp_set(sp);', '  sp_set(sp_get() + 0 * sp);', UNIT, "FAIL the image module's guard"),
   ('sjlj-eh-val-zero', 'src/cdom_image_sjlj_eh.c', 'jb->arg.val = val ? val : 1;', 'jb->arg.val = 0 * val;', IMGW, 'wasm_eh: jpeg-dqt-bad'),
   ('shim-image-swallows', 'shim/cdom.js', '      if (e !== IMAGE_THROW) throw e;\n', '', UNIT, 'a trap inside the body'),
