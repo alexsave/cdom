@@ -25,7 +25,7 @@ EXPORT("probe") uint32_t probe(const uint8_t *p, uint32_t len) {
 #ifdef CDOM_IMAGE_SIMDE   /* the SIMD builds (CDOM_IMAGE_SIMD=simde): which steps were wired, the C code on demand, the routines the module never selects */
 extern unsigned int cd_image_simd_wired, cd_image_simd_off, cd_image_simd_test_mode;
 EXPORT("wired") uint32_t wired(void) { return cd_image_simd_wired; }
-EXPORT("set_off") void set_off(uint32_t v) { cd_image_simd_off = v; }
+EXPORT("set_off") void set_off(uint32_t v) { cd_image_simd_off = v; cd_image_simd_wired = 0; }   /* the mask is the next run's alone */
 EXPORT("set_mode") void set_mode(uint32_t v) { cd_image_simd_test_mode = v; }
 #else
 EXPORT("wired") uint32_t wired(void) { return 0; }

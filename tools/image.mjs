@@ -21,7 +21,7 @@ const MAXMEM = CAP * 65536; // the same room, as the module's own limit: memory.
 const simds = (process.env.IMAGE_SIMD || '').split(',').filter((x) => x && x !== 'none');
 // IMAGE_EH=0 leaves the eh way out (a clang whose wasm exception handling is not the one cdom.mk's eh flags name, say clang 20)
 const builds = [['js', '', '', 'none'], ['eh', '', '', 'none'], ['js', CAP, '', 'none'], ['js', '', MAXMEM, 'none'], ['eh', '', MAXMEM, 'none'],
-  ...simds.flatMap((m) => [['js', '', '', m], ['eh', '', '', m]])].filter((x) => x[0] !== 'eh' || process.env.IMAGE_EH !== '0');
+  ...simds.flatMap((m) => [['js', '', '', m], ['eh', '', '', m]])].filter((x) => x[0] !== 'eh' || process.env.IMAGE_EH !== '0').filter((x) => x[3] !== 'none' || !process.env.IMAGE_SIMD_ONLY);   // IMAGE_SIMD_ONLY=1: the SIMD builds alone (the mutants)
 for (const [sjlj, cap, max, simd] of builds)
   execFileSync('make', ['-s', '-f', path.join(top, 'tests/image/wasm.mk'), `OUT=${dir}`, `SJLJ=${sjlj}`, `SIMD=${simd}`, ...(cap ? [`CAP=${cap}`] : []), ...(max ? [`MAXMEM=${max}`] : []), 'all'], { stdio: 'inherit' });
 
@@ -83,20 +83,22 @@ try {
         // Each JPEG case, at its box and at a box that keeps it whole (scale 8/8), with the C routines and with the SIMD ones, for
         // the module's options and for the ones it never sets (ifast IDCT, merged upsampling, both): the same status and the
         // same image, to the byte. The C and SIMD runs are the same module, one dispatch off and on.
-        let n = 0, bad2 = 0;
+        let n = 0, bad2 = 0, seen = 0;
+        const need2 = 1 << 10 | 1 << 7 | 1 << 8;
         for (const [cname, file, bw, bh, want] of cases) {
           if (!cname.startsWith('jpeg-') || want.startsWith('STATUS') || cname.endsWith('-16mp') || cname.startsWith('jpeg-p12')) continue;
           for (const mode of [0, 1, 2, 3]) for (const box of [+bw, 4096]) {
             const c = await b.evaluate(`hashRun(${JSON.stringify(url(file))}, ${box}, ${box}, 1, ${mode})`);
             const s = await b.evaluate(`hashRun(${JSON.stringify(url(file))}, ${box}, ${box}, 0, ${mode})`);
-            n++;
+            n++; seen |= s.wired;
+            if (c.wired !== 0) { bad2++; console.log(`FAIL ${name}: ${cname} box ${box} mode ${mode}: the C run wired SIMD steps (${c.wired.toString(2)}), so it was not libjpeg's C code`); }
+            if (s.status === 0 && s.wired === 0) { bad2++; console.log(`FAIL ${name}: ${cname} box ${box} mode ${mode}: the SIMD run wired no step`); }
             if (c.status !== s.status || c.hash !== s.hash || c.w !== s.w || c.h !== s.h) { bad2++; console.log(`FAIL ${name}: ${cname} box ${box} mode ${mode}: C ${JSON.stringify(c)}, SIMD ${JSON.stringify(s)}`); }
           }
         }
         fails += bad2;
         ok(bad2 === 0 && n > 0, `${name}: ${n} runs (every JPEG case x box x ifast/merged options) are equal, SIMD against libjpeg's C routines, to the byte`);
-        const w2 = await b.evaluate('X.wired()'), need2 = 1 << 10 | 1 << 7 | 1 << 8;
-        ok((w2 & need2) === need2, `${name}: the ifast IDCT and both merged upsamplers were wired by those runs`, `wired ${w2.toString(2)}`);
+        ok((seen & need2) === need2, `${name}: the ifast IDCT and both merged upsamplers were wired by those runs`, `wired ${seen.toString(2)}`);
       }
     } else {
       const p12p = cases.find((c) => c[0] === 'jpeg-p12-progressive'), small = cases.find((c) => c[0] === 'jpeg-420');

@@ -25,6 +25,9 @@ RESIZE = ['tools/resize_ban.sh']
 IMG = ['env', 'IMAGE_BIG=0', 'IMAGE_WASM=0', 'tests/image/run.sh']   # the image module, native, small inputs
 IMGBIG = ['env', 'IMAGE_WASM=0', 'tests/image/run.sh']               # with the big inputs (budget, peaks)
 IMGW = ['env', 'IMAGE_BIG=0', 'tests/image/run.sh']                  # and in wasm, both ways out (tools/image.mjs)
+# the SIMD build alone (docs/image-simd.md), in Chrome, on the oracle's files that a tests/image/run.sh run left in the real tree
+# (so one worker: the wasm builds go there too); WASM_CC, CHROME and CHROME_ARGS come from the caller's environment
+IMGSIMD = ['env', 'IMAGE_SIMD=simde', 'IMAGE_SIMD_ONLY=1', 'IMAGE_EH=0', 'node', 'tools/image.mjs', str(top / 'tests/out/image')]
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -758,6 +761,19 @@ M = [
   ('ban-src', 'src/cdom_file.c', 'void cd_file_read_cb(', '/* resizeWidth */\nvoid cd_file_read_cb(', RESIZE, 'FAIL resize ban: src/cdom_file.c'),
   ('ban-mk', 'cdom.mk', 'CDOM_OPT ?= -Oz\n', 'CDOM_OPT ?= -Oz\n# drawImage(img, 0, 0, w, h)\n', RESIZE, 'FAIL resize ban: cdom.mk'),
   ('ban-tools', 'tools/minshim.mjs', "import fs from 'node:fs';", "import fs from 'node:fs';\nconst q = { imageSmoothingQuality: 'low' };", RESIZE, 'FAIL resize ban: tools/minshim.mjs'),
+  # the image module's SIMD build: libjpeg-turbo's NEON routines over SIMDe (tests/image/run.sh with IMAGE_SIMD=simde; one worker, -j 1)
+  ('simd-idct-2x2', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jidctred-neon.c', '#define F_3_624  29692', '#define F_3_624  29693', IMGSIMD, 'FAIL wasm_js_simde: every case'),
+  ('simd-idct-4x4', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jidctred-neon.c', '#define F_1_451  11893', '#define F_1_451  11894', IMGSIMD, 'FAIL wasm_js_simde: every case'),
+  ('simd-idct-islow', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jidctint-neon.c', '#define F_1_501  12299', '#define F_1_501  12300', IMGSIMD, 'FAIL wasm_js_simde: every case'),
+  ('simd-idct-ifast', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jidctfst-neon.c', '#define F_0_414  13568', '#define F_0_414  13569', IMGSIMD, 'FAIL wasm_js_simde: every case'),
+  ('simd-ycc', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jdcolor-neon.c', '#define F_1_402  22971  /*', '#define F_1_402  22972  /*', IMGSIMD, 'FAIL wasm_js_simde: every case'),
+  ('simd-merged', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jdmerge-neon.c', '#define F_1_772  29033  /*', '#define F_1_772  29034  /*', IMGSIMD, ', SIMD {'),
+  ('simd-h2v2-fancy', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jdsample-neon.c', 'const uint16x8_t seven_u16 = vdupq_n_u16(7);', 'const uint16x8_t seven_u16 = vdupq_n_u16(6);', IMGSIMD, 'FAIL wasm_js_simde: every case'),
+  ('simd-dispatch-4x4-is-2x2', 'src/cdom_image_jsimd.c', 'idct_4x4_simd = jsimd_idct_4x4_neon;', 'idct_4x4_simd = jsimd_idct_2x2_neon;', IMGSIMD, 'FAIL wasm_js_simde: every case'),
+  ('simd-dispatch-unwired', 'src/cdom_image_jsimd.c', '  cd_image_simd_wired |= W_IDCT_ISLOW;\n  return JSIMD_NEON;', '  return JSIMD_NONE;', IMGSIMD, 'the cases wired the NEON steps'),
+  ('simd-dispatch-merged-h2v1', 'src/cdom_image_jsimd.c', 'SET_SIMD_EXTRGB_MERGED_UPSAMPLER(h2v1, neon);', 'SET_SIMD_EXTRGB_MERGED_UPSAMPLER(h2v2, neon);', IMGSIMD, ', SIMD {'),
+  ('simd-off-ignored', 'src/cdom_image_jsimd.c', 'sizeof(JDIMENSION) == 4 && !SIMD_OFF)', 'sizeof(JDIMENSION) == 4)', IMGSIMD, 'the C run wired SIMD steps'),
+  ('simd-mode-ignored', 'src/cdom_image_jpeg.c', '  if (cd_image_simd_test_mode & 1) c->dct_method = JDCT_IFAST;\n', '', IMGSIMD, 'the ifast IDCT and both merged'),
   ('encode-quality-unchecked', 'src/cdom.c', '|| y + h > H || quality > 100) __builtin_trap();', '|| y + h > H) __builtin_trap();', UNIT, "FAIL cd_encode_image's quality"),
 ]
 
