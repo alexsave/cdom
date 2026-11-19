@@ -2,8 +2,7 @@
  * and C reads the value only when an input event says it changed. Nothing is written back into the field,
  * so there is no value to keep in sync and no cursor to move. The greeting and the count are derived from
  * the value in the handler, the one place the value changes. */
-#include "cdom.h"
-#include <string.h>
+#include "cdom_ui.h"
 
 
 /* The field's value is copied out only for the length of one handler. A value longer than this is cut to
@@ -34,21 +33,22 @@ static void on_input(const cd_event_rec *, void *) {
   if (n == 0) {
     cd_set_text_node(greeting_text, "Hello, stranger!");
   } else {
-    char greeting[7 + NAME_CAP + 1];
-    memcpy(greeting, "Hello, ", 7);
-    memcpy(greeting + 7, name, n);
-    greeting[7 + n] = '!';
-    /* cd_tmp: the greeting is bytes with a length and no terminator, and it is read when it is used. */
-    cd_set_text_node(greeting_text, cd_tmp(greeting, 8 + n));
+    /* cd_buf appends pieces to a buffer, and cd_tmp hands the bytes (a length, no terminator) to the one
+     * call that reads them. */
+    char greeting_room[7 + NAME_CAP + 1];
+    cd_buf greeting = cd_buf_in(greeting_room, sizeof greeting_room);
+    cd_buf_putz(&greeting, "Hello, ");
+    cd_buf_put(&greeting, name, n);
+    cd_buf_putz(&greeting, "!");
+    cd_set_text_node(greeting_text, cd_tmp(greeting.p, greeting.len));
   }
 
   uint32_t chars = characters_in(name, n);
-  char count[24 + 12];
-  uint32_t digits = cd_fmt(count, (int32_t)chars, 0, CD_UNIT_NONE);
-  const char *word = chars == 1 ? " character" : " characters";
-  uint32_t word_len = (uint32_t)strlen(word);
-  memcpy(count + digits, word, word_len);
-  cd_set_text_node(count_text, cd_tmp(count, digits + word_len));
+  char count_room[32];
+  cd_buf count = cd_buf_in(count_room, sizeof count_room);
+  cd_buf_u64(&count, chars);
+  cd_buf_putz(&count, chars == 1 ? " character" : " characters");
+  cd_set_text_node(count_text, cd_tmp(count.p, count.len));
 }
 
 /* The page's CSS is src/app.css. The build puts every .css file under src/ in a <style> in the page's
