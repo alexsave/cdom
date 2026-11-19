@@ -17,7 +17,14 @@
 #   CDOM_NET_SRC, CDOM_STORE_SRC, CDOM_RANDOM_SRC, CDOM_AUDIO_SRC, CDOM_URL_SRC, CDOM_LOCALE_SRC,
 #   CDOM_SHARE_SRC, CDOM_FONTS_SRC, CDOM_UI_SRC, CDOM_FILE_SRC, CDOM_JOB_SRC
 #                 one optional module each (src/cdom_<name>.h), for an app's own rules (APP_MODULES below
-#                 adds them to the APP_WASM rule)
+#                 adds them to the APP_WASM rule); a module's list may name several files
+#   CDOM_<NAME>_PARTS, CDOM_<NAME>_<PART>_SRC, CDOM_<NAME>_<PART>_CFLAGS, CDOM_<NAME>_DEPS, CDOM_<NAME>_LDFLAGS
+#                 a module whose files need flags of their own (third-party code built with -w and its own
+#                 -I, say) names its parts; each part's files are compiled apart, as objects, with
+#                 $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) and then the part's flags, so a part's -I never
+#                 reaches the app's files and an app's -Wall -Werror still links the module. Its objects go
+#                 to $(APP_WASM).cdom/<name>/<part>/, rebuilt when a file of CDOM_<NAME>_DEPS changes, and
+#                 the link adds CDOM_<NAME>_LDFLAGS. Within a part no two files share a base name.
 #   CDOM_SHIM     the minified shim (shim/cdom.min.js) a page inlines
 #   CDOM_OPT      the optimization level of the APP_WASM rule (-Oz unless the app sets it)
 #   WASM_CC       a clang that targets wasm32 (Homebrew's llvm on macOS unless set, since Apple's clang does not;
@@ -182,17 +189,40 @@ CDOM_MODULES := net store random audio url locale share fonts ui file job
 # makefile is read, so it sees APP_* wherever they were set: for the file APP_WASM (APP_PAGE) names, the
 # prerequisites are its sources, and the APP_MODULES check runs there; for any other .wasm (.html) it is
 # a file nothing makes, so the rule does not apply and the app's own rules, or none, do.
-cdom_mk_app_src = $(APP_SRC) $(CDOM_SRC) $(addprefix $(CDOM)/src/cdom_,$(addsuffix .c,$(APP_MODULES)))
+# cdom_mk_up: a name in capitals, for the variables a module's name keys (CDOM_<NAME>_SRC); strip takes off the spaces
+# the continued lines put in.
+cdom_mk_up = $(strip $(subst a,A,$(subst b,B,$(subst c,C,$(subst d,D,$(subst e,E,$(subst f,F,$(subst g,G,$(subst h,H,$(subst i,I,\
+  $(subst j,J,$(subst k,K,$(subst l,L,$(subst m,M,$(subst n,N,$(subst o,O,$(subst p,P,$(subst q,Q,$(subst r,R,$(subst s,S,\
+  $(subst t,T,$(subst u,U,$(subst v,V,$(subst w,W,$(subst x,X,$(subst y,Y,$(subst z,Z,$(1))))))))))))))))))))))))))))
+cdom_mk_app_src = $(APP_SRC) $(CDOM_SRC) $(foreach m,$(APP_MODULES),$(CDOM_$(call cdom_mk_up,$(m))_SRC))
 cdom_mk_unknown = $(filter-out $(CDOM_MODULES),$(APP_MODULES))
-cdom_mk_known = $(if $(cdom_mk_unknown),$(error cdom.mk: APP_MODULES names $(cdom_mk_unknown), not a cdom module ($(CDOM_MODULES))))
+cdom_mk_known = $(if $(cdom_mk_unknown),$(error cdom.mk: APP_MODULES names $(cdom_mk_unknown), not a cdom module ($(CDOM_MODULES))))$(cdom_mk_unique)
+# The modules' parts: each file of CDOM_<NAME>_<PART>_SRC is the object $(APP_WASM).cdom/<name>/<part>/<base>.cdom.o.
+cdom_mk_part_src = $(CDOM_$(call cdom_mk_up,$(1))_$(call cdom_mk_up,$(2))_SRC)
+cdom_mk_objs = $(foreach m,$(APP_MODULES),$(foreach p,$(CDOM_$(call cdom_mk_up,$(m))_PARTS),\
+  $(foreach f,$(call cdom_mk_part_src,$(m),$(p)),$(APP_WASM).cdom/$(m)/$(p)/$(basename $(notdir $(f))).cdom.o)))
+cdom_mk_mod_deps = $(foreach m,$(APP_MODULES),$(CDOM_$(call cdom_mk_up,$(m))_DEPS))
+cdom_mk_mod_ldflags = $(foreach m,$(APP_MODULES),$(CDOM_$(call cdom_mk_up,$(m))_LDFLAGS))
+# cdom_mk_unique stops at a part that names two files of one base name (their objects would be one file).
+cdom_mk_dup = $(strip $(foreach f,$(1),$(if $(filter-out 1,$(words $(filter %/$(notdir $(f)) $(notdir $(f)),$(1)))),$(notdir $(f)))))
+cdom_mk_unique = $(foreach m,$(APP_MODULES),$(foreach p,$(CDOM_$(call cdom_mk_up,$(m))_PARTS),\
+  $(if $(call cdom_mk_dup,$(call cdom_mk_part_src,$(m),$(p))),$(error cdom.mk: part $(p) of module $(m) names two files called $(firstword $(call cdom_mk_dup,$(call cdom_mk_part_src,$(m),$(p))))))))
+# An object's module, part and source, from its path (the words of the path under $(APP_WASM).cdom/); the source
+# is empty for a .cdom.o that is no object of this app's modules.
+cdom_mk_obj_words = $(subst /, ,$(patsubst $(APP_WASM).cdom/%,%,$(1)))
+cdom_mk_obj_mod = $(word 1,$(call cdom_mk_obj_words,$(1)))
+cdom_mk_obj_part = $(word 2,$(call cdom_mk_obj_words,$(1)))
+cdom_mk_obj_src = $(if $(filter $(1),$(cdom_mk_objs)),$(firstword $(filter %/$(patsubst %.cdom.o,%,$(notdir $(1))).c \
+  $(patsubst %.cdom.o,%,$(notdir $(1))).c,$(call cdom_mk_part_src,$(call cdom_mk_obj_mod,$(1)),$(call cdom_mk_obj_part,$(1))))))
+cdom_mk_obj_flags = $(CDOM_$(call cdom_mk_up,$(call cdom_mk_obj_mod,$(1)))_$(call cdom_mk_up,$(call cdom_mk_obj_part,$(1)))_CFLAGS)
 # $(call cdom_mk_for,name,target,prerequisites): the prerequisites when target is the file name holds,
 # else one that nothing makes.
 cdom_mk_for = $(if $(filter $(2),$(1)),$(3),$(2).cdom-mk-none)
 .SECONDEXPANSION:
-%.wasm: $$(call cdom_mk_for,$$(APP_WASM),$$@,$$(cdom_mk_known)$$(cdom_mk_app_src) $$(CDOM_HEADERS) $$(CDOM_LITS))
+%.wasm: $$(call cdom_mk_for,$$(APP_WASM),$$@,$$(cdom_mk_known)$$(cdom_mk_app_src) $$(cdom_mk_objs) $$(CDOM_HEADERS) $$(CDOM_LITS))
 	@mkdir -p $(@D)
 	@$(cdom_mk_toolchain)
-	$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS) $(APP_LDFLAGS) -o $@.linked $(cdom_mk_app_src)
+	$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS) $(cdom_mk_mod_ldflags) $(APP_LDFLAGS) -o $@.linked $(cdom_mk_app_src) $(cdom_mk_objs)
 	$(call cdom_lits,$@.linked,$@)
 	@rm -f $@.linked
 
@@ -205,6 +235,13 @@ cdom_mk_job_src = $(APP_JOB_$(call cdom_mk_job_name,$(1))_SRC) $(CDOM)/src/cdom.
 	@mkdir -p $(@D)
 	@$(cdom_mk_toolchain)
 	$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) -DCDOM_HEAP_ONLY $(APP_JOB_CFLAGS) $(CDOM_LDFLAGS) $(APP_JOB_LDFLAGS) -o $@ $(call cdom_mk_job_src,$@)
+
+# A module part's object (the variables above): its file, compiled with the app's flags and then the part's. For
+# any other .cdom.o the prerequisite is a file nothing makes, so this rule does not apply.
+%.cdom.o: $$(or $$(call cdom_mk_obj_src,$$@),$$@.cdom-mk-none) $$(CDOM_HEADERS) $$(cdom_mk_mod_deps)
+	@mkdir -p $(@D)
+	@$(cdom_mk_toolchain)
+	$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(call cdom_mk_obj_flags,$@) -c -o $@ $(call cdom_mk_obj_src,$@)
 
 # The page: APP_PAGE_SRC or the default page, the module it bundles (unless APP_WASM_SEPARATE), else the
 # URL its /*CDOM_WASM*/ names, and the default page's title.
@@ -251,5 +288,5 @@ cdom_mk_toolchain = printf 'void f(void) {}\n' | $(WASM_CC) --target=wasm32 -nos
 # is newer (so the list, which the tool brings up to date as make starts, would go stale), and it would
 # remove the list after every page it writes, so the next make would always write the page again. Nothing
 # builds this target, and one that starts with a dot is never the default goal.
-.cdom-mk-sources: $$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(CDOM_LITS)) \
+.cdom-mk-sources: $$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(cdom_mk_objs) $$(CDOM_LITS)) \
   $$(if $$(APP_PAGE),$$(cdom_mk_page_src) $$(CDOM_PAGE_TOOL) $$(APP_PAGE).csslist)
