@@ -3,7 +3,8 @@
 // its /*CDOM_TITLE*/.
 //
 //   cdpage --page in.html --out out.html --shim cdom.min.js --lits app.wasm.lits
-//          [--wasm app.wasm | --wasm-url URL] [--title TITLE] [--css-dir DIR]
+//          [--wasm app.wasm [--simd-wasm app.simd.wasm] | --wasm-url URL [--simd-wasm-url URL]]
+//          [--title TITLE] [--css-dir DIR]
 //   cdpage --css-list DIR out.csslist
 //
 // The stylesheets (--css-dir, cdom.mk passes src): every file whose name ends in .css under DIR, in any
@@ -32,7 +33,10 @@
 //   needs a marker for it. A tag is seen only when it is whole on one line;
 // - /*CDOM_WASM*/, anywhere in a line (cdom.start's first argument), which becomes the module as a
 //   JavaScript string: with --wasm, a data:application/wasm;base64 URL of that file; with --wasm-url, that
-//   URL; with neither, the marker is an error;
+//   URL; with neither, the marker is an error. With a SIMD twin as well (--simd-wasm, --simd-wasm-url: cdom.mk's
+//   APP_SIMD), it becomes the pair ["<the module>", "<the twin>"], scalar first, in the same form, from which the shim
+//   starts the one this browser runs (README.md, "Starting an app"); a page with no /*CDOM_WASM*/ is then refused, since
+//   it would never start the twin;
 // - with --title, every /*CDOM_TITLE*/, which becomes the title escaped for HTML.
 // Refused, with nothing written: no /*CDOM_SHIM*/ line, a second one, the marker beside other text (it
 // would be lost with the line), no <script tag before it; a second /*CDOM_WASM*/; and, bundling, a page
@@ -415,7 +419,7 @@ static void css_list(const char *dir, const char *out) {
 
 /* ---- the page ---- */
 typedef struct {
-  const char *page, *out, *shim, *lits, *wasm, *wasm_url, *title, *css_dir;
+  const char *page, *out, *shim, *lits, *wasm, *wasm_url, *simd_wasm, *simd_wasm_url, *title, *css_dir;
 } Args;
 
 typedef struct { const uint8_t *p; size_t n; } Tag;
@@ -451,8 +455,22 @@ static int loads_in(const uint8_t *p, size_t n, const uint8_t **url, size_t *len
   return 0;
 }
 
+/* One module at the CDOM_WASM marker: its URL, or the file bundled as a data:application/wasm;base64 URL. */
+static void module_at(Buf *o, const char *file, const char *url) {
+  if (url) {
+    js_string(o, url);
+    return;
+  }
+  Buf mod = {0};
+  if (!slurp(file, &mod) || !mod.n) die("%s: cannot read the module to bundle %s", page_name, file);
+  bstr(o, "\"data:application/wasm;base64,");
+  base64(o, mod.p, mod.n);
+  bbyte(o, '"');
+  free(mod.p);
+}
+
 static void build(const Args *a, Buf *o) {
-  Buf src = {0}, lits = {0}, shim = {0}, mod = {0};
+  Buf src = {0}, lits = {0}, shim = {0};
   if (!slurp(a->page, &src)) die("%s: cannot read the page", a->page);
   /* The stylesheets are found and checked first: a fault in one is named before the page's. */
   Sheets sheets = discover(a->css_dir);
@@ -506,13 +524,14 @@ static void build(const Args *a, Buf *o) {
         html_text(o, a->title);
         i += sizeof TITLE - 1;
       } else if (l + i == w) {
-        if (a->wasm_url) js_string(o, a->wasm_url);
-        else if (!a->wasm) die("%s:%zu: /*CDOM_WASM*/, and no module to put there", page_name, lineno);
-        else {
-          if (!slurp(a->wasm, &mod) || !mod.n) die("%s: cannot read the module to bundle %s", page_name, a->wasm);
-          bstr(o, "\"data:application/wasm;base64,");
-          base64(o, mod.p, mod.n);
-          bbyte(o, '"');
+        if (!a->wasm_url && !a->wasm) die("%s:%zu: /*CDOM_WASM*/, and no module to put there", page_name, lineno);
+        int pair = a->simd_wasm || a->simd_wasm_url;
+        if (pair) bbyte(o, '[');
+        module_at(o, a->wasm, a->wasm_url);
+        if (pair) {
+          bbyte(o, ',');
+          module_at(o, a->simd_wasm, a->simd_wasm_url);
+          bbyte(o, ']');
         }
         i += sizeof WASM - 1;
       } else bbyte(o, l[i++]);
@@ -521,6 +540,8 @@ static void build(const Args *a, Buf *o) {
   }
   if (marks != 1)
     die("%s: no /*CDOM_SHIM*/ line (a <script> whose line is only the marker, where the shim goes)", page_name);
+  if ((a->simd_wasm || a->simd_wasm_url) && !wasms)
+    die("%s: no /*CDOM_WASM*/ for the module and its SIMD twin (APP_SIMD := 1: cdom.start(/*CDOM_WASM*/, ...))", page_name);
   if (a->wasm && !wasms) {
     if (have_loads)
       die("%s: this page loads %s; set APP_WASM_SEPARATE := 1, or start with the bundled module (the /*CDOM_WASM*/ marker)",
@@ -540,7 +561,8 @@ static void build(const Args *a, Buf *o) {
 static void usage(void) __attribute__((noreturn));
 static void usage(void) {
   die("usage: cdpage --page in.html --out out.html --shim cdom.min.js --lits app.wasm.lits\n"
-      "              [--wasm app.wasm | --wasm-url URL] [--title TITLE] [--css-dir DIR]\n"
+      "              [--wasm app.wasm [--simd-wasm app.simd.wasm] | --wasm-url URL [--simd-wasm-url URL]]\n"
+      "              [--title TITLE] [--css-dir DIR]\n"
       "       cdpage --css-list DIR out.csslist");
 }
 
@@ -555,11 +577,14 @@ int main(int argc, char **argv) {
     const char *f = argv[i];
     const char **slot = !strcmp(f, "--page") ? &a.page : !strcmp(f, "--out") ? &a.out : !strcmp(f, "--shim") ? &a.shim
       : !strcmp(f, "--lits") ? &a.lits : !strcmp(f, "--wasm") ? &a.wasm : !strcmp(f, "--wasm-url") ? &a.wasm_url
+      : !strcmp(f, "--simd-wasm") ? &a.simd_wasm : !strcmp(f, "--simd-wasm-url") ? &a.simd_wasm_url
       : !strcmp(f, "--title") ? &a.title : !strcmp(f, "--css-dir") ? &a.css_dir : 0;
     if (!slot || i + 1 >= argc || *slot) usage();
     *slot = argv[++i];
   }
-  if (!a.page || !a.out || !a.shim || !a.lits || (a.wasm && a.wasm_url)) usage();
+  /* A twin goes with a module of its own form: bundled with bundled, a URL with a URL. */
+  if (!a.page || !a.out || !a.shim || !a.lits || (a.wasm && a.wasm_url) || (a.simd_wasm && !a.wasm) || (a.simd_wasm_url && !a.wasm_url))
+    usage();
   page_name = a.page;
   Buf o = {0};
   build(&a, &o);

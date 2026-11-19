@@ -57,5 +57,9 @@ wasm -O2 "$here/out/host.wasm" "$here/host.c" "$here/../src/cdom.c" "$here/../sr
 page "$here/host.html" "$here/out/host.html" "$here/out/host.wasm"
 wasm -O2 "$here/out/legacy.wasm" "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/cdom_image_sjlj.c" -DCDOM_IMAGE_SJLJ_JS "$here/../src/mini.c"
 node "$legacy" app "$here/out/legacy.wasm" "$here/out/legacy.wasm.js"
+# The page starts the pair [legacy.wasm, legacy.simd.wasm], as an APP_SIMD page does: the twin is the same sources with
+# -msimd128, the same string table (as cdom.mk requires), and the fallback takes the scalar one's wasm2js build.
+wasm -O2 "$here/out/legacy.simd.wasm" -msimd128 "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/cdom_image_sjlj.c" -DCDOM_IMAGE_SJLJ_JS "$here/../src/mini.c"
+cmp "$here/out/legacy.wasm.lits" "$here/out/legacy.simd.wasm.lits"
 page "$here/legacy.html" "$here/out/legacy.shim.html" "$here/out/legacy.wasm"
 node "$legacy" page "$here/out/legacy.shim.html" "$here/out/legacy.html"
