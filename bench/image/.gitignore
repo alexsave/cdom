@@ -8,3 +8,4 @@ build-js-o3/
 build-js-mix/
 build-native/
 build-prof/
+build-simd/

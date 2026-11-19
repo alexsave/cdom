@@ -71,7 +71,11 @@
 /* #undef D_ARITH_CODING_SUPPORTED */
 
 /* Use accelerated SIMD routines. */
+#ifdef CDOM_JSIMD
+#define WITH_SIMD 1
+#else
 /* #undef WITH_SIMD */
+#endif
 
 #define SIMD_ARCHITECTURE  NONE
 

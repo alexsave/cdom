@@ -54,31 +54,6 @@ static int next_chunk(const uint8_t *p, uint32_t len, uint64_t *at, const uint8_
   return 1;
 }
 
-static int iabs(int v) { return v < 0 ? -v : v; }
-static uint8_t paeth(int a, int b, int c) {
-  int pa = iabs(b - c), pb = iabs(a - c), pc = iabs(a + b - 2 * c);
-  return (uint8_t)(pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
-}
-
-/* Undoes row filter f on cur (n bytes, bpp bytes a pixel) against prev (the row above, all zero for the first). */
-static int unfilter(uint32_t f, uint8_t *cur, const uint8_t *prev, uint32_t n, uint32_t bpp) {
-  switch (f) {
-    case 0: break;
-    case 1: for (uint32_t i = bpp; i < n; i++) cur[i] = (uint8_t)(cur[i] + cur[i - bpp]); break;
-    case 2: for (uint32_t i = 0; i < n; i++) cur[i] = (uint8_t)(cur[i] + prev[i]); break;
-    case 3:
-      for (uint32_t i = 0; i < bpp && i < n; i++) cur[i] = (uint8_t)(cur[i] + (prev[i] >> 1));
-      for (uint32_t i = bpp; i < n; i++) cur[i] = (uint8_t)(cur[i] + ((cur[i - bpp] + prev[i]) >> 1));
-      break;
-    case 4:
-      for (uint32_t i = 0; i < bpp && i < n; i++) cur[i] = (uint8_t)(cur[i] + prev[i]);
-      for (uint32_t i = bpp; i < n; i++) cur[i] = (uint8_t)(cur[i] + paeth(cur[i - bpp], prev[i], prev[i - bpp]));
-      break;
-    default: return 0;
-  }
-  return 1;
-}
-
 /* One channel composited on white with alpha a. */
 static uint8_t over(uint32_t c, uint32_t a) { return (uint8_t)((c * a + 255u * (255u - a) + 127u) / 255u); }
 
@@ -95,8 +70,9 @@ static void to_rgba(const fmt *f, const uint8_t *r, uint8_t *out) {
   uint32_t w = f->w;
   switch (f->ctype) {
     case 2:
+      if (!f->key) { cd_image_rgb_to_rgba(r, out, w); break; }
       for (uint32_t x = 0; x < w; x++, r += 3, out += 4) {
-        if (f->key && r[0] == f->key_rgb[0] && r[1] == f->key_rgb[1] && r[2] == f->key_rgb[2]) out[0] = out[1] = out[2] = 255;
+        if (r[0] == f->key_rgb[0] && r[1] == f->key_rgb[1] && r[2] == f->key_rgb[2]) out[0] = out[1] = out[2] = 255;
         else { out[0] = r[0]; out[1] = r[1]; out[2] = r[2]; }
         out[3] = 255;
       }
@@ -204,7 +180,7 @@ uint32_t cd_image_png_resize(const uint8_t *p, uint32_t len, const cd_image_info
           memcpy(cur + have, s, take);
           have += (uint32_t)take; s += take; left -= take;
           if (have == stride + 1) {
-            if (!unfilter(cur[0], cur + 1, prev + 1, stride, bpp)) { st = CD_IMAGE_CORRUPT; break; }
+            if (!cd_image_unfilter(cur[0], cur + 1, prev + 1, stride, bpp)) { st = CD_IMAGE_CORRUPT; break; }
             to_rgba(&x->f, cur + 1, px);
             cd_image_scaler_row(&x->sc, px);
             uint8_t *t = cur; cur = prev; prev = t;
