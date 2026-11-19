@@ -16,6 +16,11 @@
 #   CDOM_SRC      the core sources every app links (cdom.c, and mini.c, the program's libc)
 #   CDOM_NET_SRC, CDOM_STORE_SRC, CDOM_RANDOM_SRC, CDOM_AUDIO_SRC, CDOM_URL_SRC, CDOM_LOCALE_SRC,
 #   CDOM_SHARE_SRC, CDOM_FONTS_SRC, CDOM_UI_SRC, CDOM_FILE_SRC
+#   CDOM_IMAGE_PARTS (own vendor miniz sjlj) and their _SRC and _CFLAGS: the image module (src/cdom_image.h),
+#                 which is parts only: cdom's files, libjpeg-turbo, miniz's inflate, and the setjmp file
+#   CDOM_IMAGE_SJLJ  how the image module leaves a fatal libjpeg error (src/cdom_image_sjlj.c): js (the default,
+#                 a try and catch in the shim; plain wasm, every browser cdom runs in, and wasm2js) or eh (wasm
+#                 exception handling: Chrome 95, Firefox 100, Safari 15.2, and no wasm2js)
 #                 one optional module each (src/cdom_<name>.h), for an app's own rules (APP_MODULES below
 #                 adds them to the APP_WASM rule); a module's list may name several files
 #   CDOM_<NAME>_PARTS, CDOM_<NAME>_<PART>_SRC, CDOM_<NAME>_<PART>_CFLAGS, CDOM_<NAME>_DEPS, CDOM_<NAME>_LDFLAGS
@@ -36,7 +41,7 @@
 #
 #   APP_WASM, APP_SRC, APP_MODULES, APP_CFLAGS, APP_LDFLAGS
 #                 the app's module: $(APP_WASM) is built from $(APP_SRC), $(CDOM_SRC) and the optional
-#                 modules APP_MODULES names (net store random audio url locale share fonts ui file: their
+#                 modules APP_MODULES names (net store random audio url locale share fonts ui file image: their
 #                 CDOM_<NAME>_SRC) with $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS) $(APP_LDFLAGS)
 #   APP_PAGE, APP_PAGE_SRC, APP_TITLE, APP_WASM_SEPARATE, APP_WASM_URL
 #                 the app's page: $(APP_PAGE) is $(APP_PAGE_SRC) (or, unset, the default page below) with
@@ -135,6 +140,27 @@ CDOM_SHARE_SRC  := $(CDOM)/src/cdom_share.c
 CDOM_FONTS_SRC  := $(CDOM)/src/cdom_fonts.c
 CDOM_UI_SRC     := $(CDOM)/src/cdom_ui.c
 CDOM_FILE_SRC   := $(CDOM)/src/cdom_file.c
+# The image module: four parts, so libjpeg-turbo and miniz (third_party/, each with its README) build with -w and
+# their own -I, cdom's three files with the app's flags and only the vendor headers' directories (as -isystem),
+# and the one file that calls setjmp with the flags of the CDOM_IMAGE_SJLJ way.
+CDOM_IMAGE_SJLJ ?= js
+CDOM_IMAGE_LJT  := $(CDOM)/third_party/libjpeg-turbo-3.2.1/src
+CDOM_IMAGE_MZ   := $(CDOM)/third_party/miniz-3.1.2
+CDOM_IMAGE_SRC  :=
+CDOM_IMAGE_PARTS := own vendor miniz sjlj
+CDOM_IMAGE_OWN_SRC := $(CDOM)/src/cdom_image.c $(CDOM)/src/cdom_image_jpeg.c $(CDOM)/src/cdom_image_png.c
+CDOM_IMAGE_OWN_CFLAGS := -isystem $(CDOM_IMAGE_LJT) -isystem $(CDOM_IMAGE_MZ) -DNO_GETENV -DNO_PUTENV
+CDOM_IMAGE_VENDOR_SRC := $(addprefix $(CDOM_IMAGE_LJT)/,jcomapi.c jdapimin.c jdhuff.c jdinput.c jdmarker.c jdmaster.c \
+  jdphuff.c jmemmgr.c jpeg_nbits.c $(addprefix wrapper/,$(addsuffix -8.c,jdapistd jdcoefct jdcolor jddctmgr jdmainct \
+  jdpostct jdsample jidctint jidctred jutils)))
+CDOM_IMAGE_VENDOR_CFLAGS := -w -I$(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV
+CDOM_IMAGE_MINIZ_SRC := $(CDOM_IMAGE_MZ)/tinfl.c
+CDOM_IMAGE_MINIZ_CFLAGS := -w -I$(CDOM_IMAGE_MZ) -include $(CDOM)/src/cdom_image_miniz.h
+CDOM_IMAGE_SJLJ_SRC = $(CDOM)/src/cdom_image_sjlj.c $(if $(filter eh,$(CDOM_IMAGE_SJLJ)),$(CDOM)/src/cdom_image_sjlj_eh.c)
+cdom_mk_sjlj_js := -DCDOM_IMAGE_SJLJ_JS
+cdom_mk_sjlj_eh := -DCDOM_IMAGE_SJLJ_EH -mexception-handling -mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=true
+CDOM_IMAGE_SJLJ_CFLAGS = $(or $(cdom_mk_sjlj_$(CDOM_IMAGE_SJLJ)),$(error cdom.mk: CDOM_IMAGE_SJLJ is $(CDOM_IMAGE_SJLJ), not js or eh))
+CDOM_IMAGE_DEPS := $(wildcard $(CDOM_IMAGE_LJT)/*.h $(CDOM_IMAGE_LJT)/*.c) $(CDOM_IMAGE_MZ)/tinfl.h
 CDOM_HEADERS    := $(wildcard $(CDOM)/src/*.h $(CDOM)/src/libc/*.h)
 CDOM_SHIM       := $(CDOM)/shim/cdom.min.js
 
@@ -169,7 +195,7 @@ cdom_mk_page = $(CDOM_PAGE_TOOL) --page $(call cdom_mk_q,$(1)) --out $(call cdom
   --lits $(call cdom_mk_q,$(6))$(if $(3), --wasm $(call cdom_mk_q,$(3)))$(if $(4), --wasm-url $(call cdom_mk_q,$(4)))$(if $(5), --title $(call cdom_mk_q,$(5))) \
   --css-dir src
 
-CDOM_MODULES := net store random audio url locale share fonts ui file
+CDOM_MODULES := net store random audio url locale share fonts ui file image
 
 # The APP_WASM and APP_PAGE rules. Their targets are the names APP_WASM and APP_PAGE hold, which an app
 # may set after this include, so they are pattern rules (%.wasm and %.html: APP_WASM ends in .wasm,

@@ -854,6 +854,23 @@ var cdom = (() => {
     reader.readAsArrayBuffer(file);
   }
 
+  // The image module's way out of a fatal libjpeg error (src/cdom_image_sjlj.c, CDOM_IMAGE_SJLJ := js):
+  // image_call runs C's body(ctx) (the export cd_image_run) in a try, and answers 1 when image_throw ended
+  // it, 0 when it returned; anything else thrown (a trap) goes on as it came.
+  const IMAGE_THROW = {};
+  function image_call(body, ctx) {
+    try {
+      exports.cd_image_run(body, ctx);
+      return 0;
+    } catch (e) {
+      if (e !== IMAGE_THROW) throw e;
+      return 1;
+    }
+  }
+  function image_throw() {
+    throw IMAGE_THROW;
+  }
+
   // A key/value store over IndexedDB (src/cdom_store.c): bytes in, bytes out, under keys C chooses.
   // A promise of an IndexedDB request's result.
   function promised(request) {
@@ -1366,7 +1383,7 @@ var cdom = (() => {
         listen, value, value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num,
         set_text, set_text_num, set_attr, set_class, style, style_num, encode, image_bytes, remove, free, move, clear,
         detach, attach, unlisten, hit, viewport, rect, blit, set, call, get, timer, timer_stop, raf, now, ws_open, ws_send, ws_close, ws_buffered, http, epoch, origin,
-        file_read,
+        file_read, image_call, image_throw,
         store_put, store_get, store_del,
         audio_load, audio_free, audio_play, audio_stop, audio_gain, audio_master, audio_state,
         random,

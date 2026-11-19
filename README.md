@@ -270,9 +270,29 @@ flowchart TB
 
 - `CDOM_CFLAGS` and `CDOM_LDFLAGS` are the flags every cdom module needs: wasm32 with no C library but cdom's (`src/libc`, `src/mini.c`), bulk memory, no entry point, the memory exported and the stack placed first.
 - `CDOM_SRC` is the core every app links, and the APP_WASM rule adds it.
-- `APP_MODULES` names the optional modules the app uses (`net`, `store`, `random`, `audio`, `url`, `locale`, `share`, `fonts`, `ui`, `file`, each `src/cdom_<name>.h`), and the rule links them; a name that is not a module stops make.
+- `APP_MODULES` names the optional modules the app uses (`net`, `store`, `random`, `audio`, `url`, `locale`, `share`, `fonts`, `ui`, `file`, `image`, each `src/cdom_<name>.h`), and the rule links them; a name that is not a module stops make.
   A module may be several files, and a module with third-party code compiles it apart, as objects with flags of its own (`-w` and a private `-I`), so an app's `-Wall -Werror` still links it and the app's files never see that code's headers (cdom.mk, `CDOM_<NAME>_PARTS`).
 - `file` (`src/cdom_file.h`) brings a picked file's bytes into C memory: `cd_file_read_cb(input, index, max_bytes, fn, ctx)` (or `cd_file_read` with a token, to `cd_on_file`) answers once with a status and the bytes, valid until the callback returns; a file over `max_bytes` is refused from its size and never read.
+- `image` (`src/cdom_image.h`) decodes a JPEG or PNG in C and resizes it: `cd_image_resize(p, len, max_w, max_h, &rgba, &w, &h)` answers an RGBA block of the largest size inside the box, the aspect kept, never enlarged, the EXIF orientation applied, which the app frees with `cd_free`; `cd_image_probe` reads only the header.
+  A JPEG is decoded row by row at the smallest of libjpeg's scales that is still big enough, a PNG row by row, both into one streaming scaler (an exact area average), so what is held is the file, a few MB and the output, whatever the image's size; a progressive JPEG holds its coefficients too, within a budget (`CD_IMAGE_MEM_MAX`, 96 MiB).
+  Every allocation is `cd_alloc_try`, so a full heap is `CD_IMAGE_NO_ROOM`, never a trap; the other statuses are `NOT_IMAGE`, `TOO_BIG`, `UNSUPPORTED`, `CORRUPT` and `BAD_BOX`, and the app says what each means to its user.
+  The flow from a file input:
+
+  ```c
+  static void got(void *ctx, uint32_t status, const uint8_t *p, uint32_t len) {
+    uint8_t *rgba;
+    uint32_t w, h;
+    if (status != CD_FILE_OK || cd_image_resize(p, len, 1600, 1600, &rgba, &w, &h) != CD_IMAGE_OK) return; /* the app says why */
+    cd_encode_image(rgba, w, h, 4, "image/jpeg", 85, ENCODED);   /* answered to cd_on_encoded */
+    cd_free(rgba);
+  }
+  cd_file_read_cb(input, 0, 30000000, got, 0);   /* APP_MODULES += file image */
+  ```
+
+  It is libjpeg-turbo 3.2.1's decoder and miniz 3.1.2's inflate (`third_party/`, each directory's README has the version, the archive's sha256, the licence and every edit; `tools/third_party.py check` makes them again from the archives and compares).
+  **An app that ships it must say, in its documentation, "This software is based in part on the work of the Independent JPEG Group", and include miniz's MIT notice** (`third_party/miniz-3.1.2/LICENSE`); libjpeg-turbo's BSD notice is asked only of programs that include its TurboJPEG API, which is not here.
+  It adds 27.5 KB brotli to an app (JPEG 23.1, PNG 5.0; `bench/image/sizes/run.sh`), and nothing to an app that does not call it.
+  libjpeg leaves a fatal error with longjmp; `CDOM_IMAGE_SJLJ` picks how: `js` (the default: a try in the shim, every browser cdom runs in, wasm2js too) or `eh` (wasm exception handling: Chrome 95, Firefox 100, Safari 15.2); docs/image-design.md has both, and the numbers.
 - `ui` (`src/cdom_ui.h`) is shorthand an app would otherwise write itself: `cd_el`, `cd_el_id` and `cd_el_text`, `cd_button`, the `CD_ON_EVENT`, `CD_CTX_OF` and `CD_CTX_INDEX` macros, and `cd_buf`, a string builder over the caller's buffer with 64-bit numbers. Each call costs only when used.
 - `src/cdom_callbacks_only.h`, included after the other cdom headers, makes the token forms and the app-wide hooks a compile error (`#pragma GCC poison`), so an app or a library inside one uses only `cd_on` and the `_cb` forms. It costs no bytes.
 - Each module's source is also a variable (`CDOM_NET_SRC`, `CDOM_STORE_SRC` and so on) for an app that writes its own rule.
