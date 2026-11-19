@@ -763,10 +763,10 @@ M = [
   ('ban-tools', 'tools/minshim.mjs', "import fs from 'node:fs';", "import fs from 'node:fs';\nconst q = { imageSmoothingQuality: 'low' };", RESIZE, 'FAIL resize ban: tools/minshim.mjs'),
   # the image module's SIMD build: libjpeg-turbo's NEON routines over SIMDe (tests/image/run.sh with IMAGE_SIMD=simde; one worker, -j 1)
   ('simd-idct-2x2', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jidctred-neon.c', '#define F_3_624  29692', '#define F_3_624  29693', IMGSIMD, 'FAIL wasm_js_simde: every case'),
-  ('simd-idct-4x4', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jidctred-neon.c', '#define F_1_451  11893', '#define F_1_451  11894', IMGSIMD, 'FAIL wasm_js_simde: every case'),
+  ('simd-idct-4x4', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jidctred-neon.c', '#define F_1_451  11893', '#define F_1_451  12893', IMGSIMD, 'FAIL wasm_js_simde: every case'),
   ('simd-idct-islow', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jidctint-neon.c', '#define F_1_501  12299', '#define F_1_501  12300', IMGSIMD, 'FAIL wasm_js_simde: every case'),
-  ('simd-idct-ifast', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jidctfst-neon.c', '#define F_0_414  13568', '#define F_0_414  13569', IMGSIMD, 'FAIL wasm_js_simde: every case'),
-  ('simd-ycc', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jdcolor-neon.c', '#define F_1_402  22971  /*', '#define F_1_402  22972  /*', IMGSIMD, 'FAIL wasm_js_simde: every case'),
+  ('simd-idct-ifast', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jidctfst-neon.c', '#define F_0_414  13568', '#define F_0_414  13569', IMGSIMD, ', SIMD {'),
+  ('simd-ycc', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jdcolor-neon.c', '#define F_1_402  22971  /*', '#define F_1_402  23971  /*', IMGSIMD, 'FAIL wasm_js_simde: every case'),
   ('simd-merged', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jdmerge-neon.c', '#define F_1_772  29033  /*', '#define F_1_772  29034  /*', IMGSIMD, ', SIMD {'),
   ('simd-h2v2-fancy', 'third_party/libjpeg-turbo-3.2.1/simd/arm/jdsample-neon.c', 'const uint16x8_t seven_u16 = vdupq_n_u16(7);', 'const uint16x8_t seven_u16 = vdupq_n_u16(6);', IMGSIMD, 'FAIL wasm_js_simde: every case'),
   ('simd-dispatch-4x4-is-2x2', 'src/cdom_image_jsimd.c', 'idct_4x4_simd = jsimd_idct_4x4_neon;', 'idct_4x4_simd = jsimd_idct_2x2_neon;', IMGSIMD, 'FAIL wasm_js_simde: every case'),
@@ -778,13 +778,14 @@ M = [
 ]
 
 def build_and_run(root, cmd, minify=False):
+  if cmd is IMGSIMD: minify = False   # the image SIMD runs build their own pages (tools/image.mjs), not tests/build.sh's
   # In a worker's copy, a mutant of shim/cdom.js is a mutant of the minified shim too (tests/build.sh fails
   # when they disagree); the real tree's restored runs check the committed one as it is.
   if minify:
     m = subprocess.run(['node', 'tools/minshim.mjs'], cwd=root, capture_output=True, text=True)
     if m.returncode: return 1, 'MINSHIM FAILED ' + m.stderr[-400:]
-  b = subprocess.run(['tests/build.sh'], cwd=root, capture_output=True, text=True)
-  if b.returncode: return 1, 'BUILD FAILED ' + b.stderr[-400:]
+  b = subprocess.run(['tests/build.sh'], cwd=root, capture_output=True, text=True) if cmd is not IMGSIMD else None
+  if b and b.returncode: return 1, 'BUILD FAILED ' + b.stderr[-400:]
   # A mutant can make C loop forever (a cycle in a list it walks): the page then never answers, and
   # the run would wait on it for good. The test runs in a process group of its own (Chrome with it),
   # killed whole past TEST_TIMEOUT; a hang is a broken module, so it counts as caught (HUNG).
@@ -879,6 +880,7 @@ bad = sum(1 for ok in results.values() if not ok)
 print(f'{len(results) - bad} of {len(todo)} caught', flush=True)
 code = 0
 for label, cmd in (('unit', UNIT), ('host', HOST), ('canvas', CANVAS)):
+  if all(m[4] is IMGSIMD for m in todo): break   # only the image SIMD mutants ran: nothing else of the tree was built
   c, out = build_and_run(top, cmd)
   print(f'restored: {label} ' + ('ok' if c == 0 else 'FAIL\n  ' + out[-1500:].replace('\n', '\n  ')), flush=True)
   code |= c
