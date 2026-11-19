@@ -213,6 +213,17 @@ static void test_exif(void) {
   CHECK(cd_image_orientation(b, (uint32_t)n) == 6, "a huge entry count is bounded by the segment");
   n = make_exif(b, 1, 8, 0xffff, 0x0110, 3, 6);
   CHECK(cd_image_orientation(b, (uint32_t)n) == 1, "an entry count past the segment ends at the segment");
+  {   /* an IFD at the segment's last byte, in a block that ends with the segment: the count would be read past
+       * the end (ASan says so), so the offset is refused */
+    n = make_exif(b, 1, 8, 1, 0x0112, 3, 6);
+    size_t seg_end = n - 2;                      /* the EOI after it dropped */
+    uint32_t room = (uint32_t)(seg_end - 12);    /* the bytes from the TIFF header (at 12) to the segment's end */
+    b[16] = (uint8_t)(room - 1); b[17] = 0; b[18] = 0; b[19] = 0;   /* the IFD offset, little-endian */
+    uint8_t *h = malloc(seg_end);
+    memcpy(h, b, seg_end);
+    CHECK(cd_image_orientation(h, (uint32_t)seg_end) == 1, "an IFD offset at the segment's last byte reads as 1");
+    free(h);
+  }
   n = make_exif(b, 1, 8, 1, 0x0112, 3, 6);
   for (size_t cut = 0; cut < n; cut++) {
     uint32_t o = cd_image_orientation(b, (uint32_t)cut);

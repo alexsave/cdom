@@ -291,7 +291,7 @@ flowchart TB
 
   It is libjpeg-turbo 3.2.1's decoder and miniz 3.1.2's inflate (`third_party/`, each directory's README has the version, the archive's sha256, the licence and every edit; `tools/third_party.py check` makes them again from the archives and compares).
   **An app that ships it must say, in its documentation, "This software is based in part on the work of the Independent JPEG Group", and include miniz's MIT notice** (`third_party/miniz-3.1.2/LICENSE`); libjpeg-turbo's BSD notice is asked only of programs that include its TurboJPEG API, which is not here.
-  It adds 27.6 KB brotli to an app (JPEG 23.2, PNG 5.1; `bench/image/sizes/run.sh`), and nothing to an app that does not call it.
+  It adds 27.5 KB brotli to an app (JPEG 23.1, PNG 5.0; `bench/image/sizes/run.sh`), and nothing to an app that does not call it.
   libjpeg leaves a fatal error with longjmp; `CDOM_IMAGE_SJLJ` picks how: `js` (the default: a try in the shim, every browser cdom runs in, wasm2js too) or `eh` (wasm exception handling: Chrome 95, Firefox 100, Safari 15.2); docs/image-design.md has both, and the numbers.
 - `ui` (`src/cdom_ui.h`) is shorthand an app would otherwise write itself: `cd_el`, `cd_el_id` and `cd_el_text`, `cd_button`, the `CD_ON_EVENT`, `CD_CTX_OF` and `CD_CTX_INDEX` macros, and `cd_buf`, a string builder over the caller's buffer with 64-bit numbers. Each call costs only when used.
 - `src/cdom_callbacks_only.h`, included after the other cdom headers, makes the token forms and the app-wide hooks a compile error (`#pragma GCC poison`), so an app or a library inside one uses only `cd_on` and the `_cb` forms. It costs no bytes.
