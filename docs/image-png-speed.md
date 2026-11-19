@@ -319,3 +319,23 @@ fuzz_inflate, mutation-checked by hand: with inflate-third-literal it traps at o
 - inputs.py: the three new inputs are made after the four old ones and draw nothing; with this machine's Python 3.11 Pillow does not load, so inputs.py ran with /usr/bin/python3 (3.13, Pillow 12.3); the four old files are byte-equal to before (sha256 checked).
 - tests/image/test_image.c includes sys/types.h: glibc declares ssize_t only there, so the test did not build on Linux.
 - Distances past the output so far are now CORRUPT (zlib refuses them); tinfl, in its wrapping mode, read old window bytes for them.
+
+## png-fast-2: the review's gaps
+
+PR #56's review found no wrong answer by reading, but seven gaps; this branch (png-fast-2, on top of png-fast) closes them.
+The one measurement is the memory of small PNGs (item 3); its predictions follow, committed before any measurement.
+
+### Predictions: the small-PNG memory (written before measuring)
+
+The inflate's buffer is now `CD_INFLATE_WINDOW + 2 rows + min(PNG_CHUNK, h x (stride + 1))`, and at least the contract's floor (`CD_INFLATE_CAP_MIN`, 32 KB + 1314); the RGBA row is not allocated when the scaler reads RGB as it is (step 3, the scalar build).
+Peaks are test_image.c's count (the most held at once, the file not counted), natively, scalar build.
+
+- S1: a 16x16 RGBA PNG holds 300 KB (290 to 310) on png-fast, and 47 KB (42 to 52) on png-fast-2: the 32 KB window and 1.3 KB more instead of 288 KB, beside the decoder's tables (11.5 KB) and the scaler.
+  Falsifier: png-fast-2 above 55 KB, or more than 8 KB above main's peak for the same file.
+- S2: main (tinfl: a 32 KB dictionary, its 11 KB decompressor, two rows) holds 43 KB (38 to 48) for that file: png-fast-2 is within 6 KB of it, above or below.
+  Falsifier: a difference over 8 KB.
+- S3: p12.png (4032x3024 RGB) holds the same on png-fast-2 as on png-fast, less the RGBA row (16,128 bytes) in the scalar build; the SIMD build keeps the row and holds the same.
+  Falsifier: any other difference over 1 KB.
+- S4: p12.png's time does not change with this branch's formula (its h x (stride + 1) is far over PNG_CHUNK, so the buffer is the same).
+  A smaller PNG_CHUNK costs time through more hand-overs to the rows (each a call and a memmove of the window and two rows, about 56 KB): at 64 KB, 560 hand-overs instead of 140, about 23 MB more moved, 1 to 4 ms more natively (of about 100) and 1 to 6 ms in wasm (of about 140); at 16 KB, 2240 hand-overs, 5 to 15 ms more natively.
+  Falsifier: 64 KB costs more than 8 ms on either, or 16 KB costs under 3 ms natively.
