@@ -262,6 +262,19 @@ Timing only: the merged builds' images were not compared with the oracle.
 - For the merge: with image-simd's SIMD across loop, the RGB read of this branch is slower (151.6) than RGB to RGBA in SIMD and the SIMD across (138.1), so the merged module should send RGB through image-simd's path (`step` 3 only where there is no SIMD across).
 - The ratio on the Mac will differ (the skew in "The machine"); the cdom manager re-measures there.
 
+### After main took image-simd (the merge into this branch)
+
+image-simd landed on main while this branch was open; the merge (14eb11a) keeps both, as the scratch run above pointed: the scalar build uses this branch's RGB read (the across loop, now in `cdom_image_loops.c`, takes a step, inlined as a constant: 4 for RGBA, 3 for RGB), and the SIMD build (`CDOM_IMAGE_SIMD=1`) keeps image-simd's SIMD RGB to RGBA and across, and builds the inflate with its SIMD flags (`CDOM_IMAGE_INFLATE_CFLAGS` follows `CDOM_IMAGE_SIMD`).
+The merged module, 5 interleaved rounds (same machine, same Chrome):
+
+| input | merged, scalar | merged, SIMD | B1 | B2 |
+| --- | --- | --- | --- | --- |
+| p12.png | 170.9 (169.9 to 220.2) | 137.5 (135.0 to 167.7) | 150.5 (144.5 to 157.9) | 172.2 (149.9 to 173.3) |
+| p12a.png | 245.1 (241.5 to 276.3) | 182.3 (181.8 to 190.5) | 160.8 (152.3 to 163.9) | 169.6 (162.8 to 185.3) |
+
+So with the module as it now is on this branch, the SIMD build beats B1 on p12.png (0.91) on this machine; RGBA is 1.13 times B1.
+The merged tree passes tests/image/run.sh (9,192 checks, inflate_diff, the SIMD differential test) and tools/image.mjs with IMAGE_EH=0 (26 checks, scalar and SIMD builds).
+
 ## Tests
 
 - tests/image/run.sh (native, ASan and UBSan, clang 18 here with its compiler-rt installed): every case of the oracle equal to the byte (65 file cases, 14 scaler cases, 9,192 checks, 0 failures), and `inflate_diff`: 495 streams equal to zlib's output, 912 refused by both, 9,596 cuts CORRUPT, 900 damaged agreeing, the hand-made dynamic blocks (one one-bit distance code, accepted; an incomplete, an over-subscribed code and a missing end code, refused), a sink that stops (STOPPED) and one that drops the window (STOPPED), seed 20261119.
