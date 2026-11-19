@@ -200,6 +200,9 @@ cdom.start(/*CDOM_WASM*/, "app");
 
 - `cdom.start(url, mount, env, options)` fetches and instantiates the module, then calls the app's `cd_main` through the module's `cd_start`, and returns a promise of the module's exports.
 - `url` is the wasm's URL (a bundled page's `/*CDOM_WASM*/` becomes a `data:application/wasm;base64,` URL, which `fetch` takes from `file://` too, and `instantiateStreaming` still sees as `application/wasm`), or, for a browser without WebAssembly, the wasm2js build of the same module (a function that takes the imports and returns the exports).
+- `url` may also be a pair, `[scalar, simd]`, which an app built with `APP_SIMD := 1` gets at its `/*CDOM_WASM*/` (two URLs, or two `data:` URLs on a bundled page).
+  `cdom.start` then asks the browser itself, with `WebAssembly.validate` on a 29-byte module that holds one wasm SIMD instruction (`tools/simd-probe.wat`), and fetches and compiles only the one it picks: the SIMD module where the probe validates, else the scalar one.
+  There is no user-agent test and no browser floor; the probe costs every page 138 bytes of the minified shim, 64 brotli.
 - `mount` is the element the app's `CD_MOUNT` is, or its id; given an id that the parser has not reached yet, the wasm loads while the page parses and the app starts once the DOM is ready.
 - `env` is an object of the app's own imports, the wasm's `env` module (functions its C declares with `__attribute__((import_module("env"), import_name("...")))`), and may be left out.
 - `options.openStore`, when true, opens the store (`src/cdom_store.h`) while the wasm is fetched and compiled, so an app that reads its store as it starts finds it open at its first get.
@@ -207,6 +210,7 @@ cdom.start(/*CDOM_WASM*/, "app");
 - The shim's state (the node table, the memory, the module's exports) is one per page, so a second call would replace the first app's; a page runs one cdom app.
 - A page that must run without WebAssembly starts through `shim/boot.js` instead: `cdomBoot(url, mount, env, ready)` calls `cdom.start` itself when WebAssembly exists, and otherwise loads the ES5 shim and the wasm2js build (`url + ".js"`) and starts those; `tools/legacy/build.mjs` makes both, and that build needs Node.
   Both are files beside the page, so a page with this fallback takes `APP_WASM_SEPARATE := 1` (a bundled module has no `url + ".js"` to load).
+  Given the pair, it loads the scalar module's wasm2js build, `url[0] + ".js"`.
 
 ## Testing an app's page
 
@@ -293,7 +297,8 @@ flowchart TB
   **An app that ships it must say, in its documentation, "This software is based in part on the work of the Independent JPEG Group", and include miniz's MIT notice** (`third_party/miniz-3.1.2/LICENSE`); libjpeg-turbo's BSD notice is asked only of programs that include its TurboJPEG API, which is not here.
   It adds 27.5 KB brotli to an app (JPEG 23.1, PNG 5.0; `bench/image/sizes/run.sh`), and nothing to an app that does not call it.
   libjpeg leaves a fatal error with longjmp; `CDOM_IMAGE_SJLJ` picks how: `js` (the default: a try in the shim, every browser cdom runs in, wasm2js too) or `eh` (wasm exception handling: Chrome 95, Firefox 100, Safari 15.2); docs/image-design.md has both, and the numbers.
-  `CDOM_IMAGE_SIMD=1` builds the hot loops (the IDCTs, YCbCr to RGBA, the scaler, the PNG unfilter and RGB to RGBA) with hand-written wasm SIMD: bit-exact with the scalar default, 6% to 13% faster on the bench on an Apple Silicon Mac in Chrome (5% to 14% on an x86 VM), 2.1 KB brotli more, and the module then needs wasm SIMD (Chrome 91, Firefox 89, Safari 16.4); docs/image-simd-hand.md has the profile, the predictions and the numbers.
+  `CDOM_IMAGE_SIMD=1` builds the hot loops (the IDCTs, YCbCr to RGBA, the scaler, the PNG unfilter and RGB to RGBA) with hand-written wasm SIMD: bit-exact with the scalar default, 6% to 13% faster on the bench on an Apple Silicon Mac in Chrome (12% on the PNG since the Paeth fix; 5% to 14% on an x86 VM), 2.1 KB brotli more, and the module then needs wasm SIMD (Chrome 91, Firefox 89, Safari 16.4); docs/image-simd-hand.md has the profile, the predictions and the numbers.
+  `APP_SIMD := 1` (below) builds both and lets the browser pick, which is how an app ships it.
 - `job` (`src/cdom_job.h`) runs a big piece of C in a worker that ends, so its memory goes back: `cd_job_cb(name, in, in_len, args, args_len, fn, ctx)` (input from C memory) and `cd_job_file_cb(name, input, index, args, args_len, fn, ctx)` (a picked file, read straight into the job's memory and never into the app's) answer once to `fn(ctx, status, bytes, len)`, with the bytes valid until it returns.
   The job is a module of its own, built beside the app's with `APP_JOBS := image` and `APP_JOB_image_SRC := src/image_job.c` (cdom.mk): its source defines `uint32_t run(in, in_len, args, args_len)` and answers with `cd_job_answer(p, len)` (`src/cdom_job_mod.h`), over cdom's heap and `src/mini.c`, with no DOM.
   The app names it `"image.job.wasm"`; a bundled page carries it, so the page stays one file.
@@ -326,6 +331,11 @@ flowchart TB
 - By default the module is bundled: `/*CDOM_WASM*/` becomes `"data:application/wasm;base64,..."` of `APP_WASM`, so an app is one html file.
   It costs about 30% more bytes after compression (a hello world 9.5 to 12.3 KB brotli, amgi 29.9 to 39.2 KB), and in exchange the page is one request, the page and its module are never from two builds, and it opens from disk (`file://`).
   A bundled page under a Content-Security-Policy needs `data:` in `connect-src`, besides `'wasm-unsafe-eval'`; what needs a real origin (IndexedDB, so the store module, in some browsers) needs the page served over HTTP.
+- `APP_SIMD := 1` builds the module twice from the same sources: `APP_WASM`, scalar and the same bytes as without it, and its SIMD twin beside it (`app.simd.wasm` for `app.wasm`), built as `CDOM_IMAGE_SIMD=1` builds the image module.
+  The page starts the pair, and `cdom.start` picks one in the browser (above), so a visitor downloads one module, the SIMD one where the browser has wasm SIMD (Chrome 91, Firefox 89, Safari 16.4).
+  Both modules go through `tools/cdlits`, and the page carries one string table, so the twin's must be the same bytes as `APP_WASM`'s, or the build stops and removes the twin.
+  It needs a module with a SIMD build in `APP_MODULES` (`image`), and refuses `CDOM_IMAGE_SIMD=1` beside it.
+  Bundled, the page carries both modules: for an app with the image module that is about 25 KB brotli more (bench/image's app, 46.4 to 71.1 KB), which is why it is opt-in per app; separate, the twin's URL is `APP_SIMD_WASM_URL`, else `APP_WASM_URL` with `.simd.wasm` for its `.wasm`.
 - `APP_WASM_SEPARATE := 1` keeps the module a file of its own, for large apps, hosts that cache a hashed `.wasm`, or the no-WebAssembly fallback: `/*CDOM_WASM*/` becomes its URL, `APP_WASM_URL` (the base name of `APP_WASM`, beside the page, unless set), or the page names it itself (`cdom.start("app.wasm", "app")`).
 - Bundling, an app's own page must start the bundled module: a page that names its module by URL fails the build with `this page loads app.wasm; set APP_WASM_SEPARATE := 1, or start with the bundled module (the /*CDOM_WASM*/ marker)`, and cdom never rewrites the app's call.
 - The rule fails, and writes nothing, when the page has no `/*CDOM_SHIM*/` line, has two, or has the marker beside other text, or has two `/*CDOM_WASM*/`; `$(call cdom_page,in.html,out.html)` does the same inside an app's own recipe, and `$(call cdom_page,in.html,out.html,module.wasm)` bundles that module too.

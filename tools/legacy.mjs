@@ -37,9 +37,10 @@ try {
   ok(await E('X.sj() === 1'), "the image module's js way out of a libjpeg error: 500 throws from 20 frames down, the stack pointer back, then a body that returns");
   const id = {}; for (const [k, i] of Object.entries({ PAD: 0, TEXT: 1 })) id[k] = await E(`X.id(${i})`);
 
-  // The path: the fallback files only without WebAssembly, the wasm only with it.
-  const got = await E(FETCHED), mine = ['legacy.wasm.js', 'cdom.legacy.js'];
-  ok(LEGACY ? mine.every(f => got.includes(f)) && !got.includes('legacy.wasm') : !got.some(f => mine.includes(f)) && got.includes('legacy.wasm'),
+  // The path: the fallback files only without WebAssembly (the scalar module's wasm2js build), the wasm only with it: the
+  // page starts the pair [legacy.wasm, legacy.simd.wasm], and this Chrome has wasm SIMD, so only the twin.
+  const got = await E(FETCHED), mine = ['legacy.wasm.js', 'cdom.legacy.js'], wasms = got.filter(f => f.endsWith('.wasm'));
+  ok(LEGACY ? mine.every(f => got.includes(f)) && !wasms.length : !got.some(f => mine.includes(f)) && wasms.join() === 'legacy.simd.wasm',
     `${LEGACY ? 'wasm2js' : 'wasm'} path only: ${got.filter(f => /\.(js|wasm)$/.test(f)).join(' ')}`);
   if (LEGACY) {
     ok(await E('typeof WebAssembly === "undefined" && typeof X.memory.grow === "function"'), 'no WebAssembly; the exports are wasm2js');

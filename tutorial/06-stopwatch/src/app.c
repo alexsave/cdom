@@ -3,7 +3,7 @@
  * later time, and the watch never runs slow. Frames are the right clock for drawing: cd_on_frame runs once
  * before each paint, and it stops with the page's frames when the tab is hidden, so there is no timer to
  * clear when the page goes away. */
-#include "cdom.h"
+#include "cdom_ui.h"
 #include <stdio.h>
 
 
@@ -28,9 +28,9 @@ static uint32_t keys[LAP_CAP]; /* the lap numbers to show, newest first; the key
 /* The hundredths on the screen. A frame compares against it, so a frame that would write the same text skips. */
 static uint32_t shown_cs;
 
-static cd_id time_text, start_btn, start_text, lap_btn, reset_btn, note_text, laps_ol;
+static cd_id time_text, start_text, lap_btn, reset_btn, note_text, laps_ol;
 static cd_list laps_list;
-static uint32_t note_timer; /* the pending timer that clears the note, 0 when none is pending */
+static cd_timer_slot note_timer; /* at most one timer pending: the one that clears the note */
 
 /* The clock now, in ms: a run that is going adds the time since it started. */
 static double elapsed_ms(void) {
@@ -112,9 +112,8 @@ static void render_laps(void) {
   cd_list_update(&laps_list, keys, nlaps, &LAP_FNS);
 }
 
-/* The note's timer: it clears the note after NOTE_MS. A timer that fired is done, so the token is dropped. */
+/* The note's timer: it clears the note after NOTE_MS. */
 static void clear_note(void *) {
-  note_timer = 0;
   cd_set_text_node(note_text, "");
 }
 
@@ -154,11 +153,10 @@ static void on_reset(const cd_event_rec *, void *) {
   show(0);
   sync();
 
-  /* One note at a time. A Reset before the last note cleared cancels that note's timer, so the old timer
-   * cannot clear the new note early. Stopping a timer that already fired does nothing. */
-  if (note_timer) cd_timer_stop(note_timer);
+  /* One note at a time. cd_timer_set stops the slot's pending timer, if any, before it starts the new one,
+   * so a Reset before the last note cleared cannot have the old timer clear the new note early. */
   cd_set_text_node(note_text, "Reset");
-  note_timer = cd_timer_cb(NOTE_MS, clear_note, nullptr);
+  cd_timer_set(&note_timer, NOTE_MS, clear_note, nullptr);
 }
 
 /* The page's CSS is src/app.css. The build puts every .css file under src/ in a <style> in the page's
@@ -169,10 +167,11 @@ void cd_main(void) {
   cd_open("output"); cd_class("time"); cd_text("00:00.00"); cd_name_text(time_text = cd_id_new()); cd_close();
 
   cd_open("div"); cd_class("controls");
-  start_btn = cd_open_id("button"); cd_class("start");
-  cd_text("Start"); cd_name_text(start_text = cd_id_new()); cd_close();
-  lap_btn = cd_open_id("button"); cd_class("lap"); cd_text("Lap"); cd_close();
-  reset_btn = cd_open_id("button"); cd_class("reset"); cd_text("Reset"); cd_close();
+  /* cd_button (cdom_ui.h): a class, a label and the click handler; the start button also says where its
+   * label's text node goes, so sync() can change it. */
+  cd_button("start", "Start", on_start_stop, nullptr, &start_text);
+  lap_btn = cd_button("lap", "Lap", on_lap, nullptr, nullptr);
+  reset_btn = cd_button("reset", "Reset", on_reset, nullptr, nullptr);
   cd_close();
 
   /* The note keeps its height when it is empty, so the page does not move when it appears. */
@@ -185,10 +184,6 @@ void cd_main(void) {
   laps_list.parent = laps_ol;
   laps_list.owns_parent = 1;
   cd_close();
-
-  cd_on(start_btn, CD_EV_CLICK, on_start_stop, nullptr);
-  cd_on(lap_btn, CD_EV_CLICK, on_lap, nullptr);
-  cd_on(reset_btn, CD_EV_CLICK, on_reset, nullptr);
 
   show(0);
   sync();

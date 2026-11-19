@@ -441,3 +441,55 @@ On this Mac the clang driver runs Homebrew's `wasm-opt` after the link (it finds
   On the PNG it gains more (1.78x), which is most of the PNG's gain.
 - So on the Mac the PNG would be about 12 ms (5%) faster again with the 3-byte Paeth left scalar; on the VM it would be 34 ms slower.
   A wasm module cannot choose by the CPU it lands on, so this is a choice between the two, not a fix; it is left as it is, and named in the PR for Alex.
+
+## Paeth on the Mac: predictions (written before measuring the fix)
+
+The Mac's profile above has the SIMD Paeth (L5, 3 bytes a pixel) at 0.86x of the scalar one (89.2 against 76.7 ms a p12.png run), where the x86 VM had it 1.50x faster.
+p12.png is the Paeth-heavy input already (3,016 of its 3,024 rows are Paeth), so no other input was made.
+
+What the arm64 code says (`node --print-wasm-code` on `src/cdom_image_loops.c` alone, linked with its name section, TurboFan tier; the same V8 as Chrome's):
+
+- The loop-carried chain, from one pixel's left value to the next, is 10 NEON operations deep: sub, add, abs, smin, cmge, bsl, then `dup` and `uzp1` (in parallel), `mov v.d[1]`, an 8-bit add and `uxtl`.
+- The last five are clang's: it saw that `(pred + raw) & 0xff` in 16-bit lanes is an 8-bit add, and wrote it as an `i8x16.shuffle` that narrows the predictor, an `i8x16.add`, and an extend back to 16 bits; V8 lowers that shuffle to three instructions.
+  The source's own form, a 16-bit add and an `and`, is 2 operations, so the chain could be 8 deep.
+- At about 2 cycles a NEON operation on Apple's cores, 10 deep is about 20 cycles a pixel, 12.2 million pixels, about 76 ms at 3.2 GHz, near the 84 ms a node microbench of the unfilter alone measures (scalar 72 ms in the same bench).
+
+Two candidates, A/B'd against the current SIMD build in Chrome (bench/image/run.mjs, 9 interleaved rounds, p12.png at box 900):
+
+- P1, the SIMD Paeth with the chain kept at 8 (the mask made opaque to clang, so the `and` stays): the unfilter about 67 ms in the microbench (8/10 of 84), 1.08x faster than the scalar Paeth (range 1.00x to 1.20x); in Chrome, the C-simd p12.png run 6 to 14 ms faster than now.
+  Falsified if it is not faster than the scalar Paeth in the microbench, or the chain is not 8 deep in the arm64 code.
+- P2, the SIMD build using the scalar Paeth (the other filters stay SIMD): the unfilter as the scalar build's (76.7 ms, within 3%), so the C-simd p12.png run about 12 ms faster than now (226 to about 214 ms, 0.95x).
+  Falsified if the run is not at least 8 ms faster than now.
+- The pick: the faster of P1 and P2 in the Chrome A/B is kept; P1 also keeps the x86 VM's gain (1.50x) and P2 gives it up, so on a tie (within 2%) P1 is kept.
+
+## Paeth on the Mac: results
+
+The microbench of the unfilter alone (node, the same V8 as Chrome, 3,024 Paeth rows of 4,032 RGB pixels, median of 9): the SIMD Paeth before 83.9 ms, P1 67.3 ms, P2 71.5 ms, the scalar Paeth 71.3 ms.
+P1's arm64 chain is 8 deep, as predicted: sub, add, abs, smin, cmge, bsl, then `uaddw` (V8 folds the extend into the add) and `and`.
+
+Chrome, p12.png at box 900, 9 interleaved rounds, the 1-minute load 1.37 to 1.50 before every run (`bench/image/results/2026-11-19-paeth-mac.*`; P0 is main's SIMD build):
+
+| arm | median ms (min to max) | per-round ratio to P0, median (min to max) |
+| --- | --- | --- |
+| C-js (scalar build) | 236.0 (234.9 to 345.6) | |
+| C-simd P0 (before) | 222.8 (222.2 to 284.5) | 1 |
+| C-simd P1 (the SIMD Paeth, chain 8 deep) | 206.8 (205.8 to 266.5) | 0.929 (0.925 to 0.989) |
+| C-simd P2 (the scalar Paeth) | 212.9 (211.6 to 272.5) | 0.955 (0.950 to 0.965) |
+
+- P1: the microbench 67.3 ms (predicted 67, 1.06x over the scalar Paeth, inside 1.00x to 1.20x): confirmed; the Chrome run 16.0 ms faster than P0 (predicted 6 to 14): refuted on the side of a larger gain.
+- P2: 9.9 ms faster than P0 (predicted about 12, at least 8): confirmed.
+- P1 against P2: 0.976 per round (0.963 to 1.034), 6.1 ms faster by the medians, so P1 is kept: the SIMD build's p12.png run is now 0.88x of the scalar build's on the Mac (it was 0.94x).
+- x86: the VM measured the SIMD Paeth at 1.50x over scalar (build 3, above), with the shuffle in the chain; P1 keeps the SIMD Paeth and takes the shuffle out of the wasm, so it gives up nothing of that by design, but it was not measured there.
+- Bit-exact: tests/image/simd.sh (every filter, 1 to 8 bytes a pixel) and bench/image/equal.mjs (4 inputs, 5 boxes: 20 of 20 equal); the mutant paeth-mask (the mask 0x1ff) is caught, with paeth-tie, paeth-upleft and paeth-min.
+
+## Shipping it: APP_SIMD
+
+An app does not choose between the scalar and the SIMD build: `APP_SIMD := 1` builds both, and the browser picks (README.md, "Starting an app" and "Building an app").
+
+- The pick: `cdom.start` takes the pair `[scalar, simd]` and runs `WebAssembly.validate` on a 29-byte module with one `i8x16.splat` (`tools/simd-probe.wat`; `wasm-as -all` makes the same bytes, and `tools/pick.mjs` checks it); only the module it picks is fetched and compiled.
+- The shim's cost, on every page: 18,320 to 18,458 bytes minified (+138), 6,896 to 6,960 brotli (+64), 7,700 to 7,779 gzip.
+- The page's cost, for bench/image's app (the image module) bundled: 130,955 to 249,587 bytes, 46,367 to 71,069 brotli (+24.7 KB); app.wasm is 28.9 KB brotli and app.simd.wasm 30.8 KB on their own.
+  Brotli finds little in common between the two base64 blobs, so a bundled page pays nearly the whole twin; a separate page pays nothing, since a visitor fetches one module.
+- The scalar module of an APP_SIMD build is the same bytes as the build without it, and the twin the same bytes as the `CDOM_IMAGE_SIMD=1` build (tests/link/run.sh).
+- Tested end to end in Chrome by tests/pick/run.sh: bundled and separate pages, with the readable and the minified shim; the real Chrome fetches only app.simd.wasm, a page whose `WebAssembly.validate` answers false for the probe only app.wasm, and the two picks give the same pixels on the four bench inputs at five boxes.
+  The legacy page (tests/legacy.html) starts a pair too: with WebAssembly it fetches only the twin, without it only the scalar module's wasm2js build.

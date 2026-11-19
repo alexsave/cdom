@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <sys/types.h> /* ssize_t: glibc does not declare it through the C headers alone */
 #include "cdom_image.h"
 #include "cdom_image_int.h"
 #include "host_alloc.h"
