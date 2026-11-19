@@ -161,7 +161,7 @@ static void test_target(void) {
   uint32_t w, h;
   cd_image_target(4032, 3024, 1, 900, 900, &w, &h); CHECK(w == 900 && h == 675, "4032x3024 in 900: %ux%u", w, h);
   cd_image_target(4032, 3024, 6, 900, 900, &w, &h); CHECK(w == 900 && h == 675, "the same, orientation 6 (as stored): %ux%u", w, h);
-  cd_image_target(4032, 3024, 6, 900, 300, &w, &h); CHECK(w == 400 && h == 300, "orientation 6 in a 900x300 box: shown 300 wide? %ux%u", w, h);
+  cd_image_target(4032, 3024, 6, 900, 300, &w, &h); CHECK(w == 300 && h == 225, "orientation 6 in a 900x300 box: shown 225 x 300, so 300 x 225 as stored: %ux%u", w, h);
   cd_image_target(4032, 3024, 1, 900, 300, &w, &h); CHECK(w == 400 && h == 300, "the height binds: %ux%u", w, h);
   cd_image_target(100, 50, 1, 900, 900, &w, &h); CHECK(w == 100 && h == 50, "never enlarged: %ux%u", w, h);
   cd_image_target(3, 2, 1, 2, 2, &w, &h); CHECK(w == 2 && h == 1, "1.33 rounds to 1: %ux%u", w, h);

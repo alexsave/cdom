@@ -237,7 +237,7 @@ def png_cases():
     for (w, h, bw, bh) in [(200, 100, 300, 300), (700, 1, 256, 256), (1, 700, 256, 256), (1024, 768, 256, 256),
                            (1, 1, 256, 256), (301, 7, 100, 100), (640, 480, 8192, 8192), (640, 480, 1, 1)]:
         p = picture(max(w, 8), max(h, 8))[:h, :w]
-        case(f"png-size{w}x{h}-box{bw}x{bh}", write_png(f"size{w}x{h}.png", w, h, 2, 8, [r.reshape(-1) for r in p]),
+        case(f"png-size{w}x{h}-box{bw}x{bh}", write_png(f"size{w}x{h}-box{bw}x{bh}.png", w, h, 2, 8, [r.reshape(-1) for r in p]),
              bw, bh, area_avg(p, *fit_box(w, h, bw, bh)))
     for (bw, bh) in [(0, 300), (300, 0), (8193, 300), (300, 8193)]:
         status_case(f"png-box{bw}x{bh}", f("rgb.png"), bw, bh, "BAD_BOX")
