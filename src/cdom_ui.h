@@ -12,7 +12,6 @@
  * cd_s(). cls CD_NONE is no class. */
 void cd_el(cd_str tag, cd_str cls);                /* cd_open(tag), then cd_class(cls) unless CD_NONE */
 cd_id cd_el_id(cd_str tag, cd_str cls);            /* the same, named with a new id (cd_open_id) */
-void cd_el_text(cd_str tag, cd_str cls, cd_str s); /* an element holding one text, closed */
 
 /* A <button type="button"> (type="button": in a form it submits nothing), with class cls (CD_NONE: none)
  * and the text label, built where the next node goes and closed; a click calls fn(e, ctx) (cd_on).
@@ -21,7 +20,16 @@ void cd_el_text(cd_str tag, cd_str cls, cd_str s); /* an element holding one tex
 cd_id cd_button(cd_str cls, cd_str label, cd_event_fn fn, void *ctx, cd_id *label_text);
 #define cd_el(tag, cls) (cd_el)(cd_s(tag), cd_s(cls))
 #define cd_el_id(tag, cls) (cd_el_id)(cd_s(tag), cd_s(cls))
-#define cd_el_text(tag, cls, s) (cd_el_text)(cd_s(tag), cd_s(cls), cd_s(s))
+/* An element holding one text, closed: cd_el(tag, cls); cd_text(s); cd_close(). A macro, not a function, so
+ * that s is made after the element and class calls: a runtime string (cd_tmp) is good only for the next call
+ * that takes a string (cdom.h, strings), and a function would have it made before those calls. s may be any
+ * string, and is written once, in its place. A statement, not an expression. */
+#define cd_el_text(tag, cls, s) \
+  do { \
+    cd_el(tag, cls); \
+    cd_text(s); \
+    cd_close(); \
+  } while (0)
 #define cd_button(cls, label, fn, ctx, label_text) (cd_button)(cd_s(cls), cd_s(label), fn, ctx, label_text)
 
 /* ---- handlers ---- */

@@ -11,11 +11,6 @@ cd_id (cd_el_id)(cd_str tag, cd_str cls) {
   if (cls.v) cd_class(cls);
   return id;
 }
-void (cd_el_text)(cd_str tag, cd_str cls, cd_str s) {
-  cd_el(tag, cls);
-  cd_text(s);
-  cd_close();
-}
 
 cd_id (cd_button)(cd_str cls, cd_str label, cd_event_fn fn, void *ctx, cd_id *label_text) {
   cd_id b = cd_el_id("button", cls);
