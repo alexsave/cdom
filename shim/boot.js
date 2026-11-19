@@ -5,6 +5,8 @@
  * polyfills, next to the page) and url + ".js" (the same wasm compiled to JS by wasm2js, which sets
  * window.cdomFactory) in parallel, and starts that. Neither fallback file is fetched when WebAssembly
  * exists.
+ * url may be the pair [scalar, SIMD] cdom.start takes (cdom.mk's APP_SIMD): cdom.start picks one, and the fallback
+ * is the scalar module's wasm2js build, url[0] + ".js".
  * mount is an element or its id, as cdom.start takes it; ready, if given, receives the exports; options
  * is cdom.start's fourth argument. */
 function cdomBoot(url, mount, env, ready, options) {
@@ -30,5 +32,5 @@ function cdomBoot(url, mount, env, ready, options) {
     cdom.start(f, mount, env, options).then(ready);
   }
   load("cdom.legacy.js", loaded);
-  load(url + ".js", loaded);
+  load((typeof url === "string" ? url : url[0]) + ".js", loaded);
 }
