@@ -5,7 +5,8 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { launch, sleep } from '../../tools/cdp.mjs';
+import { launch } from '../../tools/cdp.mjs';
+import { resizeHash } from './resize.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 const boxes = (process.argv[2] || '900,300,1500,2500,4000').split(',').map(Number);
@@ -16,25 +17,7 @@ const srv = http.createServer((q, r) => {
 }).listen(0);
 const base = `http://127.0.0.1:${srv.address().port}`;
 const b = await launch();
-const run = async (build, input, box) => {
-  await b.send('Page.navigate', { url: `${base}/${build}/index.html` });
-  for (let i = 0; i < 200 && !(await b.evaluate('!!window.READY')); i++) await sleep(25);
-  return b.evaluate(`(async () => {
-    const data = new Uint8Array(await (await fetch(${JSON.stringify(`${base}/inputs/${input}`)})).arrayBuffer());
-    const p = X.room(data.length);
-    new Uint8Array(X.memory.buffer, p, data.length).set(data);
-    const status = X.resize(p, data.length, ${box}, ${box});
-    const o = new Uint32Array(X.memory.buffer, X.out(), 3);
-    let hash = '';
-    if (status === 0) {
-      const d = await crypto.subtle.digest('SHA-256', new Uint8Array(X.memory.buffer, o[2], o[0] * o[1] * 4));
-      hash = [...new Uint8Array(d)].map((v) => v.toString(16).padStart(2, '0')).join('');
-      X.drop(o[2]);
-    }
-    X.drop(p);
-    return { status, w: o[0], h: o[1], hash };
-  })()`);
-};
+const run = (build, input, box) => resizeHash(b, `${base}/${build}/index.html`, `${base}/inputs/${input}`, box);
 let bad = 0;
 try {
   for (const input of inputs) for (const box of boxes) {

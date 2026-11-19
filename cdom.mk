@@ -62,6 +62,15 @@
 #                 .lits file), and $(call cdom_page,in.html,out.html,module.wasm) bundles that module as well,
 #                 with the string table cdlits wrote beside it (module.wasm.lits). Both bundle src/'s
 #                 stylesheets, as the APP_PAGE rule does.
+#   APP_SIMD, APP_SIMD_WASM_URL
+#                 APP_SIMD := 1 builds a second module from the same sources, the SIMD twin of APP_WASM (app.simd.wasm
+#                 beside app.wasm), its modules' parts with their _SIMD_SRC and _SIMD_CFLAGS (the image module's, as
+#                 CDOM_IMAGE_SIMD=1 builds it); APP_WASM stays the same bytes. The twin's string table must be the
+#                 same bytes as APP_WASM's (the page carries one), or the build stops and removes the twin. The page's
+#                 /*CDOM_WASM*/ becomes the pair [scalar, SIMD], both bundled or both URLs (the twin's APP_SIMD_WASM_URL,
+#                 else APP_WASM_URL with .simd.wasm for .wasm), and cdom.start fetches only the one the browser runs
+#                 (README.md, "Starting an app"). Refused: CDOM_IMAGE_SIMD=1 beside it, and an app whose APP_MODULES have
+#                 no SIMD build.
 #
 # The stylesheets: Every file whose name ends in .css under the app's src/ directory, in any subfolder,
 # is written into the page's <style>, in byte order of its path, so 00-base.css comes before
@@ -158,23 +167,23 @@ CDOM_IMAGE_OWN_CFLAGS := -isystem $(CDOM_IMAGE_LJT) -isystem $(CDOM_IMAGE_MZ) -D
 # src/jsimd/jsimd_wasm.c, which libjpeg-turbo reaches through its own SIMD dispatch, WITH_SIMD: the three headers in
 # src/jsimd/simd/ answer its "../simd/" includes). A SIMD module needs a browser with wasm SIMD (Chrome 91, Firefox 89,
 # Safari 16.4) and does not instantiate in an older one; the two builds are the same in every other way (docs/image-simd-hand.md).
+# APP_SIMD := 1 builds both, and the shim picks one in the browser (below). The SIMD build is the parts' _SIMD_SRC and
+# _SIMD_CFLAGS on top of their own (cdom_mk_part_src, cdom_mk_obj_flags).
 # MULTIPLIER and ALIGN_SIZE keep libjpeg's scalar types as they are with SIMD off (WITH_SIMD would make them short and 32).
 CDOM_IMAGE_SIMD ?= 0
-ifeq ($(CDOM_IMAGE_SIMD),1)
-cdom_mk_simd_flags := -msimd128 -DCDOM_IMAGE_SIMD=1 -DCDOM_JSIMD -DMULTIPLIER=int -DALIGN_SIZE=8
-CDOM_IMAGE_OWN_SRC += $(CDOM)/src/jsimd/jsimd_wasm.c
-else ifeq ($(CDOM_IMAGE_SIMD),0)
-cdom_mk_simd_flags :=
-else
+ifeq ($(filter 0 1,$(CDOM_IMAGE_SIMD)),)
 $(error cdom.mk: CDOM_IMAGE_SIMD is $(CDOM_IMAGE_SIMD), not 0 or 1)
 endif
-CDOM_IMAGE_OWN_CFLAGS += $(cdom_mk_simd_flags)
+cdom_mk_simd_flags := -msimd128 -DCDOM_IMAGE_SIMD=1 -DCDOM_JSIMD -DMULTIPLIER=int -DALIGN_SIZE=8
+CDOM_IMAGE_OWN_SIMD_SRC := $(CDOM)/src/jsimd/jsimd_wasm.c
+CDOM_IMAGE_OWN_SIMD_CFLAGS := $(cdom_mk_simd_flags)
 # jdphuff.c (libjpeg's progressive decoder) is not compiled, and jdcoefct.c is compiled under another name
 # (src/cdom_image_ljt_coef.c): src/cdom_image_jpegp.c is cdom's progressive path (docs/image-progressive-speed.md).
 CDOM_IMAGE_VENDOR_SRC := $(addprefix $(CDOM_IMAGE_LJT)/,jcomapi.c jdapimin.c jdhuff.c jdinput.c jdmarker.c jdmaster.c \
   jmemmgr.c jpeg_nbits.c $(addprefix wrapper/,$(addsuffix -8.c,jdapistd jdcolor jddctmgr jdmainct \
   jdpostct jdsample jidctint jidctred jutils))) $(CDOM)/src/cdom_image_ljt_coef.c
-CDOM_IMAGE_VENDOR_CFLAGS := -w -I$(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV $(cdom_mk_simd_flags) $(if $(cdom_mk_simd_flags),-I$(CDOM)/src/jsimd/simd)
+CDOM_IMAGE_VENDOR_CFLAGS := -w -I$(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV
+CDOM_IMAGE_VENDOR_SIMD_CFLAGS := $(cdom_mk_simd_flags) -I$(CDOM)/src/jsimd/simd
 CDOM_IMAGE_MINIZ_SRC := $(CDOM_IMAGE_MZ)/tinfl.c
 CDOM_IMAGE_MINIZ_CFLAGS := -w -I$(CDOM_IMAGE_MZ) -include $(CDOM)/src/cdom_image_miniz.h
 CDOM_IMAGE_SJLJ_SRC = $(CDOM)/src/cdom_image_sjlj.c $(if $(filter eh,$(CDOM_IMAGE_SJLJ)),$(CDOM)/src/cdom_image_sjlj_eh.c)
@@ -208,13 +217,13 @@ cdom_lits = $(CDOM_LITS) $(1) $(2) $(2).lits
 # out.html is written only when the page holds its markers as the APP_PAGE rule needs them (the header
 # above). Make the rule depend on $(CDOM_PAGE_TOOL).
 cdom_page = $(call cdom_mk_page,$(1),$(2),$(3),,,$(if $(3),$(3).lits,$(4)))
-# $(call cdom_mk_page,in,out,module to bundle,URL for /*CDOM_WASM*/,title for /*CDOM_TITLE*/,lits file): the recipe
+# $(call cdom_mk_page,in,out,module to bundle,URL for /*CDOM_WASM*/,title for /*CDOM_TITLE*/,lits file[,SIMD twin to bundle,its URL]): the recipe
 # of cdom_page and the APP_PAGE rule, one run of tools/cdpage, which writes out only once the whole page is
 # made. cdom_mk_q quotes a value for the shell.
 cdom_mk_q = '$(subst ','\'',$(1))'
 cdom_mk_page = $(CDOM_PAGE_TOOL) --page $(call cdom_mk_q,$(1)) --out $(call cdom_mk_q,$(2)) --shim $(call cdom_mk_q,$(CDOM_SHIM)) \
   --lits $(call cdom_mk_q,$(6))$(if $(3), --wasm $(call cdom_mk_q,$(3)))$(if $(4), --wasm-url $(call cdom_mk_q,$(4)))$(if $(5), --title $(call cdom_mk_q,$(5))) \
-  --css-dir src
+  $(if $(7),--simd-wasm $(call cdom_mk_q,$(7)) )$(if $(8),--simd-wasm-url $(call cdom_mk_q,$(8)) )--css-dir src
 
 CDOM_MODULES := net store random audio url locale share fonts ui file image
 
@@ -233,34 +242,58 @@ cdom_mk_up = $(strip $(subst a,A,$(subst b,B,$(subst c,C,$(subst d,D,$(subst e,E
 cdom_mk_app_src = $(APP_SRC) $(CDOM_SRC) $(foreach m,$(APP_MODULES),$(CDOM_$(call cdom_mk_up,$(m))_SRC))
 cdom_mk_unknown = $(filter-out $(CDOM_MODULES),$(APP_MODULES))
 cdom_mk_known = $(if $(cdom_mk_unknown),$(error cdom.mk: APP_MODULES names $(cdom_mk_unknown), not a cdom module ($(CDOM_MODULES))))$(cdom_mk_unique)
-# The modules' parts: each file of CDOM_<NAME>_<PART>_SRC is the object $(APP_WASM).cdom/<name>/<part>/<base>.cdom.o.
-cdom_mk_part_src = $(CDOM_$(call cdom_mk_up,$(1))_$(call cdom_mk_up,$(2))_SRC)
+# APP_SIMD := 1: the SIMD twin of APP_WASM, the same name with .simd.wasm for .wasm (app.wasm, app.simd.wasm); empty without it.
+cdom_mk_simd_wasm = $(if $(filter 1,$(APP_SIMD)),$(patsubst %.wasm,%.simd.wasm,$(APP_WASM)))
+# $(call cdom_mk_simd_on,module.wasm): 1 when that module is a SIMD build (the twin, or APP_WASM under CDOM_IMAGE_SIMD=1).
+cdom_mk_simd_on = $(if $(and $(cdom_mk_simd_wasm),$(filter $(1),$(cdom_mk_simd_wasm))),1,$(filter 1,$(CDOM_IMAGE_SIMD)))
+# The modules' parts: each file of CDOM_<NAME>_<PART>_SRC (and, in a SIMD build, of CDOM_<NAME>_<PART>_SIMD_SRC) is the
+# object <module.wasm>.cdom/<name>/<part>/<base>.cdom.o, so the two builds of APP_SIMD keep their objects apart.
+# $(call cdom_mk_part_src,name,part,simd): the part's files; $(call cdom_mk_objs,module.wasm): that module's objects.
+cdom_mk_part_src = $(CDOM_$(call cdom_mk_up,$(1))_$(call cdom_mk_up,$(2))_SRC) $(if $(3),$(CDOM_$(call cdom_mk_up,$(1))_$(call cdom_mk_up,$(2))_SIMD_SRC))
 cdom_mk_objs = $(foreach m,$(APP_MODULES),$(foreach p,$(CDOM_$(call cdom_mk_up,$(m))_PARTS),\
-  $(foreach f,$(call cdom_mk_part_src,$(m),$(p)),$(APP_WASM).cdom/$(m)/$(p)/$(basename $(notdir $(f))).cdom.o)))
+  $(foreach f,$(call cdom_mk_part_src,$(m),$(p),$(call cdom_mk_simd_on,$(1))),$(1).cdom/$(m)/$(p)/$(basename $(notdir $(f))).cdom.o)))
+# APP_SIMD: unset, 0 or 1; with 1, APP_WASM itself stays scalar (CDOM_IMAGE_SIMD is 0), and some module of APP_MODULES
+# has a SIMD build (a part with _SIMD_SRC or _SIMD_CFLAGS: image), or the twin would be APP_WASM again.
+cdom_mk_simd_parts = $(strip $(foreach m,$(APP_MODULES),$(foreach p,$(CDOM_$(call cdom_mk_up,$(m))_PARTS),\
+  $(CDOM_$(call cdom_mk_up,$(m))_$(call cdom_mk_up,$(p))_SIMD_SRC)$(CDOM_$(call cdom_mk_up,$(m))_$(call cdom_mk_up,$(p))_SIMD_CFLAGS))))
+cdom_mk_simd_ok = $(if $(filter-out 0 1,$(APP_SIMD)),$(error cdom.mk: APP_SIMD is $(APP_SIMD), not 0 or 1))$(if $(cdom_mk_simd_wasm),\
+  $(if $(filter 1,$(CDOM_IMAGE_SIMD)),$(error cdom.mk: APP_SIMD := 1 builds APP_WASM scalar and $(cdom_mk_simd_wasm) with SIMD; leave CDOM_IMAGE_SIMD at 0))\
+  $(if $(cdom_mk_simd_parts),,$(error cdom.mk: APP_SIMD := 1, and no module of APP_MODULES ($(APP_MODULES)) has a SIMD build (image does))))
 cdom_mk_mod_deps = $(foreach m,$(APP_MODULES),$(CDOM_$(call cdom_mk_up,$(m))_DEPS))
 cdom_mk_mod_ldflags = $(foreach m,$(APP_MODULES),$(CDOM_$(call cdom_mk_up,$(m))_LDFLAGS))
 # cdom_mk_unique stops at a part that names two files of one base name (their objects would be one file).
 cdom_mk_dup = $(strip $(foreach f,$(1),$(if $(filter-out 1,$(words $(filter %/$(notdir $(f)) $(notdir $(f)),$(1)))),$(notdir $(f)))))
 cdom_mk_unique = $(foreach m,$(APP_MODULES),$(foreach p,$(CDOM_$(call cdom_mk_up,$(m))_PARTS),\
-  $(if $(call cdom_mk_dup,$(call cdom_mk_part_src,$(m),$(p))),$(error cdom.mk: part $(p) of module $(m) names two files called $(firstword $(call cdom_mk_dup,$(call cdom_mk_part_src,$(m),$(p))))))))
-# An object's module, part and source, from its path (the words of the path under $(APP_WASM).cdom/); the source
-# is empty for a .cdom.o that is no object of this app's modules.
-cdom_mk_obj_words = $(subst /, ,$(patsubst $(APP_WASM).cdom/%,%,$(1)))
+  $(if $(call cdom_mk_dup,$(call cdom_mk_part_src,$(m),$(p),1)),$(error cdom.mk: part $(p) of module $(m) names two files called $(firstword $(call cdom_mk_dup,$(call cdom_mk_part_src,$(m),$(p),1)))))))
+# An object's module (the .wasm whose .cdom/ it is under), its module's name, part and source, from its path (the words
+# of the path under <module.wasm>.cdom/); the source is empty for a .cdom.o that is no object of this app's modules. A SIMD
+# build's object takes the part's _SIMD_CFLAGS after its _CFLAGS.
+cdom_mk_obj_wasm = $(if $(and $(cdom_mk_simd_wasm),$(filter $(cdom_mk_simd_wasm).cdom/%,$(1))),$(cdom_mk_simd_wasm),$(APP_WASM))
+cdom_mk_obj_words = $(subst /, ,$(patsubst $(call cdom_mk_obj_wasm,$(1)).cdom/%,%,$(1)))
 cdom_mk_obj_mod = $(word 1,$(call cdom_mk_obj_words,$(1)))
 cdom_mk_obj_part = $(word 2,$(call cdom_mk_obj_words,$(1)))
-cdom_mk_obj_src = $(if $(filter $(1),$(cdom_mk_objs)),$(firstword $(filter %/$(patsubst %.cdom.o,%,$(notdir $(1))).c \
-  $(patsubst %.cdom.o,%,$(notdir $(1))).c,$(call cdom_mk_part_src,$(call cdom_mk_obj_mod,$(1)),$(call cdom_mk_obj_part,$(1))))))
-cdom_mk_obj_flags = $(CDOM_$(call cdom_mk_up,$(call cdom_mk_obj_mod,$(1)))_$(call cdom_mk_up,$(call cdom_mk_obj_part,$(1)))_CFLAGS)
+cdom_mk_obj_simd = $(call cdom_mk_simd_on,$(call cdom_mk_obj_wasm,$(1)))
+cdom_mk_obj_src = $(if $(filter $(1),$(call cdom_mk_objs,$(call cdom_mk_obj_wasm,$(1)))),$(firstword $(filter %/$(patsubst %.cdom.o,%,$(notdir $(1))).c \
+  $(patsubst %.cdom.o,%,$(notdir $(1))).c,$(call cdom_mk_part_src,$(call cdom_mk_obj_mod,$(1)),$(call cdom_mk_obj_part,$(1)),$(call cdom_mk_obj_simd,$(1))))))
+cdom_mk_obj_pv = CDOM_$(call cdom_mk_up,$(call cdom_mk_obj_mod,$(1)))_$(call cdom_mk_up,$(call cdom_mk_obj_part,$(1)))
+cdom_mk_obj_flags = $($(call cdom_mk_obj_pv,$(1))_CFLAGS) $(if $(call cdom_mk_obj_simd,$(1)),$($(call cdom_mk_obj_pv,$(1))_SIMD_CFLAGS))
 # $(call cdom_mk_for,name,target,prerequisites): the prerequisites when target is the file name holds,
 # else one that nothing makes.
 cdom_mk_for = $(if $(filter $(2),$(1)),$(3),$(2).cdom-mk-none)
 .SECONDEXPANSION:
-%.wasm: $$(call cdom_mk_for,$$(APP_WASM),$$@,$$(cdom_mk_known)$$(cdom_mk_app_src) $$(cdom_mk_objs) $$(CDOM_HEADERS) $$(CDOM_LITS))
+# The SIMD twin (APP_SIMD) is linked from the same sources and its own objects, after APP_WASM: the page carries one string
+# table, APP_WASM's, for both, so the twin's must be the same bytes, or the build stops and removes the twin.
+%.wasm: $$(call cdom_mk_for,$$(APP_WASM) $$(cdom_mk_simd_wasm),$$@,$$(cdom_mk_known)$$(cdom_mk_simd_ok)$$(cdom_mk_app_src) \
+  $$(call cdom_mk_objs,$$@) $$(CDOM_HEADERS) $$(CDOM_LITS) $$(if $$(filter $$@,$$(cdom_mk_simd_wasm)),$$(APP_WASM)))
 	@mkdir -p $(@D)
 	@$(cdom_mk_toolchain)
-	$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS) $(cdom_mk_mod_ldflags) $(APP_LDFLAGS) -o $@.linked $(cdom_mk_app_src) $(cdom_mk_objs)
+	$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS) $(cdom_mk_mod_ldflags) $(APP_LDFLAGS) -o $@.linked $(cdom_mk_app_src) $(call cdom_mk_objs,$@)
 	$(call cdom_lits,$@.linked,$@)
 	@rm -f $@.linked
+	$(if $(filter $@,$(cdom_mk_simd_wasm)),@$(call cdom_mk_lits_same,$(APP_WASM),$@))
+# $(call cdom_mk_lits_same,scalar.wasm,simd.wasm): the two string tables are the same bytes, or the twin is removed and make stops.
+cdom_mk_lits_same = cmp -s $(call cdom_mk_q,$(1).lits) $(call cdom_mk_q,$(2).lits) || { rm -f $(call cdom_mk_q,$(2)) $(call cdom_mk_q,$(2).lits); \
+  echo "cdom.mk: $(2) has other string literals than $(1) (the page's one table serves both: a SIMD build may not add or change one)" >&2; exit 1; }
 
 # A module part's object (the variables above): its file, compiled with the app's flags and then the part's. For
 # any other .cdom.o the prerequisite is a file nothing makes, so this rule does not apply.
@@ -275,6 +308,10 @@ cdom_mk_page_src = $(or $(APP_PAGE_SRC),$(CDOM_PAGE))
 cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))
 cdom_mk_wasm_url = $(if $(APP_WASM_SEPARATE),$(or $(APP_WASM_URL),$(notdir $(APP_WASM))))
 cdom_mk_title = $(if $(APP_PAGE_SRC),,$(or $(APP_TITLE),$(basename $(notdir $(APP_WASM)))))
+# APP_SIMD: the twin, bundled too, or its URL: APP_SIMD_WASM_URL, else the scalar URL with .simd.wasm for its .wasm.
+cdom_mk_simd_bundled = $(if $(APP_WASM_SEPARATE),,$(cdom_mk_simd_wasm))
+cdom_mk_simd_url = $(strip $(if $(and $(APP_WASM_SEPARATE),$(cdom_mk_simd_wasm)),$(or $(APP_SIMD_WASM_URL),$(if $(filter %.wasm,$(cdom_mk_wasm_url)),\
+  $(patsubst %.wasm,%.simd.wasm,$(cdom_mk_wasm_url)),$(error cdom.mk: APP_WASM_URL $(cdom_mk_wasm_url) does not end in .wasm; set APP_SIMD_WASM_URL, the SIMD twin's)))))
 # The page's stylesheets, as a prerequisite: $(APP_PAGE).csslist, the list tools/cdpage --css-list writes
 # of the .css files under src/ with a hash of each, which it replaces only when that text changes. A
 # list of the .css files themselves could not see one removed, nor one added with an older time. It is
@@ -286,11 +323,11 @@ cdom_mk_title = $(if $(APP_PAGE_SRC),,$(or $(APP_TITLE),$(basename $(notdir $(AP
 cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) ] && [ -d $(call cdom_mk_q,$(@D)) ] \
   && $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) --css-list src $(call cdom_mk_q,$@.csslist))$@.csslist)
 %.csslist: ;
-%.html: $$(call cdom_mk_for,$$(APP_PAGE),$$@,$$(cdom_mk_page_src) $$(CDOM_SHIM) $$(CDOM_PAGE_TOOL) $$(APP_WASM)) $$(cdom_mk_csslist)
+%.html: $$(call cdom_mk_for,$$(APP_PAGE),$$@,$$(cdom_mk_page_src) $$(CDOM_SHIM) $$(CDOM_PAGE_TOOL) $$(APP_WASM) $$(cdom_mk_simd_wasm)) $$(cdom_mk_csslist)
 	$(if $(APP_PAGE_SRC)$(APP_WASM),,$(error cdom.mk: the default page starts APP_WASM, and APP_WASM is unset))
 	@mkdir -p $(@D)
 	$(CDOM_PAGE_TOOL) --css-list src $(call cdom_mk_q,$@.csslist)
-	$(call cdom_mk_page,$(cdom_mk_page_src),$@,$(cdom_mk_bundled),$(cdom_mk_wasm_url),$(cdom_mk_title),$(APP_WASM).lits)
+	$(call cdom_mk_page,$(cdom_mk_page_src),$@,$(cdom_mk_bundled),$(cdom_mk_wasm_url),$(cdom_mk_title),$(APP_WASM).lits,$(cdom_mk_simd_bundled),$(cdom_mk_simd_url))
 
 # The toolchain check before the APP_WASM rule compiles: a one-function module through WASM_CC, its
 # wasm32 target and wasm-ld. When that fails (Apple's clang finds no wasm-ld; WASM_CC is not there), make
@@ -312,5 +349,6 @@ cdom_mk_toolchain = printf 'void f(void) {}\n' | $(WASM_CC) --target=wasm32 -nos
 # is newer (so the list, which the tool brings up to date as make starts, would go stale), and it would
 # remove the list after every page it writes, so the next make would always write the page again. Nothing
 # builds this target, and one that starts with a dot is never the default goal.
-.cdom-mk-sources: $$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(cdom_mk_objs) $$(CDOM_LITS)) \
+.cdom-mk-sources: $$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(call cdom_mk_objs,$$(APP_WASM)) $$(CDOM_LITS)) \
+  $$(if $$(cdom_mk_simd_wasm),$$(cdom_mk_simd_wasm) $$(call cdom_mk_objs,$$(cdom_mk_simd_wasm))) \
   $$(if $$(APP_PAGE),$$(cdom_mk_page_src) $$(CDOM_PAGE_TOOL) $$(APP_PAGE).csslist)
