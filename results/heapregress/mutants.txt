@@ -1,0 +1,27 @@
+caught realloc-big-null (rerun after the mutant was fixed: it no longer built, may_fail unused)
+caught realloc-try-frees
+caught heap-big-pow2
+caught heap-big-grain-64k
+caught heap-top-kept
+caught heap-top-run-kept
+caught heap-no-merge-next
+caught heap-no-merge-prev
+caught heap-split-rest-lost
+caught heap-split-rest-overlaps
+caught heap-big-no-header
+caught heap-no-grow-top
+caught heap-grow-top-anywhere
+caught bytes-http-kept
+caught bytes-msg-kept
+caught bytes-encoded-kept
+caught bytes-store-kept
+caught bytes-url-kept
+caught heap-cap-loose (rerun with the test's new name, "at the cap")
+caught own-alloc-bypassed
+caught try-path-shared
+caught try-path-heavy
+caught grow-refusal-unsigned
+caught realloc-alloc-copy
+caught foreign-free
+caught file-bytes-kept
+26 of 26 caught

@@ -1,0 +1,15 @@
+memory result for cdom-hrbase and 22_run-memory: 1.7941389083862305
+memory result for cdom-hrbase and 22_run-memory: 1.8421506881713867
+memory result for cdom-hrbase and 22_run-memory: 1.8405179977416992
+memory result for cdom-hrbase and 22_run-memory: 1.8412389755249023
+memory result for cdom-hrbase and 22_run-memory: 1.838942527770996
+memory result for cdom-hrbase and 22_run-memory: 1.8446760177612305
+memory result for cdom-hrbase and 22_run-memory: 1.8427495956420898
+memory result for cdom-hrbase and 22_run-memory: 1.8209171295166016
+memory result for cdom-hrbase and 22_run-memory: 1.8455705642700195
+memory result for cdom-hrbase and 22_run-memory: 1.8421735763549805
+memory result for cdom-hrbase and 22_run-memory: 1.8445653915405273
+memory result for cdom-hrbase and 22_run-memory: 1.818242073059082
+memory result for cdom-hrbase and 22_run-memory: 1.8400640487670898
+memory result for cdom-hrbase and 22_run-memory: 1.8478384017944336
+memory result for cdom-hrbase and 22_run-memory: 1.8078289031982422
