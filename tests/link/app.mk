@@ -30,5 +30,6 @@ CDOM_PARTS_LIB_SRC := $(cdom_mk_here)parts/lib/lib_a.c $(cdom_mk_here)parts/lib/
 CDOM_PARTS_LIB_CFLAGS := -w -I$(cdom_mk_here)parts/lib/private -DPARTS_LIB=3
 CDOM_PARTS_DEPS := $(cdom_mk_here)parts/lib/private/parts_private.h
 CDOM_PARTS_LDFLAGS := -Wl,--export=parts_lib_b
+CDOM_PARTS_LIB_SIMD_CFLAGS := $(SIMD_LIB_CFLAGS)
 APP_CFLAGS += $(EXTRA_CFLAGS)
 endif
