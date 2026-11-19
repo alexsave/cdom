@@ -2869,4 +2869,13 @@ EXPORT("t_sj") uint32_t t_sj(uint32_t which, uint32_t n) {
   return r;
 }
 EXPORT("t_sj_ran") uint32_t t_sj_ran(void) { return sj_ran; }
-EXPORT("t_sj_sp") uint32_t t_sj_sp(void) { return (uint32_t)(uintptr_t)__builtin_frame_address(0); }
+/* The stack pointer as a callee sees it: the frame of a function that cannot be inlined. */
+static __attribute__((noinline)) uintptr_t sj_sp(void) { volatile char probe = 0; uintptr_t at = (uintptr_t)&probe; return at + probe; }
+/* count throws from depth frames down, in one call, so no frame of this export's own puts the stack pointer back
+ * between them: answers 1 when every guard answered 1 and the stack pointer after them is where it was before. */
+EXPORT("t_sj_many") uint32_t t_sj_many(uint32_t count, uint32_t depth) {
+  uintptr_t before = sj_sp();
+  uint32_t all = 1;
+  for (uint32_t i = 0; i < count; i++) all &= (uint32_t)cd_image_guard(sj_throws, &depth, &sj_slot);
+  return all && sj_sp() == before;
+}

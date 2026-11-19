@@ -167,13 +167,11 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
         whole === 13 && out(whole) === '한국어 값', cut === 3 && out(3) === '한', out(x.t_host_accent()) === 'rgb(1, 2, 3)'];
       return r.every(Boolean) || JSON.stringify(r);
     });
-    check('the image module\'s guard (js, the shim\'s image_call and image_throw): a body that returns answers 0, one that throws from 40 frames down answers 1, and 2,000 throws leave the stack pointer where it was', () => {
-      const sp = x.t_sj_sp();
+    check('the image module\'s guard (js, the shim\'s image_call and image_throw): a body that returns answers 0, one that throws from 40 frames down answers 1, and 2,000 throws in one call leave the stack pointer where it was', () => {
       const r = [x.t_sj(0, 7) === 0 && x.t_sj_ran() === 7, x.t_sj(1, 40) === 1 && x.t_sj_ran() === 1];
-      let all = true;
-      for (let i = 0; i < 2000; i++) all = all && x.t_sj(1, 40) === 1;   // 8 KB of frames each: 16 MB, past the 64 KB stack, if none came back
-      r.push(all, x.t_sj_sp() === sp, x.t_sj(0, 3) === 0 && x.t_sj_ran() === 3);
-      return r.every(Boolean) || JSON.stringify(r) + ` sp ${sp} then ${x.t_sj_sp()}`;
+      r.push(x.t_sj_many(2000, 40) === 1);   // 8 KB of frames each: 16 MB, far past the 64 KB stack, if none were put back
+      r.push(x.t_sj(0, 3) === 0 && x.t_sj_ran() === 3);
+      return r.every(Boolean) || JSON.stringify(r);
     });
     check('cd_input_whole: the whole value when it fits (13 bytes into 13), else none of it and the whole length (into 12, 4 and 0)', () => {
       const W = 1 << 16;
