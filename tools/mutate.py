@@ -171,7 +171,7 @@ M = [
   ('now-zero', 'shim/cdom.js', '    return performance.now();', '    return 0;', UNIT, 'FAIL cd_now'),
   ('input-no-prevent', 'shim/cdom.js', '    if (flags & 1) {', '    if (false) {', UNIT, 'FAIL a mousedown and a touchstart'),
   ('input-touch-point', 'shim/cdom.js', '    return event.changedTouches ? event.changedTouches[0] : event;', '    return event;', UNIT, 'FAIL a mousedown and a touchstart'),
-  ('input-mask-16', 'shim/cdom.js', '  let listenMask = newWords(2048);', '  let listenMask = new Uint16Array(2048);', UNIT, 'FAIL a mousedown and a touchstart'),
+  ('input-mask-16', 'shim/cdom.js', '    listenMask[id * 2 + (type >> 5)] |= 1 << (type & 31);', '    listenMask[id * 2 + (type >> 5)] |= (1 << (type & 31)) & 0xffff;', UNIT, 'FAIL a mousedown and a touchstart'),
   ('input-win-viewport', 'shim/cdom.js', '    const viewport = type === RESIZE || type === VISIBILITY;', '    const viewport = true;', UNIT, 'FAIL the document'),
   ('input-unwin-noop', 'shim/cdom.js', '    nodes[id].removeEventListener(EVENTS[type], listener);', '', UNIT, 'FAIL the document'),
   ('input-win-twice', 'shim/cdom.js', '    if (hostListeners[slot]) {\n      return;\n    }\n    const listener', '    const listener', UNIT, 'FAIL the document'),
@@ -804,7 +804,7 @@ M = [
   ('ban-tools', 'tools/minshim.mjs', "import fs from 'node:fs';", "import fs from 'node:fs';\nconst q = { imageSmoothingQuality: 'low' };", RESIZE, 'FAIL resize ban: tools/minshim.mjs'),
   # the third tier, IE 9 (shim/boot.js, tools/legacy/memory-words.js, the seed exception, the shim-ie9 gate)
   ('ie9-boot-typed-when-absent', 'shim/boot.js', '    if (!window[typed[i]]) words = true;', '    if (!window[typed[i]]) words = false;', LEG9, 'FAIL booted'),
-  ('ie9-words-load8-off-by-one', 'tools/legacy/memory-words.js', 'function load8(ptr) {\n  return memory.load8_u(ptr);', 'function load8(ptr) {\n  return memory.load8_u(ptr + 1);', LEG9, 'FAIL'),
+  ('ie9-words-load8-off-by-one', 'tools/legacy/memory-words.js', 'function load8(ptr) {\n  return memory.load8_u(ptr);', 'function load8(ptr) {\n  return memory.load8_u(ptr + 1);', LEG9, 'FAIL booted'),
   ('ie9-seed-weak-with-crypto', 'shim/cdom.js', '    if (globalThis.crypto && crypto.getRandomValues) {\n      return crypto.getRandomValues', '    if (false) {\n      return crypto.getRandomValues', LEG1, 'FAIL cd_seed from crypto.getRandomValues, never Math.random, where crypto exists'),
   ('ie9-shim-gate-lets-typed-through', 'tools/legacy/memory.mjs', "if (node.type === 'Identifier' && names.has(node.name) && !SHIM_TYPED_ALLOWED.has(fn))", "if (false)", WORDS, 'FAIL the shim-ie9 gate'),
   ('encode-quality-unchecked', 'src/cdom.c', '|| y + h > H || quality > 100) __builtin_trap();', '|| y + h > H) __builtin_trap();', UNIT, "FAIL cd_encode_image's quality"),
