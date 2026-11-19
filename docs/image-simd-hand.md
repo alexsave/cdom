@@ -479,5 +479,17 @@ Chrome, p12.png at box 900, 9 interleaved rounds, the 1-minute load 1.37 to 1.50
 - P1: the microbench 67.3 ms (predicted 67, 1.06x over the scalar Paeth, inside 1.00x to 1.20x): confirmed; the Chrome run 16.0 ms faster than P0 (predicted 6 to 14): refuted on the side of a larger gain.
 - P2: 9.9 ms faster than P0 (predicted about 12, at least 8): confirmed.
 - P1 against P2: 0.976 per round (0.963 to 1.034), 6.1 ms faster by the medians, so P1 is kept: the SIMD build's p12.png run is now 0.88x of the scalar build's on the Mac (it was 0.94x).
-- x86: the VM measured the SIMD Paeth at 1.50x over scalar (build 3, above); P1 changes only the chain's last steps, which the x86 code did not have as a shuffle in the same form, and it was not measured there.
+- x86: the VM measured the SIMD Paeth at 1.50x over scalar (build 3, above), with the shuffle in the chain; P1 keeps the SIMD Paeth and takes the shuffle out of the wasm, so it gives up nothing of that by design, but it was not measured there.
 - Bit-exact: tests/image/simd.sh (every filter, 1 to 8 bytes a pixel) and bench/image/equal.mjs (4 inputs, 5 boxes: 20 of 20 equal); the mutant paeth-mask (the mask 0x1ff) is caught, with paeth-tie, paeth-upleft and paeth-min.
+
+## Shipping it: APP_SIMD
+
+An app does not choose between the scalar and the SIMD build: `APP_SIMD := 1` builds both, and the browser picks (README.md, "Starting an app" and "Building an app").
+
+- The pick: `cdom.start` takes the pair `[scalar, simd]` and runs `WebAssembly.validate` on a 29-byte module with one `i8x16.splat` (`tools/simd-probe.wat`; `wasm-as -all` makes the same bytes, and `tools/pick.mjs` checks it); only the module it picks is fetched and compiled.
+- The shim's cost, on every page: 18,320 to 18,458 bytes minified (+138), 6,896 to 6,960 brotli (+64), 7,700 to 7,779 gzip.
+- The page's cost, for bench/image's app (the image module) bundled: 130,955 to 249,587 bytes, 46,367 to 71,069 brotli (+24.7 KB); app.wasm is 28.9 KB brotli and app.simd.wasm 30.8 KB on their own.
+  Brotli finds little in common between the two base64 blobs, so a bundled page pays nearly the whole twin; a separate page pays nothing, since a visitor fetches one module.
+- The scalar module of an APP_SIMD build is the same bytes as the build without it, and the twin the same bytes as the `CDOM_IMAGE_SIMD=1` build (tests/link/run.sh).
+- Tested end to end in Chrome by tests/pick/run.sh: bundled and separate pages, with the readable and the minified shim; the real Chrome fetches only app.simd.wasm, a page whose `WebAssembly.validate` answers false for the probe only app.wasm, and the two picks give the same pixels on the four bench inputs at five boxes.
+  The legacy page (tests/legacy.html) starts a pair too: with WebAssembly it fetches only the twin, without it only the scalar module's wasm2js build.

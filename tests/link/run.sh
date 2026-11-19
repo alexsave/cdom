@@ -510,8 +510,9 @@ refuse 'an app with no module that has a SIMD build' 'has a SIMD build (image do
 pl="$pm/lits"
 refuse 'a twin with a string literal APP_WASM lacks' 'has other string literals than' -f "$here/app.mk" INCLUDE=first OUT="$pl" PAGE= PARTS=1 APP_MODULES='random parts' APP_SIMD=1 SIMD_LIB_CFLAGS=-DPARTS_SIMD_LIT "$pl/mk_app.simd.wasm"
 if [ -e "$pl/mk_app.simd.wasm" ]; then echo "FAIL APP_SIMD: the refused twin was left in place"; fail=1; fi
-if ! make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$pl" PAGE= PARTS=1 APP_MODULES='random parts' APP_SIMD=1 SIMD_LIB_CFLAGS=-DPARTS_SIMD_SAME "$pl/mk_app.simd.wasm" 2> "$pl/same.log"; then
-  echo "FAIL APP_SIMD: a twin whose SIMD flags add no literal does not build:"; cat "$pl/same.log"; fail=1
+ps="$pm/same" # an OUT of its own: make does not see flags change, so the refused case's objects would be reused
+if ! make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$ps" PAGE= PARTS=1 APP_MODULES='random parts' APP_SIMD=1 SIMD_LIB_CFLAGS=-DPARTS_SIMD_SAME "$ps/mk_app.simd.wasm" 2> "$pm/same.log"; then
+  echo "FAIL APP_SIMD: a twin whose SIMD flags add no literal does not build:"; cat "$pm/same.log"; fail=1
 else echo "ok   APP_SIMD: a twin whose part has SIMD flags of its own and the same literals builds"; fi
 node "$here/../../tools/seeds.mjs" || fail=1
 node "$here/../../tools/strings.mjs" || fail=1

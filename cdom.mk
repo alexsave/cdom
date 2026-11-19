@@ -62,6 +62,15 @@
 #                 .lits file), and $(call cdom_page,in.html,out.html,module.wasm) bundles that module as well,
 #                 with the string table cdlits wrote beside it (module.wasm.lits). Both bundle src/'s
 #                 stylesheets, as the APP_PAGE rule does.
+#   APP_SIMD, APP_SIMD_WASM_URL
+#                 APP_SIMD := 1 builds a second module from the same sources, the SIMD twin of APP_WASM (app.simd.wasm
+#                 beside app.wasm), its modules' parts with their _SIMD_SRC and _SIMD_CFLAGS (the image module's, as
+#                 CDOM_IMAGE_SIMD=1 builds it); APP_WASM stays the same bytes. The twin's string table must be the
+#                 same bytes as APP_WASM's (the page carries one), or the build stops and removes the twin. The page's
+#                 /*CDOM_WASM*/ becomes the pair [scalar, SIMD], both bundled or both URLs (the twin's APP_SIMD_WASM_URL,
+#                 else APP_WASM_URL with .simd.wasm for .wasm), and cdom.start fetches only the one the browser runs
+#                 (README.md, "Starting an app"). Refused: CDOM_IMAGE_SIMD=1 beside it, and an app whose APP_MODULES have
+#                 no SIMD build.
 #
 # The stylesheets: Every file whose name ends in .css under the app's src/ directory, in any subfolder,
 # is written into the page's <style>, in byte order of its path, so 00-base.css comes before
@@ -298,8 +307,8 @@ cdom_mk_wasm_url = $(if $(APP_WASM_SEPARATE),$(or $(APP_WASM_URL),$(notdir $(APP
 cdom_mk_title = $(if $(APP_PAGE_SRC),,$(or $(APP_TITLE),$(basename $(notdir $(APP_WASM)))))
 # APP_SIMD: the twin, bundled too, or its URL: APP_SIMD_WASM_URL, else the scalar URL with .simd.wasm for its .wasm.
 cdom_mk_simd_bundled = $(if $(APP_WASM_SEPARATE),,$(cdom_mk_simd_wasm))
-cdom_mk_simd_url = $(if $(and $(APP_WASM_SEPARATE),$(cdom_mk_simd_wasm)),$(or $(APP_SIMD_WASM_URL),$(if $(filter %.wasm,$(cdom_mk_wasm_url)),\
-  $(patsubst %.wasm,%.simd.wasm,$(cdom_mk_wasm_url)),$(error cdom.mk: APP_WASM_URL $(cdom_mk_wasm_url) does not end in .wasm; set APP_SIMD_WASM_URL, the SIMD twin's))))
+cdom_mk_simd_url = $(strip $(if $(and $(APP_WASM_SEPARATE),$(cdom_mk_simd_wasm)),$(or $(APP_SIMD_WASM_URL),$(if $(filter %.wasm,$(cdom_mk_wasm_url)),\
+  $(patsubst %.wasm,%.simd.wasm,$(cdom_mk_wasm_url)),$(error cdom.mk: APP_WASM_URL $(cdom_mk_wasm_url) does not end in .wasm; set APP_SIMD_WASM_URL, the SIMD twin's)))))
 # The page's stylesheets, as a prerequisite: $(APP_PAGE).csslist, the list tools/cdpage --css-list writes
 # of the .css files under src/ with a hash of each, which it replaces only when that text changes. A
 # list of the .css files themselves could not see one removed, nor one added with an older time. It is

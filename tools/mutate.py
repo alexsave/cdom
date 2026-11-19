@@ -26,6 +26,8 @@ IMG = ['env', 'IMAGE_BIG=0', 'IMAGE_WASM=0', 'tests/image/run.sh']   # the image
 IMGBIG = ['env', 'IMAGE_WASM=0', 'tests/image/run.sh']               # with the big inputs (budget, peaks)
 IMGW = ['env', 'IMAGE_BIG=0', 'tests/image/run.sh']                  # and in wasm, both ways out (tools/image.mjs)
 SIMD = ['tests/image/simd.sh']                                       # the SIMD loops against their scalar twins, in node
+PICK = ['tests/pick/run.sh']                                         # the SIMD pick (APP_SIMD) in Chrome (tools/pick.mjs)
+LEGW2J = ['env', 'LEGACY=1', 'node', 'tools/legacy.mjs']             # the legacy page as a browser without WebAssembly
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -766,6 +768,12 @@ M = [
   ('paeth-upleft', 'src/cdom_image_loops.c', '    c = b;\n', '', SIMD, 'FAIL unfilter'),  # Paeth never moves the up-left pixel along
   ('paeth-min', 'src/cdom_image_loops.c', 'wasm_i16x8_min(pb, pc)', 'wasm_i16x8_max(pb, pc)', SIMD, 'FAIL unfilter'),  # Paeth takes a when pa is at most the larger of pb and pc
   ('paeth-mask', 'src/cdom_image_loops.c', '  int m = 0xff;\n  __asm__', '  int m = 0x1ff;\n  __asm__', SIMD, 'FAIL unfilter'),  # Paeth's left value is not taken modulo 256
+  # the SIMD pick (cdom.mk's APP_SIMD, shim/cdom.js start(), tools/cdpage.c, shim/boot.js; tests/pick/run.sh, tests/link/run.sh)
+  ('pick-inverted', 'shim/cdom.js', 'url = url[+WebAssembly.validate(', 'url = url[+!WebAssembly.validate(', PICK, 'FAIL bundled page, readable shim: the real Chrome gets the SIMD module'),  # the scalar module where SIMD validates, and the twin where it does not
+  ('pick-probe-broken', 'shim/cdom.js', '65, 0, 253, 15, 11]', '65, 0, 254, 15, 11]', PICK, 'FAIL bundled page, readable shim: the real Chrome gets the SIMD module'),  # the probe is no valid module (an opcode no browser has), so validate is false everywhere
+  ('pick-bundle-order', 'tools/cdpage.c', '        module_at(o, a->wasm, a->wasm_url);', '        module_at(o, a->simd_wasm ? a->simd_wasm : a->wasm, a->wasm_url);', PICK, 'FAIL bundled page, readable shim: with no wasm SIMD'),  # the bundled pair's first entry is the twin
+  ('pick-lits-unchecked', 'cdom.mk', '\t$(if $(filter $@,$(cdom_mk_simd_wasm)),@$(call cdom_mk_lits_same,$(APP_WASM),$@))\n', '', LINK, 'FAIL APP_SIMD: a twin with a string literal APP_WASM lacks builds'),  # the twin's string table is never compared with APP_WASM's
+  ('pick-boot-simd', 'shim/boot.js', 'url[0] + ".js"', 'url[1] + ".js"', LEGW2J, 'FAIL booted'),  # the no-WebAssembly fallback loads the twin's wasm2js build, which is not there
   ('rgba-alpha', 'src/cdom_image_loops.c', '0, 1, 2, 16, 3, 4, 5, 16, 6, 7, 8, 16, 9, 10, 11, 16));', '0, 1, 2, 16, 3, 4, 5, 16, 6, 7, 8, 16, 9, 10, 11, 0));', SIMD, 'FAIL rgb to rgba'),  # the last pixel of 4 gets the red byte of the first as its alpha
   ('rgba-read-past', 'src/cdom_image_loops.c', 'for (; x + 6 <= w; x += 4)', 'for (; x + 5 <= w; x += 4)', SIMD, 'FAIL rgb to rgba'),  # the loop reads a byte past the row (a trap at the top of memory)
   ('across-store-lane', 'src/cdom_image_loops.c', 'wasm_v128_store32_lane(q + 2, sum, 2);', 'wasm_v128_store32_lane(q + 2, sum, 3);', SIMD, 'FAIL scaler across'),  # a pixel's blue sum is stored from its alpha lane
