@@ -127,20 +127,42 @@ If mix is within 5% of o2 on every input, the proposal is a per-module level in 
 - S3: confirmed (0.01 ms an error; the heap and the stack pointer checked by tools/alloc.mjs, tools/image.mjs, tests/unit and tools/legacy.mjs, the last on wasm2js too).
 - S4: confirmed; the eh module is 123 bytes larger raw, 37 brotli.
 
-### Size (bench/image/sizes/run.sh, -Oz, stripped, scalar)
+### Size (bench/image/sizes/run.sh, stripped, scalar; on main after #45)
 
 | build | raw | brotli |
 | --- | --- | --- |
-| no image code | 2,696 | 1,353 |
-| both formats, js | 82,563 | 28,935 |
-| both formats, eh | 82,686 | 28,972 |
-| JPEG only | 72,205 | 24,515 |
-| PNG only | 13,912 | 6,420 |
+| no image code, -Oz | 2,606 | 1,360 |
+| both formats, js, -Oz | 82,506 | 28,902 |
+| both formats, eh, -Oz | 82,625 | 28,905 |
+| JPEG only, -Oz | 72,160 | 24,474 |
+| PNG only, -Oz | 13,815 | 6,408 |
 
-- Z1: the module adds 27.6 KB brotli (79.9 KB raw); confirmed (26 to 32).
-- Z2: the JPEG half adds 23.2 KB and the PNG half 5.1 KB; both confirmed.
+- Z1: the module adds 27.5 KB brotli (79.9 KB raw); confirmed (26 to 32).
+- Z2: the JPEG half adds 23.1 KB and the PNG half 5.0 KB; both confirmed.
   A PNG-only app would save 22.5 KB brotli with a split module; a JPEG-only app 4.4 KB.
+- S4: the eh module is 119 bytes larger raw, 3 brotli.
 - The shim's two functions: 151 bytes minified, 50 brotli, on every page.
+
+### The PNG checksum (A1)
+
+`p12.png` with the adler32 checked (the stream read to its end) and with reading stopped at the last row (bench/image/adler, as raceclub's PR did), 21 interleaved rounds in V8: 245.3 and 245.5 ms median.
+Confirmed (under 1%): the check stays, since it costs nothing.
+
+### The optimization level
+
+The bench's C arm at four levels, the same harness (9 interleaved rounds, Chrome, box 900, load 3.2 to 4.0), raw runs in bench/image/results/2026-11-19-levels.tsv; the module's brotli from bench/image/sizes/run.sh (the app at that level, less the same app with no image code at that level):
+
+| arm | p12.jpg ms | p12p.jpg ms | p48.jpg ms | p12.png ms | module brotli |
+| --- | --- | --- | --- | --- | --- |
+| oz (-Oz, now) | 59.9 | 141.9 | 176.9 | 256.0 | 27.5 KB |
+| o2 | 58.8 | 141.1 | 179.7 | 251.7 | 30.6 KB |
+| o3 | 58.7 | 142.4 | 178.5 | 253.5 | 32.2 KB |
+| mix (third_party at -O2) | 59.8 | 140.9 | 179.7 | 257.5 | 30.0 KB |
+
+- The predictions that o2 is 15 to 30% faster (10 to 25% on PNG) are refuted: every arm is within 2% of -Oz on every input, inside the runs' spread, and p48.jpg is 1 to 2% slower at -O2.
+  The wasm engine compiles the module again (V8's optimizing tier), so what LLVM's -O2 adds over -Oz on this code (inlining and unrolling the Huffman and inflate loops) is mostly not left on the table at -Oz.
+- o3 within 5% of o2, and mix within 5% of o2: confirmed, but there is nothing to buy: -O2 costs 3.1 KB brotli, -O3 4.7 KB, mix 2.5 KB, for no measured time.
+- So no per-module level is proposed: the module stays at the app's level (-Oz by default), and Huffman and inflate time is a matter for the decoders' algorithms, not the compiler flag.
 
 ### The bench (bench/image/run.mjs)
 
