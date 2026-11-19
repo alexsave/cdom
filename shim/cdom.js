@@ -854,6 +854,121 @@ var cdom = (() => {
     reader.readAsArrayBuffer(file);
   }
 
+  // A throwaway job (src/cdom_job.c): the job module compiled once, posted to a fresh worker made from a blob:
+  // URL (so a bundled page works), the worker ended when it answers. Statuses are cdom_job.h's CD_JOB_*
+  // (0 OK, 1 NO_ROOM, 2 FAILED, 3 UNSUPPORTED, 4 NO_FILE). The worker's code, a function of its own that names
+  // nothing outside it: it loads the module, puts the args and the input (an ArrayBuffer, or a File read
+  // straight into the job's memory) in room the job makes with job_room, calls run, and answers [status,
+  // output]; run's 0 is OK, 1 NO_ROOM and any other value or a trap FAILED.
+  function jobWorker() {
+    onmessage = (event) => {
+      const [module, input, args] = event.data;
+      const heard = [0, 0];
+      let status = 2;
+      let exports;
+      const room = (n) => {
+        const p = exports.job_room(n);
+        if (!p) {
+          throw 1;
+        }
+        return p;
+      };
+      WebAssembly.instantiate(module, { cdjob: { answer: (p, n) => { heard[0] = p; heard[1] = n; } } })
+        .then((instance) => {
+          exports = instance.exports;
+          const isFile = input.size !== undefined;
+          const length = isFile ? input.size : input.byteLength;
+          const argsAt = room(args.byteLength);
+          new Uint8Array(exports.memory.buffer, argsAt, args.byteLength).set(new Uint8Array(args));
+          const inAt = room(length);
+          let at = inAt;
+          const run = () => {
+            if (at !== inAt + length) {
+              throw 2;
+            }
+            const code = exports.run(inAt, length, argsAt, args.byteLength) >>> 0;
+            status = code > 1 ? 2 : code;
+            return status ? undefined : exports.memory.buffer.slice(heard[0], heard[0] + heard[1]);
+          };
+          if (!isFile) {
+            new Uint8Array(exports.memory.buffer, inAt, length).set(new Uint8Array(input));
+            at += length;
+            return run();
+          }
+          const reader = input.stream().getReader();
+          const pump = () => reader.read().then((chunk) => {
+            if (chunk.done) {
+              return run();
+            }
+            if (at + chunk.value.length > inAt + length) {
+              throw 2;
+            }
+            new Uint8Array(exports.memory.buffer, at, chunk.value.length).set(chunk.value);
+            at += chunk.value.length;
+            return pump();
+          });
+          return pump();
+        })
+        .then((output) => postMessage([status, output], output ? [output] : []),
+          (error) => postMessage([error === 1 ? 1 : 2]));
+    };
+  }
+  const jobModules = {}; // job name -> promise of its compiled module
+  let jobSources;        // options.jobs: the bundled modules' URLs by name
+  let jobScript;         // the blob: URL of jobWorker, made at the first job
+  // Answers the job's callback: the output into room C makes (cd_job_room), NO_ROOM when it has none.
+  function jobAnswer(token, status, output) {
+    let ptr = 0;
+    const length = output ? output.byteLength : 0;
+    if (length) {
+      ptr = exports.cd_job_room(length);
+      if (ptr) {
+        bytes(ptr, length).set(new Uint8Array(output));
+      } else {
+        status = 1;
+      }
+    }
+    exports.cd_job_got(token, status, ptr, length);
+  }
+  // cd_job_cb (file 0: the input is length b at C address a) and cd_job_file_cb (file 1: file b of node a's
+  // files). The name, the args and the bytes are copied out of C memory in the call. Every answer comes from the
+  // event loop.
+  function job_run(token, namePtr, nameLen, argsPtr, argsLen, a, b, file) {
+    if (typeof Worker === "undefined" || typeof WebAssembly === "undefined") {
+      setTimeout(() => jobAnswer(token, 3));
+      return;
+    }
+    const name = utf8(namePtr, nameLen);
+    const args = bytes(argsPtr, argsLen).slice().buffer;
+    const input = file ? pickedFile(a, b) : bytes(a, b).slice().buffer;
+    if (!input) {
+      setTimeout(() => jobAnswer(token, 4));
+      return;
+    }
+    const module = jobModules[name] || (jobModules[name] = fetch((jobSources && jobSources[name]) || name)
+      .then((response) => response.arrayBuffer()).then((wasm) => WebAssembly.compile(wasm)));
+    module.then((compiled) => {
+      jobScript = jobScript || URL.createObjectURL(new Blob(["(" + jobWorker + ")()"], { type: "text/javascript" }));
+      let worker;
+      try {
+        worker = new Worker(jobScript);
+      } catch (error) {
+        jobAnswer(token, 2);
+        return;
+      }
+      const end = (status, output) => {
+        worker.terminate();
+        jobAnswer(token, status, output);
+      };
+      worker.onmessage = (event) => end(event.data[0], event.data[1]);
+      worker.onerror = () => end(2);
+      worker.postMessage([compiled, input, args], file ? [args] : [input, args]);
+    }, () => {
+      delete jobModules[name];
+      jobAnswer(token, 2);
+    });
+  }
+
   // A key/value store over IndexedDB (src/cdom_store.c): bytes in, bytes out, under keys C chooses.
   // A promise of an IndexedDB request's result.
   function promised(request) {
@@ -1350,6 +1465,7 @@ var cdom = (() => {
   // wasm loads while the parser and the stylesheets run, and the app starts once the DOM is ready.
   // options.openStore: an app that reads its store as it starts opens it now, while the wasm is
   // fetched and compiled, so its first get finds the database open. options.seed: cd_seed (seed()).
+  // options.jobs: the bundled job modules' URLs by name (cdom_job.h; cdom.mk's APP_JOBS and /*CDOM_JOBS*/).
   async function start(url, mount, env, options) {
     // The page's string table, written before the shim by the build (tools/cdpage).
     const table = globalThis.cdomLits;
@@ -1366,7 +1482,7 @@ var cdom = (() => {
         listen, value, value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num,
         set_text, set_text_num, set_attr, set_class, style, style_num, encode, image_bytes, remove, free, move, clear,
         detach, attach, unlisten, hit, viewport, rect, blit, set, call, get, timer, timer_stop, raf, now, ws_open, ws_send, ws_close, ws_buffered, http, epoch, origin,
-        file_read,
+        file_read, job_run,
         store_put, store_get, store_del,
         audio_load, audio_free, audio_play, audio_stop, audio_gain, audio_master, audio_state,
         random,
@@ -1417,6 +1533,7 @@ var cdom = (() => {
     if (!exports.cd_lits || instance.exports.cd_lits() >>> 0 !== table[1] >>> 0) {
       throw new Error("cdom: the page's string table is not this module's (the page and the module are from different builds, or the module did not go through cdlits)");
     }
+    jobSources = options && options.jobs;
     checkAhead = !!(options && options.checkAhead);
     lits = table[3].split("\0");
     litBase = table[0];
