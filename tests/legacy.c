@@ -91,3 +91,20 @@ EXPORT("file_ask") void file_ask(void) {
   cd_file_read_cb(ids[FILE], 0, 100, on_read, nullptr);
 }
 EXPORT("file_seen") int32_t file_seen_k(uint32_t k) { return file_seen[k]; }
+
+/* The image module's js way out of a libjpeg error (src/cdom_image_sjlj.c) on this tier too, wasm2js included: a body
+ * that throws from 20 frames down answers 1, 500 times in one call, the stack pointer where it was after; a body that
+ * returns answers 0. */
+#include "../src/cdom_image_int.h"
+static void *lg_slot;
+static __attribute__((noinline)) void lg_deep(uint32_t n) { volatile char pad[200]; pad[0] = (char)n; if (n) lg_deep(n - 1); else cd_image_throw(lg_slot); }
+static void lg_throws(void *ctx) { lg_deep(*(uint32_t *)ctx); }
+static void lg_returns(void *ctx) { (*(uint32_t *)ctx)++; }
+static __attribute__((noinline)) uintptr_t lg_sp(void) { volatile char probe = 0; uintptr_t at = (uintptr_t)&probe; return at + probe; }
+EXPORT("sj") uint32_t sj(void) {
+  uintptr_t before = lg_sp();
+  uint32_t n = 20, all = 1, k = 0;
+  for (int i = 0; i < 500; i++) all &= (uint32_t)cd_image_guard(lg_throws, &n, &lg_slot);
+  uint32_t r = (uint32_t)cd_image_guard(lg_returns, &k, &lg_slot);
+  return all && r == 0 && k == 1 && lg_sp() == before;
+}

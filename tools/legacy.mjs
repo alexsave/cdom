@@ -34,6 +34,7 @@ try {
   await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/legacy.html` });
   for (let i = 0; i < 100 && !(await E('!!window.READY')); i++) await sleep(50);
   ok(await E('!!window.READY'), 'booted');
+  ok(await E('X.sj() === 1'), "the image module's js way out of a libjpeg error: 500 throws from 20 frames down, the stack pointer back, then a body that returns");
   const id = {}; for (const [k, i] of Object.entries({ PAD: 0, TEXT: 1 })) id[k] = await E(`X.id(${i})`);
 
   // The path: the fallback files only without WebAssembly, the wasm only with it.
