@@ -4,7 +4,7 @@
 # tools/host.mjs).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"
+if [ "$(uname -s)" = Darwin ]; then CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"; else CC="${WASM_CC:-clang}"; fi
 legacy="$here/../tools/legacy/build.mjs"
 [ -d "$here/../tools/legacy/node_modules" ] || (cd "$here/../tools/legacy" && npm ci --no-audit --no-fund)
 mkdir -p "$here/out"
