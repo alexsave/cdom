@@ -61,6 +61,14 @@ done
 o="$out/default_url.html"
 { sed -n '1,7p' "$t"; sed -n '9,13p' "$t"; table_shim '<script>'; printf '%s\n' 'cdom.start("/w/\"x\\y\x3c/script>\x0a\u2028.wasm", "app");'; sed -n '16,$p' "$t"; } > "$o.want"
 golden "the default page, separate: the URL a JavaScript string with \\, \", <, a newline and U+2028 escaped, no title given" "$t" "$o" --wasm-url "$(printf '/w/"x\\y</script>\n\xe2\x80\xa8.wasm')"
+# APP_SIMD's pair: [the module, its SIMD twin], scalar first, both bundled or both URLs
+o="$out/default_pair.html"
+{ sed -n '1,7p' "$t"; sed -n '9,13p' "$t"; table_shim '<script>'
+  echo "cdom.start([\"data:application/wasm;base64,$(b64 "$out/m1.wasm")\",\"data:application/wasm;base64,$(b64 "$out/m2.wasm")\"], \"app\");"; sed -n '16,$p' "$t"; } > "$o.want"
+golden "the default page, bundled with a SIMD twin: the pair of data: URLs, the module first" "$t" "$o" --wasm "$out/m1.wasm" --simd-wasm "$out/m2.wasm"
+o="$out/default_pair_url.html"
+{ sed -n '1,7p' "$t"; sed -n '9,13p' "$t"; table_shim '<script>'; echo 'cdom.start(["a.wasm","a.simd.wasm"], "app");'; sed -n '16,$p' "$t"; } > "$o.want"
+golden "the default page, separate with a SIMD twin: the pair of URLs, the module first" "$t" "$o" --wasm-url a.wasm --simd-wasm-url a.simd.wasm
 o="$out/ok.html"
 { sed -n '1,3p' "$pages/ok.html"; table_shim '<script>'; sed -n '5,$p' "$pages/ok.html"; } > "$o.want"
 golden "an app's own page that names its module, no mode" "$pages/ok.html" "$o"
@@ -102,6 +110,8 @@ refused loads_boot "$e/boot.html" "$e/boot.html: this page loads boot.js; set AP
 refused nostart "$pages/two.html" "$pages/two.html:6: a second /*CDOM_SHIM*/ (the page takes the shim once)" --wasm "$out/m1.wasm"
 printf '<script>\n/*CDOM_SHIM*/\n</script>\n' > "$e/nostart.html"
 refused nostart_end "$e/nostart.html" "$e/nostart.html: no /*CDOM_WASM*/ for the bundled module (cdom.start(/*CDOM_WASM*/, ...)); or set APP_WASM_SEPARATE := 1" --wasm "$out/m1.wasm"
+refused pair_nostart "$e/nostart.html" "$e/nostart.html: no /*CDOM_WASM*/ for the module and its SIMD twin (APP_SIMD := 1: cdom.start(/*CDOM_WASM*/, ...))" --wasm-url a.wasm --simd-wasm-url a.simd.wasm
+refused nosimdwasm "$pages/marker.html" "$pages/marker.html: cannot read the module to bundle $out/no.wasm" --wasm "$out/m1.wasm" --simd-wasm "$out/no.wasm"
 LITS="$out/no.lits" refused nolits "$pages/ok.html" "$pages/ok.html: cannot read the string table $out/no.lits"
 SHIM="$out/no.js" refused noshim "$pages/ok.html" "$pages/ok.html: cannot read the shim $out/no.js"
 refused nowasm "$pages/marker.html" "$pages/marker.html: cannot read the module to bundle $out/no.wasm" --wasm "$out/no.wasm"
@@ -122,6 +132,8 @@ usage "no --lits" --page "$pages/ok.html" --out "$out/u.html" --shim "$out/shim.
 usage "an unknown flag" --page "$pages/ok.html" --out "$out/u.html" --shim "$out/shim.js" --lits "$out/app.lits" --bogus 1
 usage "--page twice" --page "$pages/ok.html" --page "$pages/ok.html" --out "$out/u.html" --shim "$out/shim.js" --lits "$out/app.lits"
 usage "--wasm and --wasm-url" --page "$pages/ok.html" --out "$out/u.html" --shim "$out/shim.js" --lits "$out/app.lits" --wasm "$out/m1.wasm" --wasm-url x
+usage "--simd-wasm without --wasm" --page "$pages/ok.html" --out "$out/u.html" --shim "$out/shim.js" --lits "$out/app.lits" --wasm-url x --simd-wasm "$out/m1.wasm"
+usage "--simd-wasm-url without --wasm-url" --page "$pages/ok.html" --out "$out/u.html" --shim "$out/shim.js" --lits "$out/app.lits" --wasm "$out/m1.wasm" --simd-wasm-url y
 usage "a flag with no value" --page "$pages/ok.html" --out "$out/u.html" --shim "$out/shim.js" --lits
 
 # ---- the stylesheets: discovery, order, the list file, the escape, the refusals and the edges ----

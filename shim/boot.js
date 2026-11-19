@@ -8,6 +8,8 @@
  * 3. No typed arrays either (IE 9): cdom.legacy-ie9.js and url + ".ie9.js", the same two with C's memory in a
  *    plain Array of words (tools/legacy/words.js) instead of typed arrays.
  * Either fallback's two files are fetched at once, and the app file sets window.cdomFactory.
+ * url may be the pair [scalar, SIMD] cdom.start takes (cdom.mk's APP_SIMD): cdom.start picks one, and either fallback
+ * is the scalar module's build, url[0] + ".js" or url[0] + ".ie9.js".
  * mount is an element or its id, as cdom.start takes it; ready, if given, receives the exports; options
  * is cdom.start's fourth argument.
  * The floor is ES5 (IE 9): what the fallback files call and no polyfill supplies. Below it the boot throws one
@@ -54,6 +56,7 @@ function cdomBoot(url, mount, env, ready, options) {
     window.cdomFactory = undefined;
     cdom.start(f, mount, env, options).then(ready);
   }
+  var base = typeof url === "string" ? url : url[0];
   load(words ? "cdom.legacy-ie9.js" : "cdom.legacy.js", loaded);
-  load(url + (words ? ".ie9.js" : ".js"), loaded);
+  load(base + (words ? ".ie9.js" : ".js"), loaded);
 }

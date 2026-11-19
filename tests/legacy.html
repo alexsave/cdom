@@ -14,5 +14,5 @@ if (/nomap/.test(location.search)) window.Map = undefined;
 var LOG = [], ERRORS = [];
 window.addEventListener('error', function (e) { ERRORS.push(e.error ? e.error.name + ': ' + e.error.message : String(e.message)); });
 var env = { ev: function (t, id, x, y, p, b) { LOG.push([t, id >>> 0, x, y, p, b]); } };
-cdomBoot('legacy.wasm', document.getElementById('m'), env, function (x) { window.X = x; window.READY = true; });
+cdomBoot(['legacy.wasm', 'legacy.simd.wasm'], document.getElementById('m'), env, function (x) { window.X = x; window.READY = true; });
 </script></body></html>
