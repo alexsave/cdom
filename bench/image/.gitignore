@@ -8,3 +8,5 @@ build-js-o3/
 build-js-mix/
 build-old/
 build-js-simd/
+build-copy/
+build-norgba/
