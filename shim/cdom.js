@@ -1360,9 +1360,9 @@ var cdom = (() => {
     return crypto.getRandomValues(new Uint32Array(1))[0];
   }
 
-  // Starts the app, once per page (README.md, "Starting an app"): url is the wasm's, or the wasm2js
-  // build of the same app (a function of the imports that returns the exports, for a browser without
-  // WebAssembly; shim/boot.js picks one). env: the module's own "env" imports.
+  // Starts the app, once per page (README.md, "Starting an app"): url is the wasm's, a pair of them
+  // [scalar, SIMD] (cdom.mk's APP_SIMD), or the wasm2js build of the same app (a function of the imports
+  // that returns the exports, for a browser without WebAssembly; shim/boot.js picks one). env: the module's own "env" imports.
   // mount is an element, or the id of one that may not be parsed yet: then the
   // wasm loads while the parser and the stylesheets run, and the app starts once the DOM is ready.
   // options.openStore: an app that reads its store as it starts opens it now, while the wasm is
@@ -1394,6 +1394,11 @@ var cdom = (() => {
       },
       env: env || {},
     };
+    // A pair [scalar, SIMD] (cdom.mk's APP_SIMD): the SIMD module where this browser validates a wasm SIMD instruction
+    // (tools/simd-probe.wat, these bytes), else the scalar one; only the one picked is fetched and compiled.
+    if (Array.isArray(url)) {
+      url = url[+WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 8, 1, 6, 0, 65, 0, 253, 15, 11]))];
+    }
     let instance;
     if (typeof url === "function") {
       copiedOnGrow = true;

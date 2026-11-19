@@ -150,7 +150,13 @@ static inline void unfilter_avg(uint8_t *cur, const uint8_t *prev, uint32_t n, c
  * lanes, with the bytes made only to store them. a is taken when pa <= pb and pa <= pc, i.e. pa <= min(pb, pc); else b
  * when pb <= pc; else c. */
 static inline void unfilter_paeth(uint8_t *cur, const uint8_t *prev, uint32_t n, const uint32_t bpp) {
-  const V lo8 = wasm_i16x8_const_splat(0xff);
+  /* The mask is a value clang cannot see (the empty asm), so the next left value stays a 16-bit add and an and. With the
+   * constant, clang makes (pred + raw) & 0xff an 8-bit add between an i8x16.shuffle that narrows pred and an extend back,
+   * which V8 lowers to five arm64 instructions in the chain: 10 deep in place of 8, and 0.80x of this loop's speed on an
+   * Apple M-series core (docs/image-simd-hand.md, "Paeth on the Mac"). */
+  int m = 0xff;
+  __asm__("" : "+r"(m));
+  const V lo8 = wasm_i16x8_splat((int16_t)m);
   V a = wasm_i8x16_const_splat(0);            /* the left pixel, 16-bit lanes: zero before the first pixel */
   V c = wasm_i8x16_const_splat(0);            /* the up-left pixel, likewise */
   uint32_t i = 0;
