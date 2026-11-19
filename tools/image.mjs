@@ -95,7 +95,7 @@ try {
   const exif = cases.find((c) => c[0] === 'jpeg-exif6');
   await pickFile(exif[1]);
   const done = await waitNote('Resized in C.');
-  const bg = await b.evaluate('getComputedStyle(document.querySelector("div")).backgroundImage');
+  const bg = await b.evaluate('getComputedStyle(document.querySelector("#app div")).backgroundImage');
   ok(done === 'Resized in C.' && bg.startsWith('url("blob:'), 'demo/photo: a picked JPEG (EXIF 6) is resized in C, encoded and shown', `${done}, ${bg.slice(0, 40)}`);
   await pickFile(path.join(dir, 'cases.tsv'));
   ok(await waitNote('That file is not a JPEG or a PNG.') === 'That file is not a JPEG or a PNG.', 'demo/photo: a file that is not an image is said in words');

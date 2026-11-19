@@ -11,7 +11,8 @@ APP_SRC := $(CDOM)/tests/image/wasm.c
 APP_MODULES := image
 APP_CFLAGS := -Wall -Wextra -Werror $(if $(CAP),-DCDOM_HEAP_PAGES_MAX=$(CAP))
 CDOM_OPT := -O2
-APP_LDFLAGS := $(if $(MAXMEM),-Wl,--max-memory=$(MAXMEM))
+cdom_comma := ,
+APP_LDFLAGS := $(if $(MAXMEM),-Wl$(cdom_comma)--max-memory=$(MAXMEM))
 CDOM_IMAGE_SJLJ := $(SJLJ)
 include $(CDOM)/cdom.mk
 all: $(APP_PAGE)
