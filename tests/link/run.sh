@@ -440,11 +440,13 @@ node "$here/../../tools/edges.mjs" || fail=1
 # reaches only the apps that link it: tests/image/wasm.c built by cdom.mk with CDOM_IMAGE_SJLJ eh has wasm exception
 # handling (try, catch, throw), and with js the shim's two imports and no exception handling; the app of app.mk,
 # with no image module and with it but no call, has neither.
+# Built with -B: an object of the image module depends on its sources, not on cdom.mk's flags, so a module left in
+# tests/out by an earlier build would be read as it was, whatever the flags are now.
 im="$out/image-link"; mkdir -p "$im"
 eh_count() { wasm-dis --all-features "$1" | grep -cE '\b(try|catch|catch_all|throw|rethrow|delegate)\b'; }
 img_imports() { wasm-dis --all-features "$1" | grep -cE '\(import "cdom" "image_(call|throw)"'; }
-if ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=eh "$im/wasm_eh.wasm" 2> "$im/eh.log" ||
-   ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=js "$im/wasm_js.wasm" 2> "$im/js.log"; then
+if ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=eh -B "$im/wasm_eh.wasm" 2> "$im/eh.log" ||
+   ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=js -B "$im/wasm_js.wasm" 2> "$im/js.log"; then
   echo "FAIL the image module's wasm test app does not build:"; cat "$im/eh.log" "$im/js.log"; fail=1
 elif [ "$(eh_count "$im/wasm_eh.wasm")" = 0 ] || [ "$(img_imports "$im/wasm_eh.wasm")" != 0 ]; then
   echo "FAIL CDOM_IMAGE_SJLJ eh: $(eh_count "$im/wasm_eh.wasm") exception-handling instructions (wanted some) and $(img_imports "$im/wasm_eh.wasm") of the shim's imports (wanted none)"; fail=1
@@ -466,7 +468,7 @@ fi
 # that calls the image module: tests/image/wasm.c built with it has some, built without it (the default) none, and the
 # app of app.mk with CDOM_IMAGE_SIMD=1, with no image module and with it but no call, none.
 simd_count() { wasm-dis --all-features "$1" | grep -cE '\b(v128|i8x16|i16x8|i32x4|i64x2|f32x4|f64x2)\.'; }
-if ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=js SIMD=1 "$im/wasm_js_simd.wasm" 2> "$im/simd.log" ||
+if ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=js SIMD=1 -B "$im/wasm_js_simd.wasm" 2> "$im/simd.log" ||
    ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=js "$im/wasm_js.wasm" 2> "$im/js.log"; then
   echo "FAIL the image module's wasm test app does not build with and without CDOM_IMAGE_SIMD:"; cat "$im/simd.log" "$im/js.log"; fail=1
 elif [ "$(simd_count "$im/wasm_js_simd.wasm")" = 0 ] || [ "$(simd_count "$im/wasm_js.wasm")" != 0 ]; then
