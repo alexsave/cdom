@@ -101,3 +101,78 @@ Memory and size:
   Falsifier: new more than 1 MiB over old.
 - M5: the module (bench page's app.wasm, stripped) changes by -2 to +3 KB brotli -q 11 when cdom's inflate replaces tinfl.
   Falsifier: outside that range.
+
+## Results
+
+A correction to the prediction text, not to a prediction: p12.png's stream makes 36,581,328 bytes (3024 rows of 1 + 12,096), not 36,581,376 as written above.
+
+### Step 1: what the browser runs, and the gap split
+
+What Chrome 153 runs for a PNG: Skia's Rust PNG codec.
+The binary (`/opt/pw-browsers/chromium-1243`, Chrome for Testing 153.0.8010.12) holds the strings `SkPngRustCodec` and `rust_png::` (the codec's error messages), and of the image decoders still behind a switch only `kRustyJpegFeature`, `kRustyBmpFeature` and `kRustyIcoFeature`: the PNG one has no switch left, so the Rust codec is the one that runs.
+That codec is the `png` crate, whose inflate is the `fdeflate` crate (Rust, with an adler32 from `simd-adler32`), not zlib: Chromium's zlib (with its SIMD chunk copy and adler32) is in the binary for other uses, not on this path.
+(Inferred from the binary's strings, not a trace; `chromium.googlesource.com` is not reachable from this machine, so Chromium's own zlib could not be fetched and built, and zlib-ng stands in for it below.)
+G2 (the Rust codec, not libpng and zlib): confirmed, on that evidence.
+
+The libraries, natively (bench/image/inflate/native.sh, native_round.sh; x86-64, clang 18 -O2, Rust 1.97 release at opt-level 2; 7 rounds of 3 runs each, arms interleaved; median, min to max; p12.png's stream, 15,177,529 bytes in 232 IDAT chunks):
+
+| id | inflate | measured ms | predicted | verdict |
+| --- | --- | --- | --- | --- |
+| N1 | tinfl (miniz 3.1.2), as cdom called it | 88.2 (83.7 to 117.8) | 110 (80 to 150) | confirmed |
+| N2 | zlib 1.3.1 (64 KB out buffer) | 98.9 (93.8 to 105.2) | 90 (65 to 130) | confirmed |
+| N3 | zlib-ng 2.2.4, its x86 SIMD on (AVX2 chunkset and adler32) | 69.2 (67.9 to 74.8) | 60 (40 to 85) | confirmed |
+| N4 | libdeflate 1.24 (one call, whole-output buffer) | 50.8 (47.9 to 63.7) | 45 (30 to 65) | confirmed |
+| N5 | fdeflate 0.3.7 (streaming as the png crate does: 32 KB kept, the buffer compacted) | 39.0 (38.8 to 49.3) | 45 (30 to 70) | confirmed |
+| | cdom's inflate (this branch, final) | 45.2 (43.6 to 51.0) | (P2) | |
+| | cdom's inflate, fed the 232 IDAT payloads as pieces | 45.2 (43.7 to 54.9) | | |
+| | png 0.18.0, the whole decode (inflate and unfilter, no scaling) | 97.3 (95.3 to 116.4) | not predicted | |
+
+In wasm (Chrome 153, bench/image/inflate/run.mjs, 9 interleaved rounds, each run on a fresh page; the inflate with its rows handed on, nothing else):
+
+| id | inflate | measured ms | predicted | verdict |
+| --- | --- | --- | --- | --- |
+| W1 | tinfl, as cdom called it | 117.7 (112.2 to 136.3) | 170 (130 to 220) | refuted (faster) |
+
+- F1, the wasm factor W1/N1: 117.7 / 88.2 = 1.33; predicted 1.5 (1.2 to 2.0): confirmed.
+- F2, the library factor N1/min(N4, N5): 88.2 / 39.0 = 2.26; predicted 2.4 (1.6 to 3.5): confirmed.
+- G1 (F2 > F1): 2.26 against 1.33, confirmed: of the old C arm's inflate time, the library (tinfl against fdeflate) costs more than wasm does.
+
+So the gap, on p12.png's inflate, split: the browser's fdeflate natively takes 39 ms; tinfl natively takes 2.26 times that (88 ms), and wasm adds 1.33 times again (118 ms).
+Inflate is not the whole gap: the png crate's whole decode is 97 ms natively, so Chrome's B1 (about 155 ms here) spends about 60 ms more on its resize, its colour and its copies.
+
+### Step 2: the inflate candidates in wasm
+
+The same harness (9 interleaved rounds, Chrome 153, -Oz as cdom.mk builds, each candidate through its streaming interface into a bounded buffer):
+
+| id | candidate | measured ms | predicted | verdict |
+| --- | --- | --- | --- | --- |
+| C-a | tinfl, as cdom called it | 117.7 (112.2 to 136.3) | 170 (130 to 220) | refuted (faster) |
+| C-b | zlib 1.3.1, generic C | 134.8 (131.7 to 141.9) | 130 (95 to 170) | confirmed |
+| C-b | zlib-ng 2.2.4, generic C (no SIMD: its functable's C paths) | 99.4 (98.3 to 110.6) | 130 (95 to 170) | confirmed |
+| C-c | cdom's inflate, scalar | 58.5 (55.7 to 67.6) | 75 (55 to 100) | confirmed |
+| C-c-simd | cdom's inflate, -msimd128 (adler32 and 16-byte copies) | 54.9 (54.5 to 63.2) | 65 (45 to 90) | confirmed |
+| | adler32 alone over 36.7 MB, scalar (SWAR, 16 bytes a turn) | 7.8 (6.7 to 10.7) | 12 (8 to 20) | refuted (faster) |
+| | adler32 alone, simd128 | 6.2 (5.4 to 10.3) | 3 (1.5 to 6) | refuted (slower) |
+
+- P2a (C-a / C-c >= 1.8): 117.7 / 58.5 = 2.01, confirmed.
+- P2b: both refuted, as in the table: the scalar adler32 is a SWAR one (8 bytes a 64-bit word, two multiplies sum the bytes and their weights), faster than predicted, and the simd128 one gains only 1.6 ms over it.
+- P2c (C-c / min(N4, N5) <= 1.6): 58.5 / 39.0 = 1.50, confirmed: cdom's inflate in wasm is 1.5 times the browser's own inflate natively.
+
+No SIMD was written for zlib-ng's chunk copy or adler32 in wasm (the brief allowed it): zlib-ng's generic build is already 1.7 times slower than cdom's inflate in the same harness, more than SIMD in two of its helpers could make up, so the candidate stopped there.
+(d): what the measurements pointed at instead is the literal path, see below.
+
+Picked: (c), cdom's own inflate, `src/cdom_image_inflate.c`, 2.0 times tinfl in wasm, about 520 lines with its comments, no third-party code.
+How it got there, each step measured natively and in wasm on p12.png (native ms, then wasm ms):
+
+| step | native | wasm |
+| --- | --- | --- |
+| first version: 64-bit bit buffer refilled without a branch, 11-bit first level with two literals an entry, second levels, 8- and 16-byte match copies, byte-wise adler32 | 57.5 | 76.3 (1 round) |
+| adler32 as SWAR (it was 22 ms of the 57 natively) | 51.7 | |
+| one 16-bit store for an entry's literals | 51.8 | |
+| entries with the bit count in their low 6 bits, up to three literal entries a turn looked up before the stores (fdeflate's way), the next entry looked up before a match's copy | 48.0 | 69.1 |
+| BAD entries filled only for an incomplete code; the 12-bit first level tried and dropped (no faster, twice the table building: p12.png has 619 dynamic blocks) | | 62.1 (11 bits) against 63.7 (12) |
+| each literal lookup shifts by the entry itself (the shift takes its count modulo 64, so no mask on the chain) | 46.0 | 55.9 |
+| four literal entries a turn: no faster, dropped | 45.5 | 58.0 against 57.3 |
+| -O2 instead of -Oz for the wasm | | 60.5 against 60.6: no difference, so the inflate stays at the app's level |
+
+The stream it is fast on: p12.png's literals take 5.2 bits each, so two fit an 11-bit entry nearly always; 622,647 matches make 16.9 MB of the 36.6 (27 bytes each, almost all at distances of 16 or more: the grain tile repeats every 1024 pixels).
