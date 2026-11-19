@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import { createRequire } from 'node:module';
 
 const SEED = 0x9e3779b9; // the one seed: change it here to try other inputs
 const src = fs.readFileSync(path.resolve(path.dirname(new URL(import.meta.url).pathname), 'legacy/words.js'), 'utf8');
@@ -277,6 +278,30 @@ section('tests/memforms.c: its words build agrees with wasm2js output on every r
   results('size()', true, call('size', [], []));
   agree('all of memory after the rounds and a grow', false);
 });
+
+// The gate of the shim-ie9 build (tools/legacy/memory.mjs, shimLeftovers), on code planted for it: a typed array
+// passes in seed and randomBytes alone, and a read of one of the shim's views passes nowhere (its declaration does).
+{
+  const { shimLeftovers } = await import('./legacy/memory.mjs');
+  const acorn = createRequire(path.resolve(path.dirname(new URL(import.meta.url).pathname), 'legacy/package.json'))('acorn');
+  const cases = [
+    ['function seed(o) { return new Uint32Array(1)[0]; } function randomBytes(p, n) { return new Uint8Array(n); }', []],
+    ['var u8, u32, i32, f32, f64; function views() { return 0; }', []],
+    ['function pixels(p) { return new Uint8ClampedArray(4); }', ['Uint8ClampedArray in pixels']],
+    ['var scratch = new Float64Array(1);', ['Float64Array in the top level']],
+    ['function seed(o) { function inner() { return new Int32Array(1); } return inner(); }', ['Int32Array in inner']],
+    ['function newWords(n) { return new Uint32Array(n); }', ['Uint32Array in newWords']],
+    ['function rect(p) { return ArrayBuffer; }', ['ArrayBuffer in rect']],
+    ['var u8; function load8(p) { return u8[p]; }', ['u8 in load8']],
+    ['var f64; function seed(o) { return f64[0]; }', ['f64 in seed']],
+  ];
+  section('the shim-ie9 gate: a typed array only in seed and randomBytes, no view read anywhere', () => {
+    for (const [code, want] of cases) {
+      const got = shimLeftovers(code, acorn);
+      ok(JSON.stringify(got) === JSON.stringify(want), `the shim-ie9 gate on ${code}: ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+    }
+  });
+}
 
 console.log(fails ? `${fails} FAILED of ${checks}` : `all ok: ${checks} checks`);
 process.exit(fails ? 1 : 0);
