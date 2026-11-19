@@ -83,6 +83,15 @@ if "$CC" "${Z[@]}" -o "$out/try_none.wasm" "$here/alloc_try_size.c" "$src/cdom.c
   elif [ $gap -gt 400 ]; then echo "FAIL calling cd_alloc_try costs $gap bytes, past its budget of 400 ($none without, $asks with)"; fail=1
   else echo "ok   the _try path costs only an app that calls it: $gap bytes (150 to 400)"; fi
 else echo "FAIL alloc_try_size.c does not build"; fail=1; fi
+# realloc calls the allocator's body (heap_alloc) rather than inlining a copy of it: realloc_size.c built
+# with cd_alloc and with cd_realloc differs by realloc's own code (the block's room, the grow at the top, the
+# copy), 255 bytes at -Oz now; a copy of the allocator in it makes the gap 478. Over 350 it has one again.
+if "$CC" "${Z[@]}" -o "$out/realloc_none.wasm" "$here/realloc_size.c" "$src/cdom.c" "$src/mini.c" &&
+   "$CC" "${Z[@]}" -DREALLOC -o "$out/realloc_asks.wasm" "$here/realloc_size.c" "$src/cdom.c" "$src/mini.c"; then
+  none=$(wc -c < "$out/realloc_none.wasm"); asks=$(wc -c < "$out/realloc_asks.wasm"); gap=$((asks - none))
+  if [ $gap -gt 350 ]; then echo "FAIL realloc carries a copy of the allocator: $none bytes with cd_alloc, $asks with cd_realloc (a gap of $gap, over 350)"; fail=1
+  else echo "ok   realloc shares the allocator's body: cd_realloc costs $gap bytes over cd_alloc (at most 350)"; fi
+else echo "FAIL realloc_size.c does not build"; fail=1; fi
 # string.h (and stdio.h, below): a file that includes it builds under cdom's flags and under freestanding ones (-ffreestanding, where
 # clang emits a call for a memcpy it does not know), and links with mini.c alone; memcpy, memmove and
 # memset are memory.copy and memory.fill in place, never an undefined symbol. libc_addr takes their

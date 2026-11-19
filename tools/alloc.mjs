@@ -18,21 +18,25 @@ const traps = (f) => { try { f(); return 'no trap'; } catch (e) { return e insta
 const check = (name, ok, why) => (ok ? passed : errors).push(ok ? name : `${name}: ${why}`);
 // A call that traps where it must not fails its own case, by name, instead of ending the run.
 const call = (f) => { try { return f(); } catch (e) { return 'threw ' + e.message; } };
-{
-  const x = await fresh('alloc_try.wasm');
-  const n = call(() => x.fill()), p = x.pages();
-  check('cd_alloc_try: blocks until the heap has no room, then 0 (never a grow past the cap), and a freed block comes back', n > 20 && p <= 40, `${n} blocks, ${p} pages`);
-}
-{
-  const x = await fresh('alloc_try.wasm');
-  const g = call(() => x.grow()), h = call(() => x.huge());
-  check('cd_realloc_try: a grow past the cap answers 0 and leaves the block as it was, its bytes kept; a grow that fits moves them', g === 1, 'grow answered ' + g);
-  check('cd_alloc_try: a size past what a size can be answers 0', h === 1, 'answered ' + h);
-}
-for (const [f, what] of [['malloc_full', 'malloc'], ['alloc_full', 'cd_alloc'], ['realloc_full', 'realloc']]) {
-  const x = await fresh('alloc_try.wasm');
-  const r = traps(() => x[f]());
-  check(`${what} still traps when the heap has no room (it never answers 0 for code that would write there)`, r === 'trap', r);
+// Each case twice: at cdom's cap (-DCDOM_HEAP_PAGES_MAX=40), and on a memory of 40 pages at most, where
+// memory.grow itself refuses (its -1 must read as a refusal, not as a size).
+for (const [mod, at] of [['alloc_try.wasm', 'at the cap'], ['alloc_try_max.wasm', 'when memory.grow refuses']]) {
+  {
+    const x = await fresh(mod);
+    const n = call(() => x.fill()), p = x.pages();
+    check(`cd_alloc_try ${at}: blocks until the heap has no room, then 0 (never a grow past the cap), and a freed block comes back`, n > 20 && p <= 40, `${n} blocks, ${p} pages`);
+  }
+  {
+    const x = await fresh(mod);
+    const g = call(() => x.grow()), h = call(() => x.huge());
+    check(`cd_realloc_try ${at}: a grow past the cap answers 0 and leaves the block as it was, its bytes kept; a grow that fits moves them`, g === 1, 'grow answered ' + g);
+    check(`cd_alloc_try ${at}: a size past what a size can be answers 0`, h === 1, 'answered ' + h);
+  }
+  for (const [f, what] of [['malloc_full', 'malloc'], ['alloc_full', 'cd_alloc'], ['realloc_full', 'realloc']]) {
+    const x = await fresh(mod);
+    const r = traps(() => x[f]());
+    check(`${what} still traps ${at} (it never answers 0 for code that would write there)`, r === 'trap', r);
+  }
 }
 {
   const x = await fresh('alloc_own.wasm');

@@ -1,0 +1,15 @@
+memory result for cdom-hrp-oldshim and 22_run-memory: 1.8430747985839844
+memory result for cdom-hrp-oldshim and 22_run-memory: 1.8386383056640625
+memory result for cdom-hrp-oldshim and 22_run-memory: 1.7949180603027344
+memory result for cdom-hrp-oldshim and 22_run-memory: 1.842132568359375
+memory result for cdom-hrp-oldshim and 22_run-memory: 1.8481388092041016
+memory result for cdom-hrp-oldshim and 22_run-memory: 1.8423805236816406
+memory result for cdom-hrp-oldshim and 22_run-memory: 1.8431015014648438
+memory result for cdom-hrp-oldshim and 22_run-memory: 1.831782341003418
+memory result for cdom-hrp-oldshim and 22_run-memory: 1.837982177734375
+memory result for cdom-hrp-oldshim and 22_run-memory: 1.8423042297363281
+memory result for cdom-hrp-oldshim and 22_run-memory: 1.8416595458984375
+memory result for cdom-hrp-oldshim and 22_run-memory: 1.8431015014648438
+memory result for cdom-hrp-oldshim and 22_run-memory: 1.8461112976074219
+memory result for cdom-hrp-oldshim and 22_run-memory: 1.8459491729736328
+memory result for cdom-hrp-oldshim and 22_run-memory: 1.8346061706542969
