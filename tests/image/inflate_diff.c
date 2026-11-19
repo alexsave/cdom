@@ -44,7 +44,7 @@ static int zlib_inflate(const uint8_t *s, size_t n, size_t *made) {
 }
 
 /* ---- cdom's ---- */
-typedef struct { uint8_t **p; uint32_t *n; uint32_t k, at; uint8_t *got; size_t got_n, got_cap; int stop_at; } feed;
+typedef struct { uint8_t **p; uint32_t *n; uint32_t k, at; uint8_t *got; size_t got_n, got_cap; int stop_at, greedy; } feed;
 static int more(void *c, const uint8_t **p, uint32_t *n) {
   feed *f = c;
   if (f->at == f->k) return 0;
@@ -54,7 +54,7 @@ static int more(void *c, const uint8_t **p, uint32_t *n) {
 static int64_t out(void *c, uint8_t *b, uint32_t n, int last) {
   feed *f = c;
   if (f->stop_at && !--f->stop_at) return -1;
-  uint32_t d = last ? n : n > CD_INFLATE_WINDOW ? n - CD_INFLATE_WINDOW : 0;
+  uint32_t d = last || f->greedy ? n : n > CD_INFLATE_WINDOW ? n - CD_INFLATE_WINDOW : 0;
   if (f->got_n + d > f->got_cap) { f->got_cap = (f->got_n + d) * 2 + 1024; f->got = realloc(f->got, f->got_cap); }
   if (d) memcpy(f->got + f->got_n, b, d);
   /* the PNG path changes the bytes it lets go, in place: so does this, to show no later match reads them */
@@ -94,7 +94,7 @@ static void agree(const uint8_t *s, size_t n, const char *what, int expect_ok) {
   if (zr == 1) {
     CHECK(st == CD_INFLATE_OK, "%s: zlib inflates %zu bytes, cdom answers %u", what, zn, st);
     if (st == CD_INFLATE_OK) {
-      CHECK(f.got_n == zn && !memcmp(f.got, z_out, zn), "%s: %zu bytes from cdom, %zu from zlib, or they differ", what, f.got_n, zn);
+      CHECK(f.got_n == zn && (!zn || !memcmp(f.got, z_out, zn)), "%s: %zu bytes from cdom, %zu from zlib, or they differ", what, f.got_n, zn);
       compared++;
     }
   } else {
@@ -234,11 +234,90 @@ static void stopped(const uint8_t *s, size_t n) {
   free(f.got);
 }
 
+/* a sink that drops the window too (all it is handed): STOPPED, since the window must stay */
+static void greedy(void) {
+  uLong dn = 300000, n = compressBound(dn);
+  uint8_t *d = malloc(dn), *s = malloc(n);
+  fill(d, dn, 1);
+  if (compress2(s, &n, d, dn, 6) != Z_OK) abort();
+  feed f = {0};
+  f.greedy = 1;
+  uint32_t st = cdom_inflate(s, n, 0, &f);
+  CHECK(st == CD_INFLATE_STOPPED, "a sink that drops the window: cdom answers %u", st);
+  free(f.got);
+  free(d); free(s);
+}
+
+/* ---- hand-written dynamic blocks: the code-length code gives 0 to 15 four bits each, and the lengths follow with
+ * no repeats, so any set of lengths can be written, complete or not ---- */
+static void canon(const uint8_t *len, uint32_t n, uint32_t *code) {   /* deflate's canonical codes */
+  uint32_t count[16] = {0}, next[16];
+  for (uint32_t i = 0; i < n; i++) count[len[i]]++;
+  count[0] = 0;
+  uint32_t c = 0;
+  for (uint32_t l = 1; l < 16; l++) { c = (c + count[l - 1]) << 1; next[l] = c; }
+  for (uint32_t i = 0; i < n; i++) if (len[i]) code[i] = next[len[i]]++;
+}
+static void dyn_header(bw *w, const uint8_t *ll, uint32_t nlen, const uint8_t *dl, uint32_t ndist) {
+  static const uint8_t order[19] = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
+  put(w, 1, 1); put(w, 2, 2);
+  put(w, nlen - 257, 5); put(w, ndist - 1, 5); put(w, 19 - 4, 4);
+  for (int i = 0; i < 19; i++) put(w, order[i] < 16 ? 4 : 0, 3);
+  for (uint32_t i = 0; i < nlen; i++) put_rev(w, ll[i], 4);       /* symbol v's code is v: 16 codes of 4 bits */
+  for (uint32_t i = 0; i < ndist; i++) put_rev(w, dl[i], 4);
+}
+/* one dynamic block: 'a' 'b' 'a' 'b', then (when match) a match of 4 at distance 2, then the end; expect: zlib's answer */
+static void dynamic_case(const char *what, const uint8_t *ll, const uint8_t *dl, uint32_t ndist, int match, int expect) {
+  bw w = {0};
+  uint32_t lc[286] = {0}, dc[30] = {0};
+  canon(ll, 286, lc); canon(dl, ndist, dc);
+  put(&w, 0x78, 8); put(&w, 0x01, 8);
+  dyn_header(&w, ll, 286, dl, ndist);
+  const char *t = "abab";
+  for (int i = 0; i < 4; i++) put_rev(&w, lc[(uint8_t)t[i]], ll[(uint8_t)t[i]]);
+  uint8_t o[8]; memcpy(o, "abab", 4);
+  size_t n = 4;
+  if (match) {   /* length 4 is code 258; distance 2 is code 1 */
+    put_rev(&w, lc[258], ll[258]); put_rev(&w, dc[1], dl[1]);
+    memcpy(o + 4, "abab", 4); n = 8;
+  }
+  put_rev(&w, lc[256], ll[256]);
+  trailer(&w, o, n);
+  agree(w.b, w.n, what, expect);
+  if (expect == 1) {
+    feed f = {0};
+    uint32_t st = cdom_inflate(w.b, w.n, 0, &f);
+    CHECK(st == CD_INFLATE_OK && f.got_n == n && !memcmp(f.got, o, n), "%s: not the bytes written", what);
+    free(f.got);
+  }
+  free(w.b);
+}
+static void dynamic_codes(void) {
+  uint8_t ll[286], dl[30];
+  /* complete: a, b, the end and length 4 at 2 bits each; one distance code of one bit (incomplete, as zlib allows) */
+  memset(ll, 0, sizeof ll); memset(dl, 0, sizeof dl);
+  ll['a'] = ll['b'] = ll[256] = ll[258] = 2; dl[1] = 1;
+  dynamic_case("dynamic: one distance code of one bit", ll, dl, 2, 1, 1);
+  /* incomplete literal/length code (three codes of 2 bits): zlib refuses it */
+  ll[258] = 0;
+  dynamic_case("dynamic: an incomplete literal/length code", ll, dl, 2, 0, 0);
+  /* incomplete distance code of two bits (one code of 2 bits): refused */
+  ll[258] = 2; dl[1] = 2;
+  dynamic_case("dynamic: an incomplete distance code", ll, dl, 2, 1, 0);
+  /* over-subscribed: five codes of 2 bits */
+  ll[258] = 2; ll['c'] = 2; dl[1] = 1;
+  dynamic_case("dynamic: an over-subscribed code", ll, dl, 2, 1, 0);
+  /* no end-of-block code */
+  memset(ll, 0, sizeof ll); ll['a'] = ll['b'] = 1;
+  dynamic_case("dynamic: no end-of-block code", ll, dl, 2, 0, 0);
+}
+
 int main(int argc, char **argv) {
   int cases = argc > 1 ? atoi(argv[1]) : 400;
   z_out = malloc(z_cap);
   char what[200];
-  /* the code's own checks of its tables: adler32 against zlib's on odd lengths */
+  /* (the sink checks) */
+/* the code's own checks of its tables: adler32 against zlib's on odd lengths */
   for (int i = 0; i < 200; i++) {
     size_t n = below(3) ? below(100) : below(200000);
     uint8_t *d = malloc(n + 1); fill(d, n, rnd());
@@ -285,6 +364,8 @@ int main(int argc, char **argv) {
     if (c % 4 == 0) cut_and_damage(w.b, w.n < 6000 ? w.n : 6000, what);
     free(w.b); free(d);
   }
+  dynamic_codes();
+  greedy();
   /* a distance of exactly the output so far is fine; one more is not */
   for (int ok = 0; ok < 2; ok++) {
     bw w = {0};
