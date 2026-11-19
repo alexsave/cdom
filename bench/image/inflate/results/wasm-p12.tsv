@@ -1,0 +1,71 @@
+round 0	p12.png	base:tinfl	136.30	36581328	15335424
+round 0	p12.png	base:cdom	67.60	36581328	15663104
+round 0	p12.png	simd:cdom	63.20	36581328	15663104
+round 0	p12.png	zlib:zlib	134.30	36581328	15466496
+round 0	p12.png	zng:zlib-ng	100.30	36581328	15466496
+round 0	p12.png	base:adler32	7.80	36700160	15597568
+round 0	p12.png	simd:adler32	8.10	36700160	15597568
+round 1	p12.png	base:cdom	56.00	36581328	15663104
+round 1	p12.png	simd:cdom	54.50	36581328	15663104
+round 1	p12.png	zlib:zlib	136.60	36581328	15466496
+round 1	p12.png	zng:zlib-ng	98.30	36581328	15466496
+round 1	p12.png	base:adler32	7.50	36700160	15597568
+round 1	p12.png	simd:adler32	5.50	36700160	15597568
+round 1	p12.png	base:tinfl	112.20	36581328	15335424
+round 2	p12.png	simd:cdom	56.80	36581328	15663104
+round 2	p12.png	zlib:zlib	138.30	36581328	15466496
+round 2	p12.png	zng:zlib-ng	98.60	36581328	15466496
+round 2	p12.png	base:adler32	8.40	36700160	15597568
+round 2	p12.png	simd:adler32	6.70	36700160	15597568
+round 2	p12.png	base:tinfl	117.70	36581328	15335424
+round 2	p12.png	base:cdom	59.30	36581328	15663104
+round 3	p12.png	zlib:zlib	138.40	36581328	15466496
+round 3	p12.png	zng:zlib-ng	100.90	36581328	15466496
+round 3	p12.png	base:adler32	6.90	36700160	15597568
+round 3	p12.png	simd:adler32	5.40	36700160	15597568
+round 3	p12.png	base:tinfl	126.50	36581328	15335424
+round 3	p12.png	base:cdom	56.70	36581328	15663104
+round 3	p12.png	simd:cdom	54.80	36581328	15663104
+round 4	p12.png	zng:zlib-ng	104.40	36581328	15466496
+round 4	p12.png	base:adler32	7.60	36700160	15597568
+round 4	p12.png	simd:adler32	6.20	36700160	15597568
+round 4	p12.png	base:tinfl	118.90	36581328	15335424
+round 4	p12.png	base:cdom	58.60	36581328	15663104
+round 4	p12.png	simd:cdom	57.70	36581328	15663104
+round 4	p12.png	zlib:zlib	134.80	36581328	15466496
+round 5	p12.png	base:adler32	10.70	36700160	15597568
+round 5	p12.png	simd:adler32	8.80	36700160	15597568
+round 5	p12.png	base:tinfl	117.70	36581328	15335424
+round 5	p12.png	base:cdom	61.10	36581328	15663104
+round 5	p12.png	simd:cdom	62.00	36581328	15663104
+round 5	p12.png	zlib:zlib	133.40	36581328	15466496
+round 5	p12.png	zng:zlib-ng	110.60	36581328	15466496
+round 6	p12.png	simd:adler32	10.30	36700160	15597568
+round 6	p12.png	base:tinfl	125.10	36581328	15335424
+round 6	p12.png	base:cdom	58.50	36581328	15663104
+round 6	p12.png	simd:cdom	54.80	36581328	15663104
+round 6	p12.png	zlib:zlib	141.90	36581328	15466496
+round 6	p12.png	zng:zlib-ng	98.60	36581328	15466496
+round 6	p12.png	base:adler32	8.80	36700160	15597568
+round 7	p12.png	base:tinfl	117.60	36581328	15335424
+round 7	p12.png	base:cdom	56.40	36581328	15663104
+round 7	p12.png	simd:cdom	54.90	36581328	15663104
+round 7	p12.png	zlib:zlib	133.10	36581328	15466496
+round 7	p12.png	zng:zlib-ng	99.40	36581328	15466496
+round 7	p12.png	base:adler32	8.10	36700160	15597568
+round 7	p12.png	simd:adler32	5.70	36700160	15597568
+round 8	p12.png	base:cdom	55.70	36581328	15663104
+round 8	p12.png	simd:cdom	54.60	36581328	15663104
+round 8	p12.png	zlib:zlib	131.70	36581328	15466496
+round 8	p12.png	zng:zlib-ng	99.00	36581328	15466496
+round 8	p12.png	base:adler32	6.70	36700160	15597568
+round 8	p12.png	simd:adler32	5.50	36700160	15597568
+round 8	p12.png	base:tinfl	112.50	36581328	15335424
+input	arm	median ms	min	max	wasm bytes
+p12.png	base:tinfl	117.7	112.2	136.3	15335424
+p12.png	base:cdom	58.5	55.7	67.6	15663104
+p12.png	simd:cdom	54.9	54.5	63.2	15663104
+p12.png	zlib:zlib	134.8	131.7	141.9	15466496
+p12.png	zng:zlib-ng	99.4	98.3	110.6	15466496
+p12.png	base:adler32	7.8	6.7	10.7	15597568
+p12.png	simd:adler32	6.2	5.4	10.3	15597568
