@@ -49,7 +49,10 @@ uint32_t cd_image_png_resize(const uint8_t *p, uint32_t len, const cd_image_info
                              uint8_t **rgba, uint32_t *w, uint32_t *h);
 
 /* libjpeg's way out of a fatal error (cdom_image_sjlj.c). cd_image_guard runs body(ctx) and answers 0 when it
- * returned, 1 when it left through cd_image_throw(*slot); while body runs, *slot names this guard. Three
+ * returned, 1 when it left through cd_image_throw(*slot); while body runs, *slot names this guard. Guards nest (a
+ * decode inside a decode's body is allowed): a throw lands at the innermost guard running, which is the one the
+ * module names, since it throws only to the guard of the decode running. Nothing re-enters wasm while a decode
+ * runs (the decode is one synchronous call), so no other decode can start under it. Three
  * builds: the C library's setjmp natively; in wasm, CDOM_IMAGE_SJLJ=js (a try and catch in the shim) or
  * CDOM_IMAGE_SJLJ=eh (wasm exception handling). */
 typedef void (*cd_image_body)(void *ctx);
