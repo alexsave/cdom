@@ -21,6 +21,7 @@ PAGE = ['tests/page/run.sh']
 TUT = ['tutorial/run.sh']
 FILE = ['node', 'tools/file.mjs']
 LEG = ['node', 'tools/legacy.mjs']
+RESIZE = ['tools/resize_ban.sh']
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -655,6 +656,15 @@ M = [
   ('file-token-hook', 'src/cdom_file.c', '  if (token < CD_TOKEN_CDOM) cd_on_file(token, status, p, len);', '  if (0) cd_on_file(token, status, p, len);', FILE, 'FAIL cd_file_read with a token'),
   ('file-token-unchecked', 'src/cdom_file.c', '  if (token >= CD_TOKEN_CDOM) __builtin_trap();\n  j_file_read', '  j_file_read', FILE, 'FAIL traps'),
   ('encode-quality-ignored', 'shim/cdom.js', 'str(mime), quality / 100);', 'str(mime), 0.92);', UNIT, "FAIL cd_encode_image's quality"),
+  # the browser resize ban (tools/resize_ban.sh): each banned form planted in shim/, src/, cdom.mk and tools/
+  ('ban-bitmap-resize', 'shim/cdom.js', '    return Date.now();', '    createImageBitmap(file, { resizeWidth: 900, resizeHeight: 600 });\n    return Date.now();', RESIZE, 'FAIL resize ban: shim/cdom.js'),
+  ('ban-bitmap-quality', 'shim/cdom.js', '    return Date.now();', '    createImageBitmap(file, { resizeQuality: "high" });\n    return Date.now();', RESIZE, 'FAIL resize ban: shim/cdom.js'),
+  ('ban-smoothing', 'shim/cdom.js', '    return Date.now();', '    canvas.getContext("2d").imageSmoothingQuality = "high";\n    return Date.now();', RESIZE, 'FAIL resize ban: shim/cdom.js'),
+  ('ban-draw-5', 'shim/cdom.js', '    return Date.now();', '    context.drawImage(bitmap, 0, 0, w, h);\n    return Date.now();', RESIZE, 'FAIL resize ban: shim/cdom.js'),
+  ('ban-draw-9-lines', 'shim/cdom.js', '    return Date.now();', '    context.drawImage(bitmap,\n      0, 0, f(a, b), sh,\n      0, 0, Math.round(w / 2), h);\n    return Date.now();', RESIZE, 'FAIL resize ban: shim/cdom.js'),
+  ('ban-src', 'src/cdom_file.c', 'void cd_file_read_cb(', '/* resizeWidth */\nvoid cd_file_read_cb(', RESIZE, 'FAIL resize ban: src/cdom_file.c'),
+  ('ban-mk', 'cdom.mk', 'CDOM_OPT ?= -Oz\n', 'CDOM_OPT ?= -Oz\n# drawImage(img, 0, 0, w, h)\n', RESIZE, 'FAIL resize ban: cdom.mk'),
+  ('ban-tools', 'tools/minshim.mjs', "import fs from 'node:fs';", "import fs from 'node:fs';\nconst q = { imageSmoothingQuality: 'low' };", RESIZE, 'FAIL resize ban: tools/minshim.mjs'),
   ('encode-quality-unchecked', 'src/cdom.c', '|| y + h > H || quality > 100) __builtin_trap();', '|| y + h > H) __builtin_trap();', UNIT, "FAIL cd_encode_image's quality"),
 ]
 
