@@ -7,7 +7,7 @@
 # With --fuzz SECONDS, it builds tests/image/fuzz_jpegp.c the same way (libFuzzer) and runs it for that long instead,
 # seeded with the corpus's files under 100 KB; the corpus grows in tests/out/image/prog-test/fuzz.
 # Usage: tests/image/prog.sh [--fuzz SECONDS] [DIR...]      HOST_CC: the compiler (default clang); LLVM_BIN: where llvm-nm
-# and llvm-objcopy are (default: next to HOST_CC, else the PATH)
+# and llvm-objcopy are (default: next to HOST_CC, else next to cdom.mk's WASM_CC, else the PATH)
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 top="$(cd "$here/../.." && pwd)"
@@ -23,8 +23,10 @@ read -r -a MINIZF <<< "$(var CDOM_IMAGE_MINIZ_CFLAGS)"
 LJT="$top/third_party/libjpeg-turbo-3.2.1/src"
 HCC="${HOST_CC:-clang}"
 bin="${LLVM_BIN:-$(dirname "$(readlink -f "$(command -v "$HCC")")")}"
-tool() { if [ -x "$bin/$1" ]; then echo "$bin/$1"; else command -v "$1"; fi; }
+wbin="$(dirname "$(var WASM_CC)")"   # cdom.mk's wasm clang: Homebrew's LLVM on macOS, which is not on the PATH
+tool() { local d; for d in "$bin" "$wbin"; do if [ -x "$d/$1" ]; then echo "$d/$1"; return; fi; done; command -v "$1"; }
 NM="$(tool llvm-nm)"; OBJCOPY="$(tool llvm-objcopy)"
+if [ -z "$NM" ] || [ -z "$OBJCOPY" ]; then echo "FAIL tests/image/prog.sh: no llvm-nm or llvm-objcopy (next to $HCC, next to $(var WASM_CC), or on the PATH; LLVM_BIN names them)"; exit 1; fi
 fuzz=""
 if [ "${1:-}" = --fuzz ]; then fuzz="$2"; shift 2; fi
 SAN=(-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
