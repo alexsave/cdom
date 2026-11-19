@@ -21,6 +21,9 @@
 #   CDOM_IMAGE_SJLJ  how the image module leaves a fatal libjpeg error (src/cdom_image_sjlj.c): js (the default,
 #                 a try and catch in the shim; plain wasm, every browser cdom runs in, and wasm2js) or eh (wasm
 #                 exception handling: Chrome 95, Firefox 100, Safari 15.2, and no wasm2js)
+#   CDOM_IMAGE_SIMD  0 (the default, scalar) or 1: the image module's hot loops in hand-written wasm SIMD
+#                 (-msimd128: src/cdom_image_loops.c, and src/jsimd/jsimd_wasm.c through libjpeg-turbo's own SIMD
+#                 dispatch); the module then needs wasm SIMD to instantiate (Chrome 91, Firefox 89, Safari 16.4)
 #                 one optional module each (src/cdom_<name>.h), for an app's own rules (APP_MODULES below
 #                 adds them to the APP_WASM rule); a module's list may name several files
 #   CDOM_<NAME>_PARTS, CDOM_<NAME>_<PART>_SRC, CDOM_<NAME>_<PART>_CFLAGS, CDOM_<NAME>_DEPS, CDOM_<NAME>_LDFLAGS
