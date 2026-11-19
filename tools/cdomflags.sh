@@ -22,7 +22,7 @@ make -s --no-print-directory -f "$cdom_top/cdom.mk" CDOM="$cdom_top" "$CDOM_LITS
 CDOM_PAGE_TOOL="$(cdom_mk_var CDOM_PAGE_TOOL)"
 make -s --no-print-directory -f "$cdom_top/cdom.mk" CDOM="$cdom_top" "$CDOM_PAGE_TOOL" || { echo "FAIL cannot build $CDOM_PAGE_TOOL" >&2; exit 1; }
 # The scripts that build cdom modules. Each must take the set from here, never write a flag of it.
-CDOM_FLAG_USERS=(tests/build.sh tests/link/run.sh bench/build.sh)
+CDOM_FLAG_USERS=(tests/build.sh tests/link/run.sh bench/build.sh tests/image/simd.sh)
 cdom_flags_gate() {
   local bad=0 f w n
   for f in "${CDOM_FLAG_USERS[@]}"; do
