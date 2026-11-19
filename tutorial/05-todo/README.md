@@ -107,7 +107,32 @@ static void item_destroy(void *, cd_item *it) {
 }
 ```
 
+```c
+/* the row's remove button, raw: */
+v->remove = cd_open_id("button");
+cd_class("remove"); cd_attr("aria-label", "Remove"); cd_text("×");
+cd_close();
+cd_on(v->remove, CD_EV_CLICK, on_remove, (void *)(uintptr_t)t->id);
+
+/* with cdom_ui.h (APP_MODULES := ui): */
+v->remove = cd_button("remove", "×", on_remove, CD_CTX_OF(t->id), nullptr);
+cd_set_attr(v->remove, "aria-label", "Remove");
+
+/* a handler asks for the render instead of calling it: */
+t->done = !t->done;
+cd_dirty(render, nullptr);
+```
+
 ## What to notice
+
+- **`cd_button` and `CD_CTX_OF`.** A button with a class, a label and a click handler is the same four calls every time, so `cd_button` makes them one.
+  It also sets `type="button"`, so a button inside a form submits nothing.
+  An attribute it does not take, here `aria-label` or `aria-pressed`, is one `cd_set_attr` on the id it returns.
+  `CD_CTX_OF(id)` and `CD_CTX_INDEX(ctx)` are the `(void *)(uintptr_t)` casts that carry a todo's id in a ctx, under a name.
+  All of these are in `cdom_ui.h`, which the lesson's Makefile links with `APP_MODULES := ui`.
+- **A change asks for the view, it does not draw it.** The raw handlers call `render()` themselves, so a handler that changes two things draws twice.
+  `cd_dirty(render, nullptr)` marks the view dirty, and cdom runs it once before the event returns, however many times it was asked.
+  `render` takes a `void *` for that reason, and it is the React setter's batching: several changes in one event, one render.
 
 - **Keys are the todo ids.** `cd_list_update` takes the keys to show, in order, the way React's `key` prop is read.
   The ids come from a counter that never goes back, so a key that is gone can never name a different todo later.

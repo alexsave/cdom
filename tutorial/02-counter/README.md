@@ -62,5 +62,28 @@ void cd_main(void) {
   A parameter a handler does not use goes unnamed, since cdom builds as C23: `step` takes the event as `const cd_event_rec *` and no name.
 - **One listener.** The shim puts a single click listener on the mount and passes each click to C, which finds the handler; buttons have no listener of their own.
 - **Wire after building.** The handlers are registered once the tree is built, which keeps the building code a plain description of the page.
-- **Numbers without printf.** `cd_set_text_node_num` sends a number as it is, and `cd_fmt` writes a signed one as JavaScript would.
-  `cd_tmp(buf, n)` hands cdom the bytes of the result, which it reads when the call runs, so a value that keeps changing is never stale.
+- **Numbers without printf.** `cd_set_text_node_num` sends an unsigned number as it is.
+  A count that can go below zero needs its minus sign, and the raw way is a branch and `cd_fmt` for the negative case:
+
+  ```c
+  if (count >= 0) {
+    cd_set_text_node_num(count_text, (uint32_t)count);
+  } else {
+    char buf[12];
+    uint32_t n = cd_fmt(buf, count, 0, CD_UNIT_NONE);
+    cd_set_text_node(count_text, cd_tmp(buf, n));
+  }
+  ```
+
+  The shorthand is `cd_buf` from `cdom_ui.h` (the lesson's Makefile says `APP_MODULES := ui`), a string builder over a buffer you own:
+
+  ```c
+  char room[12];
+  cd_buf b = cd_buf_in(room, sizeof room);
+  cd_buf_i64(&b, count);                          /* the sign comes with the number */
+  cd_set_text_node(count_text, cd_tmp(b.p, b.len));
+  ```
+
+  There is no special case for a negative count, so the branch goes away.
+  `cd_tmp(b.p, b.len)` hands cdom the bytes, which it reads when the call runs, so a value that keeps changing is never stale.
+  The buttons below stay raw (`cd_open_id`, `cd_on`), because this lesson is where you learn what a button is.

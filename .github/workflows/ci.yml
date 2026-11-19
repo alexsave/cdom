@@ -1,0 +1,88 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-24.04
+            os: ubuntu-24.04
+          - name: macos-arm64
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: '3.13'
+
+      - name: Toolchain (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # cdom needs wasm-ld 22 or later (src/cdom.c, cd_tmpz: __rodata_start), which Ubuntu 24.04 does not ship.
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang-23 lld-23 llvm-23 libjpeg-turbo-progs
+          echo "WASM_CC=/usr/lib/llvm-23/bin/clang" >> "$GITHUB_ENV"
+          # Ubuntu's binaryen (116) writes wasm2js output of another shape than tools/legacy/build.mjs reads (brew has 130).
+          b=binaryen-version_130-x86_64-linux.tar.gz
+          curl -fsSL -o "$RUNNER_TEMP/$b" "https://github.com/WebAssembly/binaryen/releases/download/version_130/$b"
+          echo "0a18362361ad05465118cd8eeb72edaeec89de6894bc283576ef4e07aa3babcc  $RUNNER_TEMP/$b" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$b" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          echo "CHROME=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          # Ubuntu 24.04 restricts unprivileged user namespaces, which Chrome's sandbox needs.
+          echo "CHROME_ARGS=--no-sandbox" >> "$GITHUB_ENV"
+          echo "CJPEG=/usr/bin/cjpeg" >> "$GITHUB_ENV"
+          echo "DJPEG=/usr/bin/djpeg" >> "$GITHUB_ENV"
+          echo "JPEGTRAN=/usr/bin/jpegtran" >> "$GITHUB_ENV"
+
+      - name: Toolchain (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm lld binaryen libjpeg-turbo
+          p="$(brew --prefix libjpeg-turbo)/bin"
+          echo "CJPEG=$p/cjpeg" >> "$GITHUB_ENV"
+          echo "DJPEG=$p/djpeg" >> "$GITHUB_ENV"
+          echo "JPEGTRAN=$p/jpegtran" >> "$GITHUB_ENV"
+
+      - name: Dependencies
+        run: |
+          npm ci
+          python3 -m pip install numpy pillow
+
+      - name: tests/build.sh
+        run: tests/build.sh
+      - name: tools/unit.mjs
+        run: node tools/unit.mjs
+      - name: tests/image/run.sh (tools/alloc.mjs reads its outputs)
+        run: tests/image/run.sh
+      - name: tools/alloc.mjs
+        run: node tools/alloc.mjs
+      - name: tests/link/run.sh
+        run: tests/link/run.sh
+      - name: tools/resize_ban.sh
+        run: tools/resize_ban.sh
+      - name: tests/lits/run.sh
+        run: tests/lits/run.sh
+      - name: tests/page/run.sh
+        run: tests/page/run.sh

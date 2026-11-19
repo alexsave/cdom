@@ -1,0 +1,23 @@
+== p12.jpg (2 profiles each)
+  idct4                          scalar     9.2 ms   simd     6.0 ms    1.53x
+  idct2                          scalar     9.1 ms   simd     7.2 ms    1.27x
+  ycc                            scalar     3.0 ms   simd     1.1 ms    2.77x
+  scaler (row, across, down)     scalar    16.6 ms   simd    18.2 ms    0.91x
+  decode_mcu*                    scalar    65.3 ms   simd    68.1 ms    0.96x
+== p12p.jpg (2 profiles each)
+  idct4                          scalar     9.9 ms   simd     6.4 ms    1.53x
+  idct2                          scalar     9.7 ms   simd     7.5 ms    1.28x
+  ycc                            scalar     2.4 ms   simd     1.0 ms    2.40x
+  scaler (row, across, down)     scalar    15.7 ms   simd    17.2 ms    0.91x
+  decode_mcu*                    scalar   205.2 ms   simd   211.0 ms    0.97x
+== p48.jpg (2 profiles each)
+  idct2                          scalar    18.8 ms   simd    16.1 ms    1.17x
+  ycc                            scalar     2.1 ms   simd     1.1 ms    1.83x
+  scaler (row, across, down)     scalar    14.6 ms   simd    18.2 ms    0.80x
+  decode_mcu*                    scalar   219.2 ms   simd   232.2 ms    0.94x
+== p12.png (2 profiles each)
+  scaler (row, across, down)     scalar    65.5 ms   simd    75.1 ms    0.87x
+  unfilter                       scalar   106.5 ms   simd    81.9 ms    1.30x
+  rgb to rgba                    scalar     1.6 ms   simd     0.4 ms    3.44x
+  png row loop (png_resize)      scalar    12.2 ms   simd     6.4 ms    1.90x
+  tinfl_decompress               scalar   173.2 ms   simd   178.2 ms    0.97x

@@ -22,6 +22,9 @@
 #   CDOM_IMAGE_SJLJ  how the image module leaves a fatal libjpeg error (src/cdom_image_sjlj.c): js (the default,
 #                 a try and catch in the shim; plain wasm, every browser cdom runs in, and wasm2js) or eh (wasm
 #                 exception handling: Chrome 95, Firefox 100, Safari 15.2, and no wasm2js)
+#   CDOM_IMAGE_SIMD  0 (the default, scalar) or 1: the image module's hot loops in hand-written wasm SIMD
+#                 (-msimd128: src/cdom_image_loops.c, and src/jsimd/jsimd_wasm.c through libjpeg-turbo's own SIMD
+#                 dispatch); the module then needs wasm SIMD to instantiate (Chrome 91, Firefox 89, Safari 16.4)
 #                 one optional module each (src/cdom_<name>.h), for an app's own rules (APP_MODULES below
 #                 adds them to the APP_WASM rule); a module's list may name several files
 #   CDOM_<NAME>_PARTS, CDOM_<NAME>_<PART>_SRC, CDOM_<NAME>_<PART>_CFLAGS, CDOM_<NAME>_DEPS, CDOM_<NAME>_LDFLAGS
@@ -142,27 +145,42 @@ CDOM_FONTS_SRC  := $(CDOM)/src/cdom_fonts.c
 CDOM_UI_SRC     := $(CDOM)/src/cdom_ui.c
 CDOM_FILE_SRC   := $(CDOM)/src/cdom_file.c
 # The image module: four parts, so libjpeg-turbo (third_party/, with its README) builds with -w and its own -I,
-# cdom's three files with the app's flags and only libjpeg's headers' directory (as -isystem), the PNG path's
-# inflate (cdom's own) with the app's flags and CDOM_IMAGE_INFLATE_CFLAGS (empty; -msimd128 there gives its
-# adler32 and match copies wasm SIMD, and nothing else of the module), and the one file that calls setjmp with the
-# flags of the CDOM_IMAGE_SJLJ way.
+# cdom's own files with the app's flags and only libjpeg's headers' directory (as -isystem), the PNG path's
+# inflate (cdom's own) with the app's flags and CDOM_IMAGE_INFLATE_CFLAGS (by default the SIMD flags of
+# CDOM_IMAGE_SIMD below, which give its adler32 and match copies wasm SIMD), and the one file that calls setjmp
+# with the flags of the CDOM_IMAGE_SJLJ way.
 CDOM_IMAGE_SJLJ ?= js
 CDOM_IMAGE_LJT  := $(CDOM)/third_party/libjpeg-turbo-3.2.1/src
 CDOM_IMAGE_SRC  :=
 CDOM_IMAGE_PARTS := own inflate vendor sjlj
-CDOM_IMAGE_OWN_SRC := $(CDOM)/src/cdom_image.c $(CDOM)/src/cdom_image_jpeg.c $(CDOM)/src/cdom_image_png.c
-CDOM_IMAGE_INFLATE_SRC := $(CDOM)/src/cdom_image_inflate.c
-CDOM_IMAGE_INFLATE_CFLAGS ?=
+CDOM_IMAGE_OWN_SRC := $(CDOM)/src/cdom_image.c $(CDOM)/src/cdom_image_jpeg.c $(CDOM)/src/cdom_image_png.c $(CDOM)/src/cdom_image_loops.c
 CDOM_IMAGE_OWN_CFLAGS := -isystem $(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV
+# CDOM_IMAGE_SIMD: 0 (the default) is scalar; 1 builds the hot loops with wasm SIMD (-msimd128, src/cdom_image_loops.c and
+# src/jsimd/jsimd_wasm.c, which libjpeg-turbo reaches through its own SIMD dispatch, WITH_SIMD: the three headers in
+# src/jsimd/simd/ answer its "../simd/" includes). A SIMD module needs a browser with wasm SIMD (Chrome 91, Firefox 89,
+# Safari 16.4) and does not instantiate in an older one; the two builds are the same in every other way (docs/image-simd-hand.md).
+# MULTIPLIER and ALIGN_SIZE keep libjpeg's scalar types as they are with SIMD off (WITH_SIMD would make them short and 32).
+CDOM_IMAGE_SIMD ?= 0
+ifeq ($(CDOM_IMAGE_SIMD),1)
+cdom_mk_simd_flags := -msimd128 -DCDOM_IMAGE_SIMD=1 -DCDOM_JSIMD -DMULTIPLIER=int -DALIGN_SIZE=8
+CDOM_IMAGE_OWN_SRC += $(CDOM)/src/jsimd/jsimd_wasm.c
+else ifeq ($(CDOM_IMAGE_SIMD),0)
+cdom_mk_simd_flags :=
+else
+$(error cdom.mk: CDOM_IMAGE_SIMD is $(CDOM_IMAGE_SIMD), not 0 or 1)
+endif
+CDOM_IMAGE_OWN_CFLAGS += $(cdom_mk_simd_flags)
 CDOM_IMAGE_VENDOR_SRC := $(addprefix $(CDOM_IMAGE_LJT)/,jcomapi.c jdapimin.c jdhuff.c jdinput.c jdmarker.c jdmaster.c \
   jdphuff.c jmemmgr.c jpeg_nbits.c $(addprefix wrapper/,$(addsuffix -8.c,jdapistd jdcoefct jdcolor jddctmgr jdmainct \
   jdpostct jdsample jidctint jidctred jutils)))
-CDOM_IMAGE_VENDOR_CFLAGS := -w -I$(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV
+CDOM_IMAGE_VENDOR_CFLAGS := -w -I$(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV $(cdom_mk_simd_flags) $(if $(cdom_mk_simd_flags),-I$(CDOM)/src/jsimd/simd)
+CDOM_IMAGE_INFLATE_SRC := $(CDOM)/src/cdom_image_inflate.c
+CDOM_IMAGE_INFLATE_CFLAGS ?= $(cdom_mk_simd_flags)
 CDOM_IMAGE_SJLJ_SRC = $(CDOM)/src/cdom_image_sjlj.c $(if $(filter eh,$(CDOM_IMAGE_SJLJ)),$(CDOM)/src/cdom_image_sjlj_eh.c)
 cdom_mk_sjlj_js := -DCDOM_IMAGE_SJLJ_JS
 cdom_mk_sjlj_eh := -DCDOM_IMAGE_SJLJ_EH -mexception-handling -mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=true
 CDOM_IMAGE_SJLJ_CFLAGS = $(or $(cdom_mk_sjlj_$(CDOM_IMAGE_SJLJ)),$(error cdom.mk: CDOM_IMAGE_SJLJ is $(CDOM_IMAGE_SJLJ), not js or eh))
-CDOM_IMAGE_DEPS := $(wildcard $(CDOM_IMAGE_LJT)/*.h $(CDOM_IMAGE_LJT)/*.c)
+CDOM_IMAGE_DEPS := $(wildcard $(CDOM_IMAGE_LJT)/*.h $(CDOM_IMAGE_LJT)/*.c $(CDOM)/src/jsimd/*.c $(CDOM)/src/jsimd/simd/*.h)
 CDOM_HEADERS    := $(wildcard $(CDOM)/src/*.h $(CDOM)/src/libc/*.h)
 CDOM_SHIM       := $(CDOM)/shim/cdom.min.js
 

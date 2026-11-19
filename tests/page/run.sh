@@ -167,7 +167,7 @@ want=""; for f in $order; do want+="$f	$(fnv "$tree/$f")"$'\n'; done
 "$CDPAGE" --css-list "$tree" "$L"
 if [ "$(cat "$L"; echo .)" = "$want." ]; then ok "the list file: the seven paths in byte order, a tab, the FNV-1a 64 of each file's bytes"
 else bad "the list file is not the seven paths and their hashes:"; diff <(printf '%s' "$want") "$L"; fi
-ino() { stat -f '%i' "$L"; }
+if [ "$(uname -s)" = Darwin ]; then ino() { stat -f '%i' "$L"; }; else ino() { stat -c '%i' "$L"; }; fi # BSD and GNU stat
 listed() { # name, then whether the list must be replaced (1) or left (0), after the step before it
   local was="$1" name="$2" want="$3"
   "$CDPAGE" --css-list "$rev" "$L"
