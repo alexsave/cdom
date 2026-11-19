@@ -3,7 +3,8 @@
  * payloads (pieces, as the PNG path reads them) into a bounded buffer and hands the bytes on in rows, as the PNG
  * path does before its unfilter: tinfl and the zlibs copy each row out of their output buffer into a row (the
  * old path's memcpy), cdom's inflate visits each row in place in its buffer (the new path). Answers the bytes made,
- * or 0 on an error. Arms: 0 tinfl, 1 cdom, 2 zlib 1.3.1, 3 zlib-ng 2.2.4 generic (2 and 3 when built in). */
+ * or 0 on an error. Arms: 0 tinfl, 1 cdom, 2 zlib 1.3.1, 3 zlib-ng 2.2.4 generic (2 and 3 when built in), 9 cdom's
+ * adler32 alone. */
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -136,5 +137,14 @@ EXPORT("run") uint32_t run(uint32_t arm, const uint8_t *p, uint32_t n) {
     return r == Z_STREAM_END ? (uint32_t)made : 0;
   }
 #endif
+  if (arm == 9) {   /* adler32 alone: 140 times over one 256 KB block (36.7 MB), hot, as the inflate takes it */
+    static uint8_t *blk;
+    if (!blk) blk = cd_alloc_try(262144);
+    for (uint32_t i = 0; i < 262144; i++) blk[i] = p[(i * 7919u) % n];
+    uint32_t a = 1;
+    for (int k = 0; k < 140; k++) a = cd_image_adler32(a, blk, 262144);
+    sink_sum += a;
+    return 140u * 262144u;
+  }
   return 0;
 }

@@ -12,7 +12,7 @@ const wdir = path.resolve(process.argv[2]);
 const rounds = +(process.argv[3] || 9);
 const arms = (process.argv[4] || 'base:0,base:1,simd:1,zlib:2,zng:3').split(',');
 const inputs = (process.argv[5] || 'p12.png').split(',');
-const names = { '0': 'tinfl', '1': 'cdom', '2': 'zlib', '3': 'zlib-ng' };
+const names = { '0': 'tinfl', '1': 'cdom', '2': 'zlib', '3': 'zlib-ng', '9': 'adler32' };
 const srv = http.createServer((q, r) => {
   const u = decodeURIComponent(q.url.split(/[?#]/)[0]);
   const f = u.startsWith('/w/') ? path.join(wdir, u.slice(3)) : u.startsWith('/in/') ? path.join(here, '..', 'inputs', u.slice(4)) : path.join(here, u);
