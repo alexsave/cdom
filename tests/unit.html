@@ -167,10 +167,11 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
         whole === 13 && out(whole) === '한국어 값', cut === 3 && out(3) === '한', out(x.t_host_accent()) === 'rgb(1, 2, 3)'];
       return r.every(Boolean) || JSON.stringify(r);
     });
-    check('the image module\'s guard (js, the shim\'s image_call and image_throw): a body that returns answers 0, one that throws from 40 frames down answers 1, and 2,000 throws in one call leave the stack pointer where it was', () => {
+    check('the image module\'s guard (js, the shim\'s image_call and image_throw): a body that returns answers 0, one that throws from 40 frames down answers 1, 2,000 throws in one call leave the stack pointer where it was, and nested guards each take their own throw', () => {
       const r = [x.t_sj(0, 7) === 0 && x.t_sj_ran() === 7, x.t_sj(1, 40) === 1 && x.t_sj_ran() === 1];
       r.push(x.t_sj_many(2000, 40) === 1);   // 8 KB of frames each: 16 MB, far past the 64 KB stack, if none were put back
       r.push(x.t_sj(0, 3) === 0 && x.t_sj_ran() === 3);
+      r.push(x.t_sj_nested(0) === 101, x.t_sj_nested(1) === 111);   // nested: the inner throw lands inside, the outer goes on (and its own throw lands outside)
       return r.every(Boolean) || JSON.stringify(r);
     });
     check('cd_input_whole: the whole value when it fits (13 bytes into 13), else none of it and the whole length (into 12, 4 and 0)', () => {

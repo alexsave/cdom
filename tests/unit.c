@@ -2869,6 +2869,22 @@ EXPORT("t_sj") uint32_t t_sj(uint32_t which, uint32_t n) {
   return r;
 }
 EXPORT("t_sj_ran") uint32_t t_sj_ran(void) { return sj_ran; }
+/* Nested guards (a body that runs a guard of its own: a decode inside a decode): each throw lands at the guard it
+ * names, the innermost, and the outer one goes on. Answers the outer guard's answer times 10 plus the inner's. */
+static void *sj_inner_slot;
+static uint32_t sj_inner, sj_outer_throws;
+static void sj_inner_throws(void *ctx) { (void)ctx; cd_image_throw(sj_inner_slot); }
+static void sj_outer(void *ctx) {
+  (void)ctx;
+  sj_inner = (uint32_t)cd_image_guard(sj_inner_throws, 0, &sj_inner_slot);
+  sj_ran = 7;   /* the outer body goes on after the inner throw */
+  if (sj_outer_throws) cd_image_throw(sj_slot);
+}
+EXPORT("t_sj_nested") uint32_t t_sj_nested(uint32_t outer_throws) {
+  sj_ran = 0; sj_outer_throws = outer_throws;
+  uint32_t outer = (uint32_t)cd_image_guard(sj_outer, 0, &sj_slot);
+  return outer * 10 + sj_inner + (sj_ran == 7 ? 100 : 0);
+}
 /* The stack pointer as a callee sees it: the frame of a function that cannot be inlined. */
 static __attribute__((noinline)) uintptr_t sj_sp(void) { volatile char probe = 0; uintptr_t at = (uintptr_t)&probe; return at + probe; }
 /* count throws from depth frames down, in one call, so no frame of this export's own puts the stack pointer back

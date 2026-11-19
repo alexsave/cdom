@@ -119,6 +119,42 @@ for (const [name, file, w, h, first] of [['12 MP', 5000000, 4032, 3024, 857], ['
   const r = call(() => x.churn(20000));
   check('20,000 seeded steps of small and large blocks taken, grown, shrunk and freed: every block keeps its own bytes', r === 0, typeof r === 'number' ? `step ${r} found another block's bytes` : r);
 }
+// The image module's way out of a libjpeg error leaves the heap as it was: tests/image/wasm.c (built by
+// tests/image/wasm.mk, each CDOM_IMAGE_SJLJ way) given a JPEG with a bad DQT (a fatal error deep in libjpeg) 100 times
+// in a row answers CORRUPT each time and grows the memory by 0 pages after the first (jpeg_destroy_decompress and
+// every cd_alloc_try block freed on the throw's path), and a good JPEG still decodes after. The input is the image
+// oracle's (tests/image/run.sh makes tests/out/image/inputs); this case runs once it is there.
+{
+  const img = path.join(out, 'image'), bad = path.join(img, 'inputs/dqt-bad.jpg'), good = path.join(img, 'inputs/s420.jpg');
+  if (!fs.existsSync(bad)) check('the image module\'s error path (needs tests/image/run.sh first)', false, `no ${bad}`);
+  else for (const sjlj of ['js', 'eh']) {
+    const { execFileSync } = await import('node:child_process');
+    execFileSync('make', ['-s', '-f', path.join(out, '../image/wasm.mk'), `OUT=${img}`, `SJLJ=${sjlj}`, path.join(img, `wasm_${sjlj}.wasm`)], { stdio: 'inherit' });
+    const mod = new WebAssembly.Module(fs.readFileSync(path.join(img, `wasm_${sjlj}.wasm`)));
+    const THROW = {};
+    let x;
+    // the shim's image_call and image_throw (shim/cdom.js), the rest answering 0
+    const own = { image_call: (body, ctx) => { try { x.cd_image_run(body, ctx); return 0; } catch (e) { if (e !== THROW) throw e; return 1; } },
+                  image_throw: () => { throw THROW; } };
+    x = new WebAssembly.Instance(mod, { cdom: new Proxy({}, { get: (_, k) => own[k] || (() => 0) }) }).exports;
+    x.cd_start(1);
+    const run = (bytes) => {
+      const p = x.room(bytes.length);
+      new Uint8Array(x.memory.buffer, p, bytes.length).set(bytes);
+      const st = x.resize(p, bytes.length, 300, 300);
+      x.drop(new Uint32Array(x.memory.buffer, x.out(), 3)[2]);
+      x.drop(p);
+      return st;
+    };
+    const b = fs.readFileSync(bad), statuses = new Set();
+    statuses.add(call(() => run(b)));
+    const after1 = x.memory.buffer.byteLength >> 16;
+    for (let i = 1; i < 100; i++) statuses.add(call(() => run(b)));
+    const grew = (x.memory.buffer.byteLength >> 16) - after1, g = call(() => run(fs.readFileSync(good)));
+    check(`the image module (${sjlj}): 100 fatal libjpeg errors in a row answer CORRUPT each time and grow the memory 0 pages after the first, and a good JPEG decodes after`,
+      statuses.size === 1 && statuses.has(4) && grew === 0 && g === 0, `statuses ${[...statuses]}, +${grew} pages, then ${g}`);
+  }
+}
 for (const p of passed) console.log('ok  ', p);
 for (const e of errors) console.log('FAIL', e);
 console.log(`${passed.length} passed, ${errors.length} failed`);
