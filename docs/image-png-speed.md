@@ -245,3 +245,64 @@ Size (bench/image/sizes: `app.c` at -Oz, stripped, clang 18 here, so not the Mac
 | PNG only | 15,889 / 6,843 | 14,620 / 6,725 | 14,627 / 6,752 |
 
 - M5 (the module changes by -2 to +3 KB brotli): -231 bytes (the module 28,235 to 28,004 brotli beyond the empty app), confirmed.
+
+### With image-simd's loops: does C match then?
+
+Not a prediction (none was written for it), and not on this branch: a scratch merge of `origin/image-simd` (3e76f8b) into this branch, built with its `SIMD=1` (its wasm SIMD unfilter, scaler and RGB to RGBA, and this branch's inflate at -msimd128), measured the same way (9 interleaved rounds, same session as the arms beside it).
+The merge's conflicts were mechanical (cdom.mk's parts, the PNG row loop, the scaler's across loop); two ways for RGB: `comb`, this branch's RGB read (the scalar across loop with step 3) for RGB and image-simd's SIMD across for the rest; `comb-rgba`, image-simd's SIMD RGB to RGBA and SIMD across for every image.
+Timing only: the merged builds' images were not compared with the oracle.
+
+| input | this branch | this branch, inflate -msimd128 | image-simd alone (tinfl) | comb | comb-rgba | B1 | B2 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| p12.png | 176.4 (170.7 to 192.4) | 180.6 (168.3 to 266.3) | 198.3 (194.9 to 219.9) | 151.6 (148.2 to 160.1) | 138.1 (133.1 to 154.6) | 146.4 (138.8 to 158.4) | 153.4 (144.9 to 189.2) |
+| p12a.png | 247.3 (241.9 to 282.1) | 242.2 (238.0 to 294.4) | 258.6 (255.4 to 289.8) | 179.8 (177.8 to 188.4) | 181.4 (178.5 to 188.3) | 153.7 (144.6 to 177.7) | 173.0 (161.5 to 193.4) |
+
+- With both branches, **C matches the browser on p12.png on this machine: 138.1 ms against B1's 146.4 (0.94) and B2's 153.4.**
+  On the RGBA PNG it does not yet: 180 against 154 (1.17).
+- For the merge: with image-simd's SIMD across loop, the RGB read of this branch is slower (151.6) than RGB to RGBA in SIMD and the SIMD across (138.1), so the merged module should send RGB through image-simd's path (`step` 3 only where there is no SIMD across).
+- The ratio on the Mac will differ (the skew in "The machine"); the cdom manager re-measures there.
+
+## Tests
+
+- tests/image/run.sh (native, ASan and UBSan, clang 18 here with its compiler-rt installed): every case of the oracle equal to the byte (65 file cases, 14 scaler cases, 9,192 checks, 0 failures), and `inflate_diff`: 495 streams equal to zlib's output, 912 refused by both, 9,596 cuts CORRUPT, 900 damaged agreeing, the hand-made dynamic blocks (one one-bit distance code, accepted; an incomplete, an over-subscribed code and a missing end code, refused), a sink that stops (STOPPED) and one that drops the window (STOPPED), seed 20261119.
+  The corpus: zlib at levels 0 to 9, every strategy (stored, fixed, Huffman only, RLE, filtered), windows of 9 to 15 bits, sync and full flushes; hand-made fixed and stored blocks with distance 1 runs, length 258, distances at 32,768 and one past the output; each stream read from pieces of 1 byte to 70 KB, each its own heap block, into the smallest buffer allowed.
+- tools/image.mjs, the js builds (the plain one, the capped heap, the module whose memory.grow refuses): every case's status and bytes equal in Chrome, the errors, NO_ROOM.
+  The eh builds need a clang newer than this machine's 18 (`-wasm-use-legacy-eh`), as on main; not run here.
+- tests/image/fuzz.sh, 300 s each (clang 18's libFuzzer): fuzz_jpeg 2,817 runs, fuzz_png 36,010, and the new fuzz_inflate (cdom's inflate against zlib on any bytes) 337,392: no crash, leak or limit.
+- tools/third_party.py check: ok.
+
+Mutants (tools/mutate.py's list; its own build step, tests/build.sh, needs a wasm2js newer than Ubuntu's 108 here, so they ran through a scratch driver with the same list, the same test command and the same text to find): the image module's 40, all caught for their reason, the new ones:
+
+| mutant | what it breaks | caught by |
+| --- | --- | --- |
+| png-prev-row-dropped | the row above is not kept in the buffer | png-rgb differs |
+| png-rgb-key-fused | an RGB image with a colour key takes the RGB read | png-rgb-key differs |
+| png-window-unfiltered | rows unfiltered 4 KB from the end, inside the window | png-rgb CORRUPT |
+| img-step-rgba | the scaler steps 4 on RGB | png-rgb differs |
+| png-idat-not-entered (now) | only the first IDAT is read | png-rgba CORRUPT |
+| png-bad-stream (now) | the inflate's answer ignored | png-adler-mismatch OK |
+| png-rows-kept, png-whole-image, png-no-plte (now) | as before, on the new code | as before |
+| inflate-dist-past-start | a distance one past the output allowed | ASan, heap-buffer-overflow |
+| inflate-copy-overlap | 16-byte copies at distances of 8 to 15 | ASan, memcpy-param-overlap |
+| inflate-incomplete-code | incomplete codes allowed | inflate_diff, "an incomplete literal/length code" |
+| inflate-lit2-too-long | two literals in an entry one bit too long | inflate_diff, zlib case 6 |
+| inflate-subtable-size | second levels sized without the codes taken | inflate_diff, zlib case 97 |
+| inflate-third-literal | the third literal's lookup off by a bit | inflate_diff, zlib case 2 |
+| inflate-stored-nlen | a stored block's NLEN unchecked | inflate_diff, a damaged stored stream |
+| inflate-sink-overdrops | a sink may drop the window | ASan in the greedy sink's test |
+| inflate-sink-ignored | a sink's stop ignored | inflate_diff, "a sink that stops" |
+| inflate-adler-unchecked | the adler32 not compared | png-adler-mismatch OK |
+| inflate-adler-weight | one SWAR weight wrong | inflate_diff, "adler32 of 84 bytes" |
+| inflate-reads-past-piece | the fast loop's input margin 4, not 32 | ASan, heap-buffer-overflow |
+
+Gone with tinfl's loop: `png-no-checksum-end` and `png-stops-at-last-row` (the stream is now always read to its adler32 inside the inflate: inflate-adler-unchecked and the cut checks stand for them), `png-window-wrap` (no wrapping window; png-window-unfiltered stands for it).
+fuzz_inflate, mutation-checked by hand: with inflate-third-literal it traps at once; with inflate-lit2-too-long it ran 120 s (491,652 runs) without finding it (a byte-flipped stream rarely makes two codes of exactly 12 bits), which inflate_diff catches.
+
+## Decisions the brief did not cover
+
+- miniz stays in third_party/ (tools/third_party.py still makes and checks it) as the inflate bench's tinfl baseline, but leaves the module's build: an app no longer ships it or owes its MIT notice (README.md, its README).
+- The inflate is its own part of the module (`CDOM_IMAGE_INFLATE_CFLAGS`), so -msimd128 can be given to it alone; it gains 3.6 ms in the inflate bench and 0 to 10 ms on the page (inside the noise in the combined session), so the default stays scalar.
+- One token of the scaler's body changed (`px += s->step`, a field init sets to 4), for the RGB read; the RGBA, grey and palette paths keep to_rgba.
+- inputs.py: the three new inputs are made after the four old ones and draw nothing; with this machine's Python 3.11 Pillow does not load, so inputs.py ran with /usr/bin/python3 (3.13, Pillow 12.3); the four old files are byte-equal to before (sha256 checked).
+- tests/image/test_image.c includes sys/types.h: glibc declares ssize_t only there, so the test did not build on Linux.
+- Distances past the output so far are now CORRUPT (zlib refuses them); tinfl, in its wrapping mode, read old window bytes for them.
