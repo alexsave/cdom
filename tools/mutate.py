@@ -444,28 +444,28 @@ M = [
   ('mk-wasm-no-libc', 'cdom.mk', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -I$(CDOM)/src', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   # cdlits, which the rule runs on the linked module, refuses a module with no cdom in it before run.sh can look at its exports
   ('mk-wasm-no-cdom', 'cdom.mk', 'cdom_mk_app_src = $(APP_SRC) $(CDOM_SRC)', 'cdom_mk_app_src = $(APP_SRC)', LINK, "cdlits: not a cdom module"),
-  ('mk-modules-dropped', 'cdom.mk', ' $(addprefix $(CDOM)/src/cdom_,$(addsuffix .c,$(APP_MODULES)))', '', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
+  ('mk-modules-dropped', 'cdom.mk', ' $(foreach m,$(APP_MODULES),$(CDOM_$(call cdom_mk_up,$(m))_SRC))', '', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   ('mk-modules-unchecked', 'cdom.mk', 'cdom_mk_known = $(if $(cdom_mk_unknown),', 'cdom_mk_known = $(if ,', LINK, 'FAIL cdom.mk (first) refused APP_MODULES for another reason'),  # make still stops, at the missing file, without saying why
   ('mk-goal-taken', 'cdom.mk', '\n.cdom-mk-sources:', '\ncdom-mk-sources:', LINK, 'FAIL cdom.mk (first) took the default goal'),
   ('mk-read-early', 'cdom.mk', 'cdom_mk_app_src = $(APP_SRC)', 'cdom_mk_app_src := $(APP_SRC)', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
-  ('mk-target-early', 'cdom.mk', '%.wasm: $$(call cdom_mk_for,$$(APP_WASM),', '$(APP_WASM): $$(call cdom_mk_for,$$(APP_WASM),', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
+  ('mk-target-early', 'cdom.mk', '%.wasm: $$(call cdom_mk_for,$$(APP_WASM) $$(cdom_mk_simd_wasm),', '$(APP_WASM): $$(call cdom_mk_for,$$(APP_WASM) $$(cdom_mk_simd_wasm),', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   ('mk-page-early', 'cdom.mk', '%.html: $$(call cdom_mk_for,$$(APP_PAGE),', '$(APP_PAGE): $$(call cdom_mk_for,$$(APP_PAGE),', LINK, 'FAIL cdom_page (first) refused a page whose marker is alone'),
   ('mk-any-wasm', 'cdom.mk', 'cdom_mk_for = $(if $(filter $(2),$(1)),$(3),$(2).cdom-mk-none)', 'cdom_mk_for = $(3)', LINK, "FAIL cdom.mk's rules built a .wasm or .html that is not APP_WASM or APP_PAGE"),
-  ('mk-missing-unnamed', 'cdom.mk', '\n.cdom-mk-sources: $$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(CDOM_LITS)) \\\n  $$(if $$(APP_PAGE),$$(cdom_mk_page_src) $$(CDOM_PAGE_TOOL) $$(APP_PAGE).csslist)\n', '\n', LINK, 'FAIL cdom.mk built an app whose APP_SRC names a file that is not there'),  # the rule no longer applies, and the module built before is kept
-  ('mk-rebuilt', 'cdom.mk', '$$(cdom_mk_known)$$(cdom_mk_app_src) $$(CDOM_HEADERS) $$(CDOM_LITS))', '$$(cdom_mk_known)$$(cdom_mk_app_src) $$(CDOM_HEADERS) $$(CDOM_LITS) .cdom-mk-sources)', LINK, "FAIL cdom.mk's APP_WASM rule (first): a second make builds the module again"),
+  ('mk-missing-unnamed', 'cdom.mk', '\n.cdom-mk-sources: $$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(call cdom_mk_objs,$$(APP_WASM)) $$(CDOM_LITS)) \\\n  $$(if $$(cdom_mk_simd_wasm),$$(cdom_mk_simd_wasm) $$(call cdom_mk_objs,$$(cdom_mk_simd_wasm))) \\\n  $$(if $$(APP_PAGE),$$(cdom_mk_page_src) $$(CDOM_PAGE_TOOL) $$(APP_PAGE).csslist)\n', '\n', LINK, 'FAIL cdom.mk built an app whose APP_SRC names a file that is not there'),  # the rule no longer applies, and the module built before is kept
+  ('mk-rebuilt', 'cdom.mk', '$$(CDOM_LITS) $$(if $$(filter $$@,$$(cdom_mk_simd_wasm)),$$(APP_WASM)))', '$$(CDOM_LITS) $$(if $$(filter $$@,$$(cdom_mk_simd_wasm)),$$(APP_WASM)) .cdom-mk-sources)', LINK, "FAIL cdom.mk's APP_WASM rule (first): a second make builds the module again"),
   # The page's module (cdom.mk's APP_PAGE rule, tools/cdpage): bundled by default, or named (APP_WASM_SEPARATE)
   ('mk-bundle-off', 'cdom.mk', 'cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))', 'cdom_mk_bundled =', LINK, 'FAIL APP_PAGE (first) bundled into a page that loads its module by URL'),
   ('mk-separate-ignored', 'cdom.mk', 'cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))', 'cdom_mk_bundled = $(APP_WASM)', LINK, 'FAIL cdom_page (first) refused a page whose marker is alone'),
   ('mk-b64-wrapped', 'tools/cdpage.c', '    bput(o, q, 4);\n  }\n  if (n - i == 1) {', "    bput(o, q, 4);\n    if ((i + 3) % 57 == 0) bbyte(o, '\\n');\n  }\n  if (n - i == 1) {", LINK, 'FAIL the default page (first), bundled, is not shim/page.html'),  # base64 in lines of 76, as GNU base64 writes it, not one line
-  ('mk-page-no-wasm-dep', 'cdom.mk', '$$(CDOM_PAGE_TOOL) $$(APP_WASM))', '$$(CDOM_PAGE_TOOL))', LINK, 'FAIL the default page (first), bundled, is up to date with a newer module'),
+  ('mk-page-no-wasm-dep', 'cdom.mk', '$$(CDOM_PAGE_TOOL) $$(APP_WASM) $$(cdom_mk_simd_wasm))', '$$(CDOM_PAGE_TOOL) $$(cdom_mk_simd_wasm))', LINK, 'FAIL the default page (first), bundled, is up to date with a newer module'),
   ('mk-no-default-page', 'cdom.mk', 'cdom_mk_page_src = $(or $(APP_PAGE_SRC),$(CDOM_PAGE))', 'cdom_mk_page_src = $(APP_PAGE_SRC)', LINK, 'FAIL the default page (first) does not build'),
   ('mk-title-full-name', 'cdom.mk', '$(or $(APP_TITLE),$(basename $(notdir $(APP_WASM))))', '$(or $(APP_TITLE),$(notdir $(APP_WASM)))', LINK, 'FAIL the default page (first), bundled, is not shim/page.html'),
-  ('mk-wasm-intermediate', 'cdom.mk', '$$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(CDOM_LITS))', '$$(if $$(APP_WASM),$$(cdom_mk_app_src) $$(CDOM_LITS))', LINK, "FAIL the starter's page does not start its bundled module"),  # make deletes the module after the page
-  ('mk-toolchain-unchecked', 'cdom.mk', '\t@$(cdom_mk_toolchain)\n', '', LINK, 'FAIL cdom.mk with WASM_CC=/usr/bin/clang, which cannot build wasm32, did not stop'),
+  ('mk-wasm-intermediate', 'cdom.mk', '$$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src)', '$$(if $$(APP_WASM),$$(cdom_mk_app_src)', LINK, "FAIL the starter's page does not start its bundled module"),  # make deletes the module after the page
+  ('mk-toolchain-unchecked', 'cdom.mk', '\t@$(cdom_mk_toolchain)\n\t$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS)', '\t$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS)', LINK, 'FAIL cdom.mk with WASM_CC=/usr/bin/clang, which cannot build wasm32, did not stop'),
   ('page-url-unchecked', 'tools/cdpage.c', '  if (a->wasm && !wasms) {', '  if (0) {', LINK, 'FAIL APP_PAGE (first) bundled into a page that loads its module by URL'),
   ('page-url-unnamed', 'tools/cdpage.c', '    if (have_loads)\n', '    if (0)\n', LINK, 'FAIL APP_PAGE (first) refused a page that loads its module by URL with another message'),
   ('page-two-wasm-taken', 'tools/cdpage.c', '      if (++wasms > 1 || find(', '      if (++wasms > 9 && find(', LINK, 'FAIL cdom_page (first) took the two_wasm page'),
-  ('page-url-mode-off', 'tools/cdpage.c', '        if (a->wasm_url) js_string(o, a->wasm_url);', '        if (0) js_string(o, a->wasm_url);', LINK, 'FAIL the default page (first), APP_WASM_SEPARATE, does not build'),
+  ('page-url-mode-off', 'tools/cdpage.c', '  if (url) {\n    js_string(o, url);', '  if (0) {\n    js_string(o, url);', LINK, 'FAIL the default page (first), APP_WASM_SEPARATE, does not build'),
   ('page-url-unescaped', 'tools/cdpage.c', '    if (c == \'\\\\\' || c == \'"\') { bbyte(o, \'\\\\\'); bbyte(o, c); }', "    if (c == '\\\\') { bbyte(o, '\\\\'); bbyte(o, c); }", LINK, 'FAIL the default page (first), APP_WASM_SEPARATE: APP_WASM_URL'),
   ('page-title-unescaped', 'tools/cdpage.c', '    else if (*s == \'<\') bstr(o, "&lt;");\n', '', LINK, 'FAIL the default page (first), APP_WASM_SEPARATE: not shim/page.html'),
   # tools/cdpage standing alone (tests/page/run.sh): the page from its parts
@@ -507,9 +507,9 @@ M = [
   ('css-inline-comments-dropped', 'tools/cdpage.c', '        from = blank ? line_at : SIZE_MAX;', '        from = line_at;', PAGE, 'FAIL comments:'),  # a comment beside a rule goes with its line, and the rule with it
   # cdom.mk and the stylesheets (tests/link/run.sh, the fixture apps of tests/link/apps, and tests/link/css.mjs in Chrome):
   # discovery through make, rebuilding on a stylesheet change only, the first build, an own page, the cascade
-  ('mk-css-dir-dropped', 'cdom.mk', ' \\\n  --css-dir src\n', '\n', LINK, 'FAIL discovery: the css app'),
-  ('mk-css-walk-app-dir', 'cdom.mk', ' \\\n  --css-dir src\n', ' \\\n  --css-dir .\n', LINK, 'FAIL an own page that links static/app.css does not build'),
-  ('mk-csslist-not-prereq', 'cdom.mk', '$$(APP_WASM)) $$(cdom_mk_csslist)', '$$(APP_WASM))', LINK, 'FAIL rebuilding: a.css edited, and make -q says'),
+  ('mk-css-dir-dropped', 'cdom.mk', ')--css-dir src\n', ')\n', LINK, 'FAIL discovery: the css app'),
+  ('mk-css-walk-app-dir', 'cdom.mk', ')--css-dir src\n', ')--css-dir .\n', LINK, 'FAIL an own page that links static/app.css does not build'),
+  ('mk-csslist-not-prereq', 'cdom.mk', '$$(APP_WASM) $$(cdom_mk_simd_wasm)) $$(cdom_mk_csslist)', '$$(APP_WASM) $$(cdom_mk_simd_wasm))', LINK, 'FAIL rebuilding: a.css edited, and make -q says'),
   ('mk-css-files-prereq', 'cdom.mk', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) ] && [ -d $(call cdom_mk_q,$(@D)) ] \\\n  && $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) --css-list src $(call cdom_mk_q,$@.csslist))$@.csslist)', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(wildcard src/*.css src/*/*.css src/*/*/*.css))', LINK, 'FAIL rebuilding: a/new.css'),
   ('mk-csslist-no-shell', 'cdom.mk', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) ] && [ -d $(call cdom_mk_q,$(@D)) ] \\\n  && $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) --css-list src $(call cdom_mk_q,$@.csslist))$@.csslist)', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$@.csslist)', LINK, 'FAIL rebuilding: a.css edited, and make -q says'),
   ('mk-csslist-not-in-recipe', 'cdom.mk', '\t$(CDOM_PAGE_TOOL) --css-list src $(call cdom_mk_q,$@.csslist)\n', '', LINK, 'a second make is not up to date'),
@@ -674,7 +674,7 @@ M = [
   ('module-one-file', 'cdom.mk', '$(foreach m,$(APP_MODULES),$(CDOM_$(call cdom_mk_up,$(m))_SRC))', '$(foreach m,$(APP_MODULES),$(firstword $(CDOM_$(call cdom_mk_up,$(m))_SRC)))', LINK, 'FAIL cdom.mk (first): the module'),
   ('module-ldflags-dropped', 'cdom.mk', '$(CDOM_LDFLAGS) $(cdom_mk_mod_ldflags) $(APP_LDFLAGS)', '$(CDOM_LDFLAGS) $(APP_LDFLAGS)', LINK, 'FAIL cdom.mk (first): the module'),
   ('part-dup-unchecked', 'cdom.mk', 'not a cdom module ($(CDOM_MODULES))))$(cdom_mk_unique)', 'not a cdom module ($(CDOM_MODULES))))', LINK, 'doubled part'),
-  ('part-objs-intermediate', 'cdom.mk', '$$(APP_WASM) $$(cdom_mk_app_src) $$(cdom_mk_objs) $$(CDOM_LITS)', '$$(APP_WASM) $$(cdom_mk_app_src) $$(CDOM_LITS)', LINK, 'FAIL cdom.mk (first): make deleted'),
+  ('part-objs-intermediate', 'cdom.mk', '$$(APP_WASM) $$(cdom_mk_app_src) $$(call cdom_mk_objs,$$(APP_WASM)) $$(CDOM_LITS)', '$$(APP_WASM) $$(cdom_mk_app_src) $$(CDOM_LITS)', LINK, 'FAIL cdom.mk (first): make deleted'),
   # the image module (tests/image/run.sh, its wasm runs, its unit cases and its link case)
   ('img-green-as-red', 'src/cdom_image_loops.c', 'q[0] += wgt * px[0]; q[1] += wgt * px[1];', 'q[0] += wgt * px[0]; q[1] += wgt * px[0];', IMG, 'differs from the exact average'),
   ('img-truncates', 'src/cdom_image.c', 'uint64_t v = (a[k] * 2 + t) / t2;', 'uint64_t v = (a[k] * 2 + 0 * t) / t2;', IMG, 'differs from the exact average'),
@@ -787,7 +787,7 @@ M = [
   ('div-cap', 'src/cdom_image_loops.c', 'const V cap = wasm_i32x4_const_splat(255);', 'const V cap = wasm_i32x4_const_splat(254);', SIMD, 'FAIL scaler divide'),  # the quotient is capped at 254, not 255
   ('div-trunc-round', 'src/cdom_image_loops.c', 'wasm_u32x4_trunc_sat_f64x2_zero(wasm_f64x2_div(x, d))', 'wasm_u32x4_trunc_sat_f64x2_zero(wasm_f64x2_nearest(wasm_f64x2_div(x, d)))', SIMD, 'FAIL scaler divide'),  # the quotient is rounded to nearest, not truncated
   ('div-read-past', 'src/cdom_image_loops.c', 'for (; i + 2 <= n; i += 2) {\n    V v = wasm_v128_load(a + i);', 'for (; i + 1 <= n; i += 2) {\n    V v = wasm_v128_load(a + i);', SIMD, 'FAIL scaler divide'),  # the loop reads and writes two sums when one is left (a trap at the top of memory)
-  ('simd-flags-everywhere', 'cdom.mk', 'CDOM_IMAGE_OWN_CFLAGS += $(cdom_mk_simd_flags)', 'CDOM_CFLAGS += $(cdom_mk_simd_flags)', LINK, 'FAIL an app that does not call the image module has SIMD instructions'),  # -msimd128 for every file, not the image module's
+  ('simd-flags-everywhere', 'cdom.mk', 'CDOM_IMAGE_OWN_SIMD_CFLAGS := $(cdom_mk_simd_flags)\n', 'CDOM_IMAGE_OWN_SIMD_CFLAGS := $(cdom_mk_simd_flags)\nCDOM_CFLAGS += $(if $(filter 1,$(CDOM_IMAGE_SIMD)),$(cdom_mk_simd_flags))\n', LINK, 'FAIL an app that does not call the image module has SIMD instructions'),  # -msimd128 for every file, not the image module's
   ('simd-default-on', 'cdom.mk', 'CDOM_IMAGE_SIMD ?= 0', 'CDOM_IMAGE_SIMD ?= 1', LINK, 'FAIL CDOM_IMAGE_SIMD:'),  # the default is SIMD, not scalar
   ('simd-emit-alpha', 'src/cdom_image.c', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 255;', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 254;', IMGW, 'FAIL wasm_js_simd: '),  # the SIMD build's emit writes the wrong alpha
   ('sjlj-sp-kept-low', 'src/cdom_image_sjlj.c', '  sp_set(sp);', '  sp_set(sp_get() + 0 * sp);', UNIT, "FAIL the image module's guard"),
