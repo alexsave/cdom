@@ -1,6 +1,7 @@
 /* cdom_image's own parts, shared by its files (src/cdom_image*.c); not for apps. */
 #ifndef CDOM_IMAGE_INT_H
 #define CDOM_IMAGE_INT_H
+#include <stddef.h>
 #include <stdint.h>
 #include "cdom_image.h"
 
@@ -58,4 +59,22 @@ uint32_t cd_image_png_resize(const uint8_t *p, uint32_t len, const cd_image_info
 typedef void (*cd_image_body)(void *ctx);
 int cd_image_guard(cd_image_body body, void *ctx, void **slot);
 _Noreturn void cd_image_throw(void *guard);
+/* cdom's inflate (cdom_image_inflate.c): one zlib stream, from pieces of input, into buf (cap bytes), which a sink
+ * empties from the front. more(ctx, &p, &n) answers the next piece (1), or 0 at the end of the input. out(ctx, buf,
+ * n, last) gets the bytes made and not yet dropped, buf[0 .. n), each time the buffer is nearly full and once at the
+ * end (last 1, after the adler32 matched); it answers how many bytes to drop from the front, at most n less
+ * CD_INFLATE_WINDOW (the window the stream may still copy from) or any number up to n when last, or -1 to stop.
+ * The adler32 is taken over the bytes before the sink sees them, so the sink may change, in place, the bytes in
+ * front of n - CD_INFLATE_WINDOW, which no later match reads (the PNG path unfilters its rows there). cap is at
+ * least CD_INFLATE_WINDOW + 1314, and must leave room for the longest match beside what the sink keeps.
+ * The answer: OK, CORRUPT (a stream zlib 1.3.1 refuses, one cut short, or an adler32 that differs) or STOPPED. */
+#define CD_INFLATE_WINDOW 32768u
+#define CD_INFLATE_LT 2340u   /* the literal/length table: 2^11 first-level entries and the second levels */
+#define CD_INFLATE_DT 592u    /* the distance table: 2^9 and the second levels */
+enum { CD_INFLATE_OK = 0, CD_INFLATE_CORRUPT = 1, CD_INFLATE_STOPPED = 2 };
+typedef struct { uint32_t lt[CD_INFLATE_LT], dt[CD_INFLATE_DT]; } cd_inflate;
+typedef int (*cd_inflate_in)(void *ctx, const uint8_t **p, uint32_t *n);
+typedef int64_t (*cd_inflate_out)(void *ctx, uint8_t *buf, uint32_t n, int last);
+uint32_t cd_inflate_zlib(cd_inflate *z, uint8_t *buf, uint32_t cap, cd_inflate_in more, cd_inflate_out out, void *ctx);
+uint32_t cd_image_adler32(uint32_t adler, const uint8_t *p, size_t n);
 #endif
