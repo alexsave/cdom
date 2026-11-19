@@ -24,11 +24,15 @@ export const TIER = !LEVEL ? 1 : LEVEL === 'ie8' ? 0 : LEVEL === 'ie9' ? 3 : 2;
 export const IE9 = TIER === 3;
 export const BELOW = TIER === 0; // below cdom's floor: the boot must refuse it
 // The files of each tier, for a page whose wasm is app (a name without .wasm): only its own may be fetched.
-export const TIER_FILES = (app) => ({ 1: [`${app}.wasm`], 2: ['cdom.legacy.js', `${app}.wasm.js`], 3: ['cdom.legacy-ie9.js', `${app}.wasm.ie9.js`] });
-// [pass, message] for the files a page fetched: all of its tier's, none of another's.
-export function tierFetched(got, app) {
-  const files = TIER_FILES(app), want = files[TIER] || [], other = Object.entries(files).filter(([t]) => +t !== TIER).flatMap(([, f]) => f);
-  return [want.every((f) => got.includes(f)) && !other.some((f) => got.includes(f)),
+// The files of each tier, for a page whose wasm is app (a name without .wasm): only its own may be fetched. wasm names
+// what the first tier fetches, when the page starts a pair (APP_SIMD) and this Chrome takes the SIMD twin; the
+// fallbacks take the scalar module's builds, and fetch no .wasm at all.
+export const TIER_FILES = (app, wasm = `${app}.wasm`) => ({ 1: [wasm], 2: ['cdom.legacy.js', `${app}.wasm.js`], 3: ['cdom.legacy-ie9.js', `${app}.wasm.ie9.js`] });
+// [pass, message] for the files a page fetched: all of its tier's, none of another's, and only the tier's own .wasm.
+export function tierFetched(got, app, wasm) {
+  const files = TIER_FILES(app, wasm), want = files[TIER] || [], other = Object.entries(files).filter(([t]) => +t !== TIER).flatMap(([, f]) => f);
+  const wasms = got.filter((f) => f.endsWith('.wasm'));
+  return [want.every((f) => got.includes(f)) && !other.some((f) => got.includes(f)) && wasms.every((f) => want.includes(f)),
     `tier ${TIER} files only (${want.join(' ') || 'none'}): fetched ${got.filter((f) => /\.(js|wasm)$/.test(f)).join(' ')}`];
 }
 // What IE 9 lacks that IE 11 has, each with the IE version it arrived in, from mdn/browser-compat-data

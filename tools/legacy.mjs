@@ -61,8 +61,9 @@ run: try {
   ok(await E('X.sj() === 1'), "the image module's js way out of a libjpeg error: 500 throws from 20 frames down, the stack pointer back, then a body that returns");
   const id = {}; for (const [k, i] of Object.entries({ PAD: 0, TEXT: 1 })) id[k] = await E(`X.id(${i})`);
 
-  // The path: each tier's own files, and no other tier's.
-  ok(...tierFetched(await E(FETCHED), 'legacy'));
+  // The path: each tier's own files, and no other tier's. The page starts the pair [legacy.wasm, legacy.simd.wasm], and
+  // this Chrome has wasm SIMD, so the first tier fetches only the twin; the fallbacks take the scalar module's builds.
+  ok(...tierFetched(await E(FETCHED), 'legacy', 'legacy.simd.wasm'));
   if (LEGACY) {
     ok(await E('typeof WebAssembly === "undefined" && typeof X.memory.grow === "function"'), 'no WebAssembly; the exports are wasm2js');
     ok(await E('!/native code/.test(String(TextDecoder)) && !/native code/.test(String(TextEncoder))'), 'TextDecoder and TextEncoder are the polyfills');
