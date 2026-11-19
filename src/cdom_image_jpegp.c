@@ -44,6 +44,7 @@ typedef struct {
   jvirt_sarray_ptr arr;
   JSAMPARRAY rows;            /* every row, once the array is realized */
   uint32_t bpr, nrows;        /* blocks a row, rows (padded as libjpeg pads its arrays) */
+  uint32_t win;               /* the virtual array's access window, in rows */
   uint32_t k;                 /* values kept a block */
   uint32_t vals_off;          /* the values' offset in a row */
   uint8_t has_mask;
@@ -637,9 +638,19 @@ static int consume(j_decompress_ptr cinfo) {
 static void start_input_pass(j_decompress_ptr cinfo) {
   pctx *x = (pctx *)cinfo->entropy;
   cinfo->input_iMCU_row = 0;
-  for (int ci = 0; ci < cinfo->num_components; ci++)
-    if (!x->c[ci].rows)
-      x->c[ci].rows = (*cinfo->mem->access_virt_sarray)((j_common_ptr)cinfo, x->c[ci].arr, 0, x->c[ci].nrows, TRUE);
+  /* Every row, once: the array is all in memory (realize_virt_arrays found room, or there is no backing store and it
+   * stopped), so the rows a window answers stay where they are; each window is zeroed as it is first reached. */
+  for (int ci = 0; ci < cinfo->num_components; ci++) {
+    pcomp *pc = &x->c[ci];
+    if (pc->rows) continue;
+    JSAMPARRAY all = (*cinfo->mem->alloc_small)((j_common_ptr)cinfo, JPOOL_IMAGE, (size_t)pc->nrows * sizeof(JSAMPROW));
+    for (uint32_t r = 0; r < pc->nrows; r += pc->win) {
+      uint32_t n = pc->nrows - r < pc->win ? pc->nrows - r : pc->win;
+      JSAMPARRAY w = (*cinfo->mem->access_virt_sarray)((j_common_ptr)cinfo, pc->arr, r, n, TRUE);
+      for (uint32_t i = 0; i < n; i++) all[r + i] = w[i];
+    }
+    pc->rows = all;
+  }
 }
 
 static void start_output_pass(j_decompress_ptr cinfo) { cinfo->output_iMCU_row = 0; }
@@ -733,7 +744,10 @@ void jinit_d_coef_controller(j_decompress_ptr cinfo, boolean need_full_buffer) {
     row = (row + 7) & ~7ull;
     if (row > 0xffffffffull) ERREXIT(cinfo, JERR_WIDTH_OVERFLOW);
     pc->vals_off = pc->has_mask ? pc->bpr * 8 : 0;
-    pc->arr = (*cinfo->mem->request_virt_sarray)((j_common_ptr)cinfo, JPOOL_IMAGE, TRUE, (JDIMENSION)row, pc->nrows, pc->nrows);
+    /* A window of a few rows, not all of them: realize_virt_arrays then holds the whole array in memory only when it
+     * fits the budget, and otherwise asks for a backing store, which stops the decode (TOO_BIG), as for libjpeg's. */
+    pc->win = (uint32_t)cp->v_samp_factor;
+    pc->arr = (*cinfo->mem->request_virt_sarray)((j_common_ptr)cinfo, JPOOL_IMAGE, TRUE, (JDIMENSION)row, pc->nrows, pc->win);
   }
   x->coef.start_input_pass = start_input_pass;
   x->coef.consume_data = consume;

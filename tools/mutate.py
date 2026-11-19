@@ -26,6 +26,8 @@ IMG = ['env', 'IMAGE_BIG=0', 'IMAGE_WASM=0', 'tests/image/run.sh']   # the image
 IMGBIG = ['env', 'IMAGE_WASM=0', 'tests/image/run.sh']               # with the big inputs (budget, peaks)
 IMGW = ['env', 'IMAGE_BIG=0', 'tests/image/run.sh']                  # and in wasm, both ways out (tools/image.mjs)
 SIMD = ['tests/image/simd.sh']                                       # the SIMD loops against their scalar twins, in node
+PROG = ['tests/image/prog.sh']                                       # the progressive decoder against libjpeg's own
+MEMB = ['env', 'IMAGE_WASM=0', 'IMAGE_SIMD=0', 'IMAGE_PROG=0', 'tests/image/run.sh']   # the big inputs' peaks only
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -778,6 +780,22 @@ M = [
   ('div-cap', 'src/cdom_image_loops.c', 'const V cap = wasm_i32x4_const_splat(255);', 'const V cap = wasm_i32x4_const_splat(254);', SIMD, 'FAIL scaler divide'),  # the quotient is capped at 254, not 255
   ('div-trunc-round', 'src/cdom_image_loops.c', 'wasm_u32x4_trunc_sat_f64x2_zero(wasm_f64x2_div(x, d))', 'wasm_u32x4_trunc_sat_f64x2_zero(wasm_f64x2_nearest(wasm_f64x2_div(x, d)))', SIMD, 'FAIL scaler divide'),  # the quotient is rounded to nearest, not truncated
   ('div-read-past', 'src/cdom_image_loops.c', 'for (; i + 2 <= n; i += 2) {\n    V v = wasm_v128_load(a + i);', 'for (; i + 1 <= n; i += 2) {\n    V v = wasm_v128_load(a + i);', SIMD, 'FAIL scaler divide'),  # the loop reads and writes two sums when one is left (a trap at the top of memory)
+  # the progressive decoder and its store (src/cdom_image_jpegp.c, docs/image-progressive-speed.md): each must make the
+  # differential test against libjpeg's own (tests/image/prog.sh), the IDCT table test (simd.sh) or a peak case fail
+  ('jpegp-deposit', 'src/cdom_image_jpegp.c', '(l1 & (0 - (w >> 62 & 1)))', '(l1 & (0 - (w >> 61 & 1)))', PROG, 'FAIL progressive differential'),  # the second correction bit of a step goes to the wrong coefficient
+  ('jpegp-correct-sign', 'src/cdom_image_jpegp.c', '*c = (int16_t)(*c + (*c >= 0 ? p1 : -p1));', '*c = (int16_t)(*c + p1);', PROG, 'FAIL progressive differential'),  # a correction moves a negative coefficient toward zero
+  ('jpegp-new-sign', 'src/cdom_image_jpegp.c', 'v[pc->slot[j]] = (int16_t)(ng >> j & 1 ? -p1 : p1);', 'v[pc->slot[j]] = (int16_t)(ng >> j & 1 ? p1 : -p1);', PROG, 'FAIL progressive differential'),  # a new coefficient of a refinement takes the opposite sign
+  ('jpegp-refine-eobrun', 'src/cdom_image_jpegp.c', '    s->eobrun--;\n  }\n  for (uint64_t q = cm', '  }\n  for (uint64_t q = cm', PROG, 'FAIL progressive differential'),  # an EOB run of a refinement never ends
+  ('jpegp-first-run', 'src/cdom_image_jpegp.c', 'k += (fe >> 8) & 15;', 'k += (fe >> 8) & 7;', PROG, 'FAIL progressive differential'),  # the one-lookup path of a first scan loses the run's top bit
+  ('jpegp-dc-refine', 'src/cdom_image_jpegp.c', 'v[0] = (int16_t)(v[0] | (1 << al));', 'v[0] = (int16_t)(v[0] | (2 << al));', PROG, 'FAIL progressive differential'),  # a DC refinement sets the wrong bit
+  ('jpegp-insufficient', 'src/cdom_image_jpegp.c', 'b->cinfo->entropy->insufficient_data = TRUE; }\n  b->real = 0;', '}\n  b->real = 0;', PROG, 'FAIL progressive differential'),  # running past the scan's data does not stop the rest of the interval (a cut file)
+  ('jpegp-restart-eob', 'src/cdom_image_jpegp.c', '  s->eobrun = 0;\n  s->rtg = cinfo->restart_interval;', '  s->rtg = cinfo->restart_interval;', PROG, 'FAIL progressive differential'),  # a restart marker leaves an EOB run running
+  ('jpegp-skip-all', 'src/cdom_image_jpegp.c', 'if (!is_dc) x->skip = !(touched(', 'if (!is_dc) x->skip = 1 || !(touched(', PROG, 'FAIL progressive differential'),  # every AC scan is skipped, read or not
+  ('jpegp-no-closure', 'src/cdom_image_jpegp.c', '{ pc->dec |= t; changed = 1; }', '{ changed = 0; }', PROG, 'FAIL progressive differential'),  # a scan is skipped when only a later scan that is decoded touches its band
+  ('idct-reads-small', 'src/cdom_image_int.h', 'size == 2 ? 0xabu', 'size == 2 ? 0xa9u', SIMD, 'FAIL unread'),  # the 2x2 table drops row and column 1, which the 2x2 reads
+  ('idct-reads-large', 'src/cdom_image_int.h', 'size == 2 ? 0xabu', 'size == 2 ? 0xafu', SIMD, 'FAIL unread'),  # the 2x2 table keeps row and column 2, which no 2x2 reads
+  ('jpegp-window-all', 'src/cdom_image_jpegp.c', 'pc->win = (uint32_t)cp->v_samp_factor;', 'pc->win = pc->nrows;', MEMB, 'jpeg-prog444-over-budget: status OK'),  # the store's window is the whole array, which realize_virt_arrays then holds whatever the budget
+  ('jpegp-store-full', 'src/cdom_image_jpegp.c', 'uint64_t nat = cd_image_idct_reads(size), z = 0;', 'uint64_t nat = ~0ull, z = 0;', MEMB, 'jpeg-prog444-4096-at-2of8: peak'),  # the store keeps every coefficient at 2/8
   ('simd-flags-everywhere', 'cdom.mk', 'CDOM_IMAGE_OWN_CFLAGS += $(cdom_mk_simd_flags)', 'CDOM_CFLAGS += $(cdom_mk_simd_flags)', LINK, 'FAIL an app that does not call the image module has SIMD instructions'),  # -msimd128 for every file, not the image module's
   ('simd-default-on', 'cdom.mk', 'CDOM_IMAGE_SIMD ?= 0', 'CDOM_IMAGE_SIMD ?= 1', LINK, 'FAIL CDOM_IMAGE_SIMD:'),  # the default is SIMD, not scalar
   ('simd-emit-alpha', 'src/cdom_image.c', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 255;', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 254;', IMGW, 'FAIL wasm_js_simd: '),  # the SIMD build's emit writes the wrong alpha
