@@ -127,3 +127,35 @@ tools/alloc.mjs now runs the _try and trap cases twice, at the cap and on a modu
   All 26 heap and answer-bytes mutants are caught (results/heapregress/mutants.txt).
   A third, heap-grow-copies (the grow inlined again), was not caught: it adds 26 bytes to realloc_size.c, inside the gate's margin, so the out-of-line grow is not gated and the mutant was dropped.
 - tools/alloc.mjs: 30 of 30 pass, the photo cases among them at 857 pages (12 MP, peak 56.3 MB) and 1,658 pages (24 MP, 108.8 MB) with a second photo at 0, as #43 measured.
+
+### The CPU pass (C1)
+
+The keyed entry of main (7279030, cdom-hr) and of this branch (cdom-hrfix), both by bench/build.sh, run by tools/pair.sh with LOADMAX=4, 15 iterations, in two passes (PASS=0 and PASS=1); no start was skipped.
+Another job (a Python process at 100% of one core, not this work) ran through pass 0, which is the noisier of the two.
+
+| benchmark | pass 0 main median (q1 to q3) | pass 0 branch | ratio | pass 1 main | pass 1 branch | ratio |
+| --- | --- | --- | ---: | --- | --- | ---: |
+| 01_run1k | 29.50 (29.20 to 29.70) | 28.70 (28.40 to 29.10) | 0.973 | 29.80 (29.50 to 30.00) | 29.70 (29.50 to 29.90) | 0.997 |
+| 02_replace1k | 31.60 (31.10 to 32.60) | 31.20 (30.90 to 31.70) | 0.987 | 31.70 (31.10 to 31.80) | 31.60 (31.30 to 31.70) | 0.997 |
+| 03_update10th1k_x16 | 18.40 (17.50 to 20.70) | 17.60 (17.10 to 20.70) | 0.957 | 17.70 (16.30 to 18.10) | 17.30 (16.30 to 24.80) | 0.977 |
+| 04_select1k | 5.00 (4.60 to 6.00) | 5.00 (4.30 to 6.20) | 1.000 | 4.40 (4.20 to 4.70) | 4.30 (4.20 to 5.10) | 0.977 |
+| 05_swap1k | 21.40 (19.40 to 22.60) | 21.60 (19.90 to 23.80) | 1.009 | 18.90 (18.70 to 19.20) | 18.90 (18.50 to 19.90) | 1.000 |
+| 06_remove-one-1k | 17.60 (16.20 to 18.90) | 16.50 (16.00 to 18.20) | 0.937 | 15.30 (15.20 to 15.90) | 15.50 (15.30 to 16.20) | 1.013 |
+| 07_create10k | 315.30 (308.20 to 321.30) | 311.30 (307.20 to 314.90) | 0.987 | 301.00 (300.10 to 301.80) | 301.80 (301.10 to 302.40) | 1.003 |
+| 08_create1k-after1k_x2 | 35.70 (35.00 to 36.70) | 34.70 (34.70 to 36.30) | 0.972 | 34.90 (34.60 to 35.00) | 34.60 (34.50 to 34.80) | 0.991 |
+| 09_clear1k_x8 | 14.20 (13.80 to 15.00) | 14.10 (13.40 to 14.60) | 0.993 | 13.20 (12.90 to 13.40) | 13.30 (13.00 to 13.50) | 1.008 |
+
+tools/ci.mjs, branch over main: pass 0 0.974 (0.957 to 1.011), pass 1 0.997 (0.989 to 1.060).
+C1 is confirmed: no median is 2% slower, the largest being 06_remove-one-1k in pass 1 at 1.3%, inside both sides' spread.
+
+### Verdicts
+
+| prediction | verdict |
+| --- | --- |
+| M1, main's wasm memory 1 to 2 pages larger after the click | refuted: 1 page smaller (5 against 6), and the measure does not count wasm memory |
+| M2, free large runs hold at least 64 KiB | refuted: nothing is free after the click |
+| M3, serving small blocks from free runs fixes it | not tried: with M1 and M2 refuted there was nothing for it to fix |
+| Z1, the hello world's +470 is the three new functions | refuted in mechanism: it is free coming into an app that never freed, through cd_encoded's cd_free (+351), and cd_bytes_buf's large path (+162) |
+| Z2, at least 300 bytes in realloc, un-inlining wins at least 250 | half: 352 in realloc confirmed, un-inlining alone won 221 (refuted at 250); with the shared bump and grow, 344 in all |
+| Z3, the exports' frees under 50 bytes | confirmed: 4 bytes in the keyed app |
+| C1, CPU within 2% | confirmed |
