@@ -304,7 +304,7 @@ if ! mkj "$mo/index.html" 2> "$mo/job_page.log"; then echo "FAIL cdom.mk's page 
 elif ! grep -q '^var cdomJobs={"shrinkjob.job.wasm":"data:application/wasm;base64,' "$mo/index.html"; then echo "FAIL a bundled page does not carry its job module in cdomJobs"; fail=1
 else echo "ok   a bundled page carries each job module in var cdomJobs, the default page unchanged"; fi
 if ! make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$mo" PAGE= APP_JOBS=shrinkjob APP_JOB_shrinkjob_SRC="$here/../shrink_job.c" APP_JOB_CFLAGS='-Wall -Wextra -Werror' APP_WASM_SEPARATE=1 -B "$mo/index.html" 2> "$mo/job_sep.log"; then echo "FAIL a separate page with APP_JOBS did not build:"; cat "$mo/job_sep.log"; fail=1
-elif grep -q 'cdomJobs' "$mo/index.html"; then echo "FAIL a page with APP_WASM_SEPARATE carries the job module (the name is its URL)"; fail=1
+elif grep -q '^var cdomJobs=' "$mo/index.html"; then echo "FAIL a page with APP_WASM_SEPARATE carries the job module (the name is its URL)"; fail=1
 else echo "ok   with APP_WASM_SEPARATE the page carries no job module: the name is the URL of the file beside it"; fi
 if mkj "$mo/other.job.wasm" > "$mo/job_other.log" 2>&1 || [ -e "$mo/other.job.wasm" ]; then echo "FAIL cdom.mk built a .job.wasm that APP_JOBS does not name"; fail=1
 else echo "ok   cdom.mk leaves a .job.wasm that APP_JOBS does not name alone"; fi

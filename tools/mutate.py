@@ -673,6 +673,7 @@ M = [
   ('job-no-unsupported-wasm', 'shim/cdom.js', 'if (typeof Worker === "undefined" || typeof WebAssembly === "undefined") {', 'if (typeof Worker === "undefined") {', JOB, 'FAIL UNSUPPORTED: no WebAssembly'),
   ('job-nofile-status', 'shim/cdom.js', '      setTimeout(() => jobAnswer(token, 4));', '      setTimeout(() => jobAnswer(token, 2));', JOB, 'FAIL NO_FILE'),
   ('job-unsupported-sync', 'shim/cdom.js', '      setTimeout(() => jobAnswer(token, 3));', '      jobAnswer(token, 3);', JOB, 'FAIL UNSUPPORTED is answered from the event loop too'),
+  ('job-legacy-no-unsupported', 'shim/cdom.js', 'if (typeof Worker === "undefined" || typeof WebAssembly === "undefined") {', 'if (typeof Worker === "undefined") {', LEG, 'FAIL the old tiers (no WebAssembly): cd_job_cb answers UNSUPPORTED'),
   ('job-answer-leaks', 'src/cdom_job.c', '  cd_flush();\n  cd_free((void *)p);', '  cd_flush();', JOB, 'FAIL the answer\'s bytes are freed after the callback'),
   ('job-room-limit', 'src/cdom_job_mod.c', 'return cd_alloc_try(n ? n : 1);', 'return cd_alloc(n ? n : 1);', JOB, 'FAIL NO_ROOM: a 20 MB file the capped job cannot hold'),
   ('job-heap-whole', 'src/cdom.c', '#ifndef CDOM_HEAP_ONLY\n', '#ifndef CDOM_HEAP_ONLY_X\n', LINK, 'FAIL a job module\'s imports are not cdjob.answer alone'),
