@@ -341,7 +341,9 @@ def big_cases():
     im.save(f("p12p.jpg"), "JPEG", quality=90, subsampling=2, progressive=True, optimize=True)
     write_png("p12.png", 4032, 3024, 2, 8, [r.reshape(-1) for r in p12])
     jpeg_case("jpeg-p12", f("p12.jpg"), 900, 900, maxkb=os.path.getsize(f("p12.jpg")) // 1024 + 6 * 1024)
-    jpeg_case("jpeg-p12-progressive", f("p12p.jpg"), 900, 900, maxkb=os.path.getsize(f("p12p.jpg")) // 1024 + 44 * 1024)
+    # progressive at 2/8: the store keeps 25 coefficients and a mask for luma, 49 and a mask for chroma (21.1 MB here;
+    # libjpeg's whole buffer was 36.6 MB), docs/image-progressive-speed.md
+    jpeg_case("jpeg-p12-progressive", f("p12p.jpg"), 900, 900, maxkb=os.path.getsize(f("p12p.jpg")) // 1024 + 26 * 1024)
     case("png-p12", f("p12.png"), 900, 900, area_avg(p12, *fit_box(4032, 3024, 900, 900)),
          maxkb=os.path.getsize(f("p12.png")) // 1024 + 6 * 1024)
     del p12, im
