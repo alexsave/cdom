@@ -63,6 +63,7 @@ typedef struct {
   d_derived_tbl *dct[NUM_HUFF_TBLS], *act[NUM_HUFF_TBLS];
   fast_tbl fdc[NUM_HUFF_TBLS], fac;
   int32_t facv[1 << LOOK];                /* AC first: (value << 16) | (run << 8) | bits, symbol and value in one */
+  uint16_t rtab[1 << LOOK];               /* AC refinement: bits | run << 5 | (new coefficient: 2 | sign) << 9, or 0 */
   pcomp c[MAX_COMPONENTS];
   pscan *scans;                           /* the walk's scans, or 0 when it gave up (then nothing is skipped) */
   uint32_t nscans, scan_at;               /* scans walked; scans started */
@@ -72,14 +73,24 @@ typedef struct {
 
 /* ---- the scan walk ---- */
 
+/* The first 0xFF at or after p[i], or n: eight bytes at a time while there are eight. */
+static size_t find_ff(const uint8_t *p, size_t i, size_t n) {
+  for (; i + 8 <= n; i += 8) {
+    uint64_t w;
+    memcpy(&w, p + i, 8);
+    if ((~w - 0x0101010101010101ull) & w & 0x8080808080808080ull) break;   /* a 0xFF byte: ~w has a zero byte */
+  }
+  while (i < n && p[i] != 0xff) i++;
+  return i;
+}
+
 /* The offset of the first marker that ends a scan's data (0xFF, more 0xFF, then neither 0 nor RSTn), at the first 0xFF
  * of it; n when there is none. */
 static size_t scan_end(const uint8_t *p, size_t n) {
   size_t i = 0;
   for (;;) {
-    const uint8_t *f = memchr(p + i, 0xff, n - i);
-    if (!f) return n;
-    size_t s = (size_t)(f - p), j = s + 1;
+    size_t s = find_ff(p, i, n), j = s + 1;
+    if (s >= n) return n;
     while (j < n && p[j] == 0xff) j++;
     if (j >= n) return n;
     if (p[j] != 0 && (p[j] < 0xd0 || p[j] > 0xd7)) return s;
@@ -95,6 +106,11 @@ static uint64_t touched(uint32_t ss, uint32_t se) {
   return (hi == 63 ? ~0ull : (2ull << hi) - 1) & ~((1ull << ss) - 1);
 }
 
+/* A band libjpeg's start_pass accepts (a scan it refuses stops the decode, so nothing after it matters) */
+static int scan_ok(const pscan *q) {
+  return q->ss <= q->se && q->se <= 63 && (q->ss != 0 || q->se == 0) && (q->ss == 0 || q->ncomp == 1);
+}
+
 /* Walks the file's markers from the first scan's data, as libjpeg's read_markers will: every scan's components and
  * band. Leaves x->scans 0 at anything it does not fully follow (a marker it does not know, a scan header libjpeg would
  * refuse), and then nothing is skipped. */
@@ -106,6 +122,7 @@ static void walk(j_decompress_ptr cinfo, pctx *x) {
   s[0].ncomp = (uint8_t)cinfo->comps_in_scan;
   for (int i = 0; i < cinfo->comps_in_scan; i++) s[0].comp[i] = (uint8_t)cinfo->cur_comp_info[i]->component_index;
   s[0].ss = (uint8_t)cinfo->Ss; s[0].se = (uint8_t)cinfo->Se; s[0].ah = (uint8_t)cinfo->Ah; s[0].al = (uint8_t)cinfo->Al;
+  if (!scan_ok(&s[0])) return;
   ns = 1;
   size_t at = scan_end(p, n);
   for (;;) {
@@ -136,7 +153,7 @@ static void walk(j_decompress_ptr cinfo, pctx *x) {
       }
       q->ncomp = (uint8_t)c;
       q->ss = p[at + 3 + 2 * c]; q->se = p[at + 4 + 2 * c]; q->ah = p[at + 5 + 2 * c] >> 4; q->al = p[at + 5 + 2 * c] & 15;
-      if (q->ss > q->se || q->se > 63 || (q->ss == 0 && q->se != 0) || (q->ss && c != 1)) return;  /* libjpeg stops there */
+      if (!scan_ok(q)) return;
       ns++;
       at += len;
       at = scan_end(p + at, n - at) + at;
@@ -177,6 +194,16 @@ static void build_acfirst(pctx *x) {
   }
 }
 
+static void build_refine(pctx *x) {
+  for (uint32_t v = 0; v < (1u << LOOK); v++) {
+    uint32_t e = x->fac.e[v], len = e >> 8, r = (e >> 4) & 15, z = e & 15;
+    x->rtab[v] = 0;
+    if (!e) continue;
+    if (z == 1 && len + 1 <= LOOK) x->rtab[v] = (uint16_t)((len + 1) | r << 5 | (2 | (v >> (LOOK - len - 1) & 1)) << 9);
+    else if (z == 0 && r == 15) x->rtab[v] = (uint16_t)(len | 15 << 5);
+  }
+}
+
 static boolean no_mcu(j_decompress_ptr cinfo, JBLOCKROW *b) { (void)b; ERREXIT(cinfo, JERR_NOT_COMPILED); return FALSE; }
 
 /* jdphuff.c's start_pass_phuff_decoder, the same checks and the same warnings, then this decoder's own setup. */
@@ -209,7 +236,7 @@ static void start_pass(j_decompress_ptr cinfo) {
     } else {
       jpeg_make_d_derived_tbl(cinfo, FALSE, cp->ac_tbl_no, &x->act[cp->ac_tbl_no]);
       build_fast(&x->fac, x->act[cp->ac_tbl_no]);
-      if (cinfo->Ah == 0) build_acfirst(x);
+      if (cinfo->Ah == 0) build_acfirst(x); else build_refine(x);
     }
   }
   x->pub.insufficient_data = FALSE;
@@ -286,15 +313,19 @@ static void refill(br *b) {
 
 ALWAYS void ensure(br *b, int n) { if (b->bits < n) refill(b); }
 
+/* The first bit taken past the file's bits (take, take_any, and the loop below) */
+static void crossed(br *b) {
+  if (!b->cinfo->entropy->insufficient_data) { WARNMS(b->cinfo, JWRN_HIT_MARKER); b->cinfo->entropy->insufficient_data = TRUE; }
+  b->real = 0;
+}
+
 /* Takes n bits (1 to 32), which must be in the buffer. The first one taken past the file's bits is where libjpeg
  * warns and sets insufficient_data. */
 ALWAYS uint32_t take(br *b, int n) {
   uint32_t v = (uint32_t)(b->buf >> (64 - n));
   b->buf <<= n; b->bits -= n;
-  if (n > b->real) {
-    if (!b->cinfo->entropy->insufficient_data) { WARNMS(b->cinfo, JWRN_HIT_MARKER); b->cinfo->entropy->insufficient_data = TRUE; }
-    b->real = 0;
-  } else b->real -= n;
+  if (n > b->real) crossed(b);
+  else b->real -= n;
   return v;
 }
 
@@ -382,59 +413,104 @@ static void ac_first_block(scan *s, const pcomp *pc, uint64_t *m, int16_t *v, in
 
 /* The correction bits of the nonzero coefficients at positions `passed` (one bit each, in zigzag order): a 1 adds the
  * scan's bit to a coefficient that does not have it yet, away from zero. Only the kept ones are stored. */
-ALWAYS void correct(br *b, const pcomp *pc, int16_t *v, uint64_t passed, int p1) {
-  int n = __builtin_popcountll(passed);
-  if (!n) return;
-  uint64_t bits = get_wide(b, n);
-  if (!bits) return;
-  uint64_t q = passed & pc->need;
-  while (q) {
-    int j = __builtin_ctzll(q);
-    q &= q - 1;
-    int idx = __builtin_popcountll(passed & ((1ull << j) - 1));
-    if (bits >> (n - 1 - idx) & 1) {
-      int16_t *c = &v[pc->slot[j]];
-      if ((*c & p1) == 0) *c = (int16_t)(*c + (*c >= 0 ? p1 : -p1));
-    }
-  }
+/* The bits of `bits` (n of them, the first at the top) put at the positions of `at` (n set bits, the lowest first). */
+ALWAYS uint64_t deposit(uint64_t bits, uint64_t at, int n) {
+  if (n == 1) return (bits & 1) << __builtin_ctzll(at);
+  uint64_t out = 0;
+  while (at) { n--; out |= (bits >> n & 1) << __builtin_ctzll(at); at &= at - 1; }
+  return out;
 }
 
+/* A refinement scan's block. The correction bits are gathered in a mask (cm) and the new coefficients in two (nw, ng),
+ * and the stored values change once, at the end: libjpeg's per-coefficient updates commute, since a position is passed
+ * once a block, and the only one that can be both corrected and made new (63, when the band ends there) takes its
+ * correction first and its new value last, as here. */
 static void ac_refine_block(scan *s, const pcomp *pc, uint64_t *m, int16_t *v, int ss, int se, int p1) {
   br *b = &s->b;
   const pctx *x = s->x;
   const d_derived_tbl *d = x->act[s->b.cinfo->cur_comp_info[0]->ac_tbl_no];
   uint64_t nz = pc->has_mask ? *m : mask_of(v);
-  uint64_t band = (se == 63 ? ~0ull : (2ull << se) - 1) & ~((1ull << ss) - 1);
+  uint64_t band = (se == 63 ? ~0ull : (2ull << se) - 1) & ~((1ull << ss) - 1), cm = 0, nw = 0, ng = 0;
   int k = ss;
+  /* the bit buffer in locals, back in *b around every call */
+  uint64_t buf = b->buf;
+  int bits = b->bits, real = b->real;
+#define OUT() (b->buf = buf, b->bits = bits, b->real = real)
+#define IN() (buf = b->buf, bits = b->bits, real = b->real)
+#define DROP(n) do { int n_ = (n); buf <<= n_; bits -= n_; if (n_ > real) { OUT(); crossed(b); IN(); } else real -= n_; } while (0)
   if (s->eobrun == 0) {
     while (k <= se) {
-      int sym = decode(b, &x->fac, d), r = sym >> 4, z = sym & 15, nv = 0;
-      if (z) {
-        if (z != 1) WARNMS(b->cinfo, JWRN_HUFF_BAD_CODE);
-        nv = get(b, 1) ? p1 : -p1;
-      } else if (r != 15) {
-        uint32_t e = 1u << r;
-        if (r) e += get(b, r);
-        s->eobrun = e;
-        break;
+      if (bits < 32) { OUT(); refill(b); IN(); }
+      uint32_t e = x->rtab[buf >> (64 - LOOK)];
+      int r, nv;
+      if (e) {                                            /* a run and a new coefficient with its sign, or a ZRL */
+        DROP((int)(e & 31));
+        r = (int)(e >> 5 & 15);
+        nv = (int)(e >> 9 & 3);                           /* 0: none, 2: negative, 3: positive */
+      } else {
+        OUT();
+        int sym = decode(b, &x->fac, d), z = sym & 15;
+        r = sym >> 4; nv = 0;
+        if (z) {
+          if (z != 1) WARNMS(b->cinfo, JWRN_HUFF_BAD_CODE);
+          nv = 2 | (int)get(b, 1);
+        } else if (r != 15) {
+          uint32_t eob = 1u << r;
+          if (r) eob += get(b, r);
+          s->eobrun = eob;
+          IN();
+          break;
+        }
+        IN();
       }
-      /* pass the nonzero coefficients from k on, with their correction bits, and r zero ones; stop at the next zero */
+      /* pass the nonzero coefficients from k on, with their correction bits, and r zero ones; stop at the next zero.
+       * Branch-free for runs up to 3 and up to 4 correction bits, the common case; the chain from one symbol to the
+       * next is then the lookup, the zero search, a popcount and a shift. */
       uint64_t rng = band & (~0ull << k), zs = ~nz & rng;
-      for (; r > 0 && zs; r--) zs &= zs - 1;
+      if (r <= 3) {
+        uint64_t z1 = zs & (zs - 1), z2 = z1 & (z1 - 1), z3 = z2 & (z2 - 1);
+        zs = r == 0 ? zs : r == 1 ? z1 : r == 2 ? z2 : z3;
+      } else for (; r > 0 && zs; r--) zs &= zs - 1;
       int to = zs ? __builtin_ctzll(zs) : se + 1;
-      correct(b, pc, v, nz & rng & (zs ? (1ull << to) - 1 : ~0ull), p1);
+      uint64_t passed = nz & rng & ((zs & (0 - zs)) - 1);
+      int n = __builtin_popcountll(passed);
+      if (n > 57) { OUT(); cm |= deposit(get_wide(b, n), passed, n); IN(); }
+      else {
+        if (n > bits) { OUT(); refill(b); IN(); }
+        uint64_t w = buf, l0 = passed & (0 - passed), a1 = passed ^ l0, l1 = a1 & (0 - a1), a2 = a1 ^ l1;
+        uint64_t l2 = a2 & (0 - a2), a3 = a2 ^ l2, l3 = a3 & (0 - a3), a4 = a3 ^ l3;
+        DROP(n);
+        cm |= (l0 & (0 - (w >> 63))) | (l1 & (0 - (w >> 62 & 1))) | (l2 & (0 - (w >> 61 & 1))) | (l3 & (0 - (w >> 60 & 1)));
+        if (a4) cm |= deposit(w << 4 >> (64 - (n - 4)), a4, n - 4);
+      }
       k = to;
       if (nv) {
-        int zz = k < 64 ? k : 63;
-        nz |= 1ull << zz;
-        if (pc->slot[zz] >= 0) v[pc->slot[zz]] = (int16_t)nv;
+        uint64_t bit = 1ull << (k < 64 ? k : 63);
+        nz |= bit; nw |= bit;
+        ng = (ng & ~bit) | (nv == 2 ? bit : 0);
       }
       k++;
     }
   }
+  OUT();
+#undef OUT
+#undef IN
+#undef DROP
   if (s->eobrun > 0) {
-    if (k <= se) correct(b, pc, v, nz & band & (~0ull << k), p1);
+    if (k <= se) {
+      uint64_t passed = nz & band & (~0ull << k);
+      int n = __builtin_popcountll(passed);
+      if (n) cm |= deposit(get_wide(b, n), passed, n);
+    }
     s->eobrun--;
+  }
+  for (uint64_t q = cm & pc->need; q; q &= q - 1) {
+    int16_t *c = &v[pc->slot[__builtin_ctzll(q)]];
+    if ((*c & p1) == 0) *c = (int16_t)(*c + (*c >= 0 ? p1 : -p1));
+  }
+  for (uint64_t q = nw & pc->need; q; q &= q - 1) {
+    int j = __builtin_ctzll(q);
+    v[pc->slot[j]] = (int16_t)(ng >> j & 1 ? -p1 : p1);
   }
   if (pc->has_mask) *m = nz;
 }
@@ -485,11 +561,18 @@ static void run_mcus(scan *s, uint32_t i, uint32_t cnt) {
   }
 }
 
+#ifdef CDOM_IMAGE_TESTING
+uint32_t cd_image_jpegp_skipped;                          /* scans skipped, for tests/image/prog.c */
+#endif
+
 /* consume_data: the whole scan in one call. */
 static int consume(j_decompress_ptr cinfo) {
   pctx *x = (pctx *)cinfo->entropy;
   struct jpeg_source_mgr *src = cinfo->src;
   if (x->skip) {                                          /* to the marker that ends the scan */
+#ifdef CDOM_IMAGE_TESTING
+    cd_image_jpegp_skipped++;
+#endif
     size_t e = scan_end(src->next_input_byte, src->bytes_in_buffer);
     src->next_input_byte += e; src->bytes_in_buffer -= e;
   } else {

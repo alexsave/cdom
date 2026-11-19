@@ -9,7 +9,9 @@
 #      SIMD loops (CDOM_IMAGE_SIMD=0 and 1), runs every case in Chrome (tools/image.mjs, through tools/cdp.mjs): the same
 #      statuses and the same bytes as the native build, and a capped heap answering NO_ROOM;
 #   5. the SIMD loops against their scalar counterparts, on random and edge inputs (tests/image/simd.sh, in node);
-#      IMAGE_SIMD=0 skips it.
+#      IMAGE_SIMD=0 skips it;
+#   6. the progressive decoder against libjpeg-turbo's own, byte for byte at every scale, on a seeded corpus of
+#      progressive files (tests/image/prog.sh, natively, with the sanitizers); IMAGE_PROG=0 skips it.
 # IMAGE_BIG=0 skips the oracle's big inputs (the 12 MP, 16 MP and 35 MP files) for a quick run.
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -46,4 +48,5 @@ tail -1 "$out/oracle.log"
 (cd "$out" && "$o/test_image") || fail=1
 if [ "${IMAGE_WASM:-1}" != 0 ]; then node "$top/tools/image.mjs" "$out" || fail=1; fi
 if [ "${IMAGE_SIMD:-1}" != 0 ]; then "$here/simd.sh" "$out/simd" || fail=1; fi
+if [ "${IMAGE_PROG:-1}" != 0 ]; then "$here/prog.sh" || fail=1; fi
 exit $fail
