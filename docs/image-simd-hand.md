@@ -278,7 +278,7 @@ The browser's arms, medians of the same 9 rounds, session 1 then session 2:
   0 differing bytes in all, and no trap.
 - `bench/image/equal.mjs`: the four bench inputs at boxes 900, 300, 1500, 2500 and 4000, scalar against SIMD, SHA-256 of the RGBA block: 20 of 20 equal.
   At the boxes over 1500 the JPEG decodes at 5/8 and beyond, so libjpeg's C 8x8 IDCT and fancy upsampling run in both builds: the dispatch answers no for them, as it must.
-- `bench/image/equal.mjs` is itself mutation-checked, on one (input, box 900) each, with the faults of `simd_mutants.py` built into the bench page: 8 of 11 make it print DIFFER (idct4-const, idct2-const, ycc-order, across-weight, down-halves, div-trunc-round on p12.jpg; paeth-min, sub3-store on p12.png).
+- `bench/image/equal.mjs` is itself mutation-checked, on one (input, box 900) each, with the SIMD faults of `tools/mutate.py` built into the bench page: 8 of 11 make it print DIFFER (idct4-const, idct2-const, ycc-order, across-weight, down-halves, div-trunc-round on p12.jpg; paeth-min, sub3-store on p12.png).
   Three it does not see, and why: div-cap (no pixel of p12.jpg at 900 has a quotient of 255), rgba-alpha (the scaler ignores alpha), up-saturate (p12.png has no Up row: 3,016 Paeth and 8 Sub).
   The loop test catches all three; the two checks are not the same check.
 - `tools/image.mjs` (Chrome), the 65 cases of `cases.tsv` (the big inputs included) and the error paths, with the SIMD build as one more build (`wasm_js_simd`, `wasm_js_cap_simd`): every image equal to the oracle's exact integer image to the byte.
@@ -314,7 +314,8 @@ The browser's arms, medians of the same 9 rounds, session 1 then session 2:
 ## The tests, and their mutants
 
 `tests/image/simd.sh` builds one module with both bodies of each loop and runs it in node (`tests/image/simd.mjs`); `tests/image/run.sh` runs it as its step 5.
-`tests/image/simd_mutants.sh` builds each of `tests/image/simd_mutants.py`'s faults into a copy of the sources, runs the same test, and requires a failure on the line of the loop the mutant names: 35 of 35 are caught, each on its own loop's assertion (the failing case's number and what differed, or a trap).
+The mutants are in `tools/mutate.py` (its SIMD section, run as `python3 tools/mutate.py <names>`), the one mutation tool of the repo: each plants its fault in a copy of the tree, runs `tests/image/simd.sh`, and requires a failure on the line of the loop the mutant names (`FAIL <loop>`): 35 of 35 are caught, each on its own loop's assertion (the failing case's number and what differed, or a trap).
+(The cloud run had them in `tests/image/simd_mutants.py` and `.sh`, a second mutation tool; they moved into `tools/mutate.py` when the branch was rebased onto main.)
 Along the way, seven planted faults did not fail the test at first.
 Two did not build (an unused variable).
 Five were equivalent mutants, faults no input can show: a colour constant off by one, and two roundings by one (the exhaustive colour test passes on them, so no (y, cb, cr) tells them from the right code), the Paeth tie "pa < pb for pa <= pb" (pa = pb with pa at most pc means a = b = c), and dropping the C's zero-row shortcut of the 4x4 (the range limit's mask drops what the shortcut changes).
