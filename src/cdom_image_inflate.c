@@ -307,25 +307,29 @@ static int huff_block(bits *s, sink *o, const uint32_t *lt, const uint32_t *dt, 
       uint32_t e = lt[bb & lm];
       while (out <= out_lim && in <= in_lim) {
         if (E_CLASS(e) == C_LIT) {
-          /* up to three literal entries: the next two looked up from the same bits, ahead of knowing they are
-           * needed, so the three loads overlap (each LBITS bits at most: 33, and 11 more for the entry after) */
-          uint32_t b1 = E_BITS(e), e2 = lt[(bb >> b1) & lm];
+          /* up to three literal entries, each looked up as soon as the one before is (its bits shifted off, the
+           * shift taking the entry itself: its low 6 bits are the count), before the stores; each LBITS bits at
+           * most: 33, and 11 more for the entry after */
+          uint64_t b = bb >> (e & 63);
+          uint32_t e2 = lt[b & lm], used = E_BITS(e);
           lits(out, e); out += e >> 24;
           if (E_CLASS(e2) == C_LIT) {
-            uint32_t b2 = b1 + E_BITS(e2), e3 = lt[(bb >> b2) & lm];
+            b >>= e2 & 63;
+            uint32_t e3 = lt[b & lm];
+            used += E_BITS(e2);
             lits(out, e2); out += e2 >> 24;
             if (E_CLASS(e3) == C_LIT) {
-              uint32_t b3 = b2 + E_BITS(e3);
+              b >>= e3 & 63;
+              e = lt[b & lm];
+              used += E_BITS(e3);
               lits(out, e3); out += e3 >> 24;
-              e = lt[(bb >> b3) & lm];
-              bb >>= b3; bl -= b3;
+              bb = b; bl -= used;
               REFILL();
               continue;
             }
-            bb >>= b2; bl -= b2; e = e3;
-          } else {
-            bb >>= b1; bl -= b1; e = e2;
-          }
+            e = e3;
+          } else e = e2;
+          bb = b; bl -= used;
           REFILL();
         }
         if (E_CLASS(e) != C_LEN) {
