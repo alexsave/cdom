@@ -2,7 +2,8 @@
 // tools/cdp.mjs, interleaved: a round runs every (input, arm) once, the arms in an order that rotates each round,
 // each run on a freshly loaded page, so one run's heap and caches never reach the next. Every run waits for the
 // 1-minute load to be under LOADMAX (default 4, bounded at 20 minutes, as tools/pair.sh), and logs the load.
-// Arms: C-js and C-eh (cd_image_resize, the two CDOM_IMAGE_SJLJ builds), B1 (createImageBitmap with resizeWidth,
+// Arms: C-js and C-eh (cd_image_resize, the two CDOM_IMAGE_SJLJ builds), C-simd (the js build with CDOM_IMAGE_SIMD=1,
+// make -C bench/image simd), B1 (createImageBitmap with resizeWidth,
 // resizeHeight and resizeQuality "high") and B2 (createImageBitmap, then drawImage scaled, imageSmoothingQuality
 // "high"); the browser arms end with getImageData, the pixels in hand as C's are.
 // Usage: node bench/image/run.mjs [rounds=9] [box=900] [arms=C-js,C-eh,B1,B2] [inputs=p12.jpg,p12p.jpg,p48.jpg,p12.png]
@@ -46,7 +47,7 @@ try {
         const arm = arms[(k + r) % arms.length];
         const waited = await gate();
         const loadBefore = load1();
-        const page = arm === 'C-eh' ? 'build-eh' : 'build-js';
+        const page = arm === 'C-eh' ? 'build-eh' : arm === 'C-simd' ? 'build-simd' : 'build-js';
         await b.send('Page.navigate', { url: `${base()}/${page}/index.html` });
         for (let i = 0; i < 200 && !(await b.evaluate('!!window.READY')); i++) await sleep(25);
         const res = await b.evaluate(`arm(${JSON.stringify(arm.startsWith('C') ? 'C' : arm)}, ${JSON.stringify(`${base()}/inputs/${input}`)}, ${box})`);

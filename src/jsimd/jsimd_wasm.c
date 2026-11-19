@@ -7,9 +7,11 @@
  * (jidctred.c's; the decodes at 1/8 to 4/8 of the size) and the YCbCr to RGBA conversion (jdcolor.c's).
  *
  * Each one is bit-exact with libjpeg's C, for every input, not only for a valid file: the arithmetic is the C's own
- * 32-bit integer arithmetic (the same multiplies, adds and shifts, wrapping the same way), lane for lane, and the C's
- * shortcuts (a column whose AC terms are zero, a row whose AC terms are zero) are reproduced as lane selects, since
- * on a corrupt file's huge coefficients the shortcut and the general path differ in the C and the SIMD must too.
+ * 32-bit integer arithmetic (the same multiplies, adds and shifts, wrapping the same way), lane for lane. The C's
+ * shortcut for a column whose AC terms are zero (pass 1) is reproduced as a lane select, since on a corrupt file's huge
+ * coefficients the shortcut and the general path differ in the C and the SIMD must too. Its shortcut for a row of the
+ * work array with zero AC terms (pass 2) is not: the two paths differ only above bit 12 of the result, and the range
+ * limit keeps 10 bits (tests/image/simd.c checks it on blocks of one column and one row of huge terms).
  * The range limit (the C's table lookup of the result masked to 10 bits) is the same function done in arithmetic. */
 #include <stdint.h>
 #include <wasm_simd128.h>
@@ -112,12 +114,10 @@ void jsimd_idct_4x4(j_decompress_ptr cinfo, jpeg_component_info *compptr, JCOEFP
   V s0, s1, s2, s3;
   parts4(T0, T1, T2, T3, T5, T6, T7, &s0, &s1, &s2, &s3);
   V rnd = SPLAT(1 << 18);                               /* DESCALE by CONST_BITS + PASS1_BITS + 3 + 1 = 19 */
-  V rowz = wasm_i32x4_eq(wasm_v128_or(wasm_v128_or(T1, T2), wasm_v128_or(wasm_v128_or(T3, T5), wasm_v128_or(T6, T7))), SPLAT(0));
-  V dcv = SHR(ADD(T0, SPLAT(16)), 5);                   /* the zero-row shortcut: DESCALE(ws[0], PASS1_BITS + 3) */
-  V x0 = mask10(wasm_v128_bitselect(dcv, SHR(ADD(s0, rnd), 19), rowz));
-  V x1 = mask10(wasm_v128_bitselect(dcv, SHR(ADD(s1, rnd), 19), rowz));
-  V x2 = mask10(wasm_v128_bitselect(dcv, SHR(ADD(s2, rnd), 19), rowz));
-  V x3 = mask10(wasm_v128_bitselect(dcv, SHR(ADD(s3, rnd), 19), rowz));
+  V x0 = mask10(SHR(ADD(s0, rnd), 19));
+  V x1 = mask10(SHR(ADD(s1, rnd), 19));
+  V x2 = mask10(SHR(ADD(s2, rnd), 19));
+  V x3 = mask10(SHR(ADD(s3, rnd), 19));
   /* bytes (x0 x1 x2 x3) of lane r: row r's four pixels */
   V l = limit8(x0, x1, x2, x3);
   V b = wasm_i8x16_shuffle(l, l, 0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15);
@@ -156,8 +156,7 @@ void jsimd_idct_2x2(j_decompress_ptr cinfo, jpeg_component_info *compptr, JCOEFP
   V o = ADD(ADD(MULC(X7, -C0_720), MULC(X5, C0_850)), ADD(MULC(X3, -C1_272), MULC(X1, C3_624)));
   V sg = wasm_i32x4_make(1, 1, -1, -1);
   V x = SHR(ADD(ADD(t10, wasm_i32x4_mul(o, sg)), SPLAT(1 << 19)), 20);   /* CONST_BITS + PASS1_BITS + 3 + 2 */
-  V rowz = wasm_i32x4_eq(wasm_v128_or(wasm_v128_or(X1, X3), wasm_v128_or(X5, X7)), SPLAT(0));
-  x = mask10(wasm_v128_bitselect(SHR(ADD(X0, SPLAT(16)), 5), x, rowz));
+  x = mask10(x);
   V b = limit8(x, x, x, x);
   wasm_v128_store8_lane(output_buf[0] + output_col, b, 0);
   wasm_v128_store8_lane(output_buf[0] + output_col + 1, b, 2);
