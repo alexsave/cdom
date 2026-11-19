@@ -16,8 +16,8 @@
 #   CDOM_SRC      the core sources every app links (cdom.c, and mini.c, the program's libc)
 #   CDOM_NET_SRC, CDOM_STORE_SRC, CDOM_RANDOM_SRC, CDOM_AUDIO_SRC, CDOM_URL_SRC, CDOM_LOCALE_SRC,
 #   CDOM_SHARE_SRC, CDOM_FONTS_SRC, CDOM_UI_SRC, CDOM_FILE_SRC
-#   CDOM_IMAGE_PARTS (own vendor miniz sjlj) and their _SRC and _CFLAGS: the image module (src/cdom_image.h),
-#                 which is parts only: cdom's files, libjpeg-turbo, miniz's inflate, and the setjmp file
+#   CDOM_IMAGE_PARTS (own vendor sjlj) and their _SRC and _CFLAGS: the image module (src/cdom_image.h),
+#                 which is parts only: cdom's files (its inflate among them), libjpeg-turbo, and the setjmp file
 #   CDOM_IMAGE_SJLJ  how the image module leaves a fatal libjpeg error (src/cdom_image_sjlj.c): js (the default,
 #                 a try and catch in the shim; plain wasm, every browser cdom runs in, and wasm2js) or eh (wasm
 #                 exception handling: Chrome 95, Firefox 100, Safari 15.2, and no wasm2js)
@@ -140,27 +140,25 @@ CDOM_SHARE_SRC  := $(CDOM)/src/cdom_share.c
 CDOM_FONTS_SRC  := $(CDOM)/src/cdom_fonts.c
 CDOM_UI_SRC     := $(CDOM)/src/cdom_ui.c
 CDOM_FILE_SRC   := $(CDOM)/src/cdom_file.c
-# The image module: four parts, so libjpeg-turbo and miniz (third_party/, each with its README) build with -w and
-# their own -I, cdom's three files with the app's flags and only the vendor headers' directories (as -isystem),
-# and the one file that calls setjmp with the flags of the CDOM_IMAGE_SJLJ way.
+# The image module: three parts, so libjpeg-turbo (third_party/, with its README) builds with -w and its own -I,
+# cdom's four files (the PNG path's inflate is cdom's own) with the app's flags and only libjpeg's headers'
+# directory (as -isystem), and the one file that calls setjmp with the flags of the CDOM_IMAGE_SJLJ way.
 CDOM_IMAGE_SJLJ ?= js
 CDOM_IMAGE_LJT  := $(CDOM)/third_party/libjpeg-turbo-3.2.1/src
-CDOM_IMAGE_MZ   := $(CDOM)/third_party/miniz-3.1.2
 CDOM_IMAGE_SRC  :=
-CDOM_IMAGE_PARTS := own vendor miniz sjlj
-CDOM_IMAGE_OWN_SRC := $(CDOM)/src/cdom_image.c $(CDOM)/src/cdom_image_jpeg.c $(CDOM)/src/cdom_image_png.c
-CDOM_IMAGE_OWN_CFLAGS := -isystem $(CDOM_IMAGE_LJT) -isystem $(CDOM_IMAGE_MZ) -DNO_GETENV -DNO_PUTENV
+CDOM_IMAGE_PARTS := own vendor sjlj
+CDOM_IMAGE_OWN_SRC := $(CDOM)/src/cdom_image.c $(CDOM)/src/cdom_image_jpeg.c $(CDOM)/src/cdom_image_png.c \
+  $(CDOM)/src/cdom_image_inflate.c
+CDOM_IMAGE_OWN_CFLAGS := -isystem $(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV
 CDOM_IMAGE_VENDOR_SRC := $(addprefix $(CDOM_IMAGE_LJT)/,jcomapi.c jdapimin.c jdhuff.c jdinput.c jdmarker.c jdmaster.c \
   jdphuff.c jmemmgr.c jpeg_nbits.c $(addprefix wrapper/,$(addsuffix -8.c,jdapistd jdcoefct jdcolor jddctmgr jdmainct \
   jdpostct jdsample jidctint jidctred jutils)))
 CDOM_IMAGE_VENDOR_CFLAGS := -w -I$(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV
-CDOM_IMAGE_MINIZ_SRC := $(CDOM_IMAGE_MZ)/tinfl.c
-CDOM_IMAGE_MINIZ_CFLAGS := -w -I$(CDOM_IMAGE_MZ) -include $(CDOM)/src/cdom_image_miniz.h
 CDOM_IMAGE_SJLJ_SRC = $(CDOM)/src/cdom_image_sjlj.c $(if $(filter eh,$(CDOM_IMAGE_SJLJ)),$(CDOM)/src/cdom_image_sjlj_eh.c)
 cdom_mk_sjlj_js := -DCDOM_IMAGE_SJLJ_JS
 cdom_mk_sjlj_eh := -DCDOM_IMAGE_SJLJ_EH -mexception-handling -mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=true
 CDOM_IMAGE_SJLJ_CFLAGS = $(or $(cdom_mk_sjlj_$(CDOM_IMAGE_SJLJ)),$(error cdom.mk: CDOM_IMAGE_SJLJ is $(CDOM_IMAGE_SJLJ), not js or eh))
-CDOM_IMAGE_DEPS := $(wildcard $(CDOM_IMAGE_LJT)/*.h $(CDOM_IMAGE_LJT)/*.c) $(CDOM_IMAGE_MZ)/tinfl.h
+CDOM_IMAGE_DEPS := $(wildcard $(CDOM_IMAGE_LJT)/*.h $(CDOM_IMAGE_LJT)/*.c)
 CDOM_HEADERS    := $(wildcard $(CDOM)/src/*.h $(CDOM)/src/libc/*.h)
 CDOM_SHIM       := $(CDOM)/shim/cdom.min.js
 

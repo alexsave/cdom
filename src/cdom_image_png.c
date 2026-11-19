@@ -1,11 +1,12 @@
-/* cdom_image's PNG path: chunks walked in place, IDAT inflated by miniz's tinfl through its 32 KB wrapping window,
- * each row unfiltered and turned into RGBA (composited on white), then fed to the streaming scaler.
+/* cdom_image's PNG path: chunks walked in place, IDAT inflated by cdom's inflate (cdom_image_inflate.c) into a
+ * bounded buffer, each row unfiltered where it lies in that buffer once no later match can read it, turned into RGBA
+ * (composited on white), then fed to the streaming scaler.
  * Refused: interlaced and 16-bit (UNSUPPORTED). Checked: the zlib stream's adler32 (a mismatch, or a stream that
  * stops before its checksum, is CORRUPT). Not checked: the chunk CRCs (a damaged chunk shows as damage, or fails
  * the adler32 when it is in the image data). */
 #include <stddef.h>
 #include <string.h>
-#include "cdom_image_miniz.h"
+#include "cdom_image_int.h"
 
 static uint32_t be32(const uint8_t *p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
 static uint32_t be16(const uint8_t *p) { return (uint32_t)p[0] << 8 | p[1]; }
@@ -136,13 +137,56 @@ static void to_rgba(const fmt *f, const uint8_t *r, uint8_t *out) {
   }
 }
 
+/* The inflate's output buffer: the window, two rows (the one above, unfiltered, and one being made) and this much
+ * more, so that each hand-over to the rows has this much new (docs/image-png-speed.md, P3). */
+#define PNG_CHUNK 262144u
+
 typedef struct {
-  tinfl_decompressor inf;
-  uint8_t dict[TINFL_LZ_DICT_SIZE];
+  cd_inflate inf;
   fmt f;
   cd_image_scaler sc;
-  uint8_t *rows;              /* two rows of stride+1 bytes (filter byte first), then one RGBA row */
+  const uint8_t *p;           /* the file, and the next chunk to look at for the IDAT pieces */
+  uint32_t len;
+  uint64_t at;
+  uint32_t h, stride, bpp;
+  uint32_t row_at;            /* where the next row (its filter byte first) starts in the inflate's buffer */
+  uint32_t done;              /* rows finished */
+  uint8_t *zero;              /* the row above the first: zeros */
+  uint8_t *px;                /* one RGBA row */
 } pctx;
+
+/* The next IDAT's payload: chunks of other types are passed over; the IEND, or a chunk that runs past the data,
+ * ends the input. */
+static int idat(void *c, const uint8_t **d, uint32_t *n) {
+  pctx *x = c;
+  const uint8_t *type;
+  while (next_chunk(x->p, x->len, &x->at, &type, d, n)) {
+    if (!memcmp(type, "IDAT", 4)) return 1;
+    if (!memcmp(type, "IEND", 4)) return 0;
+  }
+  return 0;
+}
+
+/* The inflate's sink: each row that is whole and out of the window (no later match reads it) is unfiltered where
+ * it is, in the inflate's buffer, against the row above it (kept there too), turned into RGBA and scaled; bytes
+ * past the last row are dropped. Answers the bytes to drop: all before the row above the next. */
+static int64_t rows(void *c, uint8_t *b, uint32_t n, int last) {
+  pctx *x = c;
+  uint32_t row = x->stride + 1, lim = last ? n : n > CD_INFLATE_WINDOW ? n - CD_INFLATE_WINDOW : 0;
+  while (x->done < x->h && x->row_at + row <= lim) {
+    uint8_t *cur = b + x->row_at;
+    const uint8_t *prev = x->done ? cur - row : x->zero;
+    if (!unfilter(cur[0], cur + 1, prev + 1, x->stride, x->bpp)) return -1;
+    to_rgba(&x->f, cur + 1, x->px);
+    cd_image_scaler_row(&x->sc, x->px);
+    x->row_at += row;
+    x->done++;
+  }
+  if (x->done == x->h) { x->row_at = 0; return lim; }
+  uint32_t drop = x->done ? x->row_at - row : x->row_at;
+  x->row_at -= drop;
+  return drop;
+}
 
 uint32_t cd_image_png_resize(const uint8_t *p, uint32_t len, const cd_image_info *info, uint32_t dw, uint32_t dh,
                              uint8_t **rgba, uint32_t *ow, uint32_t *oh) {
@@ -160,73 +204,49 @@ uint32_t cd_image_png_resize(const uint8_t *p, uint32_t len, const cd_image_info
   memset(&x->f, 0, sizeof x->f);
   x->f.w = w; x->f.depth = depth; x->f.ctype = ctype;
   for (int i = 0; i < 256; i++) x->f.pal[4 * i + 3] = 255;
-  uint64_t room = (uint64_t)(stride + 1) * 2 + (uint64_t)w * 4;
-  x->rows = room <= 0xffffffffu ? cd_alloc_try((uint32_t)room) : 0;
-  if (!x->rows) { cd_free(x); return CD_IMAGE_NO_ROOM; }
-  if (!cd_image_scaler_init(&x->sc, w, h, dw, dh, 1)) { cd_free(x->rows); cd_free(x); return CD_IMAGE_NO_ROOM; }
-  uint8_t *cur = x->rows, *prev = x->rows + (stride + 1), *px = x->rows + 2 * (size_t)(stride + 1);
-  memset(prev, 0, stride + 1);
+  x->p = p; x->len = len; x->h = h; x->stride = stride; x->bpp = bpp; x->row_at = 0; x->done = 0;
+  /* one block: the zero row, the RGBA row, then the inflate's buffer */
+  uint64_t cap = CD_INFLATE_WINDOW + 2 * ((uint64_t)stride + 1) + PNG_CHUNK;
+  uint64_t room = (uint64_t)(stride + 1) + (uint64_t)w * 4 + cap;
+  x->zero = room <= 0xffffffffu ? cd_alloc_try((uint32_t)room) : 0;
+  if (!x->zero) { cd_free(x); return CD_IMAGE_NO_ROOM; }
+  if (!cd_image_scaler_init(&x->sc, w, h, dw, dh, 1)) { cd_free(x->zero); cd_free(x); return CD_IMAGE_NO_ROOM; }
+  memset(x->zero, 0, stride + 1);
+  x->px = x->zero + (stride + 1);
+  uint8_t *buf = x->px + (size_t)w * 4;
 
-  tinfl_init(&x->inf);
-  uint32_t have = 0;          /* bytes of the current row (with its filter byte) filled so far */
-  uint32_t done = 0;          /* rows finished */
-  uint32_t dict_ofs = 0;
-  int saw_idat = 0, seen_plte = 0, ended = 0;   /* ended: the zlib stream finished, its adler32 matched */
-  uint64_t at = 8 + 25;
+  /* the chunks before the first IDAT: PLTE and tRNS (after it, they are passed over) */
+  int seen_plte = 0, saw_idat = 0;
+  x->at = 8 + 25;
   const uint8_t *type, *data;
   uint32_t n;
-  while (!ended && st == CD_IMAGE_OK && next_chunk(p, len, &at, &type, &data, &n)) {
-    if (!memcmp(type, "PLTE", 4) && !saw_idat) {
+  for (uint64_t at = x->at; next_chunk(p, len, &at, &type, &data, &n);) {
+    if (!memcmp(type, "PLTE", 4)) {
       if (n % 3 || n > 768) { st = CD_IMAGE_CORRUPT; break; }
       for (uint32_t i = 0; i < n / 3; i++) memcpy(x->f.pal + 4 * i, data + 3 * i, 3);
       seen_plte = 1;
-    } else if (!memcmp(type, "tRNS", 4) && !saw_idat) {
+    } else if (!memcmp(type, "tRNS", 4)) {
       if (ctype == 3) for (uint32_t i = 0; i < n && i < 256; i++) x->f.pal[4 * i + 3] = data[i];
       else if (ctype == 0 && n == 2) { x->f.key = 1; x->f.key_g = be16(data); }
       else if (ctype == 2 && n == 6 && !data[0] && !data[2] && !data[4]) {   /* a key over 255 matches no 8-bit pixel */
         x->f.key = 1; x->f.key_rgb[0] = data[1]; x->f.key_rgb[1] = data[3]; x->f.key_rgb[2] = data[5];
       }
     } else if (!memcmp(type, "IDAT", 4)) {
-      if (ctype == 3 && !seen_plte) { st = CD_IMAGE_CORRUPT; break; }
+      if (ctype == 3 && !seen_plte) st = CD_IMAGE_CORRUPT;
       saw_idat = 1;
-      size_t in_pos = 0;
-      for (;;) {
-        size_t in_n = n - in_pos, out_n = TINFL_LZ_DICT_SIZE - dict_ofs;
-        tinfl_status ts = tinfl_decompress(&x->inf, data + in_pos, &in_n, x->dict, x->dict + dict_ofs, &out_n,
-                                           TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_HAS_MORE_INPUT);
-        in_pos += in_n;
-        /* the bytes just made, x->dict[dict_ofs .. dict_ofs + out_n), into rows (any past the last row are dropped) */
-        const uint8_t *s = x->dict + dict_ofs;
-        size_t left = out_n;
-        while (left && done < h) {
-          size_t take = (stride + 1) - have;
-          if (take > left) take = left;
-          memcpy(cur + have, s, take);
-          have += (uint32_t)take; s += take; left -= take;
-          if (have == stride + 1) {
-            if (!unfilter(cur[0], cur + 1, prev + 1, stride, bpp)) { st = CD_IMAGE_CORRUPT; break; }
-            to_rgba(&x->f, cur + 1, px);
-            cd_image_scaler_row(&x->sc, px);
-            uint8_t *t = cur; cur = prev; prev = t;
-            have = 0;
-            done++;
-          }
-        }
-        dict_ofs = (dict_ofs + (uint32_t)out_n) & (TINFL_LZ_DICT_SIZE - 1);
-        if (st != CD_IMAGE_OK) break;
-        if (ts < TINFL_STATUS_DONE) { st = CD_IMAGE_CORRUPT; break; }   /* a bad stream, or its adler32 differs */
-        if (ts == TINFL_STATUS_DONE) { ended = 1; break; }
-        if (ts == TINFL_STATUS_NEEDS_MORE_INPUT && in_pos >= n) break;   /* this chunk is used up: on to the next */
-      }
+      break;
     } else if (!memcmp(type, "IEND", 4)) break;
+    x->at = at;                                    /* the IDAT pieces start at the first IDAT */
   }
-  if (st == CD_IMAGE_OK && !ended) st = CD_IMAGE_CORRUPT;   /* the data ended before the stream's checksum */
+  /* the image data: a stream cut short, refused or with a different adler32, or a row with no filter, is CORRUPT */
+  if (st == CD_IMAGE_OK && (!saw_idat || cd_inflate_zlib(&x->inf, buf, (uint32_t)cap, idat, rows, x) != CD_INFLATE_OK))
+    st = CD_IMAGE_CORRUPT;
   if (st == CD_IMAGE_OK) {
     uint8_t *o = cd_image_scaler_take(&x->sc);   /* 0 for a stream that ended short of the last row: CORRUPT */
     if (o) { *rgba = o; *ow = x->sc.ow; *oh = x->sc.oh; }
     else st = CD_IMAGE_CORRUPT;
   } else cd_image_scaler_free(&x->sc);
-  cd_free(x->rows);
+  cd_free(x->zero);
   cd_free(x);
   return st;
 }

@@ -5,7 +5,8 @@
 #   3. the native build (the module's files as cdom.mk lists them, with AddressSanitizer and UndefinedBehaviorSanitizer,
 #      on tests/image/host_alloc.c's counted heap) runs tests/image/test_image.c: every image equal to the oracle's to
 #      the byte, the refusals, a heap that runs out at every allocation, the peaks;
-#   4. the wasm build, both ways out of a libjpeg error (CDOM_IMAGE_SJLJ js and eh), runs every case in Chrome
+#   4. cdom's inflate against zlib (inflate_diff.c);
+#   5. the wasm build, both ways out of a libjpeg error (CDOM_IMAGE_SJLJ js and eh), runs every case in Chrome
 #      (tools/image.mjs, through tools/cdp.mjs): the same statuses and the same bytes as the native build, and a
 #      capped heap answering NO_ROOM.
 # IMAGE_BIG=0 skips the oracle's big inputs (the 12 MP, 16 MP and 35 MP files) for a quick run.
@@ -20,10 +21,8 @@ python3 -I "$top/tools/third_party.py" check || fail=1
 var() { cdom_mk_var "$1"; }
 read -r -a OWN <<< "$(var CDOM_IMAGE_OWN_SRC)"
 read -r -a VENDOR <<< "$(var CDOM_IMAGE_VENDOR_SRC)"
-read -r -a MINIZ <<< "$(var CDOM_IMAGE_MINIZ_SRC)"
 read -r -a OWNF <<< "$(var CDOM_IMAGE_OWN_CFLAGS)"
 read -r -a VENDORF <<< "$(var CDOM_IMAGE_VENDOR_CFLAGS)"
-read -r -a MINIZF <<< "$(var CDOM_IMAGE_MINIZ_CFLAGS)"
 HCC="${HOST_CC:-clang}"
 SAN=(-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
 H=(-std=c2x -O1 -g "${SAN[@]}" -I"$top/src" -I"$here")
@@ -35,12 +34,16 @@ build() { # the native test binary, each file as cdom.mk compiles it (its part's
     "$HCC" "${H[@]}" -Wall -Wextra -Werror "${OWNF[@]}" -c -o "$o/$(basename "$f" .c).o" "$f" || return 1
   done
   for f in "${VENDOR[@]}"; do "$HCC" "${H[@]}" "${VENDORF[@]}" -c -o "$o/v_$(basename "$f" .c).o" "$f" || return 1; done
-  for f in "${MINIZ[@]}"; do "$HCC" "${H[@]}" "${MINIZF[@]}" -c -o "$o/m_$(basename "$f" .c).o" "$f" || return 1; done
   "$HCC" "${H[@]}" -o "$o/test_image" "$o"/*.o
 }
 if ! build > "$o/build.log" 2>&1; then echo "FAIL the native image tests do not build:"; cat "$o/build.log"; exit 1; fi
 if ! python3 -I "$here/oracle.py" "$out" > "$out/oracle.log" 2>&1; then echo "FAIL the oracle:"; cat "$out/oracle.log"; exit 1; fi
 tail -1 "$out/oracle.log"
 (cd "$out" && "$o/test_image") || fail=1
+# cdom's inflate against zlib (tests/image/inflate_diff.c): the seeded corpus, cut and damaged streams, under the
+# same sanitizers; it links the system's zlib (zlib.h and -lz) as the reference
+if "$HCC" "${H[@]}" -Wall -Wextra -Werror -o "$o/inflate_diff" "$here/inflate_diff.c" "$top/src/cdom_image_inflate.c" -lz > "$o/inflate_diff.log" 2>&1; then
+  "$o/inflate_diff" || fail=1
+else echo "FAIL inflate_diff does not build:"; cat "$o/inflate_diff.log"; fail=1; fi
 if [ "${IMAGE_WASM:-1}" != 0 ]; then node "$top/tools/image.mjs" "$out" || fail=1; fi
 exit $fail
