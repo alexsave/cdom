@@ -8,10 +8,10 @@
  *     uint8_t *rgba; uint32_t w, h;
  *     if (status != CD_FILE_OK) return;
  *     if (cd_image_resize(p, len, 1600, 1600, &rgba, &w, &h) != CD_IMAGE_OK) return;  (the app says why)
- *     cd_encode_image(rgba, w, h, 4, "image/jpeg", 85, token);
+ *     cd_encode_image(rgba, w, h, 4, "image/jpeg", 85, ENCODED);  (the file arrives in cd_on_encoded)
  *     cd_free(rgba);
  *   }
- *   cd_file_read_cb(input, 0, 20000000, got, 0);
+ *   cd_file_read_cb(input, 0, 30000000, got, 0);   (APP_MODULES += file image)
  *
  * The file's bytes are read where cdom put them (no copy). A JPEG is decoded one row at a time at the
  * smallest of libjpeg's scales (n/8) that is still at least the output size, and a PNG is inflated and
