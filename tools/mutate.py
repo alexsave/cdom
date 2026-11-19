@@ -710,7 +710,7 @@ M = [
   ('jpeg-error-returns', 'src/cdom_image_jpeg.c', 'static void err_exit(j_common_ptr c) { cd_image_throw(((jctx *)c->client_data)->guard); }', 'static void err_exit(j_common_ptr c) { (void)c; }', IMG, 'dqt-bad'),
   ('jpeg-scans-unlimited', 'src/cdom_image_jpeg.c', 'if ((uint32_t)x->cinfo.input_scan_number > CD_IMAGE_SCANS_MAX)', 'if (0)', IMG, 'jpeg-scans501'),
   ('jpeg-scans-off-by-one', 'src/cdom_image_jpeg.c', 'input_scan_number > CD_IMAGE_SCANS_MAX)', 'input_scan_number >= CD_IMAGE_SCANS_MAX)', IMG, 'jpeg-scans500'),
-  ('jpeg-no-budget', 'src/cdom_image_jpeg.c', 'long jpeg_mem_init(j_common_ptr c) { (void)c; return (long)CD_IMAGE_MEM_MAX; }', 'long jpeg_mem_init(j_common_ptr c) { (void)c; return 0; }', IMGBIG, 'over-budget'),
+  ('jpeg-no-budget', 'src/cdom_image_jpeg.c', 'return cap > already ? cap - already : 0;', '(void)cap; (void)already; return max_needed;', IMGBIG, 'over-budget'),
   ('jpeg-budget-corrupt', 'src/cdom_image_jpeg.c', 'x->too_many_scans || code == JERR_NO_BACKING_STORE ? CD_IMAGE_TOO_BIG', 'x->too_many_scans ? CD_IMAGE_TOO_BIG', IMGBIG, 'over-budget'),
   ('jpeg-no-room-corrupt', 'src/cdom_image_jpeg.c', ': code == JERR_OUT_OF_MEMORY ? CD_IMAGE_NO_ROOM', ': code == JERR_OUT_OF_MEMORY ? CD_IMAGE_CORRUPT', IMG, 'bytes of room'),
   ('png-paeth-ties', 'src/cdom_image_png.c', 'pa <= pb && pa <= pc ? a : pb <= pc ? b : c', 'pa < pb && pa < pc ? a : pb < pc ? b : c', IMG, 'png-'),
