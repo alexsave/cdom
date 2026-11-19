@@ -11,7 +11,9 @@
  *   unfilter       cd_image_unfilter_simd against cd_image_unfilter_scalar: every filter (and two that are none), 1, 2,
  *                  3, 4, 6 and 8 bytes a pixel, widths 0 to 64 pixels and some larger, random and edge bytes
  *   rgba           cd_image_rgb_to_rgba_simd against the scalar: widths 0 to 64 and some larger
- *   across, down   the scaler's two row loops: random sizes from 1 to 64 pixels and more, edge weights and sums
+ *   div            the scaler's divide, in doubles: sums up to 255 t, t up to 65500 squared, and the sums at the edges of the quotient
+ *   across, down   the scaler's two row loops: random sizes from 1 to 64 pixels and more, edge weights and sums, and an
+ *                  output that starts as garbage (across writes every sum, down adds to what is there)
  *
  * Every input and output buffer is placed so that its last byte is the last byte of the module's memory (and the other one
  * far below), so a read or a write past the end is a trap, not a quiet wrong byte; a write before the start or past the
@@ -306,10 +308,11 @@ static void across_all(void) {
       int top = rep & 1;
       uint8_t *px = place(sw * 4, top, 80);
       for (uint32_t i = 0; i < sw * 4; i++) px[i] = rep % 4 == 0 ? byte_edge() : (uint8_t)rnd();
-      /* h: dw * 3 sums, zero, and one more word, which the SIMD body may read and write but not change */
+      /* h: dw * 3 sums, not zero (garbage the loops must not add to: across writes every sum), and one more word, which
+       * neither may touch */
       uint32_t words = dw * 3 + 1;
       uint32_t *ha = (uint32_t *)place(words * 4, 0, 81), *hb = (uint32_t *)place(words * 4, !top, 82);
-      for (uint32_t i = 0; i < words; i++) ha[i] = hb[i] = 0;
+      for (uint32_t i = 0; i < words; i++) ha[i] = hb[i] = rnd();
       ha[dw * 3] = hb[dw * 3] = 0xC0FFEE11u;
       cd_image_scaler_across_scalar(ha, px, sw, dw);
       cd_image_scaler_across_simd(hb, px, sw, dw);
@@ -323,7 +326,7 @@ static void across_all(void) {
     for (uint32_t j = 0; j < sw * 4; j++) px[j] = byte_edge();
     uint32_t words = dw * 3 + 1;
     uint32_t *ha = (uint32_t *)place(words * 4, 0, 84), *hb = (uint32_t *)place(words * 4, 1, 85);
-    for (uint32_t j = 0; j < words; j++) ha[j] = hb[j] = 0;
+    for (uint32_t j = 0; j < words; j++) ha[j] = hb[j] = rnd();
     cd_image_scaler_across_scalar(ha, px, sw, dw);
     cd_image_scaler_across_simd(hb, px, sw, dw);
     if (neq(ha, hb, words * 4)) note(1);
@@ -352,6 +355,35 @@ static void down_all(void) {
     }
 }
 
+static void div_all(void) {
+  uint32_t k = 0;
+  for (uint32_t n = 0; n <= 70; n++)
+    for (int rep = 0; rep < 30; rep++) {
+      cases = k++;
+      uint64_t sw = rep < 3 ? 65500 : 1 + below(65500), sh = rep < 3 ? 65500 : rep < 6 ? 1 + below(4) : 1 + below(65500);
+      uint64_t t = sw * sh;                                         /* what the scaler divides by, up to 65500 squared */
+      int top = rep & 1;
+      uint64_t *a = (uint64_t *)place(n * 8, top, 100);
+      uint8_t *oa = place(n, 0, 101), *ob = place(n, !top, 102);
+      for (uint32_t i = 0; i < n; i++) {
+        uint64_t v;
+        switch (rnd() % 4) {
+          case 0: v = ((uint64_t)rnd() << 32 | rnd()) % (255 * t + 1); break;       /* anywhere up to 255 t */
+          case 1: { uint64_t q = below(256);                       /* at a boundary of the quotient: 2a + t is q * 2t, less 1, plus 1 */
+                    uint64_t base = q * t >= (t + 1) / 2 ? q * t - (t + 1) / 2 : 0;
+                    v = base + below(5); if (v > 255 * t) v = 255 * t; break; }
+          case 2: v = below(2) ? 0 : 255 * t; break;
+          default: v = 255 * t - below(3) < 255 * t ? 255 * t - below(3) : 255 * t; break;
+        }
+        a[i] = v;
+      }
+      cd_image_scaler_div_scalar(oa, a, n, t);
+      cd_image_scaler_div_simd(ob, a, n, t);
+      if (neq(oa, ob, n)) note(1);
+      if (!canary_ok(ob, n, !top)) note(2);
+    }
+}
+
 /* ---- the entry ---- */
 
 EXPORT("run") uint32_t run(uint32_t loop) {
@@ -367,6 +399,7 @@ EXPORT("run") uint32_t run(uint32_t loop) {
     case 5: rgba_all(); break;
     case 6: across_all(); break;
     case 7: down_all(); break;
+    case 8: div_all(); break;
     default: return 0xffffffffu;
   }
   (void)fails;
