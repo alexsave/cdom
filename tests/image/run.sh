@@ -19,7 +19,7 @@ mkdir -p "$out"
 fail=0
 python3 -I "$top/tools/third_party.py" check || fail=1
 var() { cdom_mk_var "$1"; }
-read -r -a OWN <<< "$(var CDOM_IMAGE_OWN_SRC)"
+read -r -a OWN <<< "$(var CDOM_IMAGE_OWN_SRC) $(var CDOM_IMAGE_INFLATE_SRC)"
 read -r -a VENDOR <<< "$(var CDOM_IMAGE_VENDOR_SRC)"
 read -r -a OWNF <<< "$(var CDOM_IMAGE_OWN_CFLAGS)"
 read -r -a VENDORF <<< "$(var CDOM_IMAGE_VENDOR_CFLAGS)"

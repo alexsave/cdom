@@ -5,7 +5,9 @@ SJLJ ?= js
 # LEVEL (the optimization-level arm): oz (cdom.mk's -Oz, the default), o2, o3, or mix (third_party's parts at -O2,
 # the rest at -Oz): pages build-js-o2 and so on.
 LEVEL ?= oz
-SUF := $(if $(filter oz,$(LEVEL)),,-$(LEVEL))
+# SIMD=1: the inflate (only) with -msimd128 (CDOM_IMAGE_INFLATE_CFLAGS), page build-js-simd and so on.
+SIMD ?= 0
+SUF := $(if $(filter oz,$(LEVEL)),,-$(LEVEL))$(if $(filter 1,$(SIMD)),-simd)
 APP_WASM := build-$(SJLJ)$(SUF)/app.wasm
 APP_PAGE := build-$(SJLJ)$(SUF)/index.html
 APP_PAGE_SRC := page.html
@@ -14,10 +16,10 @@ APP_MODULES := image
 APP_CFLAGS := -Wall -Wextra -Werror
 CDOM_IMAGE_SJLJ := $(SJLJ)
 CDOM_OPT := $(if $(filter o2,$(LEVEL)),-O2,$(if $(filter o3,$(LEVEL)),-O3,-Oz))
+CDOM_IMAGE_INFLATE_CFLAGS := $(if $(filter 1,$(SIMD)),-msimd128)
 include $(CDOM)/cdom.mk
 ifeq ($(LEVEL),mix)
 CDOM_IMAGE_VENDOR_CFLAGS += -O2
-CDOM_IMAGE_MINIZ_CFLAGS += -O2
 endif
 all:
 	$(MAKE) SJLJ=js page

@@ -53,6 +53,7 @@ static uint32_t adler_blocks(uint32_t *a, uint32_t *b, const uint8_t *s, size_t 
 }
 #endif
 
+#ifndef __wasm_simd128__
 /* 8 bytes a step in a 64-bit word, two words a turn: the even and odd bytes spread into 16-bit lanes, and one
  * multiply sums a word's bytes (into the top lane) and another their weights 8 down to 1 (8 b0 + 7 b1 + ... + b7:
  * the top lane of e x (2, 4, 6, 8) plus o x (1, 3, 5, 7), each lane under 2^16, so nothing carries into the top).
@@ -82,6 +83,7 @@ static uint32_t adler_words(uint32_t *a, uint32_t *b, const uint8_t *s, size_t n
   *a = s1; *b = s2;
   return (uint32_t)done;
 }
+#endif
 
 uint32_t cd_image_adler32(uint32_t adler, const uint8_t *s, size_t n) {
   uint32_t s1 = adler & 0xffff, s2 = adler >> 16;
