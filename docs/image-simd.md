@@ -196,3 +196,25 @@ p12.jpg, box 4032 (scale 8/8), 5 runs:
 The x86 VM measured about 0 gain, so the prediction is the same on the Mac: each of simd128 and simde within plus or minus 3% of scalar on p12.jpg, p12p.jpg, p48.jpg and p12.png, at -Oz, box 900.
 Falsifier: a ratio outside 0.97 to 1.03 with the two arms' min to max ranges not overlapping.
 One reason to expect a little more on arm64 V8: the NEON-shaped code maps to native NEON there, so the IDCTs and colour conversion may gain a few percent, but Huffman decoding (more than half the time) does not change, so a whole-run gain over 5% is not expected.
+
+### Results
+
+Apple Silicon Mac, headless Chrome (bench/image/run.mjs as written, `make -C bench/image SIMD=none|simd128|simde page`, 9 interleaved rounds, box 900, -Oz, a fresh page for each run).
+Not a quiet machine: an IE9 qemu VM at about 180% CPU was running throughout, so the 1-minute load was 5 to 8 and the gate was raised to `LOADMAX=8` (the default 4 would never open).
+The arms are interleaved, so the VM's load hits all of them alike, but the numbers are provisional.
+Raw: bench/image/results/2026-11-19-simde-mac.tsv (every run with the load before it) and the .log beside it.
+Every C arm made the same RGBA on every input, to the byte (FNV-1a).
+The wasm memory is the same in all three arms (6.1, 40.8, 17.1, 17.1 MiB).
+
+| input | scalar ms (min-max) | simd128 ms | ratio | simde ms (min-max) | ratio |
+| --- | --- | --- | --- | --- | --- |
+| p12.jpg | 60.1 (59.1-64.3) | 59.9 (58.8-62.5) | 0.997 | 56.2 (55.4-59.1) | 0.935 |
+| p12p.jpg | 145.9 (143.3-150.8) | 144.9 (142.2-151.8) | 0.993 | 140.7 (135.8-145.2) | 0.964 |
+| p48.jpg | 180.0 (178.0-183.4) | 178.2 (175.8-180.3) | 0.990 | 170.1 (168.2-183.0) | 0.945 |
+| p12.png | 253.8 (246.1-369.8) | 252.1 (246.2-369.4) | 0.993 | 250.8 (246.5-369.0) | 0.988 |
+
+Against the prediction (within 3% of scalar): autovec holds (0.990 to 0.997, ranges overlap).
+SIMDe is refuted on the three JPEGs: 4 to 6.5% faster than scalar, with min to max ranges that do not overlap on p12.jpg and p12p.jpg (p48.jpg overlaps only through one outlier at 183.0).
+The PNG is unchanged, as it must be (no libjpeg code runs).
+So the x86 conclusion (about 0 gain) does not carry over to the Mac in full: autovec is still nothing, and SIMDe NEON is a small real gain here, in line with the profile on x86 where only the IDCTs and colour conversion moved and Huffman decoding (more than half of the time) did not.
+It stays small, under the 130 KB raw (13 KB brotli) it costs in size.
