@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>   /* ssize_t: glibc declares it only here (macOS has it from stdio.h) */
 #include <stdint.h>
 #include "cdom_image.h"
 #include "cdom_image_int.h"

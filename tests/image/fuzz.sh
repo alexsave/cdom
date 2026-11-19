@@ -14,15 +14,12 @@ mkdir -p "$out"
 CC="${FUZZ_CC:-/opt/homebrew/opt/llvm/bin/clang}"
 read -r -a OWN <<< "$(cdom_mk_var CDOM_IMAGE_OWN_SRC)"
 read -r -a VENDOR <<< "$(cdom_mk_var CDOM_IMAGE_VENDOR_SRC)"
-read -r -a MINIZ <<< "$(cdom_mk_var CDOM_IMAGE_MINIZ_SRC)"
 read -r -a OWNF <<< "$(cdom_mk_var CDOM_IMAGE_OWN_CFLAGS)"
 read -r -a VENDORF <<< "$(cdom_mk_var CDOM_IMAGE_VENDOR_CFLAGS)"
-read -r -a MINIZF <<< "$(cdom_mk_var CDOM_IMAGE_MINIZ_CFLAGS)"
 F=(-std=c2x -O1 -g -fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -I"$top/src" -I"$here")
 o="$out/obj"; rm -rf "$o"; mkdir -p "$o"
 for f in "${OWN[@]}" "$top/src/cdom_image_sjlj.c" "$here/host_alloc.c"; do "$CC" "${F[@]}" -Wall -Wextra -Werror "${OWNF[@]}" -c -o "$o/$(basename "$f" .c).o" "$f"; done
 for f in "${VENDOR[@]}"; do "$CC" "${F[@]}" "${VENDORF[@]}" -c -o "$o/v_$(basename "$f" .c).o" "$f"; done
-for f in "${MINIZ[@]}"; do "$CC" "${F[@]}" "${MINIZF[@]}" -c -o "$o/m_$(basename "$f" .c).o" "$f"; done
 for t in jpeg png; do
   "$CC" -O1 -g -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=undefined -I"$top/src" -I"$here" -o "$out/fuzz_$t" "$here/fuzz_$t.c" "$o"/*.o
   mkdir -p "$out/corpus_$t" "$out/seeds_$t"
