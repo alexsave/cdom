@@ -38,7 +38,15 @@ cdom builds it either way, chosen by one make variable, `CDOM_IMAGE_SJLJ`:
 - `eh`: setjmp and longjmp lowered by clang to wasm exception handling (`-mexception-handling -mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=true`) on `cdom_image_sjlj.c`, with the runtime in `cdom_image_sjlj_eh.c` (a file of its own: the lowering renames a runtime it finds in the file it lowers), which also defines the C longjmp tag.
   Chrome 95, Firefox 100, Safari 15.2; no wasm2js.
 
-The shim's part is the two functions above: 151 bytes minified, 50 brotli, in every page (the shim has no per-module part).
+The shim's part is the two functions above: 151 bytes minified, 50 brotli, in every page (the shim has no per-module part; the manager accepted the 50 bytes).
+
+What the js way must hold, each with its test:
+
+- A throw leaves the heap as it was: the guard returns into `cd_image_jpeg_resize`, which always runs `jpeg_destroy_decompress` and frees its row, its scaler and its state, so 100 fatal errors in a row grow the memory by 0 pages after the first (tools/alloc.mjs, both ways), and tools/image.mjs runs 300 more in Chrome.
+- Only the sentinel is taken: a trap inside the body goes on as a trap, not as a status (tests/unit.html, `?trap=imageTrap`).
+- The stack pointer is put back: 2,000 throws from 40 frames down inside one call leave it where it was (tests/unit.html; without the put-back that is 16 MB below a 64 KB stack).
+- Nesting: guards may nest (a body that runs a guard of its own), and each throw lands at the innermost guard, which is the one the module names, since it throws only to the guard of the decode running (tests/unit.html, `t_sj_nested`).
+  Re-entry cannot happen: a decode is one synchronous call into wasm, so nothing else runs in the module until it returns.
 
 ## Predictions (written before any measurement)
 
