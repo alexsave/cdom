@@ -798,7 +798,7 @@ M = [
   ('simd-default-on', 'cdom.mk', 'CDOM_IMAGE_SIMD ?= 0', 'CDOM_IMAGE_SIMD ?= 1', LINK, 'FAIL CDOM_IMAGE_SIMD:'),  # the default is SIMD, not scalar
   ('simd-emit-alpha', 'src/cdom_image.c', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 255;', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 254;', IMGW, 'FAIL wasm_js_simd: '),  # the SIMD build's emit writes the wrong alpha
   ('sjlj-sp-kept-low', 'src/cdom_image_sjlj.c', '  sp_set(sp);', '  sp_set(sp_get() + 0 * sp);', UNIT, "FAIL the image module's guard"),
-  ('sjlj-eh-val-zero', 'src/cdom_image_sjlj_eh.c', 'jb->arg.val = val ? val : 1;', 'jb->arg.val = 0 * val;', IMGW, 'wasm_eh: jpeg-dqt-bad'),
+  ('sjlj-eh-val-zero', 'src/cdom_image_sjlj_eh.c', 'jb->arg.val = val ? val : 1;', 'jb->arg.val = 0 * val;', IMGW, 'wasm_eh: jpeg-dqt-bad', HANGS),  # setjmp answers 0, the first pass, so the decode starts again, meets the same error and jumps again, for good
   ('shim-image-swallows', 'shim/cdom.js', '      if (e !== IMAGE_THROW) throw e;\n', '', UNIT, 'a trap inside the body'),
   ('shim-image-answers-0', 'shim/cdom.js', '      if (e !== IMAGE_THROW) throw e;\n      return 1;', '      if (e !== IMAGE_THROW) throw e;\n      return 0;', UNIT, "FAIL the image module's guard"),
   ('shim-image-throws-error', 'shim/cdom.js', '    throw IMAGE_THROW;', '    throw new Error("image");', UNIT, "FAIL the image module's guard"),
