@@ -35,8 +35,8 @@
 #                 the link adds CDOM_<NAME>_LDFLAGS. Within a part no two files share a base name.
 #   CDOM_SHIM     the minified shim (shim/cdom.min.js) a page inlines
 #   CDOM_OPT      the optimization level of the APP_WASM rule (-Oz unless the app sets it)
-#   WASM_CC       a clang that targets wasm32 (Homebrew's llvm on macOS unless set, since Apple's clang does not;
-#                 clang elsewhere)
+#   WASM_CC       a clang that targets wasm32, with wasm-ld from LLVM 23 or later (Homebrew's llvm on macOS
+#                 unless set, since Apple's clang finds no wasm-ld; clang elsewhere)
 #   HOST_CC       the C compiler for cdom's build tools (tools/cdlits.c, tools/cdpage.c), cc unless set
 #   CDOM_LITS     the built tools/cdlits, which every link goes through: it strips the string table out of
 #                 the module and writes it beside it as $(APP_WASM).lits, for the page
@@ -100,8 +100,9 @@
 # beside the page, so it takes APP_WASM_SEPARATE := 1. Large apps, and hosts that cache a hashed .wasm
 # for long, opt out too.
 #
-# The APP_WASM rule first checks that WASM_CC builds a wasm32 module at all, and when it does not (Apple's
-# clang, or no wasm-ld), stops with the command that installs one, instead of a linker error.
+# The APP_WASM rule first checks that WASM_CC builds a wasm32 module with wasm-ld from LLVM 23 or later, and
+# when it does not (Apple's clang, no wasm-ld, or an older one), stops with what it found and the command
+# that installs one, instead of a linker error.
 # A new app: make -C path/to/cdom new DIR=path/to/app (tools/new.sh) writes a Makefile of the APP_* lines
 # its app needs and this include, src/app.c, src/app.css and a .gitignore: nothing this file could own.
 #
@@ -113,8 +114,9 @@
 # turns off clang's builtins and costs cdom code size); string.h works under it, so an app may add it.
 # Optimization, warnings and -Wl,--strip-all are the app's choice (APP_CFLAGS, APP_LDFLAGS, CDOM_OPT).
 CDOM ?= $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
-# Homebrew's llvm on macOS (Apple's clang has no wasm32), the clang on the PATH elsewhere (Linux
-# distributions' clang targets wasm32; wasm-ld comes with lld).
+# Homebrew's llvm on macOS (Apple's clang finds no wasm-ld), the clang on the PATH elsewhere (Linux
+# distributions' clang targets wasm32 and wasm-ld comes with lld, but cdom needs LLVM 23 or later, which
+# Ubuntu 24.04 and Debian 13 do not ship: apt.llvm.org's clang-23, with WASM_CC set to it).
 ifeq ($(shell uname -s),Darwin)
 WASM_CC ?= /opt/homebrew/opt/llvm/bin/clang
 else
@@ -289,13 +291,21 @@ cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(
 	$(CDOM_PAGE_TOOL) --css-list src $(call cdom_mk_q,$@.csslist)
 	$(call cdom_mk_page,$(cdom_mk_page_src),$@,$(cdom_mk_bundled),$(cdom_mk_wasm_url),$(cdom_mk_title),$(APP_WASM).lits)
 
-# The toolchain check before the APP_WASM rule compiles: a one-function module through WASM_CC, its
-# wasm32 target and wasm-ld. When that fails (Apple's clang finds no wasm-ld; WASM_CC is not there), make
-# stops with the command that installs a toolchain, not at a linker error.
-cdom_mk_toolchain = printf 'void f(void) {}\n' | $(WASM_CC) --target=wasm32 -nostdlib -Wl,--no-entry -x c -o '$@.probe' - \
-  2> /dev/null && rm -f '$@.probe' || { rm -f '$@.probe'; \
-  echo "cdom.mk: $(WASM_CC) cannot build a wasm32 module (that takes clang with the wasm32 target, and wasm-ld)" >&2; \
-  echo "cdom.mk: install them with: brew install llvm lld   (Debian or Ubuntu: apt install clang lld)" >&2; \
+# The toolchain check before the APP_WASM rule compiles: a module through WASM_CC, its wasm32 target and
+# wasm-ld, that takes the address of __rodata_start, which wasm-ld defines from LLVM 23 on (src/cdom.c,
+# cd_tmpz, needs it, so an older linker fails there). When the probe fails, make stops with what it found
+# and the command that installs a toolchain, not at a linker error: a WASM_CC that builds no wasm32 module
+# at all (Apple's clang finds no wasm-ld; WASM_CC is not there), or one whose wasm-ld is older than 23
+# (Ubuntu 24.04's clang 18, Debian 13's clang 19), named with its version.
+cdom_mk_install = install LLVM 23 or later: brew install llvm lld   (Debian or Ubuntu: clang-23 and lld-23 from https://apt.llvm.org, then WASM_CC=/usr/lib/llvm-23/bin/clang)
+cdom_mk_probe = $(WASM_CC) --target=wasm32 -nostdlib -Wl,--no-entry -x c -o '$@.probe' - 2> /dev/null
+cdom_mk_toolchain = printf 'extern const char __rodata_start[];\n__attribute__((export_name("f"))) const char *f(void) { return __rodata_start; }\n' \
+  | $(cdom_mk_probe) && rm -f '$@.probe' || { \
+  if printf 'void f(void) {}\n' | $(cdom_mk_probe); then rm -f '$@.probe'; \
+    echo "cdom.mk: $(WASM_CC) links with $$("$$($(WASM_CC) --target=wasm32 -print-prog-name=wasm-ld)" --version 2> /dev/null | head -1), which does not define __rodata_start: cdom needs wasm-ld from LLVM 23 or later" >&2; \
+  else rm -f '$@.probe'; \
+    echo "cdom.mk: $(WASM_CC) cannot build a wasm32 module (that takes clang with the wasm32 target, and wasm-ld)" >&2; fi; \
+  echo "cdom.mk: $(cdom_mk_install)" >&2; \
   exit 1; }
 
 # The sources, named. A pattern rule whose prerequisite neither exists nor is named by any rule does not
