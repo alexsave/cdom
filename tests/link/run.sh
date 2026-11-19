@@ -186,6 +186,29 @@ if ! mk "$mo/mk_app.wasm" PAGE= APP_MODULES='random file' -B 2> "$mo/mk_file.log
 elif [ "$(filebits "$mo/mk_app.wasm")" != 2 ]; then echo "FAIL cdom.mk ($inc): APP_MODULES file did not link cdom_file.c ($(filebits "$mo/mk_app.wasm") of its 2 exports)"; fail=1
 elif ! mk "$mo/mk_app.wasm" PAGE= -B 2> "$mo/mk_file.log" || [ "$(filebits "$mo/mk_app.wasm")" != 0 ]; then echo "FAIL cdom.mk ($inc): an app without APP_MODULES file carries some of cdom_file"; fail=1
 else echo "ok   cdom.mk ($inc): APP_MODULES file links cdom_file.c (its 2 exports), and an app without it has none of them"; fi
+# A module of several files and a part of its own (app.mk's PARTS module, tests/link/parts): its two own files
+# and the part's two link, the part built with its -w, -I and -D after the app's -Wall -Wextra -Werror, and the
+# module's link flags at the link (parts_lib_b is exported only by them); the objects are kept, and a second make
+# finds it up to date.
+partbits() { wasm-dis "$1" | grep -oE '\(export "parts_(own_a|own_b|lib_a|lib_b)"' | sort -u | wc -l | tr -d ' '; }
+pk() { mk "$mo/mk_app.wasm" PAGE= PARTS=1 "$@"; }
+if ! pk APP_MODULES='random parts' -B 2> "$mo/mk_parts.log"; then echo "FAIL cdom.mk ($inc): a module with a part does not build:"; cat "$mo/mk_parts.log"; fail=1
+elif [ "$(partbits "$mo/mk_app.wasm")" != 4 ]; then echo "FAIL cdom.mk ($inc): the module's files, its part's or its link flags are missing ($(partbits "$mo/mk_app.wasm") of 4 exports)"; fail=1
+elif ! [ -f "$mo/mk_app.wasm.cdom/parts/lib/lib_a.cdom.o" ]; then echo "FAIL cdom.mk ($inc): make deleted a part's object after the link (an intermediate file), so every build compiles the part again"; fail=1
+elif ! pk APP_MODULES='random parts' -q; then echo "FAIL cdom.mk ($inc): a second make builds the module with a part again"; fail=1
+elif ! pk -B 2> "$mo/mk_parts.log" || [ "$(partbits "$mo/mk_app.wasm")" != 0 ]; then echo "FAIL cdom.mk ($inc): an app without the parts module carries some of it"; fail=1
+else echo "ok   cdom.mk ($inc): a module's two own files and its part's two link, the part with its own -w, -I and -D under the app's -Werror, the link with the module's flags; up to date after; none of it without the module"; fi
+# The part's flags are the part's alone: an app file that includes its private header does not compile, and the
+# module's own files keep the app's -Werror (an unused variable in own_a.c stops the build; the same in the part does not).
+if pk APP_MODULES='random parts' EXTRA_SRC="$here/parts/app_sees.c" -B > "$mo/mk_parts_sees.log" 2>&1; then echo "FAIL cdom.mk ($inc): an app file sees a module part's -I"; fail=1
+elif ! grep -q "'parts_private.h' file not found" "$mo/mk_parts_sees.log"; then echo "FAIL cdom.mk ($inc): app_sees.c failed for another reason:"; cat "$mo/mk_parts_sees.log"; fail=1
+else echo "ok   cdom.mk ($inc): a module part's -I does not reach the app's files"; fi
+if pk APP_MODULES='random parts' EXTRA_CFLAGS=-DPARTS_WARN -B > "$mo/mk_parts_warn.log" 2>&1; then echo "FAIL cdom.mk ($inc): a module's own file built with a warning under -Werror"; fail=1
+elif ! grep -q "own_a.c.*unused_own" "$mo/mk_parts_warn.log" || grep -q "unused_lib" "$mo/mk_parts_warn.log"; then echo "FAIL cdom.mk ($inc): the warning was not own_a.c's alone:"; cat "$mo/mk_parts_warn.log"; fail=1
+else echo "ok   cdom.mk ($inc): a module's own files keep the app's -Werror, and its part's -w is the part's alone"; fi
+if pk APP_MODULES='random parts' CDOM_PARTS_LIB_SRC="$here/parts/lib/lib_a.c $here/parts/dup/lib_a.c" -B > "$mo/mk_parts_dup.log" 2>&1; then echo "FAIL cdom.mk ($inc) took a part that names two files of one base name"; fail=1
+elif ! grep -q 'part lib of module parts names two files called lib_a.c' "$mo/mk_parts_dup.log"; then echo "FAIL cdom.mk ($inc) refused the doubled part for another reason:"; cat "$mo/mk_parts_dup.log"; fail=1
+else echo "ok   cdom.mk ($inc) stops at a part that names two files of one base name"; fi
 if [ "$(mk PAGE= 2>&1)" != app-goal ]; then echo "FAIL cdom.mk ($inc) took the default goal from the app's first rule"; fail=1
 else echo "ok   cdom.mk ($inc) leaves the app's first rule its default goal"; fi
 if mk "$mo/mk_app.wasm" PAGE= APP_MODULES='random bogus' -B > "$mo/mk_bogus.log" 2>&1; then echo "FAIL cdom.mk ($inc) took APP_MODULES naming no module"; fail=1
