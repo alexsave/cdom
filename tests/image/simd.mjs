@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 const names = ['idct4 (jsimd_idct_4x4 against jpeg_idct_4x4)', 'idct2 (jsimd_idct_2x2 against jpeg_idct_2x2)',
   'ycc random widths (jsimd_color_deconvert against libjpeg ycc_extrgbx_convert)', 'ycc every (y, cb, cr)',
-  'unfilter (every filter, 1 to 8 bytes a pixel)', 'rgb to rgba', 'scaler across', 'scaler down'];
+  'unfilter (every filter, 1 to 8 bytes a pixel)', 'rgb to rgba', 'scaler across', 'scaler down', 'scaler divide (in doubles)'];
 const { instance } = await WebAssembly.instantiate(fs.readFileSync(process.argv[2]), {});
 const x = instance.exports;
 let bad = 0;

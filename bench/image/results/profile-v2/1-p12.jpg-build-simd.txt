@@ -1,0 +1,27 @@
+# p12.jpg build-simd Chrome/153.0.8010.12: 8 runs, resize 86.7 ms mean, sampled 104.1 ms per run
+ 67.0%     58.7 ms  decode_mcu
+ 15.1%     13.3 ms  cd_image_scaler_row
+  7.7%      6.7 ms  jsimd_idct_2x2
+  5.2%      4.6 ms  jsimd_idct_4x4
+  2.7%      2.4 ms  decompress_onepass
+  0.9%      0.8 ms  jsimd_color_deconvert
+  0.6%      0.5 ms  window.arm
+  0.2%      0.2 ms  fetch
+  0.1%      0.1 ms  process_data_simple_main
+  0.1%      0.1 ms  sep_upsample
+  0.1%      0.1 ms  jpeg_read_scanlines
+  0.0%      0.0 ms  arrayBuffer
+  0.0%      0.0 ms  js-to-wasm:ii:
+  0.0%      0.0 ms  jpeg_fill_bit_buffer
+  0.0%      0.0 ms  jinit_master_decompress
+  0.0%      0.0 ms  jinit_d_main_controller
+  0.0%      0.0 ms  cd_image_run
+  0.0%      0.0 ms  _.<computed>
+  0.0%      0.0 ms  resize
+  0.0%      0.0 ms  cd_image_resize
+  0.0%      0.0 ms  cd_image_jpeg_resize
+  0.0%      0.0 ms  cd_image_guard
+  0.0%      0.0 ms  wasm-to-js
+  0.0%      0.0 ms  je
+  0.0%      0.0 ms  body
+  0.0%      0.0 ms  jpeg_start_decompress
