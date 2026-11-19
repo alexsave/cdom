@@ -93,6 +93,24 @@ Falsifier: a measured value outside its range.
 Prediction A1: `p12.png` with the check and with the stream's end not read differ by under 1%.
 Falsifier: 2% or more.
 
+## Predictions for the optimization level (written before measuring, after the first bench)
+
+The cloud profile (x86) puts Huffman decoding at 60 to 80% of JPEG time and inflate at 48% of PNG time, neither of which SIMD can touch, so the compiler's level is the lever left for them.
+Four arms of the bench's C path (js), the same inputs and harness:
+
+- `oz`: as now, cdom.mk's `-Oz` for everything.
+- `o2` and `o3`: the app built at `-O2` or `-O3` (`CDOM_OPT`).
+- `mix`: third_party (the `vendor` and `miniz` parts) at `-O2`, carried by the parts' own flags after `CDOM_OPT`; cdom's files, the app and the core at `-Oz`.
+
+| arm | p12.jpg | p12p.jpg | p48.jpg | p12.png | module brotli |
+| --- | --- | --- | --- | --- | --- |
+| o2 against oz | 15 to 30% faster | 15 to 30% faster | 15 to 30% faster | 10 to 25% faster | 36 to 44 KB (from 27.6) |
+| o3 against o2 | within 5% | within 5% | within 5% | within 5% | 2 to 8 KB more than o2 |
+| mix against o2 | within 5% | within 5% | within 5% | within 10% (the PNG unfilter is cdom's, at -Oz) | 1 to 3 KB less than o2 |
+
+Falsifier for each cell: a median outside its range.
+If mix is within 5% of o2 on every input, the proposal is a per-module level in cdom.mk (third-party parts at -O2 by default), not built in this PR.
+
 ## Results
 
 ### The spike (bench/image/sjlj.mjs)
