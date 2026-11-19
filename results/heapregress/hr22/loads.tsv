@@ -1,0 +1,7 @@
+benchmark	framework	load_before	load_after	waited_s	gate
+22_	cdom-hrbase	3.63	6.85	270	ok
+22_	cdom-hr	3.91	6.27	470	ok
+22_	cdom-hrpbase	3.81	5.03	230	ok
+22_	cdom-hrp	3.75	3.01	530	ok
+22_	cdom-hrp-oldshim	3.01	3.62	0	ok
+22_	cdom-hrpbase-newshim	3.62	3.15	0	ok

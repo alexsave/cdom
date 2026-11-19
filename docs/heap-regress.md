@@ -52,6 +52,25 @@ tools/heapregress_probe.mjs loads an entry, clicks #run once as the harness does
 - And `performance.measureUserAgentSpecificMemory()` does not count wasm memory at all: growing the memory by 16 pages (1 MiB) after the measure and measuring again moved it by 0.5 KB on the base and 6 KB on main, noise of the measure (GROW=16 in the probe).
   So no change to the allocator can move 22_run-memory, and the cause is in the JS heap or the DOM.
 
+### 22_run-memory, paired, in one session
+
+tools/pair.sh ran 22_run-memory for six entries in one pass (TAG=hr22, 15 iterations each, every start gated on a load under 4, Chrome 157.0.8103.79): the keyed entry of the base and of main, the same two with cd_heap_probe linked, and the two shims crossed (main's C with the base's shim, the base's C with main's shim), to split a JS cost from a C one.
+
+| entry | median MB | q1 to q3 |
+| --- | ---: | --- |
+| base (b59e476) | 1.841 | 1.821 to 1.843 |
+| main (7279030) | 1.843 | 1.840 to 1.843 |
+| base, probe | 1.842 | 1.840 to 1.844 |
+| main, probe | 1.842 | 1.807 to 1.844 |
+| main's C, the base's shim | 1.842 | 1.838 to 1.843 |
+| the base's C, main's shim | 1.844 | 1.843 to 1.844 |
+
+The six medians are within 0.003 MB (0.2%) of each other: the 3 to 4% of #43's table does not reproduce.
+#43's base read 1.75 and 1.79 MB; the base reads 1.84 here, the same as main did then and does now, so it was the base side of that table that was low, not main that grew.
+Every entry has a low tail (minimums 1.73 to 1.79), iterations where the measure caught less; a pass whose base landed there more often reads as main costing more.
+Those runs' raw logs were not kept (results/pairs is not committed), so why that pass's base sat low cannot be settled now; this pass's logs are in results/heapregress/hr22.
+Verdict: there is no 22_run-memory regression to fix, and none of the allocator's could show in it, since the measure does not count wasm memory; main's heap after the click is in fact one page (64 KiB) smaller than the base's.
+
 ### Where the keyed app's bytes went
 
 tools/heapregress_build.sh builds each module twice: as shipped, and through the same link with wasm-opt -Oz run by hand with `-g`, so the functions keep their names (clang runs wasm-opt -Oz after the link whenever it is on PATH, which drops the name section; both builds have byte-identical code sections).
