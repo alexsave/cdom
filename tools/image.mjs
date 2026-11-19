@@ -78,6 +78,25 @@ try {
       ok(r.status === 0 && r.diff === -1, `${name}: then a small JPEG decodes exactly`, JSON.stringify(r));
     }
   }
+  // The example (demo/photo, README.md "image"): a photo picked in its file input, as a user picks one, comes back
+  // resized, encoded and shown, and a file that is not an image is said in words.
+  execFileSync('make', ['-s', '-C', path.join(top, 'demo/photo')], { stdio: 'inherit' });
+  const demo = path.join(top, 'demo/photo/build/index.html');
+  const pickFile = async (file) => {
+    const { result: { result: { objectId } } } = await b.send('Runtime.evaluate', { expression: 'document.querySelector("input[type=file]")' });
+    await b.send('DOM.setFileInputFiles', { files: [file], objectId });
+  };
+  const note = () => b.evaluate('document.querySelector("p").textContent');
+  const waitNote = async (want) => { for (let i = 0; i < 400; i++) { const n = await note(); if (n === want) return n; await sleep(25); } return note(); };
+  await b.send('Page.navigate', { url: 'file://' + demo });
+  for (let i = 0; i < 200 && !(await b.evaluate('!!document.querySelector("input[type=file]")')); i++) await sleep(25);
+  const exif = cases.find((c) => c[0] === 'jpeg-exif6');
+  await pickFile(exif[1]);
+  const done = await waitNote('Resized in C.');
+  const bg = await b.evaluate('getComputedStyle(document.querySelector("div")).backgroundImage');
+  ok(done === 'Resized in C.' && bg.startsWith('url("blob:'), 'demo/photo: a picked JPEG (EXIF 6) is resized in C, encoded and shown', `${done}, ${bg.slice(0, 40)}`);
+  await pickFile(path.join(dir, 'cases.tsv'));
+  ok(await waitNote('That file is not a JPEG or a PNG.') === 'That file is not a JPEG or a PNG.', 'demo/photo: a file that is not an image is said in words');
 } finally {
   await b.close();
   srv.close();
