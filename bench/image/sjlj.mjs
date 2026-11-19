@@ -5,6 +5,7 @@
 // on a fresh instance; every run waits for the 1-minute load to be under LOADMAX (default 4). It also times a fatal
 // error (inputs/dqt-bad.jpg when it is there) and checks every way answers CORRUPT for it.
 // Usage: node bench/image/sjlj.mjs [rounds=21] [input=inputs/p12.jpg] [bad=../../tests/out/image/inputs/dqt-bad.jpg]
+// ADLER=1 compares the PNG adler32 check instead (A1): js against bench/image/adler's build, on inputs/p12.png.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,7 +16,10 @@ const input = path.resolve(here, process.argv[3] || 'inputs/p12.jpg');
 const badFile = path.resolve(here, process.argv[4] || '../../tests/out/image/inputs/dqt-bad.jpg');
 const LOADMAX = +(process.env.LOADMAX || 4);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const ways = {
+const ways = process.env.ADLER ? {   // A1: the adler32 checked (js) against the stream's end not read (bench/image/adler)
+  js: path.join(here, 'build-js/app.wasm'),
+  nocheck: path.join(here, 'adler/out/app.wasm'),
+} : {
   js: path.join(here, 'build-js/app.wasm'),
   eh: path.join(here, 'build-eh/app.wasm'),
   ems: path.join(here, 'sjlj-ems/out/app.wasm'),
@@ -49,7 +53,8 @@ function resize(x, bytes) {
   return { ms, st };
 }
 const med = (v) => { const s = [...v].sort((a, b) => a - b); return s[s.length >> 1]; };
-const times = { js: [], eh: [], ems: [] }, errs = { js: [], eh: [], ems: [] };
+const times = {}, errs = {};
+for (const w of Object.keys(ways)) { times[w] = []; errs[w] = []; }
 const names = Object.keys(ways);
 for (let r = 0; r < rounds; r++) {
   for (let k = 0; k < names.length; k++) {

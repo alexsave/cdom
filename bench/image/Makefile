@@ -3,8 +3,12 @@
 # CDOM_IMAGE_SIMD=1 (the hand-written wasm SIMD loops, docs/image-simd-hand.md). make inputs writes inputs/ (inputs.py, seeded).
 CDOM := $(abspath ../..)
 SJLJ ?= js
+# LEVEL (the optimization-level arm): oz (cdom.mk's -Oz, the default), o2, o3, or mix (third_party's parts at -O2,
+# the rest at -Oz): pages build-js-o2 and so on.
+LEVEL ?= oz
+SUF := $(if $(filter oz,$(LEVEL)),,-$(LEVEL))
 SIMD ?= 0
-DIR := build-$(if $(filter 1,$(SIMD)),simd,$(SJLJ))
+DIR := $(if $(filter 1,$(SIMD)),build-simd,build-$(SJLJ)$(SUF))
 APP_WASM := $(DIR)/app.wasm
 APP_PAGE := $(DIR)/index.html
 APP_PAGE_SRC := page.html
@@ -12,14 +16,21 @@ APP_SRC := app.c
 APP_MODULES := image
 APP_CFLAGS := -Wall -Wextra -Werror
 CDOM_IMAGE_SJLJ := $(SJLJ)
+CDOM_OPT := $(if $(filter o2,$(LEVEL)),-O2,$(if $(filter o3,$(LEVEL)),-O3,-Oz))
 CDOM_IMAGE_SIMD := $(SIMD)
 include $(CDOM)/cdom.mk
+ifeq ($(LEVEL),mix)
+CDOM_IMAGE_VENDOR_CFLAGS += -O2
+CDOM_IMAGE_MINIZ_CFLAGS += -O2
+endif
 all:
 	$(MAKE) SJLJ=js page
 	$(MAKE) SJLJ=eh page
+levels:
+	for l in o2 o3 mix; do $(MAKE) SJLJ=js LEVEL=$$l page || exit 1; done
 page: $(APP_PAGE)
 simd:
 	$(MAKE) SIMD=1 page
 inputs:
 	python3 -I inputs.py inputs
-.PHONY: all page simd inputs
+.PHONY: all levels page simd inputs
