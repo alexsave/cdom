@@ -7,6 +7,12 @@ Usage: python3 -I bench/image/inputs.py [OUT_DIR]      (default bench/image/inpu
   p12p.jpg  the same pixels, progressive (optimized)   how editors and some browsers save
   p48.jpg   8064 x 6048, baseline, 4:2:0, quality 90   a 48 MP camera's full-size JPEG
   p12.png   4032 x 3024 RGB, compress level 6          a large PNG (a screenshot or an edited export)
+  The progressive set (docs/image-progressive-speed.md), from the same scene and grain (no more random draws):
+  p12p444.jpg  p12's pixels, progressive, 4:4:4 (optimized)
+  p24p.jpg     6000 x 4000, progressive, 4:2:0 (optimized)      a 24 MP camera's progressive JPEG
+  p12pmany.jpg p12.jpg's coefficients, progressive with 26 scans (jpegtran -scans, MANY_SCANS below)
+  p48p.jpg     p48.jpg's coefficients, progressive (jpegtran -progressive, its standard script)
+  jpegtran is $JPEGTRAN (default: jpegtran on the PATH).
 
 Ported from raceclub's tools/resize_inputs.py (its seed and its scene), with one change for the rule on randomness:
 every draw is in logical units or of a fixed count, so the number of draws does not depend on the size. The scene is
@@ -14,7 +20,7 @@ numbers in 0..1; the film grain is one GRAIN_TILE x GRAIN_TILE tile per channel,
 image (raceclub drew width x height bytes per image). One random source: rng = random.Random(SEED), the one named
 seed; fix it to another constant in one line for another set of inputs. Pillow; a bench tool, never shipped.
 """
-import os, random, sys
+import os, random, subprocess, sys
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 SEED = 20261118
@@ -98,6 +104,20 @@ def with_grain(img, tile):
             g.paste(tile, (x, y))
     return ImageChops.add(img, g, 1.0, -128)
 
+# 26 scans: the DC, luma's first bands split twelve ways, chroma in three, then two refinements in other bands.
+MANY_SCANS = """0,1,2: 0-0, 0, 1;
+0: 1-1, 0, 2; 0: 2-2, 0, 2; 0: 3-3, 0, 2; 0: 4-5, 0, 2; 0: 6-9, 0, 2; 0: 10-14, 0, 2;
+0: 15-20, 0, 2; 0: 21-27, 0, 2; 0: 28-35, 0, 2; 0: 36-44, 0, 2; 0: 45-54, 0, 2; 0: 55-63, 0, 2;
+1: 1-5, 0, 1; 1: 6-63, 0, 1; 2: 1-63, 0, 1;
+0,1,2: 0-0, 1, 0;
+0: 1-9, 2, 1; 0: 10-27, 2, 1; 0: 28-63, 2, 1;
+0: 1-5, 1, 0; 0: 6-14, 1, 0; 0: 15-35, 1, 0; 0: 36-63, 1, 0;
+1: 1-63, 1, 0; 2: 1-63, 1, 0;
+"""
+
+def jpegtran(args, src, dst):
+    subprocess.run([os.environ.get("JPEGTRAN", "jpegtran")] + args + ["-outfile", dst, src], check=True)
+
 def save_jpeg(img, path, progressive):
     img.save(path, "JPEG", quality=90, subsampling=2, progressive=progressive, optimize=progressive)
 
@@ -111,9 +131,16 @@ def main():
     save_jpeg(p12, os.path.join(out, "p12.jpg"), False)
     save_jpeg(p12, os.path.join(out, "p12p.jpg"), True)
     p12.save(os.path.join(out, "p12.png"), "PNG", compress_level=6)
+    p12.save(os.path.join(out, "p12p444.jpg"), "JPEG", quality=90, subsampling=0, progressive=True, optimize=True)
     del p12
     save_jpeg(with_grain(render(scene, 8064, 6048), tile), os.path.join(out, "p48.jpg"), False)
-    for n in ["p12.jpg", "p12p.jpg", "p48.jpg", "p12.png"]:
+    save_jpeg(with_grain(render(scene, 6000, 4000), tile), os.path.join(out, "p24p.jpg"), True)
+    script = os.path.join(out, "many-scans.txt")
+    open(script, "w").write(MANY_SCANS)
+    jpegtran(["-scans", script], os.path.join(out, "p12.jpg"), os.path.join(out, "p12pmany.jpg"))
+    os.remove(script)
+    jpegtran(["-progressive"], os.path.join(out, "p48.jpg"), os.path.join(out, "p48p.jpg"))
+    for n in ["p12.jpg", "p12p.jpg", "p48.jpg", "p12.png", "p12p444.jpg", "p24p.jpg", "p12pmany.jpg", "p48p.jpg"]:
         im = Image.open(os.path.join(out, n))
         print(f"{n}\t{im.size[0]}x{im.size[1]}\t{os.path.getsize(os.path.join(out, n))}\tprogressive={im.info.get('progressive', 0)}")
 
