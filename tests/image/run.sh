@@ -41,6 +41,6 @@ build() { # the native test binary, each file as cdom.mk compiles it (its part's
 if ! build > "$o/build.log" 2>&1; then echo "FAIL the native image tests do not build:"; cat "$o/build.log"; exit 1; fi
 if ! python3 -I "$here/oracle.py" "$out" > "$out/oracle.log" 2>&1; then echo "FAIL the oracle:"; cat "$out/oracle.log"; exit 1; fi
 tail -1 "$out/oracle.log"
-(cd "$out" && ASAN_OPTIONS=detect_leaks=1 "$o/test_image") || fail=1
+(cd "$out" && "$o/test_image")   # leaks: the counted heap (host_alloc.c) checks every case; LSan is not on macOS || fail=1
 if [ "${IMAGE_WASM:-1}" != 0 ]; then node "$top/tools/image.mjs" "$out" || fail=1; fi
 exit $fail

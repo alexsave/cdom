@@ -36,7 +36,7 @@ for t in jpeg png; do
 done
 secs="${1:-600}"
 cd "$out"
-export ASAN_OPTIONS="quarantine_size_mb=16:detect_leaks=1"
+export ASAN_OPTIONS="quarantine_size_mb=16"   # leaks: the targets check the counted heap
 for t in jpeg png; do
   ./fuzz_$t "corpus_$t" "seeds_$t" -max_total_time="$secs" -timeout=20 -rss_limit_mb=320 -malloc_limit_mb=100 -max_len=200000 \
     -artifact_prefix="$out/crash-$t-" > "$t.log" 2>&1 &
