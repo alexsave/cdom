@@ -93,6 +93,43 @@ Falsifier: a measured value outside its range.
 Prediction A1: `p12.png` with the check and with the stream's end not read differ by under 1%.
 Falsifier: 2% or more.
 
+## Results
+
+### The spike (bench/image/sjlj.mjs)
+
+`cd_image_resize` on `p12.jpg` to a 900 box, scalar wasm at -Oz, Node 26 (V8), 21 interleaved rounds, a fresh instance each, 1-minute load 2.8 to 2.9:
+
+| way | median ms | min | max | one fatal error |
+| --- | --- | --- | --- | --- |
+| js (the explicit guard, the default) | 59.5 | 59.3 | 62.4 | 0.01 ms |
+| eh (wasm exception handling) | 59.5 | 59.3 | 62.3 | 0.01 ms |
+| ems (emscripten's lowering, bench only) | 59.4 | 59.2 | 62.3 | 0.01 ms |
+
+- S1 and S2: confirmed; the three are within 0.2%, so js stays the default.
+- S3: confirmed (0.01 ms an error; the heap and the stack pointer checked by tools/alloc.mjs, tools/image.mjs, tests/unit and tools/legacy.mjs, the last on wasm2js too).
+- S4: confirmed; the eh module is 123 bytes larger raw, 37 brotli.
+
+### Size (bench/image/sizes/run.sh, -Oz, stripped, scalar)
+
+| build | raw | brotli |
+| --- | --- | --- |
+| no image code | 2,696 | 1,353 |
+| both formats, js | 82,563 | 28,935 |
+| both formats, eh | 82,686 | 28,972 |
+| JPEG only | 72,205 | 24,515 |
+| PNG only | 13,912 | 6,420 |
+
+- Z1: the module adds 27.6 KB brotli (79.9 KB raw); confirmed (26 to 32).
+- Z2: the JPEG half adds 23.2 KB and the PNG half 5.1 KB; both confirmed.
+  A PNG-only app would save 22.5 KB brotli with a split module; a JPEG-only app 4.4 KB.
+- The shim's two functions: 151 bytes minified, 50 brotli, on every page.
+
+### Tests
+
+- tests/image/run.sh: the vendored tree made again from the archives and equal; 9,182 native checks (ASan, UBSan), every image equal to the exact integer oracle to the byte, JPEG against djpeg 3.2.1 with SIMD off at the same scale; tools/image.mjs: the 65 cases in Chrome both ways, equal to the byte, 300 errors in a row, NO_ROOM on a capped heap and on modules whose memory.grow refuses (`--max-memory`), both ways, and demo/photo driven as a user picks a file.
+- The fuzz targets, 300 s each: no crash, leak or limit (JPEG 4,213 runs, PNG 34,147).
+  With the budget taken out, the item-1 file (a 8000 x 8000 baseline whose first scan has one component) stops the JPEG target at once: libFuzzer's out-of-memory on a malloc of 128,000,047 bytes; with it, the file is TOO_BIG.
+
 ## Review of raceclub PR #10
 
 How this was checked: I read every file in src/photo, test/photo, fuzz and bench/resize/lowpeak, the PR body, and raceclub main's PERF.md, RESIZE-BENCH.md and tools/resize_inputs.py.
