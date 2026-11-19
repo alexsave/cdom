@@ -4,12 +4,19 @@ fail for that reason (its message is matched), and the source is restored after 
 on an error. Mutants run in parallel, each worker in a private copy of the tracked tree (so the real
 tree is never mutated, and an interrupted run leaves nothing behind); the test drivers serve on free
 ports and Chrome takes a free debugging port, so the workers never collide.
+A mutant whose text to mutate is not in its file exactly once stops the run before any mutant runs.
+A test killed at TEST_TIMEOUT is not a catch, unless the mutant's entry ends in HANGS: the hang is then its
+expected symptom (a C loop that never ends), and the timeout or its failure message both count.
 Usage: python3 tools/mutate.py [-j N] [name ...]   (N workers, default half the cores)"""
 import subprocess, sys, pathlib, os, shutil, tempfile, threading, queue, signal
 
 top = pathlib.Path(__file__).resolve().parent.parent
-TEST_TIMEOUT = 150 # s: unit.mjs takes about 10 on a passing tree and waits at most 60 for a broken page
+# s: the test command alone (not the build). unit.mjs takes about 10 on a passing tree and waits at most 60 for a
+# broken page; tests/link/run.sh and the wasm image suites take minutes on a loaded machine, and a test cut off
+# there was never really run, so a timeout is a miss unless the entry says HANGS.
+TEST_TIMEOUT = 600
 HUNG = -999
+HANGS = 'hangs' # an entry's optional seventh field: the mutant makes the test hang, and that is the catch
 UNIT = ['node', 'tools/unit.mjs']
 FUZZ = ['node', 'tools/fuzz.mjs']
 LINK = ['tests/link/run.sh']
@@ -442,15 +449,15 @@ M = [
   ('mk-wasm-no-libc', 'cdom.mk', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -I$(CDOM)/src', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   # cdlits, which the rule runs on the linked module, refuses a module with no cdom in it before run.sh can look at its exports
   ('mk-wasm-no-cdom', 'cdom.mk', 'cdom_mk_app_src = $(APP_SRC) $(CDOM_SRC)', 'cdom_mk_app_src = $(APP_SRC)', LINK, "cdlits: not a cdom module"),
-  ('mk-modules-dropped', 'cdom.mk', ' $(addprefix $(CDOM)/src/cdom_,$(addsuffix .c,$(APP_MODULES)))', '', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
+  ('mk-modules-dropped', 'cdom.mk', 'cdom_mk_app_src = $(APP_SRC) $(CDOM_SRC) $(foreach m,$(APP_MODULES),$(CDOM_$(call cdom_mk_up,$(m))_SRC))', 'cdom_mk_app_src = $(APP_SRC) $(CDOM_SRC)', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   ('mk-modules-unchecked', 'cdom.mk', 'cdom_mk_known = $(if $(cdom_mk_unknown),', 'cdom_mk_known = $(if ,', LINK, 'FAIL cdom.mk (first) refused APP_MODULES for another reason'),  # make still stops, at the missing file, without saying why
   ('mk-goal-taken', 'cdom.mk', '\n.cdom-mk-sources:', '\ncdom-mk-sources:', LINK, 'FAIL cdom.mk (first) took the default goal'),
   ('mk-read-early', 'cdom.mk', 'cdom_mk_app_src = $(APP_SRC)', 'cdom_mk_app_src := $(APP_SRC)', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   ('mk-target-early', 'cdom.mk', '%.wasm: $$(call cdom_mk_for,$$(APP_WASM),', '$(APP_WASM): $$(call cdom_mk_for,$$(APP_WASM),', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   ('mk-page-early', 'cdom.mk', '%.html: $$(call cdom_mk_for,$$(APP_PAGE),', '$(APP_PAGE): $$(call cdom_mk_for,$$(APP_PAGE),', LINK, 'FAIL cdom_page (first) refused a page whose marker is alone'),
   ('mk-any-wasm', 'cdom.mk', 'cdom_mk_for = $(if $(filter $(2),$(1)),$(3),$(2).cdom-mk-none)', 'cdom_mk_for = $(3)', LINK, "FAIL cdom.mk's rules built a .wasm or .html that is not APP_WASM or APP_PAGE"),
-  ('mk-missing-unnamed', 'cdom.mk', '\n.cdom-mk-sources: $$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(CDOM_LITS)) \\\n  $$(if $$(APP_PAGE),$$(cdom_mk_page_src) $$(CDOM_PAGE_TOOL) $$(APP_PAGE).csslist)\n', '\n', LINK, 'FAIL cdom.mk built an app whose APP_SRC names a file that is not there'),  # the rule no longer applies, and the module built before is kept
-  ('mk-rebuilt', 'cdom.mk', '$$(cdom_mk_known)$$(cdom_mk_app_src) $$(CDOM_HEADERS) $$(CDOM_LITS))', '$$(cdom_mk_known)$$(cdom_mk_app_src) $$(CDOM_HEADERS) $$(CDOM_LITS) .cdom-mk-sources)', LINK, "FAIL cdom.mk's APP_WASM rule (first): a second make builds the module again"),
+  ('mk-missing-unnamed', 'cdom.mk', '\n.cdom-mk-sources: $$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(cdom_mk_objs) $$(CDOM_LITS)) \\\n  $$(if $$(APP_PAGE),$$(cdom_mk_page_src) $$(CDOM_PAGE_TOOL) $$(APP_PAGE).csslist)\n', '\n', LINK, 'FAIL cdom.mk built an app whose APP_SRC names a file that is not there'),  # the rule no longer applies, and the module built before is kept
+  ('mk-rebuilt', 'cdom.mk', '$$(cdom_mk_known)$$(cdom_mk_app_src) $$(cdom_mk_objs) $$(CDOM_HEADERS) $$(CDOM_LITS))', '$$(cdom_mk_known)$$(cdom_mk_app_src) $$(cdom_mk_objs) $$(CDOM_HEADERS) $$(CDOM_LITS) .cdom-mk-sources)', LINK, "FAIL cdom.mk's APP_WASM rule (first): a second make builds the module again"),
   # The page's module (cdom.mk's APP_PAGE rule, tools/cdpage): bundled by default, or named (APP_WASM_SEPARATE)
   ('mk-bundle-off', 'cdom.mk', 'cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))', 'cdom_mk_bundled =', LINK, 'FAIL APP_PAGE (first) bundled into a page that loads its module by URL'),
   ('mk-separate-ignored', 'cdom.mk', 'cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))', 'cdom_mk_bundled = $(APP_WASM)', LINK, 'FAIL cdom_page (first) refused a page whose marker is alone'),
@@ -458,8 +465,8 @@ M = [
   ('mk-page-no-wasm-dep', 'cdom.mk', '$$(CDOM_PAGE_TOOL) $$(APP_WASM))', '$$(CDOM_PAGE_TOOL))', LINK, 'FAIL the default page (first), bundled, is up to date with a newer module'),
   ('mk-no-default-page', 'cdom.mk', 'cdom_mk_page_src = $(or $(APP_PAGE_SRC),$(CDOM_PAGE))', 'cdom_mk_page_src = $(APP_PAGE_SRC)', LINK, 'FAIL the default page (first) does not build'),
   ('mk-title-full-name', 'cdom.mk', '$(or $(APP_TITLE),$(basename $(notdir $(APP_WASM))))', '$(or $(APP_TITLE),$(notdir $(APP_WASM)))', LINK, 'FAIL the default page (first), bundled, is not shim/page.html'),
-  ('mk-wasm-intermediate', 'cdom.mk', '$$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(CDOM_LITS))', '$$(if $$(APP_WASM),$$(cdom_mk_app_src) $$(CDOM_LITS))', LINK, "FAIL the starter's page does not start its bundled module"),  # make deletes the module after the page
-  ('mk-toolchain-unchecked', 'cdom.mk', '\t@$(cdom_mk_toolchain)\n', '', LINK, 'FAIL cdom.mk with WASM_CC=/usr/bin/clang, which cannot build wasm32, did not stop'),
+  ('mk-wasm-intermediate', 'cdom.mk', '$$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src) $$(cdom_mk_objs) $$(CDOM_LITS))', '$$(if $$(APP_WASM),$$(cdom_mk_app_src) $$(cdom_mk_objs) $$(CDOM_LITS))', LINK, "FAIL the starter's page does not start its bundled module"),  # make deletes the module after the page
+  ('mk-toolchain-unchecked', 'cdom.mk', '\t@$(cdom_mk_toolchain)\n\t$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS)', '\t$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS)', LINK, 'no_wasm32_clang, which cannot build wasm32, did not stop'),  # the APP_WASM rule's check, against tests/link/no_wasm32_clang (a compiler with no wasm32 target on every OS)
   ('page-url-unchecked', 'tools/cdpage.c', '  if (a->wasm && !wasms) {', '  if (0) {', LINK, 'FAIL APP_PAGE (first) bundled into a page that loads its module by URL'),
   ('page-url-unnamed', 'tools/cdpage.c', '    if (have_loads)\n', '    if (0)\n', LINK, 'FAIL APP_PAGE (first) refused a page that loads its module by URL with another message'),
   ('page-two-wasm-taken', 'tools/cdpage.c', '      if (++wasms > 1 || find(', '      if (++wasms > 9 && find(', LINK, 'FAIL cdom_page (first) took the two_wasm page'),
@@ -812,7 +819,8 @@ def build_and_run(root, cmd, minify=False):
   if b.returncode: return 1, 'BUILD FAILED ' + b.stderr[-400:]
   # A mutant can make C loop forever (a cycle in a list it walks): the page then never answers, and
   # the run would wait on it for good. The test runs in a process group of its own (Chrome with it),
-  # killed whole past TEST_TIMEOUT; a hang is a broken module, so it counts as caught (HUNG).
+  # killed whole past TEST_TIMEOUT. That counts as caught only for an entry marked HANGS (the worker decides):
+  # for any other a timeout is a test that never finished, so it says nothing about the mutant.
   t = subprocess.Popen(cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
   try:
     out, _ = t.communicate(timeout=TEST_TIMEOUT)
@@ -858,6 +866,10 @@ only = set(args)
 unknown = sorted(only - {m[0] for m in M})
 if unknown: sys.exit('mutate.py: no mutant named ' + ', '.join(unknown)) # else a mistyped list runs nothing and passes
 todo = [m for m in M if not only or m[0] in only]
+# A mutant whose text is gone (the file moved on) would test nothing: stop before running any.
+dead = [f'{m[0]}: the text to mutate is in {m[1]} {(top / m[1]).read_text().count(m[2])} times, not once' for m in todo
+        if (top / m[1]).read_text().count(m[2]) != 1]
+if dead: sys.exit('mutate.py: FAIL dead mutants\n  ' + '\n  '.join(dead))
 results = {}
 lock = threading.Lock()
 work = queue.Queue()
@@ -869,12 +881,13 @@ def worker(w):
   root = base / f'w{w}'
   copy_tree(root)
   while True:
-    try: k, (name, f, old, new, cmd, want) = work.get_nowait()
+    try: k, (name, f, old, new, cmd, want, *opts) = work.get_nowait()
     except queue.Empty: return
+    hangs = HANGS in opts
     p = root / f
     src = p.read_text()
     if src.count(old) != 1:
-      line, ok = f'SKIP {name}: the text to mutate is not in {f} once', False
+      line, ok = f'FAIL {name}: the text to mutate is not in {f} once', False
     else:
       try:
         p.write_text(src.replace(old, new))
@@ -882,14 +895,15 @@ def worker(w):
       finally:
         p.write_text(src)
         touched = restore_tree(root)
-      ok = code == HUNG or (code != 0 and want in out)
-      why = '' if ok else f' (exit {code}; ' + ('the FAIL text is there' if want in out else 'no ' + repr(want)) + ')'
+      ok = hangs if code == HUNG else code != 0 and want in out
+      why = '' if ok else f' (timed out after {TEST_TIMEOUT} s, and the entry is not marked HANGS)' if code == HUNG \
+        else f' (exit {code}; ' + ('the FAIL text is there' if want in out else 'no ' + repr(want)) + ')'
       if not ok: # the whole output, kept past the run, since the tail shown here may not hold the cause
         (missed_dir / f'{name}.log').write_text(out)
         why += f' full output: {missed_dir / (name + ".log")}'
       if touched: # a mutant whose test rewrote tracked files: they are back, so the next mutant runs on the real tree
         why += ' (its test changed ' + ', '.join(touched) + '; restored)'
-      line = ('caught (HUNG, killed) ' if code == HUNG else 'caught ' if ok else 'MISSED ') + name + why + ('' if ok else '\n  ' + out[-600:].replace('\n', '\n  '))
+      line = ('caught (HUNG, killed) ' if code == HUNG and ok else 'caught ' if ok else 'MISSED ') + name + why + ('' if ok else '\n  ' + out[-600:].replace('\n', '\n  '))
     with lock:
       results[k] = ok
       print(line, flush=True)
