@@ -448,11 +448,11 @@ M = [
   ('page-two-taken', 'tools/cdpage.c', '      if (++marks > 1) die(', '      if (++marks > 2) die(', LINK, 'FAIL cdom_page (first) refused the two page for another reason'),
   ('page-none-taken', 'tools/cdpage.c', '  if (marks != 1)\n', '  if (marks > 1)\n', LINK, 'FAIL cdom_page (first) took the none page'),
   ('page-partial-kept', 'tools/cdpage.c', '  if (marks != 1)\n', '  if (marks != 1 && fopen(a->out, "w"))\n', LINK, 'FAIL cdom_page (first) refused the none page but left a file'),
-  ('mk-wasm-no-libc', 'cdom.mk', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -I$(CDOM)/src', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
+  ('mk-wasm-no-libc', 'cdom.mk', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -I$(CDOM)/src', LINK, "fatal error: 'stdlib.h' file not found"),  # tests/build.sh takes cdom.mk's flags (tools/cdomflags.sh): its first module stops at cdom.c's include
   # cdlits, which the rule runs on the linked module, refuses a module with no cdom in it before run.sh can look at its exports
   ('mk-wasm-no-cdom', 'cdom.mk', 'cdom_mk_app_src = $(APP_SRC) $(CDOM_SRC)', 'cdom_mk_app_src = $(APP_SRC)', LINK, "cdlits: not a cdom module"),
   ('mk-modules-dropped', 'cdom.mk', ' $(foreach m,$(APP_MODULES),$(CDOM_$(call cdom_mk_up,$(m))_SRC))', '', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
-  ('mk-modules-unchecked', 'cdom.mk', 'cdom_mk_known = $(if $(cdom_mk_unknown),', 'cdom_mk_known = $(if ,', LINK, 'FAIL cdom.mk (first) refused APP_MODULES for another reason'),  # make still stops, at the missing file, without saying why
+  ('mk-modules-unchecked', 'cdom.mk', 'cdom_mk_known = $(if $(cdom_mk_unknown),', 'cdom_mk_known = $(if ,', LINK, 'FAIL cdom.mk (first) took APP_MODULES naming no module'),  # an unknown module has no sources, so make builds the app without it
   ('mk-goal-taken', 'cdom.mk', '\n.cdom-mk-sources:', '\ncdom-mk-sources:', LINK, 'FAIL cdom.mk (first) took the default goal'),
   ('mk-read-early', 'cdom.mk', 'cdom_mk_app_src = $(APP_SRC)', 'cdom_mk_app_src := $(APP_SRC)', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   ('mk-target-early', 'cdom.mk', '%.wasm: $$(call cdom_mk_for,$$(APP_WASM) $$(cdom_mk_simd_wasm),', '$(APP_WASM): $$(call cdom_mk_for,$$(APP_WASM) $$(cdom_mk_simd_wasm),', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
@@ -511,7 +511,7 @@ M = [
   ('css-bom-kept', 'tools/cdpage.c', '    if (n >= 3 && p[0] == 0xef && p[1] == 0xbb && p[2] == 0xbf) p += 3, n -= 3;\n', '', PAGE, 'FAIL the edges:'),
   ('css-no-last-newline', 'tools/cdpage.c', "    if (o->n > at && o->p[o->n - 1] != '\\n') bbyte(o, '\\n');\n", "    if (0 && o->n > at && o->p[o->n - 1] != '\\n') bbyte(o, '\\n');\n", PAGE, 'FAIL the edges:'),
   ('css-comments-kept', 'tools/cdpage.c', "        if (from != SIZE_MAX && (j == n || p[j] == '\\n')) {", "        if (0 && from != SIZE_MAX && (j == n || p[j] == '\\n')) {", PAGE, 'FAIL comments:'),
-  ('css-inline-comments-dropped', 'tools/cdpage.c', '        from = blank ? line_at : SIZE_MAX;', '        from = line_at;', PAGE, 'FAIL comments:'),  # a comment beside a rule goes with its line, and the rule with it
+  ('css-inline-comments-dropped', 'tools/cdpage.c', '        from = blank ? line_at : SIZE_MAX;', '        from = blank >= 0 ? line_at : SIZE_MAX;', PAGE, 'FAIL comments:'),  # a comment beside a rule goes with its line, and the rule with it
   # cdom.mk and the stylesheets (tests/link/run.sh, the fixture apps of tests/link/apps, and tests/link/css.mjs in Chrome):
   # discovery through make, rebuilding on a stylesheet change only, the first build, an own page, the cascade
   ('mk-css-dir-dropped', 'cdom.mk', ')--css-dir src\n', ')\n', LINK, 'FAIL discovery: the css app'),
