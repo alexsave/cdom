@@ -4,6 +4,87 @@ The `image` module decodes a JPEG or PNG in C and resizes it to fit inside a box
 
 It ports raceclub PR #10 (branch photo-low-peak, head a7270e4) into cdom, with every item of the review below fixed.
 
+## The module
+
+- `src/cdom_image.h` is the interface: `cd_image_probe` and `cd_image_resize(p, len, max_w, max_h, &rgba, &w, &h)`, which fits the image inside the box after orientation, never enlarges it, and answers an RGBA block of cdom's heap that the caller frees with `cd_free`.
+- `APP_MODULES += image` links it (cdom.mk): four parts, so libjpeg-turbo and miniz build with `-w` and their own `-I`, cdom's three files with the app's flags, and the one file that calls setjmp with the flags of its way out.
+- The statuses: `OK`, `NOT_IMAGE`, `TOO_BIG`, `UNSUPPORTED`, `CORRUPT`, `NO_ROOM`, and `BAD_BOX` (a box of 0 or over `CD_IMAGE_BOX_MAX`, 8192, the caller's own mistake; one status more than the plan listed, so a bad call is never read as a bad file).
+- The limits, each a named constant in the header: a side of at most 65,500, at most 64 MP, at most 96 MiB held by the JPEG decoder, at most 500 scans.
+
+How each item of the review below is fixed:
+
+| item | fix | test |
+| --- | --- | --- |
+| 1, 2 | libjpeg's memory goes through cdom's own memory layer (`jmemsys.h` in `src/cdom_image_jpeg.c`, in place of `jmemnobs.c`), which holds everything libjpeg allocates to `CD_IMAGE_MEM_MAX`; `jpeg_mem_init` answers the same budget, so whole-image coefficient arrays that do not fit stop at `jpeg_open_backing_store` (TOO_BIG). The pixel caps by format are gone: one pixel cap (64 MP, for time) and the budget (for memory). | `jpeg-prog444-16mp` (OK), `jpeg-prog444-over-budget` and `jpeg-noninter-35mp-over-budget` (TOO_BIG), with their peaks |
+| 3 | a progress monitor that stops a file of more than `CD_IMAGE_SCANS_MAX` (500) scans (TOO_BIG) | `jpeg-scans500` (OK), `jpeg-scans501` (TOO_BIG) |
+| 4 | `jpeg_destroy_decompress` always, outside the guard | `test_no_room_at_create`: every room from 0 to 64 KiB, nothing left |
+| 5 | the EH runtime is clang 23's interface (`__wasm_setjmp`, `__wasm_setjmp_test`, `__wasm_longjmp`), its values in the jmp_buf, in `src/cdom_image_sjlj_eh.c` | tools/image.mjs, the `wasm_eh` page |
+| 6 | every allocation is `cd_alloc_try` (the module's, libjpeg's through the memory layer, miniz's through `MZ_MALLOC`) | the native heap that stays full (`test_no_room`), and the capped wasm heap in tools/image.mjs |
+| 7 | re-measured on main's heap | "The bench", below |
+| 8 | a box of 0 or over 8192 is `BAD_BOX` | `png-box*` cases, `test_refusals` |
+| 9 | tRNS colour keys for grey (any depth) and RGB | `png-grey-key`, `png-grey2-key`, `png-rgb-key`, `png-rgb-key-over-255` |
+| 10 | the probe applies the side and pixel limits; the adler32 is checked (the stream is read to its end); no claim of no globals in the JS way (it has none either) or the EH way (none); the orientation's step is an offset made a pointer only inside the image; no `-w` on cdom's own files | `png-adler-mismatch`, `png-adler-missing`, `test_refusals` |
+
+## The way out of a libjpeg error
+
+libjpeg's error exit must not return, and cdom's wasm has no setjmp.
+cdom builds it either way, chosen by one make variable, `CDOM_IMAGE_SJLJ`:
+
+- `js` (the default): `cd_image_guard` calls the import `image_call`, which calls the export `cd_image_run(body, ctx)` inside a JavaScript try; the error exit calls the import `image_throw`, which throws a value only the shim's catch takes; anything else thrown (a trap) goes on as it came.
+  The frames the throw unwound never put the stack pointer back, so the guard does, from the value it read before the call (two lines of inline assembly).
+  Plain wasm: every browser cdom runs in, and wasm2js.
+  No `-mllvm` flag: the calls are explicit, so there is no lowering, no `invoke_*` per signature, no exported table and no `__THREW__`.
+  The plan named emscripten's lowering (`-enable-emscripten-sjlj`); that lowering needs the same JavaScript try plus a runtime of seven symbols and an exported function table, for a guard that only ever wraps one call, so this way does the same with less (the spike measured both; see below).
+- `eh`: setjmp and longjmp lowered by clang to wasm exception handling (`-mexception-handling -mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=true`) on `cdom_image_sjlj.c`, with the runtime in `cdom_image_sjlj_eh.c` (a file of its own: the lowering renames a runtime it finds in the file it lowers), which also defines the C longjmp tag.
+  Chrome 95, Firefox 100, Safari 15.2; no wasm2js.
+
+The shim's part is the two functions above: 151 bytes minified, 50 brotli, in every page (the shim has no per-module part).
+
+## Predictions (written before any measurement)
+
+Every number below is a prediction, from reading the code, before anything was timed.
+
+**The spike: the cost of each way out, on 12 MP.**
+Both ways cost one guard per decode, around the one call that runs the whole decode (`body`); no row and no libjpeg call crosses into JavaScript or a try.
+
+- S1: the time of `cd_image_resize` on `p12.jpg` (4032 x 3024 baseline, to a 900 box) differs between `js` and `eh` by less than 1% of its median.
+  Falsifier: a difference of 2% or more, outside the spread of both.
+- S2: the same for emscripten's lowering (`-enable-emscripten-sjlj`, a scratch build, not kept): within 1% too.
+- S3: a fatal error (a bad DQT) costs under 1 ms either way, and leaves the stack pointer and the heap where they were (tools/image.mjs checks the second part on every run).
+- S4: the `eh` module is within 300 bytes of the `js` module, raw.
+
+**Size** (the bench's C arm at cdom.mk's -Oz, `brotli -q 11`, the module linked against the same app without it; scalar):
+
+- Z1: the image module adds 26 to 32 KB brotli to an app (raceclub's PR measured 29.5 KB at -Oz with SIMD).
+- Z2: the JPEG half 22 to 27 KB and the PNG half (with tinfl) 4 to 7 KB, each measured by an app that calls only that format's internal entry point (`cd_image_jpeg_resize` or `cd_image_png_resize`, `cdom_image_int.h`), so the linker drops the other.
+
+**Time** (the bench, Chrome headless on this Mac, median of 9 interleaved rounds, box 900, scalar wasm):
+
+| input | C (cd_image_resize) | B1 (createImageBitmap, resize options) | B2 (createImageBitmap, drawImage scaled) |
+| --- | --- | --- | --- |
+| p12.jpg | 110 to 250 ms | 40 to 150 ms | 60 to 200 ms |
+| p12p.jpg | 250 to 600 ms | 80 to 300 ms | 100 to 350 ms |
+| p48.jpg | 300 to 800 ms | 120 to 500 ms | 200 to 700 ms |
+| p12.png | 250 to 600 ms | 150 to 450 ms | 150 to 450 ms |
+
+Falsifier for each cell: a median outside its range.
+The C arm is scalar wasm against the browser's native SIMD decoders, so C is predicted slower on every input, by 1.5 to 3 times on JPEG.
+
+**Memory** (the C arm's wasm memory after one run on a fresh page, which is its peak since wasm memory never shrinks; the file's bytes are in it):
+
+| input | file | predicted wasm memory |
+| --- | --- | --- |
+| p12.jpg | its size | the file plus 3 to 6 MB |
+| p12p.jpg | its size | the file plus 38 to 43 MB (36.6 MB of coefficients at 4:2:0) |
+| p48.jpg | its size | the file plus 3 to 6 MB (decoded at 1/8) |
+| p12.png | its size | the file plus 2.5 to 4 MB |
+
+Falsifier: a measured value outside its range.
+
+**The PNG checksum**: checking the adler32 costs nothing measurable, since tinfl computes it whenever it parses a zlib header; the check only reads the stream's last bytes.
+Prediction A1: `p12.png` with the check and with the stream's end not read differ by under 1%.
+Falsifier: 2% or more.
+
 ## Review of raceclub PR #10
 
 How this was checked: I read every file in src/photo, test/photo, fuzz and bench/resize/lowpeak, the PR body, and raceclub main's PERF.md, RESIZE-BENCH.md and tools/resize_inputs.py.
