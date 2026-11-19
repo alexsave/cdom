@@ -415,3 +415,27 @@ The Mac's earlier numbers (docs/image-simde.md, the clean rerun) had p12.png at 
 - M3: the JPEG inputs (p12.jpg, p12p.jpg, p48.jpg) are unchanged: C-js within 5% of C-old in both browsers, since this branch does not touch the JPEG path. Refuted by a gap over 5% either way.
 - M4: in Safari, p12.png's C-simd is faster than B1 (the one-round smoke run had 165 ms against 213). Refuted if B1's median is lower.
 - M5: the wasm memory after p12.png is at most 0.5 MiB above C-old's in both browsers (the inflate's buffer is about 290 KB, against tinfl's). Refuted by more.
+
+### Results (2026-11-19)
+
+Chrome 157.0.8103.79 headless, then Safari 27.0.1; the 1-minute load was 2.1 to 3.2 throughout (macOS's mediaanalysisd held about one core, nothing of ours ran beside the bench), and 2 of the 360 runs waited for the load gate.
+Medians of 9 rounds in ms, the wasm memory after the run in MiB; the per-run tables are results/2026-11-19-png-mac-chrome.tsv and -safari.tsv.
+
+| input | browser | C-old | C-js | C-simd | B1 | B2 | wasm MiB, old to new |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| p12.jpg | Chrome | 58.9 | 59.3 | 51.8 | 63.3 | 70.7 | 6.1 to 6.1 |
+| p12p.jpg | Chrome | 139.3 | 136.3 | 130.7 | 122.8 | 129.2 | 40.8 to 40.8 |
+| p48.jpg | Chrome | 171.1 | 170.5 | 160.1 | 214.4 | 270.7 | 17.1 to 17.1 |
+| p12.png | Chrome | 235.9 | 178.2 | 156.7 | 131.0 | 139.9 | 17.4 to 17.6 |
+| p12.jpg | Safari | 63.0 | 62.0 | 54.0 | 85.0 | 76.0 | 6.1 to 6.1 |
+| p12p.jpg | Safari | 141.0 | 142.0 | 134.0 | 160.0 | 151.0 | 40.8 to 40.8 |
+| p48.jpg | Safari | 176.0 | 175.0 | 164.0 | 369.0 | 330.0 | 17.1 to 17.1 |
+| p12.png | Safari | 305.0 | 229.0 | 160.0 | 203.0 | 196.0 | 17.4 to 17.6 |
+
+- M1 refuted: Chrome's p12.png C-simd is 1.196 times B1 (156.7 against 131.0), not within 1.10. The gap to Chrome's decoder is 26 ms, down from 76 (206.8 against 130.6 in the clean rerun).
+- M2 refuted, narrowly: C-js is 0.755 of C-old in Chrome (24.5% faster, the line was 25%). In Safari it is 0.751.
+- M3 confirmed: the JPEG inputs' C-js is within 2.2% of C-old in both browsers.
+- M4 confirmed: in Safari, p12.png's C-simd (160) beats both B1 (203) and B2 (196); so do all of C's JPEG arms, and p48.jpg by more than 2 times.
+- M5 confirmed: the wasm memory after p12.png is 0.2 MiB above C-old's in both browsers.
+
+So PNG now matches or beats the browser in Safari, and is still 20% behind Chrome's B1; that gap is open work, not this branch's.
