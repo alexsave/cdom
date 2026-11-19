@@ -740,7 +740,7 @@ M = [
   ('png-idat-not-entered', 'src/cdom_image_png.c', '    if (!memcmp(type, "IDAT", 4)) return 1;', '    if (!memcmp(type, "IDAT", 4)) { x->len = 0; return 1; }', IMG, 'png-rgba'),
   ('png-window-unfiltered', 'src/cdom_image_png.c', 'n > CD_INFLATE_WINDOW ? n - CD_INFLATE_WINDOW : 0;', 'n > CD_INFLATE_WINDOW ? n - CD_INFLATE_WINDOW / 8 : 0;', IMG, 'png-'),
   # png-fast-2: the inflate's buffer of a small PNG, and no RGBA row on the RGB read (the oracle's small and wide cases)
-  ('png-cap-whole-chunk', 'src/cdom_image_png.c', 'uint64_t cap = CD_INFLATE_WINDOW + 2 * row + (all < PNG_CHUNK ? all : PNG_CHUNK);', 'uint64_t cap = CD_INFLATE_WINDOW + 2 * row + PNG_CHUNK;', IMG, 'png-small16-rgba: peak'),
+  ('png-cap-whole-chunk', 'src/cdom_image_png.c', 'uint64_t cap = CD_INFLATE_WINDOW + 2 * row + (all < PNG_CHUNK ? all : PNG_CHUNK);', 'uint64_t cap = CD_INFLATE_WINDOW + 2 * row + (all < PNG_CHUNK ? PNG_CHUNK : PNG_CHUNK);', IMG, 'png-small16-rgba: peak'),
   ('png-cap-no-floor', 'src/cdom_image_png.c', '  if (cap < CD_INFLATE_CAP_MIN) cap = CD_INFLATE_CAP_MIN;\n', '', IMG, 'png-small16-rgba: status CORRUPT'),
   ('png-rgba-row-on-rgb-read', 'src/cdom_image_png.c', 'uint64_t px_n = rgb_read ? 0 : (uint64_t)w * 4;', 'uint64_t px_n = (uint64_t)w * 4;', IMG, 'png-wide8000x3-rgb: peak'),
   # png-fast (docs/image-png-speed.md): the row flow, the fused RGB read, and cdom's inflate against zlib (inflate_diff)

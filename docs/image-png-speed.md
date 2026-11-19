@@ -373,3 +373,31 @@ This machine is slower than PR #56's (its p12.png took about 100 ms natively the
 - S4, 64 KB: natively 2.1 ms faster, not 1 to 4 ms slower (inside a 15 ms spread); in wasm 8.5 ms slower, just over the falsifier (8 ms): refuted, both ways, by numbers smaller than the noise.
 - S4, 16 KB: natively 3.0 ms slower (the falsifier was under 3: not falsified, but inside the spread); in wasm 79 ms slower, far over the prediction, with a spread of 186 ms.
 So 256 KB stays: a smaller chunk saves memory only on large images (a small one now takes the whole image, not the chunk) and costs time in wasm.
+
+### png-fast-2: the tests and their mutants
+
+Each is in tools/mutate.py and was run through it; each is caught by its own case's line unless the column says otherwise.
+
+| mutant | what it breaks | caught by |
+| --- | --- | --- |
+| inflate-dist-past-start | the fast loop's distance check allows one more | inflate_diff, "fast loop, a distance one past the output" (its buffer has 'Z' bytes before it, so the bad match reads them and the stream's adler32 then matches) |
+| inflate-dist-past-start-checked | the checked loop's, the same | inflate_diff, "checked loop, a distance one past the output" (the stream as pieces of one byte) |
+| inflate-hlit-287 | HLIT 30 and 31 allowed | inflate_diff, "HLIT 30 (287 literal/length codes)" |
+| inflate-hdist-31 | HDIST over 29 allowed | inflate_diff, "HDIST 30 (31 distance codes)" |
+| inflate-repeat-first | a code 16 first repeats a 0 | inflate_diff, "a code 16 first" |
+| inflate-repeat-past-end | a repeat may run one past HLIT + HDIST | inflate_diff, "a repeat one past HLIT + HDIST" |
+| inflate-repeat-unchecked | no repeat check at all | UBSan, "index 316 out of bounds" (the lengths overrun the stack array before any case can answer: a sanitizer catch, not an assertion; the case of three 138-zero repeats stays as a guard) |
+| inflate-block-type-3 | block type 3 read as dynamic | inflate_diff, "block type 3" |
+| inflate-header-cm, -cinfo, -fcheck, -fdict | one header check gone each | inflate_diff, "header CM 7", "header CINFO 8", "header FCHECK wrong", "header FDICT set" |
+| inflate-fixed-286 | fixed symbols 286 and 287 end the block | inflate_diff, "fixed literal/length symbol 286" |
+| inflate-fixed-dist-30 | fixed distances 30 and 31 are distance 1 | inflate_diff, "fixed distance code 30" |
+| inflate-fixed-dist-no-30-31 | 30 and 31 have no code (the fixed distance table does not build) | inflate_diff, zlib case 0 |
+| inflate-lt-short, inflate-dt-short | CD_INFLATE_LT 2339, CD_INFLATE_DT 591 | inflate_diff, "the largest tables (2340 and 592 entries)" |
+| inflate-stops-on-good | STOPPED on a good stream (the room check 2 KB too strict) | fuzz_inflate within its seeds (the old trap, CORRUPT only, ran 30 s on it without a find) |
+| simd-adler-weight-16, simd-adler-step-16, simd-adler-no-nmax | the SIMD adler32's high weight, its 16 x s1 per block, its NMAX cap | simd.sh, "FAIL adler32" |
+| png-cap-whole-chunk | a small PNG's buffer is the 256 KB chunk again | oracle png-small16-rgba, peak |
+| png-cap-no-floor | the buffer under the inflate's floor | oracle png-small16-rgba, CORRUPT |
+| png-rgba-row-on-rgb-read | the RGBA row allocated on the RGB read | oracle png-wide8000x3-rgb, peak |
+
+zlib's examples/enough.c (zlib 1.3.1) confirms the table sizes: `enough 286 11 15` is 2340 and `enough 30 9 15` is 592 (592 is also the answer at root 6, which is why it looked like one); no constant changed.
+miniz (tinfl) stays in third_party/ only for the inflate bench's baseline arms (bench/image/inflate/native.c and wasm.c, N1 and W1).
