@@ -1,0 +1,24 @@
+# Chrome/153.0.8010.12, /home/user/cdom/bench/image/inputs/p12.png, 5 rounds, medians
+arm	piece	pieces	total ms	per piece ms	longest piece ms (stream: largest piece bytes)	inside the worker ms
+whole	-	1	17.2	17.200	0.00	-
+fr	65536	232	179.8	0.775	4.50	-
+fr	262144	58	56.8	0.979	1.70	-
+fr	1048576	15	33.6	2.240	2.70	-
+ab	65536	232	159.1	0.686	2.10	-
+ab	262144	58	54.6	0.941	1.30	-
+ab	1048576	15	32.6	2.173	2.50	-
+ab2	262144	58	30.6	0.528	0.00	-
+stream	-	229	14.1	0.062	131072	-
+sync	65536	232	161.0	0.694	1.70	153.3
+sync	262144	58	64.4	1.110	1.50	58.6
+sync	1048576	15	41.6	2.773	3.00	34.8
+# overlap: a stand-in decode of 30 ms per MiB on the reading thread (worker arms: in a worker, timed from the post)
+arm	piece	total ms	busy ms	added by reading ms
+ovl-whole	-	451.3	434.3	17.0
+ovl-ab	262144	472.0	434.3	37.7
+ovl-ab	1048576	462.9	434.3	28.6
+ovl-stream	-	447.4	434.3	13.1
+ovl-sync	262144	527.6	434.3	93.3
+ovl-sync	1048576	482.6	434.3	48.3
+ovl-wab	1048576	468.5	434.3	34.2
+ovl-wstream	-	454.5	434.3	20.2

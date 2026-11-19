@@ -1,0 +1,8 @@
+killed  [push: a skip past the buffer dropped]: 9 FAIL lines
+killed  [png: a 0-length chunk's CRC taken as 3 bytes]: 11 FAIL lines
+killed  [push: one held-back byte lost]: 58 FAIL lines
+killed  [pull: a short read ignored]: 12 FAIL lines
+killed  [png: a chunk past the file is taken]: 5 FAIL lines
+killed  [png: the PLTE buffer a byte short]: 11 FAIL lines
+killed  [push: a skip one byte long]: 9 FAIL lines
+killed  [push: a short read ignored]: 1 FAIL lines
