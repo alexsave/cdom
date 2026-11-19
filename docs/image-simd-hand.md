@@ -390,3 +390,54 @@ Whole runs (`bench/image/run.mjs 9 900 C-js,C-simd,B1,B2`, median of 9 interleav
 - WC: against the browser, the SIMD build stays slower than B1 on p12p.jpg and p12.png and faster on p12.jpg and p48.jpg, as the scalar one is on main.
   Falsifier: any of the four the other way.
 - Safari (scalar against SIMD on p12.jpg), if it can be driven: 0.92, range 0.80 to 1.05 (JavaScriptCore's wasm SIMD is newer than V8's and less tuned, so the widest range).
+
+## The Mac: results (provisional)
+
+Measured on 2026-11-19 with `bench/image/simd-mac.sh` (`run.mjs 9 900 C-js,C-simd,B1,B2`, Chrome 157, the arms interleaved and rotated each round, every run on a fresh page, load gate 4); raw table `bench/image/results/2026-11-19-simd-mac.tsv`, log `2026-11-19-simd-mac.log`.
+**Provisional:** Alex's IE9 VM (qemu) was running at about 170 to 180% CPU (2 of 8 cores) through the whole run, and Safari at about 28%; the 1-minute load was 3.7 to 4.0 at every run.
+The ratios are of arms run side by side in the same rounds, so the VM slows both alike; every one of the 36 per-round ratios is under 1.00, and the spread of each C arm (median to min) is under 1%.
+The inputs are `inputs.py`'s on this Mac: the three JPEGs are the same bytes as on the VM, the PNG is 15,534,253 bytes here against 15,180,358 there (another zlib).
+
+Median ms (min to max) and the C arms' wasm memory after a run; the x86 VM's numbers (session 1 medians and the pooled ratio) beside them:
+
+| input | C scalar | C SIMD | ratio (per-round median, min to max) | B1 | B2 | wasm memory, scalar and SIMD | x86 scalar, SIMD, ratio |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| p12.jpg | 59.2 (58.8 to 64.4) | 51.7 (51.2 to 60.3) | 0.87 (0.88, 0.87 to 0.94) | 63.8 | 70.3 | 6,422,528 both | 93.8, 77.8, 0.86 |
+| p12p.jpg | 140.0 (139.6 to 149.9) | 130.5 (130.0 to 140.0) | 0.93 (0.93, 0.93 to 0.95) | 126.1 | 132.6 | 42,729,472 both | 256.6, 244.4, 0.95 |
+| p48.jpg | 174.1 (170.7 to 181.6) | 161.5 (160.4 to 170.9) | 0.93 (0.93, 0.91 to 0.95) | 218.5 | 288.5 | 17,956,864 both | 242.4, 230.0, 0.95 |
+| p12.png | 239.6 (238.2 to 348.8) | 226.1 (225.0 to 297.1) | 0.94 (0.95, 0.85 to 0.97) | 133.1 | 142.9 | 18,219,008 both | 311.9, 266.8, 0.86 |
+
+Against the predictions:
+
+- W1 p12.jpg 0.87 (predicted 0.90, 0.84 to 0.96): confirmed.
+- W2 p12p.jpg 0.93 (predicted 0.97, 0.93 to 1.00): confirmed at the bottom edge (0.932); the gain is larger than predicted.
+- W3 p48.jpg 0.93 (predicted 0.96, 0.92 to 1.00): confirmed; larger than predicted.
+- W4 p12.png 0.94 (predicted 0.93, 0.85 to 1.00): confirmed.
+- WT (none slower): confirmed, every median and every one of the 36 per-round ratios under 1.00.
+- WM (memory the same): confirmed, to the byte on every input in all 18 runs of each arm.
+- WB (B1 and B2 within 5% of main's run): refuted on one of eight: B2 on p48.jpg is 288.5 against 263.3 (+9.6%, with a max of 339.5); the other seven are 1.5% to 4.7% slower than on main, the VM's share of the machine.
+- WC (against the browser, as the scalar build): confirmed: C SIMD is faster than B1 on p12.jpg (51.7 against 63.8) and p48.jpg (161.5 against 218.5), slower on p12p.jpg (130.5 against 126.1, the gap down from 14 ms to 4) and p12.png (226.1 against 133.1).
+- Safari: not measured. `safaridriver` answers "You must enable 'Allow remote automation' in the Developer section of Safari Settings", a setting for Alex to turn on; nothing here changed it.
+
+### The Mac's profile: why the PNG gains half what it did on the VM
+
+The PNG's ratio (0.94 against 0.86) is the one that moved, so it was profiled as the VM's were (`bench/image/profile.mjs`, 8 runs after a warm-up, two profiles per build, interleaved; raw files in `bench/image/results/profile-mac/`, table by `profcmp.py`).
+On this Mac the clang driver runs Homebrew's `wasm-opt` after the link (it finds it on PATH; the VM had none), which drops the name section, so the profile pages (`build-prof0`, `build-prof1`) are linked with a PATH that has `wasm-ld` and no `wasm-opt`; their whole-run times (p12.jpg 60.6 against 52.7 ms, p12.png 252.3 against 240.0) are within 5% of the timed pages'.
+
+| loop | input | scalar ms | SIMD ms | speedup | x86 (build 3) |
+| --- | --- | --- | --- | --- | --- |
+| L1 jpeg_idct_4x4 | p12.jpg | 4.2 | 1.6 | 2.62x | 2.11x |
+| L2 jpeg_idct_2x2 | p12.jpg | 4.5 | 1.8 | 2.50x | 1.45x |
+| L3 ycc to RGBA | p12.jpg | 1.4 | 0.3 | 4.67x | 3.26x |
+| L4 scaler (row, across, down, divide) | p12.jpg | 6.2 | 5.2 | 1.19x | 1.34x |
+| L4 | p12.png | 42.8 | 24.1 | 1.78x | 1.37x |
+| L5 PNG unfilter (Paeth) | p12.png | 76.7 | 89.2 | 0.86x | 1.50x |
+| L6 RGB to RGBA | p12.png | 0.9 | 0.5 | 2.11x | 2.35x |
+| T2 decode_mcu, tinfl (untouched) | p12.jpg, p12.png | 41.5, 123.5 | 41.5, 122.8 | 0%, -0.6% | within 5% |
+
+- As predicted for the Mac, the throughput loops (the IDCTs, the colour conversion) gain more here than on the VM, and the one loop bound by a dependent chain, Paeth, loses: the SIMD Paeth is 14% slower than the scalar one on Apple's cores (16% of the PNG's time), where it was 1.5 times faster on the Xeon.
+  The scalar code runs the three channels' chains side by side at a cycle an operation; the vector chain is about eight NEON operations a pixel at 2 to 3 cycles each.
+- The scaler on p12.jpg gains less than on the VM (1.19x against 1.34x): the 64-bit division that build 3 replaced is cheap on Apple's cores.
+  On the PNG it gains more (1.78x), which is most of the PNG's gain.
+- So on the Mac the PNG would be about 12 ms (5%) faster again with the 3-byte Paeth left scalar; on the VM it would be 34 ms slower.
+  A wasm module cannot choose by the CPU it lands on, so this is a choice between the two, not a fix; it is left as it is, and named in the PR for Alex.

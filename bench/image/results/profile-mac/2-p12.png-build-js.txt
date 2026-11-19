@@ -1,0 +1,14 @@
+# p12.png build-prof0 Chrome/157.0.8103.79: 8 runs, resize 252.1 ms mean, sampled 291.6 ms per run
+ 48.9%    123.8 ms  tinfl_decompress
+ 29.8%     75.4 ms  cd_image_unfilter_scalar
+ 17.1%     43.3 ms  cd_image_scaler_row
+  3.4%      8.7 ms  cd_image_png_resize
+  0.4%      0.9 ms  cd_image_rgb_to_rgba_scalar
+  0.3%      0.7 ms  window.arm
+  0.1%      0.1 ms  fetch
+  0.0%      0.0 ms  arrayBuffer
+  0.0%      0.0 ms  _.<computed>
+  0.0%      0.0 ms  Tt
+  0.0%      0.0 ms  js-to-wasm:ii:
+  0.0%      0.0 ms  resize
+  0.0%      0.0 ms  cd_image_resize
