@@ -1,0 +1,24 @@
+11:51  up 8 days, 22:32, 4 users, load averages: 3.82 4.45 5.01
+round 8 p12.png B1: 130.6 ms 900x675 (load 3.33)
+round 8 p12.png B2: 140.5 ms 900x675 (load 3.33)
+
+input	arm	median ms	min	max	wasm MiB	(9 rounds, box 900, /Users/alex/Dev/cdom-image/bench/image/results/raw/2026-11-19T16-51-36-972Z.tsv)
+p12.jpg	C-js	58.9	58.0	65.0	6.1
+p12.jpg	C-eh	58.9	56.4	60.7	6.1
+p12.jpg	B1	61.9	61.2	67.2	
+p12.jpg	B2	68.6	64.9	71.2	
+p12p.jpg	C-js	139.1	138.0	145.9	40.8
+p12p.jpg	C-eh	139.8	137.1	145.3	40.8
+p12p.jpg	B1	122.1	119.2	126.7	
+p12p.jpg	B2	126.7	123.3	132.6	
+p48.jpg	C-js	170.0	168.3	173.3	17.1
+p48.jpg	C-eh	170.3	167.9	172.7	17.1
+p48.jpg	B1	214.0	211.1	223.8	
+p48.jpg	B2	263.3	243.0	278.9	
+p12.png	C-js	241.6	238.4	361.0	17.4
+p12.png	C-eh	240.1	237.6	362.7	17.4
+p12.png	B1	131.1	128.5	139.2	
+p12.png	B2	137.6	133.6	140.5	
+       0
+
+[exited with code 0]
