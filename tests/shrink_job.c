@@ -22,5 +22,7 @@ CD_JOB_ENTRY uint32_t run(const uint8_t *in, uint32_t in_len, const uint8_t *arg
   memcpy(out, head, sizeof head);
   for (uint32_t i = 20; i < 65536; i++) out[i] = (uint8_t)(i * 7 + a[3]);
   cd_job_answer(out, 65536);
+  memset(out, 0xEE, 65536);   /* the answer was read in the call: the block may be reused at once (cdom_job_mod.h) */
+  cd_free(out);
   return CD_JOB_RUN_OK;
 }

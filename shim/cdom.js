@@ -860,11 +860,12 @@ var cdom = (() => {
   // (0 OK, 1 NO_ROOM, 2 FAILED, 3 UNSUPPORTED, 4 NO_FILE). The worker's code, a function of its own that names
   // nothing outside it: it loads the module, puts the args and the input (an ArrayBuffer, or a File read
   // straight into the job's memory) in room the job makes with job_room, calls run, and answers [status,
-  // output]; run's 0 is OK, 1 NO_ROOM and any other value or a trap FAILED.
+  // output]; run's 0 is OK, 1 NO_ROOM and any other value or a trap FAILED. cd_job_answer's bytes are copied
+  // in the call (cdom_job_mod.h: the job may free or reuse the block after it), and the last answer counts.
   function jobWorker() {
     onmessage = (event) => {
       const [module, input, args] = event.data;
-      const heard = [0, 0];
+      let heard;
       let status = 2;
       let exports;
       const room = (n) => {
@@ -874,7 +875,7 @@ var cdom = (() => {
         }
         return p;
       };
-      WebAssembly.instantiate(module, { cdjob: { answer: (p, n) => { heard[0] = p; heard[1] = n; } } })
+      WebAssembly.instantiate(module, { cdjob: { answer: (p, n) => { heard = exports.memory.buffer.slice(p, p + n); } } })
         .then((instance) => {
           exports = instance.exports;
           const isFile = input.size !== undefined;
@@ -885,7 +886,7 @@ var cdom = (() => {
           const run = () => {
             const code = exports.run(inAt, length, argsAt, args.byteLength) >>> 0;
             status = code > 1 ? 2 : code;
-            return status ? undefined : exports.memory.buffer.slice(heard[0], heard[0] + heard[1]);
+            return status ? undefined : heard || new ArrayBuffer(0);
           };
           if (!isFile) {
             new Uint8Array(exports.memory.buffer, inAt, length).set(new Uint8Array(input));
@@ -896,6 +897,9 @@ var cdom = (() => {
           const pump = () => reader.read().then((chunk) => {
             if (chunk.done) {
               return run();
+            }
+            if (at + chunk.value.length > inAt + length) {
+              throw 2; // the file grew while it was read: never past the room it was given
             }
             new Uint8Array(exports.memory.buffer, at, chunk.value.length).set(chunk.value);
             at += chunk.value.length;
