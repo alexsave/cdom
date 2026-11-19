@@ -26,6 +26,7 @@ def read(path):
 for inp in ['p12.jpg', 'p12p.jpg', 'p48.jpg', 'p12.png']:
   runs = {b: [read(p) for p in sorted(glob.glob(f'{d}/*-{inp}-{b}.txt'))] for b in ['build-js', 'build-simd']}
   print(f'== {inp} ({len(runs["build-js"])} profiles each)')
+  if not runs['build-js'] or not runs['build-simd']: continue   # an input not profiled in this set
   for loop, (sc, si) in LOOPS.items():
     a = sum(sum(r.get(f, 0) for f in dict.fromkeys(sc)) for r in runs['build-js']) / len(runs['build-js'])
     b = sum(sum(r.get(f, 0) for f in dict.fromkeys(si)) for r in runs['build-simd']) / len(runs['build-simd'])
