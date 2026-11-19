@@ -27,6 +27,7 @@ _Static_assert(sizeof(JCOEF) == 2, "the coefficients are 16 bits");
 _Static_assert(DCTSIZE == 8 && BITS_IN_JSAMPLE == 8, "8x8 blocks of 8-bit samples");
 
 typedef v128_t V;
+#define ALWAYS static inline __attribute__((always_inline))   /* -Oz does not inline these on its own: a call is most of a 4x4 block's cost */
 
 #define SPLAT(n)    wasm_i32x4_const_splat(n)
 #define ADD(a, b)   wasm_i32x4_add(a, b)
@@ -43,27 +44,27 @@ enum { C0_211 = 1730, C0_509 = 4176, C0_601 = 4926, C0_720 = 5906, C0_765 = 6270
  * for x mod 1024 is x + 128 below 128, 255 up to 512, 0 up to 896 and x - 896 above. As arithmetic: with x taken
  * to [-512, 511] (the mask), clamp(x + 128, 0, 255), i.e. ((x + 512) & 1023) - 384 clamped. Here the first two steps;
  * limit8 does the rest for 16 lanes at a time (two vectors of 4 per half). */
-static inline V mask10(V x) { return wasm_v128_and(ADD(x, SPLAT(512)), SPLAT(1023)); }
+ALWAYS V mask10(V x) { return wasm_v128_and(ADD(x, SPLAT(512)), SPLAT(1023)); }
 
 /* Four vectors of masked results (lane k of vector j = output byte j of row/pixel k) to bytes 0 to 255: 16 bytes. */
-static inline V limit8(V a, V b, V c, V d) {
+ALWAYS V limit8(V a, V b, V c, V d) {
   V lo = wasm_i16x8_sub(wasm_i16x8_narrow_i32x4(a, b), wasm_i16x8_const_splat(384));
   V hi = wasm_i16x8_sub(wasm_i16x8_narrow_i32x4(c, d), wasm_i16x8_const_splat(384));
   return wasm_u8x16_narrow_i16x8(lo, hi);
 }
 
 /* Dequantized rows of a block: row r, columns 0 to 3 (A) and 4 to 7 (B), as 32-bit lanes. */
-static inline V deqA(const JCOEF *c, const int *q, int r) { return wasm_i32x4_mul(wasm_i32x4_load16x4(c + 8 * r), wasm_v128_load(q + 8 * r)); }
-static inline V deqB(const JCOEF *c, const int *q, int r) { return wasm_i32x4_mul(wasm_i32x4_load16x4(c + 8 * r + 4), wasm_v128_load(q + 8 * r + 4)); }
+ALWAYS V deqA(const JCOEF *c, const int *q, int r) { return wasm_i32x4_mul(wasm_i32x4_load16x4(c + 8 * r), wasm_v128_load(q + 8 * r)); }
+ALWAYS V deqB(const JCOEF *c, const int *q, int r) { return wasm_i32x4_mul(wasm_i32x4_load16x4(c + 8 * r + 4), wasm_v128_load(q + 8 * r + 4)); }
 
 /* 32-bit lanes per column (the 8 columns of coefficients) that have no AC term in the rows named: all lanes 1 bits when
  * the raw coefficients of those rows are all zero in that column (the C tests the coefficient, not the product). */
-static inline V zero_mask_A(V acc) { return wasm_i32x4_extend_low_i16x8(wasm_i16x8_eq(acc, wasm_i16x8_const_splat(0))); }
-static inline V zero_mask_B(V acc) { return wasm_i32x4_extend_high_i16x8(wasm_i16x8_eq(acc, wasm_i16x8_const_splat(0))); }
-static inline V row16(const JCOEF *c, int r) { return wasm_v128_load(c + 8 * r); }
+ALWAYS V zero_mask_A(V acc) { return wasm_i32x4_extend_low_i16x8(wasm_i16x8_eq(acc, wasm_i16x8_const_splat(0))); }
+ALWAYS V zero_mask_B(V acc) { return wasm_i32x4_extend_high_i16x8(wasm_i16x8_eq(acc, wasm_i16x8_const_splat(0))); }
+ALWAYS V row16(const JCOEF *c, int r) { return wasm_v128_load(c + 8 * r); }
 
 /* The transpose of a 4x4 block of 32-bit lanes: rows a to d in, columns out. */
-static inline void transpose4(V a, V b, V c, V d, V *o0, V *o1, V *o2, V *o3) {
+ALWAYS void transpose4(V a, V b, V c, V d, V *o0, V *o1, V *o2, V *o3) {
   V t0 = wasm_i32x4_shuffle(a, b, 0, 4, 1, 5), t1 = wasm_i32x4_shuffle(a, b, 2, 6, 3, 7);
   V t2 = wasm_i32x4_shuffle(c, d, 0, 4, 1, 5), t3 = wasm_i32x4_shuffle(c, d, 2, 6, 3, 7);
   *o0 = wasm_i64x2_shuffle(t0, t2, 0, 2); *o1 = wasm_i64x2_shuffle(t0, t2, 1, 3);
@@ -75,7 +76,7 @@ static inline void transpose4(V a, V b, V c, V d, V *o0, V *o1, V *o2, V *o3) {
 /* The even and odd parts shared by both passes: inputs rows 0, 1, 2, 3, 5, 6, 7 (lanes are columns in the first pass,
  * rows in the second), outputs the four results before their descale: s0 = tmp10 + tmp2, s3 = tmp10 - tmp2,
  * s1 = tmp12 + tmp0, s2 = tmp12 - tmp0 of jidctred.c. */
-static inline void parts4(V z0, V z1, V z2, V z3, V z5, V z6, V z7, V *s0, V *s1, V *s2, V *s3) {
+ALWAYS void parts4(V z0, V z1, V z2, V z3, V z5, V z6, V z7, V *s0, V *s1, V *s2, V *s3) {
   V t0 = SHL(z0, 14);                                   /* CONST_BITS + 1 */
   V t2 = ADD(MULC(z2, C1_847), MULC(z6, -C0_765));
   V t10 = ADD(t0, t2), t12 = SUB(t0, t2);
@@ -85,7 +86,7 @@ static inline void parts4(V z0, V z1, V z2, V z3, V z5, V z6, V z7, V *s0, V *s1
 }
 
 /* Pass 1 on four columns: the work-array rows 0 to 3 of those columns. */
-static inline void col4(V z0, V z1, V z2, V z3, V z5, V z6, V z7, V acz, V w[4]) {
+ALWAYS void col4(V z0, V z1, V z2, V z3, V z5, V z6, V z7, V acz, V w[4]) {
   V s0, s1, s2, s3;
   parts4(z0, z1, z2, z3, z5, z6, z7, &s0, &s1, &s2, &s3);
   V rnd = SPLAT(1 << 11), dc = SHL(z0, 2);              /* DESCALE by CONST_BITS - PASS1_BITS + 1 = 12; the dc shortcut */
@@ -130,7 +131,7 @@ void jsimd_idct_4x4(j_decompress_ptr cinfo, jpeg_component_info *compptr, JCOEFP
 /* ---- the 2x2 IDCT (jpeg_idct_2x2) ---- */
 
 /* Pass 1 on four columns, rows 0, 1, 3, 5, 7 of the block (the others are not read): work-array rows 0 and 1. */
-static inline void col2(V z0, V z1, V z3, V z5, V z7, V acz, V w[2]) {
+ALWAYS void col2(V z0, V z1, V z3, V z5, V z7, V acz, V w[2]) {
   V t10 = SHL(z0, 15);                                  /* CONST_BITS + 2 */
   V o = ADD(ADD(MULC(z7, -C0_720), MULC(z5, C0_850)), ADD(MULC(z3, -C1_272), MULC(z1, C3_624)));
   V rnd = SPLAT(1 << 12), dc = SHL(z0, 2);              /* DESCALE by CONST_BITS - PASS1_BITS + 2 = 13 */
@@ -176,7 +177,7 @@ int jsimd_set_idct_4x4(j_decompress_ptr cinfo) { (void)cinfo; return 1; }
 static inline uint8_t clamp8(int v) { return v < 0 ? 0 : v > 255 ? 255 : (uint8_t)v; }
 
 /* 8 pixels' r, g and b offsets (16-bit lanes) from their cb' and cr' (16-bit lanes, signed). */
-static inline void offs8(V cb, V cr, V *r, V *g, V *b) {
+ALWAYS void offs8(V cb, V cr, V *r, V *g, V *b) {
   V cbl = wasm_i32x4_extend_low_i16x8(cb), cbh = wasm_i32x4_extend_high_i16x8(cb);
   V crl = wasm_i32x4_extend_low_i16x8(cr), crh = wasm_i32x4_extend_high_i16x8(cr);
   V half = SPLAT(32768);

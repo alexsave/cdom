@@ -1,0 +1,14 @@
+# p12.png build-simd Chrome/153.0.8010.12: 8 runs, resize 294.4 ms mean, sampled 343.9 ms per run
+ 57.2%    170.2 ms  tinfl_decompress
+ 16.0%     47.7 ms  cd_image_scaler_row
+ 12.6%     37.3 ms  cd_image_unfilter_simd
+ 10.8%     32.2 ms  unfilter_paeth
+  2.2%      6.4 ms  cd_image_png_resize
+  0.8%      2.5 ms  window.arm
+  0.2%      0.6 ms  cd_image_rgb_to_rgba_simd
+  0.1%      0.3 ms  fetch
+  0.0%      0.0 ms  cd_image_resize
+  0.0%      0.0 ms  _.<computed>
+  0.0%      0.0 ms  now
+  0.0%      0.0 ms  js-to-wasm:ii:
+  0.0%      0.0 ms  resize

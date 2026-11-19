@@ -1,0 +1,26 @@
+# p48.jpg build-simd Chrome/153.0.8010.12: 8 runs, resize 243.8 ms mean, sampled 291.4 ms per run
+ 84.0%    207.1 ms  decode_mcu
+  5.8%     14.3 ms  jsimd_idct_2x2
+  4.5%     11.1 ms  cd_image_scaler_row
+  4.1%     10.1 ms  decompress_onepass
+  0.9%      2.3 ms  window.arm
+  0.3%      0.9 ms  jsimd_color_deconvert
+  0.1%      0.3 ms  fetch
+  0.0%      0.1 ms  body
+  0.0%      0.1 ms  sep_upsample
+  0.0%      0.1 ms  jpeg_read_scanlines
+  0.0%      0.0 ms  process_data_simple_main
+  0.0%      0.0 ms  fullsize_upsample
+  0.0%      0.0 ms  progress
+  0.0%      0.0 ms  start_input_pass
+  0.0%      0.0 ms  _.<computed>
+  0.0%      0.0 ms  js-to-wasm:ii:
+  0.0%      0.0 ms  resize
+  0.0%      0.0 ms  cd_image_resize
+  0.0%      0.0 ms  cd_image_jpeg_resize
+  0.0%      0.0 ms  cd_image_guard
+  0.0%      0.0 ms  wasm-to-js
+  0.0%      0.0 ms  je
+  0.0%      0.0 ms  cd_image_run
+  0.0%      0.0 ms  jpeg_start_decompress
+  0.0%      0.0 ms  jinit_master_decompress

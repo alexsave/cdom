@@ -40,6 +40,7 @@ void cd_image_rgb_to_rgba_scalar(const uint8_t *r, uint8_t *out, uint32_t w) {
 /* ---- the scaler's row loops (cdom_image.c's cd_image_scaler_row) ---- */
 
 void cd_image_scaler_across_scalar(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw) {
+  memset(h, 0, (size_t)dw * 3 * sizeof(uint32_t));
   /* across: source pixel c covers [c*dw, (c+1)*dw) in units of 1/dw; output pixel ox ends at (ox+1)*sw */
   uint64_t pos = 0, hend = sw;
   uint32_t ox = 0;
@@ -58,6 +59,14 @@ void cd_image_scaler_across_scalar(uint32_t *h, const uint8_t *px, uint32_t sw, 
 
 void cd_image_scaler_down_scalar(uint64_t *a, const uint32_t *h, uint64_t wgt, uint32_t n) {
   for (uint32_t i = 0; i < n; i++) a[i] += wgt * h[i];
+}
+
+void cd_image_scaler_div_scalar(uint8_t *out, const uint64_t *a, uint32_t n, uint64_t t) {
+  const uint64_t t2 = t * 2;
+  for (uint32_t i = 0; i < n; i++) {
+    uint64_t v = (a[i] * 2 + t) / t2;
+    out[i] = v > 255 ? 255 : (uint8_t)v;
+  }
 }
 
 #if CDOM_IMAGE_SIMD
@@ -132,21 +141,25 @@ static inline void unfilter_avg(uint8_t *cur, const uint8_t *prev, uint32_t n, c
   for (; i < n; i++) cur[i] = (uint8_t)(cur[i] + (((i >= bpp ? cur[i - bpp] : 0) + prev[i]) >> 1));
 }
 
-/* Paeth, a pixel at a time (each needs the one before it): the three channels in 16-bit lanes. */
+/* Paeth, a pixel at a time (each needs the one before it): the three channels in 16-bit lanes. The chain from one pixel to
+ * the next is the left value through the three distances, a minimum, a compare, a select and an add: kept in 16-bit
+ * lanes, with the bytes made only to store them. a is taken when pa <= pb and pa <= pc, i.e. pa <= min(pb, pc); else b
+ * when pb <= pc; else c. */
 static inline void unfilter_paeth(uint8_t *cur, const uint8_t *prev, uint32_t n, const uint32_t bpp) {
+  const V lo8 = wasm_i16x8_const_splat(0xff);
   V a = wasm_i8x16_const_splat(0);            /* the left pixel, 16-bit lanes: zero before the first pixel */
   V c = wasm_i8x16_const_splat(0);            /* the up-left pixel, likewise */
   uint32_t i = 0;
   for (; i + 4 <= n; i += bpp) {
     V b = wasm_u16x8_extend_low_u8x16(ld_px(prev + i));
+    V raw = wasm_u16x8_extend_low_u8x16(ld_px(cur + i));
     V t = wasm_i16x8_sub(b, c), u = wasm_i16x8_sub(a, c);
     V pa = wasm_i16x8_abs(t), pb = wasm_i16x8_abs(u), pc = wasm_i16x8_abs(wasm_i16x8_add(t, u));
-    V ma = wasm_v128_and(wasm_i16x8_le(pa, pb), wasm_i16x8_le(pa, pc)), mb = wasm_i16x8_le(pb, pc);
+    V ma = wasm_i16x8_le(pa, wasm_i16x8_min(pb, pc)), mb = wasm_i16x8_le(pb, pc);
     V pred = wasm_v128_bitselect(a, wasm_v128_bitselect(b, c, mb), ma);
-    V o = wasm_i8x16_add(ld_px(cur + i), wasm_u8x16_narrow_i16x8(pred, pred));
-    st_px(cur + i, o, bpp);
+    a = wasm_v128_and(wasm_i16x8_add(pred, raw), lo8);
+    st_px(cur + i, wasm_u8x16_narrow_i16x8(a, a), bpp);
     c = b;
-    a = wasm_u16x8_extend_low_u8x16(o);
   }
   for (; i < n; i++) {
     int l = i >= bpp ? cur[i - bpp] : 0, ul = i >= bpp ? prev[i - bpp] : 0;
@@ -178,21 +191,27 @@ void cd_image_rgb_to_rgba_simd(const uint8_t *r, uint8_t *out, uint32_t w) {
 
 /* ---- the scaler ---- */
 
-/* The sums are 32-bit lanes of (r, g, b, next sum's r): the fourth lane is read and written back unchanged (the pixel is
- * masked to r, g, b before the multiply, so it adds zero), which is why h has one word of room past dw * 3. */
+/* The sum of the output pixel being made is a vector of 32-bit lanes (r, g, b, and a whose sum nothing uses) in a register;
+ * a source pixel adds its pieces to it, and a finished one is stored (12 of its 16 bytes) and the next starts from zero. No
+ * sum is loaded, so nothing waits on a store before it: every output pixel is written once, and h is not read. */
 void cd_image_scaler_across_simd(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw) {
-  const V rgb = wasm_i32x4_make(-1, -1, -1, 0);
+  V sum = wasm_i32x4_const_splat(0);
   uint64_t pos = 0, hend = sw;
   uint32_t ox = 0;
   for (uint32_t c = 0; c < sw; c++, px += 4) {
-    V p = wasm_v128_and(wasm_u32x4_extend_low_u16x8(wasm_u16x8_extend_low_u8x16(wasm_v128_load32_zero(px))), rgb);
+    V p = wasm_u32x4_extend_low_u16x8(wasm_u16x8_extend_low_u8x16(wasm_v128_load32_zero(px)));
     uint64_t cend = (uint64_t)(c + 1) * dw;
     while (pos < cend) {
       uint64_t b = cend < hend ? cend : hend;
-      uint32_t *q = h + (size_t)ox * 3;
-      wasm_v128_store(q, wasm_i32x4_add(wasm_v128_load(q), wasm_i32x4_mul(p, wasm_i32x4_splat((int32_t)(uint32_t)(b - pos)))));
+      sum = wasm_i32x4_add(sum, wasm_i32x4_mul(p, wasm_i32x4_splat((int32_t)(uint32_t)(b - pos))));
       pos = b;
-      if (pos == hend) { ox++; hend += sw; }
+      if (pos == hend) {
+        uint32_t *q = h + (size_t)ox * 3;
+        wasm_v128_store64_lane(q, sum, 0);
+        wasm_v128_store32_lane(q + 2, sum, 2);
+        sum = wasm_i32x4_const_splat(0);
+        ox++; hend += sw;
+      }
     }
   }
 }
@@ -208,5 +227,24 @@ void cd_image_scaler_down_simd(uint64_t *a, const uint32_t *h, uint64_t wgt, uin
     }
   }
   for (; i < n; i++) a[i] += wgt * h[i];
+}
+/* The divide in doubles, two sums at a time. x = 2a + t is at most 511 * t, under 2^41, and d = 2t under 2^33: both are
+ * exact doubles, and so is hi * 2^33 + 2 * lo, the sum of x made from the 32-bit halves of a (it is under 2^53). The quotient
+ * q = x / d is under 256, and a double division is correctly rounded, so it is q to within 2^-53 of its size, under
+ * 2^-45; when x / d is not a whole number it is at least 1 / d, over 2^-33, from every whole number, so the double never
+ * crosses one: its integer part is the integer quotient. (When x / d is whole the division is exact.) */
+void cd_image_scaler_div_simd(uint8_t *out, const uint64_t *a, uint32_t n, uint64_t t) {
+  const V tt = wasm_f64x2_splat((double)t), d = wasm_f64x2_splat((double)(t * 2)), k33 = wasm_f64x2_splat(8589934592.0);
+  const V cap = wasm_i32x4_const_splat(255);
+  uint32_t i = 0;
+  for (; i + 2 <= n; i += 2) {
+    V v = wasm_v128_load(a + i);
+    V lo = wasm_f64x2_convert_low_u32x4(wasm_i32x4_shuffle(v, v, 0, 2, 0, 2));
+    V hi = wasm_f64x2_convert_low_u32x4(wasm_i32x4_shuffle(v, v, 1, 3, 1, 3));
+    V x = wasm_f64x2_add(wasm_f64x2_add(wasm_f64x2_mul(hi, k33), wasm_f64x2_add(lo, lo)), tt);
+    V q = wasm_u32x4_min(wasm_u32x4_trunc_sat_f64x2_zero(wasm_f64x2_div(x, d)), cap);
+    wasm_v128_store16_lane(out + i, wasm_i8x16_shuffle(q, q, 0, 4, 0, 4, 0, 4, 0, 4, 0, 4, 0, 4, 0, 4, 0, 4), 0);
+  }
+  cd_image_scaler_div_scalar(out + i, a + i, n - i, t);
 }
 #endif
