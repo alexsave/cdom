@@ -357,3 +357,35 @@ They were replaced by faults that do change an output (a constant of 1.419 for 1
 | div-cap | scaler divide | the quotient is capped at 254, not 255 |
 | div-trunc-round | scaler divide | the quotient is rounded to nearest, not truncated |
 | div-read-past | scaler divide | the loop reads and writes two sums when one is left (a trap at the top of memory) |
+
+## The Mac: predictions (written before measuring on it)
+
+The branch was rebased onto main (after #49) as `image-simd`, and every number from here on is from Alex's Mac: an Apple Silicon arm64 machine, Homebrew clang 23.1.5, headless Chrome through `tools/cdp.mjs`.
+The scalar numbers on main for the same bench (`bench/image/results/2026-11-19-box900.tsv`) were C-js 58.9, 139.1, 170.0 and 241.6 ms on p12.jpg, p12p.jpg, p48.jpg and p12.png, against 93.8, 256.6, 242.4 and 311.9 on the x86 VM.
+So the Mac runs the JPEGs 1.4 to 1.8 times faster than the VM but the PNG only 1.3 times faster.
+
+What should move between the two machines, and which way:
+
+- The 64-bit integer division that build 3 replaced with a double division is cheap on Apple's cores (a few cycles) and costly on the VM's Xeon (tens of cycles), so the scaler's gain (L4) should be smaller on the Mac.
+- Apple's cores run scalar code very wide, and a NEON integer operation has a latency of 2 to 3 cycles against 1 for a scalar one, so a loop bound by one dependent chain (Paeth, L5) should gain less, and may lose.
+- The IDCTs (L1, L2) and YCbCr to RGBA (L3) are throughput loops with no chain from one block to the next; the Mac has more vector units than the VM, so they should keep their gain or grow it.
+- The entropy decoders are untouched, so the whole-run ratio is bounded as on the VM.
+
+Whole runs (`bench/image/run.mjs 9 900 C-js,C-simd,B1,B2`, median of 9 interleaved rounds, ratio C-simd over C-js):
+
+| id | input | x86 ratio | Mac prediction | range | falsifier |
+| --- | --- | --- | --- | --- | --- |
+| W1 | p12.jpg | 0.86 | 0.90 | 0.84 to 0.96 | outside the range |
+| W2 | p12p.jpg | 0.95 | 0.97 | 0.93 to 1.00 | outside the range |
+| W3 | p48.jpg | 0.95 | 0.96 | 0.92 to 1.00 | outside the range |
+| W4 | p12.png | 0.86 | 0.93 | 0.85 to 1.00 | outside the range |
+
+- WT: no input slower with SIMD (every median ratio at most 1.00), the least sure of these on p12.png.
+  Falsifier: a median ratio over 1.00.
+- WM: the wasm memory after one run is the same for C-js and C-simd on every input, to the byte.
+  Falsifier: any difference.
+- WB: B1 and B2 are within 5% of their medians in main's run on every input (a check of the machine, not of the code).
+  Falsifier: outside 5%.
+- WC: against the browser, the SIMD build stays slower than B1 on p12p.jpg and p12.png and faster on p12.jpg and p48.jpg, as the scalar one is on main.
+  Falsifier: any of the four the other way.
+- Safari (scalar against SIMD on p12.jpg), if it can be driven: 0.92, range 0.80 to 1.05 (JavaScriptCore's wasm SIMD is newer than V8's and less tuned, so the widest range).
