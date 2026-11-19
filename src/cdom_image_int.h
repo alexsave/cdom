@@ -16,7 +16,7 @@ typedef struct {
   uint32_t o;               /* orientation 1 to 8 */
   uint32_t ow, oh;          /* the output's size, after orientation */
   uint8_t *out;             /* ow x oh RGBA */
-  uint64_t *acc;            /* dw x 3: the output row being summed */
+  uint64_t *acc;            /* dw x 3: the output row being summed (with CDOM_IMAGE_SIMD, dw x 3 bytes more after them: the quotients) */
   uint32_t *hrow;           /* dw x 3: the current source row, reduced across */
   uint64_t ypos;            /* position in the vertical sum, in units of 1/dh of a source row */
   uint32_t oy;              /* the next output row to finish */
@@ -47,6 +47,44 @@ uint32_t cd_image_jpeg_resize(const uint8_t *p, uint32_t len, const cd_image_inf
                               uint8_t **rgba, uint32_t *w, uint32_t *h);
 uint32_t cd_image_png_resize(const uint8_t *p, uint32_t len, const cd_image_info *info, uint32_t dw, uint32_t dh,
                              uint8_t **rgba, uint32_t *w, uint32_t *h);
+
+/* The hot loops (cdom_image_loops.c): each has a scalar body, always built, and a wasm SIMD body, built when
+ * CDOM_IMAGE_SIMD is 1 (cdom.mk: make variable CDOM_IMAGE_SIMD=1, -msimd128; 0, the default, is scalar). The name
+ * without a suffix is the one the module calls; the suffixed ones are what the tests compare (the SIMD body is bit-exact with
+ * the scalar one on every input). */
+#ifndef CDOM_IMAGE_SIMD
+#define CDOM_IMAGE_SIMD 0
+#endif
+/* PNG row filters: undo filter f (0 to 4) on cur (n bytes, bpp bytes a pixel) against prev (the row above, all zero
+ * for the first); 0 for an unknown filter. */
+int cd_image_unfilter_scalar(uint32_t f, uint8_t *cur, const uint8_t *prev, uint32_t n, uint32_t bpp);
+int cd_image_unfilter_simd(uint32_t f, uint8_t *cur, const uint8_t *prev, uint32_t n, uint32_t bpp);
+/* A row of w 8-bit RGB pixels as RGBA with alpha 255. */
+void cd_image_rgb_to_rgba_scalar(const uint8_t *r, uint8_t *out, uint32_t w);
+void cd_image_rgb_to_rgba_simd(const uint8_t *r, uint8_t *out, uint32_t w);
+/* The scaler's two row loops. across: h gets all dw * 3 sums of the source row px (sw RGBA pixels, alpha ignored) reduced to
+ * dw pixels by area (it need not be zeroed, and is not read). down: a[i] += wgt * h[i] for i below n. */
+void cd_image_scaler_across_scalar(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw);
+void cd_image_scaler_across_simd(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw);
+void cd_image_scaler_down_scalar(uint64_t *a, const uint32_t *h, uint64_t wgt, uint32_t n);
+void cd_image_scaler_down_simd(uint64_t *a, const uint32_t *h, uint64_t wgt, uint32_t n);
+/* The scaler's divide: out[i] = min(255, (2 * a[i] + t) / (2 * t)) for i below n, where t (at most 2^32) is the weights'
+ * sum, sw * sh, and each a[i] is at most 255 * t. The SIMD body divides in doubles, which is exact here (see the loop). */
+void cd_image_scaler_div_scalar(uint8_t *out, const uint64_t *a, uint32_t n, uint64_t t);
+void cd_image_scaler_div_simd(uint8_t *out, const uint64_t *a, uint32_t n, uint64_t t);
+#if CDOM_IMAGE_SIMD
+#define cd_image_unfilter cd_image_unfilter_simd
+#define cd_image_rgb_to_rgba cd_image_rgb_to_rgba_simd
+#define cd_image_scaler_across cd_image_scaler_across_simd
+#define cd_image_scaler_down cd_image_scaler_down_simd
+#define cd_image_scaler_div cd_image_scaler_div_simd
+#else
+#define cd_image_unfilter cd_image_unfilter_scalar
+#define cd_image_rgb_to_rgba cd_image_rgb_to_rgba_scalar
+#define cd_image_scaler_across cd_image_scaler_across_scalar
+#define cd_image_scaler_down cd_image_scaler_down_scalar
+#define cd_image_scaler_div cd_image_scaler_div_scalar
+#endif
 
 /* libjpeg's way out of a fatal error (cdom_image_sjlj.c). cd_image_guard runs body(ctx) and answers 0 when it
  * returned, 1 when it left through cd_image_throw(*slot); while body runs, *slot names this guard. Guards nest (a

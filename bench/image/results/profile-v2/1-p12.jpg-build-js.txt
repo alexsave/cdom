@@ -1,0 +1,27 @@
+# p12.jpg build-js Chrome/153.0.8010.12: 8 runs, resize 100.8 ms mean, sampled 120.1 ms per run
+ 60.0%     61.0 ms  decode_mcu
+ 14.6%     14.9 ms  cd_image_scaler_row
+ 10.1%     10.3 ms  jpeg_idct_4x4
+  7.6%      7.8 ms  jpeg_idct_2x2
+  3.6%      3.7 ms  decompress_onepass
+  2.7%      2.7 ms  ycc_extrgbx_convert
+  0.6%      0.6 ms  window.arm
+  0.2%      0.2 ms  fetch
+  0.1%      0.1 ms  jpeg_read_scanlines
+  0.0%      0.0 ms  jinit_master_decompress
+  0.0%      0.0 ms  sep_upsample
+  0.0%      0.0 ms  process_data_simple_main
+  0.0%      0.0 ms  jpeg_make_d_derived_tbl
+  0.0%      0.0 ms  _.<computed>
+  0.0%      0.0 ms  je
+  0.0%      0.0 ms  js-to-wasm:ii:
+  0.0%      0.0 ms  resize
+  0.0%      0.0 ms  cd_image_resize
+  0.0%      0.0 ms  cd_image_jpeg_resize
+  0.0%      0.0 ms  cd_image_guard
+  0.0%      0.0 ms  wasm-to-js
+  0.0%      0.0 ms  cd_image_run
+  0.0%      0.0 ms  body
+  0.0%      0.0 ms  jpeg_start_decompress
+  0.0%      0.0 ms  start_input_pass
+  0.0%      0.0 ms  start_pass_huff_decoder

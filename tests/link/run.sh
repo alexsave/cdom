@@ -485,6 +485,25 @@ else
   if [ -n "$bad" ]; then echo "FAIL an app that does not call the image module carries its exception handling or its imports:$bad"; fail=1
   else echo "ok   the image module's way out reaches only apps that call it: eh gives them exception handling, js the shim's 2 imports; an app without it, or with it and no call, has neither, either way"; fi
 fi
+# CDOM_IMAGE_SIMD=1 puts wasm SIMD instructions (which a browser without wasm SIMD refuses to instantiate) only in an app
+# that calls the image module: tests/image/wasm.c built with it has some, built without it (the default) none, and the
+# app of app.mk with CDOM_IMAGE_SIMD=1, with no image module and with it but no call, none.
+simd_count() { wasm-dis --all-features "$1" | grep -cE '\b(v128|i8x16|i16x8|i32x4|i64x2|f32x4|f64x2)\.'; }
+if ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=js SIMD=1 "$im/wasm_js_simd.wasm" 2> "$im/simd.log" ||
+   ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=js "$im/wasm_js.wasm" 2> "$im/js.log"; then
+  echo "FAIL the image module's wasm test app does not build with and without CDOM_IMAGE_SIMD:"; cat "$im/simd.log" "$im/js.log"; fail=1
+elif [ "$(simd_count "$im/wasm_js_simd.wasm")" = 0 ] || [ "$(simd_count "$im/wasm_js.wasm")" != 0 ]; then
+  echo "FAIL CDOM_IMAGE_SIMD: $(simd_count "$im/wasm_js_simd.wasm") SIMD instructions with it (wanted some), $(simd_count "$im/wasm_js.wasm") without it (wanted none)"; fail=1
+else
+  mo="$out/mk-first"
+  bad=""
+  for mods in 'random' 'random image'; do
+    if ! make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$mo" PAGE= APP_MODULES="$mods" CDOM_IMAGE_SIMD=1 -B "$mo/mk_app.wasm" 2> "$im/mk.log"; then bad="$bad [$mods: no build]"; cat "$im/mk.log"
+    elif [ "$(simd_count "$mo/mk_app.wasm")" != 0 ]; then bad="$bad [$mods: $(simd_count "$mo/mk_app.wasm")]"; fi
+  done
+  if [ -n "$bad" ]; then echo "FAIL an app that does not call the image module has SIMD instructions with CDOM_IMAGE_SIMD=1:$bad"; fail=1
+  else echo "ok   CDOM_IMAGE_SIMD=1 gives SIMD instructions to an app that calls the image module ($(simd_count "$im/wasm_js_simd.wasm")) and none without it; an app without the module, or with it and no call, has none"; fi
+fi
 node "$here/../../tools/seeds.mjs" || fail=1
 node "$here/../../tools/strings.mjs" || fail=1
 exit $fail
