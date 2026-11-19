@@ -17,9 +17,11 @@ const dir = path.resolve(process.argv[2] || path.join(top, 'tests/out/image'));
 const CAP = 400; // pages (64 KiB each): 26 MB, under the 12 MP progressive JPEG's 36 MB of coefficients
 const S = ['OK', 'NOT_IMAGE', 'TOO_BIG', 'UNSUPPORTED', 'CORRUPT', 'NO_ROOM', 'BAD_BOX'];
 const MAXMEM = CAP * 65536; // the same room, as the module's own limit: memory.grow itself refuses past it
-const builds = [['js', '', ''], ['eh', '', ''], ['js', CAP, ''], ['js', '', MAXMEM], ['eh', '', MAXMEM]];
-for (const [sjlj, cap, max] of builds)
-  execFileSync('make', ['-s', '-f', path.join(top, 'tests/image/wasm.mk'), `OUT=${dir}`, `SJLJ=${sjlj}`, ...(cap ? [`CAP=${cap}`] : []), ...(max ? [`MAXMEM=${max}`] : []), 'all'], { stdio: 'inherit' });
+// IMAGE_EH=0 leaves out the eh builds, for a clang whose wasm EH lowering is not clang 23's (the js way and SIMD are plain wasm).
+const builds = [['js', '', ''], ['eh', '', ''], ['js', CAP, ''], ['js', '', MAXMEM], ['eh', '', MAXMEM], ['js', '', '', 1], ['js', CAP, '', 1]]
+  .filter((x) => process.env.IMAGE_EH !== '0' || x[0] !== 'eh');
+for (const [sjlj, cap, max, simd] of builds)
+  execFileSync('make', ['-s', '-f', path.join(top, 'tests/image/wasm.mk'), `OUT=${dir}`, `SJLJ=${sjlj}`, ...(cap ? [`CAP=${cap}`] : []), ...(max ? [`MAXMEM=${max}`] : []), ...(simd ? ['SIMD=1'] : []), 'all'], { stdio: 'inherit' });
 
 const types = { '.html': 'text/html' };
 const srv = http.createServer((q, r) => {
@@ -34,8 +36,8 @@ let fails = 0;
 const ok = (c, m, why = '') => { if (!c) { fails++; console.log('FAIL', m + (why ? ': ' + why : '')); } else console.log('ok  ', m); };
 const b = await launch();
 try {
-  for (const [sjlj, cap, max] of builds) {
-    const name = `wasm_${sjlj}${cap ? '_cap' : ''}${max ? '_max' : ''}`;
+  for (const [sjlj, cap, max, simd] of builds) {
+    const name = `wasm_${sjlj}${cap ? '_cap' : ''}${max ? '_max' : ''}${simd ? '_simd' : ''}`;
     await b.send('Page.navigate', { url: url(path.join(dir, name + '.html')) });
     for (let i = 0; i < 200 && !(await b.evaluate('!!window.READY')); i++) await sleep(50);
     ok(await b.evaluate('!!window.READY'), `${name}: the page started`);
