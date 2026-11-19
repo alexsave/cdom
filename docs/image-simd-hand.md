@@ -278,7 +278,12 @@ The browser's arms, medians of the same 9 rounds, session 1 then session 2:
   0 differing bytes in all, and no trap.
 - `bench/image/equal.mjs`: the four bench inputs at boxes 900, 300, 1500, 2500 and 4000, scalar against SIMD, SHA-256 of the RGBA block: 20 of 20 equal.
   At the boxes over 1500 the JPEG decodes at 5/8 and beyond, so libjpeg's C 8x8 IDCT and fancy upsampling run in both builds: the dispatch answers no for them, as it must.
-- `tools/image.mjs` (Chrome), the cases of `cases.tsv` and the error paths, with the SIMD build as one more build (`wasm_js_simd`, `wasm_js_cap_simd`): every image equal to the oracle's exact integer image to the byte.
+- `bench/image/equal.mjs` is itself mutation-checked, on one (input, box 900) each, with the faults of `simd_mutants.py` built into the bench page: 8 of 11 make it print DIFFER (idct4-const, idct2-const, ycc-order, across-weight, down-halves, div-trunc-round on p12.jpg; paeth-min, sub3-store on p12.png).
+  Three it does not see, and why: div-cap (no pixel of p12.jpg at 900 has a quotient of 255), rgba-alpha (the scaler ignores alpha), up-saturate (p12.png has no Up row: 3,016 Paeth and 8 Sub).
+  The loop test catches all three; the two checks are not the same check.
+- `tools/image.mjs` (Chrome), the 65 cases of `cases.tsv` (the big inputs included) and the error paths, with the SIMD build as one more build (`wasm_js_simd`, `wasm_js_cap_simd`): every image equal to the oracle's exact integer image to the byte.
+- `tests/image/run.sh` as a whole, with `IMAGE_EH=0`: third_party equal to the archives, 9,182 native checks (ASan and UBSan, the scalar default) with 0 failures, every wasm build, the SIMD loop test.
+  A fault planted in the scalar Avg loop that moved to `cdom_image_loops.c` fails the native tests on four PNG cases, so the move kept the existing tests' hold on it.
 
 ## The design
 
