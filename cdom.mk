@@ -148,19 +148,34 @@ CDOM_IMAGE_LJT  := $(CDOM)/third_party/libjpeg-turbo-3.2.1/src
 CDOM_IMAGE_MZ   := $(CDOM)/third_party/miniz-3.1.2
 CDOM_IMAGE_SRC  :=
 CDOM_IMAGE_PARTS := own vendor miniz sjlj
-CDOM_IMAGE_OWN_SRC := $(CDOM)/src/cdom_image.c $(CDOM)/src/cdom_image_jpeg.c $(CDOM)/src/cdom_image_png.c
+CDOM_IMAGE_OWN_SRC := $(CDOM)/src/cdom_image.c $(CDOM)/src/cdom_image_jpeg.c $(CDOM)/src/cdom_image_png.c $(CDOM)/src/cdom_image_loops.c
 CDOM_IMAGE_OWN_CFLAGS := -isystem $(CDOM_IMAGE_LJT) -isystem $(CDOM_IMAGE_MZ) -DNO_GETENV -DNO_PUTENV
+# CDOM_IMAGE_SIMD: 0 (the default) is scalar; 1 builds the hot loops with wasm SIMD (-msimd128, src/cdom_image_loops.c and
+# src/jsimd/jsimd_wasm.c, which libjpeg-turbo reaches through its own SIMD dispatch, WITH_SIMD: the three headers in
+# src/jsimd/simd/ answer its "../simd/" includes). A SIMD module needs a browser with wasm SIMD (Chrome 91, Firefox 89,
+# Safari 16.4) and does not instantiate in an older one; the two builds are the same in every other way (docs/image-simd-hand.md).
+# MULTIPLIER and ALIGN_SIZE keep libjpeg's scalar types as they are with SIMD off (WITH_SIMD would make them short and 32).
+CDOM_IMAGE_SIMD ?= 0
+ifeq ($(CDOM_IMAGE_SIMD),1)
+cdom_mk_simd_flags := -msimd128 -DCDOM_IMAGE_SIMD=1 -DCDOM_JSIMD -DMULTIPLIER=int -DALIGN_SIZE=8
+CDOM_IMAGE_OWN_SRC += $(CDOM)/src/jsimd/jsimd_wasm.c
+else ifeq ($(CDOM_IMAGE_SIMD),0)
+cdom_mk_simd_flags :=
+else
+$(error cdom.mk: CDOM_IMAGE_SIMD is $(CDOM_IMAGE_SIMD), not 0 or 1)
+endif
+CDOM_IMAGE_OWN_CFLAGS += $(cdom_mk_simd_flags)
 CDOM_IMAGE_VENDOR_SRC := $(addprefix $(CDOM_IMAGE_LJT)/,jcomapi.c jdapimin.c jdhuff.c jdinput.c jdmarker.c jdmaster.c \
   jdphuff.c jmemmgr.c jpeg_nbits.c $(addprefix wrapper/,$(addsuffix -8.c,jdapistd jdcoefct jdcolor jddctmgr jdmainct \
   jdpostct jdsample jidctint jidctred jutils)))
-CDOM_IMAGE_VENDOR_CFLAGS := -w -I$(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV
+CDOM_IMAGE_VENDOR_CFLAGS := -w -I$(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV $(cdom_mk_simd_flags) $(if $(cdom_mk_simd_flags),-I$(CDOM)/src/jsimd/simd)
 CDOM_IMAGE_MINIZ_SRC := $(CDOM_IMAGE_MZ)/tinfl.c
 CDOM_IMAGE_MINIZ_CFLAGS := -w -I$(CDOM_IMAGE_MZ) -include $(CDOM)/src/cdom_image_miniz.h
 CDOM_IMAGE_SJLJ_SRC = $(CDOM)/src/cdom_image_sjlj.c $(if $(filter eh,$(CDOM_IMAGE_SJLJ)),$(CDOM)/src/cdom_image_sjlj_eh.c)
 cdom_mk_sjlj_js := -DCDOM_IMAGE_SJLJ_JS
 cdom_mk_sjlj_eh := -DCDOM_IMAGE_SJLJ_EH -mexception-handling -mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=true
 CDOM_IMAGE_SJLJ_CFLAGS = $(or $(cdom_mk_sjlj_$(CDOM_IMAGE_SJLJ)),$(error cdom.mk: CDOM_IMAGE_SJLJ is $(CDOM_IMAGE_SJLJ), not js or eh))
-CDOM_IMAGE_DEPS := $(wildcard $(CDOM_IMAGE_LJT)/*.h $(CDOM_IMAGE_LJT)/*.c) $(CDOM_IMAGE_MZ)/tinfl.h
+CDOM_IMAGE_DEPS := $(wildcard $(CDOM_IMAGE_LJT)/*.h $(CDOM_IMAGE_LJT)/*.c $(CDOM)/src/jsimd/*.c $(CDOM)/src/jsimd/simd/*.h) $(CDOM_IMAGE_MZ)/tinfl.h
 CDOM_HEADERS    := $(wildcard $(CDOM)/src/*.h $(CDOM)/src/libc/*.h)
 CDOM_SHIM       := $(CDOM)/shim/cdom.min.js
 

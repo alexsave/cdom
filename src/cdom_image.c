@@ -101,7 +101,7 @@ int cd_image_scaler_init(cd_image_scaler *s, uint32_t sw, uint32_t sh, uint32_t 
   if (out > 0xffffffffu) return 0;
   s->out = cd_alloc_try((uint32_t)out);
   s->acc = cd_alloc_try(dw * 3 * (uint32_t)sizeof(uint64_t));
-  s->hrow = cd_alloc_try(dw * 3 * (uint32_t)sizeof(uint32_t));
+  s->hrow = cd_alloc_try((dw * 3 + CDOM_IMAGE_SIMD) * (uint32_t)sizeof(uint32_t));   /* the SIMD body's one word of room */
   if (!s->out || !s->acc || !s->hrow) { cd_image_scaler_free(s); return 0; }
   memset(s->acc, 0, (size_t)dw * 3 * sizeof(uint64_t));
   return 1;
@@ -151,29 +151,15 @@ void cd_image_scaler_row(cd_image_scaler *s, const uint8_t *px) {
   s->row++;
   const uint32_t sw = s->sw, dw = s->dw, dh = s->dh, sh = s->sh;
   uint32_t *h = s->hrow;
-  memset(h, 0, (size_t)dw * 3 * sizeof(uint32_t));
-  /* across: source pixel c covers [c*dw, (c+1)*dw) in units of 1/dw; output pixel ox ends at (ox+1)*sw */
-  uint64_t pos = 0, hend = sw;
-  uint32_t ox = 0;
-  for (uint32_t c = 0; c < sw; c++, px += 4) {
-    uint64_t cend = (uint64_t)(c + 1) * dw;
-    while (pos < cend) {
-      uint64_t b = cend < hend ? cend : hend;
-      uint32_t wgt = (uint32_t)(b - pos);
-      uint32_t *q = h + (size_t)ox * 3;
-      q[0] += wgt * px[0]; q[1] += wgt * px[1]; q[2] += wgt * px[2];
-      pos = b;
-      if (pos == hend) { ox++; hend += sw; }
-    }
-  }
+  memset(h, 0, ((size_t)dw * 3 + CDOM_IMAGE_SIMD) * sizeof(uint32_t));
+  cd_image_scaler_across(h, px, sw, dw);
   /* down: this source row covers [row*dh, (row+1)*dh) in units of 1/dh; output row oy ends at (oy+1)*sh */
   uint64_t rend = (uint64_t)s->row * dh;
   while (s->ypos < rend) {
     uint64_t yend = (uint64_t)(s->oy + 1) * sh;
     uint64_t b = rend < yend ? rend : yend;
     uint64_t wgt = b - s->ypos;
-    uint64_t *a = s->acc;
-    for (uint32_t i = 0; i < dw * 3; i++) a[i] += wgt * h[i];
+    cd_image_scaler_down(s->acc, h, wgt, dw * 3);
     s->ypos = b;
     if (b == yend) { emit(s, s->oy); s->oy++; }
   }
