@@ -14,3 +14,8 @@ build-unfused/
 build-comb/
 build-combrgba/
 build-simdonly/
+build-native/
+build-prof/
+build-simd/
+build-prof0/
+build-prof1/

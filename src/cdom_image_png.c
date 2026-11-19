@@ -55,31 +55,6 @@ static int next_chunk(const uint8_t *p, uint32_t len, uint64_t *at, const uint8_
   return 1;
 }
 
-static int iabs(int v) { return v < 0 ? -v : v; }
-static uint8_t paeth(int a, int b, int c) {
-  int pa = iabs(b - c), pb = iabs(a - c), pc = iabs(a + b - 2 * c);
-  return (uint8_t)(pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
-}
-
-/* Undoes row filter f on cur (n bytes, bpp bytes a pixel) against prev (the row above, all zero for the first). */
-static int unfilter(uint32_t f, uint8_t *cur, const uint8_t *prev, uint32_t n, uint32_t bpp) {
-  switch (f) {
-    case 0: break;
-    case 1: for (uint32_t i = bpp; i < n; i++) cur[i] = (uint8_t)(cur[i] + cur[i - bpp]); break;
-    case 2: for (uint32_t i = 0; i < n; i++) cur[i] = (uint8_t)(cur[i] + prev[i]); break;
-    case 3:
-      for (uint32_t i = 0; i < bpp && i < n; i++) cur[i] = (uint8_t)(cur[i] + (prev[i] >> 1));
-      for (uint32_t i = bpp; i < n; i++) cur[i] = (uint8_t)(cur[i] + ((cur[i - bpp] + prev[i]) >> 1));
-      break;
-    case 4:
-      for (uint32_t i = 0; i < bpp && i < n; i++) cur[i] = (uint8_t)(cur[i] + prev[i]);
-      for (uint32_t i = bpp; i < n; i++) cur[i] = (uint8_t)(cur[i] + paeth(cur[i - bpp], prev[i], prev[i - bpp]));
-      break;
-    default: return 0;
-  }
-  return 1;
-}
-
 /* One channel composited on white with alpha a. */
 static uint8_t over(uint32_t c, uint32_t a) { return (uint8_t)((c * a + 255u * (255u - a) + 127u) / 255u); }
 
@@ -96,8 +71,9 @@ static void to_rgba(const fmt *f, const uint8_t *r, uint8_t *out) {
   uint32_t w = f->w;
   switch (f->ctype) {
     case 2:
+      if (!f->key) { cd_image_rgb_to_rgba(r, out, w); break; }
       for (uint32_t x = 0; x < w; x++, r += 3, out += 4) {
-        if (f->key && r[0] == f->key_rgb[0] && r[1] == f->key_rgb[1] && r[2] == f->key_rgb[2]) out[0] = out[1] = out[2] = 255;
+        if (r[0] == f->key_rgb[0] && r[1] == f->key_rgb[1] && r[2] == f->key_rgb[2]) out[0] = out[1] = out[2] = 255;
         else { out[0] = r[0]; out[1] = r[1]; out[2] = r[2]; }
         out[3] = 255;
       }
@@ -176,7 +152,7 @@ static int64_t rows(void *c, uint8_t *b, uint32_t n, int last) {
   while (x->done < x->h && x->row_at + row <= lim) {
     uint8_t *cur = b + x->row_at;
     const uint8_t *prev = x->done ? cur - row : x->zero;
-    if (!unfilter(cur[0], cur + 1, prev + 1, x->stride, x->bpp)) return -1;
+    if (!cd_image_unfilter(cur[0], cur + 1, prev + 1, x->stride, x->bpp)) return -1;
     if (x->sc.step == 3) cd_image_scaler_row(&x->sc, cur + 1);   /* RGB as it is: the scaler reads 3 bytes a pixel */
     else { to_rgba(&x->f, cur + 1, x->px); cd_image_scaler_row(&x->sc, x->px); }
     x->row_at += row;
@@ -238,8 +214,10 @@ uint32_t cd_image_png_resize(const uint8_t *p, uint32_t len, const cd_image_info
     } else if (!memcmp(type, "IEND", 4)) break;
     x->at = at;                                    /* the IDAT pieces start at the first IDAT */
   }
-  /* 8-bit RGB with no colour key: the rows go to the scaler as they are, with no RGBA row between */
-  if (ctype == 2 && depth == 8 && !x->f.key) x->sc.step = 3;
+  /* 8-bit RGB with no colour key, in the scalar build: the rows go to the scaler as they are, with no RGBA row
+   * between. The SIMD build keeps the RGBA row: its RGB to RGBA and across loops in SIMD are faster than the scalar
+   * RGB read (docs/image-png-speed.md, "With image-simd's loops"). */
+  if (!CDOM_IMAGE_SIMD && ctype == 2 && depth == 8 && !x->f.key) x->sc.step = 3;
   /* the image data: a stream cut short, refused or with a different adler32, or a row with no filter, is CORRUPT */
   if (st == CD_IMAGE_OK && (!saw_idat || cd_inflate_zlib(&x->inf, buf, (uint32_t)cap, idat, rows, x) != CD_INFLATE_OK))
     st = CD_IMAGE_CORRUPT;

@@ -2,7 +2,7 @@
  * takes away when it is hidden. Taking it away removes its nodes from the document, and frees every id
  * that was made while it was building: the region records those ids, so nothing is left behind. Nothing is
  * diffed: the disclosure builds its section when it opens, and the tabs rebuild their panel on each change. */
-#include "cdom.h"
+#include "cdom_ui.h"
 
 
 /* Two regions, of the two kinds. The disclosure's region is one element (its root), so its parent stays 0.
@@ -78,7 +78,7 @@ static void select_tab(uint32_t k) {
 
 /* The tab's index is the ctx. Clicking the tab that is already selected does nothing: its panel is built. */
 static void on_tab(const cd_event_rec *, void *ctx) {
-  uint32_t k = (uint32_t)(uintptr_t)ctx;
+  uint32_t k = CD_CTX_INDEX(ctx);
   if (k != selected) select_tab(k);
 }
 
@@ -120,7 +120,7 @@ void cd_main(void) {
 
   /* The handlers are registered once the nodes they name are closed. */
   cd_on(toggle, CD_EV_CLICK, on_toggle, nullptr);
-  for (uint32_t k = 0; k < 3; k++) cd_on(tabs[k], CD_EV_CLICK, on_tab, (void *)(uintptr_t)k);
+  for (uint32_t k = 0; k < 3; k++) cd_on(tabs[k], CD_EV_CLICK, on_tab, CD_CTX_OF(k));
 
   select_tab(0);
 }

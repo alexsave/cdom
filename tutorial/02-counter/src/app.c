@@ -1,6 +1,6 @@
 /* Lesson 2: state and events. The count is a plain C variable. A click changes it and then updates the
  * one text node that shows it: there is no re-render and no diff, because C knows exactly what changed. */
-#include "cdom.h"
+#include "cdom_ui.h"
 
 
 /* The state. React keeps it in a hook; here it is a global that lives as long as the page. */
@@ -10,16 +10,13 @@ static int32_t count;
  * per id, so an id is a direct index, not a selector. */
 static cd_id count_text, minus, plus, reset;
 
-/* The view of the state: one DOM operation. A count below zero gets a "-" in front, since
- * cd_set_text_node_num takes an unsigned number. */
+/* The view of the state: one DOM operation. cd_buf (cdom_ui.h) writes the number, with its "-" when it is
+ * below zero, into a buffer on the stack; cd_tmp hands those bytes (a length, no terminator) to the one call. */
 static void show(void) {
-  if (count >= 0) {
-    cd_set_text_node_num(count_text, (uint32_t)count);
-  } else {
-    char buf[12];
-    uint32_t n = cd_fmt(buf, count, 0, CD_UNIT_NONE);
-    cd_set_text_node(count_text, cd_tmp(buf, n)); /* bytes with a length and no terminator */
-  }
+  char room[12];
+  cd_buf b = cd_buf_in(room, sizeof room);
+  cd_buf_i64(&b, count);
+  cd_set_text_node(count_text, cd_tmp(b.p, b.len));
 }
 
 /* Handlers: (event, ctx). ctx is whatever was passed to cd_on; here it carries the step. */

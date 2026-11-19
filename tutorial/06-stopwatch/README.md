@@ -104,6 +104,7 @@ export default function Stopwatch() {
 static int running;
 static double accumulated_ms, started_ms; /* the clock: the runs that are over, and the run going now */
 static uint32_t shown_cs;                 /* what is on the screen, in whole hundredths */
+static cd_timer_slot note_timer;          /* at most one timer pending: the one that clears the note */
 
 static double elapsed_ms(void) {
   return accumulated_ms + (running ? cd_now() - started_ms : 0.0);
@@ -131,9 +132,8 @@ static void on_start_stop(const cd_event_rec *, void *) {
 
 static void on_reset(const cd_event_rec *, void *) {
   ...
-  if (note_timer) cd_timer_stop(note_timer); /* a Reset before the note clears replaces its timer */
   cd_set_text_node(note_text, "Reset");
-  note_timer = cd_timer_cb(NOTE_MS, clear_note, nullptr);
+  cd_timer_set(&note_timer, NOTE_MS, clear_note, nullptr); /* stops the slot's pending timer first */
 }
 ```
 
@@ -149,6 +149,20 @@ static void on_reset(const cd_event_rec *, void *) {
 - **Skip the write when the text would not change.** A hundredth lasts 10 ms, so a screen faster than 100 Hz has frames that land in the hundredth already on the screen.
   `cd_on_frame` compares the hundredths it would show with the ones on the screen, and writes only when they differ.
   The React version has no such check, so it renders the component on every frame.
+- **A timer slot.** The raw way keeps the timer's token in a variable, stops it before starting the next, and clears the variable when the timer fires:
+
+  ```c
+  static uint32_t note_timer;                   /* 0 when none is pending */
+  static void clear_note(void *) { note_timer = 0; cd_set_text_node(note_text, ""); }
+  ...
+  if (note_timer) cd_timer_stop(note_timer);
+  note_timer = cd_timer_cb(NOTE_MS, clear_note, nullptr);
+  ```
+
+  `cd_timer_slot` is that variable and those two rules in one type: `cd_timer_set(&note_timer, ms, fn, ctx)` stops what is pending in the slot and starts the new timer, and the slot is empty again before `fn` runs.
+  So `clear_note` does not touch it, and a Reset before the note clears still cannot let the old timer clear the new note.
+- **Buttons are one call.** `cd_button("lap", "Lap", on_lap, nullptr, nullptr)` from `cdom_ui.h` (the lesson's Makefile says `APP_MODULES := ui`) replaces `cd_open_id`, `cd_class`, `cd_text`, `cd_close` and `cd_on`, and sets `type="button"`.
+  The Start button passes `&start_text` as the last argument, to get the id of its label's text node, which `sync` changes between "Start" and "Stop".
 - **Timer tokens.** `cd_timer_cb` returns a token, and `cd_timer_stop(token)` is `clearTimeout`.
   Stopping a timer that already fired does nothing, so the app does not need to know whether it fired, and a token that was stopped can never stop a later timer in the same slot.
   The React version closes over the id in its effect, and the cleanup it returns is what clears the timer.
