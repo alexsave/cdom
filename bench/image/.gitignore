@@ -9,3 +9,5 @@ build-js-mix/
 build-native/
 build-prof/
 build-simd/
+build-prof0/
+build-prof1/

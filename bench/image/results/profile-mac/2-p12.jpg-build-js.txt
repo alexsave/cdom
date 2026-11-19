@@ -1,0 +1,15 @@
+# p12.jpg build-prof0 Chrome/157.0.8103.79: 8 runs, resize 60.3 ms mean, sampled 71.9 ms per run
+ 68.0%     41.2 ms  decode_mcu
+ 10.5%      6.4 ms  cd_image_scaler_row
+  7.7%      4.7 ms  jpeg_idct_2x2
+  6.7%      4.1 ms  jpeg_idct_4x4
+  4.4%      2.7 ms  decompress_onepass
+  2.0%      1.2 ms  ycc_extrgbx_convert
+  0.3%      0.2 ms  window.arm
+  0.1%      0.1 ms  fetch
+  0.0%      0.0 ms  room
+  0.0%      0.0 ms  jpeg_destroy_decompress
+  0.0%      0.0 ms  body
+  0.0%      0.0 ms  Tt
+  0.0%      0.0 ms  jinit_huff_decoder
+  0.0%      0.0 ms  prepare_for_output_pass
