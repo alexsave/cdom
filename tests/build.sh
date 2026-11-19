@@ -59,3 +59,13 @@ wasm -O2 "$here/out/legacy.wasm" "$here/legacy.c" "$here/../src/cdom.c" "$here/.
 node "$legacy" app "$here/out/legacy.wasm" "$here/out/legacy.wasm.js"
 page "$here/legacy.html" "$here/out/legacy.shim.html" "$here/out/legacy.wasm"
 node "$legacy" page "$here/out/legacy.shim.html" "$here/out/legacy.html"
+# cd_job (tools/job.mjs): the app, and the synthetic job module built as cdom.mk builds one (APP_JOBS): cdom's heap alone
+# (-DCDOM_HEAP_ONLY), mini.c, cdom_job_mod.c, no string table. The cap build has the heap at 100 pages (6.4 MB), for NO_ROOM.
+jobwasm() { # jobwasm <opt> <out.wasm> <sources and extra flags...>
+  local opt="$1" o="$2"; shift 2
+  "$CC" "$opt" "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -DCDOM_HEAP_ONLY -o "$o" "$@"
+}
+jobwasm -Oz "$here/out/shrink_job.wasm" "$here/shrink_job.c" "$here/../src/cdom.c" "$here/../src/mini.c" "$here/../src/cdom_job_mod.c"
+jobwasm -Oz "$here/out/shrink_job_cap.wasm" -DCDOM_HEAP_PAGES_MAX=100 "$here/shrink_job.c" "$here/../src/cdom.c" "$here/../src/mini.c" "$here/../src/cdom_job_mod.c"
+wasm -O2 "$here/out/job.wasm" "$here/job.c" "$here/../src/cdom.c" "$here/../src/cdom_job.c" "$here/../src/mini.c"
+page "$here/job.html" "$here/out/job.html" "$here/out/job.wasm"
