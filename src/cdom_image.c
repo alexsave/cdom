@@ -100,8 +100,8 @@ int cd_image_scaler_init(cd_image_scaler *s, uint32_t sw, uint32_t sh, uint32_t 
   uint64_t out = (uint64_t)dw * dh * 4;
   if (out > 0xffffffffu) return 0;
   s->out = cd_alloc_try((uint32_t)out);
-  s->acc = cd_alloc_try(dw * 3 * (uint32_t)sizeof(uint64_t));
-  s->hrow = cd_alloc_try((dw * 3 + CDOM_IMAGE_SIMD) * (uint32_t)sizeof(uint32_t));   /* the SIMD body's one word of room */
+  s->acc = cd_alloc_try(dw * 3 * (uint32_t)sizeof(uint64_t) + (CDOM_IMAGE_SIMD ? dw * 3 : 0));
+  s->hrow = cd_alloc_try(dw * 3 * (uint32_t)sizeof(uint32_t));
   if (!s->out || !s->acc || !s->hrow) { cd_image_scaler_free(s); return 0; }
   memset(s->acc, 0, (size_t)dw * 3 * sizeof(uint64_t));
   return 1;
@@ -122,7 +122,10 @@ void cd_image_scaler_free(cd_image_scaler *s) {
  * in bytes; the offset is only made a pointer while it is inside the image). */
 static void emit(cd_image_scaler *s, uint32_t y) {
   const uint32_t dw = s->dw, dh = s->dh, ow = s->ow, oh = s->oh;
-  const uint64_t t2 = (uint64_t)s->sw * s->sh * 2, t = t2 / 2;
+  const uint64_t t = (uint64_t)s->sw * s->sh;
+#if !CDOM_IMAGE_SIMD
+  const uint64_t t2 = t * 2;
+#endif
   ptrdiff_t at, step;
   switch (s->o) {
     case 2: at = ((ptrdiff_t)y * ow + dw - 1) * 4; step = -4; break;
@@ -134,6 +137,14 @@ static void emit(cd_image_scaler *s, uint32_t y) {
     case 8: at = ((ptrdiff_t)(oh - 1) * ow + y) * 4; step = -(ptrdiff_t)ow * 4; break;
     default: at = (ptrdiff_t)y * ow * 4; step = 4; break;
   }
+#if CDOM_IMAGE_SIMD
+  const uint8_t *q = (const uint8_t *)(s->acc + (size_t)dw * 3);
+  cd_image_scaler_div((uint8_t *)q, s->acc, dw * 3, t);
+  for (uint32_t x = 0; x < dw; x++, at += step, q += 3) {
+    uint8_t *d = s->out + at;
+    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 255;
+  }
+#else
   const uint64_t *a = s->acc;
   for (uint32_t x = 0; x < dw; x++, at += step, a += 3) {
     uint8_t *d = s->out + at;
@@ -143,6 +154,7 @@ static void emit(cd_image_scaler *s, uint32_t y) {
     }
     d[3] = 255;
   }
+#endif
   memset(s->acc, 0, (size_t)dw * 3 * sizeof(uint64_t));
 }
 
@@ -151,7 +163,6 @@ void cd_image_scaler_row(cd_image_scaler *s, const uint8_t *px) {
   s->row++;
   const uint32_t sw = s->sw, dw = s->dw, dh = s->dh, sh = s->sh;
   uint32_t *h = s->hrow;
-  memset(h, 0, ((size_t)dw * 3 + CDOM_IMAGE_SIMD) * sizeof(uint32_t));
   cd_image_scaler_across(h, px, sw, dw);
   /* down: this source row covers [row*dh, (row+1)*dh) in units of 1/dh; output row oy ends at (oy+1)*sh */
   uint64_t rend = (uint64_t)s->row * dh;
