@@ -1368,6 +1368,12 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
   }
   {
     // 27. cdom_ui.
+    let rtThrew = '';
+    try { x.t_ui_runtime(); } catch (e) { rtThrew = String(e); }
+    check('cd_el_text takes a runtime string (cd_tmp), which is read after the element and class calls, and a literal still works', () => {
+      const h = $('#uirt') ? $('#uirt').innerHTML : '';
+      return (!rtThrew && h === '<span class="rt">lap 7</span><em>00:01</em>') || JSON.stringify({ h, rtThrew });
+    });
     let threw = '';
     try { x.t_ui_build(); } catch (e) { threw = String(e); }
     const sec = $('#ui');
@@ -1380,12 +1386,6 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
     try { x.t_ui_relabel(); } catch (e) { threw += String(e); }
     check('cd_el, cd_el_id and cd_el_text build an element with a class (or none), named or holding one text', () =>
       (!threw && shape.startsWith('<div class="box"><p>plain</p><span class="named" data-n="1"></span></div>')) || JSON.stringify({ shape, threw }));
-    let rtThrew = '';
-    try { x.t_ui_runtime(); } catch (e) { rtThrew = String(e); }
-    check('cd_el_text takes a runtime string (cd_tmp), which is read after the element and class calls, and a literal still works', () => {
-      const h = $('#uirt') ? $('#uirt').innerHTML : '';
-      return (!rtThrew && h === '<span class="rt">lap 7</span><em>00:01</em>') || JSON.stringify({ h, rtThrew });
-    });
     check('cd_button: a type="button" with its class and label, a click to its fn with its ctx, and the label\'s text node named', () => {
       const r = [go.type === 'button' && go.getAttribute('type') === 'button', plain.className === '' && plain.textContent === 'Plain', first === '1,7', second === '2,8', go.textContent === 'Going'];
       return (!threw && r.every(Boolean)) || JSON.stringify({ r, first, second, threw });
