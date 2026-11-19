@@ -14,6 +14,9 @@ CDOM_OPT := -O2
 cdom_comma := ,
 APP_LDFLAGS := $(if $(MAXMEM),-Wl$(cdom_comma)--max-memory=$(MAXMEM))
 CDOM_IMAGE_SJLJ := $(SJLJ)
-CDOM_IMAGE_SIMD := $(if $(SIMD),1,0)
+# without SIMD, cdom.mk's default (scalar), so tests/link checks the default itself
+ifdef SIMD
+CDOM_IMAGE_SIMD := 1
+endif
 include $(CDOM)/cdom.mk
 all: $(APP_PAGE)
