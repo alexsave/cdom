@@ -38,7 +38,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq clang lld llvm binaryen libjpeg-turbo-progs
+          sudo apt-get install -y -qq clang lld llvm libjpeg-turbo-progs
+          # Ubuntu's binaryen (116) writes wasm2js output of another shape than tools/legacy/build.mjs reads (brew has 130).
+          b=binaryen-version_130-x86_64-linux.tar.gz
+          curl -fsSL -o "$RUNNER_TEMP/$b" "https://github.com/WebAssembly/binaryen/releases/download/version_130/$b"
+          echo "0a18362361ad05465118cd8eeb72edaeec89de6894bc283576ef4e07aa3babcc  $RUNNER_TEMP/$b" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$b" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/binaryen-version_130/bin" >> "$GITHUB_PATH"
           echo "CHROME=$(command -v google-chrome)" >> "$GITHUB_ENV"
           # Ubuntu 24.04 restricts unprivileged user namespaces, which Chrome's sandbox needs.
           echo "CHROME_ARGS=--no-sandbox" >> "$GITHUB_ENV"
@@ -64,14 +70,14 @@ jobs:
         run: tests/build.sh
       - name: tools/unit.mjs
         run: node tools/unit.mjs
+      - name: tests/image/run.sh (tools/alloc.mjs reads its outputs)
+        run: IMAGE_BIG=0 tests/image/run.sh
       - name: tools/alloc.mjs
         run: node tools/alloc.mjs
       - name: tests/link/run.sh
         run: tests/link/run.sh
       - name: tools/resize_ban.sh
         run: tools/resize_ban.sh
-      - name: tests/image/run.sh
-        run: IMAGE_BIG=0 tests/image/run.sh
       - name: tests/lits/run.sh
         run: tests/lits/run.sh
       - name: tests/page/run.sh
