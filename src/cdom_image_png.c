@@ -220,10 +220,9 @@ uint32_t cd_image_png_resize(const uint8_t *p, uint32_t len, const cd_image_info
       }
     } else if (!memcmp(type, "IEND", 4)) break;
   }
-  if (st == CD_IMAGE_OK && (done < h || !ended)) st = CD_IMAGE_CORRUPT;   /* the data ended before the last row
-                                                                         * or before the checksum */
+  if (st == CD_IMAGE_OK && !ended) st = CD_IMAGE_CORRUPT;   /* the data ended before the stream's checksum */
   if (st == CD_IMAGE_OK) {
-    uint8_t *o = cd_image_scaler_take(&x->sc);
+    uint8_t *o = cd_image_scaler_take(&x->sc);   /* 0 for a stream that ended short of the last row: CORRUPT */
     if (o) { *rgba = o; *ow = x->sc.ow; *oh = x->sc.oh; }
     else st = CD_IMAGE_CORRUPT;
   } else cd_image_scaler_free(&x->sc);
