@@ -4,7 +4,7 @@
 # tools/host.mjs).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"
+if [ "$(uname -s)" = Darwin ]; then CC="${WASM_CC:-/opt/homebrew/opt/llvm/bin/clang}"; else CC="${WASM_CC:-clang}"; fi
 legacy="$here/../tools/legacy/build.mjs"
 [ -d "$here/../tools/legacy/node_modules" ] || (cd "$here/../tools/legacy" && npm ci --no-audit --no-fund)
 mkdir -p "$here/out"
@@ -57,6 +57,10 @@ wasm -O2 "$here/out/host.wasm" "$here/host.c" "$here/../src/cdom.c" "$here/../sr
 page "$here/host.html" "$here/out/host.html" "$here/out/host.wasm"
 wasm -O2 "$here/out/legacy.wasm" "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/cdom_job.c" "$here/../src/cdom_image_sjlj.c" -DCDOM_IMAGE_SJLJ_JS "$here/../src/mini.c"
 node "$legacy" app "$here/out/legacy.wasm" "$here/out/legacy.wasm.js"
+# The page starts the pair [legacy.wasm, legacy.simd.wasm], as an APP_SIMD page does: the twin is the same sources with
+# -msimd128, the same string table (as cdom.mk requires), and the fallback takes the scalar one's wasm2js build.
+wasm -O2 "$here/out/legacy.simd.wasm" -msimd128 "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/cdom_job.c" "$here/../src/cdom_image_sjlj.c" -DCDOM_IMAGE_SJLJ_JS "$here/../src/mini.c"
+cmp "$here/out/legacy.wasm.lits" "$here/out/legacy.simd.wasm.lits"
 page "$here/legacy.html" "$here/out/legacy.shim.html" "$here/out/legacy.wasm"
 node "$legacy" page "$here/out/legacy.shim.html" "$here/out/legacy.html"
 # cd_job (tools/job.mjs): the app, and the synthetic job module built as cdom.mk builds one (APP_JOBS): cdom's heap alone

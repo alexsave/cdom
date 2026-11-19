@@ -2,7 +2,7 @@
  * ones the filter lets through. cd_list_update takes the ids to show, in order, and does what React does
  * when it reconciles: it creates a row for each new id, patches the rows that stayed, and destroys the rows
  * that went. A row that did not change is not written again. */
-#include "cdom.h"
+#include "cdom_ui.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -22,7 +22,7 @@ static uint32_t next_id = 1;
 enum { FILTER_ALL, FILTER_ACTIVE, FILTER_DONE };
 static uint32_t filter = FILTER_ALL;
 
-static cd_id form, input, list_ul, left_text, clear_btn;
+static cd_id form, input, list_ul, left_text;
 static cd_id filter_btn[3];
 static cd_list list;
 static uint32_t keys[TODO_CAP]; /* the ids to show this render, in order; create reads them by index */
@@ -63,7 +63,7 @@ static void on_remove(const cd_event_rec *e, void *ctx);
 /* The three things React does for you when it reconciles, written out. cd_list_update calls them. */
 
 /* create: a new id gets its whole row. cd_at is already set to the list, so the row lands in place.
- * The handlers are registered after the row closes, and their ctx is the todo's id, so an event finds its todo. */
+ * The handlers' ctx is the todo's id, so an event finds its todo. */
 static cd_id item_create(void *, uint32_t i, uint32_t *data) {
   Todo *t = find(keys[i]);
   uint32_t vi = view_new();
@@ -73,13 +73,12 @@ static cd_id item_create(void *, uint32_t i, uint32_t *data) {
   cd_class(t->done ? "item done" : "item");
   v->check = cd_open_id("input"); cd_attr("type", "checkbox"); cd_close();
   cd_open("span"); cd_class("text"); cd_text(cd_tmp(t->text, t->len)); cd_close();
-  v->remove = cd_open_id("button");
-  cd_class("remove"); cd_attr("aria-label", "Remove"); cd_text("×");
-  cd_close();
+  /* cd_button (cdom_ui.h) opens the button, gives it its class and text, closes it and registers the click. */
+  v->remove = cd_button("remove", "×", on_remove, CD_CTX_OF(t->id), nullptr);
+  cd_set_attr(v->remove, "aria-label", "Remove");
   cd_close();
   cd_set_bool(v->check, "checked", t->done);
-  cd_on(v->check, CD_EV_CHANGE, on_check, (void *)(uintptr_t)t->id);
-  cd_on(v->remove, CD_EV_CLICK, on_remove, (void *)(uintptr_t)t->id);
+  cd_on(v->check, CD_EV_CHANGE, on_check, CD_CTX_OF(t->id));
   *data = vi;
   return row;
 }
@@ -107,7 +106,7 @@ static void item_destroy(void *, cd_item *it) {
 static const cd_list_fns TODO_FNS = {nullptr, item_create, item_patch, item_destroy};
 
 /* The view of the model: the keys the filter lets through, then the footer's count. */
-static void render(void) {
+static void render(void *) {
   uint32_t n = 0, left = 0;
   for (uint32_t i = 0; i < ntodos; i++) {
     if (shown(&todos[i])) keys[n++] = todos[i].id;
@@ -149,31 +148,31 @@ static void on_submit(const cd_event_rec *, void *) {
 
   cd_set_str(input, "value", "");
   cd_call(input, "focus"); /* a click on Add moved the focus to the button; the next todo is typed here */
-  render();
+  cd_dirty(render, nullptr);
 }
 
 static void on_check(const cd_event_rec *, void *ctx) {
-  Todo *t = find((uint32_t)(uintptr_t)ctx);
+  Todo *t = find(CD_CTX_INDEX(ctx));
   if (!t) return;
   t->done = !t->done;
-  render();
+  cd_dirty(render, nullptr);
 }
 
 static void on_remove(const cd_event_rec *, void *ctx) {
-  uint32_t id = (uint32_t)(uintptr_t)ctx;
+  uint32_t id = CD_CTX_INDEX(ctx);
   for (uint32_t i = 0; i < ntodos; i++) {
     if (todos[i].id == id) { remove_at(i); break; }
   }
-  render();
+  cd_dirty(render, nullptr);
 }
 
 static void on_filter(const cd_event_rec *, void *ctx) {
-  uint32_t k = (uint32_t)(uintptr_t)ctx;
+  uint32_t k = CD_CTX_INDEX(ctx);
   filter = k;
   for (uint32_t i = 0; i < 3; i++) {
     cd_set_attr(filter_btn[i], "aria-pressed", i == k ? "true" : "false");
   }
-  render();
+  cd_dirty(render, nullptr);
 }
 
 static void on_clear(const cd_event_rec *, void *) {
@@ -182,14 +181,12 @@ static void on_clear(const cd_event_rec *, void *) {
     if (!todos[i].done) todos[kept++] = todos[i];
   }
   ntodos = kept;
-  render();
+  cd_dirty(render, nullptr);
 }
 
 static cd_id filter_button(const char *label, uint32_t k) {
-  cd_id id = cd_open_id("button");
-  cd_attr("aria-pressed", k == filter ? "true" : "false");
-  cd_text(label);
-  cd_close();
+  cd_id id = cd_button(CD_NONE, label, on_filter, CD_CTX_OF(k), nullptr);
+  cd_set_attr(id, "aria-pressed", k == filter ? "true" : "false");
   return id;
 }
 
@@ -221,14 +218,12 @@ void cd_main(void) {
   filter_btn[1] = filter_button("Active", FILTER_ACTIVE);
   filter_btn[2] = filter_button("Done", FILTER_DONE);
   cd_close();
-  clear_btn = cd_open_id("button"); cd_class("clear"); cd_text("Clear done"); cd_close();
+  cd_button("clear", "Clear done", on_clear, nullptr, nullptr);
   cd_close();
   cd_close();
 
-  /* The handlers are registered once the nodes they name are closed. */
+  /* The buttons registered their own handlers (cd_button); the form is wired once it is closed. */
   cd_on(form, CD_EV_SUBMIT, on_submit, nullptr);
-  for (uint32_t k = 0; k < 3; k++) cd_on(filter_btn[k], CD_EV_CLICK, on_filter, (void *)(uintptr_t)k);
-  cd_on(clear_btn, CD_EV_CLICK, on_clear, nullptr);
 
-  render();
+  cd_dirty(render, nullptr);
 }
