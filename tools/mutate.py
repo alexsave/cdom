@@ -113,9 +113,9 @@ M = [
   ('fmt-round', 'src/cdom.c', '(v < 0 ? -0.5 : 0.5)', '0.5', UNIT, 'FAIL cd_fmt'),
   ('two-heaps', 'src/cdom.c', 'void *cd_alloc(uint32_t n) {\n  void *p = malloc(n);', 'void *cd_alloc(uint32_t n) {\n  void *p = heap_alloc(n);', LINK, "FAIL the app's heap"),
   # the _try allocations (tools/alloc.mjs, tests/link/run.sh's size gate)
-  ('try-traps', 'src/cdom.c', '    if (may_fail) return 0;\n', '    (void)may_fail;\n', ALLOC, 'FAIL cd_alloc_try: blocks'),
+  ('try-traps', 'src/cdom.c', '    if (may_fail) return 0;\n', '    (void)may_fail;\n', ALLOC, 'FAIL cd_alloc_try at the cap: blocks'),
   ('malloc-null', 'src/cdom.c', '    __builtin_trap(); /* out of memory */', '    return 0;', ALLOC, 'FAIL malloc still traps'),
-  ('realloc-big-null', 'src/cdom.c', '    if (may_fail) return 0;\n    __builtin_trap(); /* out of memory */', '    return 0;', ALLOC, 'FAIL realloc still traps'),
+  ('realloc-big-null', 'src/cdom.c', '    if (may_fail) return 0;\n    __builtin_trap(); /* out of memory */', '    (void)may_fail;\n    return 0;', ALLOC, 'FAIL realloc still traps'),
   ('realloc-try-frees', 'src/cdom.c', '  void *q = may_fail ? heap_alloc_try((uint32_t)n) : heap_alloc((uint32_t)n);\n', '  void *q = may_fail ? heap_alloc_try((uint32_t)n) : heap_alloc((uint32_t)n);\n  if (p && !q) free(p);\n', ALLOC, 'FAIL cd_realloc_try'),
   # the heap's large blocks (tests/alloc_mem.c): each rule its own case
   ('heap-big-pow2', 'src/cdom.c', '  if (n > HEAP_SMALL_MAX - 8) {\n    c = HEAP_BIG;', '  if (0) {\n    c = HEAP_BIG;', ALLOC, 'FAIL a large block costs its size'),
@@ -134,7 +134,7 @@ M = [
   ('bytes-encoded-kept', 'src/cdom.c', '  cd_on_encoded(token, p, len);\n  cd_flush();\n  cd_free((void *)p);', '  cd_on_encoded(token, p, len);\n  cd_flush();', ALLOC, 'FAIL cd_encoded frees'),
   ('bytes-store-kept', 'src/cdom_store.c', '  cd_free((void *)p); /* the block cd_bytes_buf gave', '  /* the block cd_bytes_buf gave', ALLOC, 'FAIL cd_store_got frees'),
   ('bytes-url-kept', 'src/cdom_url.c', '  cd_free((void *)path);', '', ALLOC, 'FAIL cd_url_changed frees'),
-  ('heap-cap-loose', 'src/cdom.c', '  if ((uint32_t)__builtin_wasm_memory_size(0) + pages > (uint32_t)(CDOM_HEAP_PAGES_MAX)) return 0;', '  if ((uint32_t)__builtin_wasm_memory_size(0) + pages > (uint32_t)(CDOM_HEAP_PAGES_MAX) + 8) return 0;', ALLOC, 'FAIL cd_alloc_try: blocks'),
+  ('heap-cap-loose', 'src/cdom.c', '  if ((uint32_t)__builtin_wasm_memory_size(0) + pages > (uint32_t)(CDOM_HEAP_PAGES_MAX)) return 0;', '  if ((uint32_t)__builtin_wasm_memory_size(0) + pages > (uint32_t)(CDOM_HEAP_PAGES_MAX) + 8) return 0;', ALLOC, 'FAIL cd_alloc_try at the cap: blocks'),
   ('own-alloc-bypassed', 'src/cdom.c', 'static int heap_is_cdoms(void) { return malloc == cdom_heap_malloc; }', 'static int heap_is_cdoms(void) { return 1; }', ALLOC, 'FAIL cd_alloc_try and cd_realloc_try on an app'),
   ('try-path-shared', 'src/cdom.c', 'static inline __attribute__((always_inline)) void *heap_alloc_or(', '__attribute__((noinline)) static void *heap_alloc_or(', LINK, 'FAIL the _try path is in an app that never calls it'),
   ('try-path-heavy', 'src/cdom.c', '  return n >> 31 ? 0 : heap_alloc_try(n);\n}', '  void *p = n >> 31 ? 0 : heap_alloc_try(n);\n  char t[24];\n  if (p) ((uint8_t *)p)[0] = (uint8_t)cd_fmt_len(t, (double)n / 3, CD_UNIT_PX); /* a path that grew: cd_fmt in it */\n  return p;\n}', LINK, 'FAIL calling cd_alloc_try costs'),
