@@ -51,3 +51,60 @@ tools/heapregress_probe.mjs loads an entry, clicks #run once as the harness does
 - M2 is refuted: nothing is free at the end of the click, small or large; the large-block rules can only have lowered the heap (the arena's 64 KiB is a 68 KiB block now, not a 128 KiB class).
 - And `performance.measureUserAgentSpecificMemory()` does not count wasm memory at all: growing the memory by 16 pages (1 MiB) after the measure and measuring again moved it by 0.5 KB on the base and 6 KB on main, noise of the measure (GROW=16 in the probe).
   So no change to the allocator can move 22_run-memory, and the cause is in the JS heap or the DOM.
+
+### Where the keyed app's bytes went
+
+tools/heapregress_build.sh builds each module twice: as shipped, and through the same link with wasm-opt -Oz run by hand with `-g`, so the functions keep their names (clang runs wasm-opt -Oz after the link whenever it is on PATH, which drops the name section; both builds have byte-identical code sections).
+The per-function sizes are in results/heapregress/*/funcs.txt.
+
+Keyed app, base (b59e476) to main (7279030), code bytes by function (+952 in all; +959 with the function and type sections):
+
+| function | base | main | change | what it is |
+| --- | ---: | ---: | ---: | --- |
+| cd_realloc | 88 | 440 | +352 | heap_realloc_or inlined, and in it a full copy of heap_alloc_or (the small path), heap_grow_top and heap_cap; before, realloc called malloc |
+| free | 37 | 318 | +281 | heap_big_free, inlined by wasm-opt (one caller; wasm-opt ignores clang's noinline) |
+| heap_big | 0 | 270 | +270 | the large path: the run search and split, and its own bump off the top |
+| heap_cap | 0 | 37 | +37 | the room of a small or a large block |
+| cdom_heap_malloc | 215 | 232 | +17 | the compare that sends a large block to heap_big |
+| cd_bytes_buf | 32 | 23 | -9 | cd_alloc instead of cd_realloc |
+| cd_encoded | 4 | 8 | +4 | its cd_free |
+
+- Z2 is confirmed: 352 bytes are in realloc, and taking the copy out (realloc calls heap_alloc, cd_realloc_try calls heap_alloc_try) won back 221.
+- Z3 is confirmed: the frees in the exports cost 4 bytes in this app (cd_encoded is the only one it links), and cd_bytes_buf got 9 smaller.
+- Z1 is refuted in its mechanism: the hello world never frees, so before #43 it had no free at all; cd_encoded's new cd_free links free into every app, and with it heap_big_free.
+  Of the hello world's +471 code bytes, cd_encoded is +351 (free and heap_big_free inlined into it, heap_class with them, -42 as its own function) and cd_bytes_buf +162 (cd_alloc's small and large paths where it had realloc's small one).
+
+### What changed here, and what each won (keyed app before cdlits, stripped)
+
+| step | keyed bytes | change |
+| --- | ---: | ---: |
+| main (7279030) | 11,940 | |
+| realloc and cd_realloc_try call heap_alloc and heap_alloc_try, not an inlined copy | 11,719 | -221 |
+| the memory grow out of line (heap_more), its compare still inlined | 11,672 | -47 |
+| heap_big_free walks the runs once (no second walk to unlink a run under the top) | 11,651 | -21 |
+| small and large blocks share one bump off the top (the run search its own function) | 11,572 | -79 |
+| memory.grow's -1 read as a refusal (the bug below) | 11,596 | +24 |
+
+Shipped (after cdlits): the keyed app is 10,198 (base), 11,157 (main) and 10,813 now, so +615 over the base where #43 left +959.
+The hello world is 2,067, 2,537 and 2,440: +373 where #43 left +470.
+
+What is left over the base is the large-block logic itself, in the keyed app (results/heapregress/keyed-fix/funcs.txt against cdom-hrbase): heap_alloc +152 over the old malloc (the grain rounding, the run search and split, the second header word), free +260 (the address-ordered insert, both merges, the top lowered), cd_realloc +107 (the grow in place at the top, a large block's room), heap_more +56 and heap_cap +37, which are shared.
+That is inherent to blocks that cost their size and runs that merge, unless the code is made smaller still by rewriting it.
+In the hello world the remaining +373 is free coming into an app that never frees (cd_encoded +339) and cd_bytes_buf's large path (+77): an app that never frees pays for free because cd_encoded, in every module, frees the bytes it was handed.
+Moving cd_encoded (and cd_encode_image) out of cdom.c into a file of its own, linked only by an app that encodes, would take those 339 bytes out of such an app; that is an API and build change for the manager to decide, not made here.
+
+### A bug found on the way: memory.grow's refusal read as room
+
+`heap_grow` returned `__builtin_wasm_memory_grow(0, pages) >= 0`; the builtin's type is size_t, so the compare was always true, and a refused grow (-1) read as success.
+heap_end then moved past the memory's end: malloc and realloc wrote out of bounds (a trap, by luck, at the header store), and cd_alloc_try and cd_realloc_try never answered 0 in a build without CDOM_HEAP_PAGES_MAX, which every real app is (so cd_file_read's CD_FILE_NO_ROOM could never happen, the shim writing past the memory instead).
+It is older than #43 (b59e476 has the same line), and the tests missed it because every _try case ran at CDOM_HEAP_PAGES_MAX, whose check returns before memory.grow is reached.
+It showed itself here: with the compare always true, may_fail made no difference, so clang merged heap_alloc and heap_alloc_try into one function and tests/link's _try gate saw a gap of 90.
+tools/alloc.mjs now runs the _try and trap cases twice, at the cap and on a module linked with `--max-memory` of 40 pages, where memory.grow itself refuses; before the fix that second run failed 3 of its cases ("threw memory access out of bounds", "grow answered 0", "realloc ... no trap").
+
+### Tests and mutants
+
+- tests/link/realloc_size.c and its gate in tests/link/run.sh: cd_realloc over cd_alloc costs 255 bytes now, 478 with realloc's inlined copy of the allocator back; the gate fails over 350.
+- tools/mutate.py: the heap mutants follow the new code, and two are new: grow-refusal-unsigned (the unsigned compare back, caught by the `--max-memory` cases) and realloc-alloc-copy (the inlined copy back, caught by the size gate).
+  All 26 heap and answer-bytes mutants are caught (results/heapregress/mutants.txt).
+  A third, heap-grow-copies (the grow inlined again), was not caught: it adds 26 bytes to realloc_size.c, inside the gate's margin, so the out-of-line grow is not gated and the mutant was dropped.
+- tools/alloc.mjs: 30 of 30 pass, the photo cases among them at 857 pages (12 MP, peak 56.3 MB) and 1,658 pages (24 MP, 108.8 MB) with a second photo at 0, as #43 measured.
