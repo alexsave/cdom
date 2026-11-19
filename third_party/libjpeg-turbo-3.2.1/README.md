@@ -14,12 +14,12 @@ The files the 8-bit lossy Huffman decoder (baseline and progressive) compiles an
 Compiled (cdom.mk, `CDOM_IMAGE_VENDOR_SRC`): `jcomapi.c jdapimin.c jdhuff.c jdinput.c jdmarker.c jdmaster.c jdphuff.c jmemmgr.c jpeg_nbits.c` and the ten 8-bit wrappers in `src/wrapper/` (`jdapistd-8.c` and the rest), which include the precision-dependent files (`jdapistd.c` and the rest) as upstream builds them.
 Everything else here is included by those.
 
-Not here: SIMD, the encoder, arithmetic coding, lossless JPEG, 12 and 16-bit samples, the stdio and memory data sources (`src/cdom_image_jpeg.c` reads the caller's bytes itself), `jerror.c` (its messages are text cdom never shows; `src/cdom_image_jpeg.c` has its own error manager), `jmemnobs.c` (`src/cdom_image_jpeg.c` is the memory layer, over `cd_alloc_try`, with a budget), colour quantization, merged upsampling, and the float and fast IDCTs.
+Not here: libjpeg-turbo's own SIMD (`simd/`; the wasm dispatch answering its `jsimd` calls is `src/jsimd/`, cdom's), the encoder, arithmetic coding, lossless JPEG, 12 and 16-bit samples, the stdio and memory data sources (`src/cdom_image_jpeg.c` reads the caller's bytes itself), `jerror.c` (its messages are text cdom never shows; `src/cdom_image_jpeg.c` has its own error manager), `jmemnobs.c` (`src/cdom_image_jpeg.c` is the memory layer, over `cd_alloc_try`, with a budget), colour quantization, merged upsampling, and the float and fast IDCTs.
 
 ## The edits
 
 1. `src/jmorecfg.h`: seven features switched off, each line marked `cdom: off`: `DCT_IFAST_SUPPORTED`, `DCT_FLOAT_SUPPORTED`, `D_LOSSLESS_SUPPORTED`, `SAVE_MARKERS_SUPPORTED`, `UPSAMPLE_MERGING_SUPPORTED`, `QUANT_1PASS_SUPPORTED`, `QUANT_2PASS_SUPPORTED`; and one line in its copyright header saying so.
-2. `src/jconfig.h` is the archive's `src/jconfig.h.in` filled in as CMake would for this build: `JPEG_LIB_VERSION` 80, version 3.2.1, and every `#cmakedefine` off (no arithmetic coding, no SIMD).
+2. `src/jconfig.h` is the archive's `src/jconfig.h.in` filled in as CMake would for this build: `JPEG_LIB_VERSION` 80, version 3.2.1, and every `#cmakedefine` off (no arithmetic coding; SIMD off unless the compiler is given `-DCDOM_JSIMD`, which cdom.mk does for `CDOM_IMAGE_SIMD=1`: the template's `WITH_SIMD` line is filled as `#ifdef CDOM_JSIMD / #define WITH_SIMD 1 / #else / #undef`, so libjpeg's own sources are not touched and the scalar build is the same code it was).
 3. `src/jconfigint.h` is `src/jconfigint.h.in` filled in the same way: `BUILD` "cdom", clang's `visibility("hidden")` and `always_inline`, no thread-local storage, `SIZEOF_SIZE_T` from the compiler, and `HAVE_BUILTIN_CTZL` on (the one `#cmakedefine` that is).
 
 Built with `-DNO_GETENV -DNO_PUTENV` (the library's own switches: there is no environment) and `-w`, with this `src/` on the include path of the module's files only (cdom.mk, `CDOM_IMAGE_PARTS`).
