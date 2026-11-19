@@ -51,8 +51,6 @@ uint32_t cd_image_jpeg_probe(const uint8_t *p, uint32_t len, cd_image_info *info
 
 /* ---- one decode's state: everything the error path must release, reached through cinfo->client_data ---- */
 
-enum { FAIL_NONE, FAIL_BUDGET, FAIL_HEAP };
-
 typedef struct {
   struct jpeg_decompress_struct cinfo;
   struct jpeg_error_mgr err;
@@ -65,49 +63,27 @@ typedef struct {
   uint32_t dw, dh;
   cd_image_scaler sc;
   uint8_t *row;
-  uint64_t held;              /* bytes the memory layer holds for libjpeg */
   uint32_t status;            /* the body's answer, when it returns */
-  uint8_t fail;               /* why the memory layer last answered 0 (FAIL_*) */
   uint8_t ran_dry;            /* libjpeg asked for bytes past the end of the file: the file is cut short */
   uint8_t too_many_scans;
 } jctx;
 
-/* ---- the memory layer (jmemsys.h): cd_alloc_try, within CD_IMAGE_MEM_MAX for everything libjpeg holds ---- */
-
-/* libjpeg's own budget (max_memory_to_use, from jpeg_mem_init) decides whether the whole-image coefficient arrays
- * fit (realize_virt_arrays, through jpeg_mem_available): they fit or the decode stops at jpeg_open_backing_store.
- * The count here holds every other allocation to the same budget. Each block carries its size in front, so the
- * count is right whatever size libjpeg says it frees. */
-#define HDR 8u
-
-static void *get(j_common_ptr c, size_t n) {
-  jctx *x = c->client_data;
-  if (n > CD_IMAGE_MEM_MAX || x->held + n > CD_IMAGE_MEM_MAX) { x->fail = FAIL_BUDGET; return 0; }
-  uint8_t *b = cd_alloc_try((uint32_t)n + HDR);
-  if (!b) { x->fail = FAIL_HEAP; return 0; }
-  memcpy(b, &n, sizeof n < HDR ? sizeof n : HDR);
-  x->held += n;
-  return b + HDR;
-}
-static void put(j_common_ptr c, void *o) {
-  if (!o) return;
-  jctx *x = c->client_data;
-  uint8_t *b = (uint8_t *)o - HDR;
-  size_t n = 0;
-  memcpy(&n, b, sizeof n < HDR ? sizeof n : HDR);
-  x->held -= n;
-  cd_free(b);
-}
-void *jpeg_get_small(j_common_ptr c, size_t n) { return get(c, n); }
-void jpeg_free_small(j_common_ptr c, void *o, size_t n) { (void)n; put(c, o); }
-void *jpeg_get_large(j_common_ptr c, size_t n) { return get(c, n); }
-void jpeg_free_large(j_common_ptr c, void *o, size_t n) { (void)n; put(c, o); }
+/* ---- the memory layer (jmemsys.h): every block through cd_alloc_try, and the budget, CD_IMAGE_MEM_MAX ----
+ *
+ * The budget is libjpeg's own: jpeg_mem_init answers it, so it is max_memory_to_use, and realize_virt_arrays asks
+ * jpeg_mem_available whether the whole-image arrays (every coefficient of a progressive or multi-scan file) fit
+ * beside what is held already; when they do not, it opens a backing store, which here stops the decode (TOO_BIG)
+ * before any of them is allocated. Everything else libjpeg holds is a few rows of the image, bounded by its width.
+ * A block the heap has no room for is 0, and libjpeg stops with JERR_OUT_OF_MEMORY (NO_ROOM). */
+void *jpeg_get_small(j_common_ptr c, size_t n) { (void)c; return n > 0xffffffffu ? 0 : cd_alloc_try((uint32_t)n); }
+void jpeg_free_small(j_common_ptr c, void *o, size_t n) { (void)c; (void)n; cd_free(o); }
+void *jpeg_get_large(j_common_ptr c, size_t n) { (void)c; return n > 0xffffffffu ? 0 : cd_alloc_try((uint32_t)n); }
+void jpeg_free_large(j_common_ptr c, void *o, size_t n) { (void)c; (void)n; cd_free(o); }
 size_t jpeg_mem_available(j_common_ptr c, size_t min_needed, size_t max_needed, size_t already) {
   (void)min_needed; (void)max_needed;
   size_t cap = (size_t)c->mem->max_memory_to_use;
   return cap > already ? cap - already : 0;
 }
-/* No backing store: arrays that do not fit in the budget stop the decode (TOO_BIG). */
 void jpeg_open_backing_store(j_common_ptr c, backing_store_ptr info, long total) {
   (void)info; (void)total;
   ERREXIT(c, JERR_NO_BACKING_STORE);
@@ -220,7 +196,7 @@ uint32_t cd_image_jpeg_resize(const uint8_t *p, uint32_t len, const cd_image_inf
   if (cd_image_guard(body, x, &x->guard)) {           /* a fatal libjpeg error, or too many scans */
     int code = x->err.msg_code;
     st = x->too_many_scans || code == JERR_NO_BACKING_STORE ? CD_IMAGE_TOO_BIG
-       : code == JERR_OUT_OF_MEMORY ? (x->fail == FAIL_HEAP ? CD_IMAGE_NO_ROOM : CD_IMAGE_TOO_BIG)
+       : code == JERR_OUT_OF_MEMORY ? CD_IMAGE_NO_ROOM
        : CD_IMAGE_CORRUPT;
   } else st = x->status;
   /* Always: jpeg_create_decompress sets mem to 0 before its first allocation, and destroy checks it, so this is
