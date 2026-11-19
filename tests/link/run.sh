@@ -309,8 +309,10 @@ else echo "ok   cdom.mk's rules leave a .wasm or .html that is not APP_WASM or A
 # The toolchain check: a WASM_CC that cannot build a wasm32 module (Apple's clang, which finds no wasm-ld
 # on a PATH without Homebrew's; a clang that is not there) stops make with the install command, before
 # the compiler runs, and leaves no module.
+# /usr/bin/clang is Apple's only on macOS: on Linux it is a clang that does build wasm32.
 for cc in /usr/bin/clang "$out/no-such-clang"; do
   [ -x "$cc" ] || [ "$cc" = "$out/no-such-clang" ] || continue
+  [ "$cc" != /usr/bin/clang ] || [ "$(uname -s)" = Darwin ] || continue
   rm -rf "$out/mk-cc"
   if env PATH=/usr/bin:/bin make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$out/mk-cc" PAGE= WASM_CC="$cc" "$out/mk-cc/mk_app.wasm" > "$out/mk_cc.log" 2>&1; then
     echo "FAIL cdom.mk built a module with WASM_CC=$cc, which cannot build wasm32"; fail=1
