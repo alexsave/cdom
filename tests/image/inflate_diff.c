@@ -369,7 +369,7 @@ int main(int argc, char **argv) {
   /* a distance of exactly the output so far is fine; one more is not */
   for (int ok = 0; ok < 2; ok++) {
     bw w = {0};
-    uint8_t lit[10] = "abcdefghij";
+    static const uint8_t lit[10] = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'};
     put(&w, 0x78, 8); put(&w, 0x01, 8); put(&w, 1, 1); put(&w, 1, 2);
     for (int i = 0; i < 10; i++) fixed_sym(&w, lit[i]);
     fixed_match(&w, 5, ok ? 10 : 11);
