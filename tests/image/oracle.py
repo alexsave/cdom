@@ -226,6 +226,13 @@ def png_cases():
     z[-1] ^= 0x5a
     status_case("png-adler-mismatch", write_png("adler.png", W, H, 2, 8, None, zdata=bytes(z)), 300, 300, "CORRUPT")
     status_case("png-adler-missing", write_png("noadler.png", W, H, 2, 8, None, zdata=bytes(z[:-4])), 300, 300, "CORRUPT")
+    # a filter byte of 9 (none exists past 4), and a whole, well-formed stream of half the rows
+    rows = [r.reshape(-1) for r in pic]
+    raw = bytearray(filtered(rows, 3))
+    raw[(W * 3 + 1) * 7] = 9
+    status_case("png-filter9", write_png("filter9.png", W, H, 2, 8, None, zdata=zlib.compress(bytes(raw), 6)), 300, 300, "CORRUPT")
+    status_case("png-short-rows", write_png("shortrows.png", W, H, 2, 8, None, zdata=zlib.compress(filtered(rows[:H // 2], 3), 6)),
+                300, 300, "CORRUPT")
     # sizes: smaller than the box (never enlarged), thin, tall, one pixel, the box at its largest
     for (w, h, bw, bh) in [(200, 100, 300, 300), (700, 1, 256, 256), (1, 700, 256, 256), (1024, 768, 256, 256),
                            (1, 1, 256, 256), (301, 7, 100, 100), (640, 480, 8192, 8192), (640, 480, 1, 1)]:
@@ -358,10 +365,11 @@ def scaler_cases():
     for (sw, sh, dw, dh, o) in [(1000, 750, 900, 675, 1), (1203, 802, 300, 200, 1), (999, 1001, 7, 9, 1), (64, 64, 64, 64, 1),
                                 (5, 5, 1, 1, 1), (400, 300, 400, 300, 6), (101, 53, 50, 26, 3), (1000, 750, 333, 250, 8),
                                 (257, 129, 256, 128, 2), (100, 1, 10, 1, 4), (1, 100, 1, 10, 5), (640, 480, 321, 241, 7),
-                                (6, 4, 4, 2, 1), (3, 3, 2, 2, 1)]:
+                                (2, 2, 1, 1, 1), (4, 2, 2, 1, 1)]:
         a = noise((sh, sw, 3)).copy()
         a[: max(1, sh // 3)] //= 4                       # a dark band, so a misplaced row shows
-        if (sw, sh) in ((6, 4), (3, 3)): a[:] = np.uint8(255) * (np.indices((sh, sw)).sum(0) % 2)[..., None]   # exact halves
+        if (sw, sh) in ((2, 2), (4, 2)):   # a checkerboard of 0 and 255 into 2 x 2 blocks: every sum is exactly half
+            a[:] = (np.uint8(255) * (np.indices((sh, sw)).sum(0) % 2))[..., None]
         name = f"scaler-{sw}x{sh}-{dw}x{dh}-o{o}"
         src = f(name + ".src")
         np.concatenate([a, np.full((sh, sw, 1), 255, np.uint8)], axis=2).tofile(src)
