@@ -795,7 +795,7 @@ M = [
   ('idct-reads-small', 'src/cdom_image_int.h', 'size == 2 ? 0xabu', 'size == 2 ? 0xa9u', SIMD, 'FAIL unread'),  # the 2x2 table drops row and column 1, which the 2x2 reads
   ('idct-reads-large', 'src/cdom_image_int.h', 'size == 2 ? 0xabu', 'size == 2 ? 0xafu', SIMD, 'FAIL unread'),  # the 2x2 table keeps row and column 2, which no 2x2 reads
   ('jpegp-window-all', 'src/cdom_image_jpegp.c', 'pc->win = (uint32_t)cp->v_samp_factor;', 'pc->win = pc->nrows;', MEMB, 'jpeg-prog444-over-budget: status OK'),  # the store's window is the whole array, which realize_virt_arrays then holds whatever the budget
-  ('jpegp-store-full', 'src/cdom_image_jpegp.c', 'uint64_t nat = cd_image_idct_reads(size), z = 0;', 'uint64_t nat = ~0ull, z = 0;', MEMB, 'jpeg-p12-progressive: peak'),  # the store keeps every coefficient at 2/8
+  ('jpegp-store-full', 'src/cdom_image_jpegp.c', 'uint64_t nat = cd_image_idct_reads(size), z = 0;', 'uint64_t nat = cd_image_idct_reads(size) | ~0ull, z = 0;', MEMB, 'jpeg-p12-progressive: peak'),  # the store keeps every coefficient at 2/8
   ('simd-flags-everywhere', 'cdom.mk', 'CDOM_IMAGE_OWN_CFLAGS += $(cdom_mk_simd_flags)', 'CDOM_CFLAGS += $(cdom_mk_simd_flags)', LINK, 'FAIL an app that does not call the image module has SIMD instructions'),  # -msimd128 for every file, not the image module's
   ('simd-default-on', 'cdom.mk', 'CDOM_IMAGE_SIMD ?= 0', 'CDOM_IMAGE_SIMD ?= 1', LINK, 'FAIL CDOM_IMAGE_SIMD:'),  # the default is SIMD, not scalar
   ('simd-emit-alpha', 'src/cdom_image.c', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 255;', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 254;', IMGW, 'FAIL wasm_js_simd: '),  # the SIMD build's emit writes the wrong alpha
