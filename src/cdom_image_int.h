@@ -36,6 +36,17 @@ void cd_image_scaler_free(cd_image_scaler *s);
 /* The size the image (sw x sh as stored, orientation o) is scaled to, as stored, for a box of bw x bh shown. */
 void cd_image_target(uint32_t sw, uint32_t sh, uint32_t o, uint32_t bw, uint32_t bh, uint32_t *dw, uint32_t *dh);
 
+/* The coefficients libjpeg's IDCT of a size (a component's DCT_scaled_size, 1 to 16) reads, whichever body runs (the C
+ * or the wasm SIMD 2x2 and 4x4): bit 8 * row + column of the natural-order block. docs/image-progressive-speed.md has the
+ * table and where each line of it is in the code; tests/image/simd.c checks it (a coefficient outside it, changed to
+ * anything, changes no output byte). */
+static inline uint64_t cd_image_idct_reads(int size) {
+  uint32_t rc = size == 1 ? 0x01u : size == 2 ? 0xabu : size == 4 ? 0xefu : size >= 3 && size <= 7 ? (1u << size) - 1 : 0xffu;
+  uint64_t m = 0;
+  for (int r = 0; r < 8; r++) if (rc >> r & 1) m |= (uint64_t)rc << (8 * r);
+  return m;
+}
+
 /* The EXIF orientation (1 to 8) of the JPEG at p, or 1 when it has none. */
 uint32_t cd_image_orientation(const uint8_t *p, uint32_t len);
 
