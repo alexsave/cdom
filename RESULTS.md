@@ -315,8 +315,8 @@ The IE 9 profile in `tools/cdp.mjs` (`LEGACY=ie9`, from mdn/browser-compat-data)
 Tested: `tools/legacy.mjs` under no LEGACY, `LEGACY=1`, `ie9`, `ie9-gaps` (IE 9's other gaps on the second tier) and the `ie8` refusal; the five fuzz seeds under `LEGACY=ie9`; the keyed app's smoke (every action, 24 checks) under `LEGACY=ie9`; on the third tier the legacy page also reaches every other shim memory path (a wheel event's floats, cd_rect's doubles, the viewport, a number through a cd_val, cd_blit's pixels, the seed).
 The op-stream branch ran in real IE 9 on Windows 7: tests/legacy.html (typing echoes, focus) and the keyed app (create 1,000 rows, swap, select, delete).
 
-Bytes, keyed entry (minified, brotli in parentheses): `cdom.legacy-ie9.js` 51,876 (15,858) and `app.wasm.ie9.js` 20,493 (7,644), against `cdom.legacy.js` 52,534 (16,039) and `app.wasm.js` 18,403 (6,761).
-Every page pays for the bigger boot and the shim's accessors: the keyed page grows by 1,286 bytes (418 brotli) against main, of which the boot alone is about 1,000 (320) and the minified shim 285 (66).
+Bytes, keyed entry (minified, brotli in parentheses): `cdom.legacy-ie9.js` 52,040 (15,924) and `app.wasm.ie9.js` 20,493 (7,644), against `cdom.legacy.js` 52,698 (16,117) and `app.wasm.js` 18,403 (6,761).
+Every page pays for the bigger boot and the shim's accessors: the keyed page grows by 1,303 bytes (401 brotli) against main, of which the boot alone is about 1,000 (320) and the minified shim 285 (49).
 
 #### Cheerp, the direct C-to-JS compiler (tried 2026-11-08 on the op-stream line, not adopted)
 
