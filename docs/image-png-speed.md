@@ -339,3 +339,37 @@ Peaks are test_image.c's count (the most held at once, the file not counted), na
 - S4: p12.png's time does not change with this branch's formula (its h x (stride + 1) is far over PNG_CHUNK, so the buffer is the same).
   A smaller PNG_CHUNK costs time through more hand-overs to the rows (each a call and a memmove of the window and two rows, about 56 KB): at 64 KB, 560 hand-overs instead of 140, about 23 MB more moved, 1 to 4 ms more natively (of about 100) and 1 to 6 ms in wasm (of about 140); at 16 KB, 2240 hand-overs, 5 to 15 ms more natively.
   Falsifier: 64 KB costs more than 8 ms on either, or 16 KB costs under 3 ms natively.
+
+### Results: the small-PNG memory
+
+Measured after the predictions above were committed.
+Peaks: tests/image/host_alloc.c's count around one `cd_image_resize` (the most held at once, the file not counted), natively, scalar, the same build for each tree (main 2bf7c2a, png-fast 67f9643, png-fast-2).
+
+| file | main | png-fast | png-fast-2 |
+| --- | --- | --- | --- |
+| 16x16 RGBA (box 300) | 44,066 (43.0 KB) | 309,691 (302.4 KB) | 48,731 (47.6 KB) |
+| 8000x3 RGB (box 300) | 134,274 (131.1 KB) | 423,835 (413.9 KB) | 201,694 (197.0 KB) |
+| p12.png, 4032x3024 RGB (box 900) | 2,544,994 (2485 KB) | 2,822,651 (2756 KB) | 2,806,523 (2741 KB) |
+
+- S1: png-fast 302.4 KB (predicted 290 to 310), png-fast-2 47.6 KB (predicted 42 to 52), 4.6 KB above main: confirmed.
+- S2: main 43.0 KB (predicted 38 to 48), png-fast-2 within 6 KB of it: confirmed.
+- S3: p12.png holds 16,128 bytes less on png-fast-2 than on png-fast, exactly the RGBA row: confirmed for the scalar build.
+  The SIMD build is wasm only, so it was not measured here; it allocates the row as before (`rgb_read` is 0 there).
+- The 8000x3 file was not predicted: png-fast-2 holds 66 KB more than main there (the zero row of 24 KB and the whole image of 72 KB in the buffer beside the window), and 217 KB less than png-fast.
+
+p12.png's time with PNG_CHUNK at 256 KB (the default), 64 KB and 16 KB (`-DPNG_CHUNK=`), box 900, median of the rounds (min to max), ms.
+Natively: bench/image/native.c, x86-64, clang 23.1.6 -O2, 7 interleaved rounds, each the mean of 3 runs; png-fast (67f9643) as a fourth arm.
+In wasm: bench/image/run.mjs, Chrome 153 headless, 9 interleaved rounds, each run on a fresh page, the js page at cdom.mk's -Oz, scalar.
+
+| PNG_CHUNK | native | wasm |
+| --- | --- | --- |
+| png-fast, 256 KB | 186.1 (175.7 to 206.9) | |
+| 256 KB | 179.2 (175.7 to 199.6) | 219.8 (202.8 to 272.5) |
+| 64 KB | 177.1 (172.5 to 187.5) | 228.3 (204.1 to 240.1) |
+| 16 KB | 182.2 (177.4 to 194.8) | 298.5 (205.8 to 391.8) |
+
+This machine is slower than PR #56's (its p12.png took about 100 ms natively there; here 180), so the predicted costs are read against these medians.
+- S4, the formula: p12.png's buffer is the same on both branches, and its time did not change (179.2 against 186.1, inside the spread): confirmed.
+- S4, 64 KB: natively 2.1 ms faster, not 1 to 4 ms slower (inside a 15 ms spread); in wasm 8.5 ms slower, just over the falsifier (8 ms): refuted, both ways, by numbers smaller than the noise.
+- S4, 16 KB: natively 3.0 ms slower (the falsifier was under 3: not falsified, but inside the spread); in wasm 79 ms slower, far over the prediction, with a spread of 186 ms.
+So 256 KB stays: a smaller chunk saves memory only on large images (a small one now takes the whole image, not the chunk) and costs time in wasm.
