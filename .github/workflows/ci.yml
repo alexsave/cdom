@@ -86,3 +86,5 @@ jobs:
         run: tests/lits/run.sh
       - name: tests/page/run.sh
         run: tests/page/run.sh
+      - name: tests/pick/run.sh (APP_SIMD's pick in Chrome)
+        run: tests/pick/run.sh

@@ -502,6 +502,37 @@ else
   if [ -n "$bad" ]; then echo "FAIL an app that does not call the image module has SIMD instructions with CDOM_IMAGE_SIMD=1:$bad"; fail=1
   else echo "ok   CDOM_IMAGE_SIMD=1 gives SIMD instructions to an app that calls the image module ($(simd_count "$im/wasm_js_simd.wasm")) and none without it; an app without the module, or with it and no call, has none"; fi
 fi
+# APP_SIMD := 1 (README.md, "Starting an app"): the image test app builds APP_WASM as without it, byte for byte, and its
+# twin wasm_js.simd.wasm as CDOM_IMAGE_SIMD=1 builds the module, byte for byte; the page starts the pair, bundled or by
+# URL, and a second make is up to date. Refused: APP_SIMD with CDOM_IMAGE_SIMD=1, a value not 0 or 1, an app with no
+# module that has a SIMD build, and a twin whose string literals differ (app.mk's parts module with a literal only in the
+# SIMD build of its part), which is removed; the same part with a SIMD flag that adds no literal builds.
+pm="$im/pick"; mkdir -p "$pm"
+wk() { make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$pm" SJLJ=js APP_SIMD=1 "$@"; }
+if ! wk all 2> "$pm/build.log"; then echo "FAIL APP_SIMD: the image test app does not build:"; cat "$pm/build.log"; fail=1
+elif ! cmp -s "$pm/wasm_js.wasm" "$im/wasm_js.wasm"; then echo "FAIL APP_SIMD: APP_WASM is not the bytes it is without APP_SIMD"; fail=1
+elif ! cmp -s "$pm/wasm_js.simd.wasm" "$im/wasm_js_simd.wasm"; then echo "FAIL APP_SIMD: the twin is not the bytes CDOM_IMAGE_SIMD=1 makes"; fail=1
+elif ! grep -q 'cdom.start(\["data:application/wasm;base64,[^"]*","data:application/wasm;base64,' "$pm/wasm_js.html"; then echo "FAIL APP_SIMD: the bundled page does not start the pair of data: URLs"; fail=1
+elif ! wk -q all; then echo "FAIL APP_SIMD: a second make is not up to date"; fail=1
+elif ! wk APP_WASM_SEPARATE=1 APP_PAGE="$pm/separate.html" "$pm/separate.html" 2> "$pm/sep.log" ||
+     ! grep -q 'cdom.start(\["wasm_js.wasm","wasm_js.simd.wasm"\]' "$pm/separate.html"; then echo "FAIL APP_SIMD: the separate page does not start [\"wasm_js.wasm\",\"wasm_js.simd.wasm\"]:"; cat "$pm/sep.log"; fail=1
+else echo "ok   APP_SIMD: APP_WASM the same bytes as without it, the twin the same as CDOM_IMAGE_SIMD=1's, the page starts the pair (bundled, and by URL), up to date after"; fi
+refuse() { # what, the text make must print, then make's arguments
+  local what="$1" text="$2"; shift 2
+  if make -s --no-print-directory "$@" > "$pm/refuse.log" 2>&1; then echo "FAIL APP_SIMD: $what builds"; fail=1
+  elif ! grep -q "$text" "$pm/refuse.log"; then echo "FAIL APP_SIMD: $what fails for another reason:"; cat "$pm/refuse.log"; fail=1
+  else echo "ok   APP_SIMD refuses $what: $(grep -o "cdom.mk: .*" "$pm/refuse.log" | head -1)"; fi
+}
+refuse 'CDOM_IMAGE_SIMD=1 as well' 'leave CDOM_IMAGE_SIMD at 0' -f "$here/../image/wasm.mk" OUT="$pm/both" SJLJ=js SIMD=1 APP_SIMD=1 all
+refuse 'a value not 0 or 1' 'APP_SIMD is yes, not 0 or 1' -f "$here/../image/wasm.mk" OUT="$pm/yes" SJLJ=js APP_SIMD=yes all
+refuse 'an app with no module that has a SIMD build' 'has a SIMD build (image does)' -f "$here/app.mk" INCLUDE=first OUT="$pm/none" PAGE= APP_SIMD=1 "$pm/none/mk_app.simd.wasm"
+pl="$pm/lits"
+refuse 'a twin with a string literal APP_WASM lacks' 'has other string literals than' -f "$here/app.mk" INCLUDE=first OUT="$pl" PAGE= PARTS=1 APP_MODULES='random parts' APP_SIMD=1 SIMD_LIB_CFLAGS=-DPARTS_SIMD_LIT "$pl/mk_app.simd.wasm"
+if [ -e "$pl/mk_app.simd.wasm" ]; then echo "FAIL APP_SIMD: the refused twin was left in place"; fail=1; fi
+ps="$pm/same" # an OUT of its own: make does not see flags change, so the refused case's objects would be reused
+if ! make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$ps" PAGE= PARTS=1 APP_MODULES='random parts' APP_SIMD=1 SIMD_LIB_CFLAGS=-DPARTS_SIMD_SAME "$ps/mk_app.simd.wasm" 2> "$pm/same.log"; then
+  echo "FAIL APP_SIMD: a twin whose SIMD flags add no literal does not build:"; cat "$pm/same.log"; fail=1
+else echo "ok   APP_SIMD: a twin whose part has SIMD flags of its own and the same literals builds"; fi
 node "$here/../../tools/seeds.mjs" || fail=1
 node "$here/../../tools/strings.mjs" || fail=1
 exit $fail
