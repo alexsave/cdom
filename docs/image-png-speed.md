@@ -176,3 +176,72 @@ How it got there, each step measured natively and in wasm on p12.png (native ms,
 | -O2 instead of -Oz for the wasm | | 60.5 against 60.6: no difference, so the inflate stays at the app's level |
 
 The stream it is fast on: p12.png's literals take 5.2 bits each, so two fit an 11-bit entry nearly always; 622,647 matches make 16.9 MB of the 36.6 (27 bytes each, almost all at distances of 16 or more: the grain tile repeats every 1024 pixels).
+
+### Step 3: the pipeline
+
+Rows now flow: the inflate writes into one buffer (the 32 KB window, two rows, and 256 KB more); when it is nearly full, the sink takes each row that is whole and at least 32 KB behind the end (no later match can read it), unfilters it where it lies, against the row above it (kept in the buffer), and hands it on; the inflate then moves what is left (the window, the row above, the part-made row) to the front.
+An 8-bit RGB PNG with no colour key goes to the scaler as RGB: the scaler takes a pixel step (`cd_image_scaler.step`, 4 by default, 3 here), so no RGBA row is written and read between.
+
+The C arm on p12.png, the bench page (bench/image/run.mjs), 9 interleaved rounds each, two sessions; the variants were built from this branch with one change each (in a scratch worktree, not kept):
+
+| arm | session 1 (before the RGB read) | session 2 (after) |
+| --- | --- | --- |
+| unfilter in place, to_rgba, scaler on RGBA | 184.8 (177.2 to 218.1) | 201.6 (181.0 to 235.6) |
+| each row copied out of the buffer first (as the old path did), then the same | 183.4 (179.7 to 202.6) | 196.2 (182.4 to 239.2) |
+| to_rgba skipped (a wrong image, timing only: the bound for P3b) | 172.3 (168.5 to 198.1) | 175.0 (168.3 to 222.1) |
+| the RGB read (this branch) | | 173.9 (170.0 to 200.0) |
+
+- P3a (unfiltering in place is 1 to 8 ms faster): refuted; no difference shows (in place 1.4 and 5.4 ms slower, inside the spread of either).
+  It stays: it is no slower, it saves the two rows the copy would need, and the row's bytes are read once less.
+- P3b (to_rgba under 3 ms, so not worth a second scaler body; falsifier 5 ms or more): refuted; skipping it saves 12.5 and 26.6 ms in the two sessions.
+  So the RGB read went in, with no second scaler body: the scaler's across loop steps by `s->step` instead of 4, one token of its body, and the PNG path sets 3 for RGB with no colour key.
+  Measured: 201.6 to 173.9 ms in session 2, the same as the bound.
+- Tried and dropped: the same for 8-bit grey (step 1, with G and B read at offset 0): grey gained 10 ms (141.9 to 131.9, 5 rounds) but RGB lost 9 (173.4 to 182.2), since the scaler's G and B offsets became variables; RGB is the common case, so grey keeps its RGBA row.
+- RGBA keeps its to_rgba: it composites each pixel on white before the average, which an average of the raw pixels cannot replace; its bound is 32 ms on p12a.png (244.0 against 211.6, 5 rounds).
+
+### Step 5: the bench
+
+bench/image/run.mjs, box 900, 9 interleaved rounds, each run on a fresh page, Chrome 153 headless; median (min to max), ms.
+C-old is main (2d20ccd: tinfl, the RGBA row; bench/image/old.sh), C-new this branch scalar, C-new-simd this branch with the inflate (only) at -msimd128 (`make -C bench/image SIMD=1`).
+The prediction is under each number; the verdict is confirmed when the median is in its range.
+
+| input | C-old | C-new | C-new-simd | B1 | B2 |
+| --- | --- | --- | --- | --- | --- |
+| p12.png (12 MP RGB, 15.2 MB) | 256.8 (234.4 to 319.8) | 183.2 (168.7 to 227.9) | 173.2 (170.1 to 194.6) | 146.2 (137.5 to 159.3) | 157.4 (151.4 to 169.2) |
+| predicted | 300 (270 to 340): refuted (faster) | 205 (170 to 240): confirmed | 200 (165 to 235): confirmed | 180 (155 to 210): refuted (faster) | 195 (165 to 225): refuted (faster) |
+| p12a.png (12 MP RGBA, 17.4 MB) | 327.7 (314.8 to 352.8) | 251.6 (241.4 to 303.0) | 248.5 (239.9 to 275.6) | 161.3 (148.2 to 171.1) | 172.2 (160.7 to 194.7) |
+| predicted | 360 (300 to 430): confirmed | 250 (200 to 300): confirmed | 245 (195 to 295): confirmed | 200 (160 to 250): confirmed | 215 (170 to 260): confirmed |
+| p12g.png (12 MP grey, 6.0 MB) | 167.3 (162.0 to 197.0) | 145.7 (141.4 to 155.6) | 146.1 (140.3 to 170.7) | 93.2 (87.4 to 103.1) | 91.4 (87.5 to 104.4) |
+| predicted | 120 (90 to 160): refuted (slower) | 80 (60 to 110): refuted (slower) | 78 (58 to 108): refuted (slower) | 90 (65 to 120): confirmed | 100 (70 to 130): confirmed |
+| p24.png (24 MP RGB, 26.2 MB) | 449.4 (441.2 to 468.2) | 323.5 (312.3 to 373.6) | 318.5 (311.9 to 353.1) | 260.9 (249.7 to 293.4) | 297.6 (266.2 to 313.2) |
+| predicted | 600 (520 to 700): refuted (faster) | 410 (340 to 480): refuted (faster) | 400 (330 to 470): refuted (faster) | 360 (300 to 430): refuted (faster) | 390 (320 to 460): refuted (faster) |
+
+- M1 (new C scalar does not yet match B1 on p12.png: new C / B1 = 1.0 to 1.3): 183.2 / 146.2 = 1.25, confirmed.
+  With the inflate at -msimd128: 173.2 / 146.2 = 1.18.
+- M2 (new C / old C on p12.png 0.58 to 0.78): 183.2 / 256.8 = 0.71, confirmed.
+- M3 (new C matches or beats B1 on the grey PNG): refuted, badly: 145.7 against 93.2.
+  The grey file's inflate is a third of p12.png's; what is left is the scaler (12 MP, the same work as RGB) and to_rgba's generic grey branch (20 ms by the bound: 143.0 against 122.7, 5 rounds), both image-simd's or left as they are here (the grey read was tried and dropped, step 3).
+- So, plainly: **on this machine, C does not match the browser yet.** It went from 1.76 times B1 to 1.25 times on p12.png (1.18 with the SIMD inflate), and from 2.03 to 1.56 on p12a.png, 1.80 to 1.56 on p12g.png, 1.72 to 1.24 on p24.png.
+  The inflate is no longer the larger part: cdom's inflate takes 55 to 59 ms of p12.png's 173 to 183; the unfilter (Paeth) and the scaler, image-simd's loops, are most of the rest.
+
+Memory (the wasm memory after one run on a fresh page, its peak, the file's bytes in it):
+
+| input | file | C-old | C-new | C-new beyond the file |
+| --- | --- | --- | --- | --- |
+| p12.png | 14.5 MiB | 17.1 MiB | 17.3 MiB | 2.8 MiB |
+| p12a.png | 16.6 MiB | 19.1 MiB | 19.4 MiB | 2.8 MiB |
+| p12g.png | 5.7 MiB | 8.3 MiB | 8.5 MiB | 2.8 MiB |
+| p24.png | 25.0 MiB | 27.6 MiB | 27.8 MiB | 2.8 MiB |
+
+- M4 (new within 1 MiB of old): +0.2 to +0.3 MiB on each input, confirmed.
+  What the PNG path holds besides the scaler: its state (12.3 KB, the tables in it), one block of the zero row, the RGBA row and the inflate's buffer (32 KB + two rows + 256 KB): 329 KB for p12.png, against main's 43 KB of tinfl and three rows; nothing scales with the image's height (`png-whole-image`, the mutant that adds a whole image to it, is caught by the p12 peak case).
+
+Size (bench/image/sizes: `app.c` at -Oz, stripped, clang 18 here, so not the Mac's numbers in README.md; bytes raw, then brotli -q 11):
+
+| build | main (tinfl) | this branch | this branch, inflate at -msimd128 |
+| --- | --- | --- | --- |
+| no image code | 3,144 / 1,503 | 3,144 / 1,503 | |
+| the module, both formats | 91,587 / 29,738 | 90,332 / 29,507 | 90,339 / 29,460 |
+| PNG only | 15,889 / 6,843 | 14,620 / 6,725 | 14,627 / 6,752 |
+
+- M5 (the module changes by -2 to +3 KB brotli): -231 bytes (the module 28,235 to 28,004 brotli beyond the empty app), confirmed.
