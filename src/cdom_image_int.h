@@ -22,11 +22,13 @@ typedef struct {
   uint64_t ypos;            /* position in the vertical sum, in units of 1/dh of a source row */
   uint32_t oy;              /* the next output row to finish */
   uint32_t row;             /* source rows taken so far */
+  uint32_t step;            /* bytes a source pixel: 4 (RGBA, alpha ignored; init's), or 3 (RGB, set after init) */
 } cd_image_scaler;
 
 /* 1 on success, 0 when the heap has no room (nothing is held then). Sizes are 1 to 65535 a side. */
 int cd_image_scaler_init(cd_image_scaler *s, uint32_t sw, uint32_t sh, uint32_t dw, uint32_t dh, uint32_t orientation);
-/* One source row of sw RGBA pixels (alpha ignored). Rows past sh are ignored. */
+/* One source row of sw pixels, step bytes each, R, G and B first (RGBA, alpha ignored, or RGB). Rows past sh are
+ * ignored. */
 void cd_image_scaler_row(cd_image_scaler *s, const uint8_t *rgba);
 /* The image, which the caller owns, once all sh rows went in; 0 otherwise. Either way the scaler holds nothing
  * after it. */

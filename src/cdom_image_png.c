@@ -177,8 +177,8 @@ static int64_t rows(void *c, uint8_t *b, uint32_t n, int last) {
     uint8_t *cur = b + x->row_at;
     const uint8_t *prev = x->done ? cur - row : x->zero;
     if (!unfilter(cur[0], cur + 1, prev + 1, x->stride, x->bpp)) return -1;
-    to_rgba(&x->f, cur + 1, x->px);
-    cd_image_scaler_row(&x->sc, x->px);
+    if (x->sc.step == 3) cd_image_scaler_row(&x->sc, cur + 1);   /* RGB as it is: the scaler reads 3 bytes a pixel */
+    else { to_rgba(&x->f, cur + 1, x->px); cd_image_scaler_row(&x->sc, x->px); }
     x->row_at += row;
     x->done++;
   }
@@ -238,6 +238,8 @@ uint32_t cd_image_png_resize(const uint8_t *p, uint32_t len, const cd_image_info
     } else if (!memcmp(type, "IEND", 4)) break;
     x->at = at;                                    /* the IDAT pieces start at the first IDAT */
   }
+  /* 8-bit RGB with no colour key: the rows go to the scaler as they are, with no RGBA row between */
+  if (ctype == 2 && depth == 8 && !x->f.key) x->sc.step = 3;
   /* the image data: a stream cut short, refused or with a different adler32, or a row with no filter, is CORRUPT */
   if (st == CD_IMAGE_OK && (!saw_idat || cd_inflate_zlib(&x->inf, buf, (uint32_t)cap, idat, rows, x) != CD_INFLATE_OK))
     st = CD_IMAGE_CORRUPT;
