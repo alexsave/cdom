@@ -124,6 +124,32 @@ Falsifier: 2% or more.
   A PNG-only app would save 22.5 KB brotli with a split module; a JPEG-only app 4.4 KB.
 - The shim's two functions: 151 bytes minified, 50 brotli, on every page.
 
+### The bench (bench/image/run.mjs)
+
+Chrome headless on this Mac, 9 interleaved rounds, a fresh page per run, box 900, scalar wasm at cdom.mk's -Oz, 1-minute load 3.3 to 3.7 before every run; the raw runs are in bench/image/results/2026-11-19-box900.tsv.
+
+| input | C-js ms | C-eh ms | B1 ms | B2 ms | prediction C | B1 | B2 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| p12.jpg | 58.9 | 58.9 | 61.9 | 68.6 | 110 to 250: refuted (faster) | 40 to 150: confirmed | 60 to 200: confirmed |
+| p12p.jpg | 139.1 | 139.8 | 122.1 | 126.7 | 250 to 600: refuted (faster) | confirmed | confirmed |
+| p48.jpg | 170.0 | 170.3 | 214.0 | 263.3 | 300 to 800: refuted (faster) | confirmed | confirmed |
+| p12.png | 241.6 | 240.1 | 131.1 | 137.6 | 250 to 600: refuted (slightly faster) | 150 to 450: refuted (faster) | 150 to 450: refuted (faster) |
+
+- "C slower on every input, 1.5 to 3 times on JPEG" is refuted: scalar C beats both browser arms on baseline JPEG (5% faster than B1 at 12 MP, 21% at 48 MP), since libjpeg decodes at 1/4 and 1/8 and the browser decodes, then scales.
+- The browser is ahead on progressive JPEG (14%) and on PNG (1.8 times), where no reduced decode exists; these are where SIMD (later PRs) has most to give.
+- js and eh: the same within the spread on every input.
+
+Wasm memory after one run on a fresh page (its peak, the file's bytes in it):
+
+| input | file | wasm memory | beyond the file | prediction |
+| --- | --- | --- | --- | --- |
+| p12.jpg | 3.6 MiB | 6.1 MiB | 2.5 MiB | 3 to 6 MB: refuted (less) |
+| p12p.jpg | 3.4 MiB | 40.8 MiB | 37.4 MiB (39.2 MB) | 38 to 43 MB: confirmed |
+| p48.jpg | 14.6 MiB | 17.1 MiB | 2.5 MiB | 3 to 6 MB: refuted (less) |
+| p12.png | 14.8 MiB | 17.4 MiB | 2.6 MiB | 2.5 to 4 MB: confirmed |
+
+The review's item 7 is answered: on main's heap a 12 MP baseline JPEG needs its file plus 2.5 MiB, a progressive one its file plus 37.4 MiB, against raceclub's 59 and 63 MB on the old heap.
+
 ### Tests
 
 - tests/image/run.sh: the vendored tree made again from the archives and equal; 9,182 native checks (ASan, UBSan), every image equal to the exact integer oracle to the byte, JPEG against djpeg 3.2.1 with SIMD off at the same scale; tools/image.mjs: the 65 cases in Chrome both ways, equal to the byte, 300 errors in a row, NO_ROOM on a capped heap and on modules whose memory.grow refuses (`--max-memory`), both ways, and demo/photo driven as a user picks a file.
