@@ -35,6 +35,7 @@ JOB = ['node', 'tools/job.mjs']
 RESIZE = ['tools/resize_ban.sh']
 IMG = ['env', 'IMAGE_BIG=0', 'IMAGE_WASM=0', 'tests/image/run.sh']   # the image module, native, small inputs
 IMGBIG = ['env', 'IMAGE_WASM=0', 'tests/image/run.sh']               # with the big inputs (budget, peaks)
+IMGALL = ['tests/image/run.sh']                                     # all of it: the big inputs and wasm
 IMGW = ['env', 'IMAGE_BIG=0', 'tests/image/run.sh']                  # and in wasm, both ways out (tools/image.mjs)
 SIMD = ['tests/image/simd.sh']                                       # the SIMD loops against their scalar twins, in node
 PROG = ['tests/image/prog.sh']                                       # the progressive decoder against libjpeg's own
@@ -820,7 +821,7 @@ M = [
   ('sub3-store', 'src/cdom_image_loops.c', 'wasm_v128_store32_lane(cur + i + 8, v, 2);', 'wasm_v128_store32_lane(cur + i + 8, v, 3);', SIMD, 'FAIL unfilter'),  # Sub (3 bytes) stores its last pixel's bytes from the wrong lane
   ('avg-rounds-up', 'src/cdom_image_loops.c', '  const V one = wasm_i8x16_const_splat(1);\n  V a = wasm_i8x16_const_splat(0);\n  uint32_t i = 0;\n  for (; i + 4 <= n; i += bpp) {\n    V b = ld_px(prev + i);', '  const V one = wasm_i8x16_const_splat(0);\n  V a = wasm_i8x16_const_splat(0);\n  uint32_t i = 0;\n  for (; i + 4 <= n; i += bpp) {\n    V b = ld_px(prev + i);', SIMD, 'FAIL unfilter'),  # Avg rounds the half up (the floor is the filter)
   ('paeth-tie', 'src/cdom_image_loops.c', 'mb = wasm_i16x8_le(pb, pc);', 'mb = wasm_i16x8_lt(pb, pc);', SIMD, 'FAIL unfilter'),  # Paeth takes the up-left byte on a tie of b and c (the order of the tie is the filter)
-  ('paeth-upleft', 'src/cdom_image_loops.c', '    c = b;\n', '', SIMD, 'FAIL unfilter'),  # Paeth never moves the up-left pixel along
+  ('paeth-upleft', 'src/cdom_image_loops.c', '    st_px(cur + i, wasm_u8x16_narrow_i16x8(a, a), bpp);\n    c = b;\n', '    st_px(cur + i, wasm_u8x16_narrow_i16x8(a, a), bpp);\n', SIMD, 'FAIL unfilter'),  # Paeth never moves the up-left pixel along
   ('paeth-min', 'src/cdom_image_loops.c', 'wasm_i16x8_min(pb, pc)', 'wasm_i16x8_max(pb, pc)', SIMD, 'FAIL unfilter'),  # Paeth takes a when pa is at most the larger of pb and pc
   ('paeth-mask', 'src/cdom_image_loops.c', '  int m = 0xff;\n  __asm__', '  int m = 0x1ff;\n  __asm__', SIMD, 'FAIL unfilter'),  # Paeth's left value is not taken modulo 256
   # the SIMD pick (cdom.mk's APP_SIMD, shim/cdom.js start(), tools/cdpage.c, shim/boot.js; tests/pick/run.sh, tests/link/run.sh)
@@ -874,6 +875,7 @@ M = [
   ('simd-adler-weight-16', 'src/cdom_image_inflate.c', 'w_lo = wasm_i16x8_make(16, 15,', 'w_lo = wasm_i16x8_make(17, 15,', SIMD, 'FAIL adler32'),  # the high weight of a block's first byte
   ('simd-adler-step-16', 'src/cdom_image_inflate.c', '(uint64_t)s1 * (16 * k) + 16 * hp + h2', '(uint64_t)s1 * (16 * k) + 15 * hp + h2', SIMD, 'FAIL adler32'),  # s2's 16 x s1 before each block, per lane
   ('simd-adler-no-nmax', 'src/cdom_image_inflate.c', '    if (k > ADLER_NMAX / 16) k = ADLER_NMAX / 16;\n    v128_t', '    v128_t', SIMD, 'FAIL adler32'),  # no modulo every NMAX bytes: the lanes wrap
+  ('image-cap-case-missing', 'tools/image.mjs', "const p12p = cases.find((c) => c[0] === 'jpeg-p12-progressive')", "const p12p = cases.find((c) => c[0] === 'jpeg-p12-progressive-gone')", IMGALL, "FAIL wasm_js_cap: no jpeg-p12-progressive case in the oracle's cases"),  # a full run that lost the case fails; only IMAGE_BIG=0 skips it
   # Paeth as a wavefront (docs/image-png-speed.md): the SIMD loop over runs of up to 4 rows, and the PNG sink that hands them over
   ('paeth-wave-lag-off-by-one', 'src/cdom_image_loops.c', '*r1 = o[1] - (k > 1 ? 1 : 0) * LAG * bpp', '*r1 = o[1] - (k > 1 ? 1 : 0) * (LAG - 1) * bpp', SIMD, 'FAIL paeth runs'),  # row 1 one pixel off the lag its lanes' b assume
   ('paeth-wave-c-old', 'src/cdom_image_loops.c', '        c = b;\n        V st = wasm_v128_bitselect(raw, a, keep);\n        wasm_v128_store32_lane(r3', '        c = wasm_i8x16_shuffle(b, c, 0, 1, 2, 3, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31);\n        V st = wasm_v128_bitselect(raw, a, keep);\n        wasm_v128_store32_lane(r3', SIMD, 'FAIL paeth runs'),  # the lagging rows keep an old up-left pixel
