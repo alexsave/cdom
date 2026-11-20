@@ -324,6 +324,9 @@ flowchart TB
   An app that needs its own `<head>`, `env` or `options` brings its own page.
 - The page markers are API: the page has a `<script>` with a line that holds only `/*CDOM_SHIM*/`, which becomes `shim/cdom.min.js`, and `/*CDOM_WASM*/` stands for `cdom.start`'s first argument.
   The `<script ...>` tag before `/*CDOM_SHIM*/` must be whole on one line, since the build writes it again after the string table's script.
+- A browser with no script at all (NCSA Mosaic, IE 1.5 and 2, Netscape 1.1, Lynx) gets a fallback at a line that holds only `/*CDOM_NOSCRIPT*/` in the `<body>`, which the default page has: a screenshot of the app taken at build time, a paragraph, and a snowman, in HTML 2.0, with two GIFs beside the page (`<page>.noscript.gif` and `cdom-snowman.gif`).
+  The build then wraps the page's scripts and style in HTML comments, and takes Node, headless Chrome (`CHROME`) and Python 3 with Pillow for the screenshot; `CDOM_NOSCRIPT := 0` turns it off.
+  A browser with script never shows it and never fetches its images (docs/noscript-design.md).
 - Every file whose name ends in `.css` under the app's `src/` directory, in any subfolder, is written into the page's `<style>`, in byte order of its path, so `00-base.css` comes before `10-layout.css`, and that before `theme/dark.css`; a file or folder whose name starts with a dot is skipped, and nothing else is.
   No variable names them, and none turns this off.
   They go at a line that holds only `/*CDOM_CSS*/`, inside a `<style>` and before the `/*CDOM_SHIM*/` line; the default page has that `<style>` in its `<head>`, so an app on it only adds a file.
