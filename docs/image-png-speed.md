@@ -939,3 +939,14 @@ The base I predict from (not measured yet): main's p12g.png C-simd on this VM ab
 | H9 | the wasm memory after p12g.png: equal to main's or lower (the RGBA row of 16,128 bytes goes), at most 1 page (64 KiB) lower | higher than main's |
 | H10 | the image module grows by 0.4 to 1.5 KB brotli (q 11) in the SIMD page and 0.1 to 0.6 KB in the scalar one | outside those ranges |
 | H11 | a run of 2 or 3 Paeth rows through the 16-row loop is slower than the scalar rows (16 lanes of work for 2), so the loop is used from some run length up; a microbench decides the length, predicted 3 (2 to 5) | the 16-row loop faster than the scalar Paeth at runs of 2 by more than 1.2 times |
+
+### A third change, predicted before it was made
+
+After G1 and G2 (measured below), the profile's order is the inflate (run_on, 21.8 ms; not this step's), cd_image_scaler_row (14.2 ms, the grey across loop inlined into it) and the wavefront (13.3 ms).
+The grey across loop's inner loop runs 3 or 4 times an output pixel on p12g.png (4032 to 900), a branch whose count follows the output pixel's fraction.
+G3: the inner loop runs a count fixed for the row (sw / dw - 1, every output pixel spans at least that many whole pixels), then one more pixel taken by a mask, not a branch; the row's last output pixel as before (so nothing past the row is read).
+
+| id | prediction | falsifier |
+| --- | --- | --- |
+| H12 | G3: cd_image_scaler_row's self time on p12g.png at 0.65 of G2's (0.50 to 0.80) | above 0.90 |
+| H13 | G3: p12g.png C-simd at 0.90 of G1 and G2's (0.82 to 0.96) | above 0.98 |
