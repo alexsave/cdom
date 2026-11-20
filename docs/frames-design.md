@@ -193,7 +193,8 @@ The boot's first part goes through the same gate with js10 on, which also refuse
 So the language surface the tier needs of the browser is: functions declared at the top level, new Object() and new Array(), for, for-in, while, if, ?:, the bitwise operators, typeof, new Function, string charAt, indexOf, substring, split and length, Array join, escape and unescape, Math, Date, setTimeout and clearTimeout with a string, and the document and form objects of section 2.
 That list is what a Netscape 2 code path would have to give, whichever way it is made (a WebAssembly interpreter in JavaScript 1.0, or a transform of the wasm2js output): that choice is Alex's, after the probe.
 
-The app itself runs from the words build (app-ie9) for the prototype, which is ES3.
+The app itself ran from the words build (app-ie9) for the prototype, which is ES3.
+It now runs from the JS 1 transform's file (app-js1, url + ".js1.js": docs/js1-transform-design.md), which passes the 1.1 gate and the 1.0 one; what follows is what the words build lacked.
 What Netscape 3 lacks for it: function expressions and nested functions (the whole file is one), array literals (words.js's tables), push (words_init and words_grow), charCodeAt (the base64 data segments), === (16 in tests/out/legacy.wasm.ie9.js) and throw (3 there, wasm2js's traps), Math.imul, clz32 and trunc (frames.js supplies those three).
 And the page: tools/cdpage writes the string table as `var cdomLits=[...]`, an array literal, which Netscape 2 and 3 cannot parse.
 
