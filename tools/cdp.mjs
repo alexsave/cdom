@@ -17,6 +17,11 @@ export const sleep = ms => new Promise(r => setTimeout(r, ms));
 // LEGACY=ie9-gaps is IE 9 with those two walls put back, so IE 9's other gaps are also tested on the second tier.
 // LEGACY=ie6 is IE 9 and then what IE 6 lacks beyond it (IE6_OLD): ES5 and the W3C DOM of dom-old.js's table, with
 // attachEvent in their place, so the boot takes the fourth tier.
+// No IE has fetch or XMLHttpRequest.overrideMimeType (the page's own ?mime keeps it, for the browsers that do, Firefox 1.0 on),
+// and the network of tools/legacy/polyfills.js stands on XMLHttpRequest: IE 9 and 10 have no responseType either (IE9_WALLS),
+// and IE 5 and 6 have no XMLHttpRequest, only ActiveXObject("Microsoft.XMLHTTP") (IE6_OLD: a stand-in over the real one with
+// what an ActiveX one has, no more: responseText and no responseType, overrideMimeType or addEventListener, and a status that
+// throws where the request failed; __activeX counts the ones made).
 // LEGACY=below is IE 6 without attachEvent either: below the floor, which the boot must refuse.
 export const LEVEL = process.env.LEGACY || '';
 if (LEVEL && !['1', 'ie9', 'ie9-gaps', 'ie6', 'below'].includes(LEVEL)) throw new Error(`cdp: LEGACY=${LEVEL}: want 1, ie9, ie9-gaps, ie6 or below`);
@@ -52,7 +57,9 @@ const IE9_WALLS = `
     'Uint16Array', 'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array', 'BigInt64Array', 'BigUint64Array',
     'Float16Array', 'SharedArrayBuffer']) delete window[k];
   // crypto.getRandomValues, IE 11 (as msCrypto): IE 9 and 10 have no cryptographic generator at all.
-  delete window.msCrypto;`;
+  delete window.msCrypto;
+  // responseType and response, IE 10.
+  delete XMLHttpRequest.prototype.responseType; delete XMLHttpRequest.prototype.response;`;
 const IE9_GAPS = `
   // requestAnimationFrame and cancelAnimationFrame, IE 10 (and no prefixed ones to fall back on).
   for (const k of ['requestAnimationFrame', 'cancelAnimationFrame', 'webkitRequestAnimationFrame',
@@ -113,6 +120,21 @@ const IE6_OLD = `
   delete Document.prototype.createElementNS; delete Document.prototype.elementsFromPoint;
   for (const R of [DOMRectReadOnly.prototype, DOMRect.prototype]) { delete R.width; delete R.height; }
   delete window.innerWidth; delete window.innerHeight;
+  // IE 5 and 6: no XMLHttpRequest (IE 7's), only ActiveX's, whose request is a stand-in over the real one with an ActiveX one's
+  // surface: its status throws before the request is done or when it failed (WinInet's error), as IE's does.
+  const Real = window.XMLHttpRequest, made = window.__activeX = [];
+  if (!/xhr/.test(location.search)) { delete window.XMLHttpRequest; window.ActiveXObject = function (id) {
+    if (id !== 'Microsoft.XMLHTTP') throw new Error("Automation server can't create object");
+    const x = new Real(), self = this;
+    made.push(this);
+    for (const k of ['open', 'send', 'setRequestHeader', 'getResponseHeader', 'abort'])
+      this[k] = function () { return x[k].apply(x, arguments); };
+    define(this, 'readyState', { get: () => x.readyState });
+    define(this, 'responseText', { get: () => x.responseText });
+    define(this, 'statusText', { get: () => x.statusText });
+    define(this, 'status', { get: () => { if (x.readyState !== 4 || !x.status) throw new Error('The system cannot locate the resource specified.'); return x.status; } });
+    define(this, 'onreadystatechange', { set: (f) => { x.onreadystatechange = function () { f.call(self); }; } });
+  }; }
   const setAttr = Element.prototype.setAttribute;
   Element.prototype.setAttribute = function (n, v) {
     if (/^(class|style|for)$/i.test(n)) { this['$ie' + n] = v; return; }
@@ -143,7 +165,7 @@ const IE6_OLD = `
   };`}`;
 const OLD = `(() => {
   for (const k of ['WebAssembly', 'TextDecoder', 'TextEncoder', 'queueMicrotask', 'reportError', 'Promise', 'fetch',
-    'PointerEvent', 'globalThis']) delete window[k];
+    'PointerEvent', 'globalThis', 'AbortController', 'AbortSignal']) delete window[k];
   window.msCrypto = window.crypto; delete window.crypto; // an own accessor on the window in Chrome
   window.__noCrypto = typeof crypto === 'undefined';
   for (const k of ['imul', 'clz32', 'fround', 'trunc']) delete Math[k];
@@ -154,6 +176,8 @@ const OLD = `(() => {
     'pointerenter', 'pointerleave', 'gotpointercapture', 'lostpointercapture'])
     window.addEventListener(t, (e) => { if (e.isTrusted) e.stopImmediatePropagation(); }, true);
   const P = EventTarget.prototype, add = P.addEventListener, rem = P.removeEventListener;
+  window.__mime = /mime/.test(location.search) && typeof XMLHttpRequest.prototype.overrideMimeType === 'function';
+  if (!/mime/.test(location.search)) delete XMLHttpRequest.prototype.overrideMimeType;
   const adds = window.__adds = [];
   P.addEventListener = function (t, f, c) { adds.push([t, typeof c, !!c]); return add.call(this, t, f, !!c); };
   P.removeEventListener = function (t, f, c) { return rem.call(this, t, f, !!c); };${GAPS ? IE9_GAPS : ''}${TIER >= 3 || BELOW ? IE9_WALLS : ''}${TIER === 4 || BELOW ? IE6_OLD : ''}
