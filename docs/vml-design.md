@@ -26,7 +26,8 @@ The svg and each g are spans, not v:group elements (section 9 says why): the svg
 
 | SVG | VML (cdomVml) |
 | --- | --- |
-| `<svg width height viewBox>` | `span`, style position:relative;display:inline-block;overflow:hidden;width:Wpx;height:Hpx; the viewBox sets the CTM of everything inside (preserveAspectRatio's default, xMidYMid meet); no width or height is 300 by 150, as in a browser |
+| `<svg width height viewBox>` | `span`, style position:relative;display:inline-block;overflow:hidden;width:Wpx;height:Hpx; the viewBox sets the CTM of everything inside, by preserveAspectRatio (meet, slice or none, and each alignment); no width or height is 300 by 150, as in a browser; a width or height in a unit (em, %) is left to CSS and the CTM uses the laid-out size (section 11) |
+| `<svg x y width height viewBox>` inside an svg | `span`, style position:absolute, at x and y through the CTM, of its width and height through it, overflow hidden; what it holds is drawn from its corner, through its own viewBox |
 | `<g transform>` | `span`, style position:absolute;left:0;top:0; its translate and scale go into the CTM of what it holds |
 | `<path d>` | `v:shape` with `path` from cdomVml.path(d, CTM) |
 | `<rect x y width height rx ry>` | `v:shape`, the rect as a path (rounded corners as arcs) |
@@ -37,9 +38,11 @@ The svg and each g are spans, not v:group elements (section 9 says why): the svg
 | `stroke` | `stroked` (false for none, the default) and `strokecolor`; the shape's `v:stroke` has SVG's defaults, joinstyle miter, miterlimit 4 and endcap flat (VML's are round) |
 | `stroke-width` | `strokeweight`, in px: the width times the CTM's scale (the square root of sx times sy) |
 | `fill-opacity`, `stroke-opacity`, `opacity` | `opacity` of the shape's `v:fill` and `v:stroke` children: fill-opacity (or stroke-opacity) times every opacity from the shape up |
+| `<text x y>` | `span`, style position:absolute;white-space:nowrap, at x through the CTM and with its baseline at y through it; font-size times the CTM's vertical scale, font-style, font-weight, font-family (a family with no generic one gets serif, as an SVG falls back to); text-anchor middle and end shift it by its width |
+| `fill="currentColor"` | the CSS color of the node, read when it is drawn (IE's currentStyle); on a text, its span's color is left to inherit |
 | `id` | the VML node's id |
 
-fill, stroke, stroke-width, fill-opacity and stroke-opacity are inherited from the nearest svg or g that sets them, as SVG's presentation attributes are.
+fill, stroke, stroke-width, fill-opacity, stroke-opacity, font-family, font-size, font-style, font-weight and text-anchor are inherited from the nearest svg or g that sets them, as SVG's presentation attributes are.
 A colour is #rgb (written out as #rrggbb), #rrggbb, rgb(r, g, b), or a colour name, which VML takes as IE's CSS does.
 
 Path data: every SVG command, absolute and relative, with implicit repeats (extra pairs after M are lines).
@@ -59,13 +62,13 @@ cdomVml.path(d, sx, sy, tx, ty) is a pure function of the string and the four nu
 
 ## 3. What is not drawn
 
-Elements: text (and tspan), linearGradient, radialGradient, stop, clipPath, mask, pattern, filter, marker, use, defs, symbol, image, foreignObject, and any tag not in the table above.
+Elements: tspan, linearGradient, radialGradient, stop, clipPath, mask, pattern, filter, marker, use, defs, symbol, image, foreignObject, and any tag not in the table above.
 Each is made as a span with display:none, so it and everything in it draws nothing (a path in a defs is not drawn either, as SVG would not draw it there).
 Attributes: a transform with rotate, skewX, skewY or matrix, a negative or zero scale, clip-path, mask, filter and marker-start, marker-mid, marker-end hide the node they are on (display:none) while they are set.
-A paint that is not a colour (url(#gradient), currentColor, rgba(), hsl()) draws no fill or stroke.
+A paint that is not a colour (url(#gradient), rgba(), hsl()) draws no fill or stroke.
 Each kind is reported once, the first time it is met: an Error through window.reportError (the polyfill's, which reaches window.onerror), with a message naming the kind; cdomVml.lost lists the kinds met.
 Nothing throws.
-Also not done: SVG's nonzero fill rule (VML fills even-odd), stroke-linecap, stroke-linejoin, stroke-miterlimit and dashes (the defaults are drawn), and preserveAspectRatio other than the default.
+Also not done: SVG's nonzero fill rule (VML fills even-odd), stroke-linecap, stroke-linejoin, stroke-miterlimit and dashes (the defaults are drawn), text's own opacity, letter-spacing and dominant-baseline, and a text's position under a rotate.
 Templates (cd_tpl) holding SVG are cloned by cloneNode, whose copy has no cdomVml state; an attribute set on such a copy later is mapped as if it were the first.
 
 ## 4. VML setup
@@ -85,8 +88,8 @@ Removing or replacing the svg needs nothing: the VML nodes are DOM nodes, remove
 
 - tools/cdp.mjs, LEGACY=ie6: a VML stand-in in the IE6_OLD profile: document.namespaces.add and document.createStyleSheet's addRule recorded in window.__vml, and every document.createElement of a v: tag recorded too (Chrome makes an unknown element of it, which keeps the properties set on it).
   It models what real IE 6 did (section 9): a v: node made before the namespace, or with no behavior rule for its tag, and any v:group, go in __vml.bad, which the test wants empty; after a namespaces.add with an implementation, a v: node keeps IE's defaults whatever script sets on it.
-- tests/legacy.c's svg() builds an svg (in an absolutely placed div, clear of the test's pad) with every element of the subset, a g with translate and scale, inherited paint, opacities, and the unsupported text, defs, linearGradient and a rotate; svg_set() changes a path's d and a rect's fill after the build, and the g's transform while the path in it is detached, then attaches it again; svg_drop() removes the svg; svg_many(n) builds n paths, for the timing.
-- tools/legacy.mjs, LEGACY=ie6: each element became its v: node with the path string, coordsize, coordorigin, size, colours, weights and opacities it should have; the unsupported kinds reported once each and their nodes hidden; the later change reached the VML node; the removal left nothing; no SVG element was made.
+- tests/legacy.c's svg() builds an svg (in an absolutely placed div, clear of the test's pad) with every element of the subset, a g with translate and scale, inherited paint, opacities, a text in KaTeX_Math with currentColor, a rect with currentColor, an svg in the svg with a sliced viewBox, a second svg sized in em, and the unsupported defs, linearGradient and a rotate; svg_set() changes a path's d and a rect's fill after the build, and the g's transform while the path in it is detached, then attaches it again; svg_drop() removes the svg; svg_many(n) builds n paths, for the timing.
+- tools/legacy.mjs, LEGACY=ie6: each element became its v: node with the path string, coordsize, coordorigin, size, colours, weights and opacities it should have; the text is a span in its font whose baseline (found by an image put on it, not vml.js's way) is at y; the currentColor rect has the div's color; the inner svg is a clipping span at its place with its rect sliced; the em svg is 40 by 20 and drawn at its scale; the unsupported kinds reported once each and their nodes hidden; the later change reached the VML node; the removal left nothing; no SVG element was made.
   On the other tiers: the same svg is real SVG (the SVG namespace), and nothing reported.
 - tools/vml.mjs, in node (vml.js loaded through new Function, not a vm context, whose global lookups are slower): cdomVml.path against hand-checked strings for every command, absolute and relative, implicit repeats, S and T reflection, Z's move back, a malformed path, the CTM; and arcs against points sampled on the true arc.
 - Each test's mutants are in tools/mutate.py (vml-*).
@@ -153,8 +156,10 @@ In the XP VM (docs/ie5-design.md, "Driving the XP VM"):
    - an open purple V through (100, 60), (120, 90) and (140, 60) (the polyline);
    - a pale blue-grey triangle at 25% through (160, 60), (180, 90) and (150, 90) (the polygon);
    - a dark navy triangle through (10, 12), (30, 12) and (30, 32) with a 12 px red outline (the path in the g);
-   - no text, and nothing for the rotated or the gradient-filled rect.
-   IE then reports six script errors, one per kind not drawn (`cdom: SVG <text> is not drawn in VML ...`, then defs, linearGradient, stop, transform rotate, paint url), in the status bar or as dialogs; that is the report path, not a fault.
+   - an italic x with its baseline at (2, 90), and a small dark green square at (60, 80) (the text and the rect in currentColor);
+   - a magenta box from (100, 40) to (140, 60) (the svg in the svg), and beside the svg a second one, 40 by 20, with a black rect 4 by 6 px at (2, 2) in it (the svg in em);
+   - nothing for the rotated or the gradient-filled rect.
+   IE then reports five script errors, one per kind not drawn (`cdom: SVG <defs> is not drawn in VML ...`, then linearGradient, stop, transform rotate, paint url), in the status bar or as dialogs; that is the report path, not a fault.
 3. IE 5.01 and IE 5.5: the same page, through the test hold (docs/ie5-design.md, section 2): run `python3 tools/ie5hold.py`, copy tests/out/legacy.html to legacy-hold.html with `<img src="http://10.0.2.2:8096/x.gif" width="1" height="1">` added, and open `legacy-hold.html?svg` from Run with IE501 or IE550.
    The Utilu IE 5.01 draws no VML at all, not even a static page's (section 9), so there the run checks only that the page runs and reports what it does not draw.
 4. IE 7 and IE 8: the IE 9 VM in IE 7 and IE 8 document modes, a copy of legacy.html with an X-UA-Compatible meta, as for P5 in docs/ie6-design.md, opened with ?svg.
@@ -229,3 +234,29 @@ Measured after the two changes (two runs each where two are given):
 - svg_many(2,000), which had not finished in 4 minutes, builds in 23,078 ms, 28,938 ms to the next timeout, with no slow-script prompt.
 
 shim/cdom.min.js, which apps inline, is byte-identical after the change: terser drops the empty drawHeld and its call.
+
+## 11. What a LaTeX formula is made of
+
+The foolish-utils LaTeX app (latex/) draws each formula as an svg sized in em, with fill="currentColor" on it, a text per glyph in a KaTeX font, rects for the fraction bars, and an svg inside the svg for a radical's sign (a path 400,000 units wide, viewBox sliced to the width it needs, xMinYMin slice).
+Before this, IE 6 drew none of it: every glyph was reported (`<text>`), and every bar and sign (`paint currentColor`), and the svg was 8 px wide (its "8.048em" read as 8).
+
+- Text is an HTML span, not VML: v:textpath stretches its text along a path, where a span draws it as the browser draws text.
+  Its baseline sits at y: the span's top is y less the font's ascent, measured once a font (style, weight and family) at 100 px by an image of height 1 on the baseline of a span out of view, and scaled.
+- currentColor is read from the node's CSS color when it is drawn (currentStyle in IE 6, measured: a v:shape inherits its host's color, `#336` there).
+  A later change of the CSS color (a theme switch) is not drawn until the shape is drawn again.
+- An svg sized in a unit is laid out by CSS.
+  The shim builds a subtree out of the page and inserts it when its root closes, so while it is built its size reads 0; it is then drawn at 16 px an em, kept in a list, and measured and drawn again when the call into C ends (drawHeld), once: one still out of the page then is measured when it is put in (placed).
+- A text's family with no generic one gets serif after it: IE's default for HTML in this XP is a sans, and SVG's fallback is serif.
+
+Measured in IE 6 on the XP VM, against this branch merged with ie6-latex-fix (the app does not start in IE 6 without that branch's input-type fix):
+the formula `\int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}` draws with its limits, superscripts, fraction bar and radical in the right places, and typing `x^2 + y^2 = \frac{1}{r^2}` draws again on each edit (/Users/alex/VMs/ie6-xp/shots/latex6v-9.png and latex6v-7.png; beside Chrome: latex-ie6-vs-chrome.png).
+A fraction bar 0.96 px tall draws, antialiased grey (a probe of thin rects from 0.4 to 2 px: shots/thin6.png).
+
+What still differs from Chrome there, none of it vml.js's:
+- the glyphs are in the fallback serif, since the app's @font-face rules give IE woff2 and ttf and IE 6 takes only EOT, so the integral is a text-size one, not KaTeX_Size2's;
+- the formula sits at the left: the app centres it with `.block>svg{margin:0 auto}`, which does not match the span;
+- the app's layout is flex and grid, so in IE 6 the buttons are not a grid and the pane does not scroll, and only the formulas in the first screen can be seen;
+- the transform scale(-1,1) of a mirrored glyph (reported as `transform scale (zero or negative)`) is not drawn.
+
+The same build in the Utilu IE 5.01 draws no VML at all (section 9), and its app does not start yet (docs/ie6-design.md and the ie6-latex-fix PR say why).
+
