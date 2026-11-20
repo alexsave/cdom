@@ -519,9 +519,9 @@ static void ac_first_block(scan *s, const pcomp *pc, uint64_t *m, int16_t *v, in
 
 /* The bits of `bits` (n of them, the first at the top) put at the positions of `at` (n set bits, the lowest first). */
 ALWAYS uint64_t deposit(uint64_t bits, uint64_t at, int n) {
-  if (n == 1) return (bits & 1) << __builtin_ctzll(at);
+  if (n == 1) return (bits & 1) << cd_ctz64(at);
   uint64_t out = 0;
-  while (at) { n--; out |= (bits >> n & 1) << __builtin_ctzll(at); at &= at - 1; }
+  while (at) { n--; out |= (bits >> n & 1) << cd_ctz64(at); at &= at - 1; }
   return out;
 }
 
@@ -575,7 +575,7 @@ static void ac_refine_block(scan *s, const pcomp *pc, uint64_t *m, int16_t *v, i
         uint64_t z1 = zs & (zs - 1), z2 = z1 & (z1 - 1), z3 = z2 & (z2 - 1);
         zs = r == 0 ? zs : r == 1 ? z1 : r == 2 ? z2 : z3;
       } else for (; r > 0 && zs; r--) zs &= zs - 1;
-      int to = zs ? __builtin_ctzll(zs) : se + 1;
+      int to = zs ? cd_ctz64(zs) : se + 1;
       uint64_t passed = nz & rng & ((zs & (0 - zs)) - 1);
       int n = __builtin_popcountll(passed);
       if (n > 57) { OUT(); cm |= deposit(get_wide(b, n), passed, n); IN(); }
@@ -609,11 +609,11 @@ static void ac_refine_block(scan *s, const pcomp *pc, uint64_t *m, int16_t *v, i
     s->eobrun--;
   }
   for (uint64_t q = cm & pc->need; q; q &= q - 1) {
-    int16_t *c = &v[pc->slot[__builtin_ctzll(q)]];
+    int16_t *c = &v[pc->slot[cd_ctz64(q)]];
     if ((*c & p1) == 0) *c = (int16_t)(*c + (*c >= 0 ? p1 : -p1));
   }
   for (uint64_t q = nw & pc->need; q; q &= q - 1) {
-    int j = __builtin_ctzll(q);
+    int j = cd_ctz64(q);
     v[pc->slot[j]] = (int16_t)(ng >> j & 1 ? -p1 : p1);
   }
   if (pc->has_mask) *m = nz;

@@ -151,7 +151,8 @@ static int idat(void *c, const uint8_t **d, uint32_t *n) {
 }
 
 /* The inflate's sink: each row that is whole and out of the window (no later match reads it) is unfiltered where
- * it is, in the inflate's buffer, against the row above it (kept there too), turned into RGBA and scaled; bytes
+ * it is, in the inflate's buffer, against the row above it (kept there too), turned into RGBA and scaled (a run of up to
+ * 4 Paeth rows among those is unfiltered at once, then scaled in order: cd_image_unfilter_run); bytes
  * past the last row are dropped. Answers the bytes to drop: all before the row above the next. */
 static int64_t rows(void *c, uint8_t *b, uint32_t n, int last) {
   pctx *x = c;
@@ -159,11 +160,16 @@ static int64_t rows(void *c, uint8_t *b, uint32_t n, int last) {
   while (x->done < x->h && x->row_at + row <= lim) {
     uint8_t *cur = b + x->row_at;
     const uint8_t *prev = x->done ? cur - row : x->zero;
-    if (!cd_image_unfilter(cur[0], cur + 1, prev + 1, x->stride, x->bpp)) return -1;
-    if (x->sc.step == 3) cd_image_scaler_row(&x->sc, cur + 1);   /* RGB as it is: the scaler reads 3 bytes a pixel */
-    else { to_rgba(&x->f, cur + 1, x->px); cd_image_scaler_row(&x->sc, x->px); }
-    x->row_at += row;
-    x->done++;
+    /* the rows whole and out of the window from here (at least 1): a run of Paeth rows among them is unfiltered at once */
+    uint32_t avail = (lim - x->row_at) / row, left = x->h - x->done;
+    uint32_t k = cd_image_unfilter_run(cur, row, prev + 1, x->stride, x->bpp, avail < left ? avail : left);
+    if (!k) return -1;
+    for (uint32_t j = 0; j < k; j++, cur += row) {   /* then to the scaler in order, one at a time */
+      if (x->sc.step == 3) cd_image_scaler_row(&x->sc, cur + 1);   /* RGB as it is: the scaler reads 3 bytes a pixel */
+      else { to_rgba(&x->f, cur + 1, x->px); cd_image_scaler_row(&x->sc, x->px); }
+    }
+    x->row_at += k * row;
+    x->done += k;
   }
   if (x->done == x->h) { x->row_at = 0; return lim; }
   uint32_t drop = x->done ? x->row_at - row : x->row_at;
