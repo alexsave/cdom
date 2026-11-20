@@ -19,7 +19,7 @@ For scale, the benchmark's React entry, a table of rows about as big as lesson 5
 
 ## Running a lesson
 
-You need a clang that targets wasm32 (on macOS, `brew install llvm lld`; on Debian or Ubuntu, `apt install clang lld` and `make WASM_CC=clang`).
+You need a clang that targets wasm32, with wasm-ld from LLVM 23 or later (on macOS, `brew install llvm lld`; on Debian or Ubuntu, `clang-23` and `lld-23` from [apt.llvm.org](https://apt.llvm.org) and `make WASM_CC=/usr/lib/llvm-23/bin/clang`, since the distributions' `clang` and `lld` are older and `make` stops at them).
 No Node, npm or bundler is involved in building an app.
 
 ```sh

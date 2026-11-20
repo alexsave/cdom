@@ -33,7 +33,7 @@ for (const f of ['cdom', 'freestanding']) {
   ok(at === 0, `stdlib.h (${f} flags): abs, labs (through their address too), malloc, calloc, realloc and free give the right values${at ? ` (wrong at line ${at})` : ''}`);
 }
 x = await load(`${dir}/ro_range.wasm`);
-ok(x.ro_span() > 0, `the read-only range is not empty with this toolchain (__rodata_end - __rodata_start is ${x.ro_span()}; wasm-ld before LLVM 22 leaves it empty and every string slow)`);
+ok(x.ro_span() > 0, `the read-only range is not empty with this toolchain (__rodata_end - __rodata_start is ${x.ro_span()}; wasm-ld before LLVM 23 does not define them)`);
 ok(x.ro_id(0) === x.ro_ptr(0) && x.ro_id(1) === x.ro_ptr(1) && x.ro_ptr(0) !== x.ro_ptr(1), 'cd_tmpz of a literal the macro cannot see is the literal\'s own address');
 ok(x.mut_id() < 0 || x.mut_id() >= 0x80000000, 'cd_tmpz of mutable bytes is a runtime string (the top bit set), not an address');
 x = await load(`${dir}/on_only.wasm`);
