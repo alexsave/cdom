@@ -46,6 +46,8 @@ ok(refusal('t', 'x = { "1": 0 };', true) === '', '{ "1": 0 } passes');
 ok(/regular expression/.test(refusal('t', 'r = /a/m;', true)), '/a/m is refused');
 ok(/regular expression/.test(refusal('t', 'r = /a+?/;', true)), '/a+?/ is refused');
 ok(/regular expression/.test(refusal('t', 'r = /(?:a)/;', true)), '/(?:a)/ is refused');
+ok(/regular expression/.test(refusal('t', 'r = /[/]/;', true)), '/[/]/ is refused (Firefox 1.0)');
+ok(refusal('t', 'r = /[\\/]/;', true) === '', '/[\\/]/ passes');
 ok(refusal('t', 'r = /^\\s+|[?(]\\?$/gi;', true) === '', 'g, i, an escaped ? and ? in a class pass');
 // JScript 5.0's Error(n) takes a number: an Error made with a message is refused, and messages() rewrites it to cdomError.
 ok(/Error with a message/.test(refusal('t', 'throw new Error("x");', true)), 'new Error("x") is refused');

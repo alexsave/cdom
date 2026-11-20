@@ -15,14 +15,17 @@ const RESERVED = new Set(('break case catch continue default delete do else fina
 // and the boot, which runs before any polyfill, none of them (boot50).
 const JSCRIPT55 = ['undefined', '.push', '.pop', '.shift', '.unshift', '.splice', '.apply', '.call', '.hasOwnProperty',
   '.propertyIsEnumerable', '.isPrototypeOf', 'encodeURI', 'decodeURI', 'encodeURIComponent', 'decodeURIComponent', '.toFixed',
-  '.toPrecision', '.toExponential', '.localeCompare'];
+  '.toPrecision', '.toExponential', '.localeCompare',
+  // measured in IE 5.01 (tests/probe.html, docs/ie5-design.md): no TypeError or RangeError, and a regular expression has no
+  // lastIndex or global
+  'TypeError', 'RangeError', '.lastIndex', '.global'];
 const ES5_NAMES = new Set(['JSON', '.keys', '.create', '.defineProperty', '.defineProperties', '.getPrototypeOf',
   '.getOwnPropertyNames', '.getOwnPropertyDescriptor', '.freeze', '.seal', '.preventExtensions', '.isFrozen', '.isSealed',
   '.isExtensible', '.isArray', '.indexOf', '.lastIndexOf', '.forEach', '.map', '.filter', '.some', '.every', '.reduce',
   '.reduceRight', '.bind', '.now', '.trim', '.toISOString', '.toJSON', ...JSCRIPT55]);
 export const ES5_SUPPLIED = new Set(['.keys', '.create', '.isArray', '.now', '.trim', '.bind', '.indexOf', '.lastIndexOf',
   '.forEach', '.map', '.filter', '.some', '.every', '.reduce', 'undefined', '.push', '.pop', '.shift', '.unshift', '.splice',
-  '.apply', '.call', '.hasOwnProperty']);
+  '.apply', '.call', '.hasOwnProperty', 'TypeError']);
 // polyfills.js and dom-old.js try defineProperty and fall back; Babel's regenerator helper tries defineProperty and
 // reads getPrototypeOf only when it exists. polyfills-es3.js defines the supplied ones, so it names them all.
 const ES5_ALLOWED = { polyfills: new Set(['.defineProperty']), shim: new Set(['.defineProperty', '.getPrototypeOf']),
@@ -142,7 +145,7 @@ export function es3(name, src, minified = false) {
   if (leaks.length) throw new Error(`${name}: a catch parameter's name used elsewhere in its function, which JScript's catch would overwrite: ${leaks.join(' ')}`);
   if (minified && errorsWithMessage(tree)) throw new Error(`${name} makes an Error with a message, which JScript 5.0 (IE 5.0) drops (Error(n) takes a number there): cdomError(m) makes one`);
   if (numKeys) throw new Error(`${name} has a number as an object literal's key, which JScript 5.0 (IE 5.0) refuses as a syntax error`);
-  if (regexes.size) throw new Error(`${name} has a regular expression JScript 5.0 (IE 5.0) refuses as a syntax error (a flag but g and i, a lazy quantifier, or a group with ?): ${[...regexes].join(' ')}`);
+  if (regexes.size) throw new Error(`${name} has a regular expression JScript 5.0 (IE 5.0) refuses as a syntax error (a flag but g and i, a lazy quantifier, or a group with ?), or Firefox 1.0 does (a / in a class): ${[...regexes].join(' ')}`);
   if (bad.size) throw new Error(`${name} names a reserved word as a property, which JScript refuses: ${[...bad].join(' ')}`);
   if (minified) return src;
   if (replaceWithFunction(tree)) throw new Error(`${name} calls replace with a function, which JScript 5.0 (IE 5.0) does not take`);
@@ -246,14 +249,15 @@ export function boot50(src) {
   return [...found];
 }
 // Whether JScript 5.0 refuses a regular expression literal: it knows the flags g and i alone (/a/m is a syntax error),
-// no lazy quantifier (a+?) and no group that starts with ? ((?:a), (?=a), (?!a)).
+// no lazy quantifier (a+?) and no group that starts with ? ((?:a), (?=a), (?!a)). And Firefox 1.0 refuses a / in a class
+// unescaped (/[/]/: "unterminated character class"), which the fourth tier's file also runs in.
 export function regex50({ pattern, flags }) {
   if (/[^gi]/.test(flags)) return true;
   let inClass = false, prev = '';
   for (let i = 0; i < pattern.length; i++) {
     const c = pattern[i];
     if (c === '\\') { i++; prev = 'x'; continue; }
-    if (inClass) { if (c === ']') inClass = false; prev = 'x'; continue; }
+    if (inClass) { if (c === '/') return true; if (c === ']') inClass = false; prev = 'x'; continue; }
     if (c === '[') { inClass = true; prev = 'x'; continue; }
     if (c === '?' && (prev === '(' || prev === 'q')) return true;
     prev = c === '(' ? '(' : '*+?}'.includes(c) ? 'q' : 'x';
