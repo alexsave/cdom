@@ -93,6 +93,12 @@ jobs:
           node tools/words.mjs
           node tools/es3.mjs
           node tools/js11.mjs
+      # js1c, the wasm to JavaScript 1.0 compiler the frames tier's app file comes from (docs/js1-compile-design.md): the
+      # differential test against wasm, the call depth, time slicing and the gate on every output; the gate's own rules.
+      - name: tools/js1.mjs and tools/js10.mjs
+        run: |
+          node tools/js1.mjs
+          node tools/js10.mjs
       - name: tests/image/run.sh (tools/alloc.mjs reads its outputs)
         run: tests/image/run.sh
       - name: tools/alloc.mjs
