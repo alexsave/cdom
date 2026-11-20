@@ -17,6 +17,19 @@
 #define CD_JOB_ENTRY __attribute__((export_name("run")))
 CD_JOB_ENTRY uint32_t run(const uint8_t *in, uint32_t in_len, const uint8_t *args, uint32_t args_len);
 
+/* A job that takes a picked file in pieces (cd_job_pieces_cb) defines these four in place of run; the worker calls
+ * pieces_begin once (args as run's; size the file's), then, until pieces_put answers another value than
+ * CD_JOB_PIECES_MORE: pieces_max (the most bytes it takes now; 0: call pieces_put(0), work that needs none) and
+ * pieces_room (where they go), writes the file's next bytes there (pieces_max of them, fewer only at the file's end),
+ * and pieces_put(n). pieces_begin answers 0, or a failure as run's; pieces_put answers CD_JOB_PIECES_MORE, or the job's
+ * end: CD_JOB_RUN_OK (its output what it passed to cd_job_answer), CD_JOB_RUN_NO_ROOM or another failure. */
+#define CD_JOB_PIECES_MORE 0x100u
+#define CD_JOB_PIECES(n) __attribute__((export_name(n)))
+CD_JOB_PIECES("pieces_begin") uint32_t pieces_begin(uint32_t size, const uint8_t *args, uint32_t args_len);
+CD_JOB_PIECES("pieces_room") uint8_t *pieces_room(void);
+CD_JOB_PIECES("pieces_max") uint32_t pieces_max(void);
+CD_JOB_PIECES("pieces_put") uint32_t pieces_put(uint32_t n);
+
 /* Hands the worker the output: p and len are read during the call, so the block may be freed or reused
  * after it. The last call before run returns counts; none at all is an empty output. */
 __attribute__((import_module("cdjob"), import_name("answer"))) void cd_job_answer(const void *p, uint32_t len);
