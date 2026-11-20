@@ -266,12 +266,13 @@ def png_cases():
         path = write_png(f"chunk291x{h}.png", 291, h, 2, 8, [r.reshape(-1) for r in mid])
         case(f"png-chunk291x{h}-rgb", path, 300, 300, area_avg(mid, *fit_box(291, h, 300, 300)), maxkb=os.path.getsize(path) // 1024 + kb)
     # a stream that makes 40 KB more than the image (zeros after the last row): the bytes past it are dropped, and
-    # the buffer must still hold the window then, or the inflate stops (CORRUPT); a small image, so the window binds
-    y, x = np.mgrid[0:64, 0:64]
-    small = np.stack([x * 4, y * 4, (x ^ y) * 4], 2).astype(np.uint8)
+    # the buffer must still hold the window and two rows then, and the match room, or the inflate stops (CORRUPT);
+    # a small image (300 x 20 RGB), so the window binds, and two rows over 1 KB, so the floor does not hide the room
+    y, x = np.mgrid[0:20, 0:300]
+    small = np.stack([x % 256, y * 12, (x ^ y) % 256], 2).astype(np.uint8)
     extra = zlib.compress(filtered([r.reshape(-1) for r in small], 3) + bytes(40960), 6)
-    path = write_png("pastlast.png", 64, 64, 2, 8, None, zdata=extra)
-    case("png-past-last-row-rgb", path, 300, 300, area_avg(small, *fit_box(64, 64, 300, 300)), maxkb=os.path.getsize(path) // 1024 + 66)
+    path = write_png("pastlast.png", 300, 20, 2, 8, None, zdata=extra)
+    case("png-past-last-row-rgb", path, 300, 300, area_avg(small, *fit_box(300, 20, 300, 300)), maxkb=os.path.getsize(path) // 1024 + 82)
 
 # ---------- JPEG ----------
 
