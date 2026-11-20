@@ -276,10 +276,11 @@ export function noTypedArrays(name, code) {
 
 // What shim-ie9 (build.mjs) must not leave in cdom.legacy-ie9.js, Babel's output before minifying, given acorn: a
 // typed-array name anywhere but in seed and randomBytes (both behind a check for crypto.getRandomValues, which no
-// browser without typed arrays has) and simdProbe (called on the WebAssembly path alone, which none has either), and any read of the typed backing's views (u8, u32, i32, f32, f64), which
+// browser without typed arrays has), simdProbe (called on the WebAssembly path alone, which none has either) and jobWorker
+// (cd_job's worker code, run only inside a Worker that the WebAssembly tier alone starts, on the job's own memory), and any read of the typed backing's views (u8, u32, i32, f32, f64), which
 // memory-words.js's functions replace and so nothing may reach any more; their declarations alone may stay.
 // Returns each as "name in function".
-export const SHIM_TYPED_ALLOWED = new Set(['seed', 'randomBytes', 'simdProbe']);
+export const SHIM_TYPED_ALLOWED = new Set(['seed', 'randomBytes', 'simdProbe', 'jobWorker']);
 export const SHIM_VIEWS = new Set(['u8', 'u32', 'i32', 'f32', 'f64']);
 export function shimLeftovers(code, acorn) {
   const found = new Set();

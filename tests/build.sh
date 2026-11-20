@@ -58,12 +58,12 @@ wasm -O2 "$here/out/file_cap.wasm" -DCDOM_HEAP_PAGES_MAX=200 "$here/file.c" "$he
 page "$here/file.html" "$here/out/file_cap.html" "$here/out/file_cap.wasm"
 wasm -O2 "$here/out/host.wasm" "$here/host.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 page "$here/host.html" "$here/out/host.html" "$here/out/host.wasm"
-wasm -O2 "$here/out/legacy.wasm" "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/cdom_image_sjlj.c" -DCDOM_IMAGE_SJLJ_JS "$here/../src/mini.c"
+wasm -O2 "$here/out/legacy.wasm" "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/cdom_job.c" "$here/../src/cdom_image_sjlj.c" -DCDOM_IMAGE_SJLJ_JS "$here/../src/mini.c"
 node "$legacy" app "$here/out/legacy.wasm" "$here/out/legacy.wasm.js"
 node "$legacy" app-ie9 "$here/out/legacy.wasm" "$here/out/legacy.wasm.ie9.js"
 # The page starts the pair [legacy.wasm, legacy.simd.wasm], as an APP_SIMD page does: the twin is the same sources with
 # -msimd128, the same string table (as cdom.mk requires), and the fallback takes the scalar one's wasm2js build.
-wasm -O2 "$here/out/legacy.simd.wasm" -msimd128 "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/cdom_image_sjlj.c" -DCDOM_IMAGE_SJLJ_JS "$here/../src/mini.c"
+wasm -O2 "$here/out/legacy.simd.wasm" -msimd128 "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/cdom_job.c" "$here/../src/cdom_image_sjlj.c" -DCDOM_IMAGE_SJLJ_JS "$here/../src/mini.c"
 cmp "$here/out/legacy.wasm.lits" "$here/out/legacy.simd.wasm.lits"
 page "$here/legacy.html" "$here/out/legacy.shim.html" "$here/out/legacy.wasm"
 node "$legacy" page "$here/out/legacy.shim.html" "$here/out/legacy.html"
@@ -72,3 +72,16 @@ node "$legacy" page "$here/out/legacy.shim.html" "$here/out/legacy.html"
 "$CC" -O2 "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -o "$here/out/memforms.wasm" "$here/memforms.c"
 node "$legacy" app "$here/out/memforms.wasm" "$here/out/memforms.wasm.js"
 node "$legacy" app-ie9 "$here/out/memforms.wasm" "$here/out/memforms.wasm.ie9.js"
+# cd_job (tools/job.mjs): the app, and the synthetic job module built as cdom.mk builds one (APP_JOBS): cdom's heap alone
+# (-DCDOM_HEAP_ONLY), mini.c, cdom_job_mod.c, no string table. The cap build has the heap at 100 pages (6.4 MB), for NO_ROOM.
+jobwasm() { # jobwasm <opt> <out.wasm> <sources and extra flags...>
+  local opt="$1" o="$2"; shift 2
+  "$CC" "$opt" "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -DCDOM_HEAP_ONLY -o "$o" "$@"
+}
+jobwasm -Oz "$here/out/shrink_job.wasm" "$here/shrink_job.c" "$here/../src/cdom.c" "$here/../src/mini.c" "$here/../src/cdom_job_mod.c"
+jobwasm -Oz "$here/out/shrink_job_cap.wasm" -DCDOM_HEAP_PAGES_MAX=100 "$here/shrink_job.c" "$here/../src/cdom.c" "$here/../src/mini.c" "$here/../src/cdom_job_mod.c"
+wasm -O2 "$here/out/job.wasm" "$here/job.c" "$here/../src/cdom.c" "$here/../src/cdom_job.c" "$here/../src/mini.c"
+page "$here/job.html" "$here/out/job.html" "$here/out/job.wasm"
+# docs/job-worker.md's measurements (tools/shrink.mjs): the page, built -Oz as an app is.
+wasm -Oz "$here/out/shrink.wasm" "$here/shrink.c" "$here/../src/cdom.c" "$here/../src/cdom_job.c" "$here/../src/mini.c"
+page "$here/shrink.html" "$here/out/shrink.html" "$here/out/shrink.wasm"

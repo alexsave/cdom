@@ -1,6 +1,7 @@
 /* cdom_image's own parts, shared by its files (src/cdom_image*.c); not for apps. */
 #ifndef CDOM_IMAGE_INT_H
 #define CDOM_IMAGE_INT_H
+#include <stddef.h>
 #include <stdint.h>
 #include "cdom_image.h"
 
@@ -21,11 +22,13 @@ typedef struct {
   uint64_t ypos;            /* position in the vertical sum, in units of 1/dh of a source row */
   uint32_t oy;              /* the next output row to finish */
   uint32_t row;             /* source rows taken so far */
+  uint32_t step;            /* bytes a source pixel: 4 (RGBA, alpha ignored; init's), or 3 (RGB, set after init) */
 } cd_image_scaler;
 
 /* 1 on success, 0 when the heap has no room (nothing is held then). Sizes are 1 to 65535 a side. */
 int cd_image_scaler_init(cd_image_scaler *s, uint32_t sw, uint32_t sh, uint32_t dw, uint32_t dh, uint32_t orientation);
-/* One source row of sw RGBA pixels (alpha ignored). Rows past sh are ignored. */
+/* One source row of sw pixels, step bytes each, R, G and B first (RGBA, alpha ignored, or RGB). Rows past sh are
+ * ignored. */
 void cd_image_scaler_row(cd_image_scaler *s, const uint8_t *rgba);
 /* The image, which the caller owns, once all sh rows went in; 0 otherwise. Either way the scaler holds nothing
  * after it. */
@@ -66,6 +69,8 @@ void cd_image_rgb_to_rgba_simd(const uint8_t *r, uint8_t *out, uint32_t w);
  * dw pixels by area (it need not be zeroed, and is not read). down: a[i] += wgt * h[i] for i below n. */
 void cd_image_scaler_across_scalar(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw);
 void cd_image_scaler_across_simd(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw);
+/* across on sw RGB pixels (3 bytes each), scalar in both builds: the PNG path's RGB read (cd_image_scaler.step 3). */
+void cd_image_scaler_across_rgb(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw);
 void cd_image_scaler_down_scalar(uint64_t *a, const uint32_t *h, uint64_t wgt, uint32_t n);
 void cd_image_scaler_down_simd(uint64_t *a, const uint32_t *h, uint64_t wgt, uint32_t n);
 /* The scaler's divide: out[i] = min(255, (2 * a[i] + t) / (2 * t)) for i below n, where t (at most 2^32) is the weights'
@@ -96,4 +101,23 @@ void cd_image_scaler_div_simd(uint8_t *out, const uint64_t *a, uint32_t n, uint6
 typedef void (*cd_image_body)(void *ctx);
 int cd_image_guard(cd_image_body body, void *ctx, void **slot);
 _Noreturn void cd_image_throw(void *guard);
+/* cdom's inflate (cdom_image_inflate.c): one zlib stream, from pieces of input, into buf (cap bytes), which a sink
+ * empties from the front. more(ctx, &p, &n) answers the next piece (1), or 0 at the end of the input. out(ctx, buf,
+ * n, last) gets the bytes made and not yet dropped, buf[0 .. n), each time the buffer is nearly full and once at the
+ * end (last 1, after the adler32 matched); it answers how many bytes to drop from the front, at most n less
+ * CD_INFLATE_WINDOW (the window the stream may still copy from) or any number up to n when last, or -1 to stop.
+ * The adler32 is taken over the bytes before the sink sees them, so the sink may change, in place, the bytes in
+ * front of n - CD_INFLATE_WINDOW, which no later match reads (the PNG path unfilters its rows there). cap is at
+ * least CD_INFLATE_CAP_MIN (less is CORRUPT), and must leave room for the longest match beside what the sink keeps.
+ * The answer: OK, CORRUPT (a stream zlib 1.3.1 refuses, one cut short, or an adler32 that differs) or STOPPED. */
+#define CD_INFLATE_WINDOW 32768u
+#define CD_INFLATE_CAP_MIN (CD_INFLATE_WINDOW + 1314u)   /* the window, the longest match and its overshoot, 1 KB more */
+#define CD_INFLATE_LT 2340u   /* the literal/length table: 2^11 first-level entries and the second levels (zlib's enough) */
+#define CD_INFLATE_DT 592u    /* the distance table: 2^9 and the second levels */
+enum { CD_INFLATE_OK = 0, CD_INFLATE_CORRUPT = 1, CD_INFLATE_STOPPED = 2 };
+typedef struct { uint32_t lt[CD_INFLATE_LT], dt[CD_INFLATE_DT]; } cd_inflate;
+typedef int (*cd_inflate_in)(void *ctx, const uint8_t **p, uint32_t *n);
+typedef int64_t (*cd_inflate_out)(void *ctx, uint8_t *buf, uint32_t n, int last);
+uint32_t cd_inflate_zlib(cd_inflate *z, uint8_t *buf, uint32_t cap, cd_inflate_in more, cd_inflate_out out, void *ctx);
+uint32_t cd_image_adler32(uint32_t adler, const uint8_t *p, size_t n);
 #endif

@@ -25,7 +25,7 @@ The strings are 4 to 13 ASCII bytes, eight call sites per iteration.
 | --- | ---: | ---: | --- | --- |
 | Today with `cd_s` on each literal (the ceremony) | 6.9 / 6.9 | | 0 | none; it is what the author must not have to write |
 | A. Plain C, accept the runtime read (baseline) | 46.5 / 47.1 | 40.6 / 40.6 | +10 to +130 per lesson (the strings go back into the wasm) | none; it is slow |
-| B. A pointer into read-only data is its own id; the shim keeps its string by address (recommended) | 8.4 | 8.7 | +120 for the shim, +20 bytes of wasm, plus A's | needs wasm-ld's `__rodata_start` and `__rodata_end` (LLVM 22 or later); an older linker falls back to A's speed |
+| B. A pointer into read-only data is its own id; the shim keeps its string by address (recommended) | 8.4 | 8.7 | +120 for the shim, +20 bytes of wasm, plus A's | needs wasm-ld's `__rodata_start` and `__rodata_end` (LLVM 23 or later); cdom.mk refuses an older linker |
 | B with a `Map` only | 17.1 / 16.7 | 11.9 / 11.8 | a little less shim | none beyond B's |
 | B with an array indexed by offset | 8.0 / 8.0 | 8.8 / 8.9 | a little less shim | 4 bytes of heap per byte of read-only data |
 | C. C unchanged; the shim tests each runtime string's pointer against the read-only range | 25.9 / 26.0 | 22.5 / 22.5 | about B's | B's, for a third of the gain |
@@ -85,7 +85,7 @@ shim     str(s): s in the slot range: lits[(s - litBase) >> 2], as today.
 In C (the whole change, in `cdom.c`):
 
 ```c
-extern const char __rodata_start[] __attribute__((weak)), __rodata_end[] __attribute__((weak));
+extern const char __rodata_start[], __rodata_end[];
 cd_str cd_tmpz(const char *s) {
   if ((uintptr_t)s - (uintptr_t)__rodata_start < (uintptr_t)__rodata_end - (uintptr_t)__rodata_start)
     return (cd_str){(uint32_t)(uintptr_t)s};
@@ -104,7 +104,7 @@ roKey[h] = s; roVal[h] = v;
 return v;
 ```
 
-Why it is sound: wasm-ld puts every `const` object and every string literal in `.rodata`, and since LLVM PR 172102 (December 2025) it defines `__rodata_start` and `__rodata_end` around it.
+Why it is sound: wasm-ld puts every `const` object and every string literal in `.rodata`, and since LLVM PR 172102 (December 2025, first in a release with LLVM 23: LLD 22.1.8 still leaves them undefined) it defines `__rodata_start` and `__rodata_end` around it.
 C may not write a `const` object, so a string at such an address is the same string for the life of the page, and the address can stand for it.
 A stack buffer, a `static char buf[]`, heap memory and `.data` are all outside the range and are read on every use, exactly as today.
 Verified here: the two symbols are 65536 and 65592 for a test module whose link map shows `.rodata` at 0x10000 with size 0x38, a `static const char NAME[]` is inside, a mutable `char mut[16]` and a `.bss` array are outside.
@@ -128,9 +128,11 @@ What it also makes fast, for free: `FRUITS[i]` from a `static const char *const 
   It is bounded by the module's read-only data, so it is not a leak: nothing a running app does can add to it without end.
 - **What breaks or gets harder.**
   - *The linker.*
-    wasm-ld before LLVM 22 does not define the two symbols.
-    They are declared weak, so there the range is empty and every string takes option A's path: the same page, slower (checked with two symbols that do not exist: the test answers 0 for every pointer).
-    A link test must assert that the range is not empty with the toolchain cdom documents, so a regression is seen.
+    wasm-ld before LLVM 23 does not define the two symbols (checked with LLD 18.1.3 and 22.1.8; LLD 23.1.6 defines them).
+    An earlier version declared them weak, so that there the range was empty and every string took option A's path, which it called the same page, slower.
+    It was not: built that way, `tools/unit.mjs` failed three cases, two read-only-strings cases read 0 times from memory where 7 were wanted, and `cd_bound_set` trapped on a read-only pointer that was not a literal, since a bound value needs a literal to be its own id.
+    So the symbols are strong, and cdom.mk's toolchain check refuses a wasm-ld older than LLVM 23 with the version it found and the fix, before the link would fail on the undefined symbol.
+    A link test asserts that the range is not empty with the toolchain cdom documents, so a regression is seen.
   - *Writing through a cast.*
     Code that casts `const` away and writes into `.rodata` would show the old text for ever.
     That is undefined behaviour in C already, and clang's own optimizer assumes it does not happen.
@@ -191,14 +193,14 @@ Plain C then costs 8.4 to 8.7 ns a call, within 2 ns of a hand-written `cd_s` sl
 Direct literals keep their slots: they are still 1 to 2 ns faster, and they are the only strings that leave the module for the page's table, which is where the page bytes are saved.
 
 What it costs: 120 bytes of brotli in the shim, 20 bytes in the module, and the strings written inside a ternary or passed through a helper stay in the module instead of the table (4 to 130 bytes of brotli per lesson).
-What it depends on: wasm-ld from LLVM 22 or later for the speed, and nothing for correctness.
+What it depends on: wasm-ld from LLVM 23 or later, which cdom.mk's toolchain check requires.
 
 If it is taken, the work is small:
 
-1. `cdom.c`: the range test in `cd_tmpz`, with the weak symbols.
+1. `cdom.c`: the range test in `cd_tmpz`, with the two linker symbols.
 2. The shim: the cache in `str()`, testing both bounds of the slot range; the plain-object form for the ES5 tier; regenerate the minified shim.
 3. Tests, each mutation checked: a ternary, a helper, a `const` table and a `static const char[]` come back right and are read once (count the reads through a test hook); a mutable `static`, a stack buffer and heap bytes at a reused address are read every time and show their new text; two strings whose addresses collide in the direct-mapped cache; a link test that the range is not empty; the legacy run.
-   Mutants: the range test widened to `__data_end` (the mutable `static` shows old text), the key compare dropped from the direct-mapped cache (the colliding string is wrong), the weak symbols swapped.
+   Mutants: the range test widened to `__data_end` (the mutable `static` shows old text), the key compare dropped from the direct-mapped cache (the colliding string is wrong), the two symbols swapped.
 4. The lessons, the starter and the READMEs: plain C, `cd_s` no longer taught.
 5. Measure the lessons and the keyed benchmark again; the benchmark has no such strings, so its prediction is "within the noise".
 

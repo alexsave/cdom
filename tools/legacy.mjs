@@ -251,6 +251,13 @@ run: try {
   } else ok(await E('typeof FileReader === "undefined"'), 'no FileReader, as in IE 9');
   const ie9 = await fileAsk();
   ok(ie9 === '4,0,0', `IE 9 (no FileReader): cd_file_read answers UNSUPPORTED: ${ie9}`);
+  // A job (cd_job_cb) on the old tiers has no WebAssembly to run: UNSUPPORTED (3), from the event loop, whatever else the page has.
+  await E('delete window.WebAssembly'); // already gone under LEGACY=1; here the page started on it, and an old tier has none
+  let jobSync = 'threw';
+  try { jobSync = await E('X.job_ask(); X.job_seen(0)'); } catch (e) { jobSync = 'threw ' + String(e).slice(0, 120); }
+  for (let i = 0; i < 100 && (await E('X.job_seen(0) === -1')); i++) await sleep(20);
+  const jobSeen = await E('[0, 1].map(function (k) { return X.job_seen(k); }).join()');
+  ok(jobSync === -1 && jobSeen === '3,0', `the old tiers (no WebAssembly): cd_job_cb answers UNSUPPORTED from the event loop: ${jobSync} then ${jobSeen}`);
   // The same page with no Map: the read-only strings are kept in a plain object.
   await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/legacy.html?nomap` });
   await sleep(300);

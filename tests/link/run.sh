@@ -306,6 +306,7 @@ if mk "$mo/other.wasm" "$mo/other.html" PAGE="$here/page/ok.html" > "$mo/mk_othe
   echo "FAIL cdom.mk's rules built a .wasm or .html that is not APP_WASM or APP_PAGE"; cat "$mo/mk_other.log"; fail=1
 elif ! grep -q "No rule to make target .*other.wasm" "$mo/mk_other.log"; then echo "FAIL cdom.mk: other.wasm refused for another reason:"; cat "$mo/mk_other.log"; fail=1
 else echo "ok   cdom.mk's rules leave a .wasm or .html that is not APP_WASM or APP_PAGE alone"; fi
+install='cdom.mk: install LLVM 23 or later: brew install llvm lld   (Debian or Ubuntu: clang-23 and lld-23 from https://apt.llvm.org, then WASM_CC=/usr/lib/llvm-23/bin/clang)'
 # The toolchain check: a WASM_CC that cannot build a wasm32 module (Apple's clang, which finds no wasm-ld
 # on a PATH without Homebrew's; a clang that is not there) stops make with the install command, before
 # the compiler runs, and leaves no module.
@@ -316,11 +317,52 @@ for cc in /usr/bin/clang "$out/no-such-clang"; do
   rm -rf "$out/mk-cc"
   if env PATH=/usr/bin:/bin make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$out/mk-cc" PAGE= WASM_CC="$cc" "$out/mk-cc/mk_app.wasm" > "$out/mk_cc.log" 2>&1; then
     echo "FAIL cdom.mk built a module with WASM_CC=$cc, which cannot build wasm32"; fail=1
-  elif ! grep -qxF "cdom.mk: install them with: brew install llvm lld   (Debian or Ubuntu: apt install clang lld)" "$out/mk_cc.log" \
+  elif ! grep -qxF "$install" "$out/mk_cc.log" \
     || grep -q "linker command failed\|error:" "$out/mk_cc.log" || [ -e "$out/mk-cc/mk_app.wasm" ]; then
     echo "FAIL cdom.mk with WASM_CC=$cc, which cannot build wasm32, did not stop at the toolchain check:"; cat "$out/mk_cc.log"; fail=1
-  else echo "ok   cdom.mk with WASM_CC=$cc, which cannot build wasm32, stops before compiling: $(grep 'install them' "$out/mk_cc.log")"; fi
+  else echo "ok   cdom.mk with WASM_CC=$cc, which cannot build wasm32, stops before compiling: $(grep 'install LLVM' "$out/mk_cc.log")"; fi
 done
+# The same check on the linker's version (tests/link/stub_clang.sh, a stub over the real clang whose wasm-ld
+# says it is LLD $STUB_LLD and, below 23, fails a link that names __rodata_start, as LLD 18 and 22.1.8 do):
+# with LLD 18 or 22 make stops before compiling, naming the version and the fix; with LLD 23 the app builds.
+for lld in 18.1.3 22.1.8 23.1.6; do
+  rm -rf "$out/mk-cc"
+  STUB_LLD=$lld REAL_CC="$CC" make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$out/mk-cc" PAGE= WASM_CC="$here/stub_clang.sh" "$out/mk-cc/mk_app.wasm" > "$out/mk_cc.log" 2>&1
+  rc=$?
+  if [ "${lld%%.*}" -ge 23 ]; then
+    if [ $rc != 0 ] || [ ! -s "$out/mk-cc/mk_app.wasm" ] || grep -q "cdom.mk:" "$out/mk_cc.log"; then
+      echo "FAIL cdom.mk with wasm-ld from LLVM $lld did not build the app:"; cat "$out/mk_cc.log"; fail=1
+    else echo "ok   cdom.mk with wasm-ld from LLVM $lld builds the app"; fi
+  elif [ $rc = 0 ] || [ -e "$out/mk-cc/mk_app.wasm" ]; then
+    echo "FAIL cdom.mk built a module with wasm-ld $lld, older than LLVM 23"; fail=1
+  elif ! grep -qxF "cdom.mk: $here/stub_clang.sh links with LLD $lld, which does not define __rodata_start: cdom needs wasm-ld from LLVM 23 or later" "$out/mk_cc.log" \
+    || ! grep -qxF "$install" "$out/mk_cc.log" || grep -q "error:" "$out/mk_cc.log"; then
+    echo "FAIL cdom.mk with wasm-ld $lld, older than LLVM 23, did not stop at the toolchain check naming its version:"; cat "$out/mk_cc.log"; fail=1
+  else echo "ok   cdom.mk with wasm-ld $lld, older than LLVM 23, stops before compiling: $(head -1 "$out/mk_cc.log")"; fi
+done
+# cdom.mk's job modules (APP_JOBS, src/cdom_job_mod.h): <name>.job.wasm beside the app's module, linked from cdom's heap alone
+# (cdom.c under -DCDOM_HEAP_ONLY): its one import is cdjob.answer, so no DOM call came with the heap, and it exports run and job_room.
+# A bundled page carries it as var cdomJobs (tools/cdpage), a separate one does not, and a .job.wasm APP_JOBS does not name is not built.
+mo="$out/mk-jobs"
+mkj() { make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$mo" PAGE= APP_JOBS=shrinkjob APP_JOB_shrinkjob_SRC="$here/../shrink_job.c" APP_JOB_CFLAGS='-Wall -Wextra -Werror' "$@"; }
+rm -rf "$mo"; mkdir -p "$mo"
+if ! mkj "$mo/shrinkjob.job.wasm" 2> "$mo/job.log"; then echo "FAIL cdom.mk's job rule does not build a job module:"; cat "$mo/job.log"; fail=1
+else
+  dis="$(wasm-dis "$mo/shrinkjob.job.wasm")"
+  imports="$(grep -c '^ *(import ' <<< "$dis")"
+  if [ "$imports" != 1 ] || ! grep -q '(import "cdjob" "answer"' <<< "$dis"; then echo "FAIL a job module's imports are not cdjob.answer alone ($imports): a DOM import came with the heap"; fail=1
+  elif ! grep -q '(export "run"' <<< "$dis" || ! grep -q '(export "job_room"' <<< "$dis" || ! grep -q '(export "memory"' <<< "$dis"; then echo "FAIL a job module does not export run, job_room and memory"; fail=1
+  elif ! mkj -q "$mo/shrinkjob.job.wasm"; then echo "FAIL a second make builds the job module again"; fail=1
+  else echo "ok   cdom.mk builds <name>.job.wasm from APP_JOB_<name>_SRC: one import (cdjob.answer), run, job_room and memory exported, then up to date"; fi
+fi
+if ! mkj "$mo/index.html" 2> "$mo/job_page.log"; then echo "FAIL cdom.mk's page with APP_JOBS did not build:"; cat "$mo/job_page.log"; fail=1
+elif ! grep -q '^var cdomJobs={"shrinkjob.job.wasm":"data:application/wasm;base64,' "$mo/index.html"; then echo "FAIL a bundled page does not carry its job module in cdomJobs"; fail=1
+else echo "ok   a bundled page carries each job module in var cdomJobs, the default page unchanged"; fi
+if ! make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$mo" PAGE= APP_JOBS=shrinkjob APP_JOB_shrinkjob_SRC="$here/../shrink_job.c" APP_JOB_CFLAGS='-Wall -Wextra -Werror' APP_WASM_SEPARATE=1 -B "$mo/index.html" 2> "$mo/job_sep.log"; then echo "FAIL a separate page with APP_JOBS did not build:"; cat "$mo/job_sep.log"; fail=1
+elif grep -q '^var cdomJobs=' "$mo/index.html"; then echo "FAIL a page with APP_WASM_SEPARATE carries the job module (the name is its URL)"; fail=1
+else echo "ok   with APP_WASM_SEPARATE the page carries no job module: the name is the URL of the file beside it"; fi
+if mkj "$mo/other.job.wasm" > "$mo/job_other.log" 2>&1 || [ -e "$mo/other.job.wasm" ]; then echo "FAIL cdom.mk built a .job.wasm that APP_JOBS does not name"; fail=1
+else echo "ok   cdom.mk leaves a .job.wasm that APP_JOBS does not name alone"; fi
 # The stylesheets (docs/page-tool-design.md): cdom.mk writes every .css file under src/ where make runs
 # into the page's <style>, in byte order of its path. The fixture apps of tests/link/apps, built with
 # make -C, CDOM this checkout and OUT under tests/out, so nothing is written into the tree.
