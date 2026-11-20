@@ -46,8 +46,9 @@ function cdomBoot(url, mount, env, ready, options) {
   for (i = 0; i < es5.length; i++) {
     if (!es5[i]) old = true;
   }
-  if (!d.getElementById) lack.push("document.getElementById");
-  if (!d.addEventListener && !d.attachEvent) lack.push("addEventListener or attachEvent");
+  /* The boot runs before any polyfill, so it names nothing JScript 5.0 (IE 5.0) lacks: no push, no undefined. */
+  if (!d.getElementById) lack[lack.length] = "document.getElementById";
+  if (!d.addEventListener && !d.attachEvent) lack[lack.length] = "addEventListener or attachEvent";
   if (lack.length) throw new Error("cdom: this browser cannot run cdom: it has no " + lack.join(", "));
   var head = d.getElementsByTagName("head")[0];
   /* IE 6 to 8 fire no load on a script: readystatechange, loaded or complete (either may come, and IE 9 and 10 fire
@@ -70,7 +71,7 @@ function cdomBoot(url, mount, env, ready, options) {
   function loaded() {
     if (--left) return;
     var f = window.cdomFactory;
-    window.cdomFactory = undefined;
+    window.cdomFactory = null;
     cdom.start(f, mount, env, options).then(ready, failed);
   }
   var base = typeof url === "string" ? url : url[0];

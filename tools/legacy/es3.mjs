@@ -11,12 +11,18 @@ const RESERVED = new Set(('break case catch continue default delete do else fina
   'static super synchronized throws transient volatile').split(' '));
 // What ES5 added that the tier's file may name: each must be one polyfills-es3.js supplies (ES5_SUPPLIED), or be
 // allowed in the one part that names it behind a check (ES5_ALLOWED). A name the old DOM lacks is OLD_DOM's.
+// What JScript 5.5 (IE 5.5) added to JScript 5.0 (IE 5.0): the tier's files may name only those polyfills-es3.js supplies,
+// and the boot, which runs before any polyfill, none of them (boot50).
+const JSCRIPT55 = ['undefined', '.push', '.pop', '.shift', '.unshift', '.splice', '.apply', '.call', '.hasOwnProperty',
+  '.propertyIsEnumerable', '.isPrototypeOf', 'encodeURI', 'decodeURI', 'encodeURIComponent', 'decodeURIComponent', '.toFixed',
+  '.toPrecision', '.toExponential', '.localeCompare'];
 const ES5_NAMES = new Set(['JSON', '.keys', '.create', '.defineProperty', '.defineProperties', '.getPrototypeOf',
   '.getOwnPropertyNames', '.getOwnPropertyDescriptor', '.freeze', '.seal', '.preventExtensions', '.isFrozen', '.isSealed',
   '.isExtensible', '.isArray', '.indexOf', '.lastIndexOf', '.forEach', '.map', '.filter', '.some', '.every', '.reduce',
-  '.reduceRight', '.bind', '.now', '.trim', '.toISOString', '.toJSON']);
+  '.reduceRight', '.bind', '.now', '.trim', '.toISOString', '.toJSON', ...JSCRIPT55]);
 export const ES5_SUPPLIED = new Set(['.keys', '.create', '.isArray', '.now', '.trim', '.bind', '.indexOf', '.lastIndexOf',
-  '.forEach', '.map', '.filter', '.some', '.every', '.reduce']);
+  '.forEach', '.map', '.filter', '.some', '.every', '.reduce', 'undefined', '.push', '.pop', '.shift', '.unshift', '.splice',
+  '.apply', '.call', '.hasOwnProperty']);
 // polyfills.js and dom-old.js try defineProperty and fall back; Babel's regenerator helper tries defineProperty and
 // reads getPrototypeOf only when it exists. polyfills-es3.js defines the supplied ones, so it names them all.
 const ES5_ALLOWED = { polyfills: new Set(['.defineProperty']), shim: new Set(['.defineProperty', '.getPrototypeOf']),
@@ -103,6 +109,7 @@ export function es3(name, src, minified = false) {
   if (leaks.length) throw new Error(`${name}: a catch parameter's name used elsewhere in its function, which JScript's catch would overwrite: ${leaks.join(' ')}`);
   if (bad.size) throw new Error(`${name} names a reserved word as a property, which JScript refuses: ${[...bad].join(' ')}`);
   if (minified) return src;
+  if (replaceWithFunction(tree)) throw new Error(`${name} calls replace with a function, which JScript 5.0 (IE 5.0) does not take`);
   const ok = ES5_ALLOWED[name] || new Set(), es5 = new Set();
   let prev = null;
   for (const t of acorn.tokenizer(src, { ecmaVersion: 3, allowReserved: true })) {
@@ -185,4 +192,34 @@ export function oldDomLeftovers(src) {
     if (!dot && bare.has(k.value)) left.add(k.value);
   }
   return [...left];
+}
+
+// The names JScript 5.0 lacks in shim/boot.js, which every browser runs before the tier's polyfills, as tokens: a method
+// after a dot, a global bare.
+export function boot50(src) {
+  const names = new Set(JSCRIPT55), found = new Set();
+  let prev = null;
+  for (const t of acorn.tokenizer(src, { ecmaVersion: 3, allowReserved: true })) {
+    if (t.type.label === 'name') {
+      const key = prev && prev.type.label === '.' ? '.' + t.value : t.value;
+      if (names.has(key)) found.add(key);
+    }
+    prev = t;
+  }
+  return [...found];
+}
+// A replace whose replacement is written as a function, which JScript 5.0 turns into the function's source text.
+export function replaceWithFunction(tree) {
+  let found = 0;
+  const walk = (n) => {
+    if (n.type === 'CallExpression' && n.callee.type === 'MemberExpression' && !n.callee.computed &&
+      n.callee.property.name === 'replace' && n.arguments[1] && /Function/.test(n.arguments[1].type)) found++;
+    for (const k in n) {
+      const v = n[k];
+      if (Array.isArray(v)) { for (const c of v) if (c && typeof c.type === 'string') walk(c); }
+      else if (v && typeof v.type === 'string' && k !== 'loc') walk(v);
+    }
+  };
+  walk(tree);
+  return found;
 }

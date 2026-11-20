@@ -43,7 +43,7 @@ try {
   const common = ['tools/legacy/build.mjs', 'tools/legacy/package-lock.json', 'tools/legacy/node_modules/.package-lock.json',
     'package-lock.json', 'node_modules/.package-lock.json'];
   const must = { shim: [...common, 'shim/cdom.js', 'tools/legacy/polyfills.js', 'tools/legacy/node_modules/promise-polyfill/dist/polyfill.js',
-    'tools/legacy/node_modules/pepjs/dist/pep.js'], app: [...common, 'in/listfuzz.wasm'], page: [...common, 'shim/boot.js', 'in/listfuzz.shim.html'] };
+    'tools/legacy/node_modules/pepjs/dist/pep.js'], app: [...common, 'in/listfuzz.wasm'], page: [...common, 'shim/boot.js', 'in/listfuzz.shim.html', 'tools/legacy/es3.mjs'] };
   must['shim-ie9'] = [...must.shim, 'tools/legacy/memory-words.js', 'tools/legacy/memory.mjs'];
   must['app-ie9'] = [...must.app, 'tools/legacy/words.js', 'tools/legacy/memory.mjs', 'tools/legacy/es3.mjs'];
   // The fourth tier's shim: the third's without PEP, and its own files.
