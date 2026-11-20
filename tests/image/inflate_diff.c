@@ -27,7 +27,7 @@ static uint32_t rnd(void) {   /* splitmix64, from the one seed */
 static uint32_t below(uint32_t n) { return n ? rnd() % n : 0; }
 
 static int fails;
-#define CHECK(c, ...) do { if (!(c)) { if (fails++ < 10) { printf("FAIL inflate_diff: " __VA_ARGS__); printf("\n"); fflush(stdout); } } } while (0)
+#define CHECK(c, ...) do { if (!(c)) { if (fails++ < 60) { printf("FAIL inflate_diff: " __VA_ARGS__); printf("\n"); fflush(stdout); } } } while (0)
 
 /* ---- zlib's answer ---- */
 static uint8_t *z_out; static size_t z_cap = 1u << 26;
@@ -111,13 +111,13 @@ static void agree(const uint8_t *s, size_t n, const char *what, int expect_ok) {
     feed f = {0};
     uint32_t st = cdom_inflate(s, n, 0, &f);
     if (zr == 1) {
-      CHECK(st == CD_INFLATE_OK, "%s, %s: zlib inflates %zu bytes, cdom answers %u", what, way_name[way], zn, st);
+      CHECK(st == CD_INFLATE_OK, "%s: zlib inflates %zu bytes, cdom answers %u (%s)", what, zn, st, way_name[way]);
       if (st == CD_INFLATE_OK) {
         CHECK(f.got_n == zn && (!zn || !memcmp(f.got, z_out, zn)), "%s, %s: %zu bytes from cdom, %zu from zlib, or they differ", what, way_name[way], f.got_n, zn);
         compared++;
       }
     } else {
-      CHECK(st == CD_INFLATE_CORRUPT, "%s, %s: zlib refuses, cdom answers %u (%zu bytes)", what, way_name[way], st, f.got_n);
+      CHECK(st == CD_INFLATE_CORRUPT, "%s: zlib refuses, cdom answers %u (%zu bytes; %s)", what, st, f.got_n, way_name[way]);
       refused_both++;
     }
     free(f.got);
