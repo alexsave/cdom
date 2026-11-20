@@ -1062,11 +1062,11 @@ M = [
   ('net-no-fetch', 'tools/legacy/polyfills.js', 'if (typeof w.fetch !== "function") (function () {', 'if (false) (function () {', LEG1, 'fetch is not defined'),
   ('net-no-activex', 'tools/legacy/polyfills.js', 'try { return new w.ActiveXObject("Microsoft.XMLHTTP"); } catch (e) {}', 'return null;', LEG6, 'FAIL on this page: network'),
   ('net-arraybuffer-unset', 'tools/legacy/polyfills.js', 'if (typed) xhr.responseType = "arraybuffer";', 'if (typed) xhr.responseType = "";', LEG1, 'FAIL on this page: network'),
-  ('net-mime-high-bits', 'tools/legacy/polyfills.js', 'out[i] = mime ? c & 0xff : c < 256', 'out[i] = mime ? c : c < 256', LEG9, 'FAIL ?mime: network'),
+  ('net-mime-high-bits', 'tools/legacy/polyfills.js', 'out[i] = mime ? c & 0xff : c < 256', 'out[i] = mime ? c & 0x7f : c < 256', LEG9, 'FAIL ?mime: network'),
   ('net-cp1252-unmapped', 'tools/legacy/polyfills.js', 'c < 256 ? c : back["c" + c] || 63;', 'c < 256 ? c : 63;', LEG9, 'FAIL on this page: network'),
   ('net-charset-ignored', 'tools/legacy/polyfills.js', 'data = mime || charset === "windows-1252" || charset === "iso-8859-1" ?', 'data = mime ?', LEG6, 'FAIL on this page: network'),
   ('net-abort-ignored', 'tools/legacy/polyfills.js', 'signal.addEventListener("abort", function () {', 'if (false) signal.addEventListener("abort", function () {', LEG9, 'FAIL on this page: network'),
-  ('net-body-not-checked', 'tools/legacy/polyfills.js', 'if (again[i] !== bytes[i]) return null;', 'if (again[i] === -1) return null;', LEG6, 'FAIL on this page: network'),
+  ('net-body-not-checked', 'tools/legacy/polyfills.js', 'return new w.TextEncoder().encode(s).length === bytes.length ? s : null;', 'return s;', LEG6, 'FAIL on this page: network'),
   ('net-no-trim', 'tools/legacy/polyfills.js', 'if (!String.prototype.trim) {\n    String.prototype.trim', 'if (false) {\n    String.prototype.trim', LEG9, 'trim is not a function'),
 ]
 
