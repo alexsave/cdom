@@ -306,6 +306,7 @@ if mk "$mo/other.wasm" "$mo/other.html" PAGE="$here/page/ok.html" > "$mo/mk_othe
   echo "FAIL cdom.mk's rules built a .wasm or .html that is not APP_WASM or APP_PAGE"; cat "$mo/mk_other.log"; fail=1
 elif ! grep -q "No rule to make target .*other.wasm" "$mo/mk_other.log"; then echo "FAIL cdom.mk: other.wasm refused for another reason:"; cat "$mo/mk_other.log"; fail=1
 else echo "ok   cdom.mk's rules leave a .wasm or .html that is not APP_WASM or APP_PAGE alone"; fi
+install='cdom.mk: install LLVM 23 or later: brew install llvm lld   (Debian or Ubuntu: clang-23 and lld-23 from https://apt.llvm.org, then WASM_CC=/usr/lib/llvm-23/bin/clang)'
 # The toolchain check: a WASM_CC that cannot build a wasm32 module (a clang with no wasm32 target, here
 # tests/link/no_wasm32_clang, the same on every OS: a real system clang may well build wasm32, as Apple's
 # clang 21 and Linux's do; a clang that is not there) stops make with the install command, before the
@@ -314,10 +315,28 @@ for cc in "$here/no_wasm32_clang" "$out/no-such-clang"; do
   rm -rf "$out/mk-cc"
   if env PATH=/usr/bin:/bin make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$out/mk-cc" PAGE= WASM_CC="$cc" "$out/mk-cc/mk_app.wasm" > "$out/mk_cc.log" 2>&1; then
     echo "FAIL cdom.mk built a module with WASM_CC=$cc, which cannot build wasm32"; fail=1
-  elif ! grep -qxF "cdom.mk: install them with: brew install llvm lld   (Debian or Ubuntu: apt install clang lld)" "$out/mk_cc.log" \
+  elif ! grep -qxF "$install" "$out/mk_cc.log" \
     || grep -q "linker command failed\|error:" "$out/mk_cc.log" || [ -e "$out/mk-cc/mk_app.wasm" ]; then
     echo "FAIL cdom.mk with WASM_CC=$cc, which cannot build wasm32, did not stop at the toolchain check:"; cat "$out/mk_cc.log"; fail=1
-  else echo "ok   cdom.mk with WASM_CC=$cc, which cannot build wasm32, stops before compiling: $(grep 'install them' "$out/mk_cc.log")"; fi
+  else echo "ok   cdom.mk with WASM_CC=$cc, which cannot build wasm32, stops before compiling: $(grep 'install LLVM' "$out/mk_cc.log")"; fi
+done
+# The same check on the linker's version (tests/link/stub_clang.sh, a stub over the real clang whose wasm-ld
+# says it is LLD $STUB_LLD and, below 23, fails a link that names __rodata_start, as LLD 18 and 22.1.8 do):
+# with LLD 18 or 22 make stops before compiling, naming the version and the fix; with LLD 23 the app builds.
+for lld in 18.1.3 22.1.8 23.1.6; do
+  rm -rf "$out/mk-cc"
+  STUB_LLD=$lld REAL_CC="$CC" make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$out/mk-cc" PAGE= WASM_CC="$here/stub_clang.sh" "$out/mk-cc/mk_app.wasm" > "$out/mk_cc.log" 2>&1
+  rc=$?
+  if [ "${lld%%.*}" -ge 23 ]; then
+    if [ $rc != 0 ] || [ ! -s "$out/mk-cc/mk_app.wasm" ] || grep -q "cdom.mk:" "$out/mk_cc.log"; then
+      echo "FAIL cdom.mk with wasm-ld from LLVM $lld did not build the app:"; cat "$out/mk_cc.log"; fail=1
+    else echo "ok   cdom.mk with wasm-ld from LLVM $lld builds the app"; fi
+  elif [ $rc = 0 ] || [ -e "$out/mk-cc/mk_app.wasm" ]; then
+    echo "FAIL cdom.mk built a module with wasm-ld $lld, older than LLVM 23"; fail=1
+  elif ! grep -qxF "cdom.mk: $here/stub_clang.sh links with LLD $lld, which does not define __rodata_start: cdom needs wasm-ld from LLVM 23 or later" "$out/mk_cc.log" \
+    || ! grep -qxF "$install" "$out/mk_cc.log" || grep -q "error:" "$out/mk_cc.log"; then
+    echo "FAIL cdom.mk with wasm-ld $lld, older than LLVM 23, did not stop at the toolchain check naming its version:"; cat "$out/mk_cc.log"; fail=1
+  else echo "ok   cdom.mk with wasm-ld $lld, older than LLVM 23, stops before compiling: $(head -1 "$out/mk_cc.log")"; fi
 done
 # The stylesheets (docs/page-tool-design.md): cdom.mk writes every .css file under src/ where make runs
 # into the page's <style>, in byte order of its path. The fixture apps of tests/link/apps, built with

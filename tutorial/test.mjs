@@ -255,7 +255,9 @@ const LESSONS = {
     const tapCanvas = async (fx, fy) => {
       await t.center('canvas');
       const [l, top, w, h] = await t.eval(`(() => { const r = document.querySelector('canvas').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`);
-      await t.clickAt([l + w * fx, top + h * fy]);
+      const at = [Math.trunc(l + w * fx), Math.trunc(top + h * fy)];
+      await t.clickAt(at);
+      return at;
     };
     ok(/^\d+ particles$/.test(await t.text('.count') ?? '') && (await particles()) > 0, `the count starts above 0 (${await t.text('.count')})`);
     ok((await picture()).lit > 0, 'the start burst is on the canvas at once');
@@ -264,21 +266,51 @@ const LESSONS = {
     await t.sleep(200);
     const d2 = (await picture()).digest;
     ok(d1 !== d2, 'the picture changes from one read to the next, 200 ms apart');
-    // A click a quarter of the way across and halfway down: 200 particles at that point, counted within a frame or two.
-    const before = await particles();
-    const boxBefore = (await picture(56, 64, 104, 116)).box;
-    await tapCanvas(0.25, 0.5);
-    ok(await t.until(async () => (await particles()) >= before + 200, 1000), `a click adds 200 particles (${before} -> ${await t.text('.count')})`);
-    const boxAfter = (await picture(56, 64, 104, 116)).box;
-    ok(boxAfter > boxBefore + 30, `the burst is lit where it was clicked, a quarter across (${boxBefore} -> ${boxAfter} lit pixels in the box)`);
-    ok((await picture(0, 0, 160, 200)).box > 0, 'lit pixels are in the left half');
-    // Pause: the button says "Play", and the picture stops.
+    // A click's burst is checked on a frame the test knows, never on one it hopes for. How many steps have run
+    // since a click when a read happens depends on when the frames came (0 to 4 in the first frame that shows the
+    // burst, then more while the read waits), so a count of lit pixels read "some time after" the click is a race
+    // against requestAnimationFrame: 4 pixels (no step yet) or 29 (one step) on a frame that came early, and none
+    // in the box on a read that came late, where the particles had flown out of it. Two reads that do not race:
+    // paused, where the click draws its own burst and no step runs, so the burst is the 2x2 block at the click;
+    // and playing, read in the page in the same task as the frame that first shows the burst (the count's text
+    // changes in that frame's draw, and a MutationObserver runs before the next frame).
+    const arm = (n, x0, y0, w, h) => t.eval(`(() => {
+      const out = window.__burst = { box: null };
+      const el = document.querySelector('.count');
+      const read = () => {
+        const m = /^(\\d+) particles$/.exec(el.textContent);
+        if (!m || +m[1] < ${n}) return;
+        const d = document.querySelector('canvas').getContext('2d').getImageData(${x0}, ${y0}, ${w}, ${h}).data;
+        let lit = 0;
+        for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - 11) + Math.abs(d[i + 1] - 16) + Math.abs(d[i + 2] - 32) > 30) lit++;
+        out.box = lit;
+        ob.disconnect();
+      };
+      const ob = new MutationObserver(read);
+      ob.observe(el, { childList: true, characterData: true, subtree: true });
+      return true;
+    })()`);
+    // Pause first: the picture stops, the button says "Play".
     await t.click('button.pause');
     ok(await t.text('button.pause') === 'Play', `Pause turns the button into "Play" (${await t.text('button.pause')})`);
     const p1 = (await picture()).digest;
     await t.sleep(300);
     const p2 = (await picture()).digest;
     ok(p1 === p2, 'paused: the picture does not change over 300 ms');
+    // A click a quarter of the way across and halfway down, while paused: 200 particles at that point, drawn by the
+    // click itself with no step run, so each is the 2x2 block of pixels at the click's world position.
+    const before = await particles();
+    const [cx, cy] = await tapCanvas(0.25, 0.5);
+    ok(await t.until(async () => (await particles()) === before + 200, 1000), `a click adds 200 particles (${before} -> ${await t.text('.count')})`);
+    const block = await t.eval(`(() => {
+      const r = document.querySelector('canvas').getBoundingClientRect();
+      const wx = Math.floor((${cx} - r.left) * 320 / r.width), wy = Math.floor((${cy} - r.top) * 200 / r.height);
+      const d = document.querySelector('canvas').getContext('2d').getImageData(0, 0, 320, 200).data;
+      const lit = (x, y) => { const i = (y * 320 + x) * 4; return Math.abs(d[i] - 11) + Math.abs(d[i + 1] - 16) + Math.abs(d[i + 2] - 32) > 30; };
+      return [lit(wx, wy), lit(wx + 1, wy), lit(wx, wy + 1), lit(wx + 1, wy + 1), wx, wy];
+    })()`);
+    ok(block.slice(0, 4).every(Boolean), `the burst is lit where it was clicked: the 2x2 block at world (${block[4]}, ${block[5]}) is lit (${block.slice(0, 4)})`);
+    ok((await picture(0, 0, 160, 200)).box > 0, 'lit pixels are in the left half');
     // Play: the button says "Pause", and the picture moves again.
     await t.click('button.pause');
     ok(await t.text('button.pause') === 'Pause', 'Play turns the button back into "Pause"');
@@ -286,6 +318,16 @@ const LESSONS = {
     await t.sleep(300);
     const q2 = (await picture()).digest;
     ok(q1 !== q2, 'playing again: the picture animates');
+    // A click while playing: the frame loop draws the burst. The first frame that shows it has run 0 to 4 steps of
+    // it, so its 200 particles are all still inside the box around the click, and at least one 2x2 block is lit in
+    // it. (Where the burst lands is the paused check above: how many pixels more a playing click lights depends on
+    // how many steps its first frame ran, and on trails already in the box, so that count is not compared.)
+    const before2 = await particles();
+    await arm(before2 + 150, 216, 24, 48, 52); // 24 px each side of world (240, 60), 36 above it, 16 below
+    await tapCanvas(0.75, 0.3);
+    ok(await t.until(() => t.eval('window.__burst.box !== null'), 1000), `a click while playing: a frame shows its burst (${before2} -> ${await t.text('.count')})`);
+    const inBox = await t.eval('window.__burst.box');
+    ok(inBox >= 4, `the burst is lit in the box around the click on the first frame that shows it (${inBox} lit pixels)`);
     // The page ends playing, with two more bursts elsewhere and ~400 ms of trails.
     await tapCanvas(0.75, 0.3);
     await tapCanvas(0.5, 0.75);

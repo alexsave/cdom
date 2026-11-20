@@ -1,9 +1,10 @@
 /* The read-only range cd_tmpz tests is not empty with cdom's toolchain: wasm-ld defines __rodata_start and
- * __rodata_end from LLVM 22. Where it does not, the weak symbols are 0, the range is empty, and every
- * string takes the slow path with no error - so only a test sees it. */
+ * __rodata_end from LLVM 23 (an older one leaves them undefined, and the link fails). Were the range
+ * empty, every string would take the slow path and a literal would not be its own id, with no error -
+ * so only a test sees it. */
 #include "../../src/cdom.h"
 
-extern const char __rodata_start[] __attribute__((weak)), __rodata_end[] __attribute__((weak));
+extern const char __rodata_start[], __rodata_end[];
 static char mutable_bytes[8] = "mut";
 void cd_main(void) {}
 __attribute__((export_name("ro_span"))) uint32_t ro_span(void) { return (uint32_t)((uintptr_t)__rodata_end - (uintptr_t)__rodata_start); }

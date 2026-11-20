@@ -1368,6 +1368,12 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
   }
   {
     // 27. cdom_ui.
+    let rtThrew = '';
+    try { x.t_ui_runtime(); } catch (e) { rtThrew = String(e); }
+    check('cd_el_text takes a runtime string (cd_tmp), which is read after the element and class calls, and a literal still works', () => {
+      const h = $('#uirt') ? $('#uirt').innerHTML : '';
+      return (!rtThrew && h === '<span class="rt">lap 7</span><em>00:01</em>') || JSON.stringify({ h, rtThrew });
+    });
     let threw = '';
     try { x.t_ui_build(); } catch (e) { threw = String(e); }
     const sec = $('#ui');
