@@ -789,7 +789,7 @@ M = [
   ('inflate-reads-past-piece', 'src/cdom_image_inflate.c', '#define FAST_IN 32', '#define FAST_IN 4', IMG, 'AddressSanitizer'),
   # inflate-fast (docs/image-png-speed.md, "The inflate fast loop"): the one limit, the bit count, the extra bits, the build
   ('inflate-one-limit-gone', 'src/cdom_image_inflate.c', '      if ((size_t)(out_lim - out) > turns) out_lim = out + turns;\n', '      (void)turns;\n', IMG, 'AddressSanitizer'),
-  ('inflate-bl-unmasked', 'src/cdom_image_inflate.c', 's->bb = bb; s->bl = bl & 63;', 's->bb = bb; s->bl = bl;', IMG, 'FAIL inflate_diff'),
+  ('inflate-bl-unmasked', 'src/cdom_image_inflate.c', 's->bb = bb; s->bl = bl & 63;', 's->bb = bb; s->bl = bl;', IMG, 'png-rgb: status CORRUPT'),
   ('inflate-len-extra-mask', 'src/cdom_image_inflate.c', 'uint32_t len = (e >> 16) + (((uint32_t)bb & ((1u << (e & 31)) - 1))', 'uint32_t len = (e >> 16) + (((uint32_t)bb & ((2u << (e & 31)) - 1))', IMG, 'FAIL inflate_diff'),
   ('inflate-rev-carry', 'src/cdom_image_inflate.c', '      while (r & inc) inc >>= 1;\n', '', IMG, 'png-rgb: status CORRUPT'),   # then inflate_diff runs out of memory: over 150 s, run by hand
   ('inflate-second-index-short', 'src/cdom_image_inflate.c', 'uint32_t e2 = lt[((uint32_t)bb >> (e & 31)) & lm];', 'uint32_t e2 = lt[((uint32_t)bb >> (e & 7)) & lm];', IMG, 'FAIL inflate_diff'),
