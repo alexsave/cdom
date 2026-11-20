@@ -439,3 +439,83 @@ Medians of 9 rounds in ms, the wasm memory after the run in MiB; the per-run tab
 - M5 confirmed: the wasm memory after p12.png is 0.2 MiB above C-old's in both browsers.
 
 So PNG now matches or beats the browser in Safari, and is still 20% behind Chrome's B1; that gap is open work, not this branch's.
+
+## The inflate fast loop
+
+Issue #73's step 2 (branch `inflate-fast`, from main at 7e7f01f; PR #79's wavefront is not in it, and the inflate does not depend on it).
+On Alex's Mac with #79 (Chrome 157) p12.png at box 900 resizes in 117.6 ms in the SIMD build's profile, and cd_inflate_zlib is 59.0 ms of it.
+The goal is more margin over createImageBitmap, mainly from the inflate.
+The constraint: PR #74 (`chunked-read`) moves the inflate's state between symbols into cd_inflate and adds cd_inflate_put, so only the fast loop's body, its helpers and the table build change here; cd_inflate_zlib's driver, its signature, the callbacks and the state layout stay.
+
+### The machine and the toolchain
+
+The same kind of x86-64 cloud VM as above (4 cores, Intel Xeon at 2.30GHz), so the numbers are indicative and the Mac re-measures.
+Chrome for Testing 153.0.8010.12 headless (CHROME_ARGS=--no-sandbox), node 22.23.5, LLVM 23.1.6 from its GitHub release tarball (apt.llvm.org answers 403 here), binaryen 130 (the release tarball, sha256 as in ci.yml), Python 3.11 with numpy and Pillow 13.0.0, zlib1g-dev 1.3, libjpeg-turbo-progs 2.1.5.
+
+### What the profile says (measured before any change)
+
+- Chrome's profile of main (bench/image/profile.mjs, p12.png, box 900, 12 runs, the SIMD page linked without wasm-opt): resize 163.6 ms mean; cd_inflate_zlib 55.6 ms (33.4%), cd_image_scaler_row 35.8, cd_image_unfilter_simd 35.6, unfilter_paeth 16.3, build 7.0, cd_image_adler32 5.2, rows 3.5, cd_image_scaler_div_simd 3.4.
+- What the fast loop does on p12.png's stream (a counting copy of the inflate, natively): 4,598,952 turns of the loop; 4,331,546 start with a literal entry, 4,080,039 of them take a second literal entry and 3,855,594 a third; the entries hold one literal 5,004,946 times and two 7,262,233 times (19.5 MB of literals from 12.27 M lookups); 152,744 literal/length codes take the second level, no distance does; 622,646 matches make 17.1 MB, and 622,625 of them are at distances of 64 or more (4 at distance 1); their lengths: 8 or less 56.1%, 9 to 16 26.3%, 17 to 32 5.6%, 33 to 64 3.5%, over 64 8.4%; 618 ends of block, 19 symbols in the checked loop, 1,857 table builds (619 dynamic blocks, three tables each).
+- The first level's size, counted the same way: 10 bits 12.60 M literal lookups (and 473 K second-level ones), 11 bits 12.27 M (153 K), 12 bits 12.03 M (52 K).
+  So a 12-bit first level saves 2% of the lookups: the one-literal entries are mostly a literal before a length code or the odd one of a run, not a pair that did not fit.
+  It would also need a larger `lt` than CD_INFLATE_LT (zlib's enough for 12 bits is over 2340), which is the state layout; not tried.
+- V8's code for the loop (`node --print-wasm-code`, TurboFan, x64, the inflate harness bench/image/inflate/wasm.c with the inflate at -Oz -msimd128 and its name section):
+  - a literal entry is 15 to 17 instructions, and the lookups form one chain: `shr r, cl` (the entry is the count), `and 0x7ff`, `lea` (the table's base and the index times 4), the load; about 9 cycles a lookup here;
+  - the loop's head is about 16 instructions a turn: the two limits (`out <= out_lim && in <= in_lim`) become two compares, two `setcc` and an `and` whose result is stored to the stack and compared again, V8's stack check, and the bit buffer stored to the stack and loaded back before the next shift, which puts a store-to-load forward on the chain;
+  - a turn of three literal entries is about 78 instructions for about 4.7 bytes;
+  - a match is about 120 instructions besides the copy: the extra bits each take a mask made from two shifts, the distance check loads `o->total` from memory and adds the 64-bit count, and six values are stored to the stack and loaded back.
+- Natively (callgrind on bench/image/inflate/native.c, clang 23 -O2, one run): cd_inflate_zlib's own code 322.9 M instructions (8.8 an output byte), build 56.3 M (30 K a build: the code reversal bit by bit 8.9 M, the pass that pairs literals about 30 M), adler32 80.3 M.
+- Without the match copy (a wrong output, timing only), the wasm inflate in node is 4 to 8 ms faster of about 60: the copy is not where the time is.
+
+### The changes to try
+
+- C1, one limit: each turn takes at most 7 input bytes (one refill) and writes at least one byte, so the loop checks only `out` against a limit that is the lower of the buffer's and `out` plus the input's room over 8; it leaves earlier when the input binds and comes back after the driver's checks.
+- C2, the bit count without masks: `bl -= e` (the whole entry: only its low 6 bits are right, which is all the refill needs), instead of summing the counts.
+- C3, a literal entry is a non-negative int32 (the class's bits move to the top), so its test is a sign test.
+- C4, the distance check against the lowest byte a match may read, so the loop keeps neither `out0` nor `o`.
+- C5, the match copy: at distances of 16 or more, two 16-byte copies before the loop.
+- C6, the table build: the reversed code made by an increment from the last (zlib's way), and the pairing pass without branches.
+
+### Predictions (written before the change)
+
+- Q1. cd_inflate_zlib's self time in Chrome's profile (as above, 12 runs) is 0.80 of main's (0.70 to 0.85), main measured in the same session.
+  Falsifier: above 0.85 of main's (then the step failed).
+- Q2. build's self time in the same profile is 0.60 of main's (0.45 to 0.75).
+  Falsifier: above 0.80.
+- Q3. Natively, callgrind: cd_inflate_zlib's own instructions fall from 322.9 M to 265 M (240 to 285), and build's from 56.3 M to 35 M (28 to 42).
+  Falsifier: cd_inflate_zlib above 290 M, or build above 45 M.
+- Q4. C1 is the largest of the fast loop's changes: on its own, at least 20 M of the instructions callgrind counts.
+  Falsifier: under 20 M, or another change alone saves more.
+- Q5. C5 alone moves the inflate bench in Chrome by under 2 ms (the lengths 17 to 32, 5.6% of the matches, are all it saves a turn of the copy loop for).
+  Falsifier: a gain of 2 ms or more.
+- Q6. The inflate bench in Chrome (bench/image/inflate/run.mjs, 9 rounds, the SIMD build): this branch at 0.85 of main's median (0.75 to 0.90).
+  Falsifier: above 0.90.
+- Q7. The image bench (bench/image/run.mjs, 9 rounds, box 900): p12.png's C-simd at 0.93 of main's C-simd (0.85 to 0.97); the JPEG inputs within 3% of main.
+  Falsifier: p12.png's C-simd above 0.98 of main's, or a JPEG input more than 3% off.
+- Q8. On the Mac (not measured here; for the cdom manager's run): cd_inflate_zlib at 50 ms or less in Chrome's profile, against 59.0.
+
+## The small PNG's buffer (png-fast-2's 8000x3 note)
+
+The inflate's buffer is now `CD_INFLATE_WINDOW + 2 rows + min(PNG_CHUNK, the whole image)`, at least CD_INFLATE_CAP_MIN.
+An 8000x3 RGB PNG holds 201,694 bytes at its peak, against 134,274 on main before png-fast, since a small image still has the window and two rows beside the whole image.
+
+### The inflate's rule for cap, checked
+
+- The inflate hands the buffer to the sink only when fewer than FAST_OUT (290: the longest match, 258, and a 16-byte copy's overshoot, 32) bytes are left (the fast loop, the checked loop and stored blocks all test the same), and it stops when the sink leaves less than that.
+  So a buffer of the whole image and 290 more is never handed over before the stream's end, if the stream makes exactly the image.
+- But a stream may make more than the image: the sink drops the bytes past the last row, and zlib's rules (and this inflate's) take the stream to its end and its adler32.
+  Those bytes come out of matches like any other, so the window must stay, and the last rows can be unfiltered and dropped only once they are 32 KB behind the end.
+  A sink keeps at most the window and two rows less one byte (the row above the next and the part-made one) after a hand-over, so a buffer of the window, two rows and 290 never stops.
+- So the buffer is the larger of the image and the window with two rows, plus 290, when that is under the chunked buffer: `min(window + 2 rows + PNG_CHUNK, max(image, window + 2 rows) + 290)`, never under CD_INFLATE_CAP_MIN.
+  With the image and 290 alone, a stream with more than about 290 bytes past its last row would answer CORRUPT where main decodes it; a new oracle case has 40 KB of zeros past the image.
+- 290 is `CD_INFLATE_CAP_MIN - CD_INFLATE_WINDOW - 1024`, which cdom_image_inflate.c's static assertion ties to its FAST_OUT, so the header does not change.
+
+### Predictions (written before the change)
+
+Peaks: tests/image/host_alloc.c's count around one cd_image_resize (the most held at once, the file not counted), natively, scalar.
+
+- T1. The 8000x3 RGB PNG (box 300): its buffer goes from 152,773 to 81,060 bytes, so its peak from 201,694 to 129,981 exactly.
+- T2. The 16x16 RGBA PNG: its buffer stays CD_INFLATE_CAP_MIN (34,082), so its peak stays 48,731.
+- T3. p12.png: the same buffer as before (the chunked one), so the same peak.
+- T4. The new RGB cases 291 pixels wide (rows of 874 bytes): 299 rows (261,326 bytes, just under PNG_CHUNK) and 300 rows (262,200, just over) each hold 34,226 and 34,170 bytes less than the formula before (their buffers 261,616 and 262,490); 340 rows (297,160 bytes, the first height where the image and 290 are over the chunked buffer of 296,660) hold the same as before.
+- Falsifier of each: any other number.
