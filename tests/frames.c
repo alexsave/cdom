@@ -92,4 +92,5 @@ EXPORT("stat") uint32_t stat(uint32_t k) {
   uint32_t v[] = {count, clicks_path, inputs, changes, checks, focuses, blurs, ticks, items};
   return k < sizeof v / sizeof v[0] ? v[k] : 0;
 }
+EXPORT("seed") uint32_t seed(void) { return cd_seed; }
 EXPORT("note_len") uint32_t note_len(void) { return cd_get_str(ids[NOTE], "value", io, sizeof io); }
