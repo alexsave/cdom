@@ -13,7 +13,28 @@ import { launch, sleep, LEGACY, LEVEL, TIER, BELOW, GAPS, FETCHED, TIER_FILES, r
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
 // slow.png is answered (404) after 1.5 s: the ?nomount page stays interactive that long.
-const srv = http.createServer((q, r) => { if (q.url.startsWith('/slow.png')) { setTimeout(() => { r.writeHead(404); r.end(); }, 1500); return; }
+// The network cases (tests/legacy.c, net_ask): what each route answers, by index there.
+const NET_TEXT = Buffer.from('hello \u00e9 \u20ac net\n'), NET_MISSING = Buffer.from('no such thing\n');
+const NET_BIN = Buffer.alloc(512, 0);
+for (let i = 0; i < 512; i++) NET_BIN[i] = i < 256 ? i : 511 - i;
+const netHits = [];
+const net = (q, r) => {
+  const route = q.url.split(/[?#]/)[0];
+  netHits.push(`${q.method} ${route}`);
+  if (route === '/net/text') { r.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); r.end(NET_TEXT); }
+  // The label is what lets IE 5 to 9, which can read only responseText, have the bytes (polyfills.js, the network).
+  else if (route === '/net/bin') { r.writeHead(200, { 'content-type': 'application/octet-stream; charset=windows-1252' }); r.end(NET_BIN); }
+  else if (route === '/net/missing') { r.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); r.end(NET_MISSING); }
+  else if (route === '/net/echo') {
+    const got = [];
+    q.on('data', (c) => got.push(c));
+    q.on('end', () => { r.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+      r.end(Buffer.concat([Buffer.from(`${q.method} ${q.headers['x-cdom']}|`), ...got])); });
+  } else if (route === '/net/drop') q.socket.destroy();
+  else if (route !== '/net/hang') { r.writeHead(404); r.end(); } // /net/hang is never answered
+};
+const srv = http.createServer((q, r) => { if (q.url.startsWith('/net/')) return net(q, r);
+  if (q.url.startsWith('/slow.png')) { setTimeout(() => { r.writeHead(404); r.end(); }, 1500); return; }
   const f = path.join(root, q.url.split(/[?#]/)[0]);
   fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': types[path.extname(f)] }); r.end(b); }); }).listen(0);
 // Event types by name, read from cdom.h's enum (its numbers are cdom's to change).
@@ -412,6 +433,42 @@ run: try {
   for (let i = 0; i < 100 && (await E('X.job_seen(0) === -1')); i++) await sleep(20);
   const jobSeen = await E('[0, 1].map(function (k) { return X.job_seen(k); }).join()');
   ok(jobSync === -1 && jobSeen === '3,0', `the old tiers (no WebAssembly): cd_job_cb answers UNSUPPORTED from the event loop: ${jobSync} then ${jobSeen}`);
+  // The network on every tier (cdom_net.h): a text GET, a binary GET, a 404, a POST, a request that never arrived and a
+  // deadline, each answered once and as the server sent it. IE 10 and 11 have no fetch (cdp.mjs deletes it on every legacy
+  // level), so the polyfill's XMLHttpRequest answers there; IE 9 has no responseType, and IE 5 and 6 no XMLHttpRequest, only
+  // ActiveX's (LEGACY=ie6). The same cases again on the pages ?mime (a browser with overrideMimeType, Firefox 1.0 on: tier 3) and
+  // ?xhr (IE 7 and 8, which have XMLHttpRequest: tier 4), also with ?mime.
+  async function netRun(label) {
+    netHits.length = 0;
+    const errors = (await E('ERRORS')).length; // the page's earlier cases throw on purpose
+    await E('(function () { for (var k = 0; k < 7; k++) X.net_ask(k); })()');
+    for (let i = 0; i < 200 && !(await E('(function () { for (var k = 0; k < 7; k++) if (X.net_seen(k, 3) !== 1) return false; return true; })()')); i++) await sleep(50);
+    await sleep(300); // an answer that comes twice has come by now
+    const seen = await E('(function () { var o = []; for (var k = 0; k < 7; k++) o.push([X.net_seen(k, 0), X.net_seen(k, 1), X.net_seen(k, 2), X.net_seen(k, 3)].join()); return o; })()');
+    const want = [`200,${NET_TEXT.length},1,1`, `200,512,1,1`, `404,${NET_MISSING.length},1,1`, `200,${Buffer.byteLength('POST yes|ping \u00e9')},1,1`, '0,0,1,1', '1,0,1,1',
+      // not UTF-8: sent as it is where typed arrays are, and refused where only text can be sent (IE 9 and below)
+      TIER >= 3 ? '0,0,0,1' : '200,11,1,1'];
+    ok(seen.join(' ') === want.join(' '), `${label}: network: a text GET, a binary GET (all 256 bytes), a 404 and its body, a POST with a header, a dropped request (0), a deadline (1), a body that is not UTF-8, each answered once: ${seen.join(' ')}`);
+    ok(new Set(netHits).size === 6 && (await E('ERRORS')).length === errors, `${label}: the server saw all six routes (a browser may retry a dropped GET), and the page threw nothing: ${netHits.join(', ')} ${JSON.stringify((await E('ERRORS')).slice(errors))}`);
+  }
+  await netRun('on this page');
+  if (TIER >= 2) {
+    const how = await E('[typeof ArrayBuffer, typeof XMLHttpRequest, window.__activeX ? __activeX.length : -1, typeof fetch].join()');
+    // Where each tier's request went: typed arrays (IE 10, 11) the ArrayBuffer way; the third tier no typed arrays; the fourth
+    // ActiveX alone, one request object each (7).
+    ok(TIER === 4 ? how === 'undefined,undefined,7,function' : TIER === 3 ? how.startsWith('undefined,function,-1,') : how.startsWith('function,function,-1,'),
+      `the polyfilled fetch went through ${TIER === 4 ? 'ActiveXObject' : 'XMLHttpRequest'}: ${how}`);
+  }
+  for (const q of TIER === 3 ? ['mime'] : TIER === 4 ? ['xhr', 'xhr&mime'] : []) {
+    await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/legacy.html?${q}` });
+    await sleep(300);
+    for (let i = 0; i < 100 && !(await E(`location.search === "?${q}" && !!window.READY`)); i++) await sleep(50);
+    ok(await E('!!window.READY'), `the ?${q} page booted`);
+    if (/xhr/.test(q)) ok(await E('typeof XMLHttpRequest !== "undefined" && !window.__activeX.length'), `?${q}: XMLHttpRequest is there (IE 7 and 8)`);
+    if (/mime/.test(q)) ok(await E('!!window.__mime'), `?${q}: overrideMimeType is kept`);
+    await netRun(`?${q}`);
+    if (/xhr/.test(q)) ok(await E('window.__activeX.length') === 0, `?${q}: no ActiveX made`);
+  }
   // The same page with no Map: the read-only strings are kept in a plain object.
   await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/legacy.html?nomap` });
   await sleep(300);

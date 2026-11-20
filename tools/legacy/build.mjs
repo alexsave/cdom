@@ -22,6 +22,7 @@
 // behind what the build opens; tools/legacyfresh.mjs changes each input in turn and checks the rebuild.
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -157,7 +158,28 @@ async function shim(out, tier) {
 // itself is handed over. Returns [the script's body, the comment line naming what made it].
 function wasm2js(wasm, out) {
   opened.add(path.resolve(wasm));
-  const js = execFileSync('wasm2js', ['-all', '-O2', wasm], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  // clang emits the non-trapping float-to-int conversions (i32.trunc_sat_f64_s and its kin) for every C cast of a float to
+  // an integer (nontrapping-fptoint is among its default wasm32 features), and wasm2js's i64 lowering mishandles the four
+  // i64 ones ("local.set's value type must be correct", then "error in validating wasm2js output"); the i32 ones it
+  // takes. An app must not need a flag, so the build rewrites the i64 ones to the trapping i64.trunc_f32_s, f32_u, f64_s
+  // and f64_u, which wasm2js does take: in range they are the same instruction. Out of range the cast is undefined in C, so
+  // the saturating answer the first tier gives is not promised here (docs/ie6-design.md, "Float to integer"). It is
+  // what -mno-nontrapping-fptoint would have compiled, with no second compile and no app flag. binaryen's own
+  // --llvm-nontrapping-fptoint-lowering is no use: it gets INT32_MAX and UINT32_MAX themselves wrong (it takes them for out of
+  // range) and makes 0 or the minimum of everything above. The rewrite goes through the text format and only when a module
+  // has one, so every other module reaches wasm2js as it is, and the first tier's .wasm is read and never written.
+  let input = wasm;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cdom-wasm2js-'));
+  let js;
+  try {
+    const text = execFileSync('wasm-dis', ['-all', wasm], { encoding: 'utf8', maxBuffer: 1 << 30 });
+    if (/\bi64\.trunc_sat_f(32|64)_[su]\b/.test(text)) {
+      input = path.join(dir, 'trapping.wasm');
+      fs.writeFileSync(path.join(dir, 'trapping.wat'), text.replace(/\bi64\.trunc_sat_(f(?:32|64)_[su])\b/g, 'i64.trunc_$1'));
+      execFileSync('wasm-as', ['-all', path.join(dir, 'trapping.wat'), '-o', input], { encoding: 'utf8', maxBuffer: 1 << 28 });
+    }
+    js = execFileSync('wasm2js', ['-all', '-O2', input], { encoding: 'utf8', maxBuffer: 1 << 28 });
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   const cut = js.indexOf('\nvar retasmFunc = asmFunc(');
   if (cut < 0 || !/^function asmFunc\(imports\) \{$/m.test(js)) throw new Error('wasm2js output changed shape');
   const head = js.slice(0, cut).replace(/^import \* as \w+ from '[^']*';\n/gm, '');
