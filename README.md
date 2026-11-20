@@ -6,10 +6,13 @@ You get vanilla-JS speed at about a seventh of React's bytes, and the build is m
 
 ## Quick start
 
-On macOS, with Homebrew (on Debian or Ubuntu, `apt install clang lld` and set `WASM_CC := clang`, as `make` tells you when it finds no wasm32 clang):
+cdom needs clang with wasm-ld from LLVM 23 or later: an older wasm-ld does not define `__rodata_start` and `__rodata_end`, which cdom's string path needs, and `make` stops with the version it found.
+`apt install clang lld` is not enough: Ubuntu 24.04 ships LLVM 18 and Debian 13 LLVM 19.
+On Debian or Ubuntu, install `clang-23` and `lld-23` from [apt.llvm.org](https://apt.llvm.org) and set `WASM_CC := /usr/lib/llvm-23/bin/clang`.
+On macOS, with Homebrew:
 
 ```sh
-brew install llvm lld                      # a clang that targets wasm32, and wasm-ld
+brew install llvm lld                      # a clang that targets wasm32, and wasm-ld (LLVM 23 or later)
 git clone https://github.com/alexsave/cdom
 make -C cdom new DIR=$PWD/myapp            # writes myapp/Makefile, myapp/src/app.c, myapp/src/app.css, myapp/.gitignore
 make -C myapp                              # builds myapp/build/index.html

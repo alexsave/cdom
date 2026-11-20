@@ -163,6 +163,8 @@ static void on_reset(const cd_event_rec *, void *) {
   So `clear_note` does not touch it, and a Reset before the note clears still cannot let the old timer clear the new note.
 - **Buttons are one call.** `cd_button("lap", "Lap", on_lap, nullptr, nullptr)` from `cdom_ui.h` (the lesson's Makefile says `APP_MODULES := ui`) replaces `cd_open_id`, `cd_class`, `cd_text`, `cd_close` and `cd_on`, and sets `type="button"`.
   The Start button passes `&start_text` as the last argument, to get the id of its label's text node, which `sync` changes between "Start" and "Stop".
+- **An element with one text is one call.** `cd_el_text("span", "name", name)` from `cdom_ui.h` is `cd_open`, `cd_class`, `cd_text` and `cd_close`, and the lap rows use it for their name and split.
+  The text may be built at run time (`cd_tmp`), because it is made after the element and class calls.
 - **Timer tokens.** `cd_timer_cb` returns a token, and `cd_timer_stop(token)` is `clearTimeout`.
   Stopping a timer that already fired does nothing, so the app does not need to know whether it fired, and a token that was stopped can never stop a later timer in the same slot.
   The React version closes over the id in its effect, and the cleanup it returns is what clears the timer.
