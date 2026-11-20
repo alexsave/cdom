@@ -32,4 +32,25 @@ void cd_on_file(uint32_t token, uint32_t status, const uint8_t *p, uint32_t len)
 typedef void (*cd_file_fn)(void *ctx, uint32_t status, const uint8_t *p, uint32_t len);
 void cd_file_read_cb(cd_id input, uint32_t index, uint32_t max_bytes, cd_file_fn fn, void *ctx);
 
+/* ---- a reader in order: the file a piece at a time, never whole (docs/chunked-file-read-design.md) ---- */
+
+/* A reader on file index of input's files list: *reader for cd_file_next_cb, *size the file's size. Answers OK,
+ * NO_FILE, UNSUPPORTED (no FileReader, the IE 9 tier) or TOO_BIG (4 GiB or more) at once, in the call: it reads
+ * nothing, only looks at the list, as cd_get_num(input, "files.0.size") does (*reader and *size are 0 on the others).
+ * The shim keeps the File itself, so picking another file in the input does not change what an open reader reads. */
+uint32_t cd_file_open(cd_id input, uint32_t index, uint32_t *reader, uint32_t *size);
+/* The next bytes, at most max, written at dst; then fn(ctx, status, n) from the event loop:
+ *   OK, n 1 to max: n bytes at dst (fewer than max only for the last piece);
+ *   OK, n 0: the end, all size bytes were given;
+ *   UNREADABLE: the browser could not read on, or the file ended before its size (it changed on disk); nothing more.
+ * dst stays the caller's until the answer or cd_file_close. One next at a time per reader: a second traps. Each
+ * answer is a task of its own (input and paint run between pieces). It counts against the 65,535 callbacks pending
+ * at once. The shim reads with Blob.stream (one read ahead of C), or, where a browser has none, with FileReader on
+ * slices of the size asked. */
+typedef void (*cd_file_piece_fn)(void *ctx, uint32_t status, uint32_t n);
+void cd_file_next_cb(uint32_t reader, uint8_t *dst, uint32_t max, cd_file_piece_fn fn, void *ctx);
+/* Ends the reader, any time. After it returns nothing is written at dst and fn is not called: the shim drops the
+ * File and cancels its stream, and the pending callback's slot is freed. */
+void cd_file_close(uint32_t reader);
+
 #endif
