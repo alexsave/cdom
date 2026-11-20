@@ -964,15 +964,15 @@ var cdom = (() => {
     if (stale()) {
       views();
     }
-    u32[readerPtr >>> 2] = r;
-    u32[sizePtr >>> 2] = file.size;
+    store32(readerPtr >>> 2, r);
+    store32(sizePtr >>> 2, file.size);
     return 0;
   }
   // The rest of the chunk in hand into the piece, as far as both go (never past the file's size).
   function fillPiece(rd) {
     while (rd.chunk && rd.got < rd.max && rd.pos < rd.size) {
       const k = Math.min(rd.chunk.length - rd.off, rd.max - rd.got, rd.size - rd.pos);
-      bytes(rd.dst + rd.got, k).set(rd.chunk.subarray(rd.off, rd.off + k));
+      writeBytes(rd.dst + rd.got, rd.chunk.subarray(rd.off, rd.off + k), k);
       rd.off += k;
       rd.got += k;
       rd.pos += k;
@@ -1017,7 +1017,7 @@ var cdom = (() => {
     } else {
       const reader = new FileReader();
       const want = Math.max(rd.max - rd.got, 1);
-      reader.onload = () => got(reader.result.byteLength ? new Uint8Array(reader.result) : null);
+      reader.onload = () => got(reader.result.byteLength ? bytesOf(reader.result) : null);
       reader.onerror = failed;
       reader.readAsArrayBuffer(rd.file.slice(rd.pos, Math.min(rd.pos + want, rd.size)));
     }
