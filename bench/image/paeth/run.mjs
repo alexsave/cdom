@@ -1,6 +1,6 @@
 // The unfilter microbench (bench.c): p12.png's filtered rows (inflated here, by node's zlib) unfiltered by each loop in
 // each module, interleaved rounds, the median ms of each. Every arm's result must be the same bytes (a byte sum).
-// Usage: node bench/image/paeth/run.mjs [rounds=9] [input=bench/image/inputs/p12.png]
+// Usage: node bench/image/paeth/run.mjs [rounds=9] [input=bench/image/inputs/p12.png] (p12g.png: the grey arms)
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
@@ -15,7 +15,7 @@ while (at < png.length) {
   if (t === 'IDAT') idat.push(d);
   at += 12 + n;
 }
-const bpp = ct === 6 ? 4 : 3, rows = zlib.inflateSync(Buffer.concat(idat));
+const bpp = ({ 0: 1, 3: 1, 4: 2, 2: 3, 6: 4 })[ct], rows = zlib.inflateSync(Buffer.concat(idat));
 const paeth = [...Array(h).keys()].filter((r) => rows[r * (w * bpp + 1)] === 4).length;
 console.log(`# ${w} x ${h}, ${bpp} bytes a pixel, ${paeth} of ${h} rows Paeth; node ${process.version}`);
 const mods = {};
@@ -26,7 +26,13 @@ for (const m of ['scalar', 'simd-lag2', 'simd-lag1']) {
   mods[m] = x;
 }
 // arm: [label, module, loop, most]
-const arms = [
+const arms = bpp <= 2 ? [   // grey: the one-row-a-lane wavefront (wave_n), runs of up to 16 (1 byte) or 8 (2)
+  ['scalar, a row at a time', 'scalar', 0, 1],
+  ['simd, a row at a time (main: the scalar Paeth)', 'simd-lag2', 1, 1], ['simd wavefront lag 2, runs of 16', 'simd-lag2', 3, 16],
+  ['simd wavefront lag 1, runs of 16', 'simd-lag1', 3, 16], ['simd wavefront lag 2, runs of 8', 'simd-lag2', 3, 8],
+  ['simd wavefront lag 2, runs of 4', 'simd-lag2', 3, 4], ['simd wavefront lag 2, runs of 3', 'simd-lag2', 3, 3],
+  ['simd wavefront lag 2, runs of 2', 'simd-lag2', 3, 2], ['simd lag 2, runs of 2 then 1', 'simd-lag2', 3, 0],
+] : [
   ['scalar, a row at a time', 'scalar', 0, 1],
   ['simd, a row at a time (main)', 'simd-lag2', 1, 1], ['simd wavefront lag 2, runs of 4', 'simd-lag2', 3, 4],
   ['simd wavefront lag 1, runs of 4', 'simd-lag1', 3, 4], ['simd wavefront lag 2, runs of 3', 'simd-lag2', 3, 3],
