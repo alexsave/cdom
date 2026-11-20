@@ -925,7 +925,7 @@ M = [
   # The chunked read (docs/chunked-file-read-design.md, section 8's mutation list, and the build's own parts).
   # The prototype's eight, as the build has them:
   ('chunk-skip-dropped', 'src/cdom_image_jpeg.c', '    x->skip = (uint32_t)(past < left ? past : left);\n', '    (void)past; (void)left;\n', CHK, 'e-com.jpg at 300x300, pieces of'),
-  ('chunk-skip-one-long', 'src/cdom_image_jpeg.c', '    x->skip = (uint32_t)(past < left ? past : left);\n', '    x->skip = (uint32_t)(past < left ? past + 1 : left);\n', CHK, 'e-com.jpg at 300x300, pieces of'),
+  ('chunk-skip-one-long', 'src/cdom_image_jpeg.c', '    x->skip = (uint32_t)(past < left ? past : left);\n', '    x->skip = (uint32_t)(past < left ? past + 1 : left);\n', CHK, 'jpeg-exif1 at 300x200, pieces of 1: status CORRUPT, whole OK'),
   ('chunk-keep-byte-lost', 'src/cdom_image_jpeg.c', '  d->used = keep;\n', '  d->used = keep > 1 ? keep - 1 : keep;\n', CHK, 'pieces of 1:'),
   ('chunk-png-crc-3', 'src/cdom_image_png.c', '      x->at += 4;\n      x->state = W_HEAD;', '      x->at += x->len ? 4 : 3;\n      x->state = W_HEAD;', CHK, 'e-zero.png: differs from e-plain.png'),
   ('chunk-png-past-file', 'src/cdom_image_png.c', '      if (x->at - 8 + 12 + (uint64_t)l > size) return data_end(d, x);   /* a chunk that runs past the file */\n', '', CHK, 'makes no progress'),
@@ -938,16 +938,16 @@ M = [
   ('chunk-close-keeps-slot', 'src/cdom_file.c', '  if (token) cd_cb_drop(token);', '  (void)token;', FILE, 'FAIL cd_file_close with a piece pending frees its callback slot'),
   ('chunk-answer-microtask', 'shim/cdom.js', '    postTask(answer);\n', '    Promise.resolve().then(answer);\n', FILE, 'each answer is a task of its own'),
   # in C:
-  ('chunk-room-one-more', 'src/cdom_image.c', '  return m < left ? m : left;', '  return m < left ? m : left + 1;', CHK, 'AddressSanitizer'),
+  ('chunk-room-one-more', 'src/cdom_image.c', '  return m < left ? m : left;', '  return m < left ? m : left + 1;', CHK, 'past a piece or the file'),
   ('chunk-walker-not-fed', 'src/cdom_image_jpeg.c', '  uint32_t st = walk_feed(d, p, n, (uint64_t)d->taken - n);   /* every byte through the walker first */', '  uint32_t st = d->taken == n ? walk_feed(d, p, n, 0) : CD_IMAGE_MORE;', CHK, 'pieces of 1:'),
   ('chunk-put-unguarded', 'src/cdom_image_jpeg.c', '  int threw = cd_image_guard(body, x, &x->guard);', '  int threw = (body(x), 0);', CHK, 'AddressSanitizer'),
   ('chunk-end-no-destroy', 'src/cdom_image_jpeg.c', '  jpeg_destroy_decompress(&x->cinfo);\n  cd_free(x->row);', '  cd_free(x->row);', CHK, 'left allocated'),
   # and the build's own:
-  ('chunk-inflate-tail-lost', 'src/cdom_image_inflate.c', '    if (r <= k) { p -= r; n += r; z->carry_n = 0; }', '    if (r <= k) { p -= r ? r - 1 : 0; n += r ? r - 1 : 0; z->carry_n = 0; }', IMG, 'FAIL inflate_diff'),
-  ('chunk-inflate-no-look', 'src/cdom_image_inflate.c', 'static inline int may_read(const bits *s) { return s->last || ahead(s) >= CD_INFLATE_LOOK; }', 'static inline int may_read(const bits *s) { return s->last || ahead(s) >= 1; }', IMG, '1-byte pieces'),
-  ('chunk-inflate-carry-kept', 'src/cdom_image_inflate.c', '  z->carry_n = n - used;\n  if (z->carry_n) memcpy(z->carry, p + used, z->carry_n);', '  z->carry_n = 0;', IMG, 'FAIL inflate_diff'),
+  ('chunk-inflate-tail-lost', 'src/cdom_image_inflate.c', '    if (r <= k) { p -= r; n += r; z->carry_n = 0; }', '    if (r <= k) { p -= r ? r - 1 : 0; n += r ? r - 1 : 0; z->carry_n = 0; }', CHK, 'FAIL inflate_diff'),
+  ('chunk-inflate-no-look', 'src/cdom_image_inflate.c', 'static inline int may_read(const bits *s) { return s->last || ahead(s) >= CD_INFLATE_LOOK; }', 'static inline int may_read(const bits *s) { return s->last || ahead(s) >= 1; }', CHK, '1-byte pieces'),
+  ('chunk-inflate-carry-kept', 'src/cdom_image_inflate.c', '  z->carry_n = n - used;\n  if (z->carry_n) memcpy(z->carry, p + used, z->carry_n);', '  z->carry_n = 0;', CHK, 'FAIL inflate_diff'),
   ('chunk-steps-uncut', 'src/cdom_image_jpeg.c', '++x->since == 64', '++x->since == (1u << 30)', CHK, 'steps with no bytes wanted'),
-  ('chunk-exif-head-lost', 'src/cdom_image_jpeg.c', '        memcpy(w->exif, w->og + 4, 6);             /* "Exif\\0\\0", read already (perhaps in a piece before) */\n        w->exif_n = 6;', '        w->exif_n = 6;', CHK, 'e-icc-exif.jpg at 300x300, pieces of'),
+  ('chunk-exif-head-counted', 'src/cdom_image_jpeg.c', '        w->exif_n = 6;                             /* "Exif', '        w->exif_n = 0;                             /* "Exif', CHK, 'runtime error'),
   ('chunk-glue-stop-keeps-reader', 'src/cdom_image_file.c', '  if (j->reader) cd_file_close(j->reader);\n  cd_image_end(j->d);', '  cd_image_end(j->d);', CHK, 'readers'),
   ('chunk-job-stop-no-drop', 'src/cdom_job.c', '  cd_cb_drop(token);\n  j_job_stop(token);', '  j_job_stop(token);', IMGW, 'cd_job_stop'),
   ('chunk-job-stop-no-terminate', 'shim/cdom.js', '      if (job.worker) {\n        job.worker.terminate();\n      }', '', IMGW, 'cd_job_stop'),
