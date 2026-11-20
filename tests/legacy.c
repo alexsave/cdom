@@ -216,9 +216,9 @@ EXPORT("net_ask") void net_ask(uint32_t k) {
 EXPORT("net_seen") int32_t net_seen(uint32_t k, uint32_t f) { return net_rec[k][f]; }
 /* An SVG of every element the fourth tier draws through VML (tools/legacy/vml.js, docs/vml-design.md), with inherited
  * paint, opacities, a g with translate and scale, and what VML does not draw: text, defs, a gradient (and its stop),
- * a rotate and a gradient paint. Every other tier makes it real SVG. svg_set changes it after the build, svg_drop
- * removes it. */
-enum { SVG_ROOT, SVG_PATH, SVG_RECT, SVG_G, SVG_N };
+ * a rotate and a gradient paint. Every other tier makes it real SVG. svg_set changes it after the build (a path detached
+ * while its g's transform changes, then put back), svg_drop removes it. */
+enum { SVG_ROOT, SVG_PATH, SVG_RECT, SVG_G, SVG_GPATH, SVG_N };
 static cd_id svg_ids[SVG_N];
 static void shape(const char *tag, const char *idattr) { cd_open(tag); cd_attr("id", idattr); }
 EXPORT("svg") void svg(void) {
@@ -244,7 +244,9 @@ EXPORT("svg") void svg(void) {
   shape("polygon", "spg"); cd_attr("points", "80,30 90,45 75,45"); cd_attr("opacity", "0.5"); cd_attr("fill", "#abc"); cd_attr("fill-opacity", "0.5"); cd_close();
   shape("g", "sg"); cd_attr("transform", "translate(5,6) scale(2)"); cd_attr("fill", "#123456"); cd_attr("stroke-width", "3");
   svg_ids[SVG_G] = cd_id_new(); cd_name_el(svg_ids[SVG_G]);
-  shape("path", "sgp"); cd_attr("d", "M0 0 L5 0 L5 5"); cd_attr("stroke", "red"); cd_close();
+  shape("path", "sgp"); cd_attr("d", "M0 0 L5 0 L5 5"); cd_attr("stroke", "red");
+  svg_ids[SVG_GPATH] = cd_id_new(); cd_name_el(svg_ids[SVG_GPATH]);
+  cd_close();
   cd_close();
   shape("text", "st"); cd_attr("x", "1"); cd_attr("y", "1"); cd_text("not drawn in VML"); cd_close();
   cd_open("defs"); shape("linearGradient", "lg"); cd_open("stop"); cd_attr("offset", "0"); cd_close(); cd_close(); cd_close();
@@ -256,7 +258,11 @@ EXPORT("svg") void svg(void) {
 EXPORT("svg_set") void svg_set(void) {
   cd_set_attr(svg_ids[SVG_PATH], "d", "M0 0 L10 0");
   cd_set_attr(svg_ids[SVG_RECT], "fill", "#00f");
+  /* The g's transform changes while its path is out of the document: put back (cd_attach, the shim's place), the path
+   * is drawn under the g's new transform. */
+  cd_detach(svg_ids[SVG_GPATH]);
   cd_set_attr(svg_ids[SVG_G], "transform", "scale(1)");
+  cd_attach(svg_ids[SVG_GPATH]);
   cd_flush();
 }
 EXPORT("svg_drop") void svg_drop(void) { cd_remove(svg_ids[SVG_ROOT]); cd_flush(); }
