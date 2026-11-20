@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>math bench</title>
+<!-- The math bench's page (docs/math-design.md): run.mjs serves it cross-origin isolated (finer performance.now) and
+     drives it through window.mbSetup, mbRound and mbSums, in headless Chrome (tools/cdp.mjs) or Safari (tools/safari.mjs). -->
+<script src="glue.js"></script>
+<script>
+  window.mbSetup = async (arms, ms) => {
+    const mods = [];
+    for (const arm of arms.split(',')) {
+      const file = arm === 'js1w' ? 'js1' : arm;
+      mods.push({ arm, bytes: await (await fetch(`build/${file}.wasm`)).arrayBuffer() });
+    }
+    const r = await mathBench.setup(mods, ms);
+    return `${r.cells} cells, isolated ${self.crossOriginIsolated}, ${navigator.userAgent}`;
+  };
+  window.mbRound = (r) => mathBench.round(r).map((row) => row.join('\t')).join('\n');
+  window.mbSums = () => Object.entries(mathBench.sums()).map(([a, s]) => `# sum ${a} ${s}`).join('\n');
+  window.READY = true;
+</script>

@@ -36,10 +36,11 @@ W float rintf(float x) { return __builtin_rintf(x); }
 W double nearbyint(double x) { return __builtin_rint(x); }
 W double copysign(double x, double y) { return __builtin_copysign(x, y); }
 W float copysignf(float x, float y) { return __builtin_copysignf(x, y); }
-W double fmax(double x, double y) { return x != x ? y : y != y ? x : x > y ? x : y < x ? y : __builtin_signbit(x) ? y : x; }
-W double fmin(double x, double y) { return x != x ? y : y != y ? x : x < y ? x : y > x ? y : __builtin_signbit(x) ? x : y; }
-W float fmaxf(float x, float y) { return x != x ? y : y != y ? x : x > y ? x : y < x ? y : __builtin_signbit(x) ? y : x; }
-W float fminf(float x, float y) { return x != x ? y : y != y ? x : x < y ? x : y > x ? y : __builtin_signbit(x) ? x : y; }
+/* fmax and fmin: a NaN argument gives the other; between +0 and -0, fmax takes +0 and fmin -0. */
+W double fmax(double x, double y) { return x != x ? y : y != y ? x : x > y ? x : x < y ? y : __builtin_signbit(x) ? y : x; }
+W double fmin(double x, double y) { return x != x ? y : y != y ? x : x < y ? x : x > y ? y : __builtin_signbit(x) ? x : y; }
+W float fmaxf(float x, float y) { return x != x ? y : y != y ? x : x > y ? x : x < y ? y : __builtin_signbit(x) ? y : x; }
+W float fminf(float x, float y) { return x != x ? y : y != y ? x : x < y ? x : x > y ? y : __builtin_signbit(x) ? x : y; }
 W float nanf(const char *t) { (void)t; return __builtin_nanf(""); }
 W double nan(const char *t) { (void)t; return __builtin_nan(""); }
 /* round: half away from zero; wasm's nearest rounds half to even. */
