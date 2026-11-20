@@ -491,3 +491,18 @@ Medians in ms; the per-run tables are bench/image/results/2026-11-19-prog-mac-ch
 - Q6 confirmed: 26.1 MiB after p12p.jpg.
 
 So on the Mac the gain is mostly memory (36% to 49% less on every progressive input, and 48 MP progressive files now decode) and Safari speed; in Chrome the speed is a tie with its own decoder, and why Chrome gains so much less than Safari from the same wasm is open (a profile of p12p.jpg in both is the next step).
+
+## ctz on arm64 (issue #77)
+
+In V8 on Alex's arm64 Mac (Chrome 157, and node 26 the same), `i64.ctz` is not one instruction: a dependent chain of `x >> ctz(x)` steps takes 5.78 ns a step, against 2.38 ns for the same value computed as `63 - clz(x & -x)`, which V8 lowers to arm64's `clz` (bench: a scratch module of four chains; `node --print-wasm-code` shows the ctz going to a call and the clz to one `clz` instruction).
+`i64.popcnt` (lowered through NEON: fmov, cnt, addv, fmov) costs about 3 ns a step more as well, and a SWAR popcount is no faster (5.33 against 5.34 ns), so it stays.
+The refinement scan's loop has a ctz on its chain from one symbol to the next (`to`, the next zero), and the correction loops after each block another per set bit.
+The change: one helper, `cd_ctz64` in src/cdom_image_int.h, as `63 - clz(x & -x)` (every caller passes a nonzero value), for every ctz in the image module, and tests/link/run.sh refuses an image module whose wasm holds an `i64.ctz`.
+
+Predictions (written before the change; 9 rounds, box 900, against main at 7e7f01f as C-old, Chrome then Safari):
+
+- C1: in Chrome, p12p.jpg's C-js falls by 4% to 12% against C-old. Falsifier: under 2%.
+- C2: in Chrome, p12p.jpg's C-simd falls by as much and is under B1's median. Falsifier: at or above B1.
+- C3: in Safari, p12p.jpg's C-js is not slower than C-old by more than 2%. Falsifier: slower by more.
+- C4: p12.jpg, p48.jpg and p12.png within 2% of C-old in both browsers (they never reach the progressive decoder).
+- C5: the image module's wasm (scalar and SIMD) holds no `i64.ctz` after the change; before it, at least one.
