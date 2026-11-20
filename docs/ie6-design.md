@@ -127,6 +127,14 @@ Each is fixed, and each that Chrome can imitate is now in the profile, so CI kee
    Fix: the shim also waits while the mount is missing and the page is not complete.
    Not imitated in Chrome; checked in IE 6 on the keyed benchmark's page, whose mount comes after its scripts.
 
+6. Firefox 1.0 (asked for by Alex on 2026-11-20, run in the same XP VM) crashed outright, a native crash of the browser, as soon as the app started.
+   Babel's generator runtime, which async functions compile to, sets a function's `__proto__` where there is no Object.setPrototypeOf, and Firefox 1.0's engine crashes calling such a function (found by marking each step of the runtime with a synchronous request to the host, which a crash cannot lose).
+   Fix: the shim has no async function left (start, the store's two requests and encode are promise chains), so no legacy file carries the runtime; each is 4.3 KB smaller for it, and the tier's build refuses `__proto__`.
+   The inlined shim (cdom.min.js) grew 311 bytes for it, 55 with brotli.
+
+Firefox 1.0 then runs the fourth tier on its W3C branch of dom-old.js: addEventListener, with pointer events made from mouse events (Firefox 1.0 has none) and the held buttons tracked by the document's own listeners.
+On tests/out/legacy.html it passed the checks IE 6 did: pointer down, moves with the button held, up with none, click; typing echoed by C; a failed call reported once with the op after it applied; cd_call(focus) heard as a focus event.
+
 Also learned: IE 6 caches the tier's two scripts across reloads even with Cache-Control: no-store, so a test in the VM sets IE to check every visit first (HKCU ... Internet Settings, SyncMode5 = 3).
 
 ## 10. The predictions, measured
@@ -134,6 +142,8 @@ Also learned: IE 6 caches the tier's two scripts across reloads even with Cache-
 - P1 held: tests/out/legacy.html boots with no script error; a press, drag and release on the pad reach C as pointerdown (buttons 1), pointermove (buttons 1) and pointerup (buttons 0), then click; typing reaches C (propertychange as input) and C's echo shows it; a failed call is reported once and the next op applies; cd_call(focus) focuses the input and C hears its focus event.
 - P2 held: the keyed benchmark's page in IE 6 creates 1,000 rows in 11.5 s, updates every 10th row in 1.0 s, swaps rows in 0.25 s and clears in 1.9 s, with no slow-script prompt.
   These times are an emulated Pentium III under QEMU's TCG on arm64, so they say nothing about IE 6 on its own hardware.
-  10,000 rows in one task does raise the prompt (Alex's call: measured first; splitting long work across tasks is the follow-up if it matters).
+  10,000 rows in one task does raise the prompt; answered No (go on), it finished in 152.8 s with all 10,000 rows (Alex's call: measured first; splitting long work across tasks is the follow-up if it matters).
+- Re-run on the final build (after finding 6), IE 6 passed all of P1 again, and the broken image's error, which does not bubble, reached C through the image's own listener.
 - P3 held: cdom.legacy-ie6.js is 47,604 bytes minified (15,361 brotli -q 11, 17,137 gzip -9), against 57,376 for the third tier's (which grew from the 52 KB the prediction assumed).
+  Without the generator runtime (finding 6) it is 43,317 bytes (14,062 brotli), below the predicted range; the third tier's is 53,101 (16,336) and the second's 53,797 (16,427).
 - P4 held: terser's ie8 adds 0.19% to 0.75% to the words build of the app (listfuzz 24,248 to 24,294 bytes, legacy 17,598 to 17,641, memforms 5,717 to 5,760).
