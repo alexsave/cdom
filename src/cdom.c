@@ -220,6 +220,10 @@ void *cd_realloc_try(void *p, uint32_t n) {
   return heap_realloc_or(p, n, 1);
 }
 
+/* A job module (src/cdom_job_mod.c) links only the heap above: -DCDOM_HEAP_ONLY ends this file here, so
+ * no DOM import or export comes with it. An app's build never sets it, and its bytes do not change. */
+#ifndef CDOM_HEAP_ONLY
+
 /* ---- calls ----
  * Every DOM operation is its own import, called the moment C emits it. A string is a cd_str: a literal's
  * slot (the shim finds its text in the page's table) or a runtime string's serial (the shim reads its
@@ -1633,3 +1637,5 @@ int cd_req_current(const cd_req *r, void *ctx, uint16_t *index) {
 }
 void cd_req_end(cd_req *r, int ok) { r->state = ok ? CD_REQ_OK : CD_REQ_FAILED; }
 void cd_req_drop(cd_req *r) { r->state = CD_REQ_IDLE; } /* the next begin moves the generation on */
+
+#endif /* CDOM_HEAP_ONLY */

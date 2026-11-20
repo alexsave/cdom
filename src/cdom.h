@@ -465,7 +465,10 @@ typedef void (*cd_event_fn)(const cd_event_rec *e, void *ctx);
 void cd_on(cd_id id, uint32_t ev, cd_event_fn fn, void *ctx);
 void cd_main(void);                  /* the app's entry, called once at start */
 /* The seed for the app's random draws, set before cd_main: cdom.start's options.seed when the page fixes
- * one (one line makes a run deterministic), else 32 bits from crypto.getRandomValues. */
+ * one (one line makes a run deterministic), else 32 bits from crypto.getRandomValues. Never for secrets:
+ * in IE 9 and 10, which have no crypto.getRandomValues, the shim seeds it from Math.random and the clock,
+ * so below IE 11 it is neither secret nor unpredictable. Secrets come from cd_random_bytes (cdom_random.h),
+ * which answers UNAVAILABLE there instead. */
 extern uint32_t cd_seed;
 /* The app's one random source: xorshift32 (shifts 13, 17, 5), seeded from cd_seed by cd_start before
  * cd_main, so the same seed (cdom.start's options.seed) gives the same draws. Take a draw in logical
