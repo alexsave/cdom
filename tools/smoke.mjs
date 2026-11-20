@@ -7,7 +7,7 @@ const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console
 run: try {
   // BASE serves the entries from somewhere other than the harness server.
   await b.send('Page.navigate', { url: `${process.env.BASE || `http://localhost:${process.env.PORT || 8093}/frameworks/keyed`}/${name}/index.html` });
-  // LEGACY=ie8 (see cdp.mjs) is below the floor: the boot must refuse it, and nothing else is checked.
+  // LEGACY=below (see cdp.mjs) is below the floor: the boot must refuse it, and nothing else is checked.
   if (BELOW) { for (const [c, m] of await refused(b, '#main')) ok(c, m); break run; }
   for (let i = 0; i < 50 && !(await b.evaluate('!!document.getElementById("run")')); i++) await sleep(100);
   const E = b.evaluate;

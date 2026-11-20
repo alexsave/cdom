@@ -172,8 +172,10 @@
   if (typeof w.reportError !== "function") w.reportError = function (e) { setTimeout(function () { throw e; }, 0); };
 
   /* No IE has ChildNode.remove, which the shim removes nodes with. MDN's polyfill (the CharacterData and
-   * DocumentType prototypes as well as Element's), without its Array.prototype.forEach. */
-  (function (list) {
+   * DocumentType prototypes as well as Element's), without its Array.prototype.forEach. The fourth tier calls
+   * dom-old.js's remove instead: IE 6 and 7 have no Element to put it on, and an ES3 browser that has one (Firefox
+   * 1.0) has no defineProperty. */
+  if (Object.defineProperty) (function (list) {
     for (var i = 0; i < list.length; i++) {
       if (list[i] && !Object.prototype.hasOwnProperty.call(list[i], "remove")) {
         Object.defineProperty(list[i], "remove", {

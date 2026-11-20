@@ -2,11 +2,12 @@
 // LEGACY=1 node tools/legacy.mjs runs it as a browser without WebAssembly (see cdp.mjs): the page must then
 // take the wasm2js path, on cdom.legacy.js's polyfills and PEP. Without it, the same checks run on wasm.
 // LEGACY=ie9 runs them on the third tier (cdom.legacy-ie9.js and the words build: no typed arrays, no crypto),
-// LEGACY=ie9-gaps on IE 9's other gaps on the second tier, and LEGACY=ie8 checks that the boot refuses IE 8.
+// LEGACY=ie9-gaps on IE 9's other gaps on the second tier, LEGACY=ie6 on the fourth (cdom.legacy-ie6.js, ES3 on the old
+// DOM: no ES5, attachEvent, no textContent), and LEGACY=below checks that the boot refuses a browser under its floor.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { launch, sleep, LEGACY, LEVEL, TIER, BELOW, FETCHED, TIER_FILES, refused, tierFetched } from './cdp.mjs';
+import { launch, sleep, LEGACY, LEVEL, TIER, BELOW, GAPS, FETCHED, TIER_FILES, refused, tierFetched } from './cdp.mjs';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
@@ -24,8 +25,11 @@ const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console
 const E = b.evaluate;
 const mouse = (type, x, y, buttons = 0, button = 'none') =>
   b.send('Input.dispatchMouseEvent', { type, x, y, buttons, button, clickCount: type === 'mouseMoved' ? 0 : 1 });
+// A rect's edges, not its width and height, which IE 6 to 8 (LEGACY=ie6) leave out.
 const centre = async (sel) => E(`(function () { var r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();
-  return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; })()`);
+  return [Math.round((r.left + r.right) / 2), Math.round((r.top + r.bottom) / 2)]; })()`);
+// A node's text through innerText, every IE's: LEGACY=ie6 has no textContent.
+const textOf = (id) => E(`document.getElementById(${JSON.stringify(id)}).innerText`);
 async function click(sel) {
   const [x, y] = await centre(sel);
   await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y, 1, 'left'); await mouse('mouseReleased', x, y, 0, 'left');
@@ -47,7 +51,7 @@ await b.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
 })();` });
 run: try {
   await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/legacy.html` });
-  // LEGACY=ie8 is below the floor: the boot refuses it, and that refusal is all there is to check.
+  // LEGACY=below is below the floor: the boot refuses it, and that refusal is all there is to check.
   if (BELOW) {
     for (const [c, m] of await refused(b, '#m')) ok(c, m);
     ok(!(await E('!!window.READY')), 'never ready');
@@ -67,9 +71,17 @@ run: try {
   if (LEGACY) {
     ok(await E('typeof WebAssembly === "undefined" && typeof X.memory.grow === "function"'), 'no WebAssembly; the exports are wasm2js');
     ok(await E('!/native code/.test(String(TextDecoder)) && !/native code/.test(String(TextEncoder))'), 'TextDecoder and TextEncoder are the polyfills');
-    ok(await E('!/native code/.test(String(PointerEvent))'), 'PointerEvent is PEP');
-    ok(await E('!/native code/.test(String(Element.prototype.remove)) && !/native code/.test(String(CharacterData.prototype.remove))'),
-      'ChildNode.remove is the polyfill, as in every IE');
+    if (TIER === 4) {
+      // No PEP, no ChildNode.remove: dom-old.js makes the pointer events from mouse events and removes nodes itself.
+      ok(await E('typeof PointerEvent === "undefined" && typeof cdomOld === "object" && !("remove" in Element.prototype)'),
+        'no PointerEvent and no ChildNode.remove: the fourth tier is on dom-old.js');
+      ok(await E('typeof document.addEventListener === "undefined" && typeof Object.defineProperty === "undefined"'),
+        'no addEventListener and no defineProperty, as in IE 6 and 7');
+    } else {
+      ok(await E('!/native code/.test(String(PointerEvent))'), 'PointerEvent is PEP');
+      ok(await E('!/native code/.test(String(Element.prototype.remove)) && !/native code/.test(String(CharacterData.prototype.remove))'),
+        'ChildNode.remove is the polyfill, as in every IE');
+    }
     if (TIER === 2) ok(await E('__noCrypto && !!window.msCrypto && window.crypto === window.msCrypto'), 'no crypto but msCrypto, as in IE 11; the polyfill made it crypto');
     else {
       ok(await E('typeof Uint8Array === "undefined" && typeof ArrayBuffer === "undefined" && typeof crypto === "undefined" && typeof msCrypto === "undefined"'),
@@ -86,7 +98,7 @@ run: try {
   // cd_seed: from crypto.getRandomValues wherever there is one (msCrypto on the second tier), and the weak
   // fallback (shim seed(): Math.random and the clock) only on the third, which has no crypto at all.
   const seed = (await E('X.seed()')) >>> 0, draws = await E('__seedDraws');
-  if (TIER === 3) ok(draws.crypto === 0 && draws.random === 1 && Number.isInteger(seed), `cd_seed from the weak fallback, one Math.random draw, as IE 9 has no crypto: ${seed} ${JSON.stringify(draws)}`);
+  if (TIER >= 3) ok(draws.crypto === 0 && draws.random === 1 && Number.isInteger(seed), `cd_seed from the weak fallback, one Math.random draw, as IE 9 has no crypto: ${seed} ${JSON.stringify(draws)}`);
   else ok(seed === SEED_STUB && draws.crypto === 1 && draws.random === 0, `cd_seed from crypto.getRandomValues, never Math.random, where crypto exists: ${seed.toString(16)} ${JSON.stringify(draws)}`);
 
   // The memory grows and a new string is read right after it: the views are stale, on wasm and on wasm2js (on
@@ -95,14 +107,13 @@ run: try {
   const before = await E(size);
   await E('X.grow()');
   ok(await E(size) > before, 'the memory grew');
-  ok(await E('document.getElementById("echo").textContent') === 'read after the memory grew \u00e9',
-    `a string read after the memory grew: ${await E('document.getElementById("echo").textContent')}`);
+  ok(await textOf('echo') === 'read after the memory grew \u00e9', `a string read after the memory grew: ${await textOf('echo')}`);
 
   // A literal the macro cannot see is its own address: each read from memory once, then kept (a Map, or a plain
   // object where there is none), and the same on a page with no Map.
   const roRun = async (what) => {
     const seen = [];
-    for (const i of [0, 1, 0, 1]) { await E(`X.ro(${i})`); seen.push(await E('document.getElementById("echo").textContent')); }
+    for (const i of [0, 1, 0, 1]) { await E(`X.ro(${i})`); seen.push(await textOf('echo')); }
     ok(seen.join('|') === 'ro-zero|ro-one \u00e9|ro-zero|ro-one \u00e9', `read-only strings ${what}: ${seen.join('|')}`);
   };
   await roRun('with a Map');
@@ -133,7 +144,7 @@ run: try {
   // Latin, Cyrillic (a lead byte whose fourth bit is set), CJK and an astral character.
   const word = 'héllo ж 日本 \u{1F600}';
   await b.send('Input.insertText', { text: word }); await sleep(50);
-  ok(await E('document.getElementById("echo").textContent') === word, `echo of ${word}: ${await E('document.getElementById("echo").textContent')}`);
+  ok(await textOf('echo') === word, `echo of ${word}: ${await textOf('echo')}`);
   // The value is 21 bytes: h é l l o (6), space (7), ж (9), space (10), 日 本 (16), space (17), 😀 (21).
   const cuts = {}; for (const c of [6, 7, 8, 9, 10, 11, 12, 13, 16, 17, 18, 20, 21, 40]) cuts[c] = await E(`X.cut(${c})`);
   ok(JSON.stringify(cuts) === JSON.stringify({ 6: 6, 7: 7, 8: 7, 9: 9, 10: 10, 11: 10, 12: 10, 13: 13, 16: 16, 17: 17, 18: 17, 20: 17, 21: 21, 40: 21 }),
@@ -153,18 +164,22 @@ run: try {
   // Every other way the shim reads and writes C memory, which on the third tier is words, not views: a wheel
   // event's two floats, a rect's four doubles, the viewport's four words, a number set on the page through a
   // cd_val's double, and pixels blitted onto a canvas.
-  await E('window.__wheel = null; document.getElementById("pad").addEventListener("wheel", function (e) { __wheel = [e.deltaX, e.deltaY]; })');
+  // The fourth tier hears IE's mousewheel: no deltaX, and deltaY from wheelDelta (dom-old.js: 120 a notch is 100).
+  await E(TIER === 4 ? 'window.__wheel = null; document.getElementById("pad").attachEvent("onmousewheel", function () { __wheel = [0, -event.wheelDelta * 5 / 6]; })'
+    : 'window.__wheel = null; document.getElementById("pad").addEventListener("wheel", function (e) { __wheel = [e.deltaX, e.deltaY]; })');
   await b.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 60, y: 60, deltaX: 3.3, deltaY: -125.7 }); await sleep(100);
   const wheel = await E('__wheel'), cw = [await E('X.wheel(0)'), await E('X.wheel(1)')];
   ok(wheel && cw[0] === Math.fround(wheel[0]) && cw[1] === Math.fround(wheel[1]) && cw[1] !== 0, `the wheel's deltas as floats: C ${cw}, page ${wheel}`);
-  const box = [0, 1, 2, 3].map(k => E(`X.rect(${k})`)), want = await E('(function (r) { return [r.left, r.top, r.width, r.height]; })(document.getElementById("pad").getBoundingClientRect())');
+  const box = [0, 1, 2, 3].map(k => E(`X.rect(${k})`)), want = await E('(function (r) { return [r.left, r.top, r.right - r.left, r.bottom - r.top]; })(document.getElementById("pad").getBoundingClientRect())');
   ok(JSON.stringify(await Promise.all(box)) === JSON.stringify(want), `cd_rect's doubles: ${JSON.stringify(await Promise.all(box))} against ${JSON.stringify(want)}`);
   // IE 9 and 10 have no devicePixelRatio (the polyfill reads screen.deviceXDPI, which Chrome has not: 1).
   const vp = [];
   for (let k = 0; k < 4; k++) vp.push(await E(`X.viewport(${k})`));
-  ok(JSON.stringify(vp) === JSON.stringify(await E('[innerWidth, innerHeight, 0, Math.round(devicePixelRatio * 100)]')) && vp[3] === 100,
+  // The fourth tier has no innerWidth: the root's client size (dom-old.js), the same here with no scroll bar.
+  ok(JSON.stringify(vp) === JSON.stringify(await E(TIER === 4 ? '[document.documentElement.clientWidth, document.documentElement.clientHeight, 0, 100]'
+    : '[innerWidth, innerHeight, 0, Math.round(devicePixelRatio * 100)]')) && vp[3] === 100,
     `cd_viewport's width, height, hidden and ratio: ${vp}`);
-  if (LEVEL.startsWith('ie9')) ok(await E('!Object.getOwnPropertyDescriptor(window, "devicePixelRatio").get.toString().includes("native code")'), 'devicePixelRatio is the polyfill');
+  if (GAPS && TIER !== 4) ok(await E('!Object.getOwnPropertyDescriptor(window, "devicePixelRatio").get.toString().includes("native code")'), 'devicePixelRatio is the polyfill');
   await E('X.setnum()');
   ok(await E('window.cdomNum') === -1234.5678, `a number through a cd_val: ${await E('window.cdomNum')}`);
   await E('X.blit()');
@@ -193,6 +208,17 @@ run: try {
         U('fill(7, 2, 5)'), U('fill(9)'), U('fill(0, 6)'), U('fill(3, -2)'), U('fill(4, 1, 99)')] : []),
       'Object.entries({ a: 1, b: "x", c: [2] })', 'Object.entries({})', 'Object.entries([7, 8])',
       '"--x".startsWith("--")', '"a--".startsWith("--", 1)', '"x--".startsWith("--")', '"pan-y".includes("pan-")', '"abc".includes("d")', '"abcabc".includes("a", 4)',
+      // The fourth tier's ES5 (polyfills-es3.js), sparse arrays and the DontEnum case included.
+      ...(TIER === 4 ? ['[3, 1, 2, 1].indexOf(1)', '[3, 1, 2, 1].indexOf(1, 2)', '[3, 1, 2, 1].indexOf(1, -1)', '[3, 1, 2, 1].indexOf(9)',
+        '[3, 1, 2, 1].lastIndexOf(1)', '[3, 1, 2, 1].lastIndexOf(1, 2)', '[3, 1, 2, 1].lastIndexOf(1, -2)', '[, 1].indexOf(undefined)',
+        '[1, 2, 3].map(function (v, i) { return v * 10 + i; })', '[1, , 3].map(function (v) { return v; }).length',
+        '[1, 2, 3, 4].filter(function (v) { return v % 2; })', '[1, 2].some(function (v) { return v > 1; })', '[].some(function () { return true; })',
+        '[1, 2].every(function (v) { return v > 1; })', '[].every(function () { return false; })',
+        '[1, 2, 3].reduce(function (a, v) { return a + v; })', '[1, 2, 3].reduce(function (a, v) { return a + v; }, 10)', '[, 5].reduce(function (a, v) { return a + v; })',
+        '(function () { var n = 0; [1, , 3].forEach(function (v) { n += v; }); return n; })()',
+        'Object.keys({ a: 1, b: 2 })', 'Object.keys([7, 8])', 'Array.isArray([])', 'Array.isArray({ length: 0 })', '" x\\t".trim()',
+        '(function (a, b) { return [this.v, a, b]; }).bind({ v: 7 }, 1)(2)', 'typeof Date.now()',
+        '(function () { var a = [1, 2, 3, 4]; return [a.splice(1), a]; })()', 'Object.create({ p: 3 }).p'] : []),
     ];
     const show = (v) => Object.is(v, -0) ? '-0' : JSON.stringify(v) ?? String(v);
     const page = await E(`[${exprs.join(', ')}].map(function (v) { return 1 / v === -Infinity ? '-0' : JSON.stringify(v) || String(v); })`);
@@ -200,7 +226,8 @@ run: try {
     ok(!bad.length, `polyfills agree with the built-ins on ${exprs.length} cases: ${bad.map(x => `${x} gave ${page[exprs.indexOf(x)]}`).join('; ')}`);
     ok(await E('globalThis === window'), 'globalThis is the window');
     ok(await E(`!/native code/.test(String(Object.entries)) && !/native code/.test(String(Math.imul) + String(Math.clz32) + String(Math.trunc)${typed
-      ? ' + String(Math.fround) + String(Uint8Array.prototype.fill) + String(Uint8Array.prototype.copyWithin)' : ''})`), 'those were the polyfills');
+      ? ' + String(Math.fround) + String(Uint8Array.prototype.fill) + String(Uint8Array.prototype.copyWithin)' : ''}${TIER === 4
+      ? ' && !/native code/.test(String(Array.prototype.indexOf) + String(Array.prototype.map) + String(Object.keys) + String(Function.prototype.bind) + String(Array.isArray))' : ''})`), 'those were the polyfills');
     // TextEncoder.encode with no Uint8Array to make: a plain Array of the bytes.
     if (!typed) ok(await E('JSON.stringify(new TextEncoder().encode("h\u00e9\u65e5\ud83d\ude00"))') === JSON.stringify([...Buffer.from('h\u00e9\u65e5\u{1F600}')]),
       `TextEncoder.encode without typed arrays: ${await E('JSON.stringify(new TextEncoder().encode("h\u00e9\u65e5\ud83d\ude00"))')}`);
@@ -209,7 +236,7 @@ run: try {
   // IE 9's gaps above its walls (LEGACY=ie9-gaps): no MutationObserver and no requestAnimationFrame, prefixed
   // or not, so queueMicrotask and requestAnimationFrame are the polyfills' timeout forms. The focus check
   // above ran on that queueMicrotask; requestAnimationFrame must call back once with a time.
-  if (LEVEL.startsWith('ie9')) {
+  if (GAPS) {
     ok(await E('typeof MutationObserver === "undefined" && typeof WebKitMutationObserver === "undefined" && !/native code/.test(String(queueMicrotask))'),
       'queueMicrotask is the polyfill, on a timeout');
     await E('window.__raf = []; requestAnimationFrame(function (t) { __raf.push(typeof t, t > 0); })');
@@ -225,7 +252,14 @@ run: try {
 
   // Without options objects, every listener the shim adds must get a plain capture flag: bubbling types
   // false, the non-bubbling ones (focus) true. An object would mean capture for all of them.
-  if (LEGACY) {
+  if (TIER === 4) {
+    // No addEventListener: every listener went through attachEvent, focus as the focusin that bubbles in IE, the
+    // pointer events as mouse events, and the field's input as its propertychange.
+    const on = await E('__attached.map(function (a) { return a[1]; })');
+    for (const t of ['onfocusin', 'onmousedown', 'onmousemove', 'onmouseup', 'onclick', 'onmousewheel', 'onpropertychange'])
+      ok(on.includes(t), `attachEvent("${t}"): ${on.join(' ')}`);
+    ok(!on.some(t => /^on(focus|pointer|wheel|input)/.test(t) && t !== 'onfocusin'), `no type IE lacks: ${on.join(' ')}`);
+  } else if (LEGACY) {
     const adds = (await E('__adds')).filter(a => a[0] !== 'cdom-probe');
     const objs = adds.filter(a => a[1] === 'object');
     ok(!objs.length, `no options object reached addEventListener: ${JSON.stringify(objs)}`);
@@ -242,7 +276,7 @@ run: try {
     for (let i = 0; i < 100 && (await E('X.file_seen(0) === -1')); i++) await sleep(20);
     return E('[0, 1, 2].map(function (k) { return X.file_seen(k); }).join()');
   };
-  if (!LEVEL.startsWith('ie9')) {
+  if (!GAPS) {
     await E(`(function () { var d = new DataTransfer(), b = new Uint8Array(50); for (var i = 0; i < 50; i++) b[i] = i + 1;
       d.items.add(new File([b], 'f.bin')); document.getElementById('file').files = d.files; })()`);
     const ie10 = await fileAsk();

@@ -15,22 +15,28 @@ export const sleep = ms => new Promise(r => setTimeout(r, ms));
 // LEGACY=ie9 is all of that and then IE 9: IE9_GAPS below deletes what IE 9 lacks that IE 11 has, and IE9_WALLS
 // its typed arrays and msCrypto, so the boot takes the third tier (shim/boot.js).
 // LEGACY=ie9-gaps is IE 9 with those two walls put back, so IE 9's other gaps are also tested on the second tier.
-// LEGACY=ie8 is IE 9 and then what IE 8 lacks of the ES5 the fallback needs (IE8_ES5): the boot must refuse it.
+// LEGACY=ie6 is IE 9 and then what IE 6 lacks beyond it (IE6_OLD): ES5 and the W3C DOM of dom-old.js's table, with
+// attachEvent in their place, so the boot takes the fourth tier.
+// LEGACY=below is IE 6 without attachEvent either: below the floor, which the boot must refuse.
 export const LEVEL = process.env.LEGACY || '';
-if (LEVEL && !['1', 'ie9', 'ie9-gaps', 'ie8'].includes(LEVEL)) throw new Error(`cdp: LEGACY=${LEVEL}: want 1, ie9, ie9-gaps or ie8`);
+if (LEVEL && !['1', 'ie9', 'ie9-gaps', 'ie6', 'below'].includes(LEVEL)) throw new Error(`cdp: LEGACY=${LEVEL}: want 1, ie9, ie9-gaps, ie6 or below`);
 export const LEGACY = !!LEVEL;
-// The boot's tier (shim/boot.js): 1 wasm, 2 wasm2js on typed arrays, 3 wasm2js on words; 0 refused.
-export const TIER = !LEVEL ? 1 : LEVEL === 'ie8' ? 0 : LEVEL === 'ie9' ? 3 : 2;
+// The boot's tier (shim/boot.js): 1 wasm, 2 wasm2js on typed arrays, 3 wasm2js on words, 4 that in ES3 on the old
+// DOM; 0 refused.
+export const TIER = !LEVEL ? 1 : LEVEL === 'below' ? 0 : LEVEL === 'ie6' ? 4 : LEVEL === 'ie9' ? 3 : 2;
 export const IE9 = TIER === 3;
 export const BELOW = TIER === 0; // below cdom's floor: the boot must refuse it
+// IE 9's gaps above its walls (IE9_GAPS) are in the page: every IE level.
+export const GAPS = LEVEL !== '' && LEVEL !== '1';
 // The files of each tier, for a page whose wasm is app (a name without .wasm): only its own may be fetched.
 // The files of each tier, for a page whose wasm is app (a name without .wasm): only its own may be fetched. wasm names
 // what the first tier fetches, when the page starts a pair (APP_SIMD) and this Chrome takes the SIMD twin; the
 // fallbacks take the scalar module's builds, and fetch no .wasm at all.
-export const TIER_FILES = (app, wasm = `${app}.wasm`) => ({ 1: [wasm], 2: ['cdom.legacy.js', `${app}.wasm.js`], 3: ['cdom.legacy-ie9.js', `${app}.wasm.ie9.js`] });
+export const TIER_FILES = (app, wasm = `${app}.wasm`) => ({ 1: [wasm], 2: ['cdom.legacy.js', `${app}.wasm.js`], 3: ['cdom.legacy-ie9.js', `${app}.wasm.ie9.js`],
+  4: ['cdom.legacy-ie6.js', `${app}.wasm.ie9.js`] });
 // [pass, message] for the files a page fetched: all of its tier's, none of another's, and only the tier's own .wasm.
 export function tierFetched(got, app, wasm) {
-  const files = TIER_FILES(app, wasm), want = files[TIER] || [], other = Object.entries(files).filter(([t]) => +t !== TIER).flatMap(([, f]) => f);
+  const files = TIER_FILES(app, wasm), want = files[TIER] || [], other = Object.values(files).flat().filter((f) => !want.includes(f));
   const wasms = got.filter((f) => f.endsWith('.wasm'));
   return [want.every((f) => got.includes(f)) && !other.some((f) => got.includes(f)) && wasms.every((f) => want.includes(f)),
     `tier ${TIER} files only (${want.join(' ') || 'none'}): fetched ${got.filter((f) => /\.(js|wasm)$/.test(f)).join(' ')}`];
@@ -74,18 +80,61 @@ const IE9_GAPS = `
   delete window.devicePixelRatio;
   // Element.matches, never: IE 9 to 11 have it only as msMatchesSelector.
   Element.prototype.msMatchesSelector = Element.prototype.matches; delete Element.prototype.matches;`;
-// What IE 8 lacks of the ES5 that shim/boot.js checks for, from mdn/browser-compat-data: each IE 9. IE 8's
-// defineProperty works on DOM objects alone and throws on others. IE 8 also has no addEventListener and no
-// Element Traversal, which this profile keeps: the test pages' own scripts listen with addEventListener.
-const IE8_ES5 = `
-  const defineProperty = Object.defineProperty;
-  Object.defineProperty = function (o, k, d) {
-    if (!(o instanceof Node) && o !== window) throw new TypeError('Object.defineProperty: IE 8 takes only DOM objects');
-    return defineProperty(o, k, d);
+// What IE 6 lacks beyond IE 9 (LEGACY=ie6 and below), from mdn/browser-compat-data: the ES5 that polyfills-es3.js
+// supplies (Object.defineProperty and the rest of ES5's Object too, which nothing supplies), and the W3C DOM of
+// tools/legacy/dom-old.js's table: addEventListener (attachEvent in its place, as IE's: window.event during the call,
+// srcElement, returnValue and cancelBubble, IE's button bits, wheelDelta, and a field's input as propertychange on
+// value), textContent, previousElementSibling, style.setProperty and getPropertyValue, createElementNS,
+// elementsFromPoint, a rect's width and height, innerWidth and innerHeight; and a DOM method's apply and call. setAttribute sets an expando for class,
+// style and for, as IE 6 and 7's sets a same-named property. Kept: JSON (IE 8's), getElementById, querySelector and
+// innerText, which the harness reads the page with. Under LEGACY=below there is no attachEvent either.
+const IE6_OLD = `
+  const define = Object.defineProperty;
+  // IE 6 to 8's DOM methods are host objects, not functions: no apply or call (EventTarget's are kept: attachEvent
+  // below calls them). Through Reflect: IE9_GAPS took Object.setPrototypeOf.
+  for (const proto of [Node.prototype, Element.prototype, HTMLElement.prototype, Document.prototype, HTMLInputElement.prototype])
+    for (const k of Object.getOwnPropertyNames(proto)) {
+      const d = Object.getOwnPropertyDescriptor(proto, k);
+      if (k !== 'constructor' && d && typeof d.value === 'function') Reflect.setPrototypeOf(d.value, null);
+    }
+  for (const k of ['create', 'keys', 'getPrototypeOf', 'defineProperty', 'defineProperties', 'getOwnPropertyNames',
+    'getOwnPropertyDescriptor', 'freeze', 'seal', 'preventExtensions', 'isFrozen', 'isSealed', 'isExtensible']) delete Object[k];
+  delete Array.isArray; delete Date.now; delete Function.prototype.bind; delete String.prototype.trim;
+  for (const k of ['indexOf', 'lastIndexOf', 'forEach', 'map', 'filter', 'some', 'every', 'reduce', 'reduceRight']) delete Array.prototype[k];
+  delete P.addEventListener; delete P.removeEventListener;
+  delete Node.prototype.textContent; delete Element.prototype.previousElementSibling;
+  delete CSSStyleDeclaration.prototype.setProperty; delete CSSStyleDeclaration.prototype.getPropertyValue;
+  delete Document.prototype.createElementNS; delete Document.prototype.elementsFromPoint;
+  for (const R of [DOMRectReadOnly.prototype, DOMRect.prototype]) { delete R.width; delete R.height; }
+  delete window.innerWidth; delete window.innerHeight;
+  const setAttr = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function (n, v) {
+    if (/^(class|style|for)$/i.test(n)) { this['$ie' + n] = v; return; }
+    return Reflect.apply(setAttr, this, [n, v]);
   };
-  for (const k of ['create', 'keys', 'getPrototypeOf']) delete Object[k];
-  delete Array.isArray; delete Array.prototype.forEach; delete Array.prototype.reduce; delete Function.prototype.bind;
-  delete Date.now;`;
+  ${LEVEL === 'below' ? '' : `let current;
+  define(window, 'event', { configurable: true, get: () => current });
+  const IE_BIT = [1, 4, 2], REAL = { propertychange: 'input' }, attached = window.__attached = [];
+  const ie = (e, type) => {
+    const o = { type, srcElement: e.target, clientX: e.clientX, clientY: e.clientY, keyCode: e.keyCode,
+      shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey: e.altKey, wheelDelta: e.wheelDelta,
+      button: type === 'mousemove' ? e.buttons : type === 'mousedown' || type === 'mouseup' ? IE_BIT[e.button] : 0,
+      propertyName: type === 'propertychange' ? 'value' : undefined };
+    define(o, 'returnValue', { set(v) { if (v === false) e.preventDefault(); } });
+    define(o, 'cancelBubble', { set(v) { if (v) e.stopPropagation(); } });
+    return o;
+  };
+  P.attachEvent = function (on, f) {
+    const type = on.slice(2), real = REAL[type] || type;
+    const g = (e) => { const was = current; current = ie(e, type); try { f.call(window, current); } finally { current = was; } };
+    attached.push([this, on, f, g, real]);
+    add.call(this, real, g, false);
+    return true;
+  };
+  P.detachEvent = function (on, f) {
+    const i = attached.findIndex((r) => r[0] === this && r[1] === on && r[2] === f);
+    if (i >= 0) { rem.call(this, attached[i][4], attached[i][3], false); attached.splice(i, 1); }
+  };`}`;
 const OLD = `(() => {
   for (const k of ['WebAssembly', 'TextDecoder', 'TextEncoder', 'queueMicrotask', 'reportError', 'Promise', 'fetch',
     'PointerEvent', 'globalThis']) delete window[k];
@@ -101,10 +150,11 @@ const OLD = `(() => {
   const P = EventTarget.prototype, add = P.addEventListener, rem = P.removeEventListener;
   const adds = window.__adds = [];
   P.addEventListener = function (t, f, c) { adds.push([t, typeof c, !!c]); return add.call(this, t, f, !!c); };
-  P.removeEventListener = function (t, f, c) { return rem.call(this, t, f, !!c); };${LEVEL.startsWith('ie') ? IE9_GAPS : ''}${TIER === 3 || BELOW ? IE9_WALLS : ''}${BELOW ? IE8_ES5 : ''}
+  P.removeEventListener = function (t, f, c) { return rem.call(this, t, f, !!c); };${GAPS ? IE9_GAPS : ''}${TIER >= 3 || BELOW ? IE9_WALLS : ''}${TIER === 4 || BELOW ? IE6_OLD : ''}
 })();`;
 // The scripts a page fetched, by file name, to prove which path it took.
-export const FETCHED = "performance.getEntriesByType('resource').map(r => r.name.split('/').pop().split('?')[0])";
+// A plain loop: under LEGACY=below no polyfill puts Array.prototype.map back.
+export const FETCHED = "(function () { var e = performance.getEntriesByType('resource'), o = [], i; for (i = 0; i < e.length; i++) o.push(e[i].name.split('/').pop().split('?')[0]); return o; })()";
 
 // Every Chrome this process started and that has not exited. Node does not take its children with it,
 // so a run that ended without close() (a throw, a process.exit on a failure, a SIGTERM from a harness's
@@ -201,12 +251,11 @@ export async function launch(args = []) { // args: Chrome flags of the caller's 
   return Object.assign(api, { pid: proc.pid, version: ver.Browser, send: s, sendBrowser: send, targetId, evaluate, close, exceptions });
 }
 
-// Under LEGACY=ie8 the boot must refuse the browser cleanly (see shim/boot.js): one error naming each missing
+// Under LEGACY=below the boot must refuse the browser cleanly (see shim/boot.js): one error naming each missing
 // thing, neither fallback's files nor the wasm fetched, and nothing drawn in mount (a selector). Returns the
 // checks as [pass, message] pairs. The shim the page inlines fails first in Chrome, on TextDecoder; a real
 // old browser fails that script with a SyntaxError instead, LEGACY=1 sees the same one, and it is not counted.
-export const FLOOR = ['Object.defineProperty', 'Object.create', 'Object.keys', 'Object.getPrototypeOf', 'Array.isArray',
-  'Array.prototype.forEach', 'Array.prototype.reduce', 'Function.prototype.bind', 'Date.now'];
+export const FLOOR = ['addEventListener or attachEvent'];
 export const REFUSAL = `cdom: this browser cannot run cdom: it has no ${FLOOR.join(', ')}`;
 export async function refused(b, mount) {
   for (let i = 0; i < 100 && (await b.evaluate('document.readyState')) !== 'complete'; i++) await sleep(50);

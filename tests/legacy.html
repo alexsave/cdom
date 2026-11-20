@@ -10,9 +10,12 @@ if (/nomap/.test(location.search)) window.Map = undefined;
 /*CDOM_BOOT*/
 </script>
 <script>
-// Written in ES5 like the code it tests: with LEGACY=1 the page has none of what the polyfills supply.
+// Written in ES3 like the code it tests: with LEGACY=1 the page has none of what the polyfills supply, and with
+// LEGACY=ie6 no addEventListener (window.onerror is every browser's).
 var LOG = [], ERRORS = [];
-window.addEventListener('error', function (e) { ERRORS.push(e.error ? e.error.name + ': ' + e.error.message : String(e.message)); });
+window.onerror = function (message, file, line, column, error) {
+  ERRORS.push(error ? error.name + ': ' + error.message : String(message));
+};
 var env = { ev: function (t, id, x, y, p, b) { LOG.push([t, id >>> 0, x, y, p, b]); } };
 cdomBoot(['legacy.wasm', 'legacy.simd.wasm'], document.getElementById('m'), env, function (x) { window.X = x; window.READY = true; });
 </script></body></html>
