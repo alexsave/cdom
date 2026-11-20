@@ -751,7 +751,7 @@ M = [
   ('png-idat-not-entered', 'src/cdom_image_png.c', '    if (!memcmp(type, "IDAT", 4)) return 1;', '    if (!memcmp(type, "IDAT", 4)) { x->len = 0; return 1; }', IMG, 'png-rgba'),
   ('png-window-unfiltered', 'src/cdom_image_png.c', 'n > CD_INFLATE_WINDOW ? n - CD_INFLATE_WINDOW : 0;', 'n > CD_INFLATE_WINDOW ? n - CD_INFLATE_WINDOW / 8 : 0;', IMG, 'png-'),
   # png-fast-2: the inflate's buffer of a small PNG, and no RGBA row on the RGB read (the oracle's small and wide cases)
-  ('png-cap-whole-chunk', 'src/cdom_image_png.c', 'uint64_t cap = (all > keep ? all : keep) + PNG_MATCH_ROOM;', 'uint64_t cap = keep + PNG_CHUNK;', IMG, 'png-small16-rgba: peak'),
+  ('png-cap-whole-chunk', 'src/cdom_image_png.c', 'uint64_t cap = (all > keep ? all : keep) + PNG_MATCH_ROOM;', 'uint64_t cap = keep + PNG_CHUNK + 0 * all;', IMG, 'png-small16-rgba: peak'),
   # inflate-fast (docs/image-png-speed.md, "The small PNG's buffer"): the image, or the window and two rows, and the match room
   ('png-cap-chunk-formula', 'src/cdom_image_png.c', 'uint64_t cap = (all > keep ? all : keep) + PNG_MATCH_ROOM;', 'uint64_t cap = keep + (all < PNG_CHUNK ? all : PNG_CHUNK);', IMG, 'png-chunk291x299-rgb: peak'),
   ('png-cap-image-only', 'src/cdom_image_png.c', 'uint64_t cap = (all > keep ? all : keep) + PNG_MATCH_ROOM;', 'uint64_t cap = all + PNG_MATCH_ROOM;', IMG, 'png-past-last-row-rgb: status CORRUPT'),
