@@ -9,9 +9,13 @@ import { launch, sleep, TIER, FETCHED, tierFetched } from './cdp.mjs';
 
 if (TIER !== 5) { console.log('FAIL tools/frames.mjs runs under LEGACY=frames'); process.exit(1); }
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
+// FRAMES_APP=ie9 serves each app's IE 9 build (url + ".ie9.js") where the boot asks for the transformed file (url +
+// ".js1.js"): the run the measurements compare with (docs/js1-transform-design.md).
+const IE9_APP = process.env.FRAMES_APP === 'ie9';
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
 const srv = http.createServer((q, r) => {
-  const f = path.join(root, q.url.split(/[?#]/)[0]);
+  let f = path.join(root, q.url.split(/[?#]/)[0]);
+  if (IE9_APP) f = f.replace(/\.js1\.js$/, '.ie9.js');
   fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': types[path.extname(f)] }); r.end(b); });
 }).listen(0);
 const b = await launch();
@@ -178,16 +182,31 @@ run: try {
   ok(!(await E('cdomF.errors.length')), `no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
   ok(!errs().length, `no page exceptions: ${JSON.stringify(errs())}`);
 
-  // A trap in C: thrown out of the call, which never comes back to the shim (no finally in JavaScript 1.1), so nothing
-  // is drawn; the next entry from the browser puts the counts back, notes it, and draws what the call had done.
+  // A trap in C. The transformed file has no throw: C sets its flag and each function returns up the chain, the shim
+  // notes it, and the call ends as any other, drawing what C did before it (docs/js1-transform-design.md, section 5).
+  // The IE 9 build (FRAMES_APP=ie9) throws instead, out of a call that never comes back to the shim (no finally in
+  // JavaScript 1.1), so nothing is drawn, and the next entry from the browser puts the counts back and draws.
   d = await draws();
   const was = await stat(STAT.count);
   let threw = '';
   try { await E('X.trap()'); } catch (e) { threw = String(e).slice(0, 80); }
-  ok(threw && (await draws()) === d, `a trap is thrown out of the call, and nothing is drawn: ${threw ? 'threw' : 'no throw'}, ${(await draws()) - d} draws`);
-  await click('#inc');
-  ok((await textOf('#countp')) === `count ${was + 2}` && (await E('cdomF.errors.join()')).includes('did not return'),
-    `the next click recovers: drawn with both counts (${JSON.stringify(await textOf('#countp'))}, want count ${was + 2}), and noted: ${JSON.stringify(await E('cdomF.errors'))}`);
+  if (IE9_APP) {
+    ok(threw && (await draws()) === d, `a trap is thrown out of the call, and nothing is drawn: ${threw ? 'threw' : 'no throw'}, ${(await draws()) - d} draws`);
+    await click('#inc');
+    ok((await textOf('#countp')) === `count ${was + 2}` && (await E('cdomF.errors.join()')).includes('did not return'),
+      `the next click recovers: drawn with both counts (${JSON.stringify(await textOf('#countp'))}, want count ${was + 2}), and noted: ${JSON.stringify(await E('cdomF.errors'))}`);
+  } else {
+    ok(!threw && (await draws()) === d + 1 && (await textOf('#countp')) === `count ${was + 1}`,
+      `a trap ends the call without a throw, and what C did before it is drawn: ${threw || 'no throw'}, ${(await draws()) - d} draws, ${JSON.stringify(await textOf('#countp'))}`);
+    ok((await E('cdomF.errors.join()')) === 'cdom: C trapped in trap', `and it is noted, once: ${JSON.stringify(await E('cdomF.errors'))}`);
+    // Five calls deep: no level goes on after the trap, and neither does the export.
+    await E('X.trap_deep(5)');
+    ok((await stat(STAT.count)) === was + 1, `a trap five calls deep stops every caller: count ${await stat(STAT.count)}, want ${was + 1}`);
+    ok((await E('cdomF.errors.length')) === 2 && (await E('cdomF.errors[1]')) === 'cdom: C trapped in trap_deep', `noted: ${JSON.stringify(await E('cdomF.errors'))}`);
+    await click('#inc');
+    ok((await textOf('#countp')) === `count ${was + 2}` && (await E('cdomF.errors.length')) === 2,
+      `the next click works as before: ${JSON.stringify(await textOf('#countp'))}, want count ${was + 2}, and nothing more noted`);
+  }
 
   if (measure) {
     // Redraw cost: a page grown to n nodes, X.touch() (one text changed) timed whole and cf_html() alone, 10 of each.

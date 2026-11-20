@@ -40,7 +40,7 @@ export const GAPS = LEVEL !== '' && LEVEL !== '1';
 // what the first tier fetches, when the page starts a pair (APP_SIMD) and this Chrome takes the SIMD twin; the
 // fallbacks take the scalar module's builds, and fetch no .wasm at all.
 export const TIER_FILES = (app, wasm = `${app}.wasm`) => ({ 1: [wasm], 2: ['cdom.legacy.js', `${app}.wasm.js`], 3: ['cdom.legacy-ie9.js', `${app}.wasm.ie9.js`],
-  4: ['cdom.legacy-ie6.js', `${app}.wasm.ie9.js`], 5: ['cdom.frames.js', `${app}.wasm.ie9.js`] });
+  4: ['cdom.legacy-ie6.js', `${app}.wasm.ie9.js`], 5: ['cdom.frames.js', `${app}.wasm.js1.js`] });
 // [pass, message] for the files a page fetched: all of its tier's, none of another's, and only the tier's own .wasm.
 export function tierFetched(got, app, wasm) {
   const files = TIER_FILES(app, wasm), want = files[TIER] || [], other = Object.values(files).flat().filter((f) => !want.includes(f));

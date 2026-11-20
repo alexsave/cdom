@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><title>js1cpu</title></head><div id="m"></div>
+<script>
+/*CDOM_SHIM*/
+</script>
+<script>
+/*CDOM_BOOT*/
+</script>
+<script>
+// The JS 1 transform's CPU test (tests/js1cpu.c, docs/js1-transform-design.md), on the frames tier. Written as the
+// frames tier's own code is, so a real Netscape 3 can parse it: functions declared at the top level, no literals, and no
+// BODY tag (docs/frames-design.md, section 3).
+function cpuReady(x) {
+  X = x;
+  READY = 1;
+}
+READY = 0;
+var cpuOptions = new Object();
+cpuOptions.seed = 7;
+cdomBoot("js1cpu.wasm", "m", null, cpuReady, cpuOptions);
+</script></html>

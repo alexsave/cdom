@@ -7,6 +7,8 @@
 //   node tools/legacy/build.mjs app <in.wasm> <out/in.wasm.js>   the same wasm compiled to JS by wasm2js
 //   node tools/legacy/build.mjs app-ie9 <in.wasm> <out/in.wasm.ie9.js>  the same, on a plain Array of words (memory.mjs),
 //                                                                in ES3: IE 9 and the fourth tier (IE 6 to 8) share it
+//   node tools/legacy/build.mjs app-js1 <in.wasm> <out/in.wasm.js1.js>  the same, on words1.js, rewritten down to JavaScript
+//                                                                1.0 (js1.mjs): the frames tier (docs/js1-transform-design.md)
 //   node tools/legacy/build.mjs page <in.html> <out.html>        inlines shim/boot.js at /*CDOM_BOOT*/
 //   node tools/legacy/build.mjs inputs <shim|app|page> <args>    prints what that build reads, one per line
 // Both outputs must parse as ES5 and name no ES2015 global or method that the polyfills do not supply,
@@ -31,8 +33,10 @@ import { createRequire } from 'node:module';
 let memoryPass;
 // The fourth tier's checks and passes (es3.mjs), loaded as memoryPass is.
 let es3Pass;
-// The frames tier's language gates (js11.mjs), loaded as memoryPass is.
+// The frames tier's language gates (js11.mjs, js10.mjs) and the JS 1 transform (js1.mjs), loaded as memoryPass is.
 let js11Pass;
+let js10Pass;
+let js1Pass;
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 const top = path.resolve(here, '../..');
@@ -223,6 +227,42 @@ async function appWords(wasm, out) {
   return note + code;
 }
 
+// The same app for the frames tier (docs/js1-transform-design.md): the memory pass on words1.js (words.js's layout in
+// JavaScript 1.0), then js1.mjs down to JavaScript 1.0, which must pass the 1.1 gate (Netscape 3 and 4, IE 4: js11.mjs,
+// with nothing allowed) and the 1.0 one (Netscape 2: js10.mjs) before and after it is minified. terser only mangles the
+// locals, as for cdom.frames.js, and with names of letters, digits and _ alone (no $); js1.mjs has already given every
+// top-level name a short c_ one.
+const JS1_FIRST = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_', JS1_REST = JS1_FIRST + '0123456789';
+const js1Names = {
+  get(n) {
+    let s = JS1_FIRST[n % JS1_FIRST.length];
+    for (n = Math.floor(n / JS1_FIRST.length); n > 0; n = Math.floor((n - 1) / JS1_REST.length)) s += JS1_REST[(n - 1) % JS1_REST.length];
+    return s;
+  },
+  consider() {}, reset() {}, sort() {},
+};
+async function appJs1(wasm, out) {
+  memoryPass ??= await import('./memory.mjs');
+  js1Pass ??= await import('./js1.mjs');
+  js11Pass ??= await import('./js11.mjs');
+  js10Pass ??= await import('./js10.mjs');
+  const [head, note] = wasm2js(wasm, out);
+  const words = read(path.join(here, 'words1.js'));
+  const { code: src } = js1Pass.js1(`${words}\n${memoryPass.memoryWords(head, declared(words))}`);
+  const name = path.basename(out);
+  const gate = (what, code) => {
+    js11Pass.js11(what, code);
+    js10Pass.js10(what, code);
+  };
+  gate(name, src);
+  const { minify } = createRequire(path.join(top, 'package.json'))('terser');
+  const { code } = await minify(src, { ecma: 5, compress: false, mangle: { nth_identifier: js1Names },
+    format: { ascii_only: true, beautify: !!process.env.LEGACY_PRETTY } });
+  gate(`${name} once minified`, code);
+  memoryPass.noTypedArrays(name, code);
+  return note + code + '\n';
+}
+
 // The boot is the one script every browser runs. Its two parts (shim/boot.js) go in as two <script>s: the first must
 // be JavaScript 1.0, which Netscape 2 parses (js11.mjs, js10), and both must parse as ES3 and name nothing JScript 5.0
 // (IE 5.0) lacks, since they run before any polyfill.
@@ -298,6 +338,11 @@ function inputs(cmd, a) {
     files.push(path.resolve(a), path.join(here, 'words.js'), path.join(here, 'memory.mjs'), path.join(here, 'es3.mjs'));
     tools.push(wasm2jsVersion());
   }
+  else if (cmd === 'app-js1') {
+    files.push(path.resolve(a), path.join(here, 'words1.js'), path.join(here, 'memory.mjs'), path.join(here, 'js1.mjs'),
+      path.join(here, 'js11.mjs'), path.join(here, 'js10.mjs'));
+    tools.push(wasm2jsVersion());
+  }
   else if (cmd === 'page') files.push(path.join(top, 'shim/boot.js'), path.resolve(a), path.join(here, 'es3.mjs'), path.join(here, 'js11.mjs'));
   return { files: files.map((f) => path.resolve(f)), tools };
 }
@@ -338,7 +383,7 @@ function write(out, data, want, list) {
 }
 
 const [cmd, a, b] = process.argv.slice(2);
-const builds = { 'shim-frames': [1, (out) => shimFrames(out)], shim: [1, (out) => shim(out, '')], 'shim-ie9': [1, (out) => shim(out, 'ie9')], 'shim-ie6': [1, (out) => shim(out, 'ie6')], app: [2, (out) => app(a, out)], 'app-ie9': [2, (out) => appWords(a, out)],
+const builds = { 'shim-frames': [1, (out) => shimFrames(out)], shim: [1, (out) => shim(out, '')], 'shim-ie9': [1, (out) => shim(out, 'ie9')], 'shim-ie6': [1, (out) => shim(out, 'ie6')], app: [2, (out) => app(a, out)], 'app-ie9': [2, (out) => appWords(a, out)], 'app-js1': [2, (out) => appJs1(a, out)],
   page: [2, (out) => page(a, out)] };
 if (cmd === 'inputs' && builds[a]) {
   const list = inputs(a, process.argv[4]);
@@ -357,6 +402,6 @@ if (cmd === 'inputs' && builds[a]) {
     }
   }
 } else {
-  console.error('usage: build.mjs shim <out.js> | shim-ie9 <out.js> | shim-ie6 <out.js> | shim-frames <out.js> | app <in.wasm> <out.js> | app-ie9 <in.wasm> <out.js> | page <in.html> <out.html> | inputs <build> <args>');
+  console.error('usage: build.mjs shim <out.js> | shim-ie9 <out.js> | shim-ie6 <out.js> | shim-frames <out.js> | app <in.wasm> <out.js> | app-ie9 <in.wasm> <out.js> | app-js1 <in.wasm> <out.js> | page <in.html> <out.html> | inputs <build> <args>');
   process.exit(2);
 }

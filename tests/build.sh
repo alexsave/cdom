@@ -74,10 +74,20 @@ node "$legacy" app "$here/out/fptoint.wasm" "$here/out/fptoint.wasm.js"
 node "$legacy" app-ie9 "$here/out/fptoint.wasm" "$here/out/fptoint.wasm.ie9.js"
 page "$here/fptoint.html" "$here/out/fptoint.shim.html" "$here/out/fptoint.wasm"
 node "$legacy" page "$here/out/fptoint.shim.html" "$here/out/fptoint.html"
-# The frames tier (docs/frames-design.md, tools/frames.mjs): its shim, and a page whose app runs from the words build.
+# The frames tier (docs/frames-design.md, tools/frames.mjs): its shim, and a page whose app runs from the wasm2js output
+# rewritten to JavaScript 1.0 (app-js1, docs/js1-transform-design.md). The words build is made too, for tools/frames.mjs's
+# measurements (FRAMES_APP=ie9 serves it in the transformed file's place).
 node "$legacy" shim-frames "$here/out/cdom.frames.js"
 wasm -O2 "$here/out/frames.wasm" "$here/frames.c" "$here/../src/cdom.c" "$here/../src/mini.c"
+node "$legacy" app-js1 "$here/out/frames.wasm" "$here/out/frames.wasm.js1.js"
 node "$legacy" app-ie9 "$here/out/frames.wasm" "$here/out/frames.wasm.ie9.js"
+# The transform's CPU test (tests/js1cpu.c): its page on the frames tier, both builds, and the memory forms through it
+# (tools/js1.mjs runs those against WebAssembly).
+wasm -O2 "$here/out/js1cpu.wasm" "$here/js1cpu.c" "$here/../src/cdom.c" "$here/../src/mini.c"
+node "$legacy" app-js1 "$here/out/js1cpu.wasm" "$here/out/js1cpu.wasm.js1.js"
+node "$legacy" app-ie9 "$here/out/js1cpu.wasm" "$here/out/js1cpu.wasm.ie9.js"
+page "$here/js1cpu.html" "$here/out/js1cpu.shim.html" "$here/out/js1cpu.wasm"
+node "$legacy" page "$here/out/js1cpu.shim.html" "$here/out/js1cpu.html"
 page "$here/frames.html" "$here/out/frames.shim.html" "$here/out/frames.wasm"
 node "$legacy" page "$here/out/frames.shim.html" "$here/out/frames.html"
 sed 's|</head><div id="m">|</head><body><div id="m">|' "$here/out/frames.html" > "$here/out/frames-body.html"
@@ -87,7 +97,7 @@ cp "$here/probe.html" "$here/out/probe.html"
 # The hold that keeps the Utilu IE 5.01 and 5.5 builds from crashing at a page's Done (tools/ie5hold.py) is the test
 # rig's alone: no shipped file and no built page may name its port.
 if grep -l "10.0.2.2:8096" "$here/../shim/"*.js "$here/../tools/legacy/"*.js "$here/"*.html "$here/out/cdom.legacy"*.js \
-  "$here/out/"*.wasm.js "$here/out/"*.ie9.js "$here/out/legacy.html" "$here/out/cdom.frames.js" "$here/out/frames.html"; then
+  "$here/out/"*.wasm.js "$here/out/"*.ie9.js "$here/out/"*.js1.js "$here/out/legacy.html" "$here/out/cdom.frames.js" "$here/out/frames.html"; then
   echo "build.sh: the IE 5 test hold (port 8096) is in a shipped or built file" >&2; exit 1
 fi
 # Every memory access form as wasm, as wasm2js output and through the words pass, for tools/words.mjs to run side
@@ -95,6 +105,7 @@ fi
 "$CC" -O2 "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -o "$here/out/memforms.wasm" "$here/memforms.c"
 node "$legacy" app "$here/out/memforms.wasm" "$here/out/memforms.wasm.js"
 node "$legacy" app-ie9 "$here/out/memforms.wasm" "$here/out/memforms.wasm.ie9.js"
+node "$legacy" app-js1 "$here/out/memforms.wasm" "$here/out/memforms.wasm.js1.js"
 # cd_job (tools/job.mjs): the app, and the synthetic job module built as cdom.mk builds one (APP_JOBS): cdom's heap alone
 # (-DCDOM_HEAP_ONLY), mini.c, cdom_job_mod.c, no string table. The cap build has the heap at 100 pages (6.4 MB), for NO_ROOM.
 jobwasm() { # jobwasm <opt> <out.wasm> <sources and extra flags...>

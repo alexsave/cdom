@@ -12,12 +12,12 @@ const SYNTAX = {
   ThrowStatement: 'throw', ObjectExpression: 'an object literal', ArrayExpression: 'an array literal',
   FunctionExpression: 'a function expression', DebuggerStatement: 'debugger', WithStatement: 'with',
 };
-// Globals of JavaScript 1.3, and the methods of 1.2 and later (on any object: the gate cannot tell an Array's push
+// Globals of JavaScript 1.3 (and isNaN, which Netscape 3 lacks: docs/descent.md), and the methods of 1.2 and later (on any object: the gate cannot tell an Array's push
 // from another's), and the DOM this tier has not. fromCharCode and charCodeAt are allowed where the caller says the
 // file checks for them first. Not here, since 1.0 has them on another object: indexOf and lastIndexOf (a string's;
 // an Array's are ES5), search and replace (location's; a string's are 1.2).
-const GLOBALS = new Set(['undefined', 'NaN', 'Infinity', 'JSON', 'Promise', 'Symbol', 'Map', 'Set', 'globalThis']);
-const METHODS = new Set(['push', 'pop', 'shift', 'unshift', 'splice', 'slice', 'concat', 'call', 'apply', 'charCodeAt',
+const GLOBALS = new Set(['undefined', 'NaN', 'Infinity', 'isNaN', 'JSON', 'Promise', 'Symbol', 'Map', 'Set', 'globalThis']);
+export const METHODS = new Set(['push', 'pop', 'shift', 'unshift', 'splice', 'slice', 'concat', 'call', 'apply', 'charCodeAt',
   'fromCharCode', 'bind', 'forEach', 'map', 'filter', 'keys', 'create', 'defineProperty',
   'addEventListener', 'attachEvent', 'createElement', 'appendChild', 'insertBefore', 'removeChild', 'getElementById',
   'innerHTML', 'match', 'test', 'exec', 'toFixed', 'hasOwnProperty']);
@@ -67,6 +67,9 @@ export function lacks(src, { allowed = [], js10 = false } = {}) {
     if (n.type === 'UnaryExpression' && n.operator === 'delete') add('delete', n);
     if (js10 && n.type === 'UnaryExpression' && (n.operator === 'typeof' || n.operator === 'void')) add(n.operator, n);
     if (n.type === 'Property' && n.kind !== 'init') add('a getter or setter', n);
+    // Measured (docs/descent.md): new Date().getTime() is a syntax error in Netscape 2 and 3, and parentheses are no
+    // help in the gate's eyes (acorn drops them), so a new expression goes into a variable first.
+    if (n.type === 'MemberExpression' && n.object.type === 'NewExpression') add('a member of a new expression', n);
     if (n.type === 'MemberExpression' && !n.computed) {
       const name = n.property.name;
       if (METHODS.has(name) && !ok.has(name)) add(`.${name}`, n);

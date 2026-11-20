@@ -88,6 +88,20 @@ EXPORT("set_note") void set_note(void) { cd_set_str(ids[NOTE], "value", "from C"
 EXPORT("focus_name") void focus_name(void) { cd_call(ids[NAME], "focus"); cd_flush(); }
 /* A trap after the count was set and flushed: the call into C never returns to the shim, which must recover. */
 EXPORT("trap") void trap(void) { cd_set_text_node_num(ids[COUNT], ++count); cd_flush(); __builtin_trap(); }
+/* A trap n calls deep, when armed: each level adds after its call, and the export after it, so on the transformed file
+ * (no throw: a flag and a return after each call, docs/js1-transform-design.md) none of those adds may happen. */
+static volatile uint32_t armed;
+__attribute__((noinline)) static void deep(uint32_t n) {
+  if (n) deep(n - 1);
+  else if (armed) __builtin_trap();
+  count += 100;
+}
+EXPORT("trap_deep") void trap_deep(uint32_t n) {
+  armed = 1;
+  deep(n);
+  count += 1000;
+  cd_set_text_node_num(ids[COUNT], count);
+}
 EXPORT("stat") uint32_t stat(uint32_t k) {
   uint32_t v[] = {count, clicks_path, inputs, changes, checks, focuses, blurs, ticks, items};
   return k < sizeof v / sizeof v[0] ? v[k] : 0;

@@ -36,7 +36,8 @@ var cdomF = new Object();
 cdomF.errors = new Array();
 cdomF.draws = 0;
 
-/* C's memory: the app's words (memory.words of the .ie9.js build), as tools/legacy/memory-words.js reads them. */
+/* C's memory: the app's words (memory.words of the .js1.js build, tools/legacy/words1.js, which has words.js's layout),
+ * as tools/legacy/memory-words.js reads them. */
 var cf_raw = null;   /* the module's exports */
 var cf_mem = null;   /* its memory */
 var cf_W = null;     /* memory.words */
@@ -791,7 +792,10 @@ function cf_op_get(id, path, kind, destPtr, capacity) {
 var cf_tok = new Array();
 var cf_tid = new Array();
 var cf_timers = 0;
-var cf_t0 = (new Date()).getTime();
+/* A new Date goes into a variable before getTime: new Date().getTime(), even in parentheses, is a syntax error in
+ * Netscape 2 and 3 (docs/descent.md), which the 1.1 gate refuses. */
+var cf_d0 = new Date();
+var cf_t0 = cf_d0.getTime();
 function cf_op_timer(ms, token) {
   cf_timers++;
   cf_tok[cf_timers] = token;
@@ -807,10 +811,12 @@ function cf_op_raf(token) {
   setTimeout("cdomF.r(" + token + ")", 16);
 }
 function cf_op_now() {
-  return (new Date()).getTime() - cf_t0;
+  var d = new Date();
+  return d.getTime() - cf_t0;
 }
 function cf_op_epoch() {
-  return (new Date()).getTime();
+  var d = new Date();
+  return d.getTime();
 }
 function cf_op_origin(destPtr, capacity) {
   cf_encode(location.protocol + "//" + location.host, destPtr, capacity);
@@ -901,16 +907,24 @@ var cf_pending = 0;   /* a draw the frame was not there for yet */
 var cf_later = 0;     /* a draw put off by cf_LATER */
 var cf_over = 0;      /* the frameset was written over the page (cf_poll) */
 var cf_waits = 0;
+/* A trap in C (docs/js1-transform-design.md, section 5): the app file has no throw, so C sets its trap flag and every
+ * function returns up to here, where cdom_trapped reads and clears it. The call answers 0, the trap is noted, and the
+ * call ends as any other does: what C did before the trap is drawn, as the first tier's page shows what it did before
+ * its exception. */
 function cf_cRun(name, a, b, c, d, e, f, g, h) {
   var r;
   cf_busy++;
   r = cf_raw[name](a, b, c, d, e, f, g, h);
+  if (cf_raw.cdom_trapped && cf_raw.cdom_trapped()) {
+    cf_fail("cdom: C trapped in " + name);
+    r = 0;
+  }
   cf_busy--;
   if (cf_busy == 0) cf_callEnded();
   return r;
 }
-/* A call into C that never came back (a trap: JavaScript 1.1 has no finally) left the counts up. Only an entry from
- * the browser comes here, which runs with nothing on the stack, so they are put back. */
+/* A call into C that never came back (a trap thrown, in an app file that can throw) left the counts up. Only an
+ * entry from the browser comes here, which runs with nothing on the stack, so they are put back. */
 function cf_recover() {
   if (cf_busy || cf_holds) {
     cf_fail("cdom: a call into C did not return");
