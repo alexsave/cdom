@@ -278,7 +278,8 @@ def png_cases():
     # and the first row Paeth (its row above is the zero row); RGB and RGBA, an odd width. The pixels are a formula
     # (nothing from the rng); Pillow decodes each file to them first, so the filters written are checked apart from
     # this module. The peak limit is what the module held before the wavefront for these files (main at cdc957e: 576 and
-    # 578 KB, rounded up, and the file), so a run takes no more memory.
+    # 578 KB, rounded up, and the file), so a run takes no more memory; and 3 KB more since the fed decoder (the inflate's
+    # 2 KiB carry and the 768-byte PLTE gather of src/cdom_image_png.c's chunk walk, docs/chunked-file-read-design.md).
     plan = []
     while len(plan) < 300:
         for run in (1, 2, 3, 4, 5):
@@ -287,7 +288,7 @@ def png_cases():
     y, x = np.mgrid[0:300, 0:403]
     runs = np.stack([(x * x * 7 + y * 13) % 256, (x * y * 3 + y * y) % 251, (x * 5 + y * 11 + (x ^ y)) % 256], 2).astype(np.uint8)
     ra = ((x * 3 + y * 5) % 256).astype(np.uint8)
-    for (name, ctype, px, rgb, held) in [("rgb", 2, runs, runs, 577), ("rgba", 6, np.concatenate([runs, ra[..., None]], 2), over_white(runs, ra), 579)]:
+    for (name, ctype, px, rgb, held) in [("rgb", 2, runs, runs, 577 + 3), ("rgba", 6, np.concatenate([runs, ra[..., None]], 2), over_white(runs, ra), 579 + 3)]:
         path = write_png(f"paethruns-{name}.png", 403, 300, ctype, 8, [r.reshape(-1) for r in px], plan=plan)
         assert np.array_equal(np.asarray(Image.open(path).convert("RGBA" if ctype == 6 else "RGB")), px), path
         case(f"png-paeth-runs-{name}", path, 300, 300, area_avg(rgb, *fit_box(403, 300, 300, 300)),
@@ -301,7 +302,7 @@ def png_cases():
     path = write_png("paethruns-far.png", 403, 300, 2, 8, [r.reshape(-1) for r in farp], plan=[far[i % 26] for i in range(300)])
     assert np.array_equal(np.asarray(Image.open(path).convert("RGB")), farp), path
     case("png-paeth-runs-far-rgb", path, 300, 300, area_avg(farp, *fit_box(403, 300, 300, 300)),
-         maxkb=-(-os.path.getsize(path) // 1024) + 577)
+         maxkb=-(-os.path.getsize(path) // 1024) + 577 + 3)
 
 # ---------- JPEG ----------
 

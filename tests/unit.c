@@ -1391,6 +1391,23 @@ EXPORT("t_timer_late") void t_timer_late(void) {
   cd_timer_stop(50); cd_timer_stop(52); cd_timer_stop(57); cd_timer_stop(tm_tok[1]);
 }
 EXPORT("t_timer_bad") void t_timer_bad(void) { cd_timer_start(10, CD_TOKEN_CDOM); }
+/* 27b. A 0 ms timer is the next task, not a clamped timeout: a chain of 100 (each fn starts the next) ends
+ * long before 100 nested timeouts could (the HTML spec clamps a nested 0 ms timeout to 4 ms past the fifth);
+ * one stopped as soon as it is started never fires (a callback's, which C drops, and app token 58's, which only
+ * the shim's stop keeps from cd_on_timer); app token 59 at 0 ms reaches cd_on_timer. */
+static uint32_t z_calls, z_stopped;
+static void z_fire(void *ctx) { (void)ctx; if (++z_calls < 100) cd_timer_cb(0, z_fire, 0); }
+static void z_never(void *ctx) { (void)ctx; z_stopped++; }
+EXPORT("t_timer_zero") void t_timer_zero(void) {
+  cd_timer_cb(0, z_fire, 0);
+  cd_timer_stop(cd_timer_cb(0, z_never, 0));
+  cd_timer_start(0, 58); cd_timer_stop(58);
+  cd_timer_start(0, 59);
+}
+/* 0: the chain's calls; 1: the stopped callback's; 2: app token 59 heard; 3: app token 58 (stopped) heard */
+EXPORT("t_timer_zero_seen") uint32_t t_timer_zero_seen(uint32_t k) {
+  return k == 0 ? z_calls : k == 1 ? z_stopped : k == 2 ? app_timer_heard[9] : app_timer_heard[8];
+}
 /* k < 6: callback k's calls (k + 10: did it get its own ctx; k + 20: its token); 30 + i: app token 50 + i heard;
  * 40: cdom tokens heard by cd_on_timer. */
 EXPORT("t_timer_seen") uint32_t t_timer_seen(uint32_t k) {

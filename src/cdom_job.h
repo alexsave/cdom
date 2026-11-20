@@ -5,8 +5,8 @@
  * touched, goes back to the system at once, and none of its time is on the page's main thread.
  * The calls are explicit, with no registry: the module is named by the call. Every answer comes from the
  * event loop, never inside the call, and counts against the 65,535 callbacks pending at once.
- * A worker is a page-wide resource: two jobs at once are two workers. A job has no deadline of its own;
- * an app that wants one starts a cd_timer_cb and ignores a late answer (cd_req_current, cdom.h).
+ * A worker is a page-wide resource: two jobs at once are two workers. A job has no deadline of its own: each call
+ * answers a token, and cd_job_stop(token) ends the job (an app's deadline is a cd_timer_cb that stops it).
  * A page under a Content-Security-Policy needs worker-src blob:, and (bundled) connect-src data:. */
 #ifndef CDOM_JOB_H
 #define CDOM_JOB_H
@@ -26,13 +26,22 @@ typedef void (*cd_job_fn)(void *ctx, uint32_t status, const uint8_t *p, uint32_t
 /* Runs the job module `name` on in (in_len bytes of C memory) and args (args_len bytes of the app's own
  * layout), both read during the call. name is a bundled module's name (APP_JOBS, cdom.mk) or the module's
  * URL; the page compiles it once and keeps it. The input is copied out of C memory once, into an ArrayBuffer that is
- * transferred to the worker, not copied again, and the answer is fn(ctx, status, p, len). */
-void cd_job_cb(const char *name, const void *in, uint32_t in_len, const void *args, uint32_t args_len,
-               cd_job_fn fn, void *ctx);
+ * transferred to the worker, not copied again, and the answer is fn(ctx, status, p, len). Answers the job's token,
+ * for cd_job_stop. */
+uint32_t cd_job_cb(const char *name, const void *in, uint32_t in_len, const void *args, uint32_t args_len,
+                   cd_job_fn fn, void *ctx);
 /* The same, the input a picked file (index of node input's files list, as cd_file_read): the worker reads
  * it straight into the job's memory, and it never enters the app's. No size limit but the job's own room:
  * a file the job's memory cannot hold is NO_ROOM. */
-void cd_job_file_cb(const char *name, cd_id input, uint32_t index, const void *args, uint32_t args_len,
-                    cd_job_fn fn, void *ctx);
+uint32_t cd_job_file_cb(const char *name, cd_id input, uint32_t index, const void *args, uint32_t args_len,
+                        cd_job_fn fn, void *ctx);
+/* As cd_job_file_cb, but the job takes the file in pieces, in order, and never holds it whole: its module defines
+ * the pieces_* entries (cdom_job_mod.h) in place of run, and the worker reads the file's stream into the room the job
+ * names, pieces_max bytes at a time. A stream that ends before the file's size is FAILED. */
+uint32_t cd_job_pieces_cb(const char *name, cd_id input, uint32_t index, const void *args, uint32_t args_len,
+                          cd_job_fn fn, void *ctx);
+/* Ends the job token names: its worker is terminated (or never started), and its callback is never called. A
+ * token already answered or stopped does nothing. */
+void cd_job_stop(uint32_t token);
 
 #endif

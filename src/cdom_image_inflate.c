@@ -212,23 +212,13 @@ static int build(const uint8_t *lens, uint32_t n, uint32_t *t, uint32_t tn, uint
 
 /* ---- the stream ---- */
 
-typedef struct {
-  uint64_t bb;             /* the bit buffer: the next bits of the stream from bit 0; nothing above bl */
-  uint32_t bl;             /* its bits */
-  uint32_t pad;            /* zero bytes put in past the end of the input (each 8 bits of bb) */
-  const uint8_t *in, *end; /* the piece being read */
-  cd_inflate_in more;
-  void *ctx;
-  int done;                /* no more pieces */
-} bits;
+typedef cd_inflate bits;   /* the input's fields of the state */
+typedef cd_inflate sink;   /* the output's */
 
-/* The next byte, from this piece or the next; past the end, a zero counted in pad. */
+/* The next byte; past the end of the input (only when it is the last), a zero counted in pad. A put never reads
+ * past its end otherwise: it decodes only while CD_INFLATE_LOOK bytes are ahead. */
 static uint32_t next_byte(bits *s) {
-  while (s->in == s->end) {
-    const uint8_t *p; uint32_t n;
-    if (s->done || !s->more(s->ctx, &p, &n)) { s->done = 1; s->pad++; return 0; }
-    s->in = p; s->end = p + n;
-  }
+  if (s->in == s->end) { s->pad++; return 0; }
   return *s->in++;
 }
 /* At least n bits (n <= 56) in the buffer. */
@@ -243,16 +233,9 @@ static inline uint32_t take(bits *s, uint32_t n) {
   s->bb >>= n; s->bl -= n;
   return v;
 }
-
-typedef struct {
-  uint8_t *buf;            /* the output buffer: buf[0 .. pos) made and not dropped */
-  uint32_t cap, pos;
-  uint32_t adl;            /* buf[0 .. adl) is in the adler32 */
-  uint32_t adler;
-  uint64_t total;          /* bytes made since the start */
-  cd_inflate_out out;
-  void *ctx;
-} sink;
+/* The bytes ahead of the bit buffer; 1 when a put may go on reading: LOOK of them, or the last of the input. */
+static inline uint32_t ahead(const bits *s) { return (uint32_t)(s->end - s->in); }
+static inline int may_read(const bits *s) { return s->last || ahead(s) >= CD_INFLATE_LOOK; }
 
 /* Hands buf[0 .. pos) to the sink and drops what it lets go; 0 when the sink stops. */
 static int flush(sink *o, int last) {
@@ -290,20 +273,23 @@ static inline void copy_match(uint8_t *o, uint32_t dist, uint32_t len) {
   }
 }
 
-/* The body of one Huffman block, codes in lt and dt. 1 at its end, 0 on a bad stream or a stopped sink (*st). */
+/* The body of one Huffman block, codes in lt and dt. 1 at its end, 0 on a bad stream, a stopped sink (*st STOPPED),
+ * or the input's end short of LOOK bytes ahead when it is not the last (*st MORE: the next put goes on from here). */
 static int huff_block(bits *s, sink *o, const uint32_t *lt, const uint32_t *dt, uint32_t *st) {
   const uint32_t lm = (1u << LBITS) - 1, dm = (1u << DBITS) - 1;
   for (;;) {
     /* the fast loop: no checks of the input or the buffer inside but one, on out. Each turn starts with 56 bits
-     * or more in the buffer and the next entry e looked up. */
-    if (o->cap - o->pos >= FAST_OUT && s->end - s->in >= FAST_IN) {
+     * or more in the buffer and the next entry e looked up. It leaves look bytes of input ahead: its worst case at
+     * the last piece, or LOOK before it (the input the slower loop below may still need). */
+    const uint32_t look = s->last ? FAST_IN : CD_INFLATE_LOOK;
+    if (o->cap - o->pos >= FAST_OUT && ahead(s) >= look) {
       uint64_t bb = s->bb;
       uint32_t bl = s->bl;     /* each entry's whole value is taken off it: only its low 6 bits are the count */
       const uint8_t *in = s->in;
       uint8_t *const start = o->buf, *out = start + o->pos, *out_lim = start + o->cap - FAST_OUT;
       /* one limit: a turn refills once (7 bytes at most) and writes a byte or more, so with out at most the input's
-       * room past FAST_IN over 8 from here, each refill's 8-byte load stays in the piece */
-      size_t turns = (size_t)(s->end - in - FAST_IN) / 8;
+       * room past look over 8 from here, each refill's 8-byte load stays in the piece and look bytes stay ahead */
+      size_t turns = (size_t)(ahead(s) - look) / 8;
       if ((size_t)(out_lim - out) > turns) out_lim = out + turns;
 #define REFILL() do { bb |= load64(in) << (bl & 63); in += (63 - (bl & 63)) >> 3; bl = (bl & 63) | 56; } while (0)
 #define SAVE() do { s->bb = bb; s->bl = bl & 63; s->in = in; o->total += (uint64_t)(out - (start + o->pos)); o->pos = (uint32_t)(out - start); } while (0)
@@ -388,7 +374,8 @@ static int huff_block(bits *s, sink *o, const uint32_t *lt, const uint32_t *dt, 
       if (!flush(o, 0) || o->cap - o->pos < FAST_OUT) { *st = CD_INFLATE_STOPPED; return 0; }
       continue;
     }
-    /* one symbol, checked: the input may cross a piece or end (a length code and its extra bits take 20 at most) */
+    /* one symbol, checked: the input may end (a length code and its extra bits take 20 at most) */
+    if (!may_read(s)) { *st = CD_INFLATE_MORE; return 0; }
     need(s, 20);
     uint32_t e = lt[s->bb & lm];
     if (E_CLASS(e) == C_OTHER && E_OTHER(e) == O_SUB) {
@@ -467,52 +454,132 @@ static void fixed(uint32_t *lt, uint32_t *dt) {
   build(lens, 32, dt, CD_INFLATE_DT, DBITS, 1, 0);
 }
 
-uint32_t cd_inflate_zlib(cd_inflate *z, uint8_t *buf, uint32_t cap, cd_inflate_in more, cd_inflate_out out, void *ctx) {
-  bits s = {0, 0, 0, 0, 0, more, ctx, 0};
-  sink o = {buf, cap, 0, 0, 1, 0, out, ctx};
-  uint32_t st = CD_INFLATE_CORRUPT;
+enum { S_HEADER, S_BLOCK, S_HUFF, S_STORED, S_ADLER, S_DONE };
+
+void cd_inflate_begin(cd_inflate *z, uint8_t *buf, uint32_t cap, cd_inflate_out out, void *ctx) {
   _Static_assert(CD_INFLATE_CAP_MIN == CD_INFLATE_WINDOW + FAST_OUT + 1024, "the header's floor is the fast loop's room and 1 KB");
-  if (cap < CD_INFLATE_CAP_MIN) return CD_INFLATE_CORRUPT;
-  uint32_t cmf = take(&s, 8), flg = take(&s, 8);
-  if (cut(&s) || (cmf & 15) != 8 || (cmf >> 4) > 7 || (cmf * 256 + flg) % 31 || (flg & 32)) return st;
+  _Static_assert(CD_INFLATE_LOOK >= FAST_IN, "the look-ahead covers the fast loop's");
+  z->bb = 0; z->bl = 0; z->pad = 0; z->in = z->end = 0; z->last = 0;
+  z->buf = buf; z->cap = cap; z->pos = 0; z->adl = 0; z->adler = 1; z->total = 0; z->out = out; z->ctx = ctx;
+  z->stage = S_HEADER; z->final = 0; z->stored = 0; z->status = CD_INFLATE_CORRUPT; z->carry_n = 0;
+  if (cap < CD_INFLATE_CAP_MIN) z->stage = S_DONE;
+}
+
+/* The stream from z->in to z->end, as far as it goes: from the stage it stopped at, MORE when it stops for want of
+ * input (at a block's header, between two symbols, in a stored block, before the adler32), else its final answer. */
+static uint32_t run(cd_inflate *z) {
+  bits *s = z;
+  sink *o = z;
+  const uint32_t bad = CD_INFLATE_CORRUPT;
   for (;;) {
-    uint32_t last = take(&s, 1), type = take(&s, 2);
-    if (cut(&s)) return st;
-    if (type == 0) {                                         /* stored: to a byte, LEN, NLEN, the bytes */
-      s.bb >>= s.bl & 7; s.bl &= ~7u;
-      s.bb &= (1ull << s.bl) - 1;   /* the bytes below are taken past the bit buffer: no read-ahead bits above it */
-      uint32_t len = take(&s, 16), nlen = take(&s, 16);
-      if (cut(&s) || len != (~nlen & 0xffff)) return st;
-      while (len) {
-        if (o.cap - o.pos < FAST_OUT && (!flush(&o, 0) || o.cap - o.pos < FAST_OUT)) return CD_INFLATE_STOPPED;
-        uint32_t n = 0, room = o.cap - o.pos;
-        if (s.bl) { o.buf[o.pos] = (uint8_t)s.bb; s.bb >>= 8; s.bl -= 8; n = 1; }
-        else {
-          if (s.in == s.end) { o.buf[o.pos] = (uint8_t)next_byte(&s); if (s.pad) return st; n = 1; }
-          else {
-            n = (uint32_t)(s.end - s.in);
-            if (n > len) n = len;
-            if (n > room) n = room;
-            memcpy(o.buf + o.pos, s.in, n);
-            s.in += n;
-          }
-        }
-        o.pos += n; o.total += n; len -= n;
+    switch (z->stage) {
+      case S_HEADER: {
+        if (!may_read(s)) return CD_INFLATE_MORE;
+        uint32_t cmf = take(s, 8), flg = take(s, 8);
+        if (cut(s) || (cmf & 15) != 8 || (cmf >> 4) > 7 || (cmf * 256 + flg) % 31 || (flg & 32)) return bad;
+        z->stage = S_BLOCK;
+        break;
       }
-    } else if (type == 3) {
-      return st;
-    } else {
-      if (type == 1) fixed(z->lt, z->dt);
-      else if (!dynamic(&s, z->lt, z->dt)) return st;
-      if (!huff_block(&s, &o, z->lt, z->dt, &st)) return st;
+      case S_BLOCK: {
+        if (!may_read(s)) return CD_INFLATE_MORE;
+        z->final = take(s, 1);
+        uint32_t type = take(s, 2);
+        if (cut(s)) return bad;
+        if (type == 0) {                                     /* stored: to a byte, LEN, NLEN, the bytes */
+          s->bb >>= s->bl & 7; s->bl &= ~7u;
+          s->bb &= (1ull << s->bl) - 1;   /* the bytes below are taken past the bit buffer: no read-ahead bits above it */
+          uint32_t len = take(s, 16), nlen = take(s, 16);
+          if (cut(s) || len != (~nlen & 0xffff)) return bad;
+          z->stored = len;
+          z->stage = S_STORED;
+        } else if (type == 3) {
+          return bad;
+        } else {
+          if (type == 1) fixed(z->lt, z->dt);
+          else if (!dynamic(s, z->lt, z->dt)) return bad;
+          z->stage = S_HUFF;
+        }
+        break;
+      }
+      case S_HUFF: {
+        uint32_t st = bad;
+        if (!huff_block(s, o, z->lt, z->dt, &st)) return st;
+        z->stage = z->final ? S_ADLER : S_BLOCK;
+        break;
+      }
+      case S_STORED:
+        while (z->stored) {
+          if (o->cap - o->pos < FAST_OUT && (!flush(o, 0) || o->cap - o->pos < FAST_OUT)) return CD_INFLATE_STOPPED;
+          uint32_t n = 0, room = o->cap - o->pos;
+          if (s->bl) { o->buf[o->pos] = (uint8_t)s->bb; s->bb >>= 8; s->bl -= 8; n = 1; }
+          else if (s->in == s->end) {
+            if (!s->last) return CD_INFLATE_MORE;
+            return bad;                                      /* cut inside a stored block */
+          } else {
+            n = (uint32_t)(s->end - s->in);
+            if (n > z->stored) n = z->stored;
+            if (n > room) n = room;
+            memcpy(o->buf + o->pos, s->in, n);
+            s->in += n;
+          }
+          o->pos += n; o->total += n; z->stored -= n;
+        }
+        z->stage = z->final ? S_ADLER : S_BLOCK;
+        break;
+      case S_ADLER: {                                        /* the adler32, big-endian, from the next whole byte */
+        if (!s->last && ahead(s) < 8) return CD_INFLATE_MORE;
+        s->bb >>= s->bl & 7; s->bl &= ~7u;
+        uint32_t a = take(s, 8) << 24;
+        a |= take(s, 8) << 16; a |= take(s, 8) << 8; a |= take(s, 8);
+        if (cut(s)) return bad;
+        if (!flush(o, 1)) return CD_INFLATE_STOPPED;
+        return a == o->adler ? CD_INFLATE_OK : bad;
+      }
+      default:
+        return z->status;
     }
-    if (last) break;
   }
-  /* the adler32, big-endian, from the next whole byte */
-  s.bb >>= s.bl & 7; s.bl &= ~7u;
-  uint32_t a = take(&s, 8) << 24;
-  a |= take(&s, 8) << 16; a |= take(&s, 8) << 8; a |= take(&s, 8);
-  if (cut(&s)) return st;
-  if (!flush(&o, 1)) return CD_INFLATE_STOPPED;
-  return a == o.adler ? CD_INFLATE_OK : st;
+}
+
+/* run over p[0 .. n): the bytes it used, through *used; the answer is run's (a final one ends the stream). */
+static uint32_t run_on(cd_inflate *z, const uint8_t *p, uint32_t n, int last, uint32_t *used) {
+  z->in = p; z->end = p + n; z->last = last;
+  uint32_t st = run(z);
+  *used = (uint32_t)(z->in - p);
+  z->in = z->end = 0;
+  if (st != CD_INFLATE_MORE) { z->status = st; z->stage = S_DONE; }
+  return st;
+}
+
+/* The carry holds a tail the stream could not use yet (under LOOK bytes). New bytes join it until it holds
+ * CD_INFLATE_CARRY (or the input ends), so each run over it takes LOOK or more; once what it leaves lies in the
+ * new bytes, the run goes on over those where they are, and keeps their own tail in the carry. */
+uint32_t cd_inflate_put(cd_inflate *z, const uint8_t *p, uint32_t n, int last) {
+  static const uint8_t none[1];
+  uint32_t used, st;
+  if (z->stage == S_DONE) return z->status;
+  if (!p) p = none;                                         /* n is 0: no arithmetic on a null pointer */
+  while (z->carry_n) {
+    uint32_t k = CD_INFLATE_CARRY - z->carry_n;
+    if (k > n) k = n;
+    if (k) memcpy(z->carry + z->carry_n, p, k);
+    z->carry_n += k; p += k; n -= k;
+    int fin = last && !n;
+    if (z->carry_n < CD_INFLATE_CARRY && !fin) return CD_INFLATE_MORE;
+    st = run_on(z, z->carry, z->carry_n, fin, &used);
+    if (st != CD_INFLATE_MORE) return st;
+    uint32_t r = z->carry_n - used;                         /* under LOOK: those bytes are the last r it holds */
+    if (r <= k) { p -= r; n += r; z->carry_n = 0; }        /* all in the new bytes: go on there */
+    else { memmove(z->carry, z->carry + used, r); z->carry_n = r; }
+  }
+  if (!last && n < CD_INFLATE_CARRY) {                      /* too few to run on: into the carry */
+    if (n) memcpy(z->carry, p, n);
+    z->carry_n = n;
+    return CD_INFLATE_MORE;
+  }
+  st = run_on(z, p, n, last, &used);
+  if (st != CD_INFLATE_MORE) return st;
+  z->carry_n = n - used;
+  if (z->carry_n) memcpy(z->carry, p + used, z->carry_n);
+  return CD_INFLATE_MORE;
 }

@@ -317,6 +317,18 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
     });
   }
   {
+    // 27b. A 0 ms timer is the next task.
+    const t0 = performance.now();
+    x.t_timer_zero();
+    await until(() => x.t_timer_zero_seen(0) === 100, 2000);
+    const ms = performance.now() - t0;
+    await new Promise((r) => setTimeout(r, 30));
+    check('a 0 ms timer is the next task: a chain of 100 cd_timer_cb(0) ends in under 150 ms (100 nested timeouts take 380 or more), one stopped at once never fires (a callback, an app token), an app token at 0 ms reaches cd_on_timer', () => {
+      const r = [ms < 150, x.t_timer_zero_seen(1) === 0, x.t_timer_zero_seen(2) === 1, x.t_timer_zero_seen(3) === 0];
+      return r.every(Boolean) || JSON.stringify({ r, ms });
+    });
+  }
+  {
     // 28. cd_http_cb, against tools/unit.mjs's server (the page's own origin).
     const seen = (k) => [0, 1, 2, 3, 4, 5, 6].map((f) => x.t_http_cb_seen(k, f)).join();
     x.t_http_cb();

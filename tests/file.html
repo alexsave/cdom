@@ -7,6 +7,11 @@
 // so a file answered TOO_BIG can be seen never to have been read. The module is the page's own name:
 // file.html runs file.wasm, file_cap.html file_cap.wasm (each page has its module's string table).
 window.READS = [];
+// The reader's test: EPOCH moves on once per task (a message to the page itself, posted again from each), while
+// window.TICKING; a piece's answer reads it, so two answers in one task show as one epoch.
+window.EPOCH = 0;
+window.tick = () => { const c = new MessageChannel(); window.TICKING = true;
+  c.port1.onmessage = () => { EPOCH++; if (window.TICKING) c.port2.postMessage(0); }; c.port2.postMessage(0); };
 const readAs = FileReader.prototype.readAsArrayBuffer;
 FileReader.prototype.readAsArrayBuffer = function (blob) { READS.push(blob.size); return readAs.call(this, blob); };
 cdom.start(location.pathname.replace(/\.html$/, '.wasm'), 'm').then((x) => { window.X = x; window.READY = true; });
