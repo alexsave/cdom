@@ -10,14 +10,18 @@ var cdomVml = (function (w, doc) {
   var TAGS = ["shape", "fill", "stroke"];  /* every v: tag made here (make), each with its behavior rule */
   var SHAPE = { path: 1, rect: 1, circle: 1, ellipse: 1, line: 1, polyline: 1, polygon: 1 };
   /* Inherited from the nearest svg or g that sets them, as SVG's presentation attributes are. */
-  var PAINT = { fill: 1, stroke: 1, "stroke-width": 1, "fill-opacity": 1, "stroke-opacity": 1 };
-  var PAINTS = ["fill", "stroke", "stroke-width", "fill-opacity", "stroke-opacity"];
+  var PAINT = { fill: 1, stroke: 1, "stroke-width": 1, "fill-opacity": 1, "stroke-opacity": 1, "font-family": 1,
+    "font-size": 1, "font-style": 1, "font-weight": 1, "text-anchor": 1 };
+  var PAINTS = ["fill", "stroke", "stroke-width", "fill-opacity", "stroke-opacity", "font-family", "font-size",
+    "font-style", "font-weight", "text-anchor"];
+  var ASCENTS = {};                  /* ascent(): a font's baseline below the top of its line at 100 px, by font */
   var COLOURS = {};                  /* colour()'s answers, each worked out once ("k" and the value: no prototype names) */
   /* Attributes that hide their node while set: what VML cannot draw. */
   var HIDES = { "clip-path": 1, mask: 1, filter: 1, "marker-start": 1, "marker-mid": 1, "marker-end": 1 };
   var NAMED = /^[a-z]+$/;
   var ready = false;
   var held = [];                     /* shapes changed during this call into C, drawn once when it ends (drawHeld) */
+  var loose = [];                    /* svgs sized in a unit while out of the page, measured again when the call ends */
   var lost = [];                     /* the kinds of SVG met that are not drawn, each once */
   var seen = {};
 
@@ -319,7 +323,7 @@ var cdomVml = (function (w, doc) {
 
   /* --- the nodes ---------------------------------------------------------------------------------------------- */
 
-  /* The node for the SVG element tag. Its state is node.$vml: kind (0 the svg, 1 a g, 2 a shape, 3 not drawn), the
+  /* The node for the SVG element tag. Its state is node.$vml: kind (0 an svg, 1 a g, 2 a shape, 3 not drawn, 4 a text), the
    * SVG attributes set on it (a), what hides it (hide), and for a shape its v:fill and v:stroke and the last path key.
    * The svg and a g are spans, not v:group: IE 6 measures a v:group by what it holds, not by its width and height, and
    * does not clip to it, where a span with overflow hidden is the svg's box and clips as an svg does (docs/vml-design.md,
@@ -352,27 +356,72 @@ var cdomVml = (function (w, doc) {
       el.appendChild(st.vs);
       return el;
     }
+    if (tag === "text") {
+      /* An HTML span at the text's baseline, in its font scaled by the CTM: VML's own text (v:textpath) stretches the
+       * text along a path, and a span draws it as the browser draws text. */
+      el = doc.createElement("span");
+      el.$vml = { kind: 4, tag: tag, a: {}, hide: {}, key: "" };
+      el.style.cssText = "position:absolute;left:0;top:0;white-space:nowrap;line-height:normal";
+      return el;
+    }
     report("<" + tag + ">");
     el = doc.createElement("span");
     el.style.display = "none";
     el.$vml = { kind: 3, tag: tag, a: {}, hide: {} };
     return el;
   }
-  /* The svg's box: its size in pixels (300 by 150 when it says none, as a browser's), clipping what it holds. */
-  function frame(el) {
-    var a = el.$vml.a, s = el.style;
-    s.position = "relative";
+  /* Whether svg el is the outermost: one in another svg (or in a g) is a viewport inside it, placed by its x and y. */
+  function outermost(el) {
+    var p = el.parentNode;
+    return !(p && p.$vml);
+  }
+  /* A length of the outermost svg as CSS: a plain number is pixels, and a unit (em, %, ...) is left to CSS. */
+  function cssLength(v, dflt) {
+    if (v === void 0 || /^\s*[+\-]?(\d+\.?\d*|\.\d+)(px)?\s*$/.test(v)) return Math.round(num(v, dflt)) + "px";
+    return v;
+  }
+  /* The svg's box, clipping what it holds. The outermost: its size (300 by 150 when it says none, as a browser's), in
+   * the page's flow. One inside: at its x and y and of its width and height, in the units of what holds it (ctx). */
+  function frame(el, ctx) {
+    var a = el.$vml.a, s = el.style, m;
     s.overflow = "hidden";
-    s.width = Math.round(num(a.width, 300)) + "px";
-    s.height = Math.round(num(a.height, 150)) + "px";
+    if (!ctx) {
+      s.position = "relative";
+      s.width = cssLength(a.width, 300);
+      s.height = cssLength(a.height, 150);
+    } else {
+      m = ctx.m;
+      s.position = "absolute";
+      s.left = Math.round(m[0] * num(a.x, 0) + m[2]) + "px";
+      s.top = Math.round(m[1] * num(a.y, 0) + m[3]) + "px";
+      s.width = Math.round(m[0] * num(a.width, 0)) + "px";
+      s.height = Math.round(m[1] * num(a.height, 0)) + "px";
+    }
     hidden(el);
   }
-  /* The svg's CTM: its viewBox into its box, preserveAspectRatio's default (xMidYMid meet). */
-  function rootMatrix(a) {
-    var W = num(a.width, 300), H = num(a.height, 150), vb = a.viewBox ? numbers(a.viewBox) : [];
+  /* An outermost svg's size in pixels: as it says, or, given in a unit, as CSS laid it out (em: the formulas of a
+   * LaTeX page), or 16 px an em while it is out of the page. */
+  function size(el, v, dflt, px) {
+    if (v === void 0 || !/[a-df-z%]\s*$/i.test(v) || /px\s*$/.test(v)) return num(v, dflt);
+    if (px > 0) return px;
+    if (!el.$vml.loose) {
+      el.$vml.loose = true;
+      loose[loose.length] = el;
+    }
+    return num(v, dflt) * (/em\s*$/.test(v) ? 16 : 1);
+  }
+  /* The map of an svg's viewBox into its box of W by H: [sx, sy, tx, ty], by preserveAspectRatio (xMidYMid meet when it
+   * says none). */
+  function viewMap(a, W, H) {
+    var vb = a.viewBox ? numbers(a.viewBox) : [], par = a.preserveAspectRatio || "", sx, sy, s, ax, ay;
     if (vb.length !== 4 || vb[2] <= 0 || vb[3] <= 0) return [1, 1, 0, 0];
-    var s = Math.min(W / vb[2], H / vb[3]);
-    return [s, s, (W - vb[2] * s) / 2 - vb[0] * s, (H - vb[3] * s) / 2 - vb[1] * s];
+    sx = W / vb[2];
+    sy = H / vb[3];
+    if (/^\s*none/.test(par)) return [sx, sy, -vb[0] * sx, -vb[1] * sy];
+    s = /slice/.test(par) ? Math.max(sx, sy) : Math.min(sx, sy);
+    ax = /xMin/.test(par) ? 0 : /xMax/.test(par) ? 1 : 0.5;
+    ay = /YMin/.test(par) ? 0 : /YMax/.test(par) ? 1 : 0.5;
+    return [s, s, (W - vb[2] * s) * ax - vb[0] * s, (H - vb[3] * s) * ay - vb[1] * s];
   }
   /* What a node's children see: the CTM, the inherited paint, and the opacity so far. An svg or g keeps it (inner),
    * set whenever it is drawn again (redraw), which every change to it or to what it is in, and every move of it, does:
@@ -382,7 +431,7 @@ var cdomVml = (function (w, doc) {
     if (el && el.$vml && el.$vml.inner) return el.$vml.inner;
     while (p && p.$vml && p.$vml.kind !== 2) {
       chain[chain.length] = p;
-      if (p.$vml.kind === 0) break;
+      if (p.$vml.kind === 0 && outermost(p)) break;
       p = p.parentNode;
     }
     ctx = { m: [1, 1, 0, 0], paint: {}, opacity: 1 };
@@ -403,8 +452,16 @@ var cdomVml = (function (w, doc) {
       }
       paint[PAINTS[j]] = a[PAINTS[j]];
     }
-    own = st.kind === 0 ? rootMatrix(a) : a.transform ? st.tm : null;
-    if (own && typeof own !== "string") m = [m[0] * own[0], m[1] * own[1], m[0] * own[2] + m[2], m[1] * own[3] + m[3]];
+    if (st.kind === 0 && outermost(el)) {
+      m = viewMap(a, size(el, a.width, 300, el.offsetWidth), size(el, a.height, 150, el.offsetHeight));
+    } else if (st.kind === 0) {
+      /* inside another svg: the box is a span at its x and y (frame), so what it holds is drawn from that corner */
+      own = viewMap(a, num(a.width, 0), num(a.height, 0));
+      m = [m[0] * own[0], m[1] * own[1], m[0] * own[2], m[1] * own[3]];
+    } else if (a.transform && typeof st.tm !== "string") {
+      own = st.tm;
+      m = [m[0] * own[0], m[1] * own[1], m[0] * own[2] + m[2], m[1] * own[3] + m[3]];
+    }
     return { m: m, paint: paint, opacity: ctx.opacity * num(a.opacity, 1) };
   }
   /* The SVG path of a shape's geometry. */
@@ -444,9 +501,15 @@ var cdomVml = (function (w, doc) {
     for (j = 2; j + 1 < p.length; j += 2) s += "L" + p[j] + " " + p[j + 1];
     return t === "polygon" ? s + "Z" : s;
   }
-  /* A paint's VML colour, or "" for none (reported when it is one VML cannot draw). */
-  function paintOf(v) {
-    var c = colour(v);
+  /* A paint's VML colour, or "" for none (reported when it is one VML cannot draw). currentColor is the CSS color of el,
+   * read when it is drawn (IE's currentStyle; getComputedStyle elsewhere): VML has no keyword for it. */
+  function paintOf(v, el) {
+    var c, cs;
+    if (v.toLowerCase() === "currentcolor") {
+      cs = el.currentStyle || (w.getComputedStyle ? w.getComputedStyle(el, null) : null);
+      v = cs && cs.color ? cs.color : v;
+    }
+    c = colour(v);
     if (c === null) {
       report("paint " + v.split("(")[0]);
       return "";
@@ -461,8 +524,8 @@ var cdomVml = (function (w, doc) {
       st.key = key;
       el.path = g ? path(g, m[0], m[1], m[2], m[3]) : "m0,0 e";
     }
-    var fill = st.tag === "line" ? "" : paintOf(paint["fill"] !== void 0 ? paint["fill"] : "black");
-    var stroke = paintOf(paint.stroke !== void 0 ? paint.stroke : "none");
+    var fill = st.tag === "line" ? "" : paintOf(paint["fill"] !== void 0 ? paint["fill"] : "black", el);
+    var stroke = paintOf(paint.stroke !== void 0 ? paint.stroke : "none", el);
     var weight = num(paint["stroke-width"], 1) * Math.sqrt(m[0] * m[1]);
     var w = Math.round(weight * 100) / 100 + "px";
     var fo = String(Math.round(own.opacity * num(paint["fill-opacity"], 1) * 1000) / 1000);
@@ -482,6 +545,48 @@ var cdomVml = (function (w, doc) {
     if (fo !== st.fo) st.vf.opacity = st.fo = fo;
     if (so !== st.so) st.vs.opacity = st.so = so;
   }
+  /* The distance from the top of a line of text to its baseline, in pixels at a font size of 100 px, in the font that
+   * style, weight and family name: an image of height 1 on the baseline, in a span of that font out of view, whose
+   * top is the line's. Measured once a font, while the page has a body; 80 until then. */
+  function ascent(style, weight, family) {
+    var key = "k" + style + "|" + weight + "|" + family, c = ASCENTS[key], box, img, body = doc.body;
+    if (c !== void 0) return c;
+    if (!body) return 80;
+    box = doc.createElement("span");
+    box.style.cssText = "position:absolute;left:-10000px;top:0;visibility:hidden;white-space:nowrap;line-height:normal;font-size:100px";
+    box.style.fontStyle = style;
+    box.style.fontWeight = weight;
+    box.style.fontFamily = family;
+    box.appendChild(doc.createTextNode("x"));
+    img = doc.createElement("img");
+    img.width = 1;
+    img.height = 1;
+    img.style.verticalAlign = "baseline";
+    box.appendChild(img);
+    body.appendChild(box);
+    c = img.offsetTop + img.offsetHeight;
+    body.removeChild(box);
+    if (c > 0) ASCENTS[key] = c;
+    return c > 0 ? c : 80;
+  }
+  /* Draws text el: its x and y through the CTM, its font size by the CTM's vertical scale, its fill as the colour. */
+  function drawText(el, ctx) {
+    var st = el.$vml, own = within(el, ctx), m = own.m, paint = own.paint, a = st.a, s = el.style;
+    var px = num(paint["font-size"], 16) * m[1], style = paint["font-style"] || "normal";
+    var weight = paint["font-weight"] || "normal", family = paint["font-family"] || "serif";
+    var fill = paint["fill"] !== void 0 ? paint["fill"] : "black", anchor = paint["text-anchor"];
+    var left = m[0] * num(a.x, 0) + m[2], top = m[1] * num(a.y, 0) + m[3] - ascent(style, weight, family) * px / 100;
+    s.fontSize = Math.round(px * 100) / 100 + "px";
+    s.fontStyle = style;
+    s.fontWeight = weight;
+    s.fontFamily = family;
+    /* currentColor is the CSS color the span inherits */
+    s.color = fill.toLowerCase() === "currentcolor" ? "" : paintOf(fill, el);
+    s.visibility = fill === "none" ? "hidden" : "";
+    if (anchor === "middle" || anchor === "end") left -= el.offsetWidth * (anchor === "end" ? 1 : 0.5);
+    s.left = Math.round(left) + "px";
+    s.top = Math.round(top) + "px";
+  }
   /* Draws el and everything in it again, given what its parents give it. */
   function redraw(el, ctx) {
     var st = el.$vml, c, inner;
@@ -489,9 +594,14 @@ var cdomVml = (function (w, doc) {
       draw(el, ctx);
       return;
     }
+    if (st.kind === 4) {
+      drawText(el, ctx);
+      return;
+    }
     if (st.kind === 3) return;
-    if (st.kind === 0) frame(el);
-    inner = st.inner = within(el, st.kind === 0 ? { m: [1, 1, 0, 0], paint: {}, opacity: 1 } : ctx);
+    if (st.kind === 0 && outermost(el)) ctx = { m: [1, 1, 0, 0], paint: {}, opacity: 1 };
+    if (st.kind === 0) frame(el, outermost(el) ? null : ctx);
+    inner = st.inner = within(el, ctx);
     for (c = el.firstChild; c; c = c.nextSibling) {
       if (c.$vml) redraw(c, inner);
     }
@@ -499,7 +609,7 @@ var cdomVml = (function (w, doc) {
   /* el's state changed, or it moved: it and what it holds are drawn again from its parents' state. */
   function refresh(el) {
     var st = el.$vml;
-    redraw(el, st.kind === 0 ? null : context(el.parentNode));
+    redraw(el, st.kind === 0 && outermost(el) ? null : context(el.parentNode));
   }
   /* Hides el while it has an attribute or transform VML cannot draw. */
   function hidden(el) {
@@ -534,14 +644,14 @@ var cdomVml = (function (w, doc) {
       st.hide.transform = typeof t === "string";
       hidden(el);
     }
-    if (st.kind === 2) hold(el);
-    else if (name === "transform" || name === "opacity" || PAINT[name] === 1 ||
-        (st.kind === 0 && (name === "width" || name === "height" || name === "viewBox"))) refresh(el);
+    if (st.kind === 2 || st.kind === 4) hold(el);
+    else if (name === "transform" || name === "opacity" || PAINT[name] === 1 || (st.kind === 0 && (name === "width" ||
+        name === "height" || name === "viewBox" || name === "x" || name === "y" || name === "preserveAspectRatio"))) refresh(el);
   }
   /* el was put somewhere else (the shim's place: cd_move, cd_attach): what it inherits may have changed. */
   function placed(el) {
     var k = el.$vml.kind;
-    if (k === 2) hold(el);
+    if (k === 2 || k === 4) hold(el);
     else if (k !== 3) refresh(el);
   }
   /* A shape is drawn once when the call into C ends, not once for each of its attributes: its d, fill and stroke were
@@ -555,7 +665,17 @@ var cdomVml = (function (w, doc) {
   }
   /* The shim's drawHeld, at the end of the outermost call into C (tools/legacy/shim-old.js). */
   function drawHeld() {
-    var list = held, j;
+    var list = loose, j;
+    /* An svg sized in em is built out of the page (the shim inserts a subtree when its root closes): by now it is in,
+     * so it is measured and drawn again, and with it what it holds. Once: one still out is measured when it is put in. */
+    if (list.length) {
+      loose = [];
+      for (j = 0; j < list.length; j++) {
+        list[j].$vml.loose = false;
+        if (list[j].offsetWidth > 0) refresh(list[j]);
+      }
+    }
+    list = held;
     if (!list.length) return;
     held = [];
     for (j = 0; j < list.length; j++) {

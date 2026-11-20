@@ -283,11 +283,31 @@ run: try {
       ok(!bad.length, `<${{ sp: 'path', sr: 'rect', sc: 'circle', se: 'ellipse', sl: 'line', spl: 'polyline', spg: 'polygon', sgp: 'path in a g' }[id]}> as a v:shape: ${
         bad.map((k) => `${k} ${JSON.stringify(got && got[k])}, want ${JSON.stringify(exp[k])}`).join('; ') || got.path}`);
     }
+    // What a LaTeX formula is made of. Text: a span at x times 2, in its font size times 2, its baseline (found here by an
+    // image on it, not the way vml.js finds it) at y times 2, its colour the CSS color it inherits (currentColor).
+    const text = await E(`(function (e, svg) {
+      var img = document.createElement('img'), s = e.style, r;
+      img.width = 1; img.height = 1; img.style.verticalAlign = 'baseline'; e.appendChild(img);
+      r = img.getBoundingClientRect().bottom - svg.getBoundingClientRect().top; e.removeChild(img);
+      return [e.tagName.toLowerCase(), s.position, s.left, s.fontSize, s.fontStyle, s.color, getComputedStyle(e).color, Math.round(r), e.innerText];
+    })(document.getElementById('st'), document.getElementById('svg'))`);
+    ok(JSON.stringify(text) === JSON.stringify(['span', 'absolute', '2px', '20px', 'italic', '', 'rgb(18, 49, 35)', 90, 'x']),
+      `<text> as a span in its font, its baseline at y: ${JSON.stringify(text)}`);
+    ok((await vmlOf('scc')).fillcolor === '#123123', `a currentColor fill is the CSS color: ${(await vmlOf('scc')).fillcolor}`);
+    // The svg in the svg: a span at x and y, its width and height, clipping; its viewBox sliced to fill it (scale 1 inside).
+    const sn = await vmlOf('sn'), snr = await vmlOf('snr');
+    ok(sn && sn.tag === 'span' && sn.overflow === 'hidden' && JSON.stringify(sn.box) === '["absolute","100px","40px","40px","20px"]',
+      `the svg in the svg is a span at its x and y that clips: ${JSON.stringify(sn)}`);
+    ok(snr.path === 'm0,0 l8000,0 l8000,2000 l0,2000 x e' && snr.fillcolor === '#ff00ff', `its rect drawn from its corner, sliced: ${snr.path}`);
+    // The svg sized in em: as CSS lays it out, 40 by 20, so a viewBox of 20 by 10 is a scale of 2.
+    const em = await E('(function (e) { return [e.offsetWidth, e.offsetHeight, e.style.width, e.style.height]; })(document.getElementById("svgem"))');
+    ok(JSON.stringify(em) === '[40,20,"2em","1em"]', `the svg in em is laid out by CSS: ${JSON.stringify(em)}`);
+    ok((await vmlOf('sem')).path === 'm200,200 l600,200 l600,800 l200,800 x e', `and drawn at its scale: ${(await vmlOf('sem')).path}`);
     // What VML does not draw: hidden, and each kind reported once through window.reportError.
-    const hid = await E(`['st', 'lg', 'srot'].map(function (id) { var e = document.getElementById(id); return e ? e.tagName.toLowerCase() + ' ' + e.style.display : 'none'; })`);
-    ok(JSON.stringify(hid) === '["span none","span none","v:shape none"]', `text and the gradient are hidden spans, the rotated rect is hidden: ${JSON.stringify(hid)}`);
+    const hid = await E(`['lg', 'srot'].map(function (id) { var e = document.getElementById(id); return e ? e.tagName.toLowerCase() + ' ' + e.style.display : 'none'; })`);
+    ok(JSON.stringify(hid) === '["span none","v:shape none"]', `the gradient is a hidden span, the rotated rect is hidden: ${JSON.stringify(hid)}`);
     ok((await vmlOf('sgrad')).filled === false, 'a gradient paint fills nothing');
-    const kinds = ['<text>', '<defs>', '<linearGradient>', '<stop>', 'transform rotate', 'paint url'];
+    const kinds = ['<defs>', '<linearGradient>', '<stop>', 'transform rotate', 'paint url'];
     const lost = await E('cdomVml.lost.slice(0)'), errs = await E('ERRORS');
     ok(JSON.stringify(lost) === JSON.stringify(kinds), `cdomVml.lost names each kind once: ${JSON.stringify(lost)}`);
     ok(errs.length === kinds.length && kinds.every((k, i) => errs[i] === `Error: cdom: SVG ${k} is not drawn in VML (IE 5 to 8: docs/vml-design.md)`),
@@ -308,7 +328,7 @@ run: try {
     ok((await vmlOf('sp')).path === 'm2000,2000 l6000,2000 l6000,4000 x e' && (await E('ERRORS.length')) === kinds.length,
       `built again, the path is drawn again and nothing is reported twice: ${(await vmlOf('sp')).path}, ${await E('ERRORS.length')} errors`);
   } else {
-    ok(svgIn === 16, `the svg is real SVG, all 16 of its elements in the SVG namespace: ${svgIn}`);
+    ok(svgIn === 21, `the svg is real SVG, all 21 of its elements in the SVG namespace: ${svgIn}`);
     ok(await E('document.getElementById("sp").getAttribute("d")') === 'M10 10 h20 v10 z', 'the path has its d');
     await E('X.svg_set()');
     ok(await E('document.getElementById("sp").getAttribute("d") + " " + document.getElementById("sr").getAttribute("fill")') === 'M0 0 L10 0 #00f',

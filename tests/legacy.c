@@ -215,7 +215,8 @@ EXPORT("net_ask") void net_ask(uint32_t k) {
 }
 EXPORT("net_seen") int32_t net_seen(uint32_t k, uint32_t f) { return net_rec[k][f]; }
 /* An SVG of every element the fourth tier draws through VML (tools/legacy/vml.js, docs/vml-design.md), with inherited
- * paint, opacities, a g with translate and scale, in a div of its own, and what VML does not draw: text, defs, a gradient (and its stop),
+ * paint, opacities, a g with translate and scale, text, currentColor, an svg in the svg and one sized in em, in a div of its
+ * own, and what VML does not draw: defs, a gradient (and its stop),
  * a rotate and a gradient paint. Every other tier makes it real SVG. svg_set changes it after the build (a path detached
  * while its g's transform changes, then put back), svg_drop removes it. */
 enum { SVG_BOX, SVG_ROOT, SVG_PATH, SVG_RECT, SVG_G, SVG_GPATH, SVG_N };
@@ -223,7 +224,7 @@ static cd_id svg_ids[SVG_N];
 static void shape(const char *tag, const char *idattr) { cd_open(tag); cd_attr("id", idattr); }
 EXPORT("svg") void svg(void) {
   cd_at(CD_MOUNT, CD_APPEND);
-  svg_ids[SVG_BOX] = el("div", "svgbox", "position:absolute;left:300px;top:120px"); /* clear of the pad, to look at in IE */
+  svg_ids[SVG_BOX] = el("div", "svgbox", "position:absolute;left:300px;top:120px;color:#123123;font-size:20px"); /* clear of the pad, to look at in IE */
   cd_open("svg");
   cd_attr("id", "svg"); cd_attr("width", "200"); cd_attr("height", "100"); cd_attr("viewBox", "0 0 100 50");
   svg_ids[SVG_ROOT] = cd_id_new(); cd_name_el(svg_ids[SVG_ROOT]);
@@ -249,10 +250,22 @@ EXPORT("svg") void svg(void) {
   svg_ids[SVG_GPATH] = cd_id_new(); cd_name_el(svg_ids[SVG_GPATH]);
   cd_close();
   cd_close();
-  shape("text", "st"); cd_attr("x", "1"); cd_attr("y", "1"); cd_text("not drawn in VML"); cd_close();
+  /* What a LaTeX formula is made of (foolish-utils latex/): text in a font, paint from the CSS color, and an svg in the
+   * svg (a radical's sign, sliced to its width). */
+  shape("text", "st"); cd_attr("x", "1"); cd_attr("y", "45"); cd_attr("font-size", "10"); cd_attr("font-style", "italic");
+  cd_attr("fill", "currentColor"); cd_text("x"); cd_close();
+  shape("rect", "scc"); cd_attr("x", "30"); cd_attr("y", "40"); cd_attr("width", "4"); cd_attr("height", "4"); cd_attr("fill", "currentColor"); cd_close();
+  shape("svg", "sn"); cd_attr("x", "50"); cd_attr("y", "20"); cd_attr("width", "20"); cd_attr("height", "10");
+  cd_attr("viewBox", "0 0 40 10"); cd_attr("preserveAspectRatio", "xMinYMin slice");
+  shape("rect", "snr"); cd_attr("width", "40"); cd_attr("height", "10"); cd_attr("fill", "#f0f"); cd_close();
+  cd_close();
   cd_open("defs"); shape("linearGradient", "lg"); cd_open("stop"); cd_attr("offset", "0"); cd_close(); cd_close(); cd_close();
   shape("rect", "srot"); cd_attr("width", "5"); cd_attr("height", "5"); cd_attr("transform", "rotate(45)"); cd_close();
   shape("rect", "sgrad"); cd_attr("width", "5"); cd_attr("height", "5"); cd_attr("fill", "url(#lg)"); cd_close();
+  cd_close();
+  /* Sized in em, as a LaTeX page sizes its formulas: 2em by 1em at the div's 20px is 40 by 20. */
+  shape("svg", "svgem"); cd_attr("width", "2em"); cd_attr("height", "1em"); cd_attr("viewBox", "0 0 20 10");
+  shape("rect", "sem"); cd_attr("x", "1"); cd_attr("y", "1"); cd_attr("width", "2"); cd_attr("height", "3"); cd_close();
   cd_close();
   cd_close();
   cd_flush();
