@@ -19,7 +19,7 @@ try {
   for (const f of ['package.json', 'package-lock.json', 'shim/cdom.js', 'shim/boot.js',
     'tools/legacy/build.mjs', 'tools/legacy/package.json', 'tools/legacy/package-lock.json', 'tools/legacy/polyfills.js',
     'tools/legacy/memory-words.js', 'tools/legacy/words.js', 'tools/legacy/memory.mjs', 'tools/legacy/es3.mjs',
-    'tools/legacy/polyfills-es3.js', 'tools/legacy/dom-old.js', 'tools/legacy/shim-old.js']) {
+    'tools/legacy/polyfills-es3.js', 'tools/legacy/dom-old.js', 'tools/legacy/shim-old.js', 'tools/legacy/js11.mjs', 'tools/legacy/frames.js']) {
     fs.mkdirSync(path.dirname(path.join(T, f)), { recursive: true });
     fs.copyFileSync(path.join(top, f), path.join(T, f));
   }
@@ -32,7 +32,7 @@ try {
   for (const w of ['listfuzz.wasm', 'legacy.wasm', 'listfuzz.shim.html']) fs.copyFileSync(path.join(top, 'tests/out', w), path.join(T, 'in', w));
 
   const L = path.join(T, 'tools/legacy/build.mjs');
-  const builds = [['shim', 'out/cdom.legacy.js'], ['shim-ie9', 'out/cdom.legacy-ie9.js'], ['shim-ie6', 'out/cdom.legacy-ie6.js'], ['app', 'in/listfuzz.wasm', 'out/listfuzz.wasm.js'],
+  const builds = [['shim-frames', 'out/cdom.frames.js'], ['shim', 'out/cdom.legacy.js'], ['shim-ie9', 'out/cdom.legacy-ie9.js'], ['shim-ie6', 'out/cdom.legacy-ie6.js'], ['app', 'in/listfuzz.wasm', 'out/listfuzz.wasm.js'],
     ['app-ie9', 'in/listfuzz.wasm', 'out/listfuzz.wasm.ie9.js'], ['page', 'in/listfuzz.shim.html', 'out/listfuzz.html']].map(([cmd, ...a]) => ({ cmd, args: a.map((x) => path.join(T, x)) }));
   for (const b of builds) {
     b.out = b.args[b.args.length - 1];
@@ -43,7 +43,9 @@ try {
   const common = ['tools/legacy/build.mjs', 'tools/legacy/package-lock.json', 'tools/legacy/node_modules/.package-lock.json',
     'package-lock.json', 'node_modules/.package-lock.json'];
   const must = { shim: [...common, 'shim/cdom.js', 'tools/legacy/polyfills.js', 'tools/legacy/node_modules/promise-polyfill/dist/polyfill.js',
-    'tools/legacy/node_modules/pepjs/dist/pep.js'], app: [...common, 'in/listfuzz.wasm'], page: [...common, 'shim/boot.js', 'in/listfuzz.shim.html', 'tools/legacy/es3.mjs'] };
+    'tools/legacy/node_modules/pepjs/dist/pep.js'], app: [...common, 'in/listfuzz.wasm'], page: [...common, 'shim/boot.js', 'in/listfuzz.shim.html', 'tools/legacy/es3.mjs', 'tools/legacy/js11.mjs'] };
+  // The frames tier's shim: its one source and its gate (docs/frames-design.md).
+  must['shim-frames'] = [...common, 'tools/legacy/frames.js', 'tools/legacy/js11.mjs'];
   must['shim-ie9'] = [...must.shim, 'tools/legacy/memory-words.js', 'tools/legacy/memory.mjs'];
   must['app-ie9'] = [...must.app, 'tools/legacy/words.js', 'tools/legacy/memory.mjs', 'tools/legacy/es3.mjs'];
   // The fourth tier's shim: the third's without PEP, and its own files.
