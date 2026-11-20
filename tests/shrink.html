@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><title>shrink</title></head><body><div id="m"></div>
+<script>
+/*CDOM_SHIM*/
+</script>
+<script>
+// tools/shrink.mjs drives this page; shrink_job.wasm is the job module beside it.
+cdom.start('shrink.wasm', 'm').then((x) => { window.X = x; window.READY = true; });
+</script></body></html>

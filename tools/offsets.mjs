@@ -1,8 +1,8 @@
 // The shim hardcodes no offset into a C struct: every field offset and record size comes from
 // cd_layout (src/cdom.c, CD_LAYOUT, filled with offsetof and sizeof), read once at start. This scan
 // finds every place shim/cdom.js reaches C memory, an index into one of its views (u8, u32, i32, f32,
-// f64), their set and subarray, a typed array made over memory.buffer (its offset) and the bytes and
-// copyBytes helpers (their pointer), and fails on a number written into one: `i32[record + 11]`,
+// f64), their set and subarray, a typed array made over memory.buffer (its offset) and the helpers and
+// accessors (ACCESSORS: their pointer or index), and fails on a number written into one: `i32[record + 11]`,
 // `u32[at + 2]`. A name set to a pointer in words (`const record = ptr >> 2`) is a base: indexed bare
 // (`i32[record]`, a first field by position) or stepped by a number (`index * 4`, `meta += 3`), it
 // fails too. A shift (`ptr >> 2`, `>> 1`) is a unit, bytes to words or words to doubles, not an offset,
@@ -11,7 +11,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const VIEW = /\b(?:u8|u32|i32|f32|f64)(?:\s*\[|\.(?:set|subarray)\s*\()|\bnew\s+\w*Array\s*\(\s*memory\.buffer\s*,|\b(?:copyBytes|bytes)\s*\(/g;
+// The accessors (shim/cdom.js's "C's memory" section, which the IE 9 build swaps for memory-words.js's) take the
+// pointer or index first, as the helpers do.
+const ACCESSORS = 'copyBytes|bytes|viewBytes|writeBytes|load8|load32|store32|storeF32|loadF64|storeF64|encodeTo|randomBytes|pixels';
+const VIEW = new RegExp(String.raw`\b(?:u8|u32|i32|f32|f64)(?:\s*\[|\.(?:set|subarray)\s*\()|\bnew\s+\w*Array\s*\(\s*memory\.buffer\s*,|\b(?:${ACCESSORS})\s*\(`, 'g');
 
 // The text from just after an opening bracket to its partner, and where it ends.
 function balanced(text, from) {
@@ -56,8 +59,8 @@ export function literalOffsets(source) {
     let reach = inside; // an index, or set's and subarray's arguments: all of it
     if (m[0].endsWith(',')) {
       reach = firstArgument(inside); // a typed array over memory.buffer: its offset, the argument after the buffer
-    } else if (/\b(?:copyBytes|bytes)\s*\($/.test(m[0])) {
-      reach = firstArgument(inside); // the helpers: their pointer
+    } else if (new RegExp(String.raw`\b(?:${ACCESSORS})\s*\($`).test(m[0])) {
+      reach = firstArgument(inside); // the helpers and accessors: their pointer or index
     }
     const bare = reach.replace(/>>>?\s*\d+/g, '');
     // A number in it is an offset; an array literal set onto a view writes a struct by position.
@@ -83,7 +86,7 @@ export function literalOffsets(source) {
     }
   }
   for (const name of bases) {
-    for (const m of code.matchAll(new RegExp(`\\b(?:u8|u32|i32|f32|f64)\\s*\\[\\s*${name}\\s*\\]|\\b${name}\\s*[-+]=\\s*[^;,)\\n]*\\d`, 'g'))) {
+    for (const m of code.matchAll(new RegExp(`\\b(?:u8|u32|i32|f32|f64)\\s*\\[\\s*${name}\\s*\\]|\\b(?:${ACCESSORS})\\s*\\(\\s*${name}\\s*[,)]|\\b${name}\\s*[-+]=\\s*[^;,)\\n]*\\d`, 'g'))) {
       report(m.index);
     }
   }

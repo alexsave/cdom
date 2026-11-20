@@ -85,6 +85,13 @@ o="$out/boot.html"
 { printf '<script\n>\n<script data-a="1">\n'; table_shim '<script data-a="1">'; sed -n '5,$p' "$e/boot.html"; } > "$o.want"
 golden "a tag split across lines is not seen" "$e/boot.html" "$o"
 
+# The job modules (--job name=file, cd_job): each a data: URL in var cdomJobs, in the table's script, names escaped as a JavaScript string.
+o="$out/jobs.html"
+{ sed -n '1,3p' "$pages/ok.html"; cat "$out/app.lits"; echo
+  printf 'var cdomJobs={"a.job.wasm":"data:application/wasm;base64,%s","b\\"\\x3c.wasm":"data:application/wasm;base64,%s"};\n' "$(b64 "$out/m0.wasm")" "$(b64 "$out/m2.wasm")"
+  echo "</script>"; echo '<script>'; cat "$out/shim.js"; sed -n '5,$p' "$pages/ok.html"; } > "$o.want"
+golden "two job modules bundled in cdomJobs, a name escaped, the page unchanged" "$pages/ok.html" "$o" --job "a.job.wasm=$out/m0.wasm" --job "b\"<.wasm=$out/m2.wasm"
+
 # ---- the refusals: each with its message, and no file ----
 # refused name page message flags...: the tool exits 1, says page: message, and writes nothing
 refused() {
@@ -118,6 +125,9 @@ refused nowasm "$pages/marker.html" "$pages/marker.html: cannot read the module 
 : > "$out/empty.wasm"
 refused emptywasm "$pages/marker.html" "$pages/marker.html: cannot read the module to bundle $out/empty.wasm" --wasm "$out/empty.wasm"
 refused nopage "$out/no.html" "$out/no.html: cannot read the page"
+refused jobname "$pages/ok.html" "--job takes name=file, not nofile" --job nofile
+refused jobfile "$pages/ok.html" "$pages/ok.html: cannot read the job module to bundle $out/no.wasm" --job "x.job.wasm=$out/no.wasm"
+refused jobempty "$pages/ok.html" "$pages/ok.html: cannot read the job module to bundle $out/empty.wasm" --job "x.job.wasm=$out/empty.wasm"
 # the first fault in line order is the one named
 printf '<script>\n/*CDOM_SHIM*/ x\n/*CDOM_SHIM*/\n' > "$e/first.html"
 refused first "$e/first.html" "$e/first.html:2: /*CDOM_SHIM*/ must be alone on its line"
