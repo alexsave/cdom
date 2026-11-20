@@ -92,6 +92,13 @@
       String.prototype.startsWith = startsWith;
     }
   }
+  /* String.prototype.trim, which the network's headers use (IE 9 has it, and the polyfill is behind a check for browsers that
+   * do not). MDN's polyfill. */
+  if (!String.prototype.trim) {
+    String.prototype.trim = function () {
+      return this.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, "");
+    };
+  }
   if (!String.prototype.includes) {
     String.prototype.includes = function (search, start) {
       if (search instanceof RegExp) throw TypeError("first argument must not be a RegExp");
@@ -249,4 +256,128 @@
     wrap(w.Window && w.Window.prototype);
     wrap(w);
   }
+
+  /* The network (src/cdom_net.c) asks the shim for fetch, which IE 5 to 11 have none of: an XMLHttpRequest stands in, and on IE 5
+   * and 6, which have none either, ActiveXObject("Microsoft.XMLHTTP"). Only what the shim's one call needs: fetch(url,
+   * { method, headers: [[name, value]...], body: bytes or undefined, signal }) answering { status, arrayBuffer() }, and an
+   * AbortController for the deadline. A request that never arrived (a network failure, a status of 0 or one of WinInet's
+   * 12000s, a header the browser refuses) rejects, as fetch's does; abort() rejects too, and the shim tells the two apart by
+   * the signal. What comes back is bytes, however the browser lets a script read them (docs/ie6-design.md, "The network"):
+   * - a browser with typed arrays and responseType (IE 10, 11): an ArrayBuffer, exact;
+   * - one that has overrideMimeType (every browser but IE: Firefox 1.0 on): "text/plain; charset=x-user-defined", which
+   *   reads each byte as a character of its own, exact;
+   * - IE 5 to 9, which have neither and, without VBScript, no way to the bytes but responseText: a response the server
+   *   labels charset=windows-1252 (or iso-8859-1) is its bytes, exact (Windows maps all 256 to a character, which is
+   *   mapped back); any other is text, and its characters are encoded as UTF-8, exact for ASCII and for UTF-8 text
+   *   the server says is utf-8, and not for a binary body without that label.
+   * A body to send is bytes: sent as they are where typed arrays are, and otherwise as text, which only UTF-8 bytes can be
+   * (XMLHttpRequest sends a string as UTF-8): any other body rejects. IE 8 and 9 reach only the page's own origin (their
+   * cross-origin object is XDomainRequest, which is not used). */
+  if (!w.AbortController) {
+    w.AbortController = function () {
+      var fns = [], signal = { aborted: false, addEventListener: function (type, f) { fns.push(f); } };
+      this.signal = signal;
+      this.abort = function () {
+        var i;
+        if (signal.aborted) return;
+        signal.aborted = true;
+        for (i = 0; i < fns.length; i++) fns[i]();
+      };
+    };
+  }
+  if (typeof w.fetch !== "function") (function () {
+    /* Windows-1252's 0x80 to 0x9f, as Unicode (the five it leaves out are the C1 controls of the same number). */
+    var C1 = [0x20ac, 0x81, 0x201a, 0x192, 0x201e, 0x2026, 0x2020, 0x2021, 0x2c6, 0x2030, 0x160, 0x2039, 0x152, 0x8d, 0x17d, 0x8f,
+      0x90, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x2dc, 0x2122, 0x161, 0x203a, 0x153, 0x9d, 0x17e, 0x178];
+    var back = null;
+    var newXhr = function () {
+      if (w.XMLHttpRequest) return new w.XMLHttpRequest();
+      if (w.ActiveXObject) {
+        try { return new w.ActiveXObject("Microsoft.XMLHTTP"); } catch (e) {}
+      }
+      return null;
+    };
+    var asBytes = function (s, mime) {
+      var n = s.length, out = new Array(n), i, c;
+      if (!back) {
+        back = {};
+        for (i = 0; i < C1.length; i++) back["c" + C1[i]] = 0x80 + i;
+      }
+      for (i = 0; i < n; i++) {
+        c = s.charCodeAt(i);
+        out[i] = mime ? c & 0xff : c < 256 ? c : back["c" + c] || 63;
+      }
+      return out;
+    };
+    var charsetOf = function (xhr) {
+      var type = "", m;
+      try { type = xhr.getResponseHeader("Content-Type") || ""; } catch (e) {}
+      m = /charset=([^;\s"]+)/i.exec(type);
+      return m ? m[1].toLowerCase() : "";
+    };
+    /* The text of a body of bytes, or null when the bytes are not UTF-8 (the polyfilled decoder makes U+FFFD of what is not). */
+    var textOf = function (bytes) {
+      var s = new w.TextDecoder().decode(bytes), again = new w.TextEncoder().encode(s), i;
+      if (again.length !== bytes.length) return null;
+      for (i = 0; i < again.length; i++) {
+        if (again[i] !== bytes[i]) return null;
+      }
+      return s;
+    };
+    w.fetch = function (url, init) {
+      init = init || {};
+      return new w.Promise(function (resolve, reject) {
+        var xhr = newXhr(), signal = init.signal, headers = init.headers || [], body = init.body, typed, mime = false, sent = null, i;
+        var finished = false;
+        var fail = function () {
+          if (finished) return;
+          finished = true;
+          reject(w.cdomError("fetch failed"));
+        };
+        if (!xhr) { fail(); return; }
+        typed = typeof w.ArrayBuffer !== "undefined" && typeof xhr.responseType === "string";
+        if (body && !typed) {
+          sent = textOf(body);
+          if (sent === null) { fail(); return; }
+        } else if (body) sent = body;
+        try {
+          xhr.open(String(init.method || "GET").toUpperCase(), url, true);
+          for (i = 0; i < headers.length; i++) xhr.setRequestHeader(headers[i][0], headers[i][1]);
+          if (typed) xhr.responseType = "arraybuffer";
+          else if (xhr.overrideMimeType) {
+            xhr.overrideMimeType("text/plain; charset=x-user-defined");
+            mime = true;
+          }
+        } catch (e) { fail(); return; }
+        xhr.onreadystatechange = function () {
+          var status = 0, data, charset;
+          if (finished || xhr.readyState !== 4) return;
+          xhr.onreadystatechange = function () {};
+          try { status = xhr.status; } catch (e) {}
+          if (status === 1223) status = 204;
+          if (!(status >= 100 && status < 600)) { fail(); return; }
+          try {
+            if (typed) data = xhr.response || new w.ArrayBuffer(0);
+            else {
+              charset = charsetOf(xhr);
+              data = mime || charset === "windows-1252" || charset === "iso-8859-1" ? asBytes(xhr.responseText, mime)
+                : new w.TextEncoder().encode(xhr.responseText);
+            }
+          } catch (e) { fail(); return; }
+          finished = true;
+          resolve({ status: status, arrayBuffer: function () { return w.Promise.resolve(data); } });
+        };
+        if (signal) {
+          if (signal.aborted) { fail(); return; }
+          signal.addEventListener("abort", function () {
+            if (finished) return;
+            fail();
+            xhr.onreadystatechange = function () {};
+            try { xhr.abort(); } catch (e) {}
+          });
+        }
+        try { xhr.send(sent === null ? null : sent); } catch (e) { fail(); }
+      });
+    };
+  })();
 })(window);
