@@ -1,6 +1,6 @@
 /* The size modules (docs/math-design.md, "Size"): built with an arm's objects and measured after wasm-opt -O3.
- * SIZE_empty exports one function that calls nothing, SIZE_sin one that calls sin, SIZE_all one per function the
- * arm has (double and float); the size an arm adds is a module's bytes minus the empty one's. */
+ * SIZE_empty exports one function that calls nothing, SIZE_sin one that calls sin, SIZE_ONE one that calls SIZE_NAME,
+ * SIZE_all one per function the arm has (double and float); the size an arm adds is a module's bytes minus the empty one's. */
 #include <math.h>
 #include "fns.h"
 #define EXPORT(name) __attribute__((export_name(#name)))
@@ -18,6 +18,13 @@ BM_IMP(sin, double, double)
 EXPORT(f) double f(double x) { return x; }
 #elif defined(SIZE_sin)
 EXPORT(f) double f(double x) { return CALL_SIN(x); }
+#elif defined(SIZE_ONE)
+/* one function alone: SIZE_NAME, of SIZE_ARITY arguments */
+#if SIZE_ARITY == 1
+EXPORT(f) double f(double x) { return SIZE_NAME(x); }
+#else
+EXPORT(f) double f(double x, double y) { return SIZE_NAME(x, y); }
+#endif
 #elif defined(SIZE_all)
 #if BM_JS
 #define BM_IMPS(name, arity, doms) BM_IMP##arity(name)

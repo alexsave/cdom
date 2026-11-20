@@ -41,9 +41,9 @@ def timing(title, t, arms, prec, domain):
         rows.append(f'| {e} | ' + ' | '.join(cell(t.get((e, domain, a))) for a in arms) + ' |')
     return '\n'.join(rows) + '\n'
 
-def tax(chrome, native):
+def tax(chrome, native, what):
     arms = ['musl', 'msun', 'core', 'ours']
-    rows = ['#### The wasm tax: Chrome over the native twin (median over median), typical domain', '',
+    rows = [f'#### The wasm tax: Chrome over {what} (median over median), typical domain', '',
             '| function | ' + ' | '.join(f'{a}' for a in arms) + ' |', '|---|' + '---|' * len(arms)]
     for prec in ('double', 'float'):
         for fn in FNS:
@@ -95,6 +95,16 @@ def sizes(path):
         e = s[(a, 'empty')]
         d = [s[(a, k)][i] - e[i] for k in ('sin', 'all') for i in (0, 1)]
         rows.append(f'| {a} | {d[0]} | {d[1]} | {d[2]} | {d[3]} |')
+    arms = [a for a in ('musl', 'msun', 'core', 'ours') if (a, 'f-exp') in s]
+    if arms:
+        rows += ['', '#### Size of each function alone: brotli bytes added (raw bytes in brackets)', '',
+                 '| function | ' + ' | '.join(arms) + ' |', '|---|' + '---|' * len(arms)]
+        for fn in FNS[1:]:
+            out = []
+            for a in arms:
+                v, e = s.get((a, f'f-{fn}')), s[(a, 'empty')]
+                out.append(f'{v[1] - e[1]} ({v[0] - e[0]})' if v else '-')
+            rows.append(f'| {fn} | ' + ' | '.join(out) + ' |')
     return '\n'.join(rows) + '\n'
 
 def main():
@@ -102,18 +112,19 @@ def main():
     out = [f'### Tables of {os.path.basename(p)}', '']
     if os.path.exists(p + '-env.txt'): out += ['```', open(p + '-env.txt').read().strip(), '```', '']
     hosts = {}
-    for env in ('chrome', 'safari', 'node', 'native'):
+    for env in ('chrome', 'safari', 'node', 'native', 'native-O2'):
         t, notes = read_times(f'{p}-{env}.tsv')
         if t is None: continue
         hosts[env] = t
-        arms = [a for a in (NATIVE_ARMS if env == 'native' else WASM_ARMS) if any(k[2] == a for k in t)]
+        arms = [a for a in (NATIVE_ARMS if env.startswith('native') else WASM_ARMS) if any(k[2] == a for k in t)]
         out += [f'### {env}: ns per call, median of the rounds ±spread', ''] + [f'    {n}' for n in notes if not n.startswith('# sum')] + ['']
         out.append(timing(f'{env}, double, typical domain', t, arms, 'double', 'typical'))
         out.append(timing(f'{env}, float, typical domain', t, arms, 'float', 'typical'))
         for d in ('small', 'large'):
             out.append(timing(f'{env}, sin cos tan, {d} domain (double)', t, arms, 'double', d))
             out.append(timing(f'{env}, sin cos tan, {d} domain (float)', t, arms, 'float', d))
-    if 'chrome' in hosts and 'native' in hosts: out.append(tax(hosts['chrome'], hosts['native']))
+    if 'chrome' in hosts and 'native' in hosts: out.append(tax(hosts['chrome'], hosts['native'], 'the native twin at -Oz'))
+    if 'chrome' in hosts and 'native-O2' in hosts: out.append(tax(hosts['chrome'], hosts['native-O2'], 'the native twin at -O2'))
     out.append(accuracy(p + '-accuracy.tsv', 'double'))
     out.append(accuracy(p + '-accuracy.tsv', 'float'))
     out.append(accuracy(p + '-accuracy.tsv', 'double', 'not_cr'))

@@ -5,6 +5,8 @@
 #   tests.txt     node test.mjs (special values per arm, wasm equals native)
 #   sizes.tsv     sizes.sh (make sizes: what sin and every function add, after wasm-opt -O3, raw and brotli)
 #   native.tsv    build/native/bench time: every native twin and glibc (the host's libm), interleaved
+#   native-O2.tsv the same with the twins at -O2 (build/native-O2/): -Oz on x86-64 leaves false dependencies
+#                 (sqrtsd into a register it does not clear) that -O2 breaks, so -Oz alone would flatter wasm
 #   node.tsv      run.mjs node: the wasm arms in node
 #   <browser>.tsv run.mjs <browser>, for each of BROWSERS (default chrome): the wasm arms through page.html
 #   accuracy.tsv  build/native/accuracy over N_ACC inputs per entry and domain (default 1000000), with V8's results
@@ -20,6 +22,7 @@ rounds="${ROUNDS:-9}"; ms="${MS:-10}"; browsers="${BROWSERS:-chrome}"; acc="${AC
 mkdir -p results
 ls "$out"-* > /dev/null 2>&1 && { echo "$out-* exists: give another name" >&2; exit 1; }
 make -s -j"$jobs" all sizes || exit 1
+make -s -j"$jobs" NATIVE_OPT=-O2 build/native-O2/bench || exit 1
 [ "$acc" = 0 ] || make -s accuracy || exit 1
 cc="$(make -s print-cc)"
 {
@@ -36,6 +39,7 @@ cat "$out-env.txt"
 node test.mjs > "$out-tests.txt" 2>&1; tail -1 "$out-tests.txt"
 ./sizes.sh > "$out-sizes.tsv" || exit 1
 { uptime; ./build/native/bench time "$rounds" "$ms"; uptime; } > "$out-native.tsv" 2>&1; echo "native: $(grep -c '^native' "$out-native.tsv") runs"
+{ uptime; ./build/native-O2/bench time "$rounds" "$ms" | sed 's/^native\t/native-O2\t/'; uptime; } > "$out-native-O2.tsv" 2>&1; echo "native -O2: $(grep -c '^native-O2' "$out-native-O2.tsv") runs"
 { uptime; node run.mjs node "$rounds" "$ms"; uptime; } > "$out-node.tsv" 2>&1; echo "node: $(grep -c '^node' "$out-node.tsv") runs"
 for br in $browsers; do
   { uptime; node run.mjs "$br" "$rounds" "$ms"; uptime; } > "$out-$br.tsv" 2>&1; echo "$br: $(grep -c "^$br" "$out-$br.tsv") runs"

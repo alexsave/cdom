@@ -1,0 +1,15 @@
+special musl (wasm): 415 cases, 0 failures
+special msun (wasm): 415 cases, 0 failures
+special core (wasm): 415 cases, 0 failures
+special ours (wasm): 415 cases, 0 failures
+special js1 (wasm): 415 cases, 0 failures
+special musl (native): 0 failures
+special msun (native): 0 failures
+special core (native): 0 failures
+special ours (native): 0 failures
+special glibc (native): 0 failures
+twin musl: all identical (100000 inputs per entry and domain)
+twin msun: all identical (100000 inputs per entry and domain)
+twin core: all identical (100000 inputs per entry and domain)
+twin ours: all identical (100000 inputs per entry and domain)
+math bench tests: all pass (222 digests compared)

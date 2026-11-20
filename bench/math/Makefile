@@ -26,7 +26,10 @@ RESDIR := $(shell $(NATIVE_CC) -print-resource-dir)
 BM_FLAGS := -ffp-contract=off -fno-math-errno
 WASM_FLAGS := $(CDOM_OPT) -isystem compat $(CDOM_CFLAGS) $(BM_FLAGS)
 WASM_LINK := $(CDOM_OPT) $(CDOM_CFLAGS) $(CDOM_LDFLAGS)
-NATIVE_FLAGS := $(CDOM_OPT) -std=c23 -nostdinc -isystem compat -isystem $(RESDIR)/include $(BM_FLAGS) -U__FP_FAST_FMA -U__FP_FAST_FMAF
+# NATIVE_OPT: the native twins' optimization level, CDOM_OPT unless set (make NATIVE_OPT=-O2 builds them in build/native-O2/).
+NATIVE_OPT ?= $(CDOM_OPT)
+NATIVE_DIR := $(OUT)/native$(if $(filter-out $(CDOM_OPT),$(NATIVE_OPT)),$(NATIVE_OPT))
+NATIVE_FLAGS := $(NATIVE_OPT) -std=c23 -nostdinc -isystem compat -isystem $(RESDIR)/include $(BM_FLAGS) -U__FP_FAST_FMA -U__FP_FAST_FMAF
 HDRS := fns.h gen.h $(wildcard compat/*.h compat/*/*.h compat/*/*/*.h)
 
 MUSL_FLAGS := -isystem compat/musl -include compat/musl/features.h -Ithird_party/musl/src/internal -w
@@ -45,13 +48,13 @@ ours_SRC := $(wildcard ours/*.c)
 ours_FLAGS := -Wall -Wextra -Werror -Iours
 RENAME_KEEP := sqrt sqrtf fabs fabsf floor floorf ceil ceilf trunc truncf rint rintf nearbyint copysign copysignf fmax fmin fmaxf fminf round roundf
 
-all: $(addprefix $(OUT)/,$(addsuffix .wasm,$(ARMS) js1 jsn)) $(OUT)/native/bench
-accuracy: $(OUT)/native/accuracy
+all: $(addprefix $(OUT)/,$(addsuffix .wasm,$(ARMS) js1 jsn)) $(NATIVE_DIR)/bench
+accuracy: $(NATIVE_DIR)/accuracy
 
 # $(call arm,name): the rules of one arm.
 define arm
 $(1)_WOBJ := $$(patsubst %.c,$(OUT)/wasm/$(1)/%.o,$$($(1)_SRC) $$($(1)_WASM_SRC) compat/compat.c)
-$(1)_NOBJ := $$(patsubst %.c,$(OUT)/native/$(1)/%.o,$$($(1)_SRC) compat/compat.c)
+$(1)_NOBJ := $$(patsubst %.c,$(NATIVE_DIR)/$(1)/%.o,$$($(1)_SRC) compat/compat.c)
 $(OUT)/wasm/$(1)/%.o: %.c $(HDRS)
 	@mkdir -p $$(@D)
 	$(WASM_CC) $(WASM_FLAGS) $$($(1)_FLAGS) -c -o $$@ $$<
@@ -61,14 +64,14 @@ $(OUT)/wasm/$(1)/bench.o $(OUT)/wasm/$(1)/special.o: $(OUT)/wasm/$(1)/%.o: %.c $
 $(OUT)/$(1).wasm: $$($(1)_WOBJ) $(OUT)/wasm/$(1)/bench.o $(OUT)/wasm/$(1)/special.o
 	$(WASM_CC) $(WASM_LINK) -o $$@ $$^
 # The native names: every global the arm's objects define, but the instructions, as <arm>_<name>.
-$(OUT)/native/$(1).rename.h: $$(filter-out %/int128.o,$$($(1)_WOBJ))
+$(NATIVE_DIR)/$(1).rename.h: $$(filter-out %/int128.o,$$($(1)_WOBJ))
 	@mkdir -p $$(@D)
 	$(LLVM_NM) -g --defined-only $$^ | awk 'NF == 3 { print $$$$3 }' | sort -u | grep -vxF $(foreach k,$(RENAME_KEEP),-e $(k)) \
 	  | awk '{ print "#define " $$$$1 " $(1)_" $$$$1 }' > $$@.tmp && mv $$@.tmp $$@
-$(OUT)/native/$(1)/%.o: %.c $(HDRS) $(OUT)/native/$(1).rename.h
+$(NATIVE_DIR)/$(1)/%.o: %.c $(HDRS) $(NATIVE_DIR)/$(1).rename.h
 	@mkdir -p $$(@D)
-	$(NATIVE_CC) $(NATIVE_FLAGS) $$($(1)_FLAGS) -include $(OUT)/native/$(1).rename.h -c -o $$@ $$<
-$(OUT)/native/$(1)/bench.o $(OUT)/native/$(1)/special.o: $(OUT)/native/$(1)/%.o: %.c $(HDRS)
+	$(NATIVE_CC) $(NATIVE_FLAGS) $$($(1)_FLAGS) -include $(NATIVE_DIR)/$(1).rename.h -c -o $$@ $$<
+$(NATIVE_DIR)/$(1)/bench.o $(NATIVE_DIR)/$(1)/special.o: $(NATIVE_DIR)/$(1)/%.o: %.c $(HDRS)
 	@mkdir -p $$(@D)
 	$(NATIVE_CC) $(NATIVE_FLAGS) -Wall -Wextra -Werror $$($(1)_BENCH) -DBM_ARM=$(1) -DSP_ARM_$(1) -c -o $$@ $$<
 endef
@@ -83,27 +86,30 @@ $(OUT)/js1.wasm $(OUT)/jsn.wasm: $(OUT)/%.wasm: $(OUT)/wasm/%/bench.o $(OUT)/was
 	$(WASM_CC) $(WASM_LINK) -o $@ $^
 
 # glibc's libm, natively only: bench.c's calls go to libm.
-$(OUT)/native/glibc/bench.o $(OUT)/native/glibc/special.o: $(OUT)/native/glibc/%.o: %.c $(HDRS)
+$(NATIVE_DIR)/glibc/bench.o $(NATIVE_DIR)/glibc/special.o: $(NATIVE_DIR)/glibc/%.o: %.c $(HDRS)
 	@mkdir -p $(@D)
 	$(NATIVE_CC) $(NATIVE_FLAGS) -Wall -Wextra -Werror -DBM_ARM=glibc -DBM_HOST_LIBM -DSP_ARM_glibc -c -o $@ $<
 
-NATIVE_ARM_OBJ = $(foreach a,$(ARMS),$($(a)_NOBJ) $(OUT)/native/$(a)/bench.o $(OUT)/native/$(a)/special.o) \
-  $(OUT)/native/glibc/bench.o $(OUT)/native/glibc/special.o
+NATIVE_ARM_OBJ = $(foreach a,$(ARMS),$($(a)_NOBJ) $(NATIVE_DIR)/$(a)/bench.o $(NATIVE_DIR)/$(a)/special.o) \
+  $(NATIVE_DIR)/glibc/bench.o $(NATIVE_DIR)/glibc/special.o
 # The native driver and the accuracy sweep use the host's own headers and libc (and MPFR: brew install mpfr, or
 # libmpfr-dev). NATIVE_LIBS is for a Mac's Homebrew paths.
 MPFR_FLAGS ?= $(if $(wildcard /opt/homebrew/include/mpfr.h),-I/opt/homebrew/include -L/opt/homebrew/lib)
-$(OUT)/native/bench: native.c arms.h fns.h gen.h $(NATIVE_ARM_OBJ)
+$(NATIVE_DIR)/bench: native.c arms.h fns.h gen.h $(NATIVE_ARM_OBJ)
 	$(NATIVE_CC) -O2 -std=c2x -Wall -Wextra -Werror -o $@ native.c $(NATIVE_ARM_OBJ) -lm
-$(OUT)/native/accuracy: accuracy.c arms.h fns.h gen.h $(NATIVE_ARM_OBJ)
+$(NATIVE_DIR)/accuracy: accuracy.c arms.h fns.h gen.h $(NATIVE_ARM_OBJ)
 	$(NATIVE_CC) -O2 -std=c2x -Wall -Wextra -Werror $(MPFR_FLAGS) -o $@ accuracy.c $(NATIVE_ARM_OBJ) -lmpfr -lgmp -lm
-$(NATIVE_ARM_OBJ): | $(foreach a,$(ARMS),$(OUT)/native/$(a).rename.h)
+$(NATIVE_ARM_OBJ): | $(foreach a,$(ARMS),$(NATIVE_DIR)/$(a).rename.h)
 
-# The sizes: what one function (sin) and every function add to an empty module, after wasm-opt -O3.
-SIZE_KINDS := empty sin all
+# The sizes: what one function (sin), each function alone (f-<name>) and every function add to an empty module,
+# after wasm-opt -O3.
+SIZE_FNS := sin cos tan asin acos atan atan2 exp exp2 expm1 log log2 log10 log1p pow sinh cosh tanh cbrt hypot fmod
+SIZE_KINDS := empty sin all $(addprefix f-,$(SIZE_FNS))
+size_flags = $(if $(filter f-%,$(1)),-DSIZE_ONE -DSIZE_NAME=$(patsubst f-%,%,$(1)) -DSIZE_ARITY=$(if $(filter atan2 pow hypot fmod,$(patsubst f-%,%,$(1))),2,1),-DSIZE_$(1))
 define size
 $(OUT)/size/$(1)-%.wasm: size.c $(HDRS) $$(filter-out %/compat.o,$$($(1)_WOBJ)) $(OUT)/wasm/$(1)/compat/compat.o
 	@mkdir -p $$(@D)
-	$(WASM_CC) $(WASM_LINK) -isystem compat $(BM_FLAGS) -Wall -Wextra -Werror $$($(1)_BENCH) -DSIZE_$$* -o $$@.linked size.c $$(filter %.o,$$^)
+	$(WASM_CC) $(WASM_LINK) -isystem compat $(BM_FLAGS) -Wall -Wextra -Werror $$($(1)_BENCH) $$(call size_flags,$$*) -o $$@.linked size.c $$(filter %.o,$$^)
 	$(WASM_OPT) -O3 $$@.linked -o $$@ && rm -f $$@.linked
 endef
 $(foreach a,$(ARMS),$(eval $(call size,$(a))))
@@ -111,7 +117,7 @@ $(OUT)/size/js1-%.wasm: size.c $(HDRS)
 	@mkdir -p $(@D)
 	$(WASM_CC) $(WASM_LINK) -isystem compat $(BM_FLAGS) -Wall -Wextra -Werror -DBM_JS=1 -DSIZE_$* -o $@.linked size.c
 	$(WASM_OPT) -O3 $@.linked -o $@ && rm -f $@.linked
-sizes: $(foreach a,$(ARMS) js1,$(foreach k,$(SIZE_KINDS),$(OUT)/size/$(a)-$(k).wasm))
+sizes: $(filter-out $(OUT)/size/core-f-fmod.wasm,$(foreach a,$(ARMS),$(foreach k,$(SIZE_KINDS),$(OUT)/size/$(a)-$(k).wasm))) $(foreach k,empty sin all,$(OUT)/size/js1-$(k).wasm)
 
 print-cc:
 	@echo $(WASM_CC)

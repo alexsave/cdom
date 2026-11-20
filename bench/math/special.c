@@ -56,15 +56,17 @@ enum { DEV_JS = 1, DEV_GLIBC = 2 };   /* the arms a case is known to deviate in 
 #endif
 typedef struct { int e; double x, y, want; int dev; const char *why; } sp_case;
 
-/* D: a double case; F: its float entry; B: both, with the same values (each exact in float). */
-#define D(f, x, y, w) { 2 * bm_k_##f, x, y, w, 0, #f "(" #x ", " #y ")" },
-#define F(f, x, y, w) { 2 * bm_k_##f + 1, x, y, w, 0, #f "f(" #x ", " #y ")" },
-#define B(f, x, y, w) D(f, x, y, w) F(f, x, y, w)
+/* D: a double case; F: its float entry; B: both, with the same values (each exact in float). Each names its case
+ * by its arguments as written (the name is made where they are written, before a macro could expand them). */
+#define CASE(e, x, y, w, dev, why) { e, x, y, w, dev, why },
+#define D(f, x, y, w) CASE(2 * bm_k_##f, x, y, w, 0, #f "(" #x ", " #y ")")
+#define F(f, x, y, w) CASE(2 * bm_k_##f + 1, x, y, w, 0, #f "f(" #x ", " #y ")")
+#define B(f, x, y, w) CASE(2 * bm_k_##f, x, y, w, 0, #f "(" #x ", " #y ")") CASE(2 * bm_k_##f + 1, x, y, w, 0, #f "f(" #x ", " #y ")")
 /* JS: a pow case where ECMAScript's Math.pow gives NaN on purpose (ECMA-262, Number::exponentiate: a base of +1
  * or -1 with an infinite exponent, and +1 with a NaN exponent, are NaN), and C's pow 1. */
 /* GL: glibc's cbrt is not correctly rounded (its own manual lists cbrt at 1 ulp), so an exact cube can miss. */
-#define DGL(f, x, y, w) { 2 * bm_k_##f, x, y, w, DEV_GLIBC, #f "(" #x ", " #y ")" },
-#define BJS(f, x, y, w) { 2 * bm_k_##f, x, y, w, DEV_JS, #f "(" #x ", " #y ")" }, { 2 * bm_k_##f + 1, x, y, w, DEV_JS, #f "f(" #x ", " #y ")" },
+#define DGL(f, x, y, w) CASE(2 * bm_k_##f, x, y, w, DEV_GLIBC, #f "(" #x ", " #y ")")
+#define BJS(f, x, y, w) CASE(2 * bm_k_##f, x, y, w, DEV_JS, #f "(" #x ", " #y ")") CASE(2 * bm_k_##f + 1, x, y, w, DEV_JS, #f "f(" #x ", " #y ")")
 
 static const sp_case cases[] = {
   /* sqrt (the control) */
@@ -152,15 +154,16 @@ static uint64_t bits(int fl, double v) {
   return fl ? c.u : b.u;
 }
 static int nan_(double v) { return v != v; }
-/* want is pi, pi/2, pi/4 or 3pi/4 (rounded, either sign): got may be within 1 ulp of it. */
+/* want is pi, pi/2, pi/4 or 3pi/4 (rounded, either sign): got may be within 1 ulp of it, with the same sign. */
 static int near_pi(int fl, double got, double want) {
   static const double d[] = { PI, PI_2, PI_4, PI3_4 };
   static const float f[] = { PIF, PI_2F, PI_4F, PI3_4F };
   double a = want < 0 ? -want : want;
   for (int i = 0; i < 4; i++)
     if (fl ? a == f[i] : a == d[i]) {
-      int64_t g = (int64_t)bits(fl, got), w = (int64_t)bits(fl, want);
-      return g - w <= 1 && w - g <= 1;
+      uint64_t g = bits(fl, got), w = bits(fl, want);
+      if ((g ^ w) >> (fl ? 31 : 63)) return 0;
+      return (g > w ? g - w : w - g) <= 1;
     }
   return 0;
 }

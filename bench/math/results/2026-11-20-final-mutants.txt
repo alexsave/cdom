@@ -1,0 +1,15 @@
+unmutated: pass
+caught musl-sin-zero: FAIL special musl (wasm): FAIL sin(-0.0, 0)
+caught msun-exp-inf: FAIL special msun (wasm): FAIL exp(INF, 0)
+caught msun-atan2-pi: FAIL special msun (native): FAIL atan2(0.0, -0.0)
+caught core-log-neg: FAIL special core (wasm): FAIL log(-1.0, 0)
+caught ours-pow-minus1-inf: FAIL special ours (wasm): FAIL pow(-1.0, INF)
+caught ours-fmod-small: FAIL special ours (native): FAIL fmod(3.0, INF)
+caught glue-exp2: FAIL special js1 (wasm): FAIL exp2(
+caught js-deviation-unlisted: FAIL special js1 (wasm): FAIL pow(-1.0, INF)
+caught deviation-no-longer: FAIL special js1 (wasm): NOW RIGHT, listed as a deviation: cbrt(27.0, 0)
+caught glibc-deviation-unlisted: FAIL special glibc (native): FAIL cbrt(TD, 0)
+caught compat-fmax: FAIL twin core: wasm differs from native in atan2 typical, hypot typical
+caught native-contract: FAIL twin musl: wasm differs from native in
+caught msun-atan2-sign: FAIL special msun (wasm): FAIL atan2(-0.0, -0.0)
+mutants: 13 of 13 caught

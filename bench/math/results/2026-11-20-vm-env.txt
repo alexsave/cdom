@@ -1,0 +1,8 @@
+date 2026-11-20T16:35:26Z
+host Linux 6.18.44-fc-v726 x86_64
+cpu  Intel(R) Xeon(R) Processor @ 2.30GHz (4 cores)
+clang clang version 23.1.6 (https://github.com/llvm/llvm-project 5b10d2d74929eae78912771222c9855af97496f4) (/usr/lib/llvm-23/bin/clang)
+wasm-opt wasm-opt version 130 (version_130)
+node v22.23.5 (v8 12.4.254.21-node.57)
+libc ldd (Ubuntu GLIBC 2.39-0ubuntu8.12) 2.39
+commit 6c22516
