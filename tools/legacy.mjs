@@ -312,14 +312,15 @@ run: try {
   ok(await E('typeof Map === "undefined" && !!window.READY'), 'the no-Map page booted with no Map');
   await roRun('with no Map');
   // A start that fails reaches window.onerror, on every tier: the boot throws its rejection again. The waits ask for
-  // window.ERRORS: right after a navigation the new page's scripts may not have run, and ERRORS alone would throw.
+  // window.ERRORS on the page navigated to: right after a navigation the evaluate may still reach the page before (whose
+  // ERRORS may hold its own error), or the new one before its scripts have run (where ERRORS alone would throw).
   await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/legacy.html?nolits` });
-  for (let i = 0; i < 100 && !(await E('window.ERRORS && ERRORS.length')); i++) await sleep(50);
+  for (let i = 0; i < 100 && !(await E('location.search === "?nolits" && window.ERRORS && ERRORS.length')); i++) await sleep(50);
   const startErrs = await E('ERRORS');
   ok(!(await E('!!window.READY')) && startErrs.length === 1 && /no string table/.test(startErrs[0]), `a failed start is thrown again: ${JSON.stringify(startErrs)}`);
   // A mount id no element has, found while the page is still interactive: an error once the page has loaded, not a wait.
   await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/legacy.html?nomount` });
-  for (let i = 0; i < 100 && !(await E('window.ERRORS && ERRORS.length')); i++) await sleep(50);
+  for (let i = 0; i < 100 && !(await E('location.search === "?nomount" && window.ERRORS && ERRORS.length')); i++) await sleep(50);
   const mountErrs = await E('ERRORS');
   ok(mountErrs.length === 1 && /no element has the id no-such-mount/.test(mountErrs[0]), `a missing mount is an error once the page has loaded: ${JSON.stringify(mountErrs)}`);
 } finally { await b.close(); srv.close(); }
