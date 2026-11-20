@@ -525,6 +525,14 @@ else
   if [ -n "$bad" ]; then echo "FAIL an app that does not call the image module has SIMD instructions with CDOM_IMAGE_SIMD=1:$bad"; fail=1
   else echo "ok   CDOM_IMAGE_SIMD=1 gives SIMD instructions to an app that calls the image module ($(simd_count "$im/wasm_js_simd.wasm")) and none without it; an app without the module, or with it and no call, has none"; fi
 fi
+# No i64.ctz in the image module, scalar or SIMD: V8 on arm64 lowers it to a call, so the module counts trailing zeros as
+# cd_ctz64 does (src/cdom_image_int.h; docs/image-progressive-speed.md, "ctz on arm64").
+ctz_count() { wasm-dis --all-features "$1" | grep -c 'i64.ctz'; }
+if [ -f "$im/wasm_js.wasm" ] && [ -f "$im/wasm_js_simd.wasm" ]; then
+  if [ "$(ctz_count "$im/wasm_js.wasm")" != 0 ] || [ "$(ctz_count "$im/wasm_js_simd.wasm")" != 0 ]; then
+    echo "FAIL the image module holds i64.ctz: $(ctz_count "$im/wasm_js.wasm") scalar, $(ctz_count "$im/wasm_js_simd.wasm") SIMD (use cd_ctz64)"; fail=1
+  else echo "ok   the image module holds no i64.ctz, scalar or SIMD"; fi
+else echo "FAIL the image module's wasm test apps were not built, so i64.ctz was not checked"; fail=1; fi
 # APP_SIMD := 1 (README.md, "Starting an app"): the image test app builds APP_WASM as without it, byte for byte, and its
 # twin wasm_js.simd.wasm as CDOM_IMAGE_SIMD=1 builds the module, byte for byte; the page starts the pair, bundled or by
 # URL, and a second make is up to date. Refused: APP_SIMD with CDOM_IMAGE_SIMD=1, a value not 0 or 1, an app with no
