@@ -131,4 +131,14 @@ typedef int (*cd_inflate_in)(void *ctx, const uint8_t **p, uint32_t *n);
 typedef int64_t (*cd_inflate_out)(void *ctx, uint8_t *buf, uint32_t n, int last);
 uint32_t cd_inflate_zlib(cd_inflate *z, uint8_t *buf, uint32_t cap, cd_inflate_in more, cd_inflate_out out, void *ctx);
 uint32_t cd_image_adler32(uint32_t adler, const uint8_t *p, size_t n);
+#ifdef CDOM_IMAGE_TESTING
+/* src/cdom_image_jpegp.c's record of its marker walk and of the scans libjpeg read, for tests/image/walkcheck.h */
+#define CD_IMAGE_JPEGP_NOT_RUN (-2)   /* cd_image_jpegp_walk_n: no walk in this decode */
+#define CD_IMAGE_JPEGP_GAVE_UP (-1)   /* cd_image_jpegp_walk_n: the walk gave up (nothing skipped) */
+extern int32_t cd_image_jpegp_walk_n, cd_image_jpeg_fatal;
+extern uint32_t cd_image_jpegp_read_n, cd_image_jpegp_in_start, cd_image_jpegp_skipped;
+extern uint64_t cd_image_jpegp_walk_list[CD_IMAGE_SCANS_MAX + 2], cd_image_jpegp_read_list[CD_IMAGE_SCANS_MAX + 2];
+uint64_t cd_image_jpegp_scan_code(uint32_t ncomp, const uint8_t *comp, uint32_t ss, uint32_t se, uint32_t ah, uint32_t al);
+#endif
+
 #endif
