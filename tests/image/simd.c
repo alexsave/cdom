@@ -14,9 +14,10 @@
  *   ycc_all        the same on every (y, cb, cr) of 8 bits: 16,777,216 pixels
  *   unfilter       cd_image_unfilter_simd against cd_image_unfilter_scalar: every filter (and two that are none), 1, 2,
  *                  3, 4, 6 and 8 bytes a pixel, widths 0 to 64 pixels and some larger, random and edge bytes
- *   runs           cd_image_unfilter_run_simd (the Paeth wavefront over runs of up to 4 rows), and _scalar, against
- *                  cd_image_unfilter_scalar row by row: plans of Paeth runs of 1 to 5 rows with None, Sub, Up and Avg
- *                  rows between, 3 and 4 bytes a pixel, widths 1 to 9 pixels and 4031 and 4032, a zero or a random row
+ *   runs           cd_image_unfilter_run_simd (the Paeth wavefronts over runs of up to 4 rows of 3 and 4 bytes a pixel,
+ *                  16 of 1 and 8 of 2), and _scalar, against cd_image_unfilter_scalar row by row: plans of Paeth runs of
+ *                  1 to 5 rows (3 and 4 bytes a pixel) or 1 to 17 (1 and 2) with None, Sub, Up and Avg rows between, 1 to
+ *                  4 bytes a pixel, widths 1 to 9 pixels and 4031 and 4032, a zero or a random row
  *                  above the first, handed over a random number of rows at a time
  *   rgba           cd_image_rgb_to_rgba_simd against the scalar: widths 0 to 64 and some larger
  *   div            the scaler's divide, in doubles: sums up to 255 t, t up to 65500 squared, and the sums at the edges of the quotient
@@ -364,8 +365,9 @@ static void runs_case(uint32_t bpp, uint32_t n, const uint8_t *plan, uint32_t ro
     uint32_t avail = below(3) ? 1 + below(6) : rows - done;
     if (avail > rows - done) avail = rows - done;
     uint32_t want = 0;
-    while (want < avail && want < 4 && plan[done + want] == 4) want++;
-    if (want < 2 || scalar_run) want = 1;
+    const uint32_t cap = bpp >= 3 ? 4 : bpp == 1 ? 16 : n % 2 ? 0 : 8;   /* a run's rows: wave_v 4, wave_n 16 or 8 */
+    while (want < avail && want < cap && plan[done + want] == 4) want++;
+    if (want < (bpp <= 2 ? 3u : 2u) || scalar_run) want = 1;   /* wave_n from 3 rows, wave_v from 2 */
     uint8_t *row = got + done * pitch;
     const uint8_t *above = done ? row - pitch + 1 : prev;
     uint32_t k = scalar_run ? cd_image_unfilter_run_scalar(row, pitch, above, n, bpp, avail)
@@ -378,16 +380,18 @@ static void runs_case(uint32_t bpp, uint32_t n, const uint8_t *plan, uint32_t ro
 static void runs_all(void) {
   static const uint32_t widths[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 4031, 4032};
   uint32_t k = 0;
-  uint8_t plan[24];
-  for (uint32_t b = 3; b <= 4; b++)
+  uint8_t plan[128];
+  for (uint32_t b = 1; b <= 4; b++)
     for (uint32_t wi = 0; wi < sizeof widths / sizeof widths[0]; wi++)
       for (int rep = 0; rep < (widths[wi] > 9 ? 6 : 40); rep++) {
-        /* a plan: runs of Paeth of each length 1 to 5 in a rotating order, 0 to 2 rows of None, Sub, Up or Avg between
-         * (rep 0 and 1: no rows between, so runs meet; rep 2: one run of 5 alone) */
+        /* a plan: runs of Paeth of each length 1 to most (5 for 3 and 4 bytes a pixel, whose runs are 4 rows; 17 for 1
+         * and 2, whose runs are 16 and 8) in a rotating order, 0 to 2 rows of None, Sub, Up or Avg between (rep 0 and 1:
+         * no rows between, so runs meet; rep 2: one run of most alone) */
+        const uint32_t most = b >= 3 ? 5 : 17, cap_rows = b >= 3 ? 20 : 100;
         uint32_t rows = 0;
-        if (rep == 2) { for (; rows < 5; rows++) plan[rows] = 4; }
-        else for (uint32_t r = 0; r < 5 && rows < 20; r++) {
-          uint32_t len = 1 + (r + (uint32_t)rep) % 5;
+        if (rep == 2) { for (; rows < most; rows++) plan[rows] = 4; }
+        else for (uint32_t r = 0; r < 5 && rows < cap_rows; r++) {
+          uint32_t len = 1 + (r * (most > 5 ? 4 : 1) + (uint32_t)rep) % most;
           for (uint32_t i = 0; i < len; i++) plan[rows++] = 4;
           uint32_t gap = rep < 2 ? 0 : below(3);
           for (uint32_t i = 0; i < gap; i++) plan[rows++] = (uint8_t)below(4);
