@@ -1014,7 +1014,7 @@ M = [
   ('js10-computed-refused', 'tools/legacy/js10.mjs', '      if (!n.computed && MEMBERS.has(n.property.name)', '      if (MEMBERS.has(n.property.name || n.property.value)', JS10T, 'FAIL a computed key named as a method passes'),
   ('js1-switch-no-fallthrough', 'tools/legacy/js1.mjs', "t.binaryExpression('<=', id(c), num(i))", "t.binaryExpression('==', id(c), num(i))", JS1T, 'FAIL table gives what the original gives'),
   ('js1-dowhile-test-first', 'tools/legacy/js1.mjs', "out = t.whileStatement(t.logicalExpression('||', id(f), n.test), block([assign(f, num(0)), ...body]));", 'out = t.whileStatement(n.test, block([assign(f, num(0)), ...body]));', JS1T, 'FAIL dowhile gives what the original gives'),
-  ('js1-jump-not-passed-on', 'tools/legacy/js1.mjs', "    if (!here.length) return [t.ifStatement(id('t_J'), t.breakStatement())];", '    if (!here.length) return [];', JS1T, 'FAIL deep gives what the original gives'),
+  ('js1-jump-not-passed-on', 'tools/legacy/js1.mjs', "    if (!here.length) return [t.ifStatement(id('t_J'), t.breakStatement())];", '    if (!here.length) return [];', JS1T, 'FAIL blocks gives what the original gives'),
   ('js1-jump-settled-as-break', 'tools/legacy/js1.mjs', "[assign('t_J', num(0)), c.cont ? t.continueStatement() : t.breakStatement()]", "[assign('t_J', num(0)), t.breakStatement()]", JS1T, 'FAIL deep gives what the original gives'),
   ('js1-trap-check-dropped', 'tools/legacy/js1.mjs', '      return [n, check()];', '      return [n];', JS1T, 'FAIL a trap two calls in'),
   ('js1-trap-test-unchecked', 'tools/legacy/js1.mjs', "      if (calls(test)) {\n        locals.add('t_q');", "      if (false) {\n        locals.add('t_q');", JS1T, "FAIL a trap in an if's test"),

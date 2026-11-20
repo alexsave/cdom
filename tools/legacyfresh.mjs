@@ -19,7 +19,8 @@ try {
   for (const f of ['package.json', 'package-lock.json', 'shim/cdom.js', 'shim/boot.js',
     'tools/legacy/build.mjs', 'tools/legacy/package.json', 'tools/legacy/package-lock.json', 'tools/legacy/polyfills.js',
     'tools/legacy/memory-words.js', 'tools/legacy/words.js', 'tools/legacy/memory.mjs', 'tools/legacy/es3.mjs',
-    'tools/legacy/polyfills-es3.js', 'tools/legacy/dom-old.js', 'tools/legacy/shim-old.js', 'tools/legacy/js11.mjs', 'tools/legacy/frames.js']) {
+    'tools/legacy/polyfills-es3.js', 'tools/legacy/dom-old.js', 'tools/legacy/shim-old.js', 'tools/legacy/js11.mjs', 'tools/legacy/frames.js',
+    'tools/legacy/words1.js', 'tools/legacy/js1.mjs', 'tools/legacy/js10.mjs']) {
     fs.mkdirSync(path.dirname(path.join(T, f)), { recursive: true });
     fs.copyFileSync(path.join(top, f), path.join(T, f));
   }
@@ -33,7 +34,7 @@ try {
 
   const L = path.join(T, 'tools/legacy/build.mjs');
   const builds = [['shim-frames', 'out/cdom.frames.js'], ['shim', 'out/cdom.legacy.js'], ['shim-ie9', 'out/cdom.legacy-ie9.js'], ['shim-ie6', 'out/cdom.legacy-ie6.js'], ['app', 'in/listfuzz.wasm', 'out/listfuzz.wasm.js'],
-    ['app-ie9', 'in/listfuzz.wasm', 'out/listfuzz.wasm.ie9.js'], ['page', 'in/listfuzz.shim.html', 'out/listfuzz.html']].map(([cmd, ...a]) => ({ cmd, args: a.map((x) => path.join(T, x)) }));
+    ['app-ie9', 'in/listfuzz.wasm', 'out/listfuzz.wasm.ie9.js'], ['app-js1', 'in/listfuzz.wasm', 'out/listfuzz.wasm.js1.js'], ['page', 'in/listfuzz.shim.html', 'out/listfuzz.html']].map(([cmd, ...a]) => ({ cmd, args: a.map((x) => path.join(T, x)) }));
   for (const b of builds) {
     b.out = b.args[b.args.length - 1];
     b.inputs = execFileSync('node', [L, 'inputs', b.cmd, ...b.args.slice(0, -1)], { encoding: 'utf8' }).trim().split('\n');
@@ -48,6 +49,9 @@ try {
   must['shim-frames'] = [...common, 'tools/legacy/frames.js', 'tools/legacy/js11.mjs'];
   must['shim-ie9'] = [...must.shim, 'tools/legacy/memory-words.js', 'tools/legacy/memory.mjs'];
   must['app-ie9'] = [...must.app, 'tools/legacy/words.js', 'tools/legacy/memory.mjs', 'tools/legacy/es3.mjs'];
+  // The frames tier's app file (docs/js1-transform-design.md): words1.js, the memory pass, the transform and both gates.
+  must['app-js1'] = [...must.app, 'tools/legacy/words1.js', 'tools/legacy/memory.mjs', 'tools/legacy/js1.mjs', 'tools/legacy/js11.mjs',
+    'tools/legacy/js10.mjs'];
   // The fourth tier's shim: the third's without PEP, and its own files.
   must['shim-ie6'] = [...must['shim-ie9'].filter((f) => !f.endsWith('pep.js')), 'tools/legacy/polyfills-es3.js', 'tools/legacy/dom-old.js',
     'tools/legacy/shim-old.js', 'tools/legacy/es3.mjs'];
