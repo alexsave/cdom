@@ -806,3 +806,34 @@ Measured after the predictions above were committed, with the same counting heap
 - The wasm memory after the bench's runs is unchanged (6.1, 17.3, 19.4 and 8.5 MiB on both).
 
 The oracle's new cases (tests/image/oracle.py): png-chunk291x299-rgb, -300, -339 and -340, and png-past-last-row-rgb (300 x 20 RGB, its stream 40 KB of zeros longer than the image); each has a peak limit of the file and its measured peak rounded up to the KB, and png-small16-rgba's and png-wide8000x3-rgb's limits are tightened the same way (48 and 128 KB beyond the file's whole KB).
+
+### inflate-fast: the tests and their mutants
+
+The runs (this VM, LLVM 23.1.6):
+
+- tests/image/run.sh with the big inputs, both CDOM_IMAGE_SJLJ ways, scalar and SIMD, on the branch after main (with #79) was merged in: 9,241 native checks with 0 failures (76 file cases, the peaks), inflate_diff, the four wasm builds (76 cases each, equal to the byte), simd.sh (paeth runs 1,488 cases, adler32 1,691 and the rest) and prog.sh (1,079 files, 0 differences); 4 min 40 s. Before the merge: the same, 9,226 checks, 73 cases.
+- tests/image/inflate_diff at its default (400 cases): 502 streams equal to zlib's output, 929 refused by both, 9,596 cuts CORRUPT, 900 damaged agreeing; at 4000: 4,902, 9,129, 103,838 and 9,000 (seed 20261119).
+- tests/image/fuzz.sh 600, fuzz_png and fuzz_inflate (FUZZ_CC clang 23): 58,547 and 523,326 runs, no crash, leak or limit.
+- tests/image/simd.sh: in run.sh's runs above.
+
+The mutants, each through tools/mutate.py (`-j 1`, IMG unless named), each caught by the text named:
+
+| mutant | what it breaks | caught by |
+| --- | --- | --- |
+| png-cap-whole-chunk (new text) | a small PNG's buffer is the window, two rows and the chunk | png-small16-rgba: peak |
+| png-cap-chunk-formula | main's formula back | png-chunk291x299-rgb: peak |
+| png-cap-image-only | the image and the match room, no window for a longer stream | png-past-last-row-rgb: status CORRUPT |
+| png-cap-no-match-room | no match room | png-past-last-row-rgb: status CORRUPT |
+| png-cap-chunk-unbounded (IMGBIG) | no chunked cap: a big image's buffer is the whole image | by hand (its run takes 162 s, over mutate.py's 150): png-p12: peak 54,122 KB, limit 22,113 KB (and png-chunk291x340-rgb: peak) |
+| png-cap-no-floor, png-rgba-row-on-rgb-read (rerun) | as before | png-small16-rgba: status CORRUPT; png-wide8000x3-rgb: peak |
+| inflate-dist-past-start, -copy-overlap, -lit2-too-long, -third-literal, -fixed-286 (new text) | as before | as before |
+| inflate-reads-past-piece, -subtable-size, -incomplete-code (rerun) | as before | as before |
+| inflate-one-limit-gone | the fast loop without its input bound | AddressSanitizer |
+| inflate-bl-unmasked | the bit count saved with the entries' high bits | FAIL inflate_diff |
+| inflate-len-extra-mask | one extra bit too many in a length | FAIL inflate_diff |
+| inflate-second-index-short | the second literal's index shifted by 3 bits of the count | FAIL inflate_diff |
+| inflate-pair-first-class | a pair made with a first entry that is not a literal | FAIL inflate_diff |
+| inflate-rev-carry | the reversed code's increment without its carry | mutate.py timed out (counted caught); by hand: png-rgb (and every PNG case) status CORRUPT, then inflate_diff runs out of memory and is killed |
+
+Two mutants first tried were equivalent and were replaced: the fast loop's input bound over 2 instead of 8 (a turn takes at most 2 input bytes for each byte it writes, so over 2 still stays in the piece; the bound over 8 is conservative), and the pairing pass's count test on the second entry (an entry read there is never paired yet; the count tests went from the code).
+The last restored check of the first batch (tools/unit.mjs in the real tree) timed out while a run.sh used Chrome beside it; alone it passes (227 passed, 10 s), and the second batch's restored checks passed.
