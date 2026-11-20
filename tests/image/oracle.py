@@ -170,7 +170,7 @@ def pack_bits(vals, depth):
 
 # The grey cases' peak limits beyond the file (KB): what the grey read holds for each, rounded up (docs/image-png-speed.md,
 # "Grey PNG"); main (59380c1) held 1 KB more for each (its RGBA row of 403 x 4 bytes).
-GREY_HELD = {"grey": 407, "grey-key": 407, "grey-alpha": 526, "grey1": 322, "grey2": 322, "grey4": 348, "far-grey": 407}
+GREY_HELD = {"grey": 407, "grey-key": 407, "grey-alpha": 526, "grey1": 322, "grey2": 322, "grey4": 348, "far-grey": 487}
 
 def png_cases():
     W, H = 1203, 802            # odd sizes: no row or column ends where an output pixel does
@@ -349,12 +349,12 @@ def png_cases():
         case(f"png-grey-w{w}", path, 4, 4, area_avg(np.stack([ng] * 3, 2), *fit_box(w, 60, 4, 4)))
     # rows that repeat every 80 (403 + 1 bytes each: 80 rows are 32,320, near the window's far end), so the stream copies
     # each row from the one 80 above: a run of up to 16 that took rows still inside the window would hand those copies
-    # unfiltered bytes
-    gfar = gy[np.arange(300) % 80]
-    fplan = [gplan[i % 80] for i in range(300)]
-    path = write_png("paethruns-far-grey.png", 403, 300, 0, 8, [r for r in gfar], plan=fplan)
+    # unfiltered bytes; 800 rows (323 KB, over the inflate's chunk, so the rows are handed over in parts, not at the end)
+    gfar = gy[np.arange(800) % 80]
+    fplan = [gplan[i % 80] for i in range(800)]
+    path = write_png("paethruns-far-grey.png", 403, 800, 0, 8, [r for r in gfar], plan=fplan)
     assert np.array_equal(np.asarray(Image.open(path).convert("L")), gfar), path
-    case("png-paeth-runs-far-grey", path, 300, 300, area_avg(np.stack([gfar] * 3, 2), *fit_box(403, 300, 300, 300)),
+    case("png-paeth-runs-far-grey", path, 300, 300, area_avg(np.stack([gfar] * 3, 2), *fit_box(403, 800, 300, 300)),
          maxkb=-(-os.path.getsize(path) // 1024) + GREY_HELD["far-grey"])
     # 16-bit grey and grey+alpha stay refused
     status_case("png-grey16", write_png("grey16.png", 403, 30, 0, 16, [np.repeat(r, 2) for r in gy[:30]]), 300, 300, "UNSUPPORTED")
