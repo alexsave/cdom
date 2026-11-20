@@ -574,3 +574,14 @@ Per round, C-simd against main's C-simd: p12.png 0.770 (0.660 to 0.829), p12.jpg
 | png-sink-run-scaled-once | only a run's first row reaches the scaler | tests/image/run.sh in Chrome, FAIL wasm_js_simd: png-paeth-runs-rgb |
 
 png-sink-run-past-window was missed by the first oracle case (no match there reads the rows near the window's far edge); png-paeth-runs-far-rgb was added for it, and catches it.
+
+### Paeth as a wavefront: the Mac (written before the run)
+
+Alex's arm64 Mac, `bench/image/png-mac.sh` (C-old is main's scalar page; 9 rounds, box 900, Chrome then Safari) and `bench/image/profile.mjs` on a page linked without wasm-opt.
+Main on the Mac: Paeth 70.8 ms of a 163.7 ms profiled resize; the bench's p12.png C-simd 157.0 ms in Chrome (B1 131.1) and 161 in Safari (B1 205).
+
+- W1: Paeth's self time in Chrome's profile is at most 30 ms (0.42 of 70.8). Falsifier: above 45 ms.
+- W2: in Chrome, p12.png's C-simd median is under B1's. Falsifier: at or above it.
+- W3: in Safari, p12.png's C-simd falls by at least 0.15 (to 137 ms or less). Falsifier: less than 0.10.
+- W4: C-js (no scalar change) and the JPEG inputs are within 3% of main in both browsers.
+- W5: the wasm memory after p12.png is unchanged.
