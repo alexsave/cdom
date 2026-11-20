@@ -105,8 +105,8 @@
 # The default page (shim/page.html), the contract other repos may name as "cdom's default page": a
 # doctype, <meta charset="utf-8">, the viewport meta (width=device-width, initial-scale=1), a <title> of
 # APP_TITLE (HTML-escaped; the base name of APP_WASM unless set), a <style> after it that holds the
-# app's stylesheets (empty when src/ has none), a <body> that holds only
-# <div id="app"></div>, the app's mount, and one <script>: the shim and the one start call,
+# app's stylesheets (empty when src/ has none), a <body> that holds only the no-script fallback's
+# /*CDOM_NOSCRIPT*/ line (below), <div id="app"></div>, the app's mount, and one <script>: the shim and the one start call,
 # cdom.start(<the module>, "app"), with no env and no options. An app that needs its own <head>, env or
 # options brings its own page (APP_PAGE_SRC).
 #
@@ -361,11 +361,36 @@ cdom_mk_simd_url = $(strip $(if $(and $(APP_WASM_SEPARATE),$(cdom_mk_simd_wasm))
 cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) ] && [ -d $(call cdom_mk_q,$(@D)) ] \
   && $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) --css-list src $(call cdom_mk_q,$@.csslist))$@.csslist)
 %.csslist: ;
-%.html: $$(call cdom_mk_for,$$(APP_PAGE),$$@,$$(cdom_mk_page_src) $$(CDOM_SHIM) $$(CDOM_PAGE_TOOL) $$(APP_WASM) $$(cdom_mk_simd_wasm) $$(cdom_mk_job_files)) $$(cdom_mk_csslist)
+# The no-script fallback (docs/noscript-design.md): what a browser with no script at all shows (NCSA Mosaic, IE 1.5 and
+# 2, Netscape 1.1, Lynx), at the page's /*CDOM_NOSCRIPT*/ line, which the default page has in its <body> and an app's
+# own page may add. CDOM_NOSCRIPT := 0 turns it off (the marker line is then removed, and the page is as it was).
+# With it on, tools/cdpage writes the block (a screenshot, Alex's paragraph, the snowman, in HTML 2.0) and wraps the
+# page's scripts and style in comments, and tools/noscript.mjs then makes the two GIFs beside the page:
+# <page's base name>.noscript.gif, a screenshot of the built page in headless Chrome at CDOM_NOSCRIPT_SHOT_SIZE, and
+# CDOM_NOSCRIPT_SNOWMAN, U+2603 rendered at CDOM_NOSCRIPT_SNOWMAN_SIZE, each through tools/noscript_gif.py (Python 3 and
+# Pillow: PYTHON). That step takes Node (CDOM_NODE), Chrome (CHROME) and Python only for a page with the block, and
+# its content stamp (<page>.noscript) launches nothing when the page and what it loads are the same bytes as before.
+# A failed step removes the page, so the next make tries again.
+CDOM_NOSCRIPT ?= 1
+CDOM_NOSCRIPT_SHOT_SIZE ?= 640x480
+CDOM_NOSCRIPT_SNOWMAN ?= cdom-snowman.gif
+CDOM_NOSCRIPT_SNOWMAN_SIZE ?= 96x96
+CDOM_NODE ?= node
+cdom_mk_noscript = $(if $(filter-out 0 1,$(CDOM_NOSCRIPT)),$(error cdom.mk: CDOM_NOSCRIPT is $(CDOM_NOSCRIPT), not 0 or 1))$(filter 1,$(CDOM_NOSCRIPT))
+cdom_mk_shot_name = $(basename $(notdir $(APP_PAGE))).noscript.gif
+cdom_mk_shot = $(cdom_mk_shot_name)=$(CDOM_NOSCRIPT_SHOT_SIZE)
+cdom_mk_snowman = $(CDOM_NOSCRIPT_SNOWMAN)=$(CDOM_NOSCRIPT_SNOWMAN_SIZE)
+cdom_mk_noscript_args = $(if $(cdom_mk_noscript),--noscript-shot $(call cdom_mk_q,$(cdom_mk_shot)) --noscript-snowman $(call cdom_mk_q,$(cdom_mk_snowman)))
+cdom_mk_noscript_tools = $(if $(cdom_mk_noscript),$(CDOM)/tools/noscript.mjs $(CDOM)/tools/noscript_gif.py $(CDOM)/tools/cdp.mjs)
+cdom_mk_noscript_step = if grep -qF $(call cdom_mk_q,<img src="$(cdom_mk_shot_name)") $(call cdom_mk_q,$@); then \
+  $(CDOM_NODE) $(call cdom_mk_q,$(CDOM)/tools/noscript.mjs) $(call cdom_mk_q,$@) $(call cdom_mk_q,$(cdom_mk_shot)) $(call cdom_mk_q,$(cdom_mk_snowman)) \
+  || { rm -f $(call cdom_mk_q,$@); exit 1; }; fi
+%.html: $$(call cdom_mk_for,$$(APP_PAGE),$$@,$$(cdom_mk_page_src) $$(CDOM_SHIM) $$(CDOM_PAGE_TOOL) $$(APP_WASM) $$(cdom_mk_simd_wasm) $$(cdom_mk_job_files) $$(cdom_mk_noscript_tools)) $$(cdom_mk_csslist)
 	$(if $(APP_PAGE_SRC)$(APP_WASM),,$(error cdom.mk: the default page starts APP_WASM, and APP_WASM is unset))
 	@mkdir -p $(@D)
 	$(CDOM_PAGE_TOOL) --css-list src $(call cdom_mk_q,$@.csslist)
-	$(call cdom_mk_page,$(cdom_mk_page_src),$@,$(cdom_mk_bundled),$(cdom_mk_wasm_url),$(cdom_mk_title),$(APP_WASM).lits,$(cdom_mk_simd_bundled),$(cdom_mk_simd_url),$(cdom_mk_job_args))
+	$(call cdom_mk_page,$(cdom_mk_page_src),$@,$(cdom_mk_bundled),$(cdom_mk_wasm_url),$(cdom_mk_title),$(APP_WASM).lits,$(cdom_mk_simd_bundled),$(cdom_mk_simd_url),$(cdom_mk_job_args) $(cdom_mk_noscript_args))
+	$(if $(cdom_mk_noscript),$(cdom_mk_noscript_step))
 
 # The toolchain check before the APP_WASM rule compiles: a module through WASM_CC, its wasm32 target and
 # wasm-ld, that takes the address of __rodata_start, which wasm-ld defines from LLVM 23 on (src/cdom.c,

@@ -5,6 +5,7 @@
 //   cdpage --page in.html --out out.html --shim cdom.min.js --lits app.wasm.lits
 //          [--wasm app.wasm [--simd-wasm app.simd.wasm] | --wasm-url URL [--simd-wasm-url URL]]
 //          [--title TITLE] [--css-dir DIR] [--job name=job.wasm]...
+//          [--noscript-shot url=WxH --noscript-snowman url=WxH]
 //   cdpage --css-list DIR out.csslist
 //
 // Job modules (--job name=file, once for each; cd_job, src/cdom_job.h): each is bundled as a data:application/wasm;base64 URL in
@@ -42,6 +43,17 @@
 //   starts the one this browser runs (README.md, "Starting an app"); a page with no /*CDOM_WASM*/ is then refused, since
 //   it would never start the twin;
 // - with --title, every /*CDOM_TITLE*/, which becomes the title escaped for HTML.
+// - the one line that holds only /*CDOM_NOSCRIPT*/ (docs/noscript-design.md), which becomes what a browser with no
+//   script shows, and nothing else: the screenshot (--noscript-shot url=WxH), Alex's paragraph, the snowman
+//   (--noscript-snowman url=WxH), in HTML 2.0, inside a <noscript> that a script before it also hides in a comment it
+//   writes (Netscape 2 has script and no <noscript>). The page's every <script> and <style> with something in it is
+//   then wrapped in <!-- and --> (//--> in a script), so a browser that knows neither element shows none of their text;
+//   a module script (where <!-- is a syntax error) or one whose text holds --> (it would end that comment early) is
+//   refused. Without the two flags, the marker line is removed and nothing is wrapped. The images are the build's
+//   (tools/noscript.mjs); this tool only names them.
+// Every <script> of the page as written is checked against the HTML parser's escaped states: after a <!--, a <script
+// puts the parser in its double-escaped state, where </script> does not end the element, so the page would run on as
+// script. A page whose script would do that is refused, naming the line, whatever the flags.
 // Refused, with nothing written: no /*CDOM_SHIM*/ line, a second one, the marker beside other text (it
 // would be lost with the line), no <script tag before it; a second /*CDOM_WASM*/; and, bundling, a page
 // with no /*CDOM_WASM*/: a page that names its module by URL would fetch it besides carrying it, so it is
@@ -421,9 +433,184 @@ static void css_list(const char *dir, const char *out) {
   write_out(out, &o);
 }
 
+/* ---- what a browser with no script shows (docs/noscript-design.md) ---- */
+static const char NOSCRIPT[] = "/*CDOM_NOSCRIPT*/";
+/* Alex's paragraph, verbatim, in ASCII: Mosaic has no UTF-8, so the apostrophes are plain. */
+static const char NOSCRIPT_TEXT[] = "Brother I'm sorry, the only way I could support your browser is if I had a server running just for you. "
+  "And even if I did, anything you sent to that server would be decrypted. Regrettably I have chosen to drop support on this browser. "
+  "Here's a snowman";
+
+/* url=WxH: the url (printable ASCII, none of " < > & ' and no --, since it stands in an attribute inside the comment
+ * that hides the block from a browser with script) and the two sizes, 1 to 4096. */
+typedef struct { char url[256]; unsigned w, h; } Img;
+static Img img_arg(const char *flag, const char *v) {
+  Img m = {0};
+  const char *eq = strrchr(v, '=');
+  if (!eq || eq == v || (size_t)(eq - v) >= sizeof m.url) die("%s takes url=WxH, not %s", flag, v);
+  memcpy(m.url, v, (size_t)(eq - v));
+  for (const char *c = m.url; *c; c++)
+    if (*c <= ' ' || *c > '~' || strchr("\"<>&'", *c) || (c[0] == '-' && c[1] == '-'))
+      die("%s: the url %s may hold only printable ASCII, none of \" < > & ' and no --", flag, m.url);
+  char x;
+  if (sscanf(eq + 1, "%ux%u%c", &m.w, &m.h, &x) != 2 || !m.w || !m.h || m.w > 4096 || m.h > 4096)
+    die("%s: the size in %s is not WxH (1 to 4096 each)", flag, v);
+  return m;
+}
+static void img_tag(Buf *o, const Img *m, const char *alt) {
+  char t[400];
+  snprintf(t, sizeof t, "<img src=\"%s\" width=\"%u\" height=\"%u\" alt=\"%s\">\n", m->url, m->w, m->h, alt);
+  bstr(o, t);
+}
+/* The block at the marker. A browser with no script knows neither <script> nor <noscript>: it skips the script's
+ * text (a comment) and shows the three. A browser with script runs the script, whose document.write opens a comment
+ * that the parser reads the rest through, to the --> of <wbr -->: so Netscape 2, which has no <noscript>, never shows
+ * the block. <noscript> is for the rest: a modern browser's preload scanner reads ahead of the parser and does not
+ * run the script, but skips a <noscript>'s contents when script is on, so the images are never fetched. <wbr -->
+ * ends the comment in both readings, SGML's strict one (the -- closes it, then the >) and the minimal one (-->), and
+ * outside a comment it is a tag HTML 2.0 does not know and HTML5 a void element: nothing to show either way. */
+static void noscript_block(Buf *o, const char *shot_arg, const char *snow_arg) {
+  Img shot = img_arg("--noscript-shot", shot_arg), snow = img_arg("--noscript-snowman", snow_arg);
+  bstr(o, "<script><!--\ndocument.write(\"<!-\"+\"-\");\n//--></script><noscript>\n");
+  img_tag(o, &shot, "[A screenshot of this page in a browser with JavaScript]");
+  bstr(o, "<p>");
+  bstr(o, NOSCRIPT_TEXT);
+  bstr(o, "</p>\n");
+  img_tag(o, &snow, "[A snowman]");
+  bstr(o, "</noscript><wbr -->\n");
+}
+
+/* Whether the page is inside a <script> element, as style_state is for <style>. */
+static void script_state(const uint8_t *p, size_t n, int *in) {
+  for (size_t i = 0; i + 1 < n; i++) {
+    if (p[i] != '<') continue;
+    if (p[i + 1] == '/' && starts_ci(p + i + 2, n - i - 2, "script")) *in = 0;
+    else if (starts_ci(p + i + 1, n - i - 1, "script") && i + 7 < n && (p[i + 7] == '>' || p[i + 7] == ' ' || p[i + 7] == '\t')) *in = 1;
+  }
+}
+
+/* The page as written, element by element: each <script ...> and <style ...> and the text up to its first </script
+ * (</style), outside the page's own comments. A tag with no > or an element with no end tag ends the walk. */
+typedef struct { size_t tag, open_end, body, body_end; int style; } Elem;
+static int delim(uint8_t c) { return c == '\t' || c == '\n' || c == '\f' || c == '\r' || c == ' ' || c == '/' || c == '>'; }
+static int next_elem(const uint8_t *p, size_t n, size_t *at, Elem *e) {
+  for (size_t i = *at; i < n; i++) {
+    if (p[i] != '<') continue;
+    if (n - i >= 4 && !memcmp(p + i, "<!--", 4)) {
+      const uint8_t *end = find(p + i + 4, n - i - 4, "-->");
+      if (!end) return 0;
+      i = (size_t)(end - p) + 2;
+      continue;
+    }
+    int style = starts_ci(p + i + 1, n - i - 1, "style") && i + 6 < n && delim(p[i + 6]);
+    if (!style && !(starts_ci(p + i + 1, n - i - 1, "script") && i + 7 < n && delim(p[i + 7]))) continue;
+    const uint8_t *gt = memchr(p + i, '>', n - i);
+    if (!gt) return 0;
+    size_t body = (size_t)(gt - p) + 1, j = body;
+    const char *close = style ? "</style" : "</script";
+    while (j < n && !starts_ci(p + j, n - j, close)) j++;
+    if (j >= n) return 0;
+    *e = (Elem){ i, body, body, j, style };
+    *at = j;
+    return 1;
+  }
+  return 0;
+}
+static size_t line_of(const uint8_t *p, size_t at) {
+  size_t l = 1;
+  for (size_t i = 0; i < at; i++) l += p[i] == '\n';
+  return l;
+}
+/* A script's text through the HTML parser's script data states (the HTML standard, 13.2.5.4 to .25): plain, escaped
+ * (after <!--), and double-escaped (after a <script in escaped text), each with its dash states. Returns the offset
+ * of the <script that left the parser double-escaped at the text's end, where the </script> that follows would not
+ * end the element, or SIZE_MAX when it ends there. */
+static size_t double_escaped_at(const uint8_t *p, size_t n) {
+  enum { DATA, ESC, ESC_D, ESC_DD, DESC, DESC_D, DESC_DD } st = DATA;
+  size_t from = SIZE_MAX;
+  for (size_t i = 0; i < n;) {
+    uint8_t c = p[i];
+    switch (st) {
+    case DATA:
+      if (n - i >= 4 && !memcmp(p + i, "<!--", 4)) { st = ESC_DD; i += 4; continue; }
+      break;
+    case ESC: case ESC_D: case ESC_DD:
+      if (c == '-') { st = st == ESC ? ESC_D : ESC_DD; break; }
+      if (c == '>' && st == ESC_DD) { st = DATA; break; }
+      st = ESC;
+      if (c == '<' && starts_ci(p + i + 1, n - i - 1, "script") && i + 7 < n && delim(p[i + 7])) { st = DESC; from = i; i += 8; continue; }
+      break;
+    case DESC: case DESC_D: case DESC_DD:
+      if (c == '-') { st = st == DESC ? DESC_D : DESC_DD; break; }
+      if (c == '>' && st == DESC_DD) { st = DATA; break; }
+      st = DESC;
+      if (c == '<' && n - i >= 2 && p[i + 1] == '/' && starts_ci(p + i + 2, n - i - 2, "script") && i + 8 < n && delim(p[i + 8])) { st = ESC; i += 9; continue; }
+      break;
+    }
+    i++;
+  }
+  return st >= DESC ? from : SIZE_MAX;
+}
+/* Every script of the page: refused if the parser would read on past its </script>. */
+static void check_scripts(const uint8_t *p, size_t n) {
+  Elem e;
+  for (size_t at = 0; next_elem(p, n, &at, &e);) {
+    if (e.style) continue;
+    size_t d = double_escaped_at(p + e.body, e.body_end - e.body);
+    if (d != SIZE_MAX)
+      die("%s: the <script> on line %zu of the page as built holds \"<!--\" and then \"<script\" (line %zu): the HTML parser is "
+          "then double-escaped, and the </script> on line %zu would not end the element; write that <script as \\x3cscript or '<'+'script'",
+          page_name, line_of(p, e.tag), line_of(p, e.body + d), line_of(p, e.body_end));
+  }
+}
+static int blank(const uint8_t *p, size_t n) {
+  for (size_t i = 0; i < n; i++)
+    if (p[i] != ' ' && p[i] != '\t' && p[i] != '\n' && p[i] != '\r' && p[i] != '\f') return 0;
+  return 1;
+}
+/* The page with every script's and style's text in a comment, for a browser that knows neither element. A text that
+ * is blank needs none; one that already starts with <!-- is kept, and checked as the others are: its first --> must
+ * be its end, or a browser with no script would show what follows as text. */
+static void wrap_all(const Buf *in, Buf *o) {
+  const uint8_t *p = in->p;
+  size_t n = in->n, done = 0;
+  Elem e;
+  for (size_t at = 0; next_elem(p, n, &at, &e);) {
+    const uint8_t *b = p + e.body;
+    size_t bn = e.body_end - e.body, line = line_of(p, e.tag);
+    const char *what = e.style ? "<style>" : "<script>";
+    if (blank(b, bn)) continue;
+    if (!e.style) {
+      const uint8_t *ty = 0;
+      for (size_t i = e.tag; i + 5 < e.open_end; i++)
+        if (starts_ci(p + i, e.open_end - i, "type") && (p[i - 1] == ' ' || p[i - 1] == '\t' || p[i - 1] == '\n')) { ty = p + i; break; }
+      if (ty && find(ty, (size_t)(p + e.open_end - ty), "module"))
+        die("%s: line %zu: a module script, where <!-- is a syntax error, cannot be hidden from a browser with no script (/*CDOM_NOSCRIPT*/)", page_name, line);
+    }
+    size_t lead = 0;
+    while (lead < bn && (b[lead] == ' ' || b[lead] == '\t' || b[lead] == '\n' || b[lead] == '\r')) lead++;
+    int had = bn - lead >= 4 && !memcmp(b + lead, "<!--", 4);
+    const uint8_t *from = had ? b + lead + 4 : b, *end = find(from, bn - (size_t)(from - b), "-->");
+    if (end && (!had || !blank(end + 3, bn - (size_t)(end + 3 - b))))
+      die("%s: the %s on line %zu of the page as built holds \"-->\" (line %zu), which would end the comment that hides it from a "
+          "browser with no script, and that browser would show the rest as text (/*CDOM_NOSCRIPT*/)", page_name, what, line, line_of(p, (size_t)(end - p)));
+    if (had && !end)
+      die("%s: the %s on line %zu of the page as built opens a <!-- it never closes (/*CDOM_NOSCRIPT*/)", page_name, what, line);
+    if (had) continue;
+    bput(o, p + done, e.body - done);
+    bstr(o, "<!--");
+    if (b[0] != '\n') bbyte(o, '\n');
+    bput(o, b, bn);
+    if (b[bn - 1] != '\n') bbyte(o, '\n');
+    bstr(o, e.style ? "-->" : "//-->");
+    done = e.body_end;
+  }
+  bput(o, p + done, n - done);
+}
+
 /* ---- the page ---- */
 typedef struct {
   const char *page, *out, *shim, *lits, *wasm, *wasm_url, *simd_wasm, *simd_wasm_url, *title, *css_dir;
+  const char *noscript_shot, *noscript_snowman; /* url=WxH each, or both 0 */
   const char *jobs[16]; /* --job name=file, each */
   int njobs;
 } Args;
@@ -475,7 +662,7 @@ static void module_at(Buf *o, const char *file, const char *url) {
   free(mod.p);
 }
 
-static void build(const Args *a, Buf *o) {
+static void build(const Args *a, Buf *o, int *noscripts) {
   Buf src = {0}, lits = {0}, shim = {0};
   if (!slurp(a->page, &src)) die("%s: cannot read the page", a->page);
   /* The stylesheets are found and checked first: a fault in one is named before the page's. */
@@ -483,7 +670,7 @@ static void build(const Args *a, Buf *o) {
   Buf css = {0};
   sheets_text(&sheets, &css);
   Tag script = {0};
-  int marks = 0, wasms = 0, have_loads = 0, css_marks = 0, in_style = 0;
+  int marks = 0, wasms = 0, have_loads = 0, css_marks = 0, in_style = 0, in_script = 0;
   Buf loads = {0};
   size_t lineno = 0;
   for (size_t at = 0; at < src.n;) {
@@ -500,7 +687,15 @@ static void build(const Args *a, Buf *o) {
       bput(o, css.p, css.n);
       continue;
     }
+    if (find(l, n, NOSCRIPT)) {
+      if (!alone(l, n, NOSCRIPT)) die("%s:%zu: /*CDOM_NOSCRIPT*/ must be alone on its line", page_name, lineno);
+      if (++*noscripts > 1) die("%s:%zu: a second /*CDOM_NOSCRIPT*/ (the page shows its fallback once)", page_name, lineno);
+      if (in_style || in_script) die("%s:%zu: /*CDOM_NOSCRIPT*/ inside a <%s> element (it goes in the <body>, outside any script)", page_name, lineno, in_style ? "style" : "script");
+      if (a->noscript_shot) noscript_block(o, a->noscript_shot, a->noscript_snowman);
+      continue;
+    }
     style_state(l, n, &in_style);
+    script_state(l, n, &in_script);
     if (find(l, n, SHIM)) {
       if (!alone(l, n, SHIM)) die("%s:%zu: /*CDOM_SHIM*/ must be alone on its line", page_name, lineno);
       if (++marks > 1) die("%s:%zu: a second /*CDOM_SHIM*/ (the page takes the shim once)", page_name, lineno);
@@ -588,6 +783,7 @@ static void usage(void) {
   die("usage: cdpage --page in.html --out out.html --shim cdom.min.js --lits app.wasm.lits\n"
       "              [--wasm app.wasm [--simd-wasm app.simd.wasm] | --wasm-url URL [--simd-wasm-url URL]]\n"
       "              [--title TITLE] [--css-dir DIR] [--job name=job.wasm]...\n"
+      "              [--noscript-shot url=WxH --noscript-snowman url=WxH]\n"
       "       cdpage --css-list DIR out.csslist");
 }
 
@@ -608,16 +804,26 @@ int main(int argc, char **argv) {
     const char **slot = !strcmp(f, "--page") ? &a.page : !strcmp(f, "--out") ? &a.out : !strcmp(f, "--shim") ? &a.shim
       : !strcmp(f, "--lits") ? &a.lits : !strcmp(f, "--wasm") ? &a.wasm : !strcmp(f, "--wasm-url") ? &a.wasm_url
       : !strcmp(f, "--simd-wasm") ? &a.simd_wasm : !strcmp(f, "--simd-wasm-url") ? &a.simd_wasm_url
-      : !strcmp(f, "--title") ? &a.title : !strcmp(f, "--css-dir") ? &a.css_dir : 0;
+      : !strcmp(f, "--title") ? &a.title : !strcmp(f, "--css-dir") ? &a.css_dir
+      : !strcmp(f, "--noscript-shot") ? &a.noscript_shot : !strcmp(f, "--noscript-snowman") ? &a.noscript_snowman : 0;
     if (!slot || i + 1 >= argc || *slot) usage();
     *slot = argv[++i];
   }
   /* A twin goes with a module of its own form: bundled with bundled, a URL with a URL. */
-  if (!a.page || !a.out || !a.shim || !a.lits || (a.wasm && a.wasm_url) || (a.simd_wasm && !a.wasm) || (a.simd_wasm_url && !a.wasm_url))
+  if (!a.page || !a.out || !a.shim || !a.lits || (a.wasm && a.wasm_url) || (a.simd_wasm && !a.wasm) || (a.simd_wasm_url && !a.wasm_url)
+      || !a.noscript_shot != !a.noscript_snowman)
     usage();
   page_name = a.page;
   Buf o = {0};
-  build(&a, &o);
+  int noscripts = 0;
+  build(&a, &o, &noscripts);
+  if (noscripts && a.noscript_shot) {
+    Buf w = {0};
+    wrap_all(&o, &w);
+    free(o.p);
+    o = w;
+  }
+  check_scripts(o.p, o.n);
   write_out(a.out, &o);
   return 0;
 }
