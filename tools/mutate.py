@@ -1137,7 +1137,7 @@ M = [
   ('js1c-branch-not-carried', 'tools/js1c.c', '  if (here && !further) bf(b, "if(B){B=0;%s}", act);', '  if (here && !further) bs(b, "B=0;");', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-unreachable-no-flag', 'tools/js1c.c', '  case S_UNR: bs(b, "JT=1;return 0;"); break;', '  case S_UNR: bs(b, "return 0;"); break;', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-stack-not-put-back', 'tools/js1c.c', 'if(Jgo(%u)){JW=p;JO.js1_paused=1;return 0;}JP=p;', 'if(Jgo(%u)){JW=p;JO.js1_paused=1;return 0;}', JS1, 'FAIL a trap 30 calls down puts the explicit stack back'),
-  ('js1c-recursion-direct', 'tools/js1c.c', '    if (funcs[g].state == 1 || !funcs[g].direct) ok = 0;', '    if (0) ok = 0;', JS1, 'FAIL rec(1000) reaches JavaScript depth'),
+  ('js1c-recursion-direct', 'tools/js1c.c', '  f->direct = ok;', '  f->direct = !f->indirect;', JS1, 'FAIL rec(1000) reaches JavaScript depth'),
   ('js1c-slicing-ignored', 'tools/js1c.c', 'if(k==0){JN=n;return 1;}', 'if(k==0&&k==1){JN=n;return 1;}', JS1, 'FAIL sliced at 50 steps'),
   ('js1c-byte-sign', 'tools/js1c.c', '"function JLbs(a){return JM[a>>2]<<(24-((a&3)<<3))>>24;}\\n"', '"function JLbs(a){return JM[a>>2]<<(24-((a&3)<<3))>>>24;}\\n"', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-subnormal-bits', 'tools/js1c.c', 'm=x*JP2(1022)*4503599627370496', 'm=x*JP2(1021)*4503599627370496', JS1, 'FAIL every export agrees with wasm'),
