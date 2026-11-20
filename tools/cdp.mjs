@@ -88,9 +88,23 @@ const IE9_GAPS = `
 // elementsFromPoint, a rect's width and height, innerWidth and innerHeight; and a DOM method's apply and call; and
 // JScript's splice, which removes nothing given a start alone. setAttribute sets an expando for class,
 // style and for, as IE 6 and 7's sets a same-named property. Kept: JSON (IE 8's), getElementById, querySelector and
-// innerText, which the harness reads the page with. Under LEGACY=below there is no attachEvent either.
+// innerText, which the harness reads the page with. Under LEGACY=below there is no attachEvent either. And a stand-in
+// for VML (below).
 const IE6_OLD = `
   const define = Object.defineProperty;
+  // A VML stand-in (tools/legacy/vml.js, docs/vml-design.md): Chrome draws no VML, but IE's setup calls are here and
+  // recorded in window.__vml (namespaces.add's arguments, createStyleSheet's rules), and every element made with a v: tag
+  // is recorded too, so a test reads the VML the shim built. Chrome makes an unknown element of v:shape, which keeps the
+  // properties set on it. Before the loop below, which takes apply and call from createElement as from the DOM's methods.
+  const vml = window.__vml = { ns: [], rules: [], made: [] };
+  Document.prototype.namespaces = { add(prefix, urn, behavior) { vml.ns.push([prefix, urn, behavior === undefined ? null : behavior]); } };
+  Document.prototype.createStyleSheet = function () { return { addRule(selector, rule) { vml.rules.push([selector, rule]); } }; };
+  const createElement = Document.prototype.createElement;
+  Document.prototype.createElement = function (tag) {
+    const el = Reflect.apply(createElement, this, [tag]);
+    if (/^v:/i.test(tag)) vml.made.push(el);
+    return el;
+  };
   // IE 6 to 8's DOM methods are host objects, not functions: no apply or call (EventTarget's are kept: attachEvent
   // below calls them). Through Reflect: IE9_GAPS took Object.setPrototypeOf.
   for (const proto of [Node.prototype, Element.prototype, HTMLElement.prototype, Document.prototype, HTMLInputElement.prototype])
