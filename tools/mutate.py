@@ -52,6 +52,9 @@ FPT9 = ['env', 'LEGACY=ie9', 'node', 'tools/fptoint.mjs']            # and on th
 LEGW2J = ['env', 'LEGACY=1', 'node', 'tools/legacy.mjs']             # the legacy page as a browser without WebAssembly
 FRAMES = ['env', 'LEGACY=frames', 'node', 'tools/frames.mjs']       # the fifth tier: no DOM mutation, frames written whole
 JS11T = ['node', 'tools/js11.mjs']                                   # the frames tier's language gates, in node
+JS10T = ['node', 'tools/js10.mjs']                                   # the JavaScript 1.0 gate (Netscape 2.02), in node
+JS1T = ['node', 'tools/js1.mjs']                                     # the JS 1 transform on planted code, js1cpu against wasm, the depth
+WORDS1 = ['env', 'WORDS=words1', 'node', 'tools/words.mjs']          # words1.js against typed arrays, memforms through the transform
 NOSCRIPT = ['tests/noscript/run.sh']                                 # the no-script fallback: Chrome off and on, lynx, the lens, cdpage's refusals
 
 # name, file, old, new, test command, text the failure must contain
@@ -1001,6 +1004,31 @@ M = [
   ('js11-undefined-allowed', 'tools/legacy/js11.mjs', "const GLOBALS = new Set(['undefined', ", "const GLOBALS = new Set([", JS11T, 'FAIL var u = undefined; is refused'),
   ('js10-typeof-allowed', 'tools/legacy/js11.mjs', "    if (js10 && n.type === 'UnaryExpression' && (n.operator === 'typeof' || n.operator === 'void')) add(n.operator, n);", '', JS11T, 'FAIL js10: if (typeof x == "string") f(); is refused'),
   ('js10-names-allowed', 'tools/legacy/js11.mjs', "      if (js10 && JS10_NAMES.has(n.name)) add(n.name, n);", '', JS11T, 'FAIL js10: var a = new Array(); is refused'),
+  # the JS 1 transform (docs/js1-transform-design.md): the gates, the lowering, the traps, words1.js and the wiring
+  ('js11-new-member-allowed', 'tools/legacy/js11.mjs', "    if (n.type === 'MemberExpression' && n.object.type === 'NewExpression') add('a member of a new expression', n);", '', JS11T, 'FAIL var t = new Date().getTime(); is refused'),
+  ('js11-isnan-allowed', 'tools/legacy/js11.mjs', "'Infinity', 'isNaN', ", "'Infinity', ", JS11T, 'FAIL if (isNaN(x)) f(); is refused'),
+  ('js10-typeof-allowed-1', 'tools/legacy/js10.mjs', "    if (n.type === 'UnaryExpression' && (n.operator === 'typeof' || n.operator === 'void')) add(n.operator, n);", '', JS10T, 'FAIL if (typeof x == "string") f(); is refused'),
+  ('js10-dollar-allowed', 'tools/legacy/js10.mjs', "      if (n.name.includes('$')) add('a $ in an identifier', n);", '', JS10T, 'FAIL var $a = 1; is refused'),
+  ('js10-split-allowed', 'tools/legacy/js10.mjs', "'charCodeAt', 'fromCharCode', 'split', ", "'charCodeAt', 'fromCharCode', ", JS10T, 'FAIL var p = s.split(","); is refused'),
+  ('js10-radix-allowed', 'tools/legacy/js10.mjs', "&& n.callee.property.name === 'toString' && n.arguments.length) add(", "&& n.callee.property.name === 'toString' && false) add(", JS10T, 'FAIL var h = (255).toString(16); is refused'),
+  ('js10-computed-refused', 'tools/legacy/js10.mjs', '      if (!n.computed && MEMBERS.has(n.property.name)', '      if (MEMBERS.has(n.property.name || n.property.value)', JS10T, 'FAIL a computed key named as a method passes'),
+  ('js1-switch-no-fallthrough', 'tools/legacy/js1.mjs', "t.binaryExpression('<=', id(c), num(i))", "t.binaryExpression('==', id(c), num(i))", JS1T, 'FAIL table gives what the original gives'),
+  ('js1-dowhile-test-first', 'tools/legacy/js1.mjs', "out = t.whileStatement(t.logicalExpression('||', id(f), n.test), block([assign(f, num(0)), ...body]));", 'out = t.whileStatement(n.test, block([assign(f, num(0)), ...body]));', JS1T, 'FAIL dowhile gives what the original gives'),
+  ('js1-jump-not-passed-on', 'tools/legacy/js1.mjs', "    if (!here.length) return [t.ifStatement(id('t_J'), t.breakStatement())];", '    if (!here.length) return [];', JS1T, 'FAIL deep gives what the original gives'),
+  ('js1-jump-settled-as-break', 'tools/legacy/js1.mjs', "[assign('t_J', num(0)), c.cont ? t.continueStatement() : t.breakStatement()]", "[assign('t_J', num(0)), t.breakStatement()]", JS1T, 'FAIL deep gives what the original gives'),
+  ('js1-trap-check-dropped', 'tools/legacy/js1.mjs', '      return [n, check()];', '      return [n];', JS1T, 'FAIL a trap two calls in'),
+  ('js1-trap-test-unchecked', 'tools/legacy/js1.mjs', "      if (calls(test)) {\n        locals.add('t_q');", "      if (false) {\n        locals.add('t_q');", JS1T, "FAIL a trap in an if's test"),
+  ('js1-trap-elided-everywhere', 'tools/legacy/js1.mjs', 'const last = (next, top) => (next === undefined ? top :', 'const last = (next, top) => (true ? true :', JS1T, 'FAIL a trap two calls in'),
+  ('js1-imul-big-constant', 'tools/legacy/js1.mjs', 'const SMALL = 1 << 20;', 'const SMALL = 1 << 30;', JS1T, 'FAIL maths gives what the original gives'),
+  ('js1-imul-plain', 'tools/legacy/words1.js', '  return (al * bl + (((a >>> 16) * bl + al * (b >>> 16) & 65535) << 16)) | 0;', '  return a * b | 0;', JS1T, 'FAIL maths gives what the original gives'),
+  ('js1-infinity-left', 'tools/legacy/js1.mjs', '|| p.scope.getBinding(p.node.name)) return;', '|| p.scope.hasBinding(p.node.name)) return;', JS1T, 'FAIL the planted functions, transformed, pass the 1.1 gate: Infinity'),
+  ('js1-literal-left', 'tools/legacy/js1.mjs', '      if (t.isReturnStatement(s) && literal(s.argument)) {', '      if (false) {', FRAMES, 'is not JavaScript 1.1: an object literal'),
+  ('js1-shim-trap-unread', 'tools/legacy/frames.js', '  if (cf_raw.cdom_trapped && cf_raw.cdom_trapped()) {', '  if (false) {', FRAMES, 'FAIL and it is noted, once'),
+  ('js1-boot-loads-ie9', 'shim/boot.js', 'base + ".js1.js\\"></scr"', 'base + ".ie9.js\\"></scr"', FRAMES, 'FAIL tier 5 files only'),
+  ('words1-base64-pad', 'tools/legacy/words1.js', '  if (s.charAt(n - 1) == "=") end--;\n', '', WORDS1, 'FAIL data segments'),
+  ('words1-fround-tie-up', 'tools/legacy/words1.js', '  if (d > 0.5 || (d == 0.5 && f % 2 == 1)) f = f + 1;', '  if (d >= 0.5) f = f + 1;', WORDS1, 'FAIL Math.fround in software'),
+  ('words1-grow-unzeroed', 'tools/legacy/words1.js', '  for (; i < n; i++) W[i] = 0;\n  WBYTES = WBYTES + pages * 65536;', '  W[n - 1] = 0;\n  WBYTES = WBYTES + pages * 65536;', WORDS1, 'FAIL grow adds zero pages'),
+  ('words1-f64-negzero', 'tools/legacy/words1.js', '  if (x < 0 || (x == 0 && 1 / x < 0)) hi = hi | -2147483648;', '  if (x < 0) hi = hi | -2147483648;', WORDS1, 'FAIL f64 stores and loads'),
   ('mount-waits-on-gone-domcontentloaded', 'shim/cdom.js', '      return new Promise((resolve) => addEventListener("load", resolve, { once: true })).then(found);', '      return new Promise((resolve) => doc.addEventListener("DOMContentLoaded", resolve, { once: true })).then(found);', LEG, 'FAIL a missing mount is an error once the page has loaded'),
   # no LEGACY=ie6 twin of the one above: dom-old.js listens for DOMContentLoaded as the window's load there, so it is the same wait
   ('mount-missing-no-error', 'shim/cdom.js', '      if (!element) {\n        throw new Error(`cdom: no element has the id ${mount}`);', '      if (false) {\n        throw new Error(`cdom: no element has the id ${mount}`);', LEG, 'FAIL a missing mount is an error once the page has loaded'),

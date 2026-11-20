@@ -91,7 +91,7 @@ const PLANTED = {
   // do-while with a continue, which must go to the test.
   dowhile: `function dowhile(n) {
     n = n | 0; var i = 0, s = 0;
-    do { i = i + 1 | 0; if (i & 1) continue; s = s + i | 0; } while ((i | 0) < (n | 0));
+    do { i = i + 1 | 0; s = s + 1 | 0; if (i & 1) continue; s = s + i | 0; } while ((i | 0) < (n | 0));
     return s | 0;
   }`,
   // Three loops out, by continue and by break.
@@ -118,13 +118,13 @@ const PLANTED = {
   // Math.imul by a small constant (written x * c | 0) and by a variable, clz32, trunc, fround, === and Infinity.
   maths: `function maths(x) {
     x = x | 0;
-    return Math_imul(x, 2654) + Math_imul(x, x) + Math_imul(-1048576, x) + Math_clz32(x) + Math_trunc(x / 7) + (x === 3 ? 1 : 0)
+    return Math_imul(x, 2654) + Math_imul(x, x) + Math_imul(x, 1073741823) + Math_imul(-1048576, x) + Math_clz32(x) + Math_trunc(x / 7) + (x === 3 ? 1 : 0)
       + (Math_fround(x / 3) * 3 | 0) + (1 / 0 == Infinity ? 0 : 1) | 0;
   }`,
   // A trap two calls in: nothing after it runs, in any caller, and the flag is up.
   traps: `function trap0(x) { if ((x | 0) == 3) wasm2js_trap(); seen = seen + 1 | 0; return x + 1 | 0; }
   function trap1(x) { var r = 0; r = trap0(x) | 0; seen = seen + 10 | 0; return r + 1 | 0; }
-  function traps(x) { x = x | 0; var r = 0; seen = 0; r = trap1(x) | 0; seen = seen + 100 | 0; if (trap1(x + 1 | 0)) seen = seen + 1000 | 0; return (r + (seen << 8)) | 0; }
+  function traps(x) { x = x | 0; var r = 0; seen = 0; r = trap1(x) | 0; seen = seen + 100 | 0; if (trap1(x + 1 | 0)) seen = seen + 1000 | 0; seen = seen + 10000 | 0; return (r + (seen << 8)) | 0; }
   function seenNow() { return seen | 0; }`,
 };
 const ARGS = [0, 1, 2, 3, 4, 5, 6, 7, 9, 12, 20, 40, 1000, -1, -7];

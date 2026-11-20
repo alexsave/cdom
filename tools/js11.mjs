@@ -29,6 +29,10 @@ for (const [src, what] of [
   ['var u = undefined;', 'undefined'],
   ['var n = NaN;', 'NaN'],
   ['var i = Infinity;', 'Infinity'],
+  // Measured in Netscape 3.04 (docs/descent.md): a member of a new expression is a syntax error, and isNaN is missing.
+  ['var t = new Date().getTime();', 'a member of a new expression'],
+  ['var t = (new Date()).getTime();', 'a member of a new expression'],
+  ['if (isNaN(x)) f();', 'isNaN'],
 ]) ok(refused(src, what), `${src} is refused (${what})`);
 // The methods of 1.2 and later, and the DOM this tier has not.
 for (const m of ['push', 'pop', 'shift', 'unshift', 'splice', 'slice', 'concat', 'call', 'apply', 'charCodeAt',

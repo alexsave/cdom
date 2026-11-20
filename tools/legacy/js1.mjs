@@ -268,7 +268,16 @@ function walkNoFn(n, visit) {
 // t_q first. A return passes the trap up as it is: its caller checks. stats counts what was written.
 function traps(fnBody, can, locals, stats) {
   const calls = (n) => { let found = 0; walkNoFn(n, (x) => { if (can(x)) found++; }); return found; };
-  const list = (l) => l.flatMap(one);
+  // A check is not written where nothing but the function's end, or a return of a value that calls and assigns
+  // nothing, would follow it: the caller checks the flag itself.
+  const plain = (n) => { let bad = false; walkNoFn(n, (x) => { if (t.isCallExpression(x) || t.isAssignmentExpression(x) || t.isUpdateExpression(x)) bad = true; }); return !bad; };
+  const last = (next, top) => (next === undefined ? top : t.isReturnStatement(next) && (!next.argument || plain(next.argument)));
+  const list = (l, top = false) => l.flatMap((s, i) => {
+    const out = one(s);
+    if (out.length > 1 && t.isIfStatement(out[out.length - 1]) && out[out.length - 1].test.name === TRAP && out[out.length - 1].consequent.type === 'ReturnStatement'
+      && last(l[i + 1], top)) { stats.elided++; out.pop(); }
+    return out;
+  });
   const sub = (s) => { const out = one(s); return out.length === 1 ? out[0] : t.blockStatement(out); };
   function one(n) {
     if (t.isThrowStatement(n)) { stats.throws++; return trapNow(); }
@@ -314,7 +323,7 @@ function traps(fnBody, can, locals, stats) {
     }
     return [n];
   }
-  fnBody.body = list(fnBody.body);
+  fnBody.body = list(fnBody.body, true);
 }
 
 // The small constant of Math.imul(a, c) that (a * c | 0) multiplies exactly: an i32 or u32 operand is under 2^32, so
@@ -489,7 +498,7 @@ export function js1(src, { short = true } = {}) {
       else for (const e of n.right.elements) if (t.isIdentifier(e)) tableFns.add(e.name);
     }
   });
-  const stats = { throws: 0, checks: 0, multi: 0, functions: 0, trapping: 0 };
+  const stats = { throws: 0, checks: 0, elided: 0, multi: 0, functions: 0, trapping: 0 };
   const localsOf = new Map();
   for (const f of fns.values()) {
     const locals = new Set();
