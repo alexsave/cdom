@@ -22,19 +22,19 @@ Coordinates are baked, the way Raphael 2 drew in VML: every shape is a v:shape w
 So one VML path unit is 1/100 px (K = 100), and the path's whole numbers are the points' pixel positions times 100, rounded.
 The pixel position of a point is the shape's current transform matrix (CTM) applied to it: the svg's viewBox mapping, then each g's transform, then the shape's own, all translate and scale, so the CTM is always [sx 0 0 sy tx ty].
 Bézier curves and lines keep their shape under such a map, so converting in user space and mapping the points is exact.
-The svg and each g are v:group elements whose own frame is the identity (the svg's box W by H px with coordsize "W,H"; a g's 1 px box with coordsize "1,1"), so a child's style lengths mean the same whether IE reads them as pixels or as the group's units.
+The svg and each g are spans, not v:group elements (section 9 says why): the svg's span is its box, W by H px with overflow hidden, and a g's span holds its shapes at the svg's top left, since every point is already baked through the CTM.
 
 | SVG | VML (cdomVml) |
 | --- | --- |
-| `<svg width height viewBox>` | `v:group`, style position:relative;display:inline-block;width:Wpx;height:Hpx, coordsize "W,H", coordorigin "0,0"; the viewBox sets the CTM of everything inside (preserveAspectRatio's default, xMidYMid meet); no width or height is 300 by 150, as in a browser |
-| `<g transform>` | `v:group`, style position:absolute;left:0;top:0;width:1px;height:1px, coordsize "1,1"; its translate and scale go into the CTM of what it holds |
+| `<svg width height viewBox>` | `span`, style position:relative;display:inline-block;overflow:hidden;width:Wpx;height:Hpx; the viewBox sets the CTM of everything inside (preserveAspectRatio's default, xMidYMid meet); no width or height is 300 by 150, as in a browser |
+| `<g transform>` | `span`, style position:absolute;left:0;top:0; its translate and scale go into the CTM of what it holds |
 | `<path d>` | `v:shape` with `path` from cdomVml.path(d, CTM) |
 | `<rect x y width height rx ry>` | `v:shape`, the rect as a path (rounded corners as arcs) |
 | `<circle cx cy r>`, `<ellipse cx cy rx ry>` | `v:shape`, two arcs |
 | `<line x1 y1 x2 y2>` | `v:shape`, m and l, never filled |
 | `<polyline points>`, `<polygon points>` | `v:shape`, m and l (and x for the polygon) |
 | `fill` | `filled` (false for none) and `fillcolor` |
-| `stroke` | `stroked` (false for none, the default) and `strokecolor` |
+| `stroke` | `stroked` (false for none, the default) and `strokecolor`; the shape's `v:stroke` has SVG's defaults, joinstyle miter, miterlimit 4 and endcap flat (VML's are round) |
 | `stroke-width` | `strokeweight`, in px: the width times the CTM's scale (the square root of sx times sy) |
 | `fill-opacity`, `stroke-opacity`, `opacity` | `opacity` of the shape's `v:fill` and `v:stroke` children: fill-opacity (or stroke-opacity) times every opacity from the shape up |
 | `id` | the VML node's id |
@@ -65,18 +65,18 @@ Attributes: a transform with rotate, skewX, skewY or matrix, a negative or zero 
 A paint that is not a colour (url(#gradient), currentColor, rgba(), hsl()) draws no fill or stroke.
 Each kind is reported once, the first time it is met: an Error through window.reportError (the polyfill's, which reaches window.onerror), with a message naming the kind; cdomVml.lost lists the kinds met.
 Nothing throws.
-Also not done: the svg's own clipping to its box (VML groups do not clip), SVG's nonzero fill rule (VML fills even-odd), line caps, joins and dashes, and preserveAspectRatio other than the default.
+Also not done: SVG's nonzero fill rule (VML fills even-odd), stroke-linecap, stroke-linejoin, stroke-miterlimit and dashes (the defaults are drawn), and preserveAspectRatio other than the default.
 Templates (cd_tpl) holding SVG are cloned by cloneNode, whose copy has no cdomVml state; an attribute set on such a copy later is mapped as if it were the first.
 
 ## 4. VML setup
 
-The first VML node made sets the page up once:
+The first VML node made sets the page up once, as real IE 6 needs it (section 9):
 
-- document.namespaces.add("v", "urn:schemas-microsoft-com:vml", "#default#VML") where document.namespaces exists (IE 5.5 to 8; the two-argument form if the three-argument one throws);
-- and in every case a stylesheet rule `v\:* { behavior: url(#default#VML); display: inline-block }` (document.createStyleSheet's addRule), which IE 5.0 and IE 6 and 7 need, and IE 8's standards mode wants per element.
+- document.namespaces.add("v", "urn:schemas-microsoft-com:vml"), with two arguments, where document.namespaces exists (IE 5.5 to 8), before any v: node is made;
+- and a stylesheet rule a VML tag, `v\:shape`, `v\:fill` and `v\:stroke`, each `behavior: url(#default#VML)` (document.createStyleSheet's addRule): one rule a tag, since IE 8's standards mode ignores `v\:*`.
 
-Nodes are made with document.createElement("v:shape"), "v:group", "v:fill" and "v:stroke", and every VML property is set as a property of the node (node.path = ..., as Raphael does).
-A shape's attributes are set before the shape is in the document: the shim builds an svg subtree off the document and places its root when it closes, so every node of a newly built svg has its VML properties before IE attaches the behavior.
+Nodes are made with document.createElement("v:shape"), "v:fill" and "v:stroke", and every VML property is set as a property of the node (node.path = ..., as Raphael does).
+A shape's attributes are set before the shape is in the document: the shim builds an svg subtree off the document and places its root when it closes, so every node of a newly built svg has its VML properties before IE attaches the behavior; IE 6 takes them up then (measured, section 9).
 A later change (cd_set_attr) sets the properties on the live node.
 Moving or re-attaching a node inside an svg (cd_move, cd_attach) goes through the shim's place(), which on this tier (tools/legacy/shim-old.js) redraws what it moved, since its CTM and inherited paint can change with its parent.
 Removing or replacing the svg needs nothing: the VML nodes are DOM nodes, removed as any other.
@@ -84,6 +84,7 @@ Removing or replacing the svg needs nothing: the VML nodes are DOM nodes, remove
 ## 5. Tests
 
 - tools/cdp.mjs, LEGACY=ie6: a VML stand-in in the IE6_OLD profile: document.namespaces.add and document.createStyleSheet's addRule recorded in window.__vml, and every document.createElement of a v: tag recorded too (Chrome makes an unknown element of it, which keeps the properties set on it).
+  It models what real IE 6 did (section 9): a v: node made before the namespace, or with no behavior rule for its tag, and any v:group, go in __vml.bad, which the test wants empty; after a namespaces.add with an implementation, a v: node keeps IE's defaults whatever script sets on it.
 - tests/legacy.c's svg() builds an svg (in an absolutely placed div, clear of the test's pad) with every element of the subset, a g with translate and scale, inherited paint, opacities, and the unsupported text, defs, linearGradient and a rotate; svg_set() changes a path's d and a rect's fill after the build, and the g's transform while the path in it is detached, then attaches it again; svg_drop() removes the svg; svg_many(n) builds n paths, for the timing.
 - tools/legacy.mjs, LEGACY=ie6: each element became its v: node with the path string, coordsize, coordorigin, size, colours, weights and opacities it should have; the unsupported kinds reported once each and their nodes hidden; the later change reached the VML node; the removal left nothing; no SVG element was made.
   On the other tiers: the same svg is real SVG (the SVG namespace), and nothing reported.
@@ -170,3 +171,33 @@ In the XP VM (docs/ie5-design.md, "Driving the XP VM"):
 - That IE 8's standards mode draws these nodes with the rule's display:inline-block, and the svg's own position:relative and size.
 - That JScript 5.0's String.prototype.match with a g flag returns every match (numbers() relies on it instead of an exec loop, since JScript 5.0's regular expressions have no lastIndex).
 - VML's fill is even-odd where SVG's default is nonzero, so a self-overlapping path can show a hole SVG would fill.
+
+## 10. Speed in real IE 6
+
+Before the setup was fixed, `legacy.html?svgmany=500` took 33 s to build in IE 6 on the XP VM (QEMU's emulated Pentium III, so every number here is slower than a real machine of 2001), about 66 ms a path, and 2,000 did not finish in 4 minutes.
+Those nodes had the behavior bound as they were made (the three-argument namespace), so every property set on them went through VML.
+
+Predictions, written before measuring the fixed build, each on the same VM:
+
+- V1: svg_many(500) through cdom now builds in 5 to 30 s.
+- V2: the same 500 shapes made by hand on a bare page, node by node as vml.js makes them (a v:shape with its v:fill and v:stroke, every property set off the document, the svg placed last), build in 2 to 15 s; so cdom's own code (the app, the shim and vml.js's translation) is less than half of V1.
+- V3: the same 500 shapes as one markup string placed with insertAdjacentHTML (the classic fast path, as excanvas drew) build 3 to 10 times faster than V2.
+
+Which way vml.js builds is picked by these numbers: if V3 is not at least twice as fast as V2, or if V2 is a small part of V1, node by node stays.
+
+Measured on the fixed build (section 9's setup), the title's numbers in IE 6's own clock, two runs each where two are given:
+
+- V1 confirmed: svg_many(500) built in 23,438 ms, 25,000 ms to the next timeout.
+- V2 confirmed: 1,828 and 2,000 ms to build, 11,657 and 14,844 ms to the next timeout: IE's own VML layout after the script is most of it.
+  But V2's second half is refuted: V1 is not mostly IE's VML.
+  The same svg_many(500) with vml.js doing all its work on spans that draw nothing took 22,188 ms (22,516 ms to the next timeout), and with vml.js stubbed out (a hidden span an element, nothing mapped) 1,579 ms (1,625): so the app and the shim are 1.6 s, vml.js's own script about 20 s, and IE's VML the rest.
+- V3 refuted: the markup string built in 625 and 562 ms against node by node's 2,000 and 1,828 (3.2 times faster), but to the next timeout 10,640 and 8,297 ms against 14,844 and 11,657, only 1.4 times faster in all, since IE's layout of the shapes is the same either way.
+  By the rule above, node by node stays: markup would also mean finding every node again after the string is parsed, since the shim holds each node C made.
+
+vml.js's script, timed piece by piece on the real cdom.legacy-ie6.js (500 of each): cdomVml.path alone 8,422 ms (17 ms a path of 13 commands, a character at a time through charAt, eight closures made each call), create("path") 750 ms, and a shape made, put in an svg and given d, fill and stroke 16,250 ms: each of the three attributes walks up to the svg again (parsing its viewBox each time), converts colours through regular expressions and sets every VML property again.
+
+Predictions for the two changes made from that, written before measuring them:
+
+- V4: path() tokenizes the path with one regular expression match and keeps its state in vml.js's scope, not in closures made each call: 500 conversions take 1,500 to 4,000 ms (from 8,422).
+- V5: a container's context (CTM, paint, opacity) is kept on it and handed to what it holds, colours are converted once each, and a VML property is set only when its value changes: with V4, the 500 shapes with d, fill and stroke take 3,000 to 8,000 ms (from 16,250).
+- V6: svg_many(500) through cdom then builds in 5,000 to 12,000 ms (from 23,438).

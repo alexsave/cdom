@@ -11,6 +11,8 @@ var cdomVml = (function (w, doc) {
   var SHAPE = { path: 1, rect: 1, circle: 1, ellipse: 1, line: 1, polyline: 1, polygon: 1 };
   /* Inherited from the nearest svg or g that sets them, as SVG's presentation attributes are. */
   var PAINT = { fill: 1, stroke: 1, "stroke-width": 1, "fill-opacity": 1, "stroke-opacity": 1 };
+  var PAINTS = ["fill", "stroke", "stroke-width", "fill-opacity", "stroke-opacity"];
+  var COLOURS = {};                  /* colour()'s answers, each worked out once ("k" and the value: no prototype names) */
   /* Attributes that hide their node while set: what VML cannot draw. */
   var HIDES = { "clip-path": 1, mask: 1, filter: 1, "marker-start": 1, "marker-mid": 1, "marker-end": 1 };
   var NAMED = /^[a-z]+$/;
@@ -20,9 +22,57 @@ var cdomVml = (function (w, doc) {
 
   /* --- the path data, as a pure function of the string ---------------------------------------------------------- */
 
+  /* The path's tokens: a command letter, a number ("1.5.5" is two, "1-2" too), or any other character, which ends the
+   * path where it stands, as a malformed path is drawn up to its error. One match, not a character at a time: in IE 6
+   * that loop was 17 ms a path (docs/vml-design.md, section 10). Capturing groups only: JScript 5.0 refuses (?:. */
+  var TOKEN = /[A-Za-z]|[+\-]?(\d+\.?\d*|\.\d+)([eE][+\-]?\d+)?|[^\s,]/g;
+  var NEED = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0 };
+  /* The converter's state, kept here rather than in closures made each call: the output, the map (sx, sy, tx, ty),
+   * the current point, the subpath's start, the last control point, whether the subpath is closed, and the tokens. */
+  var out, msx, msy, mtx, mty, x, y, x0, y0, cx, cy, closed, toks, ti, tn;
+
   /* VML's whole number for x pixels. */
   function q(x) {
     return String(Math.round(x * K));
+  }
+  function pt(px, py) {
+    return q(msx * px + mtx) + "," + q(msy * py + mty);
+  }
+  function moveTo(px, py) {
+    out[out.length] = "m" + pt(px, py);
+    x = x0 = px;
+    y = y0 = py;
+    closed = false;
+  }
+  function lineTo(px, py) {
+    if (closed) moveTo(x0, y0);
+    out[out.length] = "l" + pt(px, py);
+    x = px;
+    y = py;
+  }
+  function curveTo(ax, ay, bx, by, px, py) {
+    if (closed) moveTo(x0, y0);
+    out[out.length] = "c" + pt(ax, ay) + "," + pt(bx, by) + "," + pt(px, py);
+    x = px;
+    y = py;
+  }
+  /* The number at the next token, or null. Letters and other characters are one-character tokens; so a token longer than
+   * one character, or a digit, is a number. */
+  function number() {
+    if (ti >= tn) return null;
+    var t = toks[ti], c = t.charAt(0);
+    if (t.length < 2 && (c < "0" || c > "9")) return null;
+    ti++;
+    return parseFloat(t);
+  }
+  /* An arc's flag: one character, 0 or 1, which may run into what follows ("0110" is flags 0 and 1, then 10). */
+  function flag() {
+    if (ti >= tn) return null;
+    var t = toks[ti], c = t.charAt(0);
+    if (c !== "0" && c !== "1") return null;
+    if (t.length < 2) ti++;
+    else toks[ti] = t.substring(1);
+    return c === "1" ? 1 : 0;
   }
   /* The path data d in VML's path language, each point (x, y) mapped to (sx x + tx, sy y + ty) pixels first.
    * A malformed path is drawn up to its error, as SVG does. */
@@ -33,79 +83,23 @@ var cdomVml = (function (w, doc) {
       tx = 0;
       ty = 0;
     }
-    var out = [], n = d.length, i = 0, cmd = "", x = 0, y = 0, x0 = 0, y0 = 0;
-    var cx = 0, cy = 0, prev = "", closed = false, c, v, args, need, k, rel, up;
-    var NEED = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0 };
-    function pt(px, py) {
-      return q(sx * px + tx) + "," + q(sy * py + ty);
-    }
-    function moveTo(px, py) {
-      out[out.length] = "m" + pt(px, py);
-      x = x0 = px;
-      y = y0 = py;
-      closed = false;
-    }
-    function lineTo(px, py) {
-      if (closed) moveTo(x0, y0);
-      out[out.length] = "l" + pt(px, py);
-      x = px;
-      y = py;
-    }
-    function curveTo(ax, ay, bx, by, px, py) {
-      if (closed) moveTo(x0, y0);
-      out[out.length] = "c" + pt(ax, ay) + "," + pt(bx, by) + "," + pt(px, py);
-      x = px;
-      y = py;
-    }
-    function skip() {
-      for (; i < n; i++) {
-        c = d.charAt(i);
-        if (c !== " " && c !== "," && c !== "\t" && c !== "\n" && c !== "\r" && c !== "\f") break;
-      }
-    }
-    /* One number at i, or null. "1.5.5" is two numbers, "1-2" too. */
-    function number() {
-      skip();
-      var s = i, digits = 0;
-      c = d.charAt(i);
-      if (c === "+" || c === "-") i++;
-      while (i < n && d.charAt(i) >= "0" && d.charAt(i) <= "9") { i++; digits++; }
-      if (d.charAt(i) === ".") {
-        i++;
-        while (i < n && d.charAt(i) >= "0" && d.charAt(i) <= "9") { i++; digits++; }
-      }
-      if (!digits) {
-        i = s;
-        return null;
-      }
-      c = d.charAt(i);
-      if (c === "e" || c === "E") {
-        var e = i;
-        i++;
-        c = d.charAt(i);
-        if (c === "+" || c === "-") i++;
-        var ed = 0;
-        while (i < n && d.charAt(i) >= "0" && d.charAt(i) <= "9") { i++; ed++; }
-        if (!ed) i = e;
-      }
-      return parseFloat(d.substring(s, i));
-    }
-    /* An arc's flag: one character, 0 or 1. */
-    function flag() {
-      skip();
-      c = d.charAt(i);
-      if (c !== "0" && c !== "1") return null;
-      i++;
-      return c === "1" ? 1 : 0;
-    }
-    for (;;) {
-      skip();
-      if (i >= n) break;
-      c = d.charAt(i);
-      up = c.toUpperCase();
-      if (NEED[up] !== void 0) {
-        cmd = c;
-        i++;
+    var cmd = "", prev = "", t, v, args, need, k, rel, up, ox, oy;
+    out = [];
+    msx = sx;
+    msy = sy;
+    mtx = tx;
+    mty = ty;
+    x = y = x0 = y0 = cx = cy = 0;
+    closed = false;
+    toks = d.match(TOKEN) || [];
+    ti = 0;
+    tn = toks.length;
+    while (ti < tn) {
+      t = toks[ti];
+      up = t.toUpperCase();
+      if (t.length === 1 && NEED[up] !== void 0) {
+        cmd = t;
+        ti++;
       } else if (!cmd || cmd === "z" || cmd === "Z") {
         break;                                 /* a number with no command to repeat */
       }
@@ -128,7 +122,8 @@ var cdomVml = (function (w, doc) {
         prev = "Z";
         continue;
       }
-      var ox = rel ? x : 0, oy = rel ? y : 0;
+      ox = rel ? x : 0;
+      oy = rel ? y : 0;
       if (up === "M") {
         moveTo(args[0] + ox, args[1] + oy);
         cmd = rel ? "l" : "L";                 /* pairs after a move are lines */
@@ -169,50 +164,50 @@ var cdomVml = (function (w, doc) {
       }
       prev = up;
     }
-    /* An elliptical arc from the current point to (x2, y2), as cubics of a quarter turn or less (the SVG
-     * implementation notes: endpoint to centre, radii scaled up when too small). */
-    function arc(rx, ry, deg, large, sweep, x2, y2) {
-      var x1 = x, y1 = y;
-      if (x1 === x2 && y1 === y2) return;
-      rx = Math.abs(rx);
-      ry = Math.abs(ry);
-      if (!rx || !ry) {
-        lineTo(x2, y2);
-        return;
-      }
-      var phi = deg % 360 * Math.PI / 180, cos = Math.cos(phi), sin = Math.sin(phi);
-      var dx = (x1 - x2) / 2, dy = (y1 - y2) / 2;
-      var x1p = cos * dx + sin * dy, y1p = -sin * dx + cos * dy;
-      var lam = x1p * x1p / (rx * rx) + y1p * y1p / (ry * ry);
-      if (lam > 1) {
-        lam = Math.sqrt(lam);
-        rx *= lam;
-        ry *= lam;
-      }
-      var num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p;
-      var den = rx * rx * y1p * y1p + ry * ry * x1p * x1p;
-      var co = Math.sqrt(Math.max(0, num / den)) * (large === sweep ? -1 : 1);
-      var cxp = co * rx * y1p / ry, cyp = -co * ry * x1p / rx;
-      var ecx = cos * cxp - sin * cyp + (x1 + x2) / 2, ecy = sin * cxp + cos * cyp + (y1 + y2) / 2;
-      var t1 = Math.atan2((y1p - cyp) / ry, (x1p - cxp) / rx);
-      var dt = Math.atan2((-y1p - cyp) / ry, (-x1p - cxp) / rx) - t1;
-      if (sweep && dt < 0) dt += 2 * Math.PI;
-      else if (!sweep && dt > 0) dt -= 2 * Math.PI;
-      var segs = Math.max(1, Math.ceil(Math.abs(dt) / (Math.PI / 2) - 1e-9)), step = dt / segs;
-      var h = 4 / 3 * Math.tan(step / 4), a = t1, s;
-      function onX(u, v) { return ecx + rx * cos * u - ry * sin * v; }
-      function onY(u, v) { return ecy + rx * sin * u + ry * cos * v; }
-      for (s = 0; s < segs; s++) {
-        var b = a + step, ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
-        var u1 = ca - h * sa, v1 = sa + h * ca, u2 = cb + h * sb, v2 = sb - h * cb;
-        var last = s === segs - 1;
-        curveTo(onX(u1, v1), onY(u1, v1), onX(u2, v2), onY(u2, v2), last ? x2 : onX(cb, sb), last ? y2 : onY(cb, sb));
-        a = b;
-      }
-    }
     if (!out.length) return "m0,0 e";
     out[out.length] = "e";
     return out.join(" ");
+  }
+  /* An elliptical arc from the current point to (x2, y2), as cubics of a quarter turn or less (the SVG
+   * implementation notes: endpoint to centre, radii scaled up when too small). */
+  function arc(rx, ry, deg, large, sweep, x2, y2) {
+    var x1 = x, y1 = y;
+    if (x1 === x2 && y1 === y2) return;
+    rx = Math.abs(rx);
+    ry = Math.abs(ry);
+    if (!rx || !ry) {
+      lineTo(x2, y2);
+      return;
+    }
+    var phi = deg % 360 * Math.PI / 180, cos = Math.cos(phi), sin = Math.sin(phi);
+    var dx = (x1 - x2) / 2, dy = (y1 - y2) / 2;
+    var x1p = cos * dx + sin * dy, y1p = -sin * dx + cos * dy;
+    var lam = x1p * x1p / (rx * rx) + y1p * y1p / (ry * ry);
+    if (lam > 1) {
+      lam = Math.sqrt(lam);
+      rx *= lam;
+      ry *= lam;
+    }
+    var num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p;
+    var den = rx * rx * y1p * y1p + ry * ry * x1p * x1p;
+    var co = Math.sqrt(Math.max(0, num / den)) * (large === sweep ? -1 : 1);
+    var cxp = co * rx * y1p / ry, cyp = -co * ry * x1p / rx;
+    var ecx = cos * cxp - sin * cyp + (x1 + x2) / 2, ecy = sin * cxp + cos * cyp + (y1 + y2) / 2;
+    var t1 = Math.atan2((y1p - cyp) / ry, (x1p - cxp) / rx);
+    var dt = Math.atan2((-y1p - cyp) / ry, (-x1p - cxp) / rx) - t1;
+    if (sweep && dt < 0) dt += 2 * Math.PI;
+    else if (!sweep && dt > 0) dt -= 2 * Math.PI;
+    var segs = Math.max(1, Math.ceil(Math.abs(dt) / (Math.PI / 2) - 1e-9)), step = dt / segs;
+    var h = 4 / 3 * Math.tan(step / 4), a = t1, s;
+    function onX(u, v) { return ecx + rx * cos * u - ry * sin * v; }
+    function onY(u, v) { return ecy + rx * sin * u + ry * cos * v; }
+    for (s = 0; s < segs; s++) {
+      var b = a + step, ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
+      var u1 = ca - h * sa, v1 = sa + h * ca, u2 = cb + h * sb, v2 = sb - h * cb;
+      var last = s === segs - 1;
+      curveTo(onX(u1, v1), onY(u1, v1), onX(u2, v2), onY(u2, v2), last ? x2 : onX(cb, sb), last ? y2 : onY(cb, sb));
+      a = b;
+    }
   }
 
   /* --- the attributes ----------------------------------------------------------------------------------------- */
@@ -256,6 +251,11 @@ var cdomVml = (function (w, doc) {
   }
   /* A colour VML takes, "" for none, or null for a paint it cannot draw. */
   function colour(s) {
+    var c = COLOURS["k" + s];
+    if (c === void 0) c = COLOURS["k" + s] = colourOf(s);
+    return c;
+  }
+  function colourOf(s) {
     var v = s.toLowerCase(), hex = "0123456789abcdef", rgb, j, out;
     if (v === "none" || v === "transparent") return "";
     if (/^#[0-9a-f]{3}$/.test(v)) return "#" + v.charAt(1) + v.charAt(1) + v.charAt(2) + v.charAt(2) + v.charAt(3) + v.charAt(3);
@@ -366,28 +366,36 @@ var cdomVml = (function (w, doc) {
     var s = Math.min(W / vb[2], H / vb[3]);
     return [s, s, (W - vb[2] * s) / 2 - vb[0] * s, (H - vb[3] * s) / 2 - vb[1] * s];
   }
-  /* What a node's children see: the CTM, the inherited paint, and the opacity so far. */
+  /* What a node's children see: the CTM, the inherited paint, and the opacity so far. An svg or g keeps it (inner),
+   * set whenever it is drawn again (redraw), which every change to it or to what it is in, and every move of it, does:
+   * so a shape's attribute does not walk up to the svg again (docs/vml-design.md, section 10). */
   function context(el) {
-    var chain = [], p = el, ctx, i, st;
+    var chain = [], p = el, ctx, i;
+    if (el && el.$vml && el.$vml.inner) return el.$vml.inner;
     while (p && p.$vml && p.$vml.kind !== 2) {
       chain[chain.length] = p;
       if (p.$vml.kind === 0) break;
       p = p.parentNode;
     }
     ctx = { m: [1, 1, 0, 0], paint: {}, opacity: 1 };
-    for (i = chain.length - 1; i >= 0; i--) ctx = within(chain[i], ctx);
+    for (i = chain.length - 1; i >= 0; i--) ctx = chain[i].$vml.inner = within(chain[i], ctx);
     return ctx;
   }
   /* ctx as it is inside node el. */
   function within(el, ctx) {
-    var st = el.$vml, a = st.a, m = ctx.m, own, k, paint = {};
-    for (k in ctx.paint) {
-      if (ctx.paint.hasOwnProperty(k)) paint[k] = ctx.paint[k];
+    var st = el.$vml, a = st.a, m = ctx.m, own, k, j, paint = ctx.paint, copied = false;
+    for (j = 0; j < PAINTS.length; j++) {
+      if (a[PAINTS[j]] === void 0) continue;
+      if (!copied) {
+        paint = {};
+        for (k in ctx.paint) {
+          if (ctx.paint.hasOwnProperty(k)) paint[k] = ctx.paint[k];
+        }
+        copied = true;                          /* a paint dictionary is never changed once made: shared until then */
+      }
+      paint[PAINTS[j]] = a[PAINTS[j]];
     }
-    for (k in PAINT) {
-      if (PAINT.hasOwnProperty(k) && a.hasOwnProperty(k)) paint[k] = a[k];
-    }
-    own = st.kind === 0 ? rootMatrix(a) : a.transform ? transform(a.transform) : null;
+    own = st.kind === 0 ? rootMatrix(a) : a.transform ? st.tm : null;
     if (own && typeof own !== "string") m = [m[0] * own[0], m[1] * own[1], m[0] * own[2] + m[2], m[1] * own[3] + m[3]];
     return { m: m, paint: paint, opacity: ctx.opacity * num(a.opacity, 1) };
   }
@@ -445,16 +453,26 @@ var cdomVml = (function (w, doc) {
       st.key = key;
       el.path = g ? path(g, m[0], m[1], m[2], m[3]) : "m0,0 e";
     }
-    var fill = st.tag === "line" ? "" : paintOf(paint.hasOwnProperty("fill") ? paint["fill"] : "black");
-    var stroke = paintOf(paint.hasOwnProperty("stroke") ? paint.stroke : "none");
-    el.filled = fill !== "";
-    if (fill) el.fillcolor = fill;
-    el.stroked = stroke !== "";
-    if (stroke) el.strokecolor = stroke;
+    var fill = st.tag === "line" ? "" : paintOf(paint["fill"] !== void 0 ? paint["fill"] : "black");
+    var stroke = paintOf(paint.stroke !== void 0 ? paint.stroke : "none");
     var weight = num(paint["stroke-width"], 1) * Math.sqrt(m[0] * m[1]);
-    el.strokeweight = Math.round(weight * 100) / 100 + "px";
-    st.vf.opacity = String(Math.round(own.opacity * num(paint["fill-opacity"], 1) * 1000) / 1000);
-    st.vs.opacity = String(Math.round(own.opacity * num(paint["stroke-opacity"], 1) * 1000) / 1000);
+    var w = Math.round(weight * 100) / 100 + "px";
+    var fo = String(Math.round(own.opacity * num(paint["fill-opacity"], 1) * 1000) / 1000);
+    var so = String(Math.round(own.opacity * num(paint["stroke-opacity"], 1) * 1000) / 1000);
+    /* Each VML property set only when it changes: a property set on a VML node is a call into IE (section 10). */
+    if (fill !== st.f) {
+      st.f = fill;
+      el.filled = fill !== "";
+      if (fill) el.fillcolor = fill;
+    }
+    if (stroke !== st.s) {
+      st.s = stroke;
+      el.stroked = stroke !== "";
+      if (stroke) el.strokecolor = stroke;
+    }
+    if (w !== st.w) el.strokeweight = st.w = w;
+    if (fo !== st.fo) st.vf.opacity = st.fo = fo;
+    if (so !== st.so) st.vs.opacity = st.so = so;
   }
   /* Draws el and everything in it again, given what its parents give it. */
   function redraw(el, ctx) {
@@ -465,7 +483,7 @@ var cdomVml = (function (w, doc) {
     }
     if (st.kind === 3) return;
     if (st.kind === 0) frame(el);
-    inner = within(el, st.kind === 0 ? { m: [1, 1, 0, 0], paint: {}, opacity: 1 } : ctx);
+    inner = st.inner = within(el, st.kind === 0 ? { m: [1, 1, 0, 0], paint: {}, opacity: 1 } : ctx);
     for (c = el.firstChild; c; c = c.nextSibling) {
       if (c.$vml) redraw(c, inner);
     }
@@ -503,7 +521,7 @@ var cdomVml = (function (w, doc) {
       return;
     }
     if (name === "transform") {
-      t = transform(value);
+      t = st.tm = transform(value);
       if (typeof t === "string") report(t);
       st.hide.transform = typeof t === "string";
       hidden(el);

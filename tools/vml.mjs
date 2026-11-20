@@ -56,6 +56,8 @@ is('L10 10', 'm0,0 e', 'no move first: nothing');
 is('', 'm0,0 e', 'empty: nothing');
 is('M0 0 L1 1 Z 5 5', 'm0,0 l100,100 x e', 'numbers after Z with no command: the end');
 is('M0 0 A1 1 0 2 1 3 3', 'm0,0 e', 'an arc flag but 0 or 1 ends the path');
+is('M0 0 L10 10 # 5 5', 'm0,0 l1000,1000 e', 'a character no path has ends it there');
+is('M0 0 L1 1 . 5', 'm0,0 l100,100 e', 'a point alone is no number');
 // The CTM, baked into the points: (sx x + tx, sy y + ty).
 is('M1 2 L3 4', 'm1200,2600 l1600,3200 e', 'the CTM', 2, 3, 10, 20);
 is('M1 2 Q3 3 6 0', 'm100,200 c233,267,400,200,600,0 e', 'Q under the identity, rounded');
@@ -68,6 +70,8 @@ is('M10 0 A10 10 0 0 0 0 10', 'm1000,0 c448,0,0,448,0,1000 e', 'sweep 0 takes th
 is('M0 0 A0 5 0 0 1 10 0', 'm0,0 l1000,0 e', 'a zero radius is a line');
 is('M0 0 A5 5 0 0 1 0 0', 'm0,0 e', 'an arc to the point it starts at is nothing');
 is('M0 0 A10 10 0 0 1 10 10 10 10 0 0 1 20 20', 'm0,0 c552,0,1000,448,1000,1000 c1552,1000,2000,1448,2000,2000 e', 'A repeated, each a quarter about (0, 10) and (10, 20)');
+is('M0 0 A10 10 0 0110 10', path('M0 0 A10 10 0 0 1 10 10'), 'flags run into what follows: 0110 is 0, 1 and 10');
+is('M0 0 a10 10 0 1 0 10 10', path('M0 0 A10 10 0 1 0 10 10'), 'flags 1 0, the large arc the other way');
 
 // Arcs against the true ellipse: arcs made from a centre, radii, rotation and two angles, so the expected points come
 // from the ellipse itself, not from the converter's endpoint-to-centre arithmetic. Every sampled point of the true arc
