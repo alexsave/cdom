@@ -877,7 +877,7 @@ var cdom = (() => {
     posted.push(f);
     postPort.postMessage(0);
   }
-  function file_open(id, index, outPtr) {
+  function file_open(id, index, readerPtr, sizePtr) {
     if (typeof FileReader === "undefined") {
       return 4;
     }
@@ -896,8 +896,8 @@ var cdom = (() => {
     if (stale()) {
       views();
     }
-    u32[outPtr >>> 2] = r;
-    u32[(outPtr >>> 2) + 1] = file.size;
+    u32[readerPtr >>> 2] = r;
+    u32[sizePtr >>> 2] = file.size;
     return 0;
   }
   // The rest of the chunk in hand into the piece, as far as both go (never past the file's size).
