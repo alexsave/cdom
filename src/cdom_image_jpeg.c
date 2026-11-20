@@ -161,8 +161,7 @@ static uint32_t orient_walk(cd_image_walk *w, const uint8_t *p, uint32_t n, uint
       if (!w->exif) {
         w->exif = cd_alloc_try((uint32_t)len);
         if (!w->exif) return CD_IMAGE_NO_ROOM;
-        memcpy(w->exif, w->og + 4, 6);             /* "Exif\0\0", read already (perhaps in a piece before) */
-        w->exif_n = 6;
+        w->exif_n = 6;                             /* "Exif\0\0", read already (perhaps in a piece before): not needed again */
       }
       while (w->exif_n < len && from + w->exif_n < end) {
         uint64_t at = from + w->exif_n, k = end - at;
