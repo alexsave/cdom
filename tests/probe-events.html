@@ -1,0 +1,26 @@
+<HTML>
+<HEAD>
+<TITLE>cdom probe-events</TITLE>
+<SCRIPT LANGUAGE="JavaScript">
+var TAG = "" + location.search;
+TAG = TAG.substring(1, TAG.length);
+if (TAG == "") { TAG = "x"; }
+function ev(s) {
+  document.forms[0].log.value = document.forms[0].log.value + s + " ";
+}
+function report() {
+  location.href = "/mark/" + TAG + "/p-1-events-" + escape(document.forms[0].log.value);
+}
+</SCRIPT>
+</HEAD>
+<BODY>
+<H3>cdom probe-events</H3>
+<FORM NAME="f0">
+<INPUT TYPE=text NAME="log" SIZE=60 VALUE=""><BR>
+<INPUT TYPE=button NAME="b" VALUE="press me" onClick="ev('click')" onMouseDown="ev('mousedown')" onMouseUp="ev('mouseup')"><BR>
+<INPUT TYPE=text NAME="k" SIZE=20 VALUE="" onKeyDown="ev('keydown')" onKeyPress="ev('keypress')" onKeyUp="ev('keyup')" onChange="ev('change')"><BR>
+<INPUT TYPE=button NAME="r" VALUE="report" onClick="report()">
+</FORM>
+<P><A HREF="#top" onMouseOver="ev('over'); return true" onMouseOut="ev('out')">hover link</A>
+</BODY>
+</HTML>

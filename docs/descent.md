@@ -228,18 +228,18 @@ Speed values are `new Date().getTime()` differences in milliseconds, on this slo
 | screenWidth | DIED(start) | DIED(start) | 640 | 640 | 640 | 640 |
 | innerWidth | <undefined> | undefined | 620 | ok | undefined | undefined |
 | documentBgColor | #ffffff | #ffffff | #ffffff | #ffffff | #ffffff | #ffffff |
-| speedConcat1000 | 469ms len=1000 | 125ms len=1000 | 110ms len=1000 | 16ms len=1000 | 63ms len=1000 | 63ms len=1000 |
 | speedLoop | 2672ms x=11952 | 3484ms x=11952 | 547ms x=11952 | 203ms x=11952 | 359ms x=11952 | 203ms x=11952 |
-| speedCharCodeAt | absent | absent | 344ms x=970000 len=10240 | 157ms x=970000 len=10240 | 234ms x=970000 len=10240 | 187ms x=970000 len=10240 |
-| done | end | end | end | end | end | end |
-| speedConcat2000 | 1812ms len=2000 | 312ms len=2000 | 188ms len=2000 | 32ms len=2000 | 188ms len=2000 | 109ms len=2000 |
+| speedObjKeys | 3453ms m5=99333 | 4672ms m5=99333 | 500ms m5=99333 | 453ms m5=99333 | 312ms m5=99333 | 375ms m5=99333 |
 | speedArrKeys | 1531ms m5=99333 | 5094ms m5=99333 | 469ms m5=99333 | 172ms m5=99333 | 312ms m5=99333 | 438ms m5=99333 |
 | speedCall | 3140ms x=100000 | 4407ms x=100000 | 1859ms x=100000 | 1047ms x=100000 | 1422ms x=100000 | 3438ms x=100000 |
-| speedObjKeys | 3453ms m5=99333 | 4672ms m5=99333 | 500ms m5=99333 | 453ms m5=99333 | 312ms m5=99333 | 375ms m5=99333 |
+| speedCharCodeAt | absent | absent | 344ms x=970000 len=10240 | 157ms x=970000 len=10240 | 234ms x=970000 len=10240 | 187ms x=970000 len=10240 |
+| speedConcat1000 | 469ms len=1000 | 125ms len=1000 | 110ms len=1000 | 16ms len=1000 | 63ms len=1000 | 63ms len=1000 |
+| speedConcat2000 | 1812ms len=2000 | 312ms len=2000 | 188ms len=2000 | 32ms len=2000 | 188ms len=2000 | 109ms len=2000 |
+| done | end | end | end | end | end | end |
 | tstr | n/c | fired | fired | n/c | fired | fired |
 | speedConcat | n/c | n/c | 1547ms len=10000 | 656ms len=10000 | 1266ms len=10000 | 797ms len=10000 |
-| interval | n/c | no run | 3 | n/c | 3 | 3 |
 | tfn | n/c | no run | fired | n/c | fired | fired |
+| interval | n/c | no run | 3 | n/c | 3 | 3 |
 
 ### What each engine lacks, in plain language
 
@@ -325,3 +325,31 @@ It is the measurement's reading, not the decision.
   An interpreter adds a further factor of tens on top of that for its dispatch, so only small programs (the Mosaic demo, forms, a table of numbers) are practical on Netscape 2 either way, and the transform is only the faster by that factor.
 - Memory and data: numbered keys on a plain object work (`o[1]`), but a store costs 35 microseconds, so a wasm linear memory kept as an object per byte is slow and large; a memory of packed numbers per word is the shape to measure next.
 - Missing helpers the runtime needs are all small: `charAt` and `indexOf` and `substring` exist, so strings can be walked by `indexOf` into a lookup string (there is no `charCodeAt`), and `escape` gives the code of a character as `%XX`.
+
+## The second probe
+
+Reading netscape.exe (the section "Inside Netscape 2.02's engine", on the ns2-engine branch, PR #101) left questions that only a run can settle.
+tests/probe-js1b.html asks them, written by `tools/gen_probe_js1.py b` in the first probe's style: one test per script block, marks by `document.write` of an image, the same `tools/probe_marks.py` (with `--page tests/probe-js1b.html`).
+Its string tests use double quotes, where the first probe's used single ones.
+The recursion grid comes last, so that an engine which stops at a stack overflow has reported the rest first.
+tests/probe-nested.html is a function inside a function alone, for the text of its alert.
+tests/probe-events.html has a link, a button and a text field with every handler, each of which appends its name to a text field, and a "report" button that sends the field to /mark/; it is driven through vm.py.
+
+### What I expect, written before the run
+
+- split: methods on a literal work in Netscape 2 (`'abc'.charAt(1)` gave b), so a literal against a variable should make no difference, and I expect split to die on the variable too, as it did on the literal.
+  The name in the binary would then belong to something else.
+  Falsifier: `splitVar0` is `a`.
+- Methods on a double-quoted literal: `"abc".length` 3, `charAt(1)` b, `indexOf("c")` 2, as with single quotes.
+- `new Array(3)`: no `length` (undefined, as in the first probe), `a[0]` undefined, still no `length` after `a[5] = 1`; `new Array()` works and has no `length`; `new Array(1,2,3)` stores its arguments, so `a[1]` is 2 (a guess at even odds).
+- `s.chop()` gives `hell` and leaves `s` as `hello`; `s.match("ell")` gives true and `s.match("zz")` false (a string match, not a regular expression); `s.substr(1,2)` gives undefined, as on the literal.
+- The assignment in a condition is compared in Netscape 2: `ifAssign05` gives `compared-false x=0`, `ifAssign00` gives `compared-true x=0`, `whileAssign03` gives `c=0 x=0`, and `whileAssign00` runs to its guard, `c=6 x=0`.
+  Netscape 3 does the same (the same parser); Netscape 4.08 (with `LANGUAGE="JavaScript"`) and IE 4 assign (`assigned-true x=5`, `assigned-false x=0`, `c=6 x=3`, `c=0 x=0`).
+- The value stack: 512 slots of 16 bytes per page context, shared with the block's own `mark("name", ...)` (about 3 slots).
+  A frame of `r0` holds the function and its argument (2 slots), of `r1` the 1, the function and the argument (3), of `r3` the function and four arguments (5).
+  So the deepest call that works is about 254 for r0 (250 passes, 275 dies), 170 for r1 (160 passes, 180 dies) and 101 for r3 (100 passes, 120 dies).
+  Falsifiers: if the three die at the same depth, the limit counts calls, not slots; if the ratios hold but the levels are lower, each frame holds a fixed number of further slots, which the three depths together give.
+  Netscape 3 is the same as Netscape 2 (it also died at r1 300); Netscape 4.08 passes 600 for all three; IE 4 passes 400 and dies at 512 or 600 for r1, with its "Stack overflow" dialog.
+- Event handlers: Netscape 2 fires onmouseover, onclick and onchange, and never onmouseout, onmousedown, onmouseup or any key event.
+  Netscape 3 adds onmouseout; Netscape 4.08 and IE 4 fire all of them.
+- A function inside a function: Netscape 2's alert names "function defined inside a function".

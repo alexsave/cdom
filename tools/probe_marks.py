@@ -8,7 +8,8 @@ A test block writes <name>-start, then <name>-<value>, then <name>-ok.  So, per 
   DIED(start)         the block started and never finished: a run-time error
   no run              no mark at all: the block did not parse (or the page stopped before it)
 The tests are listed in the order of tests/probe-js1.html, then any other name seen.
-Usage: probe_marks.py <serve.log> [tag ...] [--md] [--na tag=name,name ...]   (no tags: every tag in the log)
+Usage: probe_marks.py <serve.log> [tag ...] [--md] [--na tag=name,name ...] [--page tests/probe-js1b.html]
+(no tags: every tag in the log; --page: the page whose test order the rows follow, probe-js1.html by default)
 --na marks tests a browser's run did not collect (its page stalled), "n/c", instead of "no run".
 No JSON: the log is text and so is the table."""
 import re
@@ -50,7 +51,13 @@ def results(marks):
         else:
             values[name] = val
     out = {}
-    for name in started | set(values):
+    # In the order of the marks (sorted by n), not a set's: a set of strings iterates in an order that changes with each
+    # run's hash seed, which reordered the rows of tests that are not on the page.
+    seen = []
+    for n, name, val in marks:
+        if name not in seen:
+            seen.append(name)
+    for name in seen:
         if name in values:
             out[name] = values[name] if (name in finished or name not in started) else values[name] + " (no ok)"
         else:
@@ -58,8 +65,7 @@ def results(marks):
     return out
 
 
-def test_order(here):
-    html = os.path.join(here, "..", "tests", "probe-js1.html")
+def test_order(html):
     names = []
     if os.path.exists(html):
         for m in re.finditer(r'mark\("([A-Za-z0-9_]+)", "start"\)', open(html).read()):
@@ -75,6 +81,11 @@ def main():
         tag, names = argv[i + 1].split("=")
         na.setdefault(tag, set()).update(names.split(","))
         del argv[i:i + 2]
+    page = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", "probe-js1.html")
+    if "--page" in argv:
+        i = argv.index("--page")
+        page = argv[i + 1]
+        del argv[i:i + 2]
     args = [a for a in argv if not a.startswith("--")]
     md = "--md" in argv
     if not args:
@@ -82,7 +93,7 @@ def main():
     marks = load(args[0])
     tags = args[1:] or sorted(marks)
     per = {t: results(marks.get(t, [])) for t in tags}
-    order = test_order(os.path.dirname(os.path.abspath(__file__)))
+    order = test_order(page)
     for t in tags:
         for name in per[t]:
             if name not in order:
