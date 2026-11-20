@@ -1,7 +1,8 @@
 // Builds the files a browser without WebAssembly loads instead of cdom.js and app.wasm:
 //   node tools/legacy/build.mjs shim <out/cdom.legacy.js>       the polyfills, then shim/cdom.js in ES5
 //   node tools/legacy/build.mjs shim-ie9 <out/cdom.legacy-ie9.js>  the same on memory-words.js, for no typed arrays
-//   node tools/legacy/build.mjs shim-ie6 <out/cdom.legacy-ie6.js>  that again in ES3 on the old DOM (dom-old.js), for IE 6 to 8
+//   node tools/legacy/build.mjs shim-ie6 <out/cdom.legacy-ie6.js>  that again in ES3 on the old DOM (dom-old.js), SVG as VML
+//                                                                (vml.js), for IE 5 to 8
 //   node tools/legacy/build.mjs app <in.wasm> <out/in.wasm.js>   the same wasm compiled to JS by wasm2js
 //   node tools/legacy/build.mjs app-ie9 <in.wasm> <out/in.wasm.ie9.js>  the same, on a plain Array of words (memory.mjs),
 //                                                                in ES3: IE 9 and the fourth tier (IE 6 to 8) share it
@@ -140,7 +141,7 @@ async function shim(out, tier) {
     if (left.length) throw new Error(`shim-ie6: W3C DOM the old DOM lacks left in the shim: ${left.join(', ')}`);
   }
   const parts = [
-    ...(old ? [['polyfills-es3', read(path.join(here, 'polyfills-es3.js'))], ['dom-old', read(path.join(here, 'dom-old.js'))]] : []),
+    ...(old ? [['polyfills-es3', read(path.join(here, 'polyfills-es3.js'))], ['dom-old', read(path.join(here, 'dom-old.js'))], ['vml', read(path.join(here, 'vml.js'))]] : []),
     ['polyfills', read(path.join(here, 'polyfills.js'))],
     ['promise-polyfill', read(require.resolve('promise-polyfill/dist/polyfill.js'))],
     ...(old ? [] : [['pepjs', read(require.resolve('pepjs/dist/pep.js'))]]),
@@ -258,7 +259,7 @@ function inputs(cmd, a) {
     require.resolve('promise-polyfill/dist/polyfill.js'));
   if (cmd === 'shim' || cmd === 'shim-ie9') files.push(require.resolve('pepjs/dist/pep.js'));
   if (cmd === 'shim-ie9' || cmd === 'shim-ie6') files.push(path.join(here, 'memory-words.js'), path.join(here, 'memory.mjs'));
-  if (cmd === 'shim-ie6') files.push(path.join(here, 'polyfills-es3.js'), path.join(here, 'dom-old.js'), path.join(here, 'shim-old.js'),
+  if (cmd === 'shim-ie6') files.push(path.join(here, 'polyfills-es3.js'), path.join(here, 'dom-old.js'), path.join(here, 'vml.js'), path.join(here, 'shim-old.js'),
     path.join(here, 'es3.mjs'));
   else if (cmd === 'app') { files.push(path.resolve(a)); tools.push(wasm2jsVersion()); }
   // memory.mjs is imported, not read, so it is named here as build.mjs is.
