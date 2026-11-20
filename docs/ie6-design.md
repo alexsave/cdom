@@ -184,6 +184,15 @@ Each is fixed, and each that Chrome can imitate is now in the profile, so CI kee
 Firefox 1.0 then runs the fourth tier on its W3C branch of dom-old.js: addEventListener, with pointer events made from mouse events (Firefox 1.0 has none) and the held buttons tracked by the document's own listeners.
 On tests/out/legacy.html it passed the checks IE 6 did: pointer down, moves with the button held, up with none, click; typing echoed by C; a failed call reported once with the op after it applied; cd_call(focus) heard as a focus event.
 
+7. The LaTeX app (foolish-utils latex/) stopped at "This command is not supported." with a blank page.
+   IE 5 to 8 refuse an input's type once the input has had a parent, even after it is taken out again: setAttribute throws unless the value is the type the input already has.
+   The shim appends each element to its parent as it opens, so every typed input has one; legacy.c's file input was top level, which is why the tests never met it.
+   Probe pages in the VM showed that a lone input takes any type (one IE does not know, like search, becomes text), and that `el.mergeAttributes(lone, false)` carries the type onto an input with a parent.
+   A button's type is never refused (IE 6 ignores it, and its default is already button).
+   Fix: dom-old.js's setAttribute sets an input's type on a fresh lone input and merges it across when it differs.
+   The Chrome profile refuses the type as IE does, and tests/legacy.c types a checkbox and a search field inside a div (mutant ie6-input-type-refused).
+   The app then runs in IE 6: it boots, takes typing and renders again on each edit.
+
 Also learned: IE 6 caches the tier's two scripts across reloads even with Cache-Control: no-store, so a test in the VM sets IE to check every visit first (HKCU ... Internet Settings, SyncMode5 = 3).
 
 ## 10. The predictions, measured
