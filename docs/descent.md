@@ -344,3 +344,11 @@ The engine is linked into netscape.exe (there is no separate DLL); its own name 
 - Two of those disagree with the table above and need a second run: the probe called split on a string literal (`'a,b,c'.split(',')`) and found it missing, and found `new Array(3).length` undefined, but both names are in the binary.
   The next probe should call split on a variable, and test what `new Array(3)` gives (number keys, no length).
 - Typing `mocha:` in the location field opens the engine's own console (two frames, MochaInput and MochaOutput).
+- An assignment written as a condition is silently turned into a comparison: the parser's messages "test for equality (==) mistyped as assignment (=)?" and "Assuming equality test".
+  Generated code for Netscape 2 must never assign inside an `if` or `while` condition (`while (x = next())` would compare instead).
+- The event handlers the binary knows are onload, onunload, onfocus, onblur, onchange, onselect, onsubmit, onclick, onmouseover and onscroll.
+  There is no onmouseout, no onmousedown or onmouseup, and no key event at all, so on Netscape 2 input is clicks, field changes and form submits.
+- `<SCRIPT LANGUAGE=...>` accepts JavaScript, LiveScript and Mocha, and `livescript:` and `mocha:` URLs work beside `javascript:`.
+- The Mocha console is a frameset (75% output, 25% input) with an ISINDEX field posting into the output frame: the engine's own authors built interactive UI in Netscape 2 with frames and a form, which is the frames tier's approach.
+- Proxy auto-config starts here: the binary calls `FindProxyForURL("%s","%s")` in Mocha, the same function every PAC file still defines.
+- Functions print their source by decompiling the bytecode (format strings like `while (%s) {` and `function %s(`), and String has a Perl-style `chop` that later versions dropped.
