@@ -243,18 +243,38 @@ def png_cases():
         status_case(f"png-box{bw}x{bh}", f("rgb.png"), bw, bh, "BAD_BOX")
     # png-fast-2 (docs/image-png-speed.md): a small PNG holds the 32 KB window and little more, not a 256 KB chunk; a
     # wide RGB one read as RGB (the scalar build) holds no RGBA row. The limits are the file and what the module holds
-    # (the peaks measured, 48 and 197 KB, and a margin under the 256 KB chunk and the 31 KB row they would add). The
-    # pixels are a formula: nothing is drawn from the rng, so every later input is as it was.
+    # (the peaks measured after inflate-fast's buffer, 47.6 and 126.9 KB, rounded up to the KB with the file's part
+    # KB). The pixels are a formula: nothing is drawn from the rng, so every later input is as it was.
     y, x = np.mgrid[0:16, 0:16]
     s16 = np.stack([x * 16, y * 16, (x + y) * 8], 2).astype(np.uint8)
     a16 = ((x * 13 + y * 7) % 256).astype(np.uint8)
     path = write_png("small16rgba.png", 16, 16, 6, 8, [r.reshape(-1) for r in np.concatenate([s16, a16[..., None]], 2)])
     case("png-small16-rgba", path, 300, 300, area_avg(over_white(s16, a16), *fit_box(16, 16, 300, 300)),
-         maxkb=os.path.getsize(path) // 1024 + 56)
+         maxkb=os.path.getsize(path) // 1024 + 51)
     y, x = np.mgrid[0:3, 0:8000]
     wide = np.stack([x % 251, (x // 7 + y * 40) % 256, (x * 3 + y) % 253], 2).astype(np.uint8)
     path = write_png("wide8000x3.png", 8000, 3, 2, 8, [r.reshape(-1) for r in wide])
-    case("png-wide8000x3-rgb", path, 300, 300, area_avg(wide, *fit_box(8000, 3, 300, 300)), maxkb=os.path.getsize(path) // 1024 + 212)
+    case("png-wide8000x3-rgb", path, 300, 300, area_avg(wide, *fit_box(8000, 3, 300, 300)), maxkb=os.path.getsize(path) // 1024 + 131)
+    # inflate-fast (docs/image-png-speed.md, "The small PNG's buffer"): the buffer is the whole image and the match
+    # room when that is under the chunked one (the window, two rows and PNG_CHUNK). RGB 291 wide (rows of 874 bytes):
+    # 299 rows are just under PNG_CHUNK (262,144), 300 just over, 339 the last height under the chunked buffer and 340
+    # the first over it. The limits are the file and the peaks measured (the scaler's output is most of them), rounded
+    # up to the KB. Every limit in this block (the small and wide PNGs above, these, and the past-the-last-row one
+    # below) has 3 KB more since the fed decoder (the inflate's 2 KiB carry and the 768-byte PLTE gather), as the Paeth
+    # runs' below.
+    for h, kb in [(299, 623), (300, 625), (339, 619), (340, 617)]:
+        y, x = np.mgrid[0:h, 0:291]
+        mid = np.stack([(x * 5 + y * 3) % 256, (x * y) % 251, (x // 3 + y * 7) % 256], 2).astype(np.uint8)
+        path = write_png(f"chunk291x{h}.png", 291, h, 2, 8, [r.reshape(-1) for r in mid])
+        case(f"png-chunk291x{h}-rgb", path, 300, 300, area_avg(mid, *fit_box(291, h, 300, 300)), maxkb=os.path.getsize(path) // 1024 + kb)
+    # a stream that makes 40 KB more than the image (zeros after the last row): the bytes past it are dropped, and
+    # the buffer must still hold the window and two rows then, and the match room, or the inflate stops (CORRUPT);
+    # a small image (300 x 20 RGB), so the window binds, and two rows over 1 KB, so the floor does not hide the room
+    y, x = np.mgrid[0:20, 0:300]
+    small = np.stack([x % 256, y * 12, (x ^ y) % 256], 2).astype(np.uint8)
+    extra = zlib.compress(filtered([r.reshape(-1) for r in small], 3) + bytes(40960), 6)
+    path = write_png("pastlast.png", 300, 20, 2, 8, None, zdata=extra)
+    case("png-past-last-row-rgb", path, 300, 300, area_avg(small, *fit_box(300, 20, 300, 300)), maxkb=os.path.getsize(path) // 1024 + 85)
     # Paeth as a wavefront (docs/image-png-speed.md): the sink hands over runs of up to 4 Paeth rows, so the rows here are
     # Paeth runs of every length 1 to 5 (a 5 is a 4 and a 1), each followed by a row of None, Sub, Up or Avg in turn,
     # and the first row Paeth (its row above is the zero row); RGB and RGBA, an odd width. The pixels are a formula

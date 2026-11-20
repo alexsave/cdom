@@ -110,6 +110,9 @@ static void to_rgba(const fmt *f, const uint8_t *r, uint8_t *out) {
 #ifndef PNG_CHUNK
 #define PNG_CHUNK 262144u
 #endif
+/* The room the inflate keeps free for the longest match and a wide copy's overshoot (its FAST_OUT, 290): the floor
+ * less the window and its 1 KB, which cdom_image_inflate.c's static assertion ties to FAST_OUT. */
+#define PNG_MATCH_ROOM (CD_INFLATE_CAP_MIN - CD_INFLATE_WINDOW - 1024u)
 
 /* The chunk walk's states: a chunk's length and type (gathered across pieces), its payload, its CRC (counted past). */
 enum { W_HEAD, W_DATA, W_CRC };
@@ -181,8 +184,10 @@ static void chunk_end(pctx *x) {
 }
 
 /* The first IDAT: the rows' block and the scaler. One block: the zero row, the RGBA row (unless the rows are read as
- * RGB), then the inflate's buffer: the window, two rows and the smaller of PNG_CHUNK and the whole image, and never
- * under the inflate's floor. 8-bit RGB with no colour key, in the scalar build: the rows go to the scaler as they are,
+ * RGB), then the inflate's buffer: the window, two rows and PNG_CHUNK; or, when it is smaller, the whole image (never
+ * handed over before the end) or the window and two rows (what the sink keeps once a stream makes more than the
+ * image), whichever is larger, and the room the inflate keeps for the longest match (docs/image-png-speed.md, "The
+ * small PNG's buffer"); never under the inflate's floor. 8-bit RGB with no colour key, in the scalar build: the rows go to the scaler as they are,
  * with no RGBA row between (none is allocated). The SIMD build keeps the RGBA row: its RGB to RGBA and across loops in
  * SIMD are faster than the scalar RGB read (docs/image-png-speed.md, "With image-simd's loops"). */
 static uint32_t first_idat(cd_image_dec *d, pctx *x) {
@@ -190,7 +195,9 @@ static uint32_t first_idat(cd_image_dec *d, pctx *x) {
   x->saw_idat = 1;
   int rgb_read = !CDOM_IMAGE_SIMD && x->f.ctype == 2 && x->f.depth == 8 && !x->f.key;
   uint64_t row = (uint64_t)x->stride + 1, all = row * x->h;
-  uint64_t cap = CD_INFLATE_WINDOW + 2 * row + (all < PNG_CHUNK ? all : PNG_CHUNK);
+  uint64_t keep = CD_INFLATE_WINDOW + 2 * row;
+  uint64_t cap = (all > keep ? all : keep) + PNG_MATCH_ROOM;
+  if (cap > keep + PNG_CHUNK) cap = keep + PNG_CHUNK;
   if (cap < CD_INFLATE_CAP_MIN) cap = CD_INFLATE_CAP_MIN;
   uint64_t px_n = rgb_read ? 0 : (uint64_t)x->f.w * 4;
   uint64_t room = row + px_n + cap;
