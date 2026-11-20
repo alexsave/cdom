@@ -31,6 +31,10 @@ LEG = ['node', 'tools/legacy.mjs']
 LEG1 = ['env', 'LEGACY=1', 'node', 'tools/legacy.mjs']       # the second tier: wasm2js on typed arrays (IE 10, 11)
 LEG9 = ['env', 'LEGACY=ie9', 'node', 'tools/legacy.mjs']     # the third: wasm2js on words, no typed arrays (IE 9)
 WORDS = ['node', 'tools/words.mjs']                          # words.js, the words pass and the shim-ie9 gate, in node
+LEG6 = ['env', 'LEGACY=ie6', 'node', 'tools/legacy.mjs']     # the fourth: words in ES3 on the old DOM (IE 6 to 8)
+LEGBELOW = ['env', 'LEGACY=below', 'node', 'tools/legacy.mjs']  # under the fourth tier's floor: refused
+FUZZ6 = ['env', 'LEGACY=ie6', 'node', 'tools/fuzz.mjs']      # the keyed fuzz on the fourth tier
+ES3T = ['node', 'tools/es3.mjs']                             # the fourth tier's checks and passes, in node
 JOB = ['node', 'tools/job.mjs']
 RESIZE = ['tools/resize_ban.sh']
 IMG = ['env', 'IMAGE_BIG=0', 'IMAGE_WASM=0', 'tests/image/run.sh']   # the image module, native, small inputs
@@ -948,6 +952,27 @@ M = [
   ('ie9-boot-typed-when-absent', 'shim/boot.js', '    if (!window[typed[i]]) words = true;', '    if (!window[typed[i]]) words = false;', LEG9, 'FAIL booted'),
   ('ie9-words-load8-off-by-one', 'tools/legacy/memory-words.js', 'function load8(ptr) {\n  return memory.load8_u(ptr);', 'function load8(ptr) {\n  return memory.load8_u(ptr + 1);', LEG9, 'FAIL booted'),
   ('ie9-seed-weak-with-crypto', 'shim/cdom.js', '    if (globalThis.crypto && crypto.getRandomValues) {\n      return crypto.getRandomValues', '    if (false) {\n      return crypto.getRandomValues', LEG1, 'FAIL cd_seed from crypto.getRandomValues, never Math.random, where crypto exists'),
+  # the fourth tier, IE 6 to 8 (shim/boot.js, tools/legacy/es3.mjs, dom-old.js, shim-old.js, polyfills-es3.js)
+  ('ie6-boot-new-when-es5-missing', 'shim/boot.js', '    if (!es5[i]) old = true;', '    if (!es5[i]) old = false;', LEG6, 'FAIL booted'),
+  ('ie6-floor-without-listeners', 'shim/boot.js', '  if (!d.addEventListener && !d.attachEvent) lack.push', '  if (false) lack.push', LEGBELOW, "FAIL one error, the boot's"),
+  ('ie6-boot-swallows-failed-start', 'shim/boot.js', '    setTimeout(function () { throw e; }, 0);', '', LEG, 'FAIL a failed start is thrown again'),
+  ('ie6-catch-not-renamed', 'tools/legacy/es3.mjs', '      if (t.isIdentifier(p.node.param)) p.scope.rename(', '      if (false) p.scope.rename(', ES3T, "catch parameter's name used elsewhere in its function"),
+  ('ie6-catch-gate-off', 'tools/legacy/es3.mjs', '      if (found) leaks.add(n);', '      if (false) leaks.add(n);', ES3T, "FAIL catch (e) over the function's own e is refused"),
+  ('ie6-reserved-gate-off', 'tools/legacy/es3.mjs', '  if (minified) walk(tree);', '  if (false) walk(tree);', ES3T, 'FAIL a.class is refused'),
+  ('ie6-es5-gate-off', 'tools/legacy/es3.mjs', '      if (ES5_NAMES.has(key) && !ES5_SUPPLIED.has(key) && !ok.has(key)) es5.add(key);', '      if (false) es5.add(key);', ES3T, 'FAIL Object.getOwnPropertyNames is refused'),
+  ('ie6-old-dom-gate-off', 'tools/legacy/es3.mjs', "    if (dot && ((called.has(k.value) && call) || props.has(k.value))) left.add('.' + k.value);", '', ES3T, 'FAIL a call, a property and a global left are found'),
+  ('ie6-old-dom-call-not-rewritten', 'tools/legacy/es3.mjs', "        if (m && (own(OLD_DOM.call, m) || (own(OLD_DOM.zero, m) && !p.node.arguments.length))) {", "        if (false) {", ES3T, 'W3C DOM the old DOM lacks left in the shim'),
+  ('ie6-invoke-through-apply', 'tools/legacy/shim-old.js', '    case 0: return object[key]();', '    case 0: return object[key].apply(object, a);', LEG6, 'FAIL focus delivered once'),
+  ('ie6-no-reach', 'tools/legacy/shim-old.js', '    cdomOld.reach(node, EVENTS[type], delegatedListener[type]);', '', LEG6, "FAIL the broken image's error"),
+  ('ie6-splice-unfixed', 'tools/legacy/polyfills-es3.js', '  if (probe.length) {', '  if (false) {', LEG6, 'FAIL polyfills agree with the built-ins'),
+  ('ie6-indexof-negative-from', 'tools/legacy/polyfills-es3.js', '    if (i < 0) i = Math.max(n + i, 0);\n    for (; i < n; i++) {', '    for (; i < n; i++) {', LEG6, 'FAIL polyfills agree with the built-ins'),
+  ('ie6-pointerup-buttons-held', 'tools/legacy/dom-old.js', '      o.buttons = type === "pointerup" ? 0 : b;', '      o.buttons = b;', LEG6, 'FAIL pointerup at 60,55, no buttons'),
+  ('ie6-input-never', 'tools/legacy/dom-old.js', '        if (e.propertyName === "value" && doc.activeElement === t) f(shaped(e, t, type));', '', LEG6, 'FAIL echo of'),
+  ('ie6-style-attribute-dropped', 'tools/legacy/dom-old.js', '      el.style.cssText = value;', '      el.setAttribute(n, value);', LEG6, 'FAIL one pointerdown, one pointerup, one click'),
+  ('ie6-wheel-unscaled', 'tools/legacy/dom-old.js', '    if (type === "wheel") o.deltaY = -(e.wheelDelta | 0) * 5 / 6;', '    if (type === "wheel") o.deltaY = -(e.wheelDelta | 0);', LEG6, "FAIL the wheel's deltas"),
+  ('ie6-rect-no-width', 'tools/legacy/dom-old.js', '      width: r.right - r.left, height: r.bottom - r.top };', '      width: 0, height: r.bottom - r.top };', LEG6, "FAIL cd_rect's doubles"),
+  ('ie6-prev-element-counts-text', 'tools/legacy/dom-old.js', '    while (s && s.nodeType !== 1) s = s.previousSibling;\n', '', FUZZ6, 'errors'),
+  ('ie6-clear-keeps-children', 'tools/legacy/dom-old.js', '    while (x.firstChild) x.removeChild(x.firstChild);\n', '', FUZZ6, 'errors'),
   ('ie9-shim-gate-lets-typed-through', 'tools/legacy/memory.mjs', "if (node.type === 'Identifier' && names.has(node.name) && !SHIM_TYPED_ALLOWED.has(fn))", "if (false)", WORDS, 'FAIL the shim-ie9 gate'),
   ('encode-quality-unchecked', 'src/cdom.c', '|| y + h > H || quality > 100) __builtin_trap();', '|| y + h > H) __builtin_trap();', UNIT, "FAIL cd_encode_image's quality"),
   # cd_job (src/cdom_job.c, src/cdom_job_mod.c, tools/job.mjs; cdom.mk's job rule and tools/cdpage's --job in tests/link and tests/page)
