@@ -1,8 +1,10 @@
 // Builds the files a browser without WebAssembly loads instead of cdom.js and app.wasm:
 //   node tools/legacy/build.mjs shim <out/cdom.legacy.js>       the polyfills, then shim/cdom.js in ES5
 //   node tools/legacy/build.mjs shim-ie9 <out/cdom.legacy-ie9.js>  the same on memory-words.js, for no typed arrays
+//   node tools/legacy/build.mjs shim-ie6 <out/cdom.legacy-ie6.js>  that again in ES3 on the old DOM (dom-old.js), for IE 6 to 8
 //   node tools/legacy/build.mjs app <in.wasm> <out/in.wasm.js>   the same wasm compiled to JS by wasm2js
-//   node tools/legacy/build.mjs app-ie9 <in.wasm> <out/in.wasm.ie9.js>  the same, on a plain Array of words (memory.mjs)
+//   node tools/legacy/build.mjs app-ie9 <in.wasm> <out/in.wasm.ie9.js>  the same, on a plain Array of words (memory.mjs),
+//                                                                in ES3: IE 9 and the fourth tier (IE 6 to 8) share it
 //   node tools/legacy/build.mjs page <in.html> <out.html>        inlines shim/boot.js at /*CDOM_BOOT*/
 //   node tools/legacy/build.mjs inputs <shim|app|page> <args>    prints what that build reads, one per line
 // Both outputs must parse as ES5 and name no ES2015 global or method that the polyfills do not supply,
@@ -68,68 +70,198 @@ function es5(name, src) {
   return src;
 }
 
-// Minified as ES5: terser keeps the syntax at ecma 5, and the parse proves it.
-async function small(name, src) {
+// The fourth tier (IE 6 to 8, docs/ie6-design.md) reads ES3 as JScript does: a reserved word is a syntax error as a
+// property name there (`a.class`, `{ default: 1 }`), which acorn's ES3 lets through, so this walk finds them.
+const RESERVED = new Set(('break case catch continue default delete do else finally for function if in instanceof new return ' +
+  'switch this throw try typeof var void while with null true false abstract boolean byte char class const debugger double ' +
+  'enum export extends final float goto implements import int interface long native package private protected public short ' +
+  'static super synchronized throws transient volatile').split(' '));
+// What ES5 added that the tier's file may name: each must be one polyfills-es3.js supplies (ES5_SUPPLIED), or be
+// allowed in the one part that names it behind a check (ES5_ALLOWED). A name the old DOM lacks is OLD_DOM's.
+const ES5_NAMES = new Set(['JSON', '.keys', '.create', '.defineProperty', '.defineProperties', '.getPrototypeOf',
+  '.getOwnPropertyNames', '.getOwnPropertyDescriptor', '.freeze', '.seal', '.preventExtensions', '.isFrozen', '.isSealed',
+  '.isExtensible', '.isArray', '.indexOf', '.lastIndexOf', '.forEach', '.map', '.filter', '.some', '.every', '.reduce',
+  '.reduceRight', '.bind', '.now', '.trim', '.toISOString', '.toJSON']);
+const ES5_SUPPLIED = new Set(['.keys', '.create', '.isArray', '.now', '.trim', '.bind', '.indexOf', '.lastIndexOf',
+  '.forEach', '.map', '.filter', '.some', '.every', '.reduce']);
+// polyfills.js and dom-old.js try defineProperty and fall back; Babel's regenerator helper tries defineProperty and
+// reads getPrototypeOf only when it exists. polyfills-es3.js defines the supplied ones, so it names them all.
+const ES5_ALLOWED = { polyfills: new Set(['.defineProperty']), shim: new Set(['.defineProperty', '.getPrototypeOf']),
+  'polyfills-es3': ES5_NAMES };
+// Each part is checked for ES3 syntax and ES5 names as written (minified, the parts are one file); the reserved words
+// once minified, since terser's ie8 quotes the ones the parts name (promise-polyfill's .catch).
+function es3(name, src, minified = false) {
+  let tree;
+  try { tree = acorn.parse(src, { ecmaVersion: 3, sourceType: 'script', allowReserved: true }); } catch (e) {
+    const line = src.split('\n')[e.loc.line - 1];
+    throw new Error(`${name} is not ES3: ${e.message}\n  ${line.trim().slice(0, 160)}`);
+  }
+  const bad = new Set();
+  const walk = (n) => {
+    if (n.type === 'MemberExpression' && !n.computed && RESERVED.has(n.property.name)) bad.add('.' + n.property.name);
+    if (n.type === 'Property' && n.key.type === 'Identifier' && RESERVED.has(n.key.name)) bad.add(n.key.name + ':');
+    for (const k in n) {
+      const v = n[k];
+      if (Array.isArray(v)) { for (const c of v) if (c && typeof c.type === 'string') walk(c); }
+      else if (v && typeof v.type === 'string' && k !== 'loc') walk(v);
+    }
+  };
+  if (minified) walk(tree);
+  if (bad.size) throw new Error(`${name} names a reserved word as a property, which JScript refuses: ${[...bad].join(' ')}`);
+  if (minified) return src;
+  const ok = ES5_ALLOWED[name] || new Set(), es5 = new Set();
+  let prev = null;
+  for (const t of acorn.tokenizer(src, { ecmaVersion: 3, allowReserved: true })) {
+    if (t.type.label === 'name') {
+      const key = prev && prev.type.label === '.' ? '.' + t.value : t.value;
+      if (ES5_NAMES.has(key) && !ES5_SUPPLIED.has(key) && !ok.has(key)) es5.add(key);
+    }
+    prev = t;
+  }
+  if (es5.size) throw new Error(`${name} uses ES5 names polyfills-es3.js does not supply: ${[...es5].join(' ')}`);
+  return src;
+}
+
+// Minified as ES5: terser keeps the syntax at ecma 5, and the parse proves it. ie8: terser also quotes reserved words
+// used as property names and works around JScript's named function expressions and catch scopes, and writes ASCII
+// only, for the files the fourth tier runs (which are then checked as ES3).
+async function small(name, src, ie8 = false) {
   const { minify } = createRequire(path.join(top, 'package.json'))('terser');
-  const { code } = await minify(src, { ecma: 5, compress: { passes: 2 }, mangle: true });
+  const { code } = await minify(src, { ecma: 5, ie8, compress: { passes: 2 }, mangle: true, format: { ascii_only: ie8 } });
   try { acorn.parse(code, { ecmaVersion: 5, sourceType: 'script' }); } catch (e) {
     throw new Error(`${name} is not ES5 once minified: ${e.message}`);
   }
+  if (ie8) es3(name, code, true);
   return code;
 }
 
-// The shim for a browser without typed arrays: shim/cdom.js's C-memory functions are each replaced by
-// memory-words.js's function of the same name, every one of which must find its match; what memory-words.js
-// declares besides goes in front of the first. One shim source, two backings of its memory.
-function wordsBacked({ types: t, parseSync: parse }) {
+// A shim built on functions of a file's own: shim/cdom.js's functions are each replaced by file's function of the
+// same name, every one of which must find its match; what file declares besides goes in front of the first. One
+// shim source: memory-words.js backs its memory with words (the third and fourth tiers), shim-old.js does what the
+// old DOM needs done differently (the fourth).
+const replacedFrom = (file) => ({ types: t, parseSync: parse }) => ({
+  visitor: {
+    Program(p) {
+      const own = parse(read(path.join(here, file)), { sourceType: 'script', configFile: false, babelrc: false }).program.body;
+      // The shim is one `var cdom = (() => { ... })();`: its functions are the statements of that arrow's body.
+      const init = p.node.body.length === 1 && p.node.body[0].declarations?.[0]?.init;
+      const body = init && t.isCallExpression(init) && t.isArrowFunctionExpression(init.callee) && init.callee.body.body;
+      if (!body) throw new Error(`${file}: shim/cdom.js is no longer one var cdom = (() => { ... })()`);
+      const at = (name) => body.findIndex((n) => t.isFunctionDeclaration(n) && n.id.name === name);
+      const extra = own.filter((n) => !t.isFunctionDeclaration(n));
+      let first = -1;
+      for (const f of own.filter((n) => t.isFunctionDeclaration(n))) {
+        const i = at(f.id.name);
+        if (i < 0) throw new Error(`${file}'s ${f.id.name} has no function of that name in shim/cdom.js`);
+        body[i] = f;
+        first = first < 0 ? i : Math.min(first, i);
+      }
+      body.splice(first, 0, ...extra);
+    },
+  },
+});
+
+// The fourth tier's one table of what the old DOM (IE 6 to 8) lacks: each W3C call the shim makes, rewritten to the
+// tools/legacy/dom-old.js function that does its job (the object it was called on first). call: a method call;
+// zero: a call with no arguments only; read: a property read; write: a property assignment; global: a name the
+// window holds, read or called. The build refuses cdom.legacy-ie6.js if one of these names is left in the shim.
+const OLD_DOM = {
+  call: { addEventListener: 'on', removeEventListener: 'off', setProperty: 'setProperty', getPropertyValue: 'getPropertyValue',
+    setAttribute: 'setAttribute', createElementNS: 'createElementNS', elementsFromPoint: 'elementsFromPoint' },
+  zero: { remove: 'remove', getBoundingClientRect: 'rect' },
+  read: { previousElementSibling: 'prevElement' },
+  write: { textContent: 'setText' },
+  global: { innerWidth: 'viewportWidth', innerHeight: 'viewportHeight', devicePixelRatio: 'pixelRatio', addEventListener: 'on' },
+};
+function oldDom({ types: t }) {
+  const helper = (name) => t.memberExpression(t.identifier('cdomOld'), t.identifier(name));
+  // A call of a helper itself (cdomOld.setProperty) is what a rewrite made: never rewritten again.
+  const named = (m) => t.isMemberExpression(m) && !m.computed && t.isIdentifier(m.property) &&
+    !t.isIdentifier(m.object, { name: 'cdomOld' }) ? m.property.name : null;
+  const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   return {
     visitor: {
-      Program(p) {
-        const own = parse(read(path.join(here, 'memory-words.js')), { sourceType: 'script', configFile: false, babelrc: false }).program.body;
-        // The shim is one `var cdom = (() => { ... })();`: its functions are the statements of that arrow's body.
-        const init = p.node.body.length === 1 && p.node.body[0].declarations?.[0]?.init;
-        const body = init && t.isCallExpression(init) && t.isArrowFunctionExpression(init.callee) && init.callee.body.body;
-        if (!body) throw new Error('shim-ie9: shim/cdom.js is no longer one var cdom = (() => { ... })()');
-        const at = (name) => body.findIndex((n) => t.isFunctionDeclaration(n) && n.id.name === name);
-        const extra = own.filter((n) => !t.isFunctionDeclaration(n));
-        let first = -1;
-        for (const f of own.filter((n) => t.isFunctionDeclaration(n))) {
-          const i = at(f.id.name);
-          if (i < 0) throw new Error(`shim-ie9: memory-words.js's ${f.id.name} has no function of that name in shim/cdom.js`);
-          body[i] = f;
-          first = first < 0 ? i : Math.min(first, i);
+      CallExpression(p) {
+        const c = p.node.callee, m = named(c);
+        if (m && (own(OLD_DOM.call, m) || (own(OLD_DOM.zero, m) && !p.node.arguments.length))) {
+          p.replaceWith(t.callExpression(helper(OLD_DOM.call[m] || OLD_DOM.zero[m]), [c.object, ...p.node.arguments]));
+        } else if (t.isIdentifier(c) && own(OLD_DOM.global, c.name) && OLD_DOM.global[c.name] === 'on' && !p.scope.hasBinding(c.name)) {
+          p.replaceWith(t.callExpression(helper('on'), [t.identifier('window'), ...p.node.arguments]));
         }
-        body.splice(first, 0, ...extra);
+      },
+      AssignmentExpression(p) {
+        const m = named(p.node.left);
+        if (m && own(OLD_DOM.write, m) && p.node.operator === '=') {
+          p.replaceWith(t.callExpression(helper(OLD_DOM.write[m]), [p.node.left.object, p.node.right]));
+        }
+      },
+      MemberExpression(p) {
+        const m = named(p.node);
+        if (m && own(OLD_DOM.read, m) && !(p.parentPath.isAssignmentExpression() && p.parentPath.node.left === p.node)) {
+          p.replaceWith(t.callExpression(helper(OLD_DOM.read[m]), [p.node.object]));
+        }
+      },
+      Identifier(p) {
+        const n = p.node.name;
+        if (!own(OLD_DOM.global, n) || OLD_DOM.global[n] === 'on' || p.scope.hasBinding(n) || !p.isReferencedIdentifier()) return;
+        p.replaceWith(t.callExpression(helper(OLD_DOM.global[n]), []));
       },
     },
   };
 }
+// The names of OLD_DOM left in the fourth tier's shim, as tokens: a method called after a dot (a read of one is a
+// feature test, which the old DOM answers), a property read or written after a dot, a global bare.
+function oldDomLeftovers(src, parse) {
+  const called = new Set([...Object.keys(OLD_DOM.call), ...Object.keys(OLD_DOM.zero)]);
+  const props = new Set([...Object.keys(OLD_DOM.read), ...Object.keys(OLD_DOM.write)]);
+  const bare = new Set(Object.keys(OLD_DOM.global)), left = new Set();
+  const ks = [...parse.tokenizer(src, { ecmaVersion: 5 })];
+  for (let i = 0; i < ks.length; i++) {
+    const k = ks[i];
+    if (k.type.label !== 'name') continue;
+    const dot = i > 0 && ks[i - 1].type.label === '.';
+    // cdomOld.setProperty is a helper's call, which the rewrite made
+    if (dot && i > 1 && ks[i - 2].type.label === 'name' && ks[i - 2].value === 'cdomOld') continue;
+    const call = i + 1 < ks.length && ks[i + 1].type.label === '(';
+    if (dot && ((called.has(k.value) && call) || props.has(k.value))) left.add('.' + k.value);
+    if (!dot && bare.has(k.value)) left.add(k.value);
+  }
+  return [...left];
+}
 
-// cdom.legacy.js, or with ie9 cdom.legacy-ie9.js: the shim on memory-words.js, refused when a typed array is left
-// in it outside seed and randomBytes or a view of the typed backing is read anywhere (memory.mjs, shimLeftovers).
-async function shim(out, ie9) {
+// cdom.legacy.js (tier ''), cdom.legacy-ie9.js (tier 'ie9': the shim on memory-words.js, refused when a typed array
+// is left in it outside seed and randomBytes or a view of the typed backing is read anywhere, memory.mjs's
+// shimLeftovers), or cdom.legacy-ie6.js (tier 'ie6': that, in ES3 on the old DOM, with no PEP; refused when an ES5 name
+// polyfills-es3.js does not supply or a name of OLD_DOM is left in it).
+async function shim(out, tier) {
+  const words = tier === 'ie9' || tier === 'ie6', old = tier === 'ie6';
   const { transformSync } = await import('@babel/core');
   const babel = transformSync(read(path.join(top, 'shim/cdom.js')), {
     babelrc: false, configFile: false, comments: false, sourceType: 'script',
     // The shim spreads and iterates only arrays, so the helpers need no Symbol.iterator.
     assumptions: { iterableIsArray: true, arrayLikeIsIterable: false, noDocumentAll: true },
-    plugins: ie9 ? [wordsBacked] : [],
-    presets: [[require.resolve('@babel/preset-env'), { targets: ie9 ? `${TARGETS}, ie 9` : TARGETS, modules: false }]],
+    plugins: [...(words ? [replacedFrom('memory-words.js')] : []), ...(old ? [replacedFrom('shim-old.js'), oldDom] : [])],
+    presets: [[require.resolve('@babel/preset-env'), { targets: old ? `${TARGETS}, ie 6` : words ? `${TARGETS}, ie 9` : TARGETS, modules: false }]],
   }).code;
-  if (ie9) {
+  if (words) {
     memoryPass ??= await import('./memory.mjs');
     const left = memoryPass.shimLeftovers(babel, acorn);
-    if (left.length) throw new Error(`shim-ie9: typed memory left in the shim: ${left.join(', ')}`);
+    if (left.length) throw new Error(`shim-${tier}: typed memory left in the shim: ${left.join(', ')}`);
+  }
+  if (old) {
+    const left = oldDomLeftovers(babel, acorn);
+    if (left.length) throw new Error(`shim-ie6: W3C DOM the old DOM lacks left in the shim: ${left.join(', ')}`);
   }
   const parts = [
+    ...(old ? [['polyfills-es3', read(path.join(here, 'polyfills-es3.js'))], ['dom-old', read(path.join(here, 'dom-old.js'))]] : []),
     ['polyfills', read(path.join(here, 'polyfills.js'))],
     ['promise-polyfill', read(require.resolve('promise-polyfill/dist/polyfill.js'))],
-    ['pepjs', read(require.resolve('pepjs/dist/pep.js'))],
+    ...(old ? [] : [['pepjs', read(require.resolve('pepjs/dist/pep.js'))]]),
     ['shim', babel],
   ];
-  const body = parts.map(([n, s]) => es5(n, s)).join('\n;\n');
+  const body = parts.map(([n, s]) => old ? es3(n, es5(n, s)) : es5(n, s)).join('\n;\n');
   const name = path.basename(out);
-  return `/* ${name}: generated by tools/legacy/build.mjs, do not edit. */\n` + await small(name, body);
+  return `/* ${name}: generated by tools/legacy/build.mjs, do not edit. */\n` + await small(name, body, old);
 }
 
 // wasm2js output as a script: wasm2js writes an ES module that imports each import module and exports what
@@ -172,7 +304,7 @@ async function appWords(wasm, out) {
   const words = read(path.join(here, 'words.js'));
   const src = `${note}(function () {\n${words}\n${memoryPass.memoryWords(head, declared(words))}\nwindow.cdomFactory = asmFunc;\n})();\n`;
   es5('wasm2js', src);
-  const code = await small(path.basename(out), src);
+  const code = await small(path.basename(out), src, true);
   memoryPass.noTypedArrays(path.basename(out), code);
   return note + code;
 }
@@ -208,9 +340,11 @@ function inputs(cmd, a) {
     path.join(here, 'node_modules/.package-lock.json'), path.join(top, 'package.json'), path.join(top, 'package-lock.json'),
     path.join(top, 'node_modules/.package-lock.json')];
   const tools = ['node ' + process.version];
-  if (cmd === 'shim' || cmd === 'shim-ie9') files.push(path.join(top, 'shim/cdom.js'), path.join(here, 'polyfills.js'),
-    require.resolve('promise-polyfill/dist/polyfill.js'), require.resolve('pepjs/dist/pep.js'));
-  if (cmd === 'shim-ie9') files.push(path.join(here, 'memory-words.js'), path.join(here, 'memory.mjs'));
+  if (cmd === 'shim' || cmd === 'shim-ie9' || cmd === 'shim-ie6') files.push(path.join(top, 'shim/cdom.js'), path.join(here, 'polyfills.js'),
+    require.resolve('promise-polyfill/dist/polyfill.js'));
+  if (cmd === 'shim' || cmd === 'shim-ie9') files.push(require.resolve('pepjs/dist/pep.js'));
+  if (cmd === 'shim-ie9' || cmd === 'shim-ie6') files.push(path.join(here, 'memory-words.js'), path.join(here, 'memory.mjs'));
+  if (cmd === 'shim-ie6') files.push(path.join(here, 'polyfills-es3.js'), path.join(here, 'dom-old.js'), path.join(here, 'shim-old.js'));
   else if (cmd === 'app') { files.push(path.resolve(a)); tools.push(wasm2jsVersion()); }
   // memory.mjs is imported, not read, so it is named here as build.mjs is.
   else if (cmd === 'app-ie9') {
@@ -257,7 +391,7 @@ function write(out, data, want, list) {
 }
 
 const [cmd, a, b] = process.argv.slice(2);
-const builds = { shim: [1, (out) => shim(out, false)], 'shim-ie9': [1, (out) => shim(out, true)], app: [2, (out) => app(a, out)], 'app-ie9': [2, (out) => appWords(a, out)],
+const builds = { shim: [1, (out) => shim(out, '')], 'shim-ie9': [1, (out) => shim(out, 'ie9')], 'shim-ie6': [1, (out) => shim(out, 'ie6')], app: [2, (out) => app(a, out)], 'app-ie9': [2, (out) => appWords(a, out)],
   page: [2, (out) => page(a, out)] };
 if (cmd === 'inputs' && builds[a]) {
   const list = inputs(a, process.argv[4]);
@@ -269,6 +403,6 @@ if (cmd === 'inputs' && builds[a]) {
     write(out, await builds[cmd][1](out), want, list);
   }
 } else {
-  console.error('usage: build.mjs shim <out.js> | shim-ie9 <out.js> | app <in.wasm> <out.js> | app-ie9 <in.wasm> <out.js> | page <in.html> <out.html> | inputs <build> <args>');
+  console.error('usage: build.mjs shim <out.js> | shim-ie9 <out.js> | shim-ie6 <out.js> | app <in.wasm> <out.js> | app-ie9 <in.wasm> <out.js> | page <in.html> <out.html> | inputs <build> <args>');
   process.exit(2);
 }
