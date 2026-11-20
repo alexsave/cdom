@@ -857,9 +857,10 @@ var cdom = (() => {
   // A picked file read in order (cd_file_open, cd_file_next_cb, cd_file_close). readers[r] holds the File itself (so
   // another pick leaves an open reader as it was), its stream reader, the rest of a stream chunk not yet given, and the
   // piece pending: C's dst and max, and the token that answers it. A piece is answered once max bytes are at dst or the
-  // file is at its end, each answer a task of its own: the stream's own completion, or a message posted to the page
-  // itself when the bytes were already in hand, never a microtask after the piece before. One read is kept in flight
-  // ahead of C. Where Blob.stream is missing, FileReader reads slices of the size asked.
+  // file is at its end, each answer a task of its own (a message posted to the page itself: a stream's read resolves
+  // from its queue as a microtask, so even its completion may be in the task of the answer before), never a microtask
+  // after the piece before. One read is kept in flight ahead of C. Where Blob.stream is missing, FileReader reads
+  // slices of the size asked.
   const readers = [null];
   const posted = [];
   let postPort;
@@ -930,7 +931,7 @@ var cdom = (() => {
         rd.end = true;
       }
       if (rd.token && !rd.due) {
-        piece(r, rd, false);
+        piece(r, rd);
       }
     };
     const failed = () => {
@@ -938,7 +939,7 @@ var cdom = (() => {
         rd.reading = false;
         rd.failed = true;
         if (rd.token && !rd.due) {
-          piece(r, rd, false);
+          piece(r, rd);
         }
       }
     };
@@ -954,8 +955,7 @@ var cdom = (() => {
     }
   }
   // The piece pending: answered when it is full or the file is at its end (or failed); else a read is asked for.
-  // fresh: called from file_next, so an answer must be posted as a task of its own.
-  function piece(r, rd, fresh) {
+  function piece(r, rd) {
     fillPiece(rd);
     const done = rd.pos >= rd.size;
     if (rd.got < rd.max && !done && !rd.end && !rd.failed) {
@@ -975,22 +975,19 @@ var cdom = (() => {
       readAhead(r, rd); // the next read is in flight while C uses this piece
       exports.cd_file_piece(token, status, n);
     };
-    if (fresh) {
-      post(answer);
-    } else {
-      answer();
-    }
+    post(answer);
   }
   function file_next(r, dst, max, token) {
     const rd = readers[r];
     if (!rd || rd.token) {
-      throw new Error("cdom: cd_file_next_cb on a reader that is closed or has a piece pending");
+      return 1; // C traps
     }
     rd.token = token;
     rd.dst = dst;
     rd.max = max >>> 0;
     rd.got = 0;
-    piece(r, rd, true);
+    piece(r, rd);
+    return 0;
   }
   // Ends the reader: the File dropped, its stream cancelled; the pending piece's token goes back to C, which frees it.
   function file_close(r) {
