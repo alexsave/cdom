@@ -2,12 +2,11 @@
 // and relative, against VML strings worked out by hand, and arcs against points sampled on the true ellipse.
 // node tools/vml.mjs; exit 1 on any failure. VML_TIME=1 also times the converter (T1 in docs/vml-design.md).
 import fs from 'node:fs';
-import vm from 'node:vm';
 
+// Loaded through new Function with a window and a document of its own, not a vm context, whose global lookups (Math,
+// String, parseFloat) are several times slower and would be what T1 measured.
 const src = fs.readFileSync(new URL('./legacy/vml.js', import.meta.url), 'utf8');
-const box = { window: {}, document: {} };
-vm.runInNewContext(src + '\nwindow.cdomVml = cdomVml;', box);
-const { path, K } = box.window.cdomVml;
+const { path, K } = new Function('window', 'document', `${src}\nreturn cdomVml;`)({}, {});
 let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console.log('ok  ', m); };
 const is = (d, want, m, ...ctm) => { const got = path(d, ...ctm); ok(got === want, `${m}: ${JSON.stringify(d)} is ${JSON.stringify(got)}${got === want ? '' : `, want ${JSON.stringify(want)}`}`); };

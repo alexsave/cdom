@@ -263,12 +263,13 @@ run: try {
     ok(JSON.stringify(lost) === JSON.stringify(kinds), `cdomVml.lost names each kind once: ${JSON.stringify(lost)}`);
     ok(errs.length === kinds.length && kinds.every((k, i) => errs[i] === `Error: cdom: SVG ${k} is not drawn in VML (IE 5 to 8: docs/vml-design.md)`),
       `each reported once through window.onerror: ${JSON.stringify(errs)}`);
-    // Later changes (cd_set_attr) reach the VML: a path's d, a rect's fill, the g's transform (its path drawn again).
+    // Later changes (cd_set_attr) reach the VML: a path's d, a rect's fill; and the g's transform, set while the path in it is
+    // detached, then the path attached again (the shim's place, which on this tier draws what it put back).
     await E('X.svg_set()');
     const [sp2, sr2, sgp2] = [await vmlOf('sp'), await vmlOf('sr'), await vmlOf('sgp')];
     ok(sp2.path === 'm0,0 l2000,0 e', `cd_set_attr of d reached the v:shape: ${sp2.path}`);
     ok(sr2.fillcolor === '#0000ff' && sr2.fill[1] === '0.5', `cd_set_attr of fill reached it, its fill-opacity kept: ${sr2.fillcolor} ${sr2.fill}`);
-    ok(sgp2.path === 'm0,0 l1000,0 l1000,1000 e' && sgp2.strokeweight === '6px', `cd_set_attr of the g's transform redrew the path in it: ${sgp2.path} ${sgp2.strokeweight}`);
+    ok(sgp2.path === 'm0,0 l1000,0 l1000,1000 e' && sgp2.strokeweight === '6px', `the g's transform changed while its path was detached: put back, the path is drawn under it: ${sgp2.path} ${sgp2.strokeweight}`);
     // Removed, then built again: nothing left, then the same VML, and nothing reported twice.
     await E('X.svg_drop()');
     const left = await E(`(function () { var all = document.getElementById('m').getElementsByTagName('*'), n = 0, i;
@@ -289,12 +290,13 @@ run: try {
     await E('X.svg()');
   }
   await E('X.svg_drop()');
-  // T2 and T3: C building 1,000 paths (each d, fill and stroke) in an svg of their own, the median of 5 builds.
+  // T2 and T3: C building 1,000 paths (each d, fill and stroke) in an svg of their own (the one before removed), 20 builds
+  // a run (the clock the fourth tier has is Date's, to the ms), the median of 5 runs after one warm-up.
   if (process.env.VML_TIME) {
     const runs = [];
-    for (let r = 0; r < 6; r++) runs.push(await E('(function () { var t = new Date().getTime(); X.svg_many(1000); return new Date().getTime() - t; })()'));
+    for (let r = 0; r < 6; r++) runs.push(await E('(function () { var t = new Date().getTime(), i; for (i = 0; i < 20; i++) X.svg_many(1000); return (new Date().getTime() - t) / 20; })()'));
     const ms = runs.slice(1).sort((a, b) => a - b)[2];
-    console.log(`T2/T3 (LEGACY=${LEVEL || 'none'}): 1,000 paths in ${ms} ms, ${(1000 / ms).toFixed(1)} paths per ms (median of 5 after one warm-up: ${runs.join(', ')})`);
+    console.log(`T2/T3 (LEGACY=${LEVEL || 'none'}): 1,000 paths in ${ms} ms, ${(1000 / ms).toFixed(1)} paths per ms (median of 5 runs of 20 builds after one warm-up: ${runs.join(', ')})`);
     if (TIER === 4) ok(await E('__vml.made.length') >= 3000, 'and each path made a v:shape, a v:fill and a v:stroke');
     await E('X.svg_many(0)');
   }
