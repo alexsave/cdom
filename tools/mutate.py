@@ -969,6 +969,7 @@ M = [
   ('ie5-numkey-gate-off', 'tools/legacy/es3.mjs', "  if (numKeys) throw", "  if (false) throw", ES3T, 'FAIL { 1: 0 } is refused'),
   ('ie5-regex-flag-gate-off', 'tools/legacy/es3.mjs', "  if (/[^gi]/.test(flags)) return true;", '', ES3T, 'FAIL /a/m is refused'),
   ('ie5-regex-group-gate-off', 'tools/legacy/es3.mjs', "    if (c === '?' && (prev === '(' || prev === 'q')) return true;", '', ES3T, 'FAIL /a+?/ is refused'),
+  ('ie5-regex-class-slash-gate-off', 'tools/legacy/es3.mjs', "if (c === '/') return true; ", '', ES3T, 'FAIL /[/]/ is refused (Firefox 1.0)'),
   ('ie5-error-gate-off', 'tools/legacy/es3.mjs', "  if (minified && errorsWithMessage(tree)) throw", "  if (false) throw", ES3T, 'FAIL new Error("x") is refused'),
   ('ie5-error-not-rewritten', 'tools/legacy/es3.mjs', "        p.replaceWith(t.callExpression(t.identifier('cdomError'), [n.arguments[0]]));", '', ES3T, 'cdom.legacy-ie6.js makes an Error with a message'),
   ('ie5-boot-error-gate-off', 'tools/legacy/es3.mjs', "found.add('Error(message)');", "0;", ES3T, 'FAIL boot50 finds an Error made with a message'),
