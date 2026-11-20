@@ -1,0 +1,32 @@
+<HTML>
+<HEAD><TITLE>probe-frames g</TITLE>
+<SCRIPT LANGUAGE="JavaScript">
+// g reports history.length before the write, calls parent.go() from its onload, then reports history.length again
+// after a timer.  Marks are images written into g, or, once g is closed, loaded by new Image where there is one.
+var TAG = "" + parent.location.search;
+TAG = TAG.substring(1, TAG.length);
+if (TAG == "") { TAG = "x"; }
+function hist() {
+  var h = "none";
+  if (window.history) { h = "" + history.length; }
+  return h;
+}
+function after() {
+  var u = '/mark/' + TAG + '/p-g3-hist1-' + escape(hist());
+  if (window.Image) { var im = new Image(); im.src = u; }
+  else { document.write('<IMG SRC="' + u + '" WIDTH=1 HEIGHT=1>'); }
+  var v = '/mark/' + TAG + '/p-g4-top-' + escape("" + parent.length);
+  if (window.Image) { var im2 = new Image(); im2.src = v; }
+}
+function loaded() {
+  parent.go();
+  setTimeout("after()", 1500);
+}
+document.write('<IMG SRC="/mark/' + TAG + '/p-g1-gstart-yes" WIDTH=1 HEIGHT=1>');
+document.write('<IMG SRC="/mark/' + TAG + '/p-g2-hist0-' + escape(hist()) + '" WIDTH=1 HEIGHT=1>');
+</SCRIPT>
+</HEAD>
+<BODY onLoad="loaded()">
+frame g
+</BODY>
+</HTML>
