@@ -1888,17 +1888,29 @@ var cdom = (() => {
     }
     return response.then((got) => got.arrayBuffer()).then((wasm) => WebAssembly.instantiate(wasm, imports)).then((result) => result.instance);
   }
-  // A promise of the mount: the element given, or the one of that id once the parser has made it. IE 6 to 8 say
-  // interactive before the parser has reached the end, so a mount not parsed yet is waited for too, until the page is
-  // complete.
+  // A promise of the mount: the element given, or the one of that id once the parser has made it. While the page
+  // loads, DOMContentLoaded; then, if the id is still missing and the page not complete, the window's load, which comes
+  // once whatever the page waits on is in (IE 6 to 8 say interactive before the parser has reached the end; elsewhere a
+  // page stays interactive while its images load, long after DOMContentLoaded). An id with no element then is an
+  // error, never a wait.
   function parsed(mount) {
     if (typeof mount !== "string") {
       return Promise.resolve(mount);
     }
-    if (doc.readyState === "loading" || (doc.readyState !== "complete" && !doc.getElementById(mount))) {
-      return new Promise((resolve) => doc.addEventListener("DOMContentLoaded", resolve, { once: true })).then(() => doc.getElementById(mount));
+    const found = () => {
+      const element = doc.getElementById(mount);
+      if (!element) {
+        throw new Error(`cdom: no element has the id ${mount}`);
+      }
+      return element;
+    };
+    if (doc.readyState === "loading") {
+      return new Promise((resolve) => doc.addEventListener("DOMContentLoaded", resolve, { once: true })).then(() => parsed(mount));
     }
-    return Promise.resolve(doc.getElementById(mount));
+    if (doc.readyState !== "complete" && !doc.getElementById(mount)) {
+      return new Promise((resolve) => addEventListener("load", resolve, { once: true })).then(found);
+    }
+    return Promise.resolve().then(found);
   }
   // The app's start, once its module and its mount are there: the exports, wrapped.
   function begin(instance, mount, table, options) {
