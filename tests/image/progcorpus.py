@@ -131,6 +131,98 @@ def variants(path, cuts, corrupts):
 SIZES = [(203, 137), (64, 48), (17, 9), (1, 1), (8, 8), (333, 517), (161, 23)]
 SAMPLES = [("grey", None), ("444", "1x1"), ("420", "2x2"), ("422", "2x1"), ("440", "1x2"), ("411", "4x1")]
 
+def seg(m, data=b"", length=None):
+    """A marker segment: 0xFF, the marker, the length field (len(data) + 2 unless given), the data."""
+    n = len(data) + 2 if length is None else length
+    return bytes([0xff, m, n >> 8, n & 0xff]) + data
+
+# What goes between two scans, as libjpeg's read_markers takes it (jdmarker.c): segments it skips by their length
+# (APPn and COM, skip_variable and get_interesting_appn, and DNL and DAC, which this build skips too), the zero and
+# one lengths it skips nothing for, tables it reads (DHT, DQT, DRI: valid ones, and short ones it refuses), the
+# parameterless markers (RSTn, TEM), fill bytes, stray bytes, and markers it refuses.
+BETWEEN = {
+    "com0": seg(0xfe, length=0), "com1": seg(0xfe, length=1), "com2": seg(0xfe), "com-text": seg(0xfe, b"cdom"),
+    "com-ff": seg(0xfe, b"\xff\xda\x00\x08\x01\x01\x00\x00\x3f\x00\xff\xd9\xff"),   # marker-shaped bytes inside
+    "app0-0": seg(0xe0, length=0), "app0-1": seg(0xe0, length=1), "app1-0": seg(0xe1, length=0),
+    "app1-1": seg(0xe1, length=1), "app14-0": seg(0xee, length=0), "app15-1": seg(0xef, length=1),
+    "app0-jfif": seg(0xe0, b"JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00"), "app14-short": seg(0xee, b"Adob"),
+    "app14-adobe": seg(0xee, b"Adobe\x00\x64\x00\x00\x00\x00\x01"), "app2-long": seg(0xe2, bytes(range(256)) * 3),
+    "dnl": seg(0xdc, b"\x00\x10"), "dnl0": seg(0xdc, length=0), "dac0": seg(0xcc, length=0), "dac": seg(0xcc, b"\x01\x10"),
+    "dri0": seg(0xdd, b"\x00\x00"), "dri5": seg(0xdd, b"\x00\x05"), "dri-len5": seg(0xdd, b"\x00\x05\x00"),
+    "dri-len0": seg(0xdd, length=0), "dht2": seg(0xc4), "dht0": seg(0xc4, length=0), "dht1": seg(0xc4, length=1),
+    "dht-short": seg(0xc4, b"\x10" + bytes(15)), "dht-index": seg(0xc4, b"\x05" + b"\x01" + bytes(15) + b"\x00"),
+    "dqt2": seg(0xdb), "dqt0": seg(0xdb, length=0), "dqt-index": seg(0xdb, b"\x04" + bytes(range(1, 65))),
+    "dqt-short": seg(0xdb, b"\x01" + bytes(range(1, 64))),
+    "rst3": b"\xff\xd3", "tem": b"\xff\x01", "fill": b"\xff\xff\xff\xff", "stray": b"\x12\x34\xff\x00\x56",
+    # right after a scan's data, bytes are taken as more of the data (the walk's scan_end, libjpeg's entropy decoder);
+    # after a segment, they are next_marker's to skip: stray bytes, 0xFF 0x00, fill bytes, RSTn and TEM there
+    "com-stray": seg(0xfe, b"x") + b"\x12\x34", "com-stuffed": seg(0xfe, b"x") + b"\x12\xff\x00\x34\xff\xff\x00",
+    "com-fill": seg(0xfe, b"x") + b"\xff\xff\xff", "com-rst": seg(0xfe, b"x") + b"\xff\xd5\x77", "com-tem": seg(0xfe, b"x") + b"\xff\x01",
+    "sof": seg(0xc0, b"\x08\x00\x10\x00\x10\x01\x01\x11\x00"), "soi": b"\xff\xd8", "jpg0": seg(0xf0, b"\x00"),
+    "res": seg(0x02, b"\x00"),
+}
+
+REFUSED = {"dri-len5", "dri-len0", "dht0", "dht1", "dht-short", "dht-index", "dqt0", "dqt-index", "dqt-short", "sof", "soi",
+           "jpg0", "res"}
+
+def segments():
+    """Progressive files with what BETWEEN holds put after a scan's data, one kind a file (after the first scan, as
+    the walk's first step, and after a middle one), all the ones libjpeg takes after every scan, and segments that end
+    exactly at the end of the file or run past it."""
+    bases = []
+    for (w, h, samp, extra) in [(80, 56, "2x2", []), (40, 24, None, []), (48, 32, "1x1", ["-restart", "1"])]:
+        src = os.path.join(OUT, "src.pnm")
+        write_pnm(src, picture(w, h, samp is None))
+        p = os.path.join(OUT, "base.jpg")
+        cjpeg(src, p, ["-quality", "85", "-progressive"] + (["-grayscale"] if samp is None else ["-sample", samp]) + extra)
+        bases.append((f"{'grey' if samp is None else samp.replace('x', '')}{'-rst' if extra else ''}", open(p, "rb").read()))
+    for (bname, d) in bases:
+        sc = scans_of(d)
+        ends = [e for (s, e) in sc]
+        # "-follow" in a name: libjpeg reads every marker of the file without an error, so the walk must not give up
+        # on it (tests/image/prog.c)
+        for name, b in BETWEEN.items():
+            follow = "" if name in REFUSED else "-follow"
+            for k in (0, len(sc) // 2):
+                open(add(f"seg-{bname}-{name}-after{k}{follow}.jpg"), "wb").write(d[:ends[k]] + b + d[ends[k]:])
+        # every kind libjpeg takes without an error, after every scan
+        ok = [b for name, b in BETWEEN.items() if name not in REFUSED]
+        # a later scan libjpeg stops at: a refused band (Ah 3, Al 1), which the walk models, and Huffman tables never
+        # defined (3 and 3), which it does not (libjpeg's list is then a prefix of the walk's)
+        s1 = sc[len(sc) // 2][0]
+        nc = d[s1 + 4]
+        for name, at, v in [("badal", s1 + 5 + 2 * nc + 2, 0x31), ("notable", s1 + 6, 0x33)]:
+            open(add(f"seg-{bname}-{name}.jpg"), "wb").write(d[:at] + bytes([v]) + d[at + 1:])
+        out, at = bytearray(), 0
+        for k, e in enumerate(ends[:-1]):
+            out += d[at:e] + ok[k % len(ok)] + ok[(k + 7) % len(ok)]
+            at = e
+        out += d[at:]
+        open(add(f"seg-{bname}-many-follow.jpg"), "wb").write(bytes(out))
+        # the file ending at a segment's end, inside one, and with a zero length as its last bytes
+        cut = d[:ends[0]]
+        for name, tail in [("end-com", seg(0xfe, b"xy")), ("end-com0", seg(0xfe, length=0)), ("end-app1", seg(0xe1, length=1)),
+                           ("end-dht2", seg(0xc4)), ("end-dri", seg(0xdd, b"\x00\x00")), ("end-dri-cut", seg(0xdd, b"\x00\x00")[:5]),
+                           ("end-dqt-cut", seg(0xdb, b"\x00" + bytes(64))[:30]), ("end-dqt-len", seg(0xdb, b"\x00" + bytes(64))[:4]), ("end-dht-cut", seg(0xc4, b"\x10" + b"\x01" + bytes(15) + b"\x00")[:9]),
+                           ("end-com-past", seg(0xfe, b"abc", length=40)), ("end-len-cut", b"\xff\xfe\x00"), ("end-marker", b"\xff\xfe"),
+                           ("end-sos-cut", d[sc[1][0]:sc[1][0] + 5]), ("end-fill", b"\xff\xff")]:
+            open(add(f"seg-{bname}-{name}.jpg"), "wb").write(cut + tail)
+
+def shapes():
+    """Wide images (over 4000 pixels, and one of 65,500 a row: 8,188 blocks), 3x1 and 1x3 sampling, grey at odd sizes."""
+    for (w, h, samp, q) in [(4100, 24, "2x2", 75), (4001, 9, "1x1", 90), (65500, 8, None, 75), (9000, 17, "2x1", 60),
+                            (203, 137, "3x1", 85), (137, 203, "1x3", 85), (61, 7, "3x1", 50), (7, 61, "1x3", 98),
+                            (1, 7, None, 90), (7, 1, None, 90), (13, 29, None, 50), (255, 3, None, 98), (9, 9, None, 75), (127, 129, None, 85)]:
+        src = os.path.join(OUT, "src.pnm")
+        write_pnm(src, picture(w, h, samp is None))
+        sname = "grey" if samp is None else samp.replace("x", "")
+        base = ["-quality", str(q)] + (["-grayscale"] if samp is None else ["-sample", f"{samp},1x1,1x1"])
+        for extra, tag in [([], "std"), (["-restart", "1"], "rst1")]:
+            cjpeg(src, add(f"shape-{sname}-{w}x{h}-{tag}.jpg"), base + ["-progressive"] + extra)
+        sp = os.path.join(OUT, "script.txt")
+        open(sp, "w").write(script_split(1 if samp is None else 3))
+        cjpeg(src, add(f"shape-{sname}-{w}x{h}-split.jpg"), base + ["-scans", sp])
+
 def main():
     k = 0
     for (w, h) in SIZES:
@@ -170,6 +262,8 @@ def main():
     open(add("repeated-scan.jpg"), "wb").write(head + b"".join(body[:5]) + body[3] + b"".join(body[5:]) + tail)
     open(add("no-eoi.jpg"), "wb").write(head + b"".join(body))
     open(add("dc-only.jpg"), "wb").write(head + body[0] + tail)
+    segments()
+    shapes()
     for f in ("src.pnm", "script.txt", "base.jpg"):
         os.remove(os.path.join(OUT, f))
     open(os.path.join(OUT, "list.txt"), "w").write("".join(n + "\n" for n in names))
