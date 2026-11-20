@@ -838,3 +838,18 @@ The mutants, each through tools/mutate.py (`-j 1`, IMG unless named), each caugh
 
 Two mutants first tried were equivalent and were replaced: the fast loop's input bound over 2 instead of 8 (a turn takes at most 2 input bytes for each byte it writes, so over 2 still stays in the piece; the bound over 8 is conservative), and the pairing pass's count test on the second entry (an entry read there is never paired yet; the count tests went from the code).
 The last restored check of the first batch (tools/unit.mjs in the real tree) timed out while a run.sh used Chrome beside it; alone it passes (227 passed, 10 s), and the second batch's restored checks passed.
+
+## inflate-fast on the Mac: predictions (written before the run)
+
+Written 2026-11-20 by the dispatcher, before any Mac run of this branch.
+The run is bench/image/inflate-mac.sh: main's scalar and SIMD pages (C-old, C-old-simd), this branch's (C-js, C-simd) and the two browser arms, 9 interleaved rounds at box 900, in Chrome and then Safari, on p12.jpg, p12.png, p12a.png (RGBA) and p12g.png (grey).
+The VM's results above are the base: the inflate's self time 0.936 of main's, p12.png's C-simd 0.985.
+On the Mac the image module's times have run at about 0.7 to 0.85 of the VM's, and V8 on arm64 is a different code generator, so the ratios are taken as the VM's with more spread.
+
+- R1: p12.png, p12a.png and p12g.png, C-simd against C-old-simd: 0.94 to 1.00 in Chrome, and 0.94 to 1.01 in Safari.
+  Falsifier for shipping the fast loop: any of the three more than 1% slower than main's in either browser.
+- R2: p12.jpg within 2% of main's in both browsers (the JPEG path is untouched).
+- R3: the wasm memory after each input equal to main's, within 1 page (the small PNG's buffer only moves small images).
+- R4: against the browser in Chrome (C-simd over B1): p12.png 0.80 to 0.90; p12a.png 0.95 to 1.15; p12g.png 1.05 to 1.30.
+  That is, the RGBA and grey PNGs are not predicted to beat Chrome's decoder; this is the first Mac measurement of either.
+- R5: against Safari (C-simd over the faster of B1 and B2): under 0.75 for all three PNGs.
