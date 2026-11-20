@@ -74,12 +74,13 @@ function es5(name, src) {
 
 // Minified as ES5: terser keeps the syntax at ecma 5, and the parse proves it. ie8: terser also quotes reserved words
 // used as property names and works around JScript's named function expressions and catch scopes, and writes ASCII
-// only, for the files the fourth tier runs (which are then checked as ES3).
+// only, for the files the fourth tier runs (which are then checked as ES3). And it quotes every key of an object literal:
+// JScript 5.0 (IE 5.0) refuses a number as one (`{1: 0}` is a syntax error there, `{"1": 0}` is not).
 async function small(name, src, ie8 = false) {
   if (ie8) es3Pass ??= await import('./es3.mjs');
   const { minify } = createRequire(path.join(top, 'package.json'))('terser');
   // LEGACY_PRETTY=1 lays the output out one statement a line, so an old browser's line number says where (debugging only).
-  const { code } = await minify(src, { ecma: 5, ie8, compress: { passes: 2 }, mangle: true, format: { ascii_only: ie8, beautify: !!process.env.LEGACY_PRETTY } });
+  const { code } = await minify(src, { ecma: 5, ie8, compress: { passes: 2 }, mangle: true, format: { ascii_only: ie8, quote_keys: ie8, beautify: !!process.env.LEGACY_PRETTY } });
   try { acorn.parse(code, { ecmaVersion: 5, sourceType: 'script' }); } catch (e) {
     throw new Error(`${name} is not ES5 once minified: ${e.message}`);
   }

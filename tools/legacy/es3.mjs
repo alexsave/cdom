@@ -95,9 +95,13 @@ export function es3(name, src, minified = false) {
     throw new Error(`${name} is not ES3: ${e.message}\n  ${line.trim().slice(0, 160)}`);
   }
   const bad = new Set();
+  const regexes = new Set();
+  let numKeys = 0;
   const walk = (n) => {
     if (n.type === 'MemberExpression' && !n.computed && RESERVED.has(n.property.name)) bad.add('.' + n.property.name);
     if (n.type === 'Property' && n.key.type === 'Identifier' && RESERVED.has(n.key.name)) bad.add(n.key.name + ':');
+    if (n.type === 'Property' && n.key.type === 'Literal' && typeof n.key.value === 'number') numKeys++;
+    if (n.type === 'Literal' && n.regex && regex50(n.regex)) regexes.add(n.raw);
     for (const k in n) {
       const v = n[k];
       if (Array.isArray(v)) { for (const c of v) if (c && typeof c.type === 'string') walk(c); }
@@ -105,8 +109,11 @@ export function es3(name, src, minified = false) {
     }
   };
   if (minified) walk(tree);
+  if (binaryIn(tree)) throw new Error(`${name} uses the binary in operator, which JScript 5.0 (IE 5.0) refuses as a syntax error (only for-in has in there)`);
   const leaks = minified ? catchLeaks(tree) : [];
   if (leaks.length) throw new Error(`${name}: a catch parameter's name used elsewhere in its function, which JScript's catch would overwrite: ${leaks.join(' ')}`);
+  if (numKeys) throw new Error(`${name} has a number as an object literal's key, which JScript 5.0 (IE 5.0) refuses as a syntax error`);
+  if (regexes.size) throw new Error(`${name} has a regular expression JScript 5.0 (IE 5.0) refuses as a syntax error (a flag but g and i, a lazy quantifier, or a group with ?): ${[...regexes].join(' ')}`);
   if (bad.size) throw new Error(`${name} names a reserved word as a property, which JScript refuses: ${[...bad].join(' ')}`);
   if (minified) return src;
   if (replaceWithFunction(tree)) throw new Error(`${name} calls replace with a function, which JScript 5.0 (IE 5.0) does not take`);
@@ -207,6 +214,36 @@ export function boot50(src) {
     prev = t;
   }
   return [...found];
+}
+// Whether JScript 5.0 refuses a regular expression literal: it knows the flags g and i alone (/a/m is a syntax error),
+// no lazy quantifier (a+?) and no group that starts with ? ((?:a), (?=a), (?!a)).
+export function regex50({ pattern, flags }) {
+  if (/[^gi]/.test(flags)) return true;
+  let inClass = false, prev = '';
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '\\') { i++; prev = 'x'; continue; }
+    if (inClass) { if (c === ']') inClass = false; prev = 'x'; continue; }
+    if (c === '[') { inClass = true; prev = 'x'; continue; }
+    if (c === '?' && (prev === '(' || prev === 'q')) return true;
+    prev = c === '(' ? '(' : '*+?}'.includes(c) ? 'q' : 'x';
+  }
+  return false;
+}
+// A binary in (`k in o`), which JScript 5.0 parses only as for-in's: anywhere else it is a syntax error, and the whole
+// file fails. polyfills-es3.js's holds() does its job.
+export function binaryIn(tree) {
+  let found = 0;
+  const walk = (n) => {
+    if (n.type === 'BinaryExpression' && n.operator === 'in') found++;
+    for (const k in n) {
+      const v = n[k];
+      if (Array.isArray(v)) { for (const c of v) if (c && typeof c.type === 'string') walk(c); }
+      else if (v && typeof v.type === 'string' && k !== 'loc') walk(v);
+    }
+  };
+  walk(tree);
+  return found;
 }
 // A replace whose replacement is written as a function, which JScript 5.0 turns into the function's source text.
 export function replaceWithFunction(tree) {

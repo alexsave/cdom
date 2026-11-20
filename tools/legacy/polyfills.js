@@ -196,7 +196,7 @@
   /* devicePixelRatio is IE 11's; IE 9 and 10 have the same ratio as screen.deviceXDPI over logicalXDPI. Read
    * through a getter, as the real one is, since zoom changes it. Without it, the shim's viewport read throws. */
   /* IE 6 to 8 have no getters on the window: there the fourth tier's dom-old.js reads the ratio itself. */
-  if (!("devicePixelRatio" in w)) {
+  if (w.devicePixelRatio === void 0) {
     try {
       Object.defineProperty(w, "devicePixelRatio", {
         configurable: true,
