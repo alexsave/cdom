@@ -787,7 +787,7 @@ M = [
   ('inflate-one-limit-gone', 'src/cdom_image_inflate.c', '      if ((size_t)(out_lim - out) > turns) out_lim = out + turns;\n', '      (void)turns;\n', IMG, 'AddressSanitizer'),
   ('inflate-bl-unmasked', 'src/cdom_image_inflate.c', 's->bb = bb; s->bl = bl & 63;', 's->bb = bb; s->bl = bl;', IMG, 'FAIL inflate_diff'),
   ('inflate-len-extra-mask', 'src/cdom_image_inflate.c', 'uint32_t len = (e >> 16) + (((uint32_t)bb & ((1u << (e & 31)) - 1))', 'uint32_t len = (e >> 16) + (((uint32_t)bb & ((2u << (e & 31)) - 1))', IMG, 'FAIL inflate_diff'),
-  ('inflate-rev-carry', 'src/cdom_image_inflate.c', '      while (r & inc) inc >>= 1;\n', '', IMG, 'FAIL inflate_diff'),
+  ('inflate-rev-carry', 'src/cdom_image_inflate.c', '      while (r & inc) inc >>= 1;\n', '', IMG, 'png-rgb: status CORRUPT'),   # then inflate_diff runs out of memory: over 150 s, run by hand
   ('inflate-second-index-short', 'src/cdom_image_inflate.c', 'uint32_t e2 = lt[((uint32_t)bb >> (e & 31)) & lm];', 'uint32_t e2 = lt[((uint32_t)bb >> (e & 7)) & lm];', IMG, 'FAIL inflate_diff'),
   ('inflate-pair-first-class', 'src/cdom_image_inflate.c', 'uint32_t pair = (((e | e2) & 0xc0u) == 0)', 'uint32_t pair = ((e2 & 0xc0u) == 0)', IMG, 'FAIL inflate_diff'),
   ('inflate-sink-ignored', 'src/cdom_image_inflate.c', '  if (drop < 0 || (uint64_t)drop > can) return 0;', '  if (drop < 0) drop = 0;\n  if ((uint64_t)drop > can) return 0;', IMG, 'a sink that stops'),
