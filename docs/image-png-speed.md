@@ -1037,4 +1037,42 @@ On the Mac's numbers (main 134.1 ms against B1's 77.2) the same ratio would be a
 
 - tests/image/simd.c: "paeth runs" now covers 1 to 4 bytes a pixel, with Paeth runs of 1 to 17 rows for 1 and 2 bytes (the sink's 16 and 8, and one past) mixed with None, Sub, Up and Avg rows, every length in some plan, widths 1 to 9 pixels and 4031 and 4032 (narrow ones run only the parts where rows start and end), handed over a random number of rows at a time: 2,976 cases.
   "scaler across grey": `cd_image_scaler_across_grey` against `cd_image_scaler_across_scalar` on the same pixels as RGBA, sw 1 to 70 at every dw edge and 400 wide rows, a canary word past the sums and the grey row at the top of memory (a read past it traps): 2,500 cases.
-- tests/image/oracle.py: png-paeth-runs-grey, -grey-key, -grey-alpha, -grey1, -grey2 and -grey4 (403 x 300, Paeth runs of every length 1 to 17, each followed by a row of None, Sub, Up or Avg in turn, the first row Paeth), png-grey-w1, -w2, -w3, -w5, -w17 and -w33 (60 rows, a box of 4), png-paeth-runs-far-grey (rows that repeat every 80, so the stream copies each from near the window's far end), png-grey16 and png-grey-alpha16 (UNSUPPORTED); pixels from a formula, Pillow decodes each file first; main decodes every new case to the same bytes (its test_image on this oracle: 9,275 checks, 0 failures), and holds 1 KB more on each than the limits, which are this branch's peaks (main fails five of the seven).
+- tests/image/oracle.py: png-paeth-runs-grey, -grey-key, -grey-alpha, -grey1, -grey2 and -grey4 (403 x 300, Paeth runs of every length 1 to 17, each followed by a row of None, Sub, Up or Avg in turn, the first row Paeth), png-grey-w1, -w2, -w3, -w5, -w17 and -w33 (60 rows, a box of 4), png-paeth-runs-far-grey (403 x 800, rows that repeat every 80, so the stream copies each from near the window's far end; 800 rows so the image is over the inflate's chunk and its rows are handed over in parts: at 300 rows it was handed over whole at the end, and png-sink-grey-run-past-window was missed), png-grey16 and png-grey-alpha16 (UNSUPPORTED); pixels from a formula, Pillow decodes each file first; main decodes every new case to the same bytes (its test_image on this oracle: 9,275 checks, 0 failures), and holds 1 KB more on each than the limits, which are this branch's peaks (main fails five of the seven).
+- The runs: tests/image/run.sh with the big inputs, both ways out, scalar and SIMD (9,306 native checks, 0 failures; the fed decoder 55,535 checks; inflate_diff; the four wasm builds on 84 cases; simd.sh; prog.sh, 1,079 files, 0 differences); tests/link/run.sh (exit 0, its i64.ctz gate included); tests/image/fuzz.sh 600 with FUZZ_TARGETS=png (fuzz_png, clang 23.1.6: 70,928 runs in 601 s, no crash, leak or limit).
+- tools/mutate.py, each mutant caught by the text named:
+
+| mutant | what it breaks | caught by |
+| --- | --- | --- |
+| wave-n-lag-off-by-one | the rows one pixel off the lag their lanes' b assume | simd.sh, FAIL paeth runs |
+| wave-n-c-old | the up-left pixel is the left one | simd.sh, FAIL paeth runs |
+| wave-n-store-order | a run under 16: the lanes past it stored after its last row | simd.sh, FAIL paeth runs |
+| wave-n-two-byte-store | 2 bytes a pixel: only a pixel's first byte stored | simd.sh, FAIL paeth runs |
+| wave-n-lane-up-two | 1 byte: b from the row two above | simd.sh, FAIL paeth runs |
+| wave-n-ramp-past-end | the parts where rows end store a pixel past a row | simd.sh, FAIL paeth runs |
+| wave-n-cap-17 | runs of 17 rows of 1 byte, for 16 lanes | simd.sh, FAIL paeth runs |
+| wave-n-from-2 | wave_n from runs of 2 | simd.sh, FAIL paeth runs |
+| paeth-run-not-broken (new text) | a row of another filter taken into the run | simd.sh, FAIL paeth runs |
+| paeth-run-not-broken-png (new text) | the same, through the PNG path | tests/image/run.sh in Chrome, FAIL wasm_js_simd |
+| png-sink-grey-run-past-window | a run of grey rows takes rows still inside the window | tests/image/run.sh in Chrome, FAIL wasm_js_simd: png-paeth-runs-far-grey |
+| across-grey-middle | the whole pixels weighted one unit short | simd.sh, FAIL scaler across grey |
+| across-grey-left | a last piece of one unit dropped | simd.sh, FAIL scaler across grey |
+| across-grey-reads-past | the last output pixel reads the byte past the row | simd.sh, FAIL scaler across grey (a trap) |
+| grey-emit-scalar | the scalar build's grey output has no blue | the native tests, png-grey |
+| grey-emit-simd | the SIMD build's grey output has no blue | tests/image/run.sh in Chrome, FAIL wasm_js_simd: png-grey |
+| grey-step-unset | the scaler reads grey rows as RGBA | the native tests, png-grey |
+| grey-key-dropped | a colour key's pixels not white | the native tests, png-grey-key |
+| grey-alpha-raw | grey+alpha not composited | the native tests, png-grey-alpha |
+| grey-low-bits-scale | 1, 2 and 4 bits scaled to 8 wrong | the native tests, png-grey1 |
+| grey-rgba-row-back | the grey row as large as an RGBA one | the native tests, png-paeth-runs-grey-key: peak |
+| png-rgba-row-on-rgb-read (new text) | the RGBA row allocated on the RGB read | the native tests, png-wide8000x3-rgb: peak |
+
+### Decisions the brief did not cover
+
+- 16-bit PNGs are UNSUPPORTED in this decoder (read_ihdr), so no 16-bit grey path was written; png-grey16 and png-grey-alpha16 keep the refusal tested.
+- The 1-, 2- and 4-bit greys and grey with a colour key keep their own unpacking (`to_grey` does what `to_rgba` did for them, a byte a pixel), and go through the grey read as well, so their RGBA row is gone too; palette PNGs (1 byte a pixel) take the 1-byte wavefront for their unfilter and keep `to_rgba`.
+- The wave for 1 and 2 bytes a pixel starts at 3 rows (the microbench), where wave_v starts at 2.
+- G3 (the grey across loop without its inner branch) was tried after G1 and G2, predicted, measured slower (1.048) and dropped.
+- The scalar emit keeps main's RGB loop and has a grey loop beside it, not one loop over a channel count (that version measured within the noise but changed the RGB loop's code).
+- A transposed 16 x 16 block (16 vector loads and stores a 16 steps, in place of 32 lane loads and stores a step) was not tried: on this VM the lane traffic binds, but the Mac's cores are bound by the Paeth chain (8 operations a step), where the transpose saves nothing.
+- The scaler's across loop for grey is scalar in both builds, like the RGB read's.
+- bench/image/paeth/run.mjs runs grey arms on a grey input; bench/image/.gitignore has build-old-simd/ and build-prof-simd/.
