@@ -247,15 +247,22 @@ static void emit(cd_image_scaler *s, uint32_t y) {
     }
 #else
   const uint64_t *a = s->acc;
-  for (uint32_t x = 0; x < dw; x++, at += step, a += ch) {
-    uint8_t *d = s->out + at;
-    for (uint32_t k = 0; k < ch; k++) {
-      uint64_t v = (a[k] * 2 + t) / t2;
-      d[k] = v > 255 ? 255 : (uint8_t)v;
+  if (ch == 1)
+    for (uint32_t x = 0; x < dw; x++, at += step, a++) {
+      uint8_t *d = s->out + at;
+      uint64_t v = (a[0] * 2 + t) / t2;
+      d[0] = v > 255 ? 255 : (uint8_t)v;
+      d[1] = d[2] = d[0]; d[3] = 255;
     }
-    if (ch == 1) d[1] = d[2] = d[0];
-    d[3] = 255;
-  }
+  else
+    for (uint32_t x = 0; x < dw; x++, at += step, a += 3) {
+      uint8_t *d = s->out + at;
+      for (int k = 0; k < 3; k++) {
+        uint64_t v = (a[k] * 2 + t) / t2;
+        d[k] = v > 255 ? 255 : (uint8_t)v;
+      }
+      d[3] = 255;
+    }
 #endif
   memset(s->acc, 0, (size_t)dw * ch * sizeof(uint64_t));
 }

@@ -917,7 +917,7 @@ M = [
   ('across-grey-middle', 'src/cdom_image_loops.c', '    sum += m * dw;', '    sum += m * (dw - 1);', SIMD, 'FAIL scaler across grey'),  # the whole pixels weighted one unit short
   ('across-grey-left', 'src/cdom_image_loops.c', '    if (left) sum += left * px[c];', '    if (left > 1) sum += left * px[c];', SIMD, 'FAIL scaler across grey'),  # a last piece of one unit dropped
   ('across-grey-reads-past', 'src/cdom_image_loops.c', '    if (left) sum += left * px[c];', '    sum += left * px[c];', SIMD, 'FAIL scaler across grey'),  # the row's last output pixel reads the byte past the row (a trap at the top of memory)
-  ('grey-emit-scalar', 'src/cdom_image.c', '    if (ch == 1) d[1] = d[2] = d[0];', '    if (ch == 1) d[1] = d[0];', IMG, 'png-grey: '),  # the scalar build's grey output has no blue
+  ('grey-emit-scalar', 'src/cdom_image.c', '      d[1] = d[2] = d[0]; d[3] = 255;', '      d[1] = d[0]; d[3] = 255;', IMG, 'png-grey: '),  # the scalar build's grey output has no blue
   ('grey-emit-simd', 'src/cdom_image.c', '      d[0] = d[1] = d[2] = q[0]; d[3] = 255;', '      d[0] = d[1] = q[0]; d[3] = 255;', IMGW, 'FAIL wasm_js_simd: png-grey'),  # the SIMD build's grey output has no blue
   ('grey-step-unset', 'src/cdom_image_png.c', '  if (grey) x->sc.step = 1;', '  if (0) x->sc.step = 1;', IMG, 'png-grey'),  # the scaler reads grey rows as RGBA
   ('grey-key-dropped', 'src/cdom_image_png.c', 'out[x] = (uint8_t)(f->key && v == f->key_g ? 255', 'out[x] = (uint8_t)(0 && v == f->key_g ? 255', IMG, 'png-grey-key: '),  # a colour key's pixels not white
