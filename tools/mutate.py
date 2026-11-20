@@ -28,6 +28,7 @@ JOB = ['node', 'tools/job.mjs']
 RESIZE = ['tools/resize_ban.sh']
 IMG = ['env', 'IMAGE_BIG=0', 'IMAGE_WASM=0', 'tests/image/run.sh']   # the image module, native, small inputs
 IMGBIG = ['env', 'IMAGE_WASM=0', 'tests/image/run.sh']               # with the big inputs (budget, peaks)
+IMGALL = ['tests/image/run.sh']                                     # all of it: the big inputs and wasm
 IMGW = ['env', 'IMAGE_BIG=0', 'tests/image/run.sh']                  # and in wasm, both ways out (tools/image.mjs)
 SIMD = ['tests/image/simd.sh']                                       # the SIMD loops against their scalar twins, in node
 PROG = ['tests/image/prog.sh']                                       # the progressive decoder against libjpeg's own
@@ -867,6 +868,7 @@ M = [
   ('simd-adler-weight-16', 'src/cdom_image_inflate.c', 'w_lo = wasm_i16x8_make(16, 15,', 'w_lo = wasm_i16x8_make(17, 15,', SIMD, 'FAIL adler32'),  # the high weight of a block's first byte
   ('simd-adler-step-16', 'src/cdom_image_inflate.c', '(uint64_t)s1 * (16 * k) + 16 * hp + h2', '(uint64_t)s1 * (16 * k) + 15 * hp + h2', SIMD, 'FAIL adler32'),  # s2's 16 x s1 before each block, per lane
   ('simd-adler-no-nmax', 'src/cdom_image_inflate.c', '    if (k > ADLER_NMAX / 16) k = ADLER_NMAX / 16;\n    v128_t', '    v128_t', SIMD, 'FAIL adler32'),  # no modulo every NMAX bytes: the lanes wrap
+  ('image-cap-case-missing', 'tools/image.mjs', "const p12p = cases.find((c) => c[0] === 'jpeg-p12-progressive')", "const p12p = cases.find((c) => c[0] === 'jpeg-p12-progressive-gone')", IMGALL, "FAIL wasm_js_cap: no jpeg-p12-progressive case in the oracle's cases"),  # a full run that lost the case fails; only IMAGE_BIG=0 skips it
   ('simd-emit-alpha', 'src/cdom_image.c', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 255;', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 254;', IMGW, 'FAIL wasm_js_simd: '),  # the SIMD build's emit writes the wrong alpha
   ('sjlj-sp-kept-low', 'src/cdom_image_sjlj.c', '  sp_set(sp);', '  sp_set(sp_get() + 0 * sp);', UNIT, "FAIL the image module's guard"),
   ('sjlj-eh-val-zero', 'src/cdom_image_sjlj_eh.c', 'jb->arg.val = val ? val : 1;', 'jb->arg.val = 0 * val;', IMGW, 'wasm_eh: jpeg-dqt-bad'),
