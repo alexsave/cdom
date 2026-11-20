@@ -84,10 +84,10 @@ Removing or replacing the svg needs nothing: the VML nodes are DOM nodes, remove
 ## 5. Tests
 
 - tools/cdp.mjs, LEGACY=ie6: a VML stand-in in the IE6_OLD profile: document.namespaces.add and document.createStyleSheet's addRule recorded in window.__vml, and every document.createElement of a v: tag recorded too (Chrome makes an unknown element of it, which keeps the properties set on it).
-- tests/legacy.c's svg() builds an svg with every element of the subset, a g with translate and scale, inherited paint, opacities, and the unsupported text, defs, linearGradient and a rotate; svg_set() changes a path's d and a rect's fill after the build; svg_drop() removes the svg; svg_many(n) builds n paths, for the timing.
+- tests/legacy.c's svg() builds an svg (in an absolutely placed div, clear of the test's pad) with every element of the subset, a g with translate and scale, inherited paint, opacities, and the unsupported text, defs, linearGradient and a rotate; svg_set() changes a path's d and a rect's fill after the build, and the g's transform while the path in it is detached, then attaches it again; svg_drop() removes the svg; svg_many(n) builds n paths, for the timing.
 - tools/legacy.mjs, LEGACY=ie6: each element became its v: node with the path string, coordsize, coordorigin, size, colours, weights and opacities it should have; the unsupported kinds reported once each and their nodes hidden; the later change reached the VML node; the removal left nothing; no SVG element was made.
   On the other tiers: the same svg is real SVG (the SVG namespace), and nothing reported.
-- tools/vml.mjs, in node: cdomVml.path against hand-checked strings for every command, absolute and relative, implicit repeats, S and T reflection, Z's move back, a malformed path, the CTM; and arcs against points sampled on the true arc.
+- tools/vml.mjs, in node (vml.js loaded through new Function, not a vm context, whose global lookups are slower): cdomVml.path against hand-checked strings for every command, absolute and relative, implicit repeats, S and T reflection, Z's move back, a malformed path, the CTM; and arcs against points sampled on the true arc.
 - Each test's mutants are in tools/mutate.py (vml-*).
 
 ## 6. Predictions
@@ -110,3 +110,63 @@ Written before any of it was measured.
   Falsified outside that range.
 
 Timings here are indicative: a Linux x86-64 cloud machine, not Alex's Mac, and Chrome's VML stand-in is not IE's VML, which is known to be slow with thousands of shapes.
+
+## 7. The predictions, measured
+
+Measured on 2026-11-20 on a Linux x86-64 cloud machine (Intel Xeon at 2.10 GHz, 4 vCPUs), Chrome for Testing 153.0.8010.12 headless, node v22.23.5, clang 23.1.6, binaryen 130.
+The baseline is origin/ie5 at 8198cfe, built with the same tools.
+Every timing is indicative only.
+
+- B1 confirmed: of the 58 files tests/build.sh writes to tests/out, the only ones that differ from the baseline's are cdom.legacy-ie6.js and the legacy test app's own (legacy.wasm, legacy.simd.wasm, their .lits, legacy.wasm.js, legacy.wasm.ie9.js, legacy.html, legacy.shim.html), whose C and page changed.
+  cdom.legacy.js, cdom.legacy-ie9.js, every other app's .wasm, .wasm.js and .wasm.ie9.js, shim/cdom.js and shim/cdom.min.js are byte-identical.
+- S1 refuted: cdom.legacy-ie6.js went from 45,970 to 55,008 bytes minified, 9,038 more, above the 4,000 to 8,000 predicted.
+  (The baseline is the IE 5 branch's file: P3's 43,317 grew to 45,970 with the IE 5 work.)
+  vml.js minified on its own is 9,009 bytes: the converter, the arc, the five shapes' geometry and the colours are about twice the code the prediction allowed for.
+- S2 refuted: 14,819 to 18,217 bytes with brotli -q 11, 3,398 more, just above the 1,500 to 3,200 predicted (gzip -9: 16,465 to 20,193).
+- A1 confirmed: over the nine arc cases of tools/vml.mjs (quarter, half, large, rotated, negative sweep, small arc of a big circle, nearly a whole turn, under a CTM, radii too small), the converted curve is never farther from the true ellipse than 63.3% of its tolerance; the worst is 0.019 px on a 90 by 30 ellipse (tolerance 0.037).
+- T1 refuted as first measured, then within range: the first run gave 52 paths per ms, under the 100 to 2,000 predicted.
+  That run loaded vml.js into a node vm context, where every global lookup (Math, String, parseFloat) goes through the context's proxy; the same function loaded through new Function, as tools/vml.mjs now does, converts 171 to 188 paths per ms (three runs, each the median of five runs of 20,000).
+  The prediction stands as refuted on its first measurement; the second number is the converter's own speed.
+- T2 confirmed: C building 1,000 paths through cdomVml under LEGACY=ie6 runs at 45.5 paths per ms timed one build at a time (22 ms, the clock's millisecond), and 56 to 66 paths per ms timed over 20 builds a run (15.3 to 17.8 ms a build), inside the 20 to 300 predicted.
+- T3 refuted: the same 1,000 paths take 15.3 to 17.8 ms under LEGACY=ie6 (VML) and 1.2 to 1.75 ms under LEGACY=ie9 (real SVG, the same app file), 9 to 15 times as long, above the 1.0 to 5.0 predicted.
+  The VML build makes three elements a path (the shape, its v:fill and v:stroke), parses a style per shape, and draws each shape again for each paint attribute set; the path itself is converted once (the drawing is keyed on its geometry and CTM).
+  This is Chrome's cost of the translation into a stand-in; IE's own VML rendering, which the stand-in does not do, is the known slow part and is measured only in real IE (section 8).
+
+Mutants: tools/mutate.py's 34 vml-* mutants are each caught by the check written for them.
+The first run missed three, and each showed a gap now closed: the repeat-after-move branch was dead code (the move itself turns the command to a line, so that branch is gone and the mutant breaks the move's line instead), no case had a number ending at a second point (1.5.5 is now one), and the sweep mutant named a case whose sweep is 0 (it now names the sweep 1 one).
+
+## 8. Verifying in real IE
+
+Chrome's stand-in checks the VML the shim builds, not what IE draws.
+In the XP VM (docs/ie5-design.md, "Driving the XP VM"):
+
+1. Build: `tests/build.sh` (tests/out/legacy.html, cdom.legacy-ie6.js, legacy.wasm.ie9.js), and serve tests/out as for the IE 6 runs (`python3 /Users/alex/VMs/ie9-win7/serve.py <worktree>/tests/out 8099`).
+2. IE 6: Start, Run, `"C:\Program Files\Utilu IE Collection\IE600\iexplore.exe" http://10.0.2.2:8099/legacy.html?svg`.
+   ?svg makes the page call the app's svg() once it starts.
+   Expected, in a 200 by 100 px box at 300 px from the left and 120 px from the top of the page (the viewBox doubles every coordinate):
+   - a red rectangle from (20, 20) to (60, 40) px with a 4 px blue outline (the path);
+   - a half-transparent mid-blue rectangle with rounded corners from (80, 10) to (120, 30) (the rect);
+   - a green circle outline, radius 10, centred at (160, 20) (the circle);
+   - a black ellipse 32 by 16 centred at (20, 80) (the ellipse);
+   - a faint grey line from (40, 60) to (80, 90) (the line, black at 25%);
+   - an open purple V through (100, 60), (120, 90) and (140, 60) (the polyline);
+   - a pale blue-grey triangle at 25% through (160, 60), (180, 90) and (150, 90) (the polygon);
+   - a dark navy triangle through (10, 12), (30, 12) and (30, 32) with a 12 px red outline (the path in the g);
+   - no text, and nothing for the rotated or the gradient-filled rect.
+   IE then reports six script errors, one per kind not drawn (`cdom: SVG <text> is not drawn in VML ...`, then defs, linearGradient, stop, transform rotate, paint url), in the status bar or as dialogs; that is the report path, not a fault.
+3. IE 5.01 and IE 5.5: the same page, through the test hold (docs/ie5-design.md, section 2): run `python3 tools/ie5hold.py`, copy tests/out/legacy.html to legacy-hold.html with `<img src="http://10.0.2.2:8096/x.gif" width="1" height="1">` added, and open `legacy-hold.html?svg` from Run with IE501 or IE550.
+   IE 5.01 has no document.namespaces, so there only the stylesheet rule sets VML up; whether createElement("v:shape") then draws is the open question this run answers (section 9).
+4. IE 7 and IE 8: the IE 9 VM in IE 7 and IE 8 document modes, a copy of legacy.html with an X-UA-Compatible meta, as for P5 in docs/ie6-design.md, opened with ?svg.
+   IE 8's standards mode is where VML is most particular (section 9).
+5. Speed: `legacy.html?svgmany=N` (with or without ?svg) builds N paths of the timing case in a 400 by 400 box at (520, 120) and puts the times in the window title: the build in ms, then the ms until a timeout could run, which in IE includes some of the layout.
+   Run N = 100, 1,000 and 3,000 in IE 6, and for IE 5.01 the hold copy; note the times, and whether 3,000 raises the slow-script prompt.
+
+## 9. Unverified until real IE runs it
+
+- That a VML group's children read style lengths and coordsize as this design assumes.
+  The design keeps every group an identity frame (1 unit a pixel) so either reading gives the same picture, and draws every shape Raphael's way (a 1 px box, coordsize "100,100", the path in hundredths of a pixel).
+- That properties set on a VML node before IE attaches the behavior (as expandos while the svg is off the document) are taken up when it is placed; Raphael 2 set them in that order.
+- That IE 5.01, which has no document.namespaces, draws VML made by createElement("v:shape") with only the stylesheet rule.
+- That IE 8's standards mode draws these nodes with the rule's display:inline-block, and the svg's own position:relative and size.
+- That JScript 5.0's String.prototype.match with a g flag returns every match (numbers() relies on it instead of an exec loop, since JScript 5.0's regular expressions have no lastIndex).
+- VML's fill is even-odd where SVG's default is nonzero, so a self-overlapping path can show a hole SVG would fill.

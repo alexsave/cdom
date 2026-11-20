@@ -72,6 +72,7 @@ The boot's load() takes either, once.
 
 No canvas and no SVG, for now: an SVG is made of plain elements and draws nothing, and the canvas calls (cd_blit, cd_image_bytes, encode) do nothing and report once why, so the rest of the app runs (Alex's call, 2026-11-20).
 The follow-up Alex asked for is to draw them after all, through VML or as an image baked into the page; it is not part of this change.
+SVG now draws through VML on this tier (IE 5 to 8): docs/vml-design.md.
 Also no WebSocket, fetch, IndexedDB, audio, file reads (UNSUPPORTED, as on IE 9) or jobs (UNSUPPORTED).
 No History API: cd_url_go answers 0.
 cd_seed is the IE 9 exception's weak seed.
