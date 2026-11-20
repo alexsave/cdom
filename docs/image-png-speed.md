@@ -838,3 +838,11 @@ The mutants, each through tools/mutate.py (`-j 1`, IMG unless named), each caugh
 
 Two mutants first tried were equivalent and were replaced: the fast loop's input bound over 2 instead of 8 (a turn takes at most 2 input bytes for each byte it writes, so over 2 still stays in the piece; the bound over 8 is conservative), and the pairing pass's count test on the second entry (an entry read there is never paired yet; the count tests went from the code).
 The last restored check of the first batch (tools/unit.mjs in the real tree) timed out while a run.sh used Chrome beside it; alone it passes (227 passed, 10 s), and the second batch's restored checks passed.
+
+### After the chunked read (#85) was merged in
+
+Main took #85 (the inflate's state in cd_inflate, cd_inflate_put) while this PR was open; the merge keeps its driver and puts this branch's fast loop on it.
+The one change to the loop: it needs `look` bytes ahead to start (FAST_IN for the last input, CD_INFLATE_LOOK before), as #85's loop does, and its one limit is the input's room past `look` over 8, so each refill's 8-byte load stays in the input (look is 32 or more).
+Every PNG peak above is 2,944 bytes higher on the merged tree (the fed decoder's state), the same for main and this branch, so T1 to T4's differences stand; the oracle's limits are the merged tree's peaks rounded up to the KB (png-small16-rgba 51, png-wide8000x3-rgb 131, png-chunk291x299 to -340 623, 625, 619 and 617, png-past-last-row-rgb 85 KB beyond the file).
+The merged tree passes tests/image/run.sh with the big inputs (9,241 checks and the fed decoder's 54,831, inflate_diff with every way of pushing the stream, the four wasm builds by every reader, simd.sh, prog.sh).
+The timings above are from before the merge.

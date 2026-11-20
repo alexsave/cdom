@@ -15,17 +15,110 @@ uint32_t cd_image_probe(const uint8_t *p, uint32_t len, cd_image_info *info) {
   return CD_IMAGE_NOT_IMAGE;
 }
 
+/* ---- the fed decoder ---- */
+
+static int bad_box(uint32_t w, uint32_t h) { return !w || !h || w > CD_IMAGE_BOX_MAX || h > CD_IMAGE_BOX_MAX; }
+
+static void dec_init(cd_image_dec *d, uint32_t size, uint32_t max_w, uint32_t max_h) {
+  memset(d, 0, sizeof *d);
+  d->size = size; d->box_w = max_w; d->box_h = max_h; d->status = CD_IMAGE_MORE;
+  d->info.orientation = 1;
+}
+
+/* The next n bytes of the file at p (the room's, or all of the rest where they lie), taken already counted. Before
+ * the format is known, the first bytes wait at the room's front (min(8, size) of them say it), and are then handed
+ * to the format from the start. */
+static uint32_t feed(cd_image_dec *d, const uint8_t *p, uint32_t n) {
+  if (!d->format) {
+    const uint8_t *h = p;
+    uint32_t hn = n;
+    if (d->buf) { d->used += n; h = d->buf; hn = d->used; }
+    if (hn < (d->size < 8 ? d->size : 8)) return CD_IMAGE_MORE;
+    if (is_jpeg(h, hn)) d->format = CD_IMAGE_JPEG;
+    else if (is_png(h, hn)) d->format = CD_IMAGE_PNG;
+    else return CD_IMAGE_NOT_IMAGE;
+    if (d->buf) { p = d->buf; n = d->used; d->used = 0; }
+  }
+  return d->format == CD_IMAGE_JPEG ? cd_image_jpeg_put(d, p, n) : cd_image_png_put(d, p, n);
+}
+
+/* What the decoder holds, freed; the block itself is the caller's. */
+static void dec_free(cd_image_dec *d) {
+  if (d->format == CD_IMAGE_JPEG) cd_image_jpeg_end(d);
+  else if (d->format == CD_IMAGE_PNG) cd_image_png_end(d);
+  cd_free(d->walk.exif); d->walk.exif = 0;
+  cd_free(d->rgba); d->rgba = 0;
+  cd_free(d->buf); d->buf = 0;
+}
+
+uint32_t cd_image_begin(uint32_t size, uint32_t max_w, uint32_t max_h, cd_image_dec **out) {
+  *out = 0;
+  if (bad_box(max_w, max_h)) return CD_IMAGE_BAD_BOX;
+  cd_image_dec *d = cd_alloc_try(sizeof *d);
+  if (!d) return CD_IMAGE_NO_ROOM;
+  dec_init(d, size, max_w, max_h);
+  const uint32_t most = CD_IMAGE_PIECE + CD_IMAGE_JPEG_KEEP;
+  d->cap = size < most ? size : most;
+  d->buf = cd_alloc_try(d->cap ? d->cap : 1);
+  if (!d->buf) { cd_free(d); return CD_IMAGE_NO_ROOM; }
+  *out = d;
+  return CD_IMAGE_OK;
+}
+
+static uint32_t room_max(const cd_image_dec *d) {
+  if (d->status != CD_IMAGE_MORE || d->step) return 0;
+  uint32_t m = d->cap - d->used, left = d->size - d->taken;
+  if (m > CD_IMAGE_PIECE) m = CD_IMAGE_PIECE;
+  return m < left ? m : left;
+}
+
+uint8_t *cd_image_room(cd_image_dec *d, uint32_t *max) {
+  *max = room_max(d);
+  return d->buf + d->used;
+}
+
+uint32_t cd_image_put(cd_image_dec *d, uint32_t n) {
+  if (d->status != CD_IMAGE_MORE) return d->status;
+  if (n > room_max(d)) __builtin_trap();               /* more than the room: the caller wrote past it */
+  d->step = 0;
+  d->taken += n;
+  d->status = feed(d, d->buf + d->used, n);
+  return d->status;
+}
+
+void cd_image_take(cd_image_dec *d, uint8_t **rgba, uint32_t *w, uint32_t *h) {
+  *rgba = d->rgba; *w = d->rgba ? d->w : 0; *h = d->rgba ? d->h : 0;
+  d->rgba = 0;
+}
+
+uint32_t cd_image_dec_warnings(const cd_image_dec *d) { return d->warnings; }
+
+void cd_image_end(cd_image_dec *d) {
+  if (!d) return;
+  dec_free(d);
+  cd_free(d);
+}
+
+/* One put of the whole file where it lies: the decoder's block on the stack, no room (the format reads p itself),
+ * and the steps that take no bytes run here. */
 uint32_t cd_image_resize(const uint8_t *p, uint32_t len, uint32_t max_w, uint32_t max_h, uint8_t **rgba,
                          uint32_t *w, uint32_t *h) {
+  return cd_image_decode(p, len, max_w, max_h, rgba, w, h, 0);
+}
+uint32_t cd_image_decode(const uint8_t *p, uint32_t len, uint32_t max_w, uint32_t max_h, uint8_t **rgba, uint32_t *w,
+                         uint32_t *h, uint32_t *warnings) {
   *rgba = 0; *w = 0; *h = 0;
-  if (!max_w || !max_h || max_w > CD_IMAGE_BOX_MAX || max_h > CD_IMAGE_BOX_MAX) return CD_IMAGE_BAD_BOX;
-  cd_image_info info;
-  uint32_t st = cd_image_probe(p, len, &info);
-  if (st != CD_IMAGE_OK) return st;
-  uint32_t dw, dh;
-  cd_image_target(info.width, info.height, info.orientation, max_w, max_h, &dw, &dh);
-  return info.format == CD_IMAGE_JPEG ? cd_image_jpeg_resize(p, len, &info, dw, dh, rgba, w, h)
-                                      : cd_image_png_resize(p, len, &info, dw, dh, rgba, w, h);
+  if (bad_box(max_w, max_h)) return CD_IMAGE_BAD_BOX;
+  cd_image_dec d;
+  dec_init(&d, len, max_w, max_h);
+  d.taken = len;
+  uint32_t st = feed(&d, p, len);
+  while (st == CD_IMAGE_MORE && d.step) { d.step = 0; st = feed(&d, p + len, 0); }
+  if (st == CD_IMAGE_MORE) st = CD_IMAGE_CORRUPT;      /* not reached: with every byte in, only steps answer MORE */
+  if (st == CD_IMAGE_OK) cd_image_take(&d, rgba, w, h);
+  if (warnings) *warnings = d.warnings;
+  dec_free(&d);
+  return st;
 }
 
 /* ---- the size ---- */
@@ -67,24 +160,25 @@ uint32_t cd_image_orientation(const uint8_t *p, uint32_t len) {
     uint32_t marker = p[at + 1], seg = be16(p + at + 2);
     if (marker == 0xff) { at++; continue; }                 /* fill bytes */
     if (marker == 0xda || marker == 0xd9 || seg < 2) break; /* the scan, or the end: no more headers */
-    if (marker == 0xe1 && seg >= 16 && at + 2 + seg <= len && !memcmp(p + at + 4, "Exif\0\0", 6)) {
-      const uint8_t *t = p + at + 10;                       /* the TIFF header */
-      uint64_t room = seg - 8;                              /* the bytes from t to the end of the segment */
-      int le = t[0] == 'I';
-      if ((t[0] != 'I' && t[0] != 'M') || t[1] != t[0] || rd16(t + 2, le) != 42) return 1;
-      uint64_t ifd = rd32(t + 4, le);
-      if (ifd + 2 > room) return 1;
-      uint32_t count = rd16(t + ifd, le);
-      for (uint32_t i = 0; i < count && ifd + 2 + 12 * (uint64_t)(i + 1) <= room; i++) {
-        const uint8_t *e = t + ifd + 2 + 12 * (uint64_t)i; /* tag, type, count, value */
-        if (rd16(e, le) == 0x0112 && rd16(e + 2, le) == 3) {
-          uint32_t o = rd16(e + 8, le);
-          return o >= 1 && o <= 8 ? o : 1;
-        }
-      }
-      return 1;
-    }
+    if (marker == 0xe1 && seg >= 16 && at + 2 + seg <= len && !memcmp(p + at + 4, "Exif\0\0", 6))
+      return cd_image_exif_orientation(p + at + 10, seg - 8);   /* the TIFF header, and the bytes from it to the end */
     at += 2 + (uint64_t)seg;
+  }
+  return 1;
+}
+
+uint32_t cd_image_exif_orientation(const uint8_t *t, uint64_t room) {
+  int le = t[0] == 'I';
+  if ((t[0] != 'I' && t[0] != 'M') || t[1] != t[0] || rd16(t + 2, le) != 42) return 1;
+  uint64_t ifd = rd32(t + 4, le);
+  if (ifd + 2 > room) return 1;
+  uint32_t count = rd16(t + ifd, le);
+  for (uint32_t i = 0; i < count && ifd + 2 + 12 * (uint64_t)(i + 1) <= room; i++) {
+    const uint8_t *e = t + ifd + 2 + 12 * (uint64_t)i; /* tag, type, count, value */
+    if (rd16(e, le) == 0x0112 && rd16(e + 2, le) == 3) {
+      uint32_t o = rd16(e + 8, le);
+      return o >= 1 && o <= 8 ? o : 1;
+    }
   }
   return 1;
 }

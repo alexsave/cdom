@@ -25,4 +25,20 @@ window.run = async (input, bw, bh, expected) => {
   X.drop(p);
   return { status, w, h, diff, pages: X.memory.buffer.byteLength >> 16, sp: X.sp() };
 };
+// The chunked read: file index of the input decoded by cd_image_file_cb (job undefined), or in a job (job 1: pieces,
+// 0: the file whole; report 1: the job answers its memory). The same answer as run's; len the pixels' bytes.
+window.runFile = async (index, bw, bh, expected, job, report) => {
+  if (job === undefined) X.file_start(index, bw, bh); else X.job_start(index, bw, bh, job, report ? 1 : 0);
+  for (let t = 0; t < 120000 && (X.file_rec(0) | 0) === -1; t += 2) await new Promise((r) => setTimeout(r, 2));
+  let status = X.file_rec(0) | 0;
+  const w = X.file_rec(1), h = X.file_rec(2), p = X.file_rec(3), len = X.file_rec(4), calls = X.file_rec(5), jobPages = X.file_rec(6);
+  if (status >= 100 && status < 200) status -= 100; // a job's answer of the image's status
+  let diff = -2;
+  if (status === 0 && expected && len) {
+    const want = await bytesOf(expected), got = new Uint8Array(X.memory.buffer, p, len);
+    diff = want.length !== got.length ? -3 : -1;
+    for (let i = 0; diff === -1 && i < got.length; i++) if (got[i] !== want[i]) diff = i >> 2;
+  }
+  return { status, w, h, len, diff, calls, jobPages, pages: X.memory.buffer.byteLength >> 16 };
+};
 </script></body></html>
