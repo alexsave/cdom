@@ -993,6 +993,7 @@ M = [
   ('ie6-wheel-unscaled', 'tools/legacy/dom-old.js', '    if (type === "wheel") o.deltaY = -(e.wheelDelta | 0) * 5 / 6;', '    if (type === "wheel") o.deltaY = -(e.wheelDelta | 0);', LEG6, "FAIL the wheel's deltas"),
   ('ie6-rect-no-width', 'tools/legacy/dom-old.js', '      width: r.right - r.left, height: r.bottom - r.top };', '      width: 0, height: r.bottom - r.top };', LEG6, "FAIL cd_rect's doubles"),
   ('ie6-prev-element-counts-text', 'tools/legacy/dom-old.js', '    while (s && s.nodeType !== 1) s = s.previousSibling;\n', '', LEG6, 'FAIL a click on the <i> reaches the paragraph'),
+  ('ie6-input-type-refused', 'tools/legacy/dom-old.js', '    if (el.mergeAttributes && el.nodeName === "INPUT" && name.toLowerCase() === "type") {', '    if (0) {', LEG6, 'FAIL nested inputs typed'),
   ('ie6-clear-keeps-children', 'tools/legacy/dom-old.js', '    while (x.firstChild) x.removeChild(x.firstChild);\n', '', FUZZ6, 'errors round'),
   ('ie9-shim-gate-lets-typed-through', 'tools/legacy/memory.mjs', "if (node.type === 'Identifier' && names.has(node.name) && !SHIM_TYPED_ALLOWED.has(fn))", "if (false)", WORDS, 'FAIL the shim-ie9 gate'),
   ('encode-quality-unchecked', 'src/cdom.c', '|| y + h > H || quality > 100) __builtin_trap();', '|| y + h > H) __builtin_trap();', UNIT, "FAIL cd_encode_image's quality"),

@@ -37,6 +37,12 @@ void cd_main(void) {
   ids[ERR] = el("button", "err", "position:fixed;left:10px;top:250px"); cd_text("err"); cd_close();
   ids[FOCUS] = el("button", "focus", "position:fixed;left:100px;top:250px"); cd_text("focus"); cd_close();
   ids[FILE] = el("input", "file", "position:fixed;left:10px;top:300px"); cd_attr("type", "file"); cd_close();
+  /* Inputs typed inside a parent: IE 5 to 8 refuse an input's type once it has had one ("This command is not
+   * supported."), and the shim appends each element as it opens (dom-old.js's setAttribute carries the type over). */
+  cd_open("div"); cd_attr("style", "position:fixed;left:10px;top:330px");
+  cd_open("input"); cd_attr("id", "tcheck"); cd_attr("type", "checkbox"); cd_close();
+  cd_open("input"); cd_attr("id", "tsearch"); cd_attr("type", "search"); cd_close();
+  cd_close();
   ids[CANVAS] = el("canvas", "cv", "position:fixed;left:300px;top:10px");
   cd_attr("width", "2"); cd_attr("height", "2");
   cd_close();

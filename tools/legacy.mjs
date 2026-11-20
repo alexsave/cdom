@@ -85,6 +85,10 @@ run: try {
   }
   for (let i = 0; i < 100 && !(await E('!!window.READY')); i++) await sleep(50);
   ok(await E('!!window.READY'), 'booted');
+  // Inputs typed inside a parent (IE 5 to 8 refuse that once the input has had one): each keeps its type, IE's being
+  // text for one it does not know, and the boot threw nothing.
+  const types = await E('[(document.getElementById("tcheck") || {}).type, (document.getElementById("tsearch") || {}).type, ERRORS.length]');
+  ok(JSON.stringify(types) === JSON.stringify(['checkbox', TIER === 4 ? 'text' : 'search', 0]), `nested inputs typed: ${JSON.stringify(types)} ${JSON.stringify(await E('ERRORS'))}`);
   ok(await E('X.sj() === 1'), "the image module's js way out of a libjpeg error: 500 throws from 20 frames down, the stack pointer back, then a body that returns");
   const id = {}; for (const [k, i] of Object.entries({ PAD: 0, TEXT: 1, BROKEN: 7 })) id[k] = await E(`X.id(${i})`);
   // An event that does not bubble, from inside the mount: the image that does not load, its error heard once (the
