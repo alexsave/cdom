@@ -445,3 +445,16 @@ With LLVM 23 the eh-way wasm builds (`CDOM_IMAGE_SJLJ=eh`), which this branch co
 | tests/image/prog.sh --fuzz 900 | 21,604 inputs run (837 in the grown corpus), with the walk differential: no difference, crash or leak |
 | tests/image/fuzz.sh 600 | fuzz_jpeg 5,787 runs, fuzz_png 53,519, fuzz_inflate 904,360: no crash, leak or limit |
 | bench/image/run.mjs, one round, box 900 (not a timing: the Mac re-measures) | p12p.jpg decodes to 900 x 675 in C-js, C-eh and C-simd, wasm memory 26.1 MiB as before |
+
+## The Mac: Chrome and Safari (written before the run)
+
+Alex's arm64 Mac, `bench/image/prog-mac.sh`: 9 interleaved rounds at box 900 in headless Chrome, then in Safari (tools/safari.mjs).
+Arms: C-old (main's scalar page, built by bench/image/old.sh), C-js (this branch, scalar), C-simd (this branch, SIMD), B1 and B2.
+For reference, main on the Mac (docs/image-png-speed.md, "The Mac"): p12p.jpg C-old 139.3 ms in Chrome and 141 in Safari, C-simd 130.7 and 134, B1 122.8 and 160.
+
+- Q1: p12p.jpg's C-js is 0.55 to 0.75 of C-old's in both browsers (the VM had 0.64). Falsifier: above 0.85.
+- Q2: in Chrome, p12p.jpg's C-simd is under B1's median. Falsifier: at or above it.
+- Q3: in Safari, every progressive input's C-simd (p12p, p24p, p12p444, p12pmany, p48p) is under B1's. Falsifier: any at or above it.
+- Q4: p48p.jpg, refused by main (TOO_BIG), decodes, in under 0.75 of p48.jpg's C-simd time on the same build, in both browsers.
+- Q5: the baseline inputs (p12.jpg, p48.jpg) and p12.png: C-js within 3% of C-old in both browsers.
+- Q6: the wasm memory after p12p.jpg is 24.5 to 27.5 MiB (main 40.8).
