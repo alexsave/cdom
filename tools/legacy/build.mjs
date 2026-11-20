@@ -197,12 +197,16 @@ async function appWords(wasm, out) {
 }
 
 // The boot is the one script every browser runs, so it must parse as ES3.
-function page(src, out) {
+async function page(src, out) {
   // Every page carries it, so its comments are cut.
   const src0 = read(path.join(top, 'shim/boot.js')), cuts = [];
   try { acorn.parse(src0, { ecmaVersion: 3, onComment: (b, t, s, e) => cuts.push([s, e]) }); } catch (e) {
     throw new Error(`shim/boot.js is not ES3: ${e.message}`);
   }
+  // It runs before any polyfill, in IE 5.0 too: none of what JScript 5.0 lacks.
+  es3Pass ??= await import('./es3.mjs');
+  const newer = es3Pass.boot50(src0.replace(/\/\*[\s\S]*?\*\//g, ''));
+  if (newer.length) throw new Error(`shim/boot.js names what JScript 5.0 (IE 5.0) lacks: ${newer.join(' ')}`);
   let boot = '', at = 0;
   for (const [s, e] of cuts) { boot += src0.slice(at, s); at = e; }
   boot = (boot + src0.slice(at)).replace(/[ \t]+$/gm, '').replace(/\n{2,}/g, '\n').trim() + '\n';
@@ -239,7 +243,7 @@ function inputs(cmd, a) {
     files.push(path.resolve(a), path.join(here, 'words.js'), path.join(here, 'memory.mjs'), path.join(here, 'es3.mjs'));
     tools.push(wasm2jsVersion());
   }
-  else if (cmd === 'page') files.push(path.join(top, 'shim/boot.js'), path.resolve(a));
+  else if (cmd === 'page') files.push(path.join(top, 'shim/boot.js'), path.resolve(a), path.join(here, 'es3.mjs'));
   return { files: files.map((f) => path.resolve(f)), tools };
 }
 

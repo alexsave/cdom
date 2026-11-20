@@ -4,12 +4,87 @@
  * and nothing in cdom walks an Array with for-in. ES5_SUPPLIED in build.mjs names exactly these, and the build
  * refuses any other ES5 name in the tier's file. tools/legacy.mjs checks each against the built-in.
  * Also JScript's own bug: splice(start) with no count removes nothing (the standard removes to the end).
- * ES3, as JScript 5.6 reads it. */
+ * And what JScript 5.0 (IE 5.0) lacks of what JScript 5.5 has, which the rest of this file and every later part call:
+ * the global undefined, Array's push, pop, shift, unshift and splice, Function's call and apply, and Object's
+ * hasOwnProperty. So those come first, each written without the others.
+ * ES3, as JScript 5.0 reads it. */
 (function (w) {
-  var O = Object, A = Array.prototype, F = Function.prototype, has = O.prototype.hasOwnProperty;
+  var O = Object, A = Array.prototype, F = Function.prototype, P = O.prototype;
 
-  /* JScript does not enumerate an own property that shadows a built-in one (the DontEnum bug). */
-  var dontEnumBug = !{ toString: null }.propertyIsEnumerable("toString");
+  /* JScript 5.0 has no global named undefined: reading it throws. As a property of the window it is one. */
+  w["undefined"] = void 0;
+  if (!A.push) A.push = function () {
+    for (var i = 0; i < arguments.length; i++) this[this.length] = arguments[i];
+    return this.length;
+  };
+  if (!A.pop) A.pop = function () {
+    var n = this.length, v;
+    if (!n) return void 0;
+    v = this[n - 1];
+    this.length = n - 1;
+    return v;
+  };
+  /* splice as the standard has it: from start, count removed (to the end when left out), the rest inserted there. */
+  if (!A.splice) A.splice = function (start, count) {
+    var n = this.length, add = arguments.length > 2 ? arguments.length - 2 : 0, out = [], tail = [], i, k = 0;
+    start = start < 0 ? Math.max(n + start, 0) : Math.min(start | 0, n);
+    count = arguments.length < 2 ? n - start : Math.min(Math.max(count | 0, 0), n - start);
+    for (i = 0; i < count; i++) out[i] = this[start + i];
+    for (i = start + count; i < n; i++) tail[k++] = this[i];
+    this.length = start;
+    for (i = 0; i < add; i++) this[this.length] = arguments[i + 2];
+    for (i = 0; i < k; i++) this[this.length] = tail[i];
+    return out;
+  };
+  if (!A.shift) A.shift = function () {
+    return this.length ? this.splice(0, 1)[0] : void 0;
+  };
+  if (!A.unshift) A.unshift = function () {
+    var args = [0, 0];
+    for (var i = 0; i < arguments.length; i++) args[i + 2] = arguments[i];
+    this.splice.apply(this, args);
+    return this.length;
+  };
+  /* apply, with no apply to build it from: the function is set on the object under a key of this call's own and called
+   * through eval with the arguments by index, then the key is taken off. */
+  var applying = 0;
+  if (!F.apply) F.apply = function (self, args) {
+    var o = self == null ? w : self, key = "__cdomApply" + applying++, list = [], i, n = args ? args.length : 0, r;
+    if (typeof o !== "object" && typeof o !== "function") o = new O(o);
+    for (i = 0; i < n; i++) list[i] = "args[" + i + "]";
+    o[key] = this;
+    try {
+      r = eval("o[key](" + list.join(",") + ")");
+    } finally {
+      applying--;
+      try {
+        delete o[key];
+      } catch (gone) {
+        o[key] = void 0;
+      }
+    }
+    return r;
+  };
+  if (!F.call) F.call = function (self) {
+    var args = [];
+    for (var i = 1; i < arguments.length; i++) args[i - 1] = arguments[i];
+    return this.apply(self, args);
+  };
+  /* hasOwnProperty, as JScript 5.0 can tell it: the object has the key and its constructor's prototype does not hold the
+   * same value under it. It cannot tell an own property that equals the prototype's, which nothing here sets. */
+  if (!P.hasOwnProperty) P.hasOwnProperty = function (k) {
+    var proto = this.constructor && this.constructor.prototype;
+    if (this[k] === void 0 && !(k in this)) return false;
+    return !proto || proto === this || proto[k] !== this[k];
+  };
+  var has = P.hasOwnProperty;
+
+  /* JScript does not enumerate an own property that shadows a built-in one (the DontEnum bug). Tested by enumerating,
+   * not with propertyIsEnumerable, which JScript 5.0 lacks. */
+  var dontEnumBug = (function () {
+    for (var k in { toString: null }) if (k === "toString") return false;
+    return true;
+  })();
   var DONT_ENUM = ["toString", "toLocaleString", "valueOf", "hasOwnProperty", "isPrototypeOf",
     "propertyIsEnumerable", "constructor"];
   if (!O.keys) O.keys = function (o) {

@@ -162,9 +162,19 @@ var cdomOld = (function (w, doc) {
     node.attachEvent("on" + type, function () { f(shaped(w.event, node, type)); });
   }
 
-  /* "background-color" as the style object's backgroundColor. */
+  /* "background-color" as the style object's backgroundColor. A loop, not replace with a function, which JScript 5.0
+   * (IE 5.0) does not take. */
   function camel(name) {
-    return name.replace(/-([a-z])/g, function (m, c) { return c.toUpperCase(); });
+    var out = "", i, c, up = false;
+    for (i = 0; i < name.length; i++) {
+      c = name.charAt(i);
+      if (c === "-") up = true;
+      else {
+        out += up ? c.toUpperCase() : c;
+        up = false;
+      }
+    }
+    return out;
   }
   /* style.setProperty(name, value). IE 6 throws on a value it cannot parse, which other browsers ignore. */
   function setProperty(style, name, value) {
