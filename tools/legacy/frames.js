@@ -26,8 +26,9 @@ var cf_UNITS = new Array("", "px", "%", "deg", "em", "rem", "vw", "vh", "ms", "s
  * over the whole page once that has loaded (cf_poll), by open, write and close. No src: the frame's first document is
  * the empty one the browser makes, which the shim writes over. */
 var cf_FRAMESET = "<frameset rows=\"100%\" border=\"0\" frameborder=\"0\" framespacing=\"0\"><frame name=\"cdomView\" marginwidth=\"8\" marginheight=\"8\"></frameset>";
-/* How long a change or a blur waits to be drawn (ms): the click that often comes right after it (a field left for a
- * button) would land on a button the rewrite has replaced, and be lost, so the two are drawn once, after the click. */
+/* How long a change, a focus or a blur waits to be drawn (ms): leaving a field for a button fires all three between
+ * the press and the release, and a rewrite there would replace the button under the pointer, and lose the click, so
+ * they are drawn once, after the click. */
 var cf_LATER = 250;
 
 /* The handlers' entry points and what a page or a test reads. */
@@ -417,9 +418,29 @@ function cf_op_text_num(number) {
   cf_lastText = cf_last;
   cf_placeNew(cf_last);
 }
-function cf_op_attr(name, value) {
-  cf_last.a = cf_setPair(cf_last.a, cf_str(name), cf_str(value));
+/* An attribute; style is read into the style pairs, which section 8 writes as markup. */
+function cf_setAttr(x, name, value) {
+  var parts, k, c;
   cf_dirty = 1;
+  if (name != "style") {
+    x.a = cf_setPair(x.a, name, value);
+    return;
+  }
+  x.s = null;
+  parts = value.split(";");
+  for (k = 0; k < parts.length; k++) {
+    c = parts[k].indexOf(":");
+    if (c > 0) x.s = cf_setPair(x.s, cf_trim(parts[k].substring(0, c)).toLowerCase(), cf_trim(parts[k].substring(c + 1)));
+  }
+}
+function cf_trim(s) {
+  var a = 0, b = s.length;
+  while (a < b && s.charAt(a) == " ") a++;
+  while (b > a && s.charAt(b - 1) == " ") b--;
+  return s.substring(a, b);
+}
+function cf_op_attr(name, value) {
+  cf_setAttr(cf_last, cf_str(name), cf_str(value));
 }
 function cf_op_class(value) {
   cf_last.a = cf_setPair(cf_last.a, "class", cf_str(value));
@@ -515,9 +536,7 @@ function cf_op_set_text_num(id, number) {
   cf_dirty = 1;
 }
 function cf_op_set_attr(id, name, value) {
-  var x = cf_nodes[id];
-  x.a = cf_setPair(x.a, cf_str(name), cf_str(value));
-  cf_dirty = 1;
+  cf_setAttr(cf_nodes[id], cf_str(name), cf_str(value));
 }
 function cf_op_set_class(id, value) {
   var x = cf_nodes[id];
@@ -905,7 +924,7 @@ function cf_hold(fromBrowser) {
   if (cf_holds == 0 && cf_busy == 0) cf_sync();
   cf_holds++;
 }
-/* later: a change or a blur, whose draw waits cf_LATER for the click that may follow. */
+/* later: a change, a focus or a blur, whose draw waits cf_LATER for the click that may follow. */
 function cf_release(later) {
   cf_holds--;
   if (cf_holds || cf_busy) return;
@@ -1391,7 +1410,7 @@ function cf_onFocus(n, on) {
     cf_fire(x, cf_BLUR, 0);
     cf_fire(x, cf_FOCUSOUT, 0);
   }
-  cf_release(!on);
+  cf_release(1);
 }
 function cf_onOver(n, on) {
   var x = cf_hit[n];
