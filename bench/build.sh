@@ -36,6 +36,7 @@ build() { # name, version note, extra flags...
   node "$legacy" shim "$out/cdom.legacy.js"
   node "$legacy" app "$out/app.wasm" "$out/app.wasm.js"
   node "$legacy" shim-ie9 "$out/cdom.legacy-ie9.js"
+  node "$legacy" shim-ie6 "$out/cdom.legacy-ie6.js"
   node "$legacy" app-ie9 "$out/app.wasm" "$out/app.wasm.ie9.js"
   cat > "$out/package.json" <<JSON
 {

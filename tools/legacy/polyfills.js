@@ -70,13 +70,17 @@
 
   /* The shim tests path segments for a "--" prefix; PEP reads touch-action values with includes.
    * MDN's String.prototype.startsWith and String.prototype.includes polyfills. */
+  /* IE 6 and 7 have no defineProperty, and IE 8's takes DOM objects alone: there it is a plain assignment. */
   if (!String.prototype.startsWith) {
-    Object.defineProperty(String.prototype, "startsWith", {
-      value: function (search, rawPos) {
-        var pos = rawPos > 0 ? rawPos | 0 : 0;
-        return this.substring(pos, pos + search.length) === search;
-      }
-    });
+    var startsWith = function (search, rawPos) {
+      var pos = rawPos > 0 ? rawPos | 0 : 0;
+      return this.substring(pos, pos + search.length) === search;
+    };
+    try {
+      Object.defineProperty(String.prototype, "startsWith", { value: startsWith });
+    } catch (e) {
+      String.prototype.startsWith = startsWith;
+    }
   }
   if (!String.prototype.includes) {
     String.prototype.includes = function (search, start) {
@@ -189,14 +193,17 @@
 
   /* devicePixelRatio is IE 11's; IE 9 and 10 have the same ratio as screen.deviceXDPI over logicalXDPI. Read
    * through a getter, as the real one is, since zoom changes it. Without it, the shim's viewport read throws. */
+  /* IE 6 to 8 have no getters on the window: there the fourth tier's dom-old.js reads the ratio itself. */
   if (!("devicePixelRatio" in w)) {
-    Object.defineProperty(w, "devicePixelRatio", {
-      configurable: true,
-      get: function () {
-        var s = w.screen;
-        return s && s.deviceXDPI && s.logicalXDPI ? s.deviceXDPI / s.logicalXDPI : 1;
-      }
-    });
+    try {
+      Object.defineProperty(w, "devicePixelRatio", {
+        configurable: true,
+        get: function () {
+          var s = w.screen;
+          return s && s.deviceXDPI && s.logicalXDPI ? s.deviceXDPI / s.logicalXDPI : 1;
+        }
+      });
+    } catch (e) {}
   }
 
   if (!w.requestAnimationFrame) {

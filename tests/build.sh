@@ -40,6 +40,7 @@ page "$here/listfuzz.html" "$here/out/listfuzz.shim.html" "$here/out/listfuzz.wa
 node "$legacy" page "$here/out/listfuzz.shim.html" "$here/out/listfuzz.html"
 node "$legacy" shim "$here/out/cdom.legacy.js"
 node "$legacy" shim-ie9 "$here/out/cdom.legacy-ie9.js"
+node "$legacy" shim-ie6 "$here/out/cdom.legacy-ie6.js"
 node "$legacy" app "$here/out/listfuzz.wasm" "$here/out/listfuzz.wasm.js"
 node "$legacy" app-ie9 "$here/out/listfuzz.wasm" "$here/out/listfuzz.wasm.ie9.js"
 # The _try allocations at a small cap, and on an app's own allocator (tools/alloc.mjs, in Node).

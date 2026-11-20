@@ -39,6 +39,7 @@ var cdom = (() => {
   const templates = [];     // template root by template id
   const stack = [];         // the open elements
   const delegated = [];     // event types with a listener on the mount
+  const delegatedListener = []; // and that listener, by type
   const templateSlots = []; // slot text nodes by template id
   let slots = [];           // slot text nodes of the template being built
   const hostListeners = [];  // the listener per (host object, event type), while listened
@@ -434,7 +435,7 @@ var cdom = (() => {
     const word = type >> 5;
     const bit = 1 << (type & 31);
     const mount = nodes[0];
-    mount.addEventListener(EVENTS[type], (event) => {
+    const listener = (event) => {
       let path = 0;
       let pathDepth = 0;
       for (let node = event.target; node && node !== mount; node = node.parentNode) {
@@ -449,8 +450,14 @@ var cdom = (() => {
         path = (path << 8) | (index & 255);
         pathDepth++;
       }
-    }, { capture: (type >= FOCUS && type <= PAUSE) || type === CANCEL || type === CLOSE, passive: false });
+    };
+    delegatedListener[type] = listener;
+    mount.addEventListener(EVENTS[type], listener, { capture: (type >= FOCUS && type <= PAUSE) || type === CANCEL || type === CLOSE, passive: false });
   }
+  // A browser with no capture phase (the fourth tier, IE 6 to 8) never brings a type that does not bubble up to the
+  // mount's listener, so there the node C listens on hears it itself: tools/legacy/shim-old.js puts its reach in place
+  // of this one. Where the capture phase exists the mount hears every type, and there is nothing to do.
+  function reach(node, type) {}
 
   // Where new top-level nodes go: into parent, before node beforeId (0: at the end).
   function at(parent, beforeId) {
@@ -527,6 +534,7 @@ var cdom = (() => {
     if (!delegated[type]) {
       delegate(type);
     }
+    reach(last, type);
   }
   function unlisten(id, type) {
     if (id && id < EVENT) {
