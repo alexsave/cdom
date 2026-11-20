@@ -211,6 +211,10 @@ var cdomOld = (function (w, doc) {
     return d.className !== "x";
   })();
   function setAttribute(el, name, value) {
+    if (el.$vml) {
+      w.cdomVml.attr(el, name, value);  /* an SVG attribute on its VML node */
+      return;
+    }
     if (!attrsAreProperties) {
       el.setAttribute(name, value);
       return;
@@ -248,9 +252,9 @@ var cdomOld = (function (w, doc) {
     while (s && s.nodeType !== 1) s = s.previousSibling;
     return s;
   }
-  /* No SVG in IE 6 to 8: a plain element of the tag, which draws nothing (docs/ie6-design.md, section 6). */
+  /* No SVG in IE 5 to 8: the SVG tag becomes VML (tools/legacy/vml.js, docs/vml-design.md). */
   function createElementNS(d, ns, tag) {
-    return d.createElementNS ? d.createElementNS(ns, tag) : d.createElement(tag);
+    return d.createElementNS ? d.createElementNS(ns, tag) : w.cdomVml.create(tag);
   }
   /* Every element at (x, y), topmost first: elementFromPoint's, then its ancestors. */
   function elementsFromPoint(d, x, y) {

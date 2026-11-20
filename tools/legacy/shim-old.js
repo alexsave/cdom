@@ -28,3 +28,12 @@ function invoke(object, key, args) {
     default: return object[key].apply(object, a);
   }
 }
+
+// A node moved or put back inside an svg (cd_move, cd_attach) may now inherit another transform or paint: on this tier
+// the svg is VML, which tools/legacy/vml.js draws again from its new parents (docs/vml-design.md).
+function place(parent, node, next) {
+  parent.insertBefore(node, next);
+  if (node.$vml) {
+    cdomVml.placed(node);
+  }
+}
