@@ -138,12 +138,6 @@ static uint32_t sym_entry(uint32_t sym, uint32_t c, int dist) {
   return BAD;
 }
 
-static uint32_t rev(uint32_t code, uint32_t len) {   /* the code's bits reversed: deflate sends a code's top bit first */
-  uint32_t r = 0;
-  for (uint32_t i = 0; i < len; i++) r = r << 1 | ((code >> i) & 1);
-  return r;
-}
-
 /* The table for n code lengths (lens) into t: a first level of 2^root entries, then second levels. 0 for a code zlib
  * refuses: over-subscribed, or incomplete unless it is one code of one bit (or, for the code-length code, any
  * incomplete code or none at all). dist: the symbols are distances; codes: the code-length code (each entry is then
@@ -167,11 +161,13 @@ static int build(const uint8_t *lens, uint32_t n, uint32_t *t, uint32_t tn, uint
   for (uint32_t i = 0; i < n; i++) if (lens[i]) sorted[offs[lens[i]]++] = (uint16_t)i;
   /* incomplete (one code of one bit): the other half of the table is BAD; a complete code fills every entry */
   if (left > 0) for (uint32_t i = 0; i < (1u << root); i++) t[i] = BAD;
-  uint32_t code = 0, k = 0, next_sub = 1u << root;
+  /* r: the next code, its bits reversed (deflate sends a code's top bit first), counted up in that order the way
+   * zlib does; a longer code appends a 0, which reversed is the top bit, so r carries over */
+  uint32_t r = 0, k = 0, next_sub = 1u << root;
   uint32_t sub_prefix = ~0u, sub_start = 0, sub_bits = 0;
   for (uint32_t l = 1; l <= max; l++) {
     for (uint32_t j = 0; j < count[l]; j++, k++) {
-      uint32_t sym = sorted[k], r = rev(code, l);
+      uint32_t sym = sorted[k];
       if (codes) {
         for (uint32_t i = r; i < (1u << root); i += 1u << l) t[i] = l | sym << 16;
       } else if (l <= root) {
@@ -195,18 +191,19 @@ static int build(const uint8_t *lens, uint32_t n, uint32_t *t, uint32_t tn, uint
         uint32_t e = sym_entry(sym, l - root, dist);
         for (uint32_t i = r >> root; i < (1u << sub_bits); i += 1u << (l - root)) t[sub_start + i] = e;
       }
-      code++;
+      uint32_t inc = 1u << (l - 1);
+      while (r & inc) inc >>= 1;
+      r = inc ? (r & (inc - 1)) + inc : 0;
     }
-    code <<= 1;
   }
   if (!codes && !dist) {
     /* two literals in one entry where both codes fit the first level. From the top down, so the entry looked up for
      * the second (index i >> l1, below i) is still a one-symbol entry. */
     for (uint32_t i = (1u << root); i-- > 0;) {
-      uint32_t e = t[i];
-      if (E_CLASS(e) != C_LIT) continue;
-      uint32_t l1 = E_BITS(e), e2 = t[i >> l1];
-      if (E_CLASS(e2) == C_LIT && e2 >> 24 == 1 && l1 + E_BITS(e2) <= root) t[i] = LIT2(l1 + E_BITS(e2), (e >> 8) & 255, (e2 >> 8) & 255);
+      uint32_t e = t[i], l1 = E_BITS(e), e2 = t[i >> l1];
+      /* without branches: e and e2 one-literal entries (class literal, count 1), their bits together in the level */
+      uint32_t pair = ((e & 0xff0000c0u) == 1u << 24) & ((e2 & 0xff0000c0u) == 1u << 24) & (l1 + E_BITS(e2) <= root);
+      t[i] = pair ? LIT2(l1 + E_BITS(e2), (e >> 8) & 255, (e2 >> 8) & 255) : e;
     }
   }
   return 1;
@@ -281,7 +278,8 @@ static inline void copy_match(uint8_t *o, uint32_t dist, uint32_t len) {
   const uint8_t *s = o - dist;
   uint8_t *e = o + len;
   if (dist >= 16) {
-    do { memcpy(o, s, 16); o += 16; s += 16; } while (o < e);
+    memcpy(o, s, 16); memcpy(o + 16, s + 16, 16);   /* 32 bytes first: 88% of p12.png's matches are no longer */
+    for (o += 32, s += 32; o < e; o += 16, s += 16) memcpy(o, s, 16);
   } else if (dist >= 8) {
     do { memcpy(o, s, 8); o += 8; s += 8; } while (o < e);
   } else if (dist == 1) {
@@ -295,43 +293,44 @@ static inline void copy_match(uint8_t *o, uint32_t dist, uint32_t len) {
 static int huff_block(bits *s, sink *o, const uint32_t *lt, const uint32_t *dt, uint32_t *st) {
   const uint32_t lm = (1u << LBITS) - 1, dm = (1u << DBITS) - 1;
   for (;;) {
-    /* the fast loop: no checks of the input or the buffer inside. Each turn starts with 56 bits or more in the
-     * buffer and the next entry e looked up. */
+    /* the fast loop: no checks of the input or the buffer inside but one, on out. Each turn starts with 56 bits
+     * or more in the buffer and the next entry e looked up. */
     if (o->cap - o->pos >= FAST_OUT && s->end - s->in >= FAST_IN) {
       uint64_t bb = s->bb;
-      uint32_t bl = s->bl;
-      const uint8_t *in = s->in, *in_lim = s->end - FAST_IN;
-      uint8_t *out = o->buf + o->pos, *out_lim = o->buf + o->cap - FAST_OUT;
-      uint8_t *out0 = out;
-      int end = 0, bad = 0;
-#define REFILL() do { bb |= load64(in) << bl; in += (63 - bl) >> 3; bl |= 56; } while (0)
+      uint32_t bl = s->bl;     /* each entry's whole value is taken off it: only its low 6 bits are the count */
+      const uint8_t *in = s->in;
+      uint8_t *const start = o->buf, *out = start + o->pos, *out_lim = start + o->cap - FAST_OUT;
+      /* one limit: a turn refills once (7 bytes at most) and writes a byte or more, so with out at most the input's
+       * room past FAST_IN over 8 from here, each refill's 8-byte load stays in the piece */
+      size_t turns = (size_t)(s->end - in - FAST_IN) / 8;
+      if ((size_t)(out_lim - out) > turns) out_lim = out + turns;
+#define REFILL() do { bb |= load64(in) << (bl & 63); in += (63 - (bl & 63)) >> 3; bl = (bl & 63) | 56; } while (0)
+#define SAVE() do { s->bb = bb; s->bl = bl & 63; s->in = in; o->total += (uint64_t)(out - (start + o->pos)); o->pos = (uint32_t)(out - start); } while (0)
       REFILL();
       uint32_t e = lt[bb & lm];
-      while (out <= out_lim && in <= in_lim) {
+      while (out <= out_lim) {
         if (E_CLASS(e) == C_LIT) {
           /* up to three literal entries, each looked up as soon as the one before is (its bits shifted off, the
            * shift taking the entry itself: its low 6 bits are the count), before the stores; each LBITS bits at
            * most: 33, and 11 more for the entry after */
           uint64_t b = bb >> (e & 63);
-          uint32_t e2 = lt[b & lm], used = E_BITS(e);
-          lits(out, e); out += e >> 24;
+          uint32_t e2 = lt[b & lm];
+          lits(out, e); out += e >> 24; bl -= e;
           if (E_CLASS(e2) == C_LIT) {
             b >>= e2 & 63;
             uint32_t e3 = lt[b & lm];
-            used += E_BITS(e2);
-            lits(out, e2); out += e2 >> 24;
+            lits(out, e2); out += e2 >> 24; bl -= e2;
             if (E_CLASS(e3) == C_LIT) {
               b >>= e3 & 63;
               e = lt[b & lm];
-              used += E_BITS(e3);
-              lits(out, e3); out += e3 >> 24;
-              bb = b; bl -= used;
+              lits(out, e3); out += e3 >> 24; bl -= e3;
+              bb = b;
               REFILL();
               continue;
             }
             e = e3;
           } else e = e2;
-          bb = b; bl -= used;
+          bb = b;
           REFILL();
         }
         if (E_CLASS(e) != C_LEN) {
@@ -341,7 +340,7 @@ static int huff_block(bits *s, sink *o, const uint32_t *lt, const uint32_t *dt, 
             e = lt[(e >> 16) + (bb & ((1u << ((e >> 8) & 15)) - 1))];
             if (E_CLASS(e) == C_LIT) {
               *out++ = (uint8_t)(e >> 8);
-              bb >>= E_BITS(e); bl -= E_BITS(e);
+              bb >>= e & 63; bl -= e;
               REFILL();
               e = lt[bb & lm];
               continue;
@@ -349,37 +348,36 @@ static int huff_block(bits *s, sink *o, const uint32_t *lt, const uint32_t *dt, 
             if (E_CLASS(e) != C_LEN) k = E_OTHER(e);
           }
           if (E_CLASS(e) != C_LEN) {
-            if (k == O_END) { bb >>= E_BITS(e); bl -= E_BITS(e); end = 1; }
-            else bad = 1;
-            break;
+            if (k != O_END) return 0;
+            bb >>= e & 63; bl -= e;
+            SAVE();
+            return 1;
           }
         }
-        /* a length (up to 20 bits with a second level), then a distance (up to 28): 56 are there */
-        uint32_t c = (e >> 8) & 15, n = E_BITS(e);
-        uint32_t len = (e >> 16) + (uint32_t)((bb >> c) & ((1u << (n - c)) - 1));
-        bb >>= n; bl -= n;
+        /* a length (up to 20 bits with a second level), then a distance (up to 28): 56 are there. The extra bits are
+         * the entry's bits below its count (under 32) above its code's own */
+        uint32_t len = (e >> 16) + (((uint32_t)bb & ((1u << (e & 31)) - 1)) >> ((e >> 8) & 15));
+        bb >>= e & 63; bl -= e;
         uint32_t d = dt[bb & dm];
         if (E_CLASS(d) != C_LEN) {
-          if (E_OTHER(d) != O_SUB) { bad = 1; break; }
+          if (E_OTHER(d) != O_SUB) return 0;
           bb >>= DBITS; bl -= DBITS;
           d = dt[(d >> 16) + (bb & ((1u << ((d >> 8) & 15)) - 1))];
-          if (E_CLASS(d) != C_LEN) { bad = 1; break; }
+          if (E_CLASS(d) != C_LEN) return 0;
         }
-        c = (d >> 8) & 15; n = E_BITS(d);
-        uint32_t dist = (d >> 16) + (uint32_t)((bb >> c) & ((1u << (n - c)) - 1));
-        bb >>= n; bl -= n;
-        if (dist > o->total + (uint64_t)(out - out0)) { bad = 1; break; }   /* before the start of the output */
+        uint32_t dist = (d >> 16) + (((uint32_t)bb & ((1u << (d & 31)) - 1)) >> ((d >> 8) & 15));
+        bb >>= d & 63; bl -= d;
+        /* before the start of the output: while nothing was dropped the output starts at start; once something was,
+         * the sink kept the window (flush allows no more), so no distance reaches past start */
+        if (dist > (uint32_t)(out - start)) return 0;
         REFILL();
         e = lt[bb & lm];                              /* the next entry's load overlaps the copy */
         copy_match(out, dist, len);
         out += len;
       }
+      SAVE();
 #undef REFILL
-      s->bb = bb; s->bl = bl; s->in = in;
-      o->total += (uint64_t)(out - out0);
-      o->pos = (uint32_t)(out - o->buf);
-      if (bad) return 0;
-      if (end) return 1;
+#undef SAVE
       continue;
     }
     if (o->cap - o->pos < FAST_OUT) {
