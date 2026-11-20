@@ -126,12 +126,12 @@ def paeth(a, b, c):
     pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
     return np.where((pa <= pb) & (pa <= pc), a, np.where(pb <= pc, b, c))
 
-def filtered(rows, bpp):
-    """Row i gets filter i % 5, so every filter is used, the first row's included."""
+def filtered(rows, bpp, plan=None):
+    """Row i gets filter i % 5, so every filter is used, the first row's included; or plan[i], when a plan is given."""
     out = bytearray()
     prev = np.zeros_like(rows[0])
     for i, cur in enumerate(rows):
-        fl = i % 5
+        fl = i % 5 if plan is None else plan[i]
         left = np.concatenate([np.zeros(bpp, np.uint8), cur[:-bpp]]) if len(cur) > bpp else np.zeros_like(cur)
         ul = np.concatenate([np.zeros(bpp, np.uint8), prev[:-bpp]]) if len(cur) > bpp else np.zeros_like(cur)
         if fl == 0: r = cur
@@ -143,9 +143,9 @@ def filtered(rows, bpp):
         prev = cur
     return bytes(out)
 
-def png_bytes(w, h, ctype, depth, rows, plte=None, trns=None, idat_split=None, zdata=None):
+def png_bytes(w, h, ctype, depth, rows, plte=None, trns=None, idat_split=None, zdata=None, plan=None):
     bpp = max(1, {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[ctype] * depth // 8)
-    z = zdata if zdata is not None else zlib.compress(filtered(rows, bpp), 6)
+    z = zdata if zdata is not None else zlib.compress(filtered(rows, bpp, plan), 6)
     d = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, depth, ctype, 0, 0, 0))
     if plte is not None: d += chunk(b"PLTE", bytes(plte))
     if trns is not None: d += chunk(b"tRNS", bytes(trns))
@@ -255,6 +255,25 @@ def png_cases():
     wide = np.stack([x % 251, (x // 7 + y * 40) % 256, (x * 3 + y) % 253], 2).astype(np.uint8)
     path = write_png("wide8000x3.png", 8000, 3, 2, 8, [r.reshape(-1) for r in wide])
     case("png-wide8000x3-rgb", path, 300, 300, area_avg(wide, *fit_box(8000, 3, 300, 300)), maxkb=os.path.getsize(path) // 1024 + 212)
+    # Paeth as a wavefront (docs/image-png-speed.md): the sink hands over runs of up to 4 Paeth rows, so the rows here are
+    # Paeth runs of every length 1 to 5 (a 5 is a 4 and a 1), each followed by a row of None, Sub, Up or Avg in turn,
+    # and the first row Paeth (its row above is the zero row); RGB and RGBA, an odd width. The pixels are a formula
+    # (nothing from the rng); Pillow decodes each file to them first, so the filters written are checked apart from
+    # this module. The peak limit is what the module held before the wavefront for these files (main at cdc957e: 576 and
+    # 578 KB, rounded up, and the file), so a run takes no more memory.
+    plan = []
+    while len(plan) < 300:
+        for run in (1, 2, 3, 4, 5):
+            plan += [4] * run + [len(plan) % 4]
+    plan = plan[:300]
+    y, x = np.mgrid[0:300, 0:403]
+    runs = np.stack([(x * x * 7 + y * 13) % 256, (x * y * 3 + y * y) % 251, (x * 5 + y * 11 + (x ^ y)) % 256], 2).astype(np.uint8)
+    ra = ((x * 3 + y * 5) % 256).astype(np.uint8)
+    for (name, ctype, px, rgb, held) in [("rgb", 2, runs, runs, 577), ("rgba", 6, np.concatenate([runs, ra[..., None]], 2), over_white(runs, ra), 579)]:
+        path = write_png(f"paethruns-{name}.png", 403, 300, ctype, 8, [r.reshape(-1) for r in px], plan=plan)
+        assert np.array_equal(np.asarray(Image.open(path).convert("RGBA" if ctype == 6 else "RGB")), px), path
+        case(f"png-paeth-runs-{name}", path, 300, 300, area_avg(rgb, *fit_box(403, 300, 300, 300)),
+             maxkb=-(-os.path.getsize(path) // 1024) + held)
 
 # ---------- JPEG ----------
 
