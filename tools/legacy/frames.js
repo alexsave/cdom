@@ -36,7 +36,8 @@ var cdomF = new Object();
 cdomF.errors = new Array();
 cdomF.draws = 0;
 
-/* C's memory: the app's words (memory.words of the .ie9.js build), as tools/legacy/memory-words.js reads them. */
+/* C's memory: the app's words (memory.words of the interpreter's module, cdom.js1.js, which keeps tools/legacy/words.js's
+ * layout), as tools/legacy/memory-words.js reads them. */
 var cf_raw = null;   /* the module's exports */
 var cf_mem = null;   /* its memory */
 var cf_W = null;     /* memory.words */
@@ -902,9 +903,16 @@ var cf_later = 0;     /* a draw put off by cf_LATER */
 var cf_over = 0;      /* the frameset was written over the page (cf_poll) */
 var cf_waits = 0;
 function cf_cRun(name, a, b, c, d, e, f, g, h) {
-  var r;
+  var r, t = "";
   cf_busy++;
   r = cf_raw[name](a, b, c, d, e, f, g, h);
+  /* The interpreter (cdom.js1.js) cannot throw a trap out of the call (JavaScript 1.0 has no throw): it ends the call
+   * and says so. The counts stay up, as a thrown trap leaves them, and the next entry from the browser recovers. */
+  if (cf_raw["$trap"]) t = cf_raw["$trap"]();
+  if (t) {
+    cf_fail("cdom: C trapped: " + t);
+    return 0;
+  }
   cf_busy--;
   if (cf_busy == 0) cf_callEnded();
   return r;
@@ -947,6 +955,7 @@ function cf_exp(name, a, b, c, d, e, f, g, h) {
 function cf_wrap(raw) {
   var out = new Object(), k;
   for (k in raw) {
+    if (k == "$trap") continue;
     if (typeof raw[k] == "function") out[k] = new Function("a", "b", "c", "d", "e", "f", "g", "h", "return cf_exp(\"" + k + "\", a, b, c, d, e, f, g, h)");
     else out[k] = raw[k];
   }

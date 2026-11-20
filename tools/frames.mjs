@@ -178,13 +178,16 @@ run: try {
   ok(!(await E('cdomF.errors.length')), `no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
   ok(!errs().length, `no page exceptions: ${JSON.stringify(errs())}`);
 
-  // A trap in C: thrown out of the call, which never comes back to the shim (no finally in JavaScript 1.1), so nothing
-  // is drawn; the next entry from the browser puts the counts back, notes it, and draws what the call had done.
+  // A trap in C: the interpreter (cdom.js1.js) ends the call and says so (JavaScript 1.0 has no throw), and the shim
+  // leaves its counts up as a thrown trap would, so nothing is drawn; the next entry from the browser puts the counts
+  // back, notes it, and draws what the call had done.
   d = await draws();
   const was = await stat(STAT.count);
   let threw = '';
   try { await E('X.trap()'); } catch (e) { threw = String(e).slice(0, 80); }
-  ok(threw && (await draws()) === d, `a trap is thrown out of the call, and nothing is drawn: ${threw ? 'threw' : 'no throw'}, ${(await draws()) - d} draws`);
+  const noted = await E('cdomF.errors.join()');
+  ok(!threw && noted.includes('C trapped: unreachable') && (await draws()) === d,
+    `a trap ends the call with no throw, noted (${JSON.stringify(noted)}), and nothing is drawn: ${threw || 'no throw'}, ${(await draws()) - d} draws`);
   await click('#inc');
   ok((await textOf('#countp')) === `count ${was + 2}` && (await E('cdomF.errors.join()')).includes('did not return'),
     `the next click recovers: drawn with both counts (${JSON.stringify(await textOf('#countp'))}, want count ${was + 2}), and noted: ${JSON.stringify(await E('cdomF.errors'))}`);
