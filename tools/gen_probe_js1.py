@@ -15,6 +15,8 @@ Run: python3 tools/gen_probe_js1.py > tests/probe-js1.html
      python3 tools/gen_probe_js1.py b > tests/probe-js1b.html   (the second probe: the questions netscape.exe raised, see
      docs/descent.md "The second probe"; the recursion depth grid comes last, so an engine that stops on a stack overflow
      has reported everything else first)
+     python3 tools/gen_probe_js1.py c > tests/probe-js1c.html   (its follow-up: are the methods that return undefined
+     present at all, and the depth limits to a step of 2 to 5)
      python3 tools/gen_probe_js1.py nested > tests/probe-nested.html   (a function inside a function, alone: the alert's text)
      python3 tools/gen_probe_js1.py events > tests/probe-events.html   (which event handlers fire: driven by hand)
 Written for JS 1.0: no typeof, no try, no literals, no function expressions in the helper block."""
@@ -255,6 +257,25 @@ TESTS_B = [
     ("whileAssign00", "var x = 0; var y = 0; var c = 0; while (x = y) { c = c + 1; if (c > 5) { break; } }", '"c=" + c + " x=" + x'),
 ] + [("depth%s_%d" % (f[1:], d), defs, expr % d) for d in DEPTHS for (f, defs, expr) in RFUNCS]
 
+# The second probe's follow-up (tests/probe-js1c.html), after Netscape 2's first run of probe-js1b: is a method that
+# returns undefined there (chop, match, substr, split) present at all, and the depth limits to within a step of 2 to 5.
+STRV = 'var s = "a,b,c";'
+TESTS_C = [
+    ("ua", "", "navigator.userAgent"),
+    ("charAtProp", STRV, '"" + s.charAt'),
+    ("splitProp", STRV, '"" + s.split'),
+    ("chopProp", STRV, '"" + s.chop'),
+    ("matchProp", STRV, '"" + s.match'),
+    ("substrProp", STRV, '"" + s.substr'),
+    ("missingProp", STRV, '"" + s.zzz'),
+    ("missingCall", STRV, "s.zzz(1)"),
+    ("splitResult", STRV, '"" + s.split(",")'),
+    ("splitStrObj1", 'var s = new String("a,b,c"); var p = s.split(",");', "p[1]"),
+    ("strObjCharAt", 'var s = new String("a,b,c");', "s.charAt(2)"),
+] + [("depth0_%d" % d, RFUNCS[0][1], RFUNCS[0][2] % d) for d in range(252, 275, 2)] \
+  + [("depth1_%d" % d, RFUNCS[1][1], RFUNCS[1][2] % d) for d in range(162, 179, 2)] \
+  + [("depth3_%d" % d, RFUNCS[2][1], RFUNCS[2][2] % d) for d in range(55, 100, 5)]
+
 NESTED = [("nestedFunc", "function f(){ function g(){ return 1; } return g(); }", "f()")]
 
 EVENTS = """<HTML>
@@ -318,9 +339,11 @@ def main():
     if sys.argv[1:2] == ["events"]:
         print(EVENTS, end="")
         return
-    if sys.argv[1:2] in (["b"], ["nested"]):
-        out[0] = out[0].replace("probe-js1</", "probe-js1%s</" % ("b" if sys.argv[1] == "b" else "-nested"))
-        out.append("".join(block(*t) for t in (TESTS_B if sys.argv[1] == "b" else NESTED)))
+    pages = {"b": ("b", TESTS_B), "c": ("c", TESTS_C), "nested": ("-nested", NESTED)}
+    if sys.argv[1:2] and sys.argv[1] in pages:
+        suffix, tests = pages[sys.argv[1]]
+        out[0] = out[0].replace("probe-js1</", "probe-js1%s</" % suffix)
+        out.append("".join(block(*t) for t in tests))
         out.append('<SCRIPT LANGUAGE="JavaScript">\nmark("done", "end");\n</SCRIPT>\n</BODY>\n</HTML>\n')
         print("".join(out), end="")
         return

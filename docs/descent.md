@@ -353,3 +353,12 @@ tests/probe-events.html has a link, a button and a text field with every handler
 - Event handlers: Netscape 2 fires onmouseover, onclick and onchange, and never onmouseout, onmousedown, onmouseup or any key event.
   Netscape 3 adds onmouseout; Netscape 4.08 and IE 4 fire all of them.
 - A function inside a function: Netscape 2's alert names "function defined inside a function".
+
+### The follow-up, expected before its run
+
+Netscape 2's run of probe-js1b (below) gave undefined from `chop`, `match` and `substr`, and an undefined result from `split` (then "has no properties" on its `[0]`), and the depths fell between grid points.
+tests/probe-js1c.html (`gen_probe_js1.py c`) asks whether those methods are there at all, and narrows the depths to a step of 2 for r0 and r1 and 5 for r3.
+
+- `"" + s.charAt` prints a native function, and so do `s.split`, `s.chop`, `s.match` and `s.substr` (the binary names them), while `s.zzz` is undefined and `s.zzz(1)` dies: the four are present and return undefined in 2.02.
+  `split` on a `new String` object is the same as on a primitive.
+- Depths, with a frame of 2, 3 and 6 slots (r3 died at 100, so it holds more than the 5 I counted: the sixth is a guess) and about 3 slots under the first call: the deepest r0 that works is 252 to 254, r1 167 or 168, r3 83 or 84 (so r3 dies at 85 or 90 on this grid).
