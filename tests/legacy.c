@@ -215,14 +215,15 @@ EXPORT("net_ask") void net_ask(uint32_t k) {
 }
 EXPORT("net_seen") int32_t net_seen(uint32_t k, uint32_t f) { return net_rec[k][f]; }
 /* An SVG of every element the fourth tier draws through VML (tools/legacy/vml.js, docs/vml-design.md), with inherited
- * paint, opacities, a g with translate and scale, and what VML does not draw: text, defs, a gradient (and its stop),
+ * paint, opacities, a g with translate and scale, in a div of its own, and what VML does not draw: text, defs, a gradient (and its stop),
  * a rotate and a gradient paint. Every other tier makes it real SVG. svg_set changes it after the build (a path detached
  * while its g's transform changes, then put back), svg_drop removes it. */
-enum { SVG_ROOT, SVG_PATH, SVG_RECT, SVG_G, SVG_GPATH, SVG_N };
+enum { SVG_BOX, SVG_ROOT, SVG_PATH, SVG_RECT, SVG_G, SVG_GPATH, SVG_N };
 static cd_id svg_ids[SVG_N];
 static void shape(const char *tag, const char *idattr) { cd_open(tag); cd_attr("id", idattr); }
 EXPORT("svg") void svg(void) {
   cd_at(CD_MOUNT, CD_APPEND);
+  svg_ids[SVG_BOX] = el("div", "svgbox", "position:absolute;left:300px;top:120px"); /* clear of the pad, to look at in IE */
   cd_open("svg");
   cd_attr("id", "svg"); cd_attr("width", "200"); cd_attr("height", "100"); cd_attr("viewBox", "0 0 100 50");
   svg_ids[SVG_ROOT] = cd_id_new(); cd_name_el(svg_ids[SVG_ROOT]);
@@ -253,6 +254,7 @@ EXPORT("svg") void svg(void) {
   shape("rect", "srot"); cd_attr("width", "5"); cd_attr("height", "5"); cd_attr("transform", "rotate(45)"); cd_close();
   shape("rect", "sgrad"); cd_attr("width", "5"); cd_attr("height", "5"); cd_attr("fill", "url(#lg)"); cd_close();
   cd_close();
+  cd_close();
   cd_flush();
 }
 EXPORT("svg_set") void svg_set(void) {
@@ -265,21 +267,22 @@ EXPORT("svg_set") void svg_set(void) {
   cd_attach(svg_ids[SVG_GPATH]);
   cd_flush();
 }
-EXPORT("svg_drop") void svg_drop(void) { cd_remove(svg_ids[SVG_ROOT]); cd_flush(); }
+EXPORT("svg_drop") void svg_drop(void) { cd_remove(svg_ids[SVG_BOX]); cd_flush(); }
 /* n paths in an svg of their own, each with d, fill and stroke (docs/vml-design.md, T2 and T3); the one before removed. */
 static cd_id many_id;
 EXPORT("svg_many") void svg_many(uint32_t n) {
   if (many_id) { cd_remove(many_id); many_id = 0; }
   cd_at(CD_MOUNT, CD_APPEND);
+  many_id = el("div", "svgmany", "position:absolute;left:520px;top:120px");
   cd_open("svg");
   cd_attr("width", "400"); cd_attr("height", "400"); cd_attr("viewBox", "0 0 200 200");
-  many_id = cd_id_new(); cd_name_el(many_id);
   for (uint32_t i = 0; i < n; i++) {
     cd_open("path");
     cd_attr("d", "M10 10 L50 10 l0 20 H80 v15 C90 50 100 60 110 50 s20 -10 30 0 Q160 70 170 50 Z");
     cd_attr("fill", "#4a8"); cd_attr("stroke", "#123");
     cd_close();
   }
+  cd_close();
   cd_close();
   cd_flush();
 }
