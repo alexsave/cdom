@@ -1,0 +1,33 @@
+P1 cdom.js1.js 24894 bytes, 6438 gzipped; frames.wasm.js1.js 12822 bytes, 4834 gzipped; together 11272 gzipped against frames.wasm.ie9.js 15552 bytes, 5576 gzipped (2.022 times); cdom.frames.js 30172 bytes, 9833 gzipped
+P2 digits {"bytes":12829,"gzipped":4841,"ms":1.4}, statements {"bytes":77456,"gzipped":23605,"ms":1.6}: the digit string is 0.166 of the bytes and takes 0.875 times as long
+P3 interpreter {"boot":9.8,"factory":1.1,"click":1.05,"touchUs":0.48,"count":5020}, ie9 {"boot":8.9,"factory":0.6,"click":1.125,"touchUs":0.14,"count":5020} (ms): boot 1.101 times, click 0.933 times, the call into C alone (touch, us) 3.429 times
+P4 loop(100000): interpreter {"cold":38.2,"warm":25.2}, ie9 {"cold":5.9,"warm":0.7} ms; 36 times warm, 6.475 cold; 2300480 instructions, 91 million a second warm, 60 cold
+P6 loop(100000): 2300480 interpreter instructions for 5201107 wasm instructions: 0.442
+P4 rec(1000): interpreter {"cold":0.291,"warm":0.128}, ie9 {"cold":0.042,"warm":0.023} ms; 5.565 times warm, 6.929 cold; 11008 instructions, 86 million a second warm, 38 cold
+P6 rec(1000): 11008 interpreter instructions for 18008 wasm instructions: 0.611
+P5 the interpreter reaches 524285 frames of rec, one more traps (call stack exhausted), and the next call works; the IE 9 build in this Chrome reaches 11329
+P7 loop(1e5) ms by dispatch shape: {"weighted":27.5,"mixed":31.6,"tree":32,"chain":27}
+P8 frames.wasm: 2908 instructions; 6237 after --flatten --i64-to-i32-lowering (2.145 times); 2958 with -O2 after (1.017 times)
+P8 memforms.wasm: 167 instructions; 758 after --flatten --i64-to-i32-lowering (4.539 times); 204 with -O2 after (1.222 times)
+P1 cdom.js1.js 24894 bytes, 6438 gzipped; frames.wasm.js1.js 12822 bytes, 4834 gzipped; together 11272 gzipped against frames.wasm.ie9.js 15552 bytes, 5576 gzipped (2.022 times); cdom.frames.js 30172 bytes, 9833 gzipped
+P2 digits {"bytes":12829,"gzipped":4841,"ms":1.5}, statements {"bytes":77456,"gzipped":23605,"ms":1.8}: the digit string is 0.166 of the bytes and takes 0.833 times as long
+P3 interpreter {"boot":11.6,"factory":1.7,"click":1.17,"touchUs":0.7,"count":5020}, ie9 {"boot":7.6,"factory":0.5,"click":0.945,"touchUs":0.12,"count":5020} (ms): boot 1.526 times, click 1.238 times, the call into C alone (touch, us) 5.833 times
+P4 loop(100000): interpreter {"cold":38.1,"warm":23.9}, ie9 {"cold":6.2,"warm":0.7} ms; 34.143 times warm, 6.145 cold; 2300480 instructions, 96 million a second warm, 60 cold
+P6 loop(100000): 2300480 interpreter instructions for 5201107 wasm instructions: 0.442
+P4 rec(1000): interpreter {"cold":0.154,"warm":0.104}, ie9 {"cold":0.071,"warm":0.023} ms; 4.522 times warm, 2.169 cold; 11008 instructions, 106 million a second warm, 71 cold
+P6 rec(1000): 11008 interpreter instructions for 18008 wasm instructions: 0.611
+P5 the interpreter reaches 524285 frames of rec, one more traps (call stack exhausted), and the next call works; the IE 9 build in this Chrome reaches 11695
+P7 loop(1e5) ms by dispatch shape: {"weighted":24.6,"mixed":29.4,"tree":28.4,"chain":28}
+P8 frames.wasm: 2908 instructions; 6237 after --flatten --i64-to-i32-lowering (2.145 times); 2958 with -O2 after (1.017 times)
+P8 memforms.wasm: 167 instructions; 758 after --flatten --i64-to-i32-lowering (4.539 times); 204 with -O2 after (1.222 times)
+P1 cdom.js1.js 24894 bytes, 6438 gzipped; frames.wasm.js1.js 12822 bytes, 4834 gzipped; together 11272 gzipped against frames.wasm.ie9.js 15552 bytes, 5576 gzipped (2.022 times); cdom.frames.js 30172 bytes, 9833 gzipped
+P2 digits {"bytes":12829,"gzipped":4841,"ms":1.5}, statements {"bytes":77456,"gzipped":23605,"ms":2}: the digit string is 0.166 of the bytes and takes 0.75 times as long
+P3 interpreter {"boot":8.2,"factory":1,"click":0.92,"touchUs":0.42,"count":5020}, ie9 {"boot":8.1,"factory":0.5,"click":0.93,"touchUs":0.1,"count":5020} (ms): boot 1.012 times, click 0.989 times, the call into C alone (touch, us) 4.2 times
+P4 loop(100000): interpreter {"cold":41.3,"warm":37.9}, ie9 {"cold":4.8,"warm":0.8} ms; 47.375 times warm, 8.604 cold; 2300480 instructions, 61 million a second warm, 56 cold
+P6 loop(100000): 2300480 interpreter instructions for 5201107 wasm instructions: 0.442
+P4 rec(1000): interpreter {"cold":0.212,"warm":0.156}, ie9 {"cold":0.032,"warm":0.023} ms; 6.783 times warm, 6.625 cold; 11008 instructions, 71 million a second warm, 52 cold
+P6 rec(1000): 11008 interpreter instructions for 18008 wasm instructions: 0.611
+P5 the interpreter reaches 524285 frames of rec, one more traps (call stack exhausted), and the next call works; the IE 9 build in this Chrome reaches 9864
+P7 loop(1e5) ms by dispatch shape: {"weighted":29.1,"mixed":23.4,"tree":32.6,"chain":22.3}
+P8 frames.wasm: 2908 instructions; 6237 after --flatten --i64-to-i32-lowering (2.145 times); 2958 with -O2 after (1.017 times)
+P8 memforms.wasm: 167 instructions; 758 after --flatten --i64-to-i32-lowering (4.539 times); 204 with -O2 after (1.222 times)

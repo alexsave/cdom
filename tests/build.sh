@@ -85,6 +85,9 @@ page "$here/frames.html" "$here/out/frames.shim.html" "$here/out/frames.wasm"
 node "$legacy" page "$here/out/frames.shim.html" "$here/out/frames.html"
 sed 's|</head><div id="m">|</head><body><div id="m">|' "$here/out/frames.html" > "$here/out/frames-body.html"
 grep -q '<body><div id="m">' "$here/out/frames-body.html"
+# The same page on the IE 9 build instead of the interpreter, for tools/js1measure.mjs (P3): never served to a browser.
+sed 's|<script src=\\"cdom.js1.js\\"></scr" + "ipt><script src=\\"" + base + ".js1.js\\"|<script src=\\"" + base + ".ie9.js\\"|' "$here/out/frames.html" > "$here/out/frames-ie9.html"
+grep -q 'base + ".ie9.js' "$here/out/frames-ie9.html"
 # The script engine probe (docs/ie5-design.md), served beside the pages for the XP VM's browsers.
 cp "$here/probe.html" "$here/out/probe.html"
 # The hold that keeps the Utilu IE 5.01 and 5.5 builds from crashing at a page's Done (tools/ie5hold.py) is the test
