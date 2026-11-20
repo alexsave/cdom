@@ -47,7 +47,7 @@
 #                 the app's module: $(APP_WASM) is built from $(APP_SRC), $(CDOM_SRC) and the optional
 #                 modules APP_MODULES names (net store random audio url locale share fonts ui file image job: their
 #                 CDOM_<NAME>_SRC) with $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS) $(APP_LDFLAGS)
-#   APP_JOBS, APP_JOB_<name>_SRC, APP_JOB_CFLAGS, APP_JOB_LDFLAGS
+#   APP_JOBS, APP_JOB_<name>_SRC, APP_JOB_<name>_MODULES, APP_JOB_CFLAGS, APP_JOB_LDFLAGS
 #                 the app's job modules (src/cdom_job.h, src/cdom_job_mod.h): for each name in APP_JOBS,
 #                 $(dir $(APP_WASM))<name>.job.wasm is built from $(APP_JOB_<name>_SRC) with cdom's heap alone
 #                 (src/cdom.c under -DCDOM_HEAP_ONLY), src/mini.c and src/cdom_job_mod.c, with $(CDOM_OPT)
@@ -56,6 +56,7 @@
 #                 by tools/cdpage beside the string table, so the page needs no change; with APP_WASM_SEPARATE the
 #                 module is the file beside the page, which the name is the URL of. A job has no string table and
 #                 goes through no cdlits: it has no DOM and no string literals to move.
+#                 APP_JOB_<name>_MODULES (image) links the app's own objects of those modules into the job too.
 #   APP_PAGE, APP_PAGE_SRC, APP_TITLE, APP_WASM_SEPARATE, APP_WASM_URL
 #                 the app's page: $(APP_PAGE) is $(APP_PAGE_SRC) (or, unset, the default page below) with
 #                 the shim inlined at the line that holds only the marker /*CDOM_SHIM*/ (inside a <script>),
@@ -315,10 +316,17 @@ cdom_mk_lits_same = cmp -s $(call cdom_mk_q,$(1).lits) $(call cdom_mk_q,$(2).lit
 cdom_mk_job_files = $(foreach j,$(APP_JOBS),$(dir $(APP_WASM))$(j).job.wasm)
 cdom_mk_job_name = $(patsubst %.job.wasm,%,$(notdir $(1)))
 cdom_mk_job_src = $(APP_JOB_$(call cdom_mk_job_name,$(1))_SRC) $(CDOM)/src/cdom.c $(CDOM)/src/mini.c $(CDOM_JOB_MOD_SRC)
-%.job.wasm: $$(call cdom_mk_for,$$(cdom_mk_job_files),$$@,$$(cdom_mk_job_src) $$(CDOM_HEADERS))
+# A job may link cdom modules of the app's (APP_JOB_<name>_MODULES := image): the app's own objects of their parts
+# (the same build, so the same flags), every part but the glue to the file module, which reads on the page. The worker
+# gives such a job the image module's js way out of a libjpeg error (shim/cdom.js, jobWorker).
+cdom_mk_job_mods = $(APP_JOB_$(call cdom_mk_job_name,$(1))_MODULES)
+cdom_mk_job_bad = $(filter-out $(APP_MODULES),$(call cdom_mk_job_mods,$(1)))
+cdom_mk_job_objs = $(if $(call cdom_mk_job_bad,$(1)),$(error cdom.mk: job $(call cdom_mk_job_name,$(1)) names $(call cdom_mk_job_bad,$(1)), not in APP_MODULES)) \
+  $(foreach m,$(call cdom_mk_job_mods,$(1)),$(filter-out $(APP_WASM).cdom/$(m)/file/%,$(filter $(APP_WASM).cdom/$(m)/%,$(call cdom_mk_objs,$(APP_WASM)))))
+%.job.wasm: $$(call cdom_mk_for,$$(cdom_mk_job_files),$$@,$$(cdom_mk_job_src) $$(cdom_mk_job_objs) $$(CDOM_HEADERS))
 	@mkdir -p $(@D)
 	@$(cdom_mk_toolchain)
-	$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) -DCDOM_HEAP_ONLY $(APP_JOB_CFLAGS) $(CDOM_LDFLAGS) $(APP_JOB_LDFLAGS) -o $@ $(call cdom_mk_job_src,$@)
+	$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) -DCDOM_HEAP_ONLY $(APP_JOB_CFLAGS) $(CDOM_LDFLAGS) $(APP_JOB_LDFLAGS) -o $@ $(call cdom_mk_job_src,$@) $(call cdom_mk_job_objs,$@)
 
 # A module part's object (the variables above): its file, compiled with the app's flags and then the part's. For
 # any other .cdom.o the prerequisite is a file nothing makes, so this rule does not apply.
