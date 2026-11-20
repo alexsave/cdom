@@ -950,3 +950,91 @@ G3: the inner loop runs a count fixed for the row (sw / dw - 1, every output pix
 | --- | --- | --- |
 | H12 | G3: cd_image_scaler_row's self time on p12g.png at 0.65 of G2's (0.50 to 0.80) | above 0.90 |
 | H13 | G3: p12g.png C-simd at 0.90 of G1 and G2's (0.82 to 0.96) | above 0.98 |
+
+### What was built
+
+- G1, `wave_n` in src/cdom_image_loops.c: one row a lane, 16 rows of 1 byte or 8 of 2, each 2 pixels behind the one above (LAG, as `wave_v`); a lane load and a lane store a row a step, b from the row above in lane 0 and from the upper lane's result of 2 steps before in the others.
+  `cd_image_unfilter_run_simd` takes runs of up to 16 Paeth rows of 1 byte a pixel (grey of any depth, palette) and 8 of 2 (grey+alpha), and runs the wave from 3 rows; the sink (`rows()`) is unchanged, since it already hands over every row that is whole and out of the window.
+- G2, the grey read: `cd_image_scaler.step` 1 runs `cd_image_scaler_across_grey` (one sum an output pixel), `down` and the divide over `dw` sums, and the store makes R, G and B of the one quotient.
+  The PNG path reads 8-bit grey with no colour key as it lies in the inflate's buffer (`READ_AS_IS`, no row allocated), and grey with a key, 1, 2 and 4-bit grey and grey+alpha through `to_grey`, a row of a byte a pixel (`READ_GREY`), made with the same unpacking and compositing `to_rgba` had for them; `to_rgba` keeps RGB with a key, RGBA and palette.
+- The unfilter microbench (bench/image/paeth/run.mjs) takes a grey PNG and then times the grey arms: node v22.23.5, p12g.png's own rows, 9 rounds after one warm-up, medians:
+
+| loop | ms | of the scalar rows |
+| --- | --- | --- |
+| scalar, a row at a time | 72.6 | 1.000 |
+| SIMD build, a row at a time (main: its 1-byte Paeth is the scalar one) | 73.3 | 1.010 |
+| wave_n, runs of 16 | 25.1 | 0.347 |
+| wave_n, lag 1, runs of 16 | 25.0 | 0.345 |
+| wave_n, runs of 8 | 32.7 | 0.450 |
+| wave_n, runs of 4 | 48.0 | 0.662 |
+| wave_n, runs of 3 | 59.8 | 0.825 |
+| wave_n, runs of 2 | 82.1 | 1.131 |
+
+So the wave starts at 3 rows for 1 and 2 bytes a pixel (at 2 its 16 lanes of work for 2 rows lose to the scalar rows).
+On this VM the loop is bound by its lane loads and stores (32 a step), not its chain: lag 1 is as fast as lag 2; the lag stays 2, as for `wave_v`, since the Mac is where the chain binds.
+
+### Results
+
+The profile (bench/image/profile.mjs, p12g.png at box 900, 12 runs after a warm-up, the SIMD pages linked without wasm-opt: main 59380c1 as build-prof0, this branch as build-prof-simd), ms per run, three runs of each (the first before the others, the second and third interleaved):
+
+| function, main | run 1 | run 2 | run 3 | | function, this branch | run 1 | run 2 | run 3 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| cd_image_unfilter_scalar (the 1-byte Paeth) | 66.6 | 65.4 | 64.4 | | run_on (the inflate) | 21.8 | 24.9 | 23.8 |
+| cd_image_scaler_row (across on RGBA inlined) | 45.9 | 45.6 | 43.2 | | cd_image_scaler_row (across_grey inlined) | 14.2 | 17.6 | 15.5 |
+| rows (to_rgba inlined) | 24.7 | 23.0 | 23.2 | | cd_image_unfilter_run_simd (wave_n) | 13.3 | 17.2 | 15.8 |
+| run_on (the inflate) | 23.4 | 23.1 | 22.8 | | build | 2.9 | 3.6 | 3.1 |
+| build | 3.2 | 3.0 | 3.0 | | cd_image_adler32 | 2.0 | 2.3 | 1.6 |
+| cd_image_adler32 | 1.8 | 2.0 | 1.7 | | cd_image_scaler_div_simd | 1.4 | 1.7 | 1.1 |
+| resize, mean | 166.0 | 162.6 | 158.7 | | resize, mean | 57.0 | 68.5 | 62.7 |
+
+(An earlier profile of main, before any change, had 67.7, 49.8, 26.5 and 24.4 ms for the first four, 174.8 resize.)
+rows is gone from the list (under 0.1 ms): the row loop now only hands rows to the scaler.
+The inflate is the largest part left, then the scaler and the wave, near equal.
+
+The bench (bench/image/run.mjs, 15 interleaved rounds, box 900, each run on a fresh page, Chrome 153 headless, the 1-minute load 1.0 to 1.1; C-old and C-old-simd are main at 59380c1, built in a scratch worktree as bench/image/inflate-mac.sh builds them; bench/image/results/2026-11-20-png-grey-chrome.tsv), medians (min to max) in ms, the wasm memory after the run:
+
+| input | C-old | C-old-simd | C-js | C-simd | B1 | B2 | wasm bytes, main and this branch |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| p12.jpg | 84.8 | 71.8 | 89.0 | 77.1 | 106.7 | 106.6 | 6,422,528 |
+| p12.png | 205.6 | 125.5 | 207.5 | 123.7 | 168.4 | 179.6 | 18,087,936 (scalar), 18,153,472 (SIMD) |
+| p12a.png | 292.9 | 178.7 | 294.4 | 178.0 | 180.6 | 194.9 | 20,316,160 |
+| p12g.png | 169.7 (131.5 to 218.6) | 147.7 (142.3 to 191.8) | 102.0 (81.6 to 117.5) | 52.1 (39.9 to 90.3) | 102.9 (98.5 to 122.3) | 107.3 (91.7 to 135.9) | 8,912,896 |
+
+Per round, p12g.png: C-simd over C-old-simd 0.358 (0.265 to 0.629), C-js over C-old 0.578 (0.475 to 0.751), C-simd over B1 0.501 (0.371 to 0.773).
+The changes one at a time (15 rounds, p12g.png only, the pages built from this branch with the other change left out; bench/image/results/2026-11-20-png-grey-split-chrome.tsv), per round over C-old-simd: G1 alone 0.803 (0.537 to 1.249), G2 alone 0.685 (0.480 to 1.015), both 0.358 (0.182 to 0.486); C-simd 55.5 ms against B1's 112.4.
+The inputs this branch does not change, 31 interleaved rounds (bench/image/results/2026-11-20-png-grey-others-chrome.tsv), per round: C-simd over C-old-simd p12.jpg 0.971 (0.713 to 1.525), p12.png 1.001 (0.662 to 1.614), p12a.png 0.985 (0.663 to 1.400); C-js over C-old 0.977, 1.005 and 1.027.
+After the scalar emit's grey loop was split from the RGB one (below), a second 31-round session gave C-js over C-old 1.018, 0.988 and 0.994, and the build before the split, in the same session, 0.999, 0.992 and 1.011 (it had been 1.027 on p12a.png in the first): the same code moves by 2% to 3% between sessions on this VM.
+
+The module's sizes (the bench page's app.wasm, which is the image module and a small app; brotli -q 11):
+
+| build | main | this branch | change |
+| --- | --- | --- | --- |
+| scalar, wasm | 95,152 | 95,642 | +490 |
+| scalar, brotli | 34,361 | 34,554 | +193 |
+| SIMD, wasm | 104,071 | 107,728 | +3,657 |
+| SIMD, brotli | 37,063 | 38,106 | +1,043 |
+
+| id | prediction | measured | verdict |
+| --- | --- | --- | --- |
+| H1 | G1 alone 0.60 of main (0.50 to 0.70), falsifier above 0.75 | 0.803 | refuted: the wave alone gains less in the bench than its 50 ms in the warm profile, and G2 gains more with it than alone (0.358 together) |
+| H2 | the wave's self time 13 ms (8 to 20), falsifier above 25 | 13.3, 17.2, 15.8 (against 66.6, 65.4, 64.4) | confirmed |
+| H3 | G2 alone 0.80 (0.72 to 0.88), falsifier above 0.92 | 0.685 | outside its range on the fast side; not falsified |
+| H4 | cd_image_scaler_row 11 ms (6 to 16), falsifier above 20; rows under 3 ms | 14.2, 17.6, 15.5 (against 45.9, 45.6, 43.2); rows under 0.1 | confirmed in two runs of three; the third over the range, under the falsifier |
+| H5 | G1 and G2 0.40 of main (0.30 to 0.50), falsifier above 0.70 (the task's) | 0.358 | confirmed: the task's falsifier is not hit |
+| H6 | under B1, at 0.55 of B1 (0.42 to 0.70) | 0.501 (and 0.504 in the split session) | confirmed |
+| H7 | C-js 0.82 of C-old (0.72 to 0.92), falsifier above 0.95 | 0.578 | outside its range on the fast side (the scalar build loses to_rgba and three of four channels too); not falsified |
+| H8 | p12.jpg, p12.png, p12a.png within 2% of main | per round 0.971 to 1.027 in one session, 0.988 to 1.018 in the next | refuted by the letter (p12a.png's C-js 1.027 in the first session); the same build was 1.011 in the second, and this VM's per-round spread (0.66 to 1.6) is wider than the line, so the Mac decides |
+| H9 | the wasm memory after p12g.png equal to main's or up to a page lower | equal to the byte (8,912,896) | confirmed (the RGBA row, 16,128 bytes, is no longer allocated; the heap's pages do not fall) |
+| H10 | +0.4 to +1.5 KB brotli (SIMD), +0.1 to +0.6 KB (scalar) | +1,043 and +193 bytes | confirmed |
+| H11 | the wave from some run length up, predicted 3 (2 to 5); falsifier: faster than the scalar rows at runs of 2 by more than 1.2 times | runs of 2 at 1.131 of the scalar rows (slower), runs of 3 at 0.825 | confirmed on the length (3); the text's "2 or 3 slower" was wrong for 3 |
+| H12 | G3: cd_image_scaler_row at 0.65 of G2's (0.50 to 0.80), falsifier above 0.90 | 17.0 ms (12.7 in across_grey, no longer inlined, and 4.3), against 14.2: 1.20 | refuted |
+| H13 | G3: p12g.png C-simd at 0.90 of G1 and G2's (0.82 to 0.96), falsifier above 0.98 | 1.048 (0.971 to 1.521), 15 rounds | refuted: G3 is not kept |
+
+So on this VM the grey resize is 0.36 of main's in the SIMD build and 0.58 in the scalar one, and half of createImageBitmap's time; the Mac re-measures.
+On the Mac's numbers (main 134.1 ms against B1's 77.2) the same ratio would be about 48 ms, but the Mac's chain-bound cores gain less from wider loops than this VM's port-bound ones in some loops and more in others, so that is not a prediction.
+
+### Tests
+
+- tests/image/simd.c: "paeth runs" now covers 1 to 4 bytes a pixel, with Paeth runs of 1 to 17 rows for 1 and 2 bytes (the sink's 16 and 8, and one past) mixed with None, Sub, Up and Avg rows, every length in some plan, widths 1 to 9 pixels and 4031 and 4032 (narrow ones run only the parts where rows start and end), handed over a random number of rows at a time: 2,976 cases.
+  "scaler across grey": `cd_image_scaler_across_grey` against `cd_image_scaler_across_scalar` on the same pixels as RGBA, sw 1 to 70 at every dw edge and 400 wide rows, a canary word past the sums and the grey row at the top of memory (a read past it traps): 2,500 cases.
+- tests/image/oracle.py: png-paeth-runs-grey, -grey-key, -grey-alpha, -grey1, -grey2 and -grey4 (403 x 300, Paeth runs of every length 1 to 17, each followed by a row of None, Sub, Up or Avg in turn, the first row Paeth), png-grey-w1, -w2, -w3, -w5, -w17 and -w33 (60 rows, a box of 4), png-paeth-runs-far-grey (rows that repeat every 80, so the stream copies each from near the window's far end), png-grey16 and png-grey-alpha16 (UNSUPPORTED); pixels from a formula, Pillow decodes each file first; main decodes every new case to the same bytes (its test_image on this oracle: 9,275 checks, 0 failures), and holds 1 KB more on each than the limits, which are this branch's peaks (main fails five of the seven).
