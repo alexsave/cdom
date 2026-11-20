@@ -506,3 +506,26 @@ Predictions (written before the change; 9 rounds, box 900, against main at 7e7f0
 - C3: in Safari, p12p.jpg's C-js is not slower than C-old by more than 2%. Falsifier: slower by more.
 - C4: p12.jpg, p48.jpg and p12.png within 2% of C-old in both browsers (they never reach the progressive decoder).
 - C5: the image module's wasm (scalar and SIMD) holds no `i64.ctz` after the change; before it, at least one.
+
+### ctz on arm64: the Mac's results (2026-11-19)
+
+`bench/image/png-mac.sh origin/main ctz-mac` (C-old is main at e7906f4, with #76's decoder), 9 rounds at box 900, Chrome 157 then Safari 27, load 2.1 to 3.0; the per-run tables are bench/image/results/2026-11-19-ctz-mac-chrome.tsv and -safari.tsv.
+
+| input | browser | C-old (main) | C-js | C-simd | B1 | B2 |
+| --- | --- | --- | --- | --- | --- | --- |
+| p12p.jpg | Chrome | 130.0 | 111.7 | 105.2 | 124.1 | 132.7 |
+| p12.jpg | Chrome | 59.2 | 58.9 | 52.1 | 63.2 | 69.3 |
+| p48.jpg | Chrome | 170.8 | 171.6 | 161.1 | 217.0 | 263.9 |
+| p12.png | Chrome | 179.6 | 179.3 | 112.0 | 131.3 | 140.3 |
+| p12p.jpg | Safari | 122 | 120 | 115 | 161 | 151 |
+| p12.jpg | Safari | 63 | 64 | 54 | 85 | 77 |
+| p48.jpg | Safari | 177 | 176 | 166 | 377 | 328 |
+| p12.png | Safari | 232 | 234 | 118 | 206 | 198 |
+
+- C1 refuted above its range: p12p.jpg's C-js falls by 14.1% in Chrome (130.0 to 111.7), past the 12% the prediction allowed; the falsifier (under 2%) is far off.
+- C2 confirmed: Chrome's C-simd is 105.2 ms against B1's 124.1 (it tied B1 before, 122.7 against 122.2).
+- C3 confirmed: Safari's C-js is 120 against 122.
+- C4 confirmed: the other inputs are within 1.6% of main in both browsers.
+- C5 confirmed: 8 i64.ctz in main's page, 0 in this branch's scalar and SIMD pages; tests/link/run.sh now refuses one.
+
+So the arm64 gap of issue #77 was mostly this one instruction: progressive JPEG now beats Chrome's own decoder by 15% (0.85 of B1) and Safari's by 29%.
