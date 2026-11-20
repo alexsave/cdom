@@ -494,6 +494,99 @@ Chrome for Testing 153.0.8010.12 headless (CHROME_ARGS=--no-sandbox), node 22.23
   Falsifier: p12.png's C-simd above 0.98 of main's, or a JPEG input more than 3% off.
 - Q8. On the Mac (not measured here; for the cdom manager's run): cd_inflate_zlib at 50 ms or less in Chrome's profile, against 59.0.
 
+### What was built
+
+Measured after the predictions above were committed; the changes were made one at a time in a scratch copy, each counted and timed, and the ones kept went into src/cdom_image_inflate.c.
+Three counts, each deterministic to 0.2%: callgrind's instructions natively (clang 23 -O2), and the instructions V8's TurboFan code runs for one inflate of p12.png (callgrind on node with `--no-liftoff`, three runs less one, halved; build and adler32 included), with node 22 (V8 12.4) and with node 27.0.0-alpha.0 (V8 15.6, the nearest to Chrome 153's V8 15.3; Chrome's own `--print-wasm-code` prints nothing, its release build has no disassembler).
+
+| version | native, cd_inflate_zlib | native, build | V8 12.4 | V8 15.6 |
+| --- | --- | --- | --- | --- |
+| main | 322.9 M | 56.3 M | 590.6 M | 610.8 M |
+| C1 alone (one limit, the exits as they were) | 313.1 M | 56.3 M | 571.8 M | |
+| C5 alone (the 32-byte first copy) | 323.6 M | 56.3 M | 589.1 M | |
+| C6 alone (the build) | 322.9 M | 50.7 M | 581.2 M | |
+| C1 with the exits as returns, C2, C4 and one mask for the extra bits | 311.6 M | 56.3 M | 506.9 M | |
+| the same and C6 | 311.6 M | 50.7 M | 500.4 M | |
+| all of C1 to C6 but C3 | 321.1 M | 50.7 M | 496.8 M | 513.1 M |
+| this branch: the same, the literal lookups indexed by a 32-bit shift | 328.0 M | 50.7 M | 514.7 M | 537.4 M |
+
+The scalar build, V8 15.6: main 674.0 M, this branch 601.2 M.
+
+What the instructions showed, change by change:
+
+- C1 alone saved little in V8 because of how clang left the loop: `while (out <= out_lim && ...)` with `end` and `bad` flags set inside made clang keep the loop's condition in a local (to tell the exits apart after the loop), which V8 stored to the stack each turn.
+  With the exits as returns (BAD returns 0, the end of the block saves the state and returns 1, only the limit leaves the loop), the loop's head is V8's stack check, `bl | 56` and one compare, and the bit buffer stays in a register.
+- C2 (`bl -= e`) and C4 (the distance against the buffer's start, since a sink keeps the window: while nothing was dropped the output starts there, and once something was, no distance reaches past it) took two values out of the loop (`out0` and `o`), and with C1 cut V8 12.4's count by 14%.
+- C3 was not done: the checked loop reads the same entries (`e >> 24` the count, `e >> 16` the base), and the checked loop is not this step's to change, so no bit of an entry can move.
+- C5 is no gain in any count; it stays (the lengths 17 to 32 take one 32-byte step, no loop).
+- C6: the pairing pass without branches and the codes reversed by increment took build from 56.3 M to 50.7 M natively; a second form of the pair (e plus a masked delta) was 52.5 M and was dropped.
+- The 32-bit index: V8 15.6 puts `and 0x3f` before every 64-bit shift by a register (a tiny module shows it for `i64.shr_u` of a zero-extended i32, of an i64 and even of an `i64.and` with 63: then two ands), and not before a 32-bit shift; V8 12.4 puts none.
+  So in Chrome each literal lookup's chain was `and 0x3f`, `shr r64, cl`, `and 0x7ff`, `lea`, the load.
+  Each lookup now takes its index from the low 32 bits of the buffer before it, shifted by the entry's count (11 bits and 11 more fit in 32), and the 64-bit shift of the buffer runs beside the chain: the chain is `shr r32, cl`, `and 0x7ff`, `lea`, the load.
+  It costs instructions (537.4 M against 513.1 M in V8 15.6) and gains time (below).
+  The same for the distance's lookup gained nothing and was dropped; so were 64-bit entry variables (533.3 M, the mask stays).
+
+Chrome 153, the inflate harness with each build of cdom_image_inflate.c, SIMD, ms of p12.png's stream:
+
+| arm | fresh page each run, 9 rounds (median) | warm, 12 rounds of 6 runs (median), session A | session B |
+| --- | --- | --- | --- |
+| main | 65.1 | 65.1 | 63.8 |
+| all of C1 to C6 but C3 (64-bit index) | 63.1 | 62.9 | 62.4 |
+| this branch (32-bit index) | | 60.9 | 60.4 |
+
+- The instruction counts fell 12 to 16% but the time only 3 to 7%: the loop is bound by the chain from one literal lookup to the next, about 8 cycles each on this VM (12.27 M lookups make about 37 ms of p12.png's inflate), not by its instructions.
+- A run on a fresh page is in part Liftoff's code: in node, the first run of the inflate is 64 to 90 ms against 57 to 62 for the later ones, and Liftoff alone (`--liftoff-only`) is about 75 ms on main and 66 with these changes.
+  So the bench's numbers (each run on a fresh page) have this tier's share too, where the instruction count matters more.
+- Natively the changes are no faster: 54.0 ms on main, and three rounds of 7 runs gave main 50.2, 57.9, 56.7 and this branch 55.8, 51.6, 51.0 (noise of 15% on this VM).
+
+### Results
+
+The profile (bench/image/profile.mjs, p12.png at box 900, 12 runs after a warm-up, the SIMD pages linked without wasm-opt; main and this branch interleaved, two runs each; ms, then the share of the sampled time):
+
+| function | main, run 1 | main, run 2 | this branch, run 1 | this branch, run 2 |
+| --- | --- | --- | --- | --- |
+| cd_inflate_zlib | 57.8 (33.1%) | 59.1 (33.9%) | 53.7 (31.4%) | 55.7 (31.5%) |
+| cd_image_unfilter_simd | 39.3 (22.5%) | 38.2 (21.9%) | 39.2 (22.9%) | 38.6 (21.9%) |
+| cd_image_scaler_row | 36.2 (20.7%) | 35.7 (20.5%) | 36.9 (21.6%) | 38.8 (22.0%) |
+| unfilter_paeth | 16.6 (9.5%) | 16.8 (9.6%) | 17.0 (10.0%) | 17.7 (10.0%) |
+| build | 7.0 (4.0%) | 7.5 (4.3%) | 6.9 (4.0%) | 6.7 (3.8%) |
+| cd_image_adler32 | 5.7 (3.3%) | 5.1 (2.9%) | 5.1 (3.0%) | 6.0 (3.4%) |
+| rows | 4.1 (2.3%) | 3.7 (2.1%) | 4.2 (2.5%) | 4.3 (2.4%) |
+| cd_image_scaler_div_simd | 3.6 (2.1%) | 3.1 (1.8%) | 3.3 (1.9%) | 3.9 (2.2%) |
+| resize, mean | 171.4 | 170.8 | 167.6 | 173.0 |
+
+(An earlier pair, before the 32-bit index, gave cd_inflate_zlib 56.0 and 59.1 on main against 55.3 and 54.2, build 7.1 and 7.0 against 6.5 and 6.0.)
+
+The inflate bench (bench/image/inflate/run.mjs, 9 rounds, each run on a fresh page; and the same builds warm, 10 rounds of 6 runs):
+
+| build | main, fresh | this branch, fresh | ratio | main, warm | this branch, warm | ratio |
+| --- | --- | --- | --- | --- | --- | --- |
+| SIMD | 65.5 (60.5 to 77.6) | 61.3 (57.5 to 89.8) | 0.936 | 65.3 | 60.5 | 0.926 |
+| scalar | 69.3 (64.1 to 82.3) | 62.3 (60.1 to 90.3) | 0.899 | 66.7 | 62.5 | 0.937 |
+
+The image bench (bench/image/run.mjs, 9 interleaved rounds, box 900, each run on a fresh page, Chrome 153 headless; C-old is main's scalar page (7e7f01f, bench/image/old.sh), C-old-simd main's SIMD page; bench/image/results/2026-11-20-inflate-fast-chrome.tsv), medians (min to max) in ms, the wasm memory after the run in MiB:
+
+| input | C-old | C-old-simd | C-js | C-simd | B1 | B2 | MiB |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| p12.jpg | 78.7 | 69.4 | 80.7 | 68.9 | 101.1 | 103.3 | 6.1 |
+| p12.png | 195.7 | 161.3 | 209.4 | 158.9 | 165.4 | 178.8 | 17.3 |
+| p12a.png | 291.3 | 211.0 | 287.1 | 209.8 | 176.6 | 195.3 | 19.4 |
+| p12g.png | 163.3 | 143.8 | 154.8 | 143.8 | 105.2 | 101.8 | 8.5 |
+
+(The C-js p12.png median is over C-old's on this run, with a spread of 181 to 248 ms; the scalar inflate alone is 0.90 to 0.94 of main's in the inflate bench.)
+
+- Q1 refuted: cd_inflate_zlib's self time is 0.936 of main's (58.5 to 54.7 ms, the means of the two runs each), over the 0.85 falsifier: **the step failed** its gate.
+- Q2 refuted: build is 0.94 of main's (7.25 to 6.8 ms), over the 0.80 falsifier.
+- Q3 refuted: natively cd_inflate_zlib's own instructions rose to 328.0 M (the falsifier was above 290 M), and build's fell to 50.7 M (the falsifier was above 45 M). In V8 the fall was 12 to 16% (above).
+- Q4 refuted: C1 alone saved 9.8 M natively (under 20 M; 18.8 M in V8 12.4); with the exits as returns it is most of the 83.7 M V8 12.4 lost from C1, C2, C4 and C7 together, but the falsifier's count was the native one.
+- Q5 refuted, by a number the counts do not back: C5 alone was 59.5 ms against main's 65.5 in one fresh-page session (a gain over 2 ms), while its instruction counts are main's within 0.3% and the build with all the changes measured 63.5 in the same session; read it as noise, but the falsifier was hit.
+- Q6 refuted: 0.936 of main's in the inflate bench (the falsifier was above 0.90).
+- Q7 refuted: p12.png's C-simd is 0.985 of main's C-simd (161.3 to 158.9 ms), over 0.98; the JPEG part holds (p12.jpg C-simd 0.99 of main's, C-js 1.025).
+- Q8 open: for the Mac's run. My expectation after this VM: about 0.93 of 59.0, near 55 ms, not 50; the chain is shorter there by the same `and` if V8's arm64 code masks the same way.
+
+So, plainly: the fast loop runs 12 to 16% fewer instructions in V8 and is 6 to 7% faster in Chrome, short of the 15% the step wanted; the loop is now bound by the lookup chain, which the state's layout (an 11-bit first level, 32-bit entries, the checked loop's reading of them) fixes.
+What would move it further is outside this step: a larger first level or wider entries (more literals a lookup, so fewer links in the chain) change the state's layout, and with PR #74 merged that is the next place to look.
+
 ## The small PNG's buffer (png-fast-2's 8000x3 note)
 
 The inflate's buffer is now `CD_INFLATE_WINDOW + 2 rows + min(PNG_CHUNK, the whole image)`, at least CD_INFLATE_CAP_MIN.
@@ -519,3 +612,26 @@ Peaks: tests/image/host_alloc.c's count around one cd_image_resize (the most hel
 - T3. p12.png: the same buffer as before (the chunked one), so the same peak.
 - T4. The new RGB cases 291 pixels wide (rows of 874 bytes): 299 rows (261,326 bytes, just under PNG_CHUNK) and 300 rows (262,200, just over) each hold 34,226 and 34,170 bytes less than the formula before (their buffers 261,616 and 262,490); 340 rows (297,160 bytes, the first height where the image and 290 are over the chunked buffer of 296,660) hold the same as before.
 - Falsifier of each: any other number.
+
+### Results: the small PNG's buffer
+
+Measured after the predictions above were committed, with the same counting heap (tests/image/host_alloc.c), natively, scalar, main 7e7f01f against this branch:
+
+| file | main | this branch | the buffer, main to this branch |
+| --- | --- | --- | --- |
+| 16x16 RGBA (box 300) | 48,731 | 48,731 | 34,082 to 34,082 |
+| 8000x3 RGB (box 300) | 201,694 | 129,981 | 152,773 to 81,060 |
+| 291x299 RGB, 261,326 bytes of image (box 300) | 668,148 | 633,922 | 295,842 to 261,616 |
+| 291x300 RGB, 262,200 bytes (box 300) | 670,130 | 635,960 | 296,660 to 262,490 |
+| 291x339 RGB (box 300) | 629,342 | 629,258 | 296,660 to 296,576 |
+| 291x340 RGB (box 300) | 628,106 | 628,106 | 296,660 to 296,660 |
+| 300x20 RGB, 40 KB past the last row (box 300) | 101,211 | 83,481 | 52,590 to 34,860 |
+| p12.png (box 900) | 2,806,523 | 2,806,523 | the chunked one |
+
+- T1 confirmed: 129,981 exactly; under main before png-fast (134,274).
+- T2 confirmed: 48,731.
+- T3 confirmed: p12.png holds the same.
+- T4 confirmed: 34,226 and 34,170 bytes less for 299 and 300 rows, the same for 340; 339 rows (not predicted) 84 less, its buffer the image and 290.
+- The wasm memory after the bench's runs is unchanged (6.1, 17.3, 19.4 and 8.5 MiB on both).
+
+The oracle's new cases (tests/image/oracle.py): png-chunk291x299-rgb, -300, -339 and -340, and png-past-last-row-rgb (300 x 20 RGB, its stream 40 KB of zeros longer than the image); each has a peak limit of the file and its measured peak rounded up to the KB, and png-small16-rgba's and png-wide8000x3-rgb's limits are tightened the same way (48 and 128 KB beyond the file's whole KB).
