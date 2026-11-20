@@ -20,7 +20,10 @@ fail=0
 ok() { echo "ok   $*"; pass=$((pass + 1)); }
 bad() { echo "FAIL $*"; fail=$((fail + 1)); }
 finish() { echo "tests/noscript: $pass passed, $fail failed"; [ "$fail" = 0 ]; exit $?; }
-now() { echo "${EPOCHREALTIME/,/.}"; }
+# Portable to macOS's bash 3.2 and BSD tools: the clock, mtimes and in-place edits through Python.
+now() { "$PY" -c 'import time; print(time.time())'; }
+mtimes() { "$PY" -c 'import os, sys; print(" ".join(str(os.stat(f).st_mtime_ns) for f in sys.argv[1:]))' "$@"; }
+subst() { "$PY" -c 'import sys; f, a, b = sys.argv[1:]; t = open(f).read(); assert a in t; open(f, "w").write(t.replace(a, b))' "$@"; }
 since() { awk -v a="$1" -v b="$(now)" 'BEGIN { printf "%.2f", b - a }'; }
 TEXT="Brother I'm sorry, the only way I could support your browser is if I had a server running just for you. And even if I did, anything you sent to that server would be decrypted. Regrettably I have chosen to drop support on this browser. Here's a snowman"
 SHOT_ALT='[A screenshot of this page in a browser with JavaScript]'
@@ -104,20 +107,20 @@ if [ "$same" = 1 ] && [ "$exact" = 1 ]; then ok "tools/noscript_gif.py: the same
 else bad "tools/noscript_gif.py: not the same bytes twice ($same), or a picture of 64 colours not kept exactly ($exact)"; fi
 
 # ---- the content stamp ----
-m1=$(stat -c %Y.%y "$shot" "$snow" "$page.noscript")
+m1=$(mtimes "$shot" "$snow" "$page.noscript")
 sleep 1
 touch "$app/build/app.wasm"
 t=$(now)
 mk > "$out/make3.log" 2>&1
 t_hit=$(since "$t")
-if [ "$m1" = "$(stat -c %Y.%y "$shot" "$snow" "$page.noscript")" ]; then ok "the content stamp: a page rewritten with the same bytes makes neither GIF again"
+if [ "$m1" = "$(mtimes "$shot" "$snow" "$page.noscript")" ]; then ok "the content stamp: a page rewritten with the same bytes makes neither GIF again"
 else bad "the content stamp: a page of the same bytes made the GIFs again"; fi
 echo "measure P5: that make (the page rewritten, the stamp matching) took ${t_hit} s"
-sed -i 's|cd_text("cdom")|cd_text("cdom!")|' "$app/src/app.c"
+subst "$app/src/app.c" 'cd_text("cdom")' 'cd_text("cdom!")'
 mk > "$out/make4.log" 2>&1
 if cmp -s "$shot" "$out/shot1.gif"; then bad "the content stamp: the app drew another word, and the screenshot is the old one"
 else ok "the content stamp: the app draws another word, and the screenshot is made again"; fi
-sed -i 's|cd_text("cdom!")|cd_text("cdom")|' "$app/src/app.c"
+subst "$app/src/app.c" 'cd_text("cdom!")' 'cd_text("cdom")'
 mk > "$out/make5.log" 2>&1
 if cmp -s "$shot" "$out/shot1.gif"; then ok "determinism: the app put back, the screenshot is the first one's bytes again"
 else bad "determinism: the app put back, the screenshot differs from the first"; fi
