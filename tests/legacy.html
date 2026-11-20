@@ -17,5 +17,7 @@ window.onerror = function (message, file, line, column, error) {
   ERRORS.push(error ? error.name + ': ' + error.message : String(message));
 };
 var env = { ev: function (t, id, x, y, p, b) { LOG.push([t, id >>> 0, x, y, p, b]); } };
+// ?nolits: a page whose string table is gone, so cdom.start fails; the boot must throw that again for window.onerror.
+if (/nolits/.test(location.search)) window.cdomLits = undefined;
 cdomBoot(['legacy.wasm', 'legacy.simd.wasm'], document.getElementById('m'), env, function (x) { window.X = x; window.READY = true; });
 </script></body></html>

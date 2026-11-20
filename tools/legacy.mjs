@@ -63,7 +63,12 @@ run: try {
   for (let i = 0; i < 100 && !(await E('!!window.READY')); i++) await sleep(50);
   ok(await E('!!window.READY'), 'booted');
   ok(await E('X.sj() === 1'), "the image module's js way out of a libjpeg error: 500 throws from 20 frames down, the stack pointer back, then a body that returns");
-  const id = {}; for (const [k, i] of Object.entries({ PAD: 0, TEXT: 1 })) id[k] = await E(`X.id(${i})`);
+  const id = {}; for (const [k, i] of Object.entries({ PAD: 0, TEXT: 1, BROKEN: 7 })) id[k] = await E(`X.id(${i})`);
+  // An event that does not bubble, from inside the mount: the image that does not load, its error heard once (the
+  // capture phase, or on the fourth tier the image's own listener).
+  for (let i = 0; i < 40 && !(await E('LOG')).some(e => e[1] === id.BROKEN); i++) await sleep(50);
+  const broken = (await E('LOG')).filter(e => e[1] === id.BROKEN).map(e => e[0]);
+  ok(JSON.stringify(broken) === JSON.stringify([EV.ERROR]), `the broken image's error, which does not bubble, reached C once: ${JSON.stringify(broken)}`);
 
   // The path: each tier's own files, and no other tier's. The page starts the pair [legacy.wasm, legacy.simd.wasm], and
   // this Chrome has wasm SIMD, so the first tier fetches only the twin; the fallbacks take the scalar module's builds.
@@ -298,6 +303,11 @@ run: try {
   for (let i = 0; i < 100 && !(await E('!!window.READY')); i++) await sleep(50);
   ok(await E('typeof Map === "undefined" && !!window.READY'), 'the no-Map page booted with no Map');
   await roRun('with no Map');
+  // A start that fails reaches window.onerror, on every tier: the boot throws its rejection again.
+  await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/legacy.html?nolits` });
+  for (let i = 0; i < 100 && !(await E('ERRORS.length')); i++) await sleep(50);
+  const startErrs = await E('ERRORS');
+  ok(!(await E('!!window.READY')) && startErrs.length === 1 && /no string table/.test(startErrs[0]), `a failed start is thrown again: ${JSON.stringify(startErrs)}`);
 } finally { await b.close(); srv.close(); }
 console.log(fails ? `${fails} FAILED` : 'all ok');
 process.exit(fails ? 1 : 0);

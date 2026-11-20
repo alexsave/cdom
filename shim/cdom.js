@@ -1881,7 +1881,9 @@ var cdom = (() => {
       }
     }
     if (typeof mount === "string") {
-      if (doc.readyState === "loading") {
+      // IE 6 to 8 say interactive before the parser has reached the end, so a mount not parsed yet is waited for
+      // too, until the page is complete.
+      if (doc.readyState === "loading" || (doc.readyState !== "complete" && !doc.getElementById(mount))) {
         await new Promise((resolve) => doc.addEventListener("DOMContentLoaded", resolve, { once: true }));
       }
       mount = doc.getElementById(mount);

@@ -26,6 +26,8 @@ import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 // The words pass of app-ie9 (memory.mjs) and Babel under it: loaded, like acorn, only when that build runs.
 let memoryPass;
+// The fourth tier's checks and passes (es3.mjs), loaded as memoryPass is.
+let es3Pass;
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 const top = path.resolve(here, '../..');
@@ -70,130 +72,18 @@ function es5(name, src) {
   return src;
 }
 
-// The fourth tier (IE 6 to 8, docs/ie6-design.md) reads ES3 as JScript does: a reserved word is a syntax error as a
-// property name there (`a.class`, `{ default: 1 }`), which acorn's ES3 lets through, so this walk finds them.
-const RESERVED = new Set(('break case catch continue default delete do else finally for function if in instanceof new return ' +
-  'switch this throw try typeof var void while with null true false abstract boolean byte char class const debugger double ' +
-  'enum export extends final float goto implements import int interface long native package private protected public short ' +
-  'static super synchronized throws transient volatile').split(' '));
-// What ES5 added that the tier's file may name: each must be one polyfills-es3.js supplies (ES5_SUPPLIED), or be
-// allowed in the one part that names it behind a check (ES5_ALLOWED). A name the old DOM lacks is OLD_DOM's.
-const ES5_NAMES = new Set(['JSON', '.keys', '.create', '.defineProperty', '.defineProperties', '.getPrototypeOf',
-  '.getOwnPropertyNames', '.getOwnPropertyDescriptor', '.freeze', '.seal', '.preventExtensions', '.isFrozen', '.isSealed',
-  '.isExtensible', '.isArray', '.indexOf', '.lastIndexOf', '.forEach', '.map', '.filter', '.some', '.every', '.reduce',
-  '.reduceRight', '.bind', '.now', '.trim', '.toISOString', '.toJSON']);
-const ES5_SUPPLIED = new Set(['.keys', '.create', '.isArray', '.now', '.trim', '.bind', '.indexOf', '.lastIndexOf',
-  '.forEach', '.map', '.filter', '.some', '.every', '.reduce']);
-// polyfills.js and dom-old.js try defineProperty and fall back; Babel's regenerator helper tries defineProperty and
-// reads getPrototypeOf only when it exists. polyfills-es3.js defines the supplied ones, so it names them all.
-const ES5_ALLOWED = { polyfills: new Set(['.defineProperty']), shim: new Set(['.defineProperty', '.getPrototypeOf']),
-  'polyfills-es3': ES5_NAMES };
-// JScript (IE 6 to 8) gives a catch clause no scope of its own: its parameter is a variable of the enclosing function,
-// so `function f(e) { try { ... } catch (e) {} use(e); }` loses f's e to the error. Babel's own helpers do exactly
-// that (_regeneratorDefine2's defineProperty probe, which throws in IE 6, so every async function failed there). So
-// every catch parameter in the fourth tier's file is renamed to a name of its own (catchScoped), and the minified
-// file is refused if a catch parameter's name is used anywhere else in its function (catchLeaks).
-async function catchScoped(src) {
-  const { transformSync } = await import('@babel/core');
-  return transformSync(src, { babelrc: false, configFile: false, sourceType: 'script', comments: false,
-    plugins: [({ types: t }) => ({ visitor: { CatchClause(p) {
-      if (t.isIdentifier(p.node.param)) p.scope.rename(p.node.param.name, p.scope.generateUid('caught'));
-    } } })] }).code;
-}
-function catchLeaks(tree) {
-  const leaks = new Set();
-  const kids = (node, f) => {
-    for (const k in node) {
-      const v = node[k];
-      if (Array.isArray(v)) { for (const c of v) if (c && typeof c.type === 'string') f(c); }
-      else if (v && typeof v.type === 'string') f(v);
-    }
-  };
-  // The names a function binds itself: its name as an expression, its parameters, its vars and function declarations
-  // (not those of the functions inside it).
-  const binds = (fn) => {
-    const out = new Set(fn.params.map((p) => p.name));
-    if (fn.type === 'FunctionExpression' && fn.id) out.add(fn.id.name);
-    const scan = (n) => {
-      if (n.type === 'VariableDeclarator') out.add(n.id.name);
-      if (n.type === 'FunctionDeclaration') { out.add(n.id.name); return; }
-      if (/Function/.test(n.type)) return;
-      kids(n, scan);
-    };
-    kids(fn.body, scan);
-    return out;
-  };
-  // Whether name is used under node, outside skip, where it means the enclosing function's: a function inside that
-  // binds name itself has its own.
-  const uses = (node, name, skip) => {
-    if (node === skip) return false;
-    if (node.type === 'Identifier' && node.name === name) return true;
-    if (/Function/.test(node.type) && binds(node).has(name)) return false;
-    let found = false;
-    kids(node, (c) => { found = found || uses(c, name, skip); });
-    return found;
-  };
-  const walk = (node, fn) => {
-    if (/Function/.test(node.type)) fn = node;
-    if (node.type === 'CatchClause' && node.param && fn) {
-      const n = node.param.name;
-      let found = fn.params.some((p) => p.name === n) || (fn.type === 'FunctionExpression' && fn.id && fn.id.name === n);
-      kids(fn.body, (c) => { found = found || uses(c, n, node); });
-      if (found) leaks.add(n);
-    }
-    kids(node, (c) => walk(c, fn));
-  };
-  walk(tree, null);
-  return [...leaks];
-}
-
-// Each part is checked for ES3 syntax and ES5 names as written (minified, the parts are one file); the reserved words
-// once minified, since terser's ie8 quotes the ones the parts name (promise-polyfill's .catch).
-function es3(name, src, minified = false) {
-  let tree;
-  try { tree = acorn.parse(src, { ecmaVersion: 3, sourceType: 'script', allowReserved: true }); } catch (e) {
-    const line = src.split('\n')[e.loc.line - 1];
-    throw new Error(`${name} is not ES3: ${e.message}\n  ${line.trim().slice(0, 160)}`);
-  }
-  const bad = new Set();
-  const walk = (n) => {
-    if (n.type === 'MemberExpression' && !n.computed && RESERVED.has(n.property.name)) bad.add('.' + n.property.name);
-    if (n.type === 'Property' && n.key.type === 'Identifier' && RESERVED.has(n.key.name)) bad.add(n.key.name + ':');
-    for (const k in n) {
-      const v = n[k];
-      if (Array.isArray(v)) { for (const c of v) if (c && typeof c.type === 'string') walk(c); }
-      else if (v && typeof v.type === 'string' && k !== 'loc') walk(v);
-    }
-  };
-  if (minified) walk(tree);
-  const leaks = minified ? catchLeaks(tree) : [];
-  if (leaks.length) throw new Error(`${name}: a catch parameter's name used elsewhere in its function, which JScript's catch would overwrite: ${leaks.join(' ')}`);
-  if (bad.size) throw new Error(`${name} names a reserved word as a property, which JScript refuses: ${[...bad].join(' ')}`);
-  if (minified) return src;
-  const ok = ES5_ALLOWED[name] || new Set(), es5 = new Set();
-  let prev = null;
-  for (const t of acorn.tokenizer(src, { ecmaVersion: 3, allowReserved: true })) {
-    if (t.type.label === 'name') {
-      const key = prev && prev.type.label === '.' ? '.' + t.value : t.value;
-      if (ES5_NAMES.has(key) && !ES5_SUPPLIED.has(key) && !ok.has(key)) es5.add(key);
-    }
-    prev = t;
-  }
-  if (es5.size) throw new Error(`${name} uses ES5 names polyfills-es3.js does not supply: ${[...es5].join(' ')}`);
-  return src;
-}
-
 // Minified as ES5: terser keeps the syntax at ecma 5, and the parse proves it. ie8: terser also quotes reserved words
 // used as property names and works around JScript's named function expressions and catch scopes, and writes ASCII
 // only, for the files the fourth tier runs (which are then checked as ES3).
 async function small(name, src, ie8 = false) {
+  if (ie8) es3Pass ??= await import('./es3.mjs');
   const { minify } = createRequire(path.join(top, 'package.json'))('terser');
   // LEGACY_PRETTY=1 lays the output out one statement a line, so an old browser's line number says where (debugging only).
   const { code } = await minify(src, { ecma: 5, ie8, compress: { passes: 2 }, mangle: true, format: { ascii_only: ie8, beautify: !!process.env.LEGACY_PRETTY } });
   try { acorn.parse(code, { ecmaVersion: 5, sourceType: 'script' }); } catch (e) {
     throw new Error(`${name} is not ES5 once minified: ${e.message}`);
   }
-  if (ie8) es3(name, code, true);
+  if (ie8) es3Pass.es3(name, code, true);
   return code;
 }
 
@@ -223,86 +113,19 @@ const replacedFrom = (file) => ({ types: t, parseSync: parse }) => ({
   },
 });
 
-// The fourth tier's one table of what the old DOM (IE 6 to 8) lacks: each W3C call the shim makes, rewritten to the
-// tools/legacy/dom-old.js function that does its job (the object it was called on first). call: a method call;
-// zero: a call with no arguments only; read: a property read; write: a property assignment; global: a name the
-// window holds, read or called. The build refuses cdom.legacy-ie6.js if one of these names is left in the shim.
-const OLD_DOM = {
-  call: { addEventListener: 'on', removeEventListener: 'off', setProperty: 'setProperty', getPropertyValue: 'getPropertyValue',
-    setAttribute: 'setAttribute', createElementNS: 'createElementNS', elementsFromPoint: 'elementsFromPoint' },
-  zero: { remove: 'remove', getBoundingClientRect: 'rect' },
-  read: { previousElementSibling: 'prevElement' },
-  write: { textContent: 'setText' },
-  global: { innerWidth: 'viewportWidth', innerHeight: 'viewportHeight', devicePixelRatio: 'pixelRatio', addEventListener: 'on' },
-};
-function oldDom({ types: t }) {
-  const helper = (name) => t.memberExpression(t.identifier('cdomOld'), t.identifier(name));
-  // A call of a helper itself (cdomOld.setProperty) is what a rewrite made: never rewritten again.
-  const named = (m) => t.isMemberExpression(m) && !m.computed && t.isIdentifier(m.property) &&
-    !t.isIdentifier(m.object, { name: 'cdomOld' }) ? m.property.name : null;
-  const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
-  return {
-    visitor: {
-      CallExpression(p) {
-        const c = p.node.callee, m = named(c);
-        if (m && (own(OLD_DOM.call, m) || (own(OLD_DOM.zero, m) && !p.node.arguments.length))) {
-          p.replaceWith(t.callExpression(helper(OLD_DOM.call[m] || OLD_DOM.zero[m]), [c.object, ...p.node.arguments]));
-        } else if (t.isIdentifier(c) && own(OLD_DOM.global, c.name) && OLD_DOM.global[c.name] === 'on' && !p.scope.hasBinding(c.name)) {
-          p.replaceWith(t.callExpression(helper('on'), [t.identifier('window'), ...p.node.arguments]));
-        }
-      },
-      AssignmentExpression(p) {
-        const m = named(p.node.left);
-        if (m && own(OLD_DOM.write, m) && p.node.operator === '=') {
-          p.replaceWith(t.callExpression(helper(OLD_DOM.write[m]), [p.node.left.object, p.node.right]));
-        }
-      },
-      MemberExpression(p) {
-        const m = named(p.node);
-        if (m && own(OLD_DOM.read, m) && !(p.parentPath.isAssignmentExpression() && p.parentPath.node.left === p.node)) {
-          p.replaceWith(t.callExpression(helper(OLD_DOM.read[m]), [p.node.object]));
-        }
-      },
-      Identifier(p) {
-        const n = p.node.name;
-        if (!own(OLD_DOM.global, n) || OLD_DOM.global[n] === 'on' || p.scope.hasBinding(n) || !p.isReferencedIdentifier()) return;
-        p.replaceWith(t.callExpression(helper(OLD_DOM.global[n]), []));
-      },
-    },
-  };
-}
-// The names of OLD_DOM left in the fourth tier's shim, as tokens: a method called after a dot (a read of one is a
-// feature test, which the old DOM answers), a property read or written after a dot, a global bare.
-function oldDomLeftovers(src, parse) {
-  const called = new Set([...Object.keys(OLD_DOM.call), ...Object.keys(OLD_DOM.zero)]);
-  const props = new Set([...Object.keys(OLD_DOM.read), ...Object.keys(OLD_DOM.write)]);
-  const bare = new Set(Object.keys(OLD_DOM.global)), left = new Set();
-  const ks = [...parse.tokenizer(src, { ecmaVersion: 5 })];
-  for (let i = 0; i < ks.length; i++) {
-    const k = ks[i];
-    if (k.type.label !== 'name') continue;
-    const dot = i > 0 && ks[i - 1].type.label === '.';
-    // cdomOld.setProperty is a helper's call, which the rewrite made
-    if (dot && i > 1 && ks[i - 2].type.label === 'name' && ks[i - 2].value === 'cdomOld') continue;
-    const call = i + 1 < ks.length && ks[i + 1].type.label === '(';
-    if (dot && ((called.has(k.value) && call) || props.has(k.value))) left.add('.' + k.value);
-    if (!dot && bare.has(k.value)) left.add(k.value);
-  }
-  return [...left];
-}
-
 // cdom.legacy.js (tier ''), cdom.legacy-ie9.js (tier 'ie9': the shim on memory-words.js, refused when a typed array
 // is left in it outside seed and randomBytes or a view of the typed backing is read anywhere, memory.mjs's
 // shimLeftovers), or cdom.legacy-ie6.js (tier 'ie6': that, in ES3 on the old DOM, with no PEP; refused when an ES5 name
 // polyfills-es3.js does not supply or a name of OLD_DOM is left in it).
 async function shim(out, tier) {
   const words = tier === 'ie9' || tier === 'ie6', old = tier === 'ie6';
+  if (old) es3Pass ??= await import('./es3.mjs');
   const { transformSync } = await import('@babel/core');
   const babel = transformSync(read(path.join(top, 'shim/cdom.js')), {
     babelrc: false, configFile: false, comments: false, sourceType: 'script',
     // The shim spreads and iterates only arrays, so the helpers need no Symbol.iterator.
     assumptions: { iterableIsArray: true, arrayLikeIsIterable: false, noDocumentAll: true },
-    plugins: [...(words ? [replacedFrom('memory-words.js')] : []), ...(old ? [replacedFrom('shim-old.js'), oldDom] : [])],
+    plugins: [...(words ? [replacedFrom('memory-words.js')] : []), ...(old ? [replacedFrom('shim-old.js'), es3Pass.oldDom] : [])],
     presets: [[require.resolve('@babel/preset-env'), { targets: old ? `${TARGETS}, ie 6` : words ? `${TARGETS}, ie 9` : TARGETS, modules: false }]],
   }).code;
   if (words) {
@@ -311,7 +134,7 @@ async function shim(out, tier) {
     if (left.length) throw new Error(`shim-${tier}: typed memory left in the shim: ${left.join(', ')}`);
   }
   if (old) {
-    const left = oldDomLeftovers(babel, acorn);
+    const left = es3Pass.oldDomLeftovers(babel);
     if (left.length) throw new Error(`shim-ie6: W3C DOM the old DOM lacks left in the shim: ${left.join(', ')}`);
   }
   const parts = [
@@ -321,8 +144,8 @@ async function shim(out, tier) {
     ...(old ? [] : [['pepjs', read(require.resolve('pepjs/dist/pep.js'))]]),
     ['shim', babel],
   ];
-  let body = parts.map(([n, s]) => old ? es3(n, es5(n, s)) : es5(n, s)).join('\n;\n');
-  if (old) body = await catchScoped(body);
+  let body = parts.map(([n, s]) => old ? es3Pass.es3(n, es5(n, s)) : es5(n, s)).join('\n;\n');
+  if (old) body = await es3Pass.catchScoped(body);
   const name = path.basename(out);
   return `/* ${name}: generated by tools/legacy/build.mjs, do not edit. */\n` + await small(name, body, old);
 }
@@ -367,7 +190,8 @@ async function appWords(wasm, out) {
   const words = read(path.join(here, 'words.js'));
   const src = `${note}(function () {\n${words}\n${memoryPass.memoryWords(head, declared(words))}\nwindow.cdomFactory = asmFunc;\n})();\n`;
   es5('wasm2js', src);
-  const code = await small(path.basename(out), await catchScoped(src), true);
+  es3Pass ??= await import('./es3.mjs');
+  const code = await small(path.basename(out), await es3Pass.catchScoped(src), true);
   memoryPass.noTypedArrays(path.basename(out), code);
   return note + code;
 }
@@ -407,11 +231,12 @@ function inputs(cmd, a) {
     require.resolve('promise-polyfill/dist/polyfill.js'));
   if (cmd === 'shim' || cmd === 'shim-ie9') files.push(require.resolve('pepjs/dist/pep.js'));
   if (cmd === 'shim-ie9' || cmd === 'shim-ie6') files.push(path.join(here, 'memory-words.js'), path.join(here, 'memory.mjs'));
-  if (cmd === 'shim-ie6') files.push(path.join(here, 'polyfills-es3.js'), path.join(here, 'dom-old.js'), path.join(here, 'shim-old.js'));
+  if (cmd === 'shim-ie6') files.push(path.join(here, 'polyfills-es3.js'), path.join(here, 'dom-old.js'), path.join(here, 'shim-old.js'),
+    path.join(here, 'es3.mjs'));
   else if (cmd === 'app') { files.push(path.resolve(a)); tools.push(wasm2jsVersion()); }
   // memory.mjs is imported, not read, so it is named here as build.mjs is.
   else if (cmd === 'app-ie9') {
-    files.push(path.resolve(a), path.join(here, 'words.js'), path.join(here, 'memory.mjs'));
+    files.push(path.resolve(a), path.join(here, 'words.js'), path.join(here, 'memory.mjs'), path.join(here, 'es3.mjs'));
     tools.push(wasm2jsVersion());
   }
   else if (cmd === 'page') files.push(path.join(top, 'shim/boot.js'), path.resolve(a));
@@ -463,7 +288,14 @@ if (cmd === 'inputs' && builds[a]) {
   const out = builds[cmd][0] === 1 ? a : b, list = inputs(cmd, a), want = inputsHash(cmd, a, out, list);
   if (!fresh(out, want)) {
     acorn = await import('acorn');
-    write(out, await builds[cmd][1](out), want, list);
+    // A refused build ends with what refused it, after the stack: the line a log's tail shows (tests/build.sh, mutate.py).
+    try {
+      write(out, await builds[cmd][1](out), want, list);
+    } catch (e) {
+      console.error(e.stack);
+      console.error(`build.mjs ${cmd} ${path.basename(out)}: ${e.message.split('\n')[0]}`);
+      process.exit(1);
+    }
   }
 } else {
   console.error('usage: build.mjs shim <out.js> | shim-ie9 <out.js> | shim-ie6 <out.js> | app <in.wasm> <out.js> | app-ie9 <in.wasm> <out.js> | page <in.html> <out.html> | inputs <build> <args>');

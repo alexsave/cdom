@@ -85,7 +85,8 @@ const IE9_GAPS = `
 // tools/legacy/dom-old.js's table: addEventListener (attachEvent in its place, as IE's: window.event during the call,
 // srcElement, returnValue and cancelBubble, IE's button bits, wheelDelta, and a field's input as propertychange on
 // value), textContent, previousElementSibling, style.setProperty and getPropertyValue, createElementNS,
-// elementsFromPoint, a rect's width and height, innerWidth and innerHeight; and a DOM method's apply and call. setAttribute sets an expando for class,
+// elementsFromPoint, a rect's width and height, innerWidth and innerHeight; and a DOM method's apply and call; and
+// JScript's splice, which removes nothing given a start alone. setAttribute sets an expando for class,
 // style and for, as IE 6 and 7's sets a same-named property. Kept: JSON (IE 8's), getElementById, querySelector and
 // innerText, which the harness reads the page with. Under LEGACY=below there is no attachEvent either.
 const IE6_OLD = `
@@ -101,6 +102,11 @@ const IE6_OLD = `
     'getOwnPropertyDescriptor', 'freeze', 'seal', 'preventExtensions', 'isFrozen', 'isSealed', 'isExtensible']) delete Object[k];
   delete Array.isArray; delete Date.now; delete Function.prototype.bind; delete String.prototype.trim;
   for (const k of ['indexOf', 'lastIndexOf', 'forEach', 'map', 'filter', 'some', 'every', 'reduce', 'reduceRight']) delete Array.prototype[k];
+  // JScript's splice(start) with no count removes nothing (the standard removes to the end).
+  const splice = Array.prototype.splice;
+  Array.prototype.splice = function (start) {
+    return Reflect.apply(splice, this, arguments.length === 1 ? [start, 0] : arguments);
+  };
   delete P.addEventListener; delete P.removeEventListener;
   delete Node.prototype.textContent; delete Element.prototype.previousElementSibling;
   delete CSSStyleDeclaration.prototype.setProperty; delete CSSStyleDeclaration.prototype.getPropertyValue;

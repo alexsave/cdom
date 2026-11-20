@@ -13,7 +13,7 @@
 /* Every delivered event: its type, the listening id and four record fields. */
 IMPORT("ev") void ev(int32_t type, int32_t id, int32_t x, int32_t y, int32_t pointer, int32_t buttons);
 
-enum { PAD, TEXT, ECHO, ERR, FOCUS, FILE, CANVAS, NIDS };
+enum { PAD, TEXT, ECHO, ERR, FOCUS, FILE, CANVAS, BROKEN, NIDS };
 static cd_id ids[NIDS];
 static char io[256];
 
@@ -39,12 +39,19 @@ void cd_main(void) {
   ids[CANVAS] = el("canvas", "cv", "position:fixed;left:300px;top:10px");
   cd_attr("width", "2"); cd_attr("height", "2");
   cd_close();
+  /* An image that does not load: its error does not bubble, so the mount hears it in the capture phase, or, on the
+   * fourth tier (IE 6 to 8, no capture phase), from the image itself (tools/legacy/shim-old.js, reach). */
+  ids[BROKEN] = el("img", "broken", "position:fixed;left:300px;top:40px;width:4px;height:4px");
+  cd_close();
   static const uint32_t pad_evs[] = {CD_EV_POINTERDOWN, CD_EV_POINTERMOVE, CD_EV_POINTERUP, CD_EV_CLICK, CD_EV_WHEEL};
   for (uint32_t i = 0; i < sizeof pad_evs / 4; i++) { cd_sel(ids[PAD]); cd_listen(ids[PAD], pad_evs[i]); }
   cd_sel(ids[TEXT]); cd_listen(ids[TEXT], CD_EV_INPUT);
   cd_sel(ids[TEXT]); cd_listen(ids[TEXT], CD_EV_FOCUS);
   cd_sel(ids[ERR]); cd_listen(ids[ERR], CD_EV_CLICK);
   cd_sel(ids[FOCUS]); cd_listen(ids[FOCUS], CD_EV_CLICK);
+  /* Listened for before its src is set, so the error cannot come first. */
+  cd_sel(ids[BROKEN]); cd_listen(ids[BROKEN], CD_EV_ERROR);
+  cd_set_attr(ids[BROKEN], "src", "no-such-image.png");
 }
 
 static float wheel_dx, wheel_dy;
