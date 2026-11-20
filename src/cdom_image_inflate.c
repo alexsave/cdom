@@ -310,19 +310,21 @@ static int huff_block(bits *s, sink *o, const uint32_t *lt, const uint32_t *dt, 
       uint32_t e = lt[bb & lm];
       while (out <= out_lim) {
         if (E_CLASS(e) == C_LIT) {
-          /* up to three literal entries, each looked up as soon as the one before is (its bits shifted off, the
-           * shift taking the entry itself: its low 6 bits are the count), before the stores; each LBITS bits at
-           * most: 33, and 11 more for the entry after */
+          /* up to three literal entries, each looked up as soon as the one before is, before the stores; each LBITS
+           * bits at most: 33, and 11 more for the entry after. The index comes from the low 32 bits of the buffer
+           * before, shifted by the entry (its low 5 bits are the count): 11 and 11 more fit, and V8 masks a 64-bit
+           * shift's count (an and on the chain from one lookup to the next) but not a 32-bit one; the 64-bit
+           * shift, by the entry too, is beside the chain */
+          uint32_t e2 = lt[((uint32_t)bb >> (e & 31)) & lm];
           uint64_t b = bb >> (e & 63);
-          uint32_t e2 = lt[b & lm];
           lits(out, e); out += e >> 24; bl -= e;
           if (E_CLASS(e2) == C_LIT) {
+            uint32_t e3 = lt[((uint32_t)b >> (e2 & 31)) & lm];
             b >>= e2 & 63;
-            uint32_t e3 = lt[b & lm];
             lits(out, e2); out += e2 >> 24; bl -= e2;
             if (E_CLASS(e3) == C_LIT) {
+              e = lt[((uint32_t)b >> (e3 & 31)) & lm];
               b >>= e3 & 63;
-              e = lt[b & lm];
               lits(out, e3); out += e3 >> 24; bl -= e3;
               bb = b;
               REFILL();

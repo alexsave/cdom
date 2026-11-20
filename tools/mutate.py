@@ -769,7 +769,7 @@ M = [
   ('inflate-incomplete-code', 'src/cdom_image_inflate.c', 'if (left > 0 && (codes || max != 1)) return 0;', 'if (left > 0 && codes) return 0;', IMG, 'an incomplete'),
   ('inflate-lit2-too-long', 'src/cdom_image_inflate.c', '(l1 + E_BITS(e2) <= root);', '(l1 + E_BITS(e2) <= root + 1);', IMG, 'FAIL inflate_diff'),
   ('inflate-subtable-size', 'src/cdom_image_inflate.c', '          room -= count[ll] - j;', '          room -= count[ll];', IMG, 'FAIL inflate_diff'),
-  ('inflate-third-literal', 'src/cdom_image_inflate.c', '              b >>= e3 & 63;\n              e = lt[b & lm];', '              b >>= e3 & 63;\n              e = lt[(b >> 1) & lm];', IMG, 'FAIL inflate_diff'),
+  ('inflate-third-literal', 'src/cdom_image_inflate.c', 'e = lt[((uint32_t)b >> (e3 & 31)) & lm];', 'e = lt[((uint32_t)b >> ((e3 & 31) + 1)) & lm];', IMG, 'FAIL inflate_diff'),
   ('inflate-stored-nlen', 'src/cdom_image_inflate.c', 'if (cut(&s) || len != (~nlen & 0xffff)) return st;', 'if (cut(&s) || (len != (~nlen & 0xffff) && 0)) return st;', IMG, 'FAIL inflate_diff'),
   ('inflate-sink-overdrops', 'src/cdom_image_inflate.c', '  if (drop < 0 || (uint64_t)drop > can) return 0;', '  if (drop < 0 || (uint64_t)drop > can + (uint64_t)o->pos) return 0;', IMG, 'in greedy'),
   ('inflate-adler-unchecked', 'src/cdom_image_inflate.c', 'return a == o.adler ? CD_INFLATE_OK : st;', 'return a == o.adler || 1 ? CD_INFLATE_OK : st;', IMG, 'png-adler-mismatch'),
@@ -780,6 +780,7 @@ M = [
   ('inflate-bl-unmasked', 'src/cdom_image_inflate.c', 's->bb = bb; s->bl = bl & 63;', 's->bb = bb; s->bl = bl;', IMG, 'FAIL inflate_diff'),
   ('inflate-len-extra-mask', 'src/cdom_image_inflate.c', 'uint32_t len = (e >> 16) + (((uint32_t)bb & ((1u << (e & 31)) - 1))', 'uint32_t len = (e >> 16) + (((uint32_t)bb & ((2u << (e & 31)) - 1))', IMG, 'FAIL inflate_diff'),
   ('inflate-rev-carry', 'src/cdom_image_inflate.c', '      while (r & inc) inc >>= 1;\n', '', IMG, 'FAIL inflate_diff'),
+  ('inflate-second-index-short', 'src/cdom_image_inflate.c', 'uint32_t e2 = lt[((uint32_t)bb >> (e & 31)) & lm];', 'uint32_t e2 = lt[((uint32_t)bb >> (e & 7)) & lm];', IMG, 'FAIL inflate_diff'),
   ('inflate-pair-second-count', 'src/cdom_image_inflate.c', '& ((e2 & 0xff0000c0u) == 1u << 24)', '& ((e2 & 0xc0u) == 0)', IMG, 'FAIL inflate_diff'),
   ('inflate-sink-ignored', 'src/cdom_image_inflate.c', '  if (drop < 0 || (uint64_t)drop > can) return 0;', '  if (drop < 0) drop = 0;\n  if ((uint64_t)drop > can) return 0;', IMG, 'a sink that stops'),
   # png-fast-2 (docs/image-png-speed.md, "png-fast-2"): the review's gaps, each caught by its own case in inflate_diff
