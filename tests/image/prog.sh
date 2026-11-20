@@ -40,7 +40,7 @@ build() {
   # libjpeg's own progressive path: the same files but cdom's two, and jdphuff.c and jdcoefct.c as upstream builds them
   for f in "${OWN[@]}" "$top/src/cdom_image_sjlj.c"; do
     [ "$(basename "$f")" = cdom_image_jpegp.c ] && continue
-    "$HCC" "${H[@]}" "${OWNF[@]}" -c -o "$o/ref/$(basename "$f" .c).o" "$f" || return 1
+    "$HCC" "${H[@]}" -DCDOM_IMAGE_TESTING "${OWNF[@]}" -c -o "$o/ref/$(basename "$f" .c).o" "$f" || return 1   # its cd_image_jpeg_resize
   done
   for f in "${VENDOR[@]}" "$LJT/jdphuff.c" "$LJT/wrapper/jdcoefct-8.c"; do
     [ "$(basename "$f")" = cdom_image_ljt_coef.c ] && continue

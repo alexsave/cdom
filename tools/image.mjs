@@ -5,6 +5,11 @@
 // as it was, and the next good file still decodes exactly. Then a heap capped at CAP pages (CDOM_HEAP_PAGES_MAX):
 // the 12 MP progressive JPEG is NO_ROOM, never a trap, and a small file decodes after it; and the same with the
 // module's own memory limited (wasm-ld --max-memory, both ways), where memory.grow itself refuses.
+// And the chunked read (docs/chunked-file-read-design.md, tests 11 and 13), in the builds without a cap: every case's
+// file picked from disk (CDP DOM.setFileInputFiles) and decoded by cd_image_file_cb, its status and its bytes as above;
+// 300 corrupt files in a row, the memory still from the second on; the tier without Blob.stream (slices); the same
+// files in a job (cd_job_pieces_cb, tests/image/job.c), with the job's memory and the app's; and cd_job_stop and
+// cd_image_file_stop: no answer, the worker ended, no slot or memory kept.
 // Usage: node tools/image.mjs <dir with cases.tsv>   Exit 1 on any failure. Kills the Chrome it starts.
 import http from 'node:http';
 import fs from 'node:fs';
@@ -15,7 +20,7 @@ import { launch, sleep } from './cdp.mjs';
 const top = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const dir = path.resolve(process.argv[2] || path.join(top, 'tests/out/image'));
 const CAP = 400; // pages (64 KiB each): 26 MB, under the 12 MP progressive JPEG's 36 MB of coefficients
-const S = ['OK', 'NOT_IMAGE', 'TOO_BIG', 'UNSUPPORTED', 'CORRUPT', 'NO_ROOM', 'BAD_BOX'];
+const S = ['OK', 'NOT_IMAGE', 'TOO_BIG', 'UNSUPPORTED', 'CORRUPT', 'NO_ROOM', 'BAD_BOX', 'UNREADABLE'];
 const MAXMEM = CAP * 65536; // the same room, as the module's own limit: memory.grow itself refuses past it
 // Every build twice: scalar (CDOM_IMAGE_SIMD=0, the default) and with the hand-written wasm SIMD loops (CDOM_IMAGE_SIMD=1),
 // so both pass the whole set. IMAGE_EH=0 leaves out the eh builds, for a clang whose wasm EH lowering is not clang 23's
@@ -38,6 +43,83 @@ const cases = fs.readFileSync(path.join(dir, 'cases.tsv'), 'utf8').trim().split(
 let fails = 0;
 const ok = (c, m, why = '') => { if (!c) { fails++; console.log('FAIL', m + (why ? ': ' + why : '')); } else console.log('ok  ', m); };
 const b = await launch();
+// The chunked read on the page loaded now (see the header).
+const picked = [...new Set(cases.map((c) => c[1]))].concat([path.join(dir, 'inputs/dqt-bad.jpg'), path.join(dir, 'inputs/dqt-bad-progressive.jpg')]);
+const WRAP = `(() => {
+  window.W = { made: 0, live: 0, ended: 0 };
+  const Real = window.Worker, end = Real.prototype.terminate;
+  window.Worker = function (url) { const w = new Real(url); W.made++; W.live++; return w; };
+  Real.prototype.terminate = function () { W.ended++; W.live--; return end.call(this); };
+})()`;
+async function chunked(name) {
+  const { result: { result: { objectId } } } = await b.send('Runtime.evaluate', { expression: 'document.getElementById("pick")' });
+  await b.send('DOM.setFileInputFiles', { files: picked, objectId });
+  await b.evaluate(WRAP);
+  const runFile = (i, bw, bh, exp, job, report) => b.evaluate(`runFile(${i}, ${bw}, ${bh}, ${exp ? JSON.stringify(url(exp)) : 'null'}, ${job === undefined ? 'undefined' : job}, ${report ? 1 : 0})`);
+  const each = async (job, what, filter = () => true) => {
+    let bad = 0, n = 0;
+    for (const [cname, file, bw, bh, want, ew, eh] of cases) {
+      if (!filter(cname, file)) continue;
+      const exact = !want.startsWith('STATUS');
+      const r = await runFile(picked.indexOf(file), +bw, +bh, exact ? want : null, job);
+      const status = exact ? 'OK' : want.split(':')[1];
+      const good = S[r.status] === status && r.calls >= 1 && (!exact || (r.len === +ew * +eh * 4 && r.diff === -1 && (job !== undefined || (r.w === +ew && r.h === +eh))));
+      if (!good) { bad++; console.log(`FAIL ${name}: ${what}: ${cname}: ${S[r.status] ?? r.status} ${r.w}x${r.h} (${r.len} bytes), first difference at ${r.diff}; wanted ${status}${exact ? ` ${ew}x${eh}, exact` : ''}`); }
+      n++;
+    }
+    fails += bad;
+    ok(bad === 0, `${name}: ${what}: every case of cases.tsv (${n}) picked from disk has its status, and each image equals the exact one to the byte`);
+  };
+  await each(undefined, 'cd_image_file_cb');
+  // 300 corrupt files in a row: CORRUPT each time, the memory still from the second on
+  const bad1 = picked.length - 2, bad2 = picked.length - 1;
+  const r = await b.evaluate(`(async () => {
+    const statuses = new Set(), pages = new Set();
+    for (let i = 0; i < 300; i++) { const r = await runFile(i % 2 ? ${bad2} : ${bad1}, 300, 300, null); statuses.add(r.status); if (i >= 2) pages.add(r.pages); }
+    return { statuses: [...statuses], pages: [...pages] };
+  })()`);
+  ok(r.statuses.length === 1 && r.statuses[0] === 4 && r.pages.length === 1, `${name}: cd_image_file_cb on 300 corrupt files in a row: CORRUPT every time, the memory grows 0 pages after the first`, JSON.stringify(r));
+  // the tier without Blob.stream: FileReader on slices
+  await b.evaluate('window.STREAM = Blob.prototype.stream; delete Blob.prototype.stream');
+  await each(undefined, 'cd_image_file_cb without Blob.stream (slices)', (c) => ['jpeg-420', 'jpeg-progressive', 'png-rgb', 'png-rgba', 'jpeg-exif6', 'jpeg-p12-progressive', 'png-p12'].includes(c));
+  await b.evaluate('Blob.prototype.stream = STREAM');
+  // in a job, the file in pieces; and the job's memory and the app's
+  await each(1, 'cd_job_pieces_cb');
+  const p12png = picked.findIndex((f) => f.endsWith('/p12.png'));
+  if (p12png >= 0) {
+    await runFile(p12png, 900, 900, null, 1);
+    const a0 = await b.evaluate('X.memory.buffer.byteLength >> 16');
+    const j = await runFile(p12png, 900, 900, null, 1, 1);
+    const j0 = await runFile(p12png, 900, 900, null, 0, 1);
+    await runFile(p12png, 900, 900, null, 1);
+    const a1 = await b.evaluate('X.memory.buffer.byteLength >> 16');
+    ok(j.status === 0 && j.jobPages > 0 && j.jobPages * 65536 < j0.jobPages * 65536 - 12e6 && j.len === j.w * j.h * 4 && a1 - a0 <= 2,
+      `${name}: p12.png (${fs.statSync(picked[p12png]).size} bytes) in a job: the pieces job's memory at its end ${(j.jobPages / 16).toFixed(2)} MiB (the whole-file job's ${(j0.jobPages / 16).toFixed(2)}); the app's memory grows ${a1 - a0} pages after the first answer`, JSON.stringify({ j, j0, a0, a1 }));
+  } else ok(false, `${name}: no p12.png case (IMAGE_BIG=0?)`);
+  // cd_job_stop and cd_image_file_stop: no answer, the worker ended, the slot and the memory as before
+  const big = p12png >= 0 ? p12png : 0;
+  for (const delay of [0, 30, 120]) {
+    const slot = await b.evaluate('X.slot_probe()'), calls = await b.evaluate('X.file_rec(5)'), live = await b.evaluate('W.live');
+    await b.evaluate(`X.job_start(${big}, 900, 900, 1, 0)`);
+    await sleep(delay);
+    await b.evaluate('X.job_stop()');
+    await sleep(800);
+    const after = { slot: await b.evaluate('X.slot_probe()'), calls: await b.evaluate('X.file_rec(5)'), live: await b.evaluate('W.live') };
+    ok(after.slot === slot && after.calls === calls && after.live === live && live === 0, `${name}: cd_job_stop ${delay} ms after the start: no callback, the worker ended, the callback slot freed`, JSON.stringify({ slot, calls, live, after }));
+  }
+  const pages0 = await b.evaluate('X.memory.buffer.byteLength >> 16');
+  for (const delay of [0, 10, 40]) {
+    const slot = await b.evaluate('X.slot_probe()'), calls = await b.evaluate('X.file_rec(5)');
+    await b.evaluate(`X.file_start(${big}, 900, 900)`);
+    await sleep(delay);
+    await b.evaluate('X.file_stop()');
+    await sleep(300);
+    const after = { slot: await b.evaluate('X.slot_probe()'), calls: await b.evaluate('X.file_rec(5)') };
+    ok(after.slot === slot && after.calls === calls, `${name}: cd_image_file_stop ${delay} ms after the start: no callback, the callback slots freed`, JSON.stringify({ slot, calls, after }));
+  }
+  const pages1 = await b.evaluate('X.memory.buffer.byteLength >> 16');
+  ok(pages1 === pages0, `${name}: three stopped decodes leave the memory as it was`, `${pages0} -> ${pages1}`);
+}
 try {
   for (const [sjlj, cap, max, simd] of builds) {
     const name = `wasm_${sjlj}${cap ? '_cap' : ''}${max ? '_max' : ''}${simd ? '_simd' : ''}`;
@@ -75,6 +157,7 @@ try {
       const g = cases.find((c) => c[0] === 'jpeg-420');
       const after = await run(g[1], +g[2], +g[3], g[4]);
       ok(after.status === 0 && after.diff === -1, `${name}: after the errors, a good JPEG decodes exactly`, JSON.stringify(after));
+      await chunked(name);
     } else {
       const p12p = cases.find((c) => c[0] === 'jpeg-p12-progressive'), small = cases.find((c) => c[0] === 'jpeg-420');
       if (p12p) {

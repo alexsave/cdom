@@ -748,12 +748,32 @@ var cdom = (() => {
     }
     return 1;
   }
-  // A timer: C keeps the handle (by token) to stop it, and is told which one fired.
+  // A timer: C keeps the handle (by token) to stop it, and is told which one fired. A 0 ms timer is the next
+  // task (postTask), never a setTimeout: browsers clamp a nested 0 ms timeout to 4 ms and throttle timeouts in a
+  // window that is not in front (Safari by seconds), and a 0 ms timer is how C yields and goes on (the steps of
+  // cd_image_file_cb). Its handle is from its own range, past any setTimeout id.
+  const soon = {};
+  let soonNext = 0;
   function timer(ms, token) {
+    if (!ms) {
+      const handle = 0x40000000 + (soonNext = (soonNext + 1) & 0x3fffffff);
+      soon[handle] = 1;
+      postTask(() => {
+        if (soon[handle]) {
+          delete soon[handle];
+          exports.cd_timer(token, handle);
+        }
+      });
+      return handle;
+    }
     const handle = setTimeout(() => exports.cd_timer(token, handle), ms);
     return handle;
   }
   function timer_stop(handle) {
+    if (soon[handle]) {
+      delete soon[handle];
+      return;
+    }
     clearTimeout(handle);
   }
   function raf(token) {
@@ -922,6 +942,154 @@ var cdom = (() => {
     reader.readAsArrayBuffer(file);
   }
 
+  // A picked file read in order (cd_file_open, cd_file_next_cb, cd_file_close). readers[r] holds the File itself (so
+  // another pick leaves an open reader as it was), its stream reader, the rest of a stream chunk not yet given, and the
+  // piece pending: C's dst and max, and the token that answers it. A piece is answered once max bytes are at dst or the
+  // file is at its end, each answer a task of its own (a message posted to the page itself: a stream's read resolves
+  // from its queue as a microtask, so even its completion may be in the task of the answer before), never a microtask
+  // after the piece before. One read is kept in flight ahead of C. Where Blob.stream is missing, FileReader reads
+  // slices of the size asked.
+  const readers = [null];
+  const posted = [];
+  let postPort;
+  function postTask(f) {
+    if (typeof MessageChannel === "undefined") {
+      setTimeout(f);
+      return;
+    }
+    if (!postPort) {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = () => posted.shift()();
+      postPort = channel.port2;
+    }
+    posted.push(f);
+    postPort.postMessage(0);
+  }
+  function file_open(id, index, readerPtr, sizePtr) {
+    if (typeof FileReader === "undefined") {
+      return 4;
+    }
+    const file = pickedFile(id, index);
+    if (!file) {
+      return 1;
+    }
+    if (file.size > 4294967295) {
+      return 2;
+    }
+    let r = 1;
+    while (readers[r]) {
+      r++;
+    }
+    readers[r] = { file, size: file.size, pos: 0, token: 0, due: false, dst: 0, max: 0, got: 0, chunk: null, off: 0, reading: false, end: false, failed: false, stream: null };
+    if (stale()) {
+      views();
+    }
+    store32(readerPtr >>> 2, r);
+    store32(sizePtr >>> 2, file.size);
+    return 0;
+  }
+  // The rest of the chunk in hand into the piece, as far as both go (never past the file's size).
+  function fillPiece(rd) {
+    while (rd.chunk && rd.got < rd.max && rd.pos < rd.size) {
+      const k = Math.min(rd.chunk.length - rd.off, rd.max - rd.got, rd.size - rd.pos);
+      writeBytes(rd.dst + rd.got, rd.chunk.subarray(rd.off, rd.off + k), k);
+      rd.off += k;
+      rd.got += k;
+      rd.pos += k;
+      if (rd.off === rd.chunk.length) {
+        rd.chunk = null;
+      }
+    }
+  }
+  // The next chunk: from the stream, or a slice of the size the piece still wants. Then the piece goes on, in this task.
+  function readAhead(r, rd) {
+    if (rd.reading || rd.chunk || rd.end || rd.failed || rd.pos >= rd.size) {
+      return;
+    }
+    rd.reading = true;
+    const got = (chunk) => {
+      if (readers[r] !== rd) {
+        return; // closed meanwhile
+      }
+      rd.reading = false;
+      if (chunk) {
+        rd.chunk = chunk;
+        rd.off = 0;
+      } else {
+        rd.end = true;
+      }
+      if (rd.token && !rd.due) {
+        piece(r, rd);
+      }
+    };
+    const failed = () => {
+      if (readers[r] === rd) {
+        rd.reading = false;
+        rd.failed = true;
+        if (rd.token && !rd.due) {
+          piece(r, rd);
+        }
+      }
+    };
+    if (typeof rd.file.stream === "function") {
+      rd.stream = rd.stream || rd.file.stream().getReader();
+      rd.stream.read().then((c) => got(c.done || !c.value.length ? null : c.value), failed);
+    } else {
+      const reader = new FileReader();
+      const want = Math.max(rd.max - rd.got, 1);
+      reader.onload = () => got(reader.result.byteLength ? bytesOf(reader.result) : null);
+      reader.onerror = failed;
+      reader.readAsArrayBuffer(rd.file.slice(rd.pos, Math.min(rd.pos + want, rd.size)));
+    }
+  }
+  // The piece pending: answered when it is full or the file is at its end (or failed); else a read is asked for.
+  function piece(r, rd) {
+    fillPiece(rd);
+    const done = rd.pos >= rd.size;
+    if (rd.got < rd.max && !done && !rd.end && !rd.failed) {
+      readAhead(r, rd);
+      return;
+    }
+    const status = rd.got ? 0 : rd.failed || !done ? 3 : 0;
+    const n = status ? 0 : rd.got;
+    const token = rd.token;
+    rd.due = true; // answered once: a chunk that comes before the posted answer waits for the next piece
+    const answer = () => {
+      if (readers[r] !== rd || rd.token !== token) {
+        return; // closed before the answer was delivered
+      }
+      rd.token = 0;
+      rd.due = false;
+      readAhead(r, rd); // the next read is in flight while C uses this piece
+      exports.cd_file_piece(token, status, n);
+    };
+    postTask(answer);
+  }
+  function file_next(r, dst, max, token) {
+    const rd = readers[r];
+    if (!rd || rd.token) {
+      return 1; // C traps
+    }
+    rd.token = token;
+    rd.dst = dst;
+    rd.max = max >>> 0;
+    rd.got = 0;
+    piece(r, rd);
+    return 0;
+  }
+  // Ends the reader: the File dropped, its stream cancelled; the pending piece's token goes back to C, which frees it.
+  function file_close(r) {
+    const rd = readers[r];
+    if (!rd) {
+      return 0;
+    }
+    readers[r] = null;
+    if (rd.stream) {
+      rd.stream.cancel().catch(() => {});
+    }
+    return rd.token;
+  }
+
   // A throwaway job (src/cdom_job.c): the job module (a URL, or a name in cdomJobs, the page's bundled ones,
   // which tools/cdpage writes beside the string table) compiled once, posted to a fresh worker made from a blob:
   // URL (so a bundled page works), the worker ended when it answers. Statuses are cdom_job.h's CD_JOB_*
@@ -930,9 +1098,12 @@ var cdom = (() => {
   // straight into the job's memory) in room the job makes with job_room, calls run, and answers [status,
   // output]; run's 0 is OK, 1 NO_ROOM and any other value or a trap FAILED. cd_job_answer's bytes are copied
   // in the call (cdom_job_mod.h: the job may free or reuse the block after it), and the last answer counts.
+  // A pieces job (cd_job_pieces_cb, mode 2) is fed the file's stream instead: pieces_begin, then pieces_max bytes into
+  // pieces_room and pieces_put, until it answers other than CD_JOB_PIECES_MORE (0x100), with no yielding (nothing
+  // else runs in the worker); FileReaderSync on slices where Blob.stream is missing.
   function jobWorker() {
     onmessage = (event) => {
-      const [module, input, args] = event.data;
+      const [module, input, args, mode] = event.data;
       let heard;
       let status = 2;
       let exports;
@@ -943,9 +1114,88 @@ var cdom = (() => {
         }
         return p;
       };
-      WebAssembly.instantiate(module, { cdjob: { answer: (p, n) => { heard = exports.memory.buffer.slice(p, p + n); } } })
+      const pieces = () => {
+        const size = input.size;
+        const argsAt = room(args.byteLength);
+        new Uint8Array(exports.memory.buffer, argsAt, args.byteLength).set(new Uint8Array(args));
+        const code = exports.pieces_begin(size, argsAt, args.byteLength) >>> 0;
+        if (code) {
+          status = code > 1 ? 2 : code;
+          return undefined;
+        }
+        const stream = input.stream ? input.stream().getReader() : null;
+        const sync = stream ? null : new FileReaderSync();
+        let chunk = null;
+        let off = 0;
+        let at = 0;
+        const next = (want) => stream ? stream.read().then((c) => c.done ? null : c.value)
+          : Promise.resolve(new Uint8Array(sync.readAsArrayBuffer(input.slice(at, Math.min(size, at + want)))));
+        // The chunks into the room, as far as both go (never past the file's size).
+        const copy = (dst, max, got) => {
+          while (chunk && got < max && at < size) {
+            const k = Math.min(chunk.length - off, max - got, size - at);
+            new Uint8Array(exports.memory.buffer, dst + got, k).set(chunk.subarray(off, off + k));
+            off += k;
+            got += k;
+            at += k;
+            if (off === chunk.length) {
+              chunk = null;
+            }
+          }
+          return got;
+        };
+        // Pieces from here on: max bytes (fewer only at the file's end) into the room, then the put; a chunk read
+        // when the piece wants one; until the job's end.
+        const from = (dst, max, got) => {
+          for (;;) {
+            got = copy(dst, max, got);
+            if (got < max && at < size) {
+              return next(max - got).then((c) => {
+                if (!c || !c.length) {
+                  throw 2; // the stream ended before the file's size
+                }
+                chunk = c;
+                off = 0;
+                return from(dst, max, got);
+              });
+            }
+            const r = exports.pieces_put(got) >>> 0;
+            if (r !== 0x100) {
+              status = r > 1 ? 2 : r;
+              return status ? undefined : heard || new ArrayBuffer(0);
+            }
+            max = exports.pieces_max() >>> 0;
+            dst = exports.pieces_room() >>> 0;
+            got = 0;
+          }
+        };
+        return from(exports.pieces_room() >>> 0, exports.pieces_max() >>> 0, 0);
+      };
+      // A job that links the image module (APP_JOB_<name>_MODULES, cdom.mk) leaves a libjpeg error the js way
+      // (src/cdom_image_sjlj.c), as the page does: these two are the page's image_call and image_throw.
+      const thrown = {};
+      const image = {
+        image_call: (body, ctx) => {
+          try {
+            exports.cd_image_run(body, ctx);
+            return 0;
+          } catch (e) {
+            if (e !== thrown) {
+              throw e;
+            }
+            return 1;
+          }
+        },
+        image_throw: () => {
+          throw thrown;
+        },
+      };
+      WebAssembly.instantiate(module, { cdjob: { answer: (p, n) => { heard = exports.memory.buffer.slice(p, p + n); } }, cdom: image })
         .then((instance) => {
           exports = instance.exports;
+          if (mode === 2) {
+            return pieces();
+          }
           const isFile = input.size !== undefined;
           const length = isFile ? input.size : input.byteLength;
           const argsAt = room(args.byteLength);
@@ -998,6 +1248,17 @@ var cdom = (() => {
   // cd_job_cb (file 0: the input is length b at C address a) and cd_job_file_cb (file 1: file b of node a's
   // files). The name, the args and the bytes are copied out of C memory in the call. Every answer comes from the
   // event loop.
+  const jobLive = {}; // token -> { worker } of each job not yet answered, for job_stop
+  function job_stop(token) {
+    const job = jobLive[token];
+    if (job) {
+      delete jobLive[token];
+      job.stopped = true;
+      if (job.worker) {
+        job.worker.terminate();
+      }
+    }
+  }
   function job_run(token, namePtr, nameLen, argsPtr, argsLen, a, b, file) {
     if (typeof Worker === "undefined" || typeof WebAssembly === "undefined") {
       setTimeout(() => jobAnswer(token, 3));
@@ -1012,7 +1273,11 @@ var cdom = (() => {
     }
     const module = jobModules[name] || (jobModules[name] = fetch((globalThis.cdomJobs && cdomJobs[name]) || name)
       .then((response) => response.arrayBuffer()).then((wasm) => WebAssembly.compile(wasm)));
+    const job = jobLive[token] = { worker: null, stopped: false };
     module.then((compiled) => {
+      if (job.stopped) {
+        return;
+      }
       jobScript = jobScript || URL.createObjectURL(new Blob(["(" + jobWorker + ")()"], { type: "text/javascript" }));
       let worker;
       try {
@@ -1021,15 +1286,18 @@ var cdom = (() => {
         jobAnswer(token, 2);
         return;
       }
+      job.worker = worker;
       const end = (status, output) => {
         worker.terminate();
+        delete jobLive[token];
         jobAnswer(token, status, output);
       };
       worker.onmessage = (event) => end(event.data[0], event.data[1]);
       worker.onerror = () => end(2);
-      worker.postMessage([compiled, input, args], file ? [args] : [input, args]);
+      worker.postMessage([compiled, input, args, file], file ? [args] : [input, args]);
     }, () => {
       delete jobModules[name];
+      delete jobLive[token];
       jobAnswer(token, 2);
     });
   }
@@ -1571,7 +1839,7 @@ var cdom = (() => {
         listen, value, value_num, tpl_save, clone, slot, tpl_text, tpl_text_num, walk, walk_value, walk_value_num,
         set_text, set_text_num, set_attr, set_class, style, style_num, encode, image_bytes, remove, free, move, clear,
         detach, attach, unlisten, hit, viewport, rect, blit, set, call, get, timer, timer_stop, raf, now, ws_open, ws_send, ws_close, ws_buffered, http, epoch, origin,
-        file_read, job_run, image_call, image_throw,
+        file_read, file_open, file_next, file_close, job_run, job_stop, image_call, image_throw,
         store_put, store_get, store_del,
         audio_load, audio_free, audio_play, audio_stop, audio_gain, audio_master, audio_state,
         random,

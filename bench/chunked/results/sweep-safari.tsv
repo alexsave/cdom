@@ -1,0 +1,721 @@
+browser	round	piece	input	arm	status	w	h	total_ms	wasm_mib	job_mib	renderer_peak_mib	renderer_after_mib	longest_task_ms	tasks
+safari	1	16384	p12.jpg	whole	0	900	675	71.0	6.19					
+safari	1	16384	p12.jpg	file	0	900	675	87.0	2.63					
+safari	1	16384	p12.jpg	pieces	0	900	675	76.0	2.50	2.56				
+safari	1	16384	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	1	16384	p48.jpg	whole	0	900	675	183.0	17.19					
+safari	1	16384	p48.jpg	file	0	900	675	258.0	2.63					
+safari	1	16384	p48.jpg	pieces	0	900	675	195.0	2.50	2.56				
+safari	1	16384	p48.jpg	job	0	900	675	192.0	2.50	17.13				
+safari	1	16384	p12p.jpg	whole	0	900	675	126.0	26.19					
+safari	1	16384	p12p.jpg	file	0	900	675	145.0	26.25					
+safari	1	16384	p12p.jpg	pieces	0	900	675	132.0	2.50	26.19				
+safari	1	16384	p12p.jpg	job	0	900	675	132.0	2.50	26.13				
+safari	1	16384	p12.png	whole	0	900	675	238.0	17.69					
+safari	1	16384	p12.png	file	0	900	675	304.0	2.94					
+safari	1	16384	p12.png	pieces	0	900	675	244.0	2.50	2.88				
+safari	1	16384	p12.png	job	0	900	675	243.0	2.50	17.63				
+safari	1	16384	p64.jpg	whole	0	900	675	237.0	21.50					
+safari	1	16384	p64.jpg	file	0	900	675	331.0	2.69					
+safari	1	16384	p64.jpg	pieces	0	900	675	248.0	2.50	2.56				
+safari	1	16384	p64.jpg	job	0	900	675	244.0	2.50	21.44				
+safari	1	65536	p12.jpg	whole	0	900	675	65.0	6.19					
+safari	1	65536	p12.jpg	file	0	900	675	74.0	2.69					
+safari	1	65536	p12.jpg	pieces	0	900	675	75.0	2.50	2.63				
+safari	1	65536	p12.jpg	job	0	900	675	74.0	2.50	6.13				
+safari	1	65536	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	1	65536	p48.jpg	file	0	900	675	204.0	2.69					
+safari	1	65536	p48.jpg	pieces	0	900	675	190.0	2.50	2.63				
+safari	1	65536	p48.jpg	job	0	900	675	190.0	2.50	17.13				
+safari	1	65536	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	1	65536	p12p.jpg	file	0	900	675	132.0	26.31					
+safari	1	65536	p12p.jpg	pieces	0	900	675	132.0	2.50	26.25				
+safari	1	65536	p12p.jpg	job	0	900	675	129.0	2.50	26.13				
+safari	1	65536	p12.png	whole	0	900	675	237.0	17.69					
+safari	1	65536	p12.png	file	0	900	675	257.0	3.00					
+safari	1	65536	p12.png	pieces	0	900	675	241.0	2.50	2.94				
+safari	1	65536	p12.png	job	0	900	675	243.0	2.50	17.63				
+safari	1	65536	p64.jpg	whole	0	900	675	237.0	21.50					
+safari	1	65536	p64.jpg	file	0	900	675	261.0	2.69					
+safari	1	65536	p64.jpg	pieces	0	900	675	242.0	2.50	2.63				
+safari	1	65536	p64.jpg	job	0	900	675	243.0	2.50	21.44				
+safari	1	262144	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	1	262144	p12.jpg	file	0	900	675	70.0	2.88					
+safari	1	262144	p12.jpg	pieces	0	900	675	73.0	2.50	2.81				
+safari	1	262144	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	1	262144	p48.jpg	whole	0	900	675	183.0	17.19					
+safari	1	262144	p48.jpg	file	0	900	675	189.0	2.88					
+safari	1	262144	p48.jpg	pieces	0	900	675	191.0	2.50	2.81				
+safari	1	262144	p48.jpg	job	0	900	675	188.0	2.50	17.13				
+safari	1	262144	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	1	262144	p12p.jpg	file	0	900	675	128.0	26.50					
+safari	1	262144	p12p.jpg	pieces	0	900	675	131.0	2.50	26.44				
+safari	1	262144	p12p.jpg	job	0	900	675	130.0	2.50	26.13				
+safari	1	262144	p12.png	whole	0	900	675	242.0	17.69					
+safari	1	262144	p12.png	file	0	900	675	242.0	3.19					
+safari	1	262144	p12.png	pieces	0	900	675	240.0	2.50	3.13				
+safari	1	262144	p12.png	job	0	900	675	242.0	2.50	17.63				
+safari	1	262144	p64.jpg	whole	0	900	675	238.0	21.50					
+safari	1	262144	p64.jpg	file	0	900	675	247.0	2.88					
+safari	1	262144	p64.jpg	pieces	0	900	675	242.0	2.50	2.81				
+safari	1	262144	p64.jpg	job	0	900	675	246.0	2.50	21.44				
+safari	1	1048576	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	1	1048576	p12.jpg	file	0	900	675	71.0	3.63					
+safari	1	1048576	p12.jpg	pieces	0	900	675	73.0	2.50	3.56				
+safari	1	1048576	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	1	1048576	p48.jpg	whole	0	900	675	183.0	17.19					
+safari	1	1048576	p48.jpg	file	0	900	675	186.0	3.63					
+safari	1	1048576	p48.jpg	pieces	0	900	675	189.0	2.50	3.56				
+safari	1	1048576	p48.jpg	job	0	900	675	189.0	2.50	17.13				
+safari	1	1048576	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	1	1048576	p12p.jpg	file	0	900	675	129.0	27.25					
+safari	1	1048576	p12p.jpg	pieces	0	900	675	130.0	2.50	27.19				
+safari	1	1048576	p12p.jpg	job	0	900	675	132.0	2.50	26.13				
+safari	1	1048576	p12.png	whole	0	900	675	237.0	17.69					
+safari	1	1048576	p12.png	file	0	900	675	239.0	3.94					
+safari	1	1048576	p12.png	pieces	0	900	675	243.0	2.50	3.88				
+safari	1	1048576	p12.png	job	0	900	675	242.0	2.50	17.63				
+safari	1	1048576	p64.jpg	whole	0	900	675	237.0	21.50					
+safari	1	1048576	p64.jpg	file	0	900	675	238.0	3.63					
+safari	1	1048576	p64.jpg	pieces	0	900	675	239.0	2.50	3.56				
+safari	1	1048576	p64.jpg	job	0	900	675	241.0	2.50	21.44				
+safari	2	16384	p48.jpg	job	0	900	675	190.0	2.50	17.13				
+safari	2	16384	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	2	16384	p12p.jpg	file	0	900	675	143.0	26.25					
+safari	2	16384	p12p.jpg	pieces	0	900	675	130.0	2.50	26.19				
+safari	2	16384	p12p.jpg	job	0	900	675	128.0	2.50	26.13				
+safari	2	16384	p12.png	whole	0	900	675	236.0	17.69					
+safari	2	16384	p12.png	file	0	900	675	305.0	2.94					
+safari	2	16384	p12.png	pieces	0	900	675	242.0	2.50	2.88				
+safari	2	16384	p12.png	job	0	900	675	242.0	2.50	17.63				
+safari	2	16384	p64.jpg	whole	0	900	675	236.0	21.50					
+safari	2	16384	p64.jpg	file	0	900	675	330.0	2.69					
+safari	2	16384	p64.jpg	pieces	0	900	675	247.0	2.50	2.56				
+safari	2	16384	p64.jpg	job	0	900	675	240.0	2.50	21.44				
+safari	2	65536	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	2	65536	p12.jpg	file	0	900	675	73.0	2.69					
+safari	2	65536	p12.jpg	pieces	0	900	675	73.0	2.50	2.63				
+safari	2	65536	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	2	65536	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	2	65536	p48.jpg	file	0	900	675	204.0	2.69					
+safari	2	65536	p48.jpg	pieces	0	900	675	190.0	2.50	2.63				
+safari	2	65536	p48.jpg	job	0	900	675	189.0	2.50	17.13				
+safari	2	65536	p12p.jpg	whole	0	900	675	124.0	26.19					
+safari	2	65536	p12p.jpg	file	0	900	675	132.0	26.31					
+safari	2	65536	p12p.jpg	pieces	0	900	675	131.0	2.50	26.25				
+safari	2	65536	p12p.jpg	job	0	900	675	131.0	2.50	26.13				
+safari	2	65536	p12.png	whole	0	900	675	240.0	17.69					
+safari	2	65536	p12.png	file	0	900	675	256.0	3.00					
+safari	2	65536	p12.png	pieces	0	900	675	242.0	2.50	2.94				
+safari	2	65536	p12.png	job	0	900	675	245.0	2.50	17.63				
+safari	2	65536	p64.jpg	whole	0	900	675	236.0	21.50					
+safari	2	65536	p64.jpg	file	0	900	675	260.0	2.69					
+safari	2	65536	p64.jpg	pieces	0	900	675	242.0	2.50	2.63				
+safari	2	65536	p64.jpg	job	0	900	675	245.0	2.50	21.44				
+safari	2	262144	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	2	262144	p12.jpg	file	0	900	675	72.0	2.88					
+safari	2	262144	p12.jpg	pieces	0	900	675	73.0	2.50	2.81				
+safari	2	262144	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	2	262144	p48.jpg	whole	0	900	675	185.0	17.19					
+safari	2	262144	p48.jpg	file	0	900	675	191.0	2.88					
+safari	2	262144	p48.jpg	pieces	0	900	675	191.0	2.50	2.81				
+safari	2	262144	p48.jpg	job	0	900	675	189.0	2.50	17.13				
+safari	2	262144	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	2	262144	p12p.jpg	file	0	900	675	128.0	26.50					
+safari	2	262144	p12p.jpg	pieces	0	900	675	129.0	2.50	26.44				
+safari	2	262144	p12p.jpg	job	0	900	675	129.0	2.50	26.13				
+safari	2	262144	p12.png	whole	0	900	675	236.0	17.69					
+safari	2	262144	p12.png	file	0	900	675	243.0	3.19					
+safari	2	262144	p12.png	pieces	0	900	675	244.0	2.50	3.13				
+safari	2	262144	p12.png	job	0	900	675	242.0	2.50	17.63				
+safari	2	262144	p64.jpg	whole	0	900	675	237.0	21.50					
+safari	2	262144	p64.jpg	file	0	900	675	243.0	2.88					
+safari	2	262144	p64.jpg	pieces	0	900	675	239.0	2.50	2.81				
+safari	2	262144	p64.jpg	job	0	900	675	240.0	2.50	21.44				
+safari	2	1048576	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	2	1048576	p12.jpg	file	0	900	675	68.0	3.63					
+safari	2	1048576	p12.jpg	pieces	0	900	675	72.0	2.50	3.56				
+safari	2	1048576	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	2	1048576	p48.jpg	whole	0	900	675	185.0	17.19					
+safari	2	1048576	p48.jpg	file	0	900	675	190.0	3.63					
+safari	2	1048576	p48.jpg	pieces	0	900	675	188.0	2.50	3.56				
+safari	2	1048576	p48.jpg	job	0	900	675	192.0	2.50	17.13				
+safari	2	1048576	p12p.jpg	whole	0	900	675	124.0	26.19					
+safari	2	1048576	p12p.jpg	file	0	900	675	127.0	27.25					
+safari	2	1048576	p12p.jpg	pieces	0	900	675	131.0	2.50	27.19				
+safari	2	1048576	p12p.jpg	job	0	900	675	127.0	2.50	26.13				
+safari	2	1048576	p12.png	whole	0	900	675	238.0	17.69					
+safari	2	1048576	p12.png	file	0	900	675	239.0	3.94					
+safari	2	1048576	p12.png	pieces	0	900	675	240.0	2.50	3.88				
+safari	2	1048576	p12.png	job	0	900	675	243.0	2.50	17.63				
+safari	2	1048576	p64.jpg	whole	0	900	675	237.0	21.50					
+safari	2	1048576	p64.jpg	file	0	900	675	238.0	3.63					
+safari	2	1048576	p64.jpg	pieces	0	900	675	241.0	2.50	3.56				
+safari	2	1048576	p64.jpg	job	0	900	675	241.0	2.50	21.44				
+safari	2	16384	p12.jpg	whole	0	900	675	68.0	6.19					
+safari	2	16384	p12.jpg	file	0	900	675	87.0	2.63					
+safari	2	16384	p12.jpg	pieces	0	900	675	74.0	2.50	2.56				
+safari	2	16384	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	2	16384	p48.jpg	whole	0	900	675	183.0	17.19					
+safari	2	16384	p48.jpg	file	0	900	675	260.0	2.63					
+safari	2	16384	p48.jpg	pieces	0	900	675	193.0	2.50	2.56				
+safari	3	16384	p12.png	pieces	0	900	675	241.0	2.50	2.88				
+safari	3	16384	p12.png	job	0	900	675	247.0	2.50	17.63				
+safari	3	16384	p64.jpg	whole	0	900	675	237.0	21.50					
+safari	3	16384	p64.jpg	file	0	900	675	329.0	2.69					
+safari	3	16384	p64.jpg	pieces	0	900	675	249.0	2.50	2.56				
+safari	3	16384	p64.jpg	job	0	900	675	242.0	2.50	21.44				
+safari	3	65536	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	3	65536	p12.jpg	file	0	900	675	74.0	2.69					
+safari	3	65536	p12.jpg	pieces	0	900	675	73.0	2.50	2.63				
+safari	3	65536	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	3	65536	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	3	65536	p48.jpg	file	0	900	675	204.0	2.69					
+safari	3	65536	p48.jpg	pieces	0	900	675	190.0	2.50	2.63				
+safari	3	65536	p48.jpg	job	0	900	675	189.0	2.50	17.13				
+safari	3	65536	p12p.jpg	whole	0	900	675	127.0	26.19					
+safari	3	65536	p12p.jpg	file	0	900	675	131.0	26.31					
+safari	3	65536	p12p.jpg	pieces	0	900	675	130.0	2.50	26.25				
+safari	3	65536	p12p.jpg	job	0	900	675	130.0	2.50	26.13				
+safari	3	65536	p12.png	whole	0	900	675	236.0	17.69					
+safari	3	65536	p12.png	file	0	900	675	255.0	3.00					
+safari	3	65536	p12.png	pieces	0	900	675	244.0	2.50	2.94				
+safari	3	65536	p12.png	job	0	900	675	244.0	2.50	17.63				
+safari	3	65536	p64.jpg	whole	0	900	675	236.0	21.50					
+safari	3	65536	p64.jpg	file	0	900	675	261.0	2.69					
+safari	3	65536	p64.jpg	pieces	0	900	675	242.0	2.50	2.63				
+safari	3	65536	p64.jpg	job	0	900	675	240.0	2.50	21.44				
+safari	3	262144	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	3	262144	p12.jpg	file	0	900	675	71.0	2.88					
+safari	3	262144	p12.jpg	pieces	0	900	675	74.0	2.50	2.81				
+safari	3	262144	p12.jpg	job	0	900	675	73.0	2.50	6.13				
+safari	3	262144	p48.jpg	whole	0	900	675	183.0	17.19					
+safari	3	262144	p48.jpg	file	0	900	675	190.0	2.88					
+safari	3	262144	p48.jpg	pieces	0	900	675	188.0	2.50	2.81				
+safari	3	262144	p48.jpg	job	0	900	675	189.0	2.50	17.13				
+safari	3	262144	p12p.jpg	whole	0	900	675	123.0	26.19					
+safari	3	262144	p12p.jpg	file	0	900	675	130.0	26.50					
+safari	3	262144	p12p.jpg	pieces	0	900	675	130.0	2.50	26.44				
+safari	3	262144	p12p.jpg	job	0	900	675	129.0	2.50	26.13				
+safari	3	262144	p12.png	whole	0	900	675	236.0	17.69					
+safari	3	262144	p12.png	file	0	900	675	245.0	3.19					
+safari	3	262144	p12.png	pieces	0	900	675	242.0	2.50	3.13				
+safari	3	262144	p12.png	job	0	900	675	242.0	2.50	17.63				
+safari	3	262144	p64.jpg	whole	0	900	675	235.0	21.50					
+safari	3	262144	p64.jpg	file	0	900	675	245.0	2.88					
+safari	3	262144	p64.jpg	pieces	0	900	675	240.0	2.50	2.81				
+safari	3	262144	p64.jpg	job	0	900	675	241.0	2.50	21.44				
+safari	3	1048576	p12.jpg	whole	0	900	675	67.0	6.19					
+safari	3	1048576	p12.jpg	file	0	900	675	69.0	3.63					
+safari	3	1048576	p12.jpg	pieces	0	900	675	71.0	2.50	3.56				
+safari	3	1048576	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	3	1048576	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	3	1048576	p48.jpg	file	0	900	675	186.0	3.63					
+safari	3	1048576	p48.jpg	pieces	0	900	675	190.0	2.50	3.56				
+safari	3	1048576	p48.jpg	job	0	900	675	189.0	2.50	17.13				
+safari	3	1048576	p12p.jpg	whole	0	900	675	127.0	26.19					
+safari	3	1048576	p12p.jpg	file	0	900	675	128.0	27.25					
+safari	3	1048576	p12p.jpg	pieces	0	900	675	131.0	2.50	27.19				
+safari	3	1048576	p12p.jpg	job	0	900	675	129.0	2.50	26.13				
+safari	3	1048576	p12.png	whole	0	900	675	236.0	17.69					
+safari	3	1048576	p12.png	file	0	900	675	238.0	3.94					
+safari	3	1048576	p12.png	pieces	0	900	675	241.0	2.50	3.88				
+safari	3	1048576	p12.png	job	0	900	675	246.0	2.50	17.63				
+safari	3	1048576	p64.jpg	whole	0	900	675	236.0	21.50					
+safari	3	1048576	p64.jpg	file	0	900	675	239.0	3.63					
+safari	3	1048576	p64.jpg	pieces	0	900	675	239.0	2.50	3.56				
+safari	3	1048576	p64.jpg	job	0	900	675	241.0	2.50	21.44				
+safari	3	16384	p12.jpg	whole	0	900	675	67.0	6.19					
+safari	3	16384	p12.jpg	file	0	900	675	88.0	2.63					
+safari	3	16384	p12.jpg	pieces	0	900	675	75.0	2.50	2.56				
+safari	3	16384	p12.jpg	job	0	900	675	73.0	2.50	6.13				
+safari	3	16384	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	3	16384	p48.jpg	file	0	900	675	255.0	2.63					
+safari	3	16384	p48.jpg	pieces	0	900	675	194.0	2.50	2.56				
+safari	3	16384	p48.jpg	job	0	900	675	188.0	2.50	17.13				
+safari	3	16384	p12p.jpg	whole	0	900	675	126.0	26.19					
+safari	3	16384	p12p.jpg	file	0	900	675	146.0	26.25					
+safari	3	16384	p12p.jpg	pieces	0	900	675	130.0	2.50	26.19				
+safari	3	16384	p12p.jpg	job	0	900	675	130.0	2.50	26.13				
+safari	3	16384	p12.png	whole	0	900	675	236.0	17.69					
+safari	3	16384	p12.png	file	0	900	675	305.0	2.94					
+safari	4	65536	p12.jpg	file	0	900	675	74.0	2.69					
+safari	4	65536	p12.jpg	pieces	0	900	675	73.0	2.50	2.63				
+safari	4	65536	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	4	65536	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	4	65536	p48.jpg	file	0	900	675	203.0	2.69					
+safari	4	65536	p48.jpg	pieces	0	900	675	190.0	2.50	2.63				
+safari	4	65536	p48.jpg	job	0	900	675	190.0	2.50	17.13				
+safari	4	65536	p12p.jpg	whole	0	900	675	126.0	26.19					
+safari	4	65536	p12p.jpg	file	0	900	675	131.0	26.31					
+safari	4	65536	p12p.jpg	pieces	0	900	675	131.0	2.50	26.25				
+safari	4	65536	p12p.jpg	job	0	900	675	132.0	2.50	26.13				
+safari	4	65536	p12.png	whole	0	900	675	237.0	17.69					
+safari	4	65536	p12.png	file	0	900	675	262.0	3.00					
+safari	4	65536	p12.png	pieces	0	900	675	242.0	2.50	2.94				
+safari	4	65536	p12.png	job	0	900	675	246.0	2.50	17.63				
+safari	4	65536	p64.jpg	whole	0	900	675	236.0	21.50					
+safari	4	65536	p64.jpg	file	0	900	675	262.0	2.69					
+safari	4	65536	p64.jpg	pieces	0	900	675	242.0	2.50	2.63				
+safari	4	65536	p64.jpg	job	0	900	675	240.0	2.50	21.44				
+safari	4	262144	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	4	262144	p12.jpg	file	0	900	675	71.0	2.88					
+safari	4	262144	p12.jpg	pieces	0	900	675	72.0	2.50	2.81				
+safari	4	262144	p12.jpg	job	0	900	675	71.0	2.50	6.13				
+safari	4	262144	p48.jpg	whole	0	900	675	183.0	17.19					
+safari	4	262144	p48.jpg	file	0	900	675	196.0	2.88					
+safari	4	262144	p48.jpg	pieces	0	900	675	198.0	2.50	2.81				
+safari	4	262144	p48.jpg	job	0	900	675	194.0	2.50	17.13				
+safari	4	262144	p12p.jpg	whole	0	900	675	129.0	26.19					
+safari	4	262144	p12p.jpg	file	0	900	675	134.0	26.50					
+safari	4	262144	p12p.jpg	pieces	0	900	675	134.0	2.50	26.44				
+safari	4	262144	p12p.jpg	job	0	900	675	135.0	2.50	26.13				
+safari	4	262144	p12.png	whole	0	900	675	246.0	17.69					
+safari	4	262144	p12.png	file	0	900	675	247.0	3.19					
+safari	4	262144	p12.png	pieces	0	900	675	249.0	2.50	3.13				
+safari	4	262144	p12.png	job	0	900	675	243.0	2.50	17.63				
+safari	4	262144	p64.jpg	whole	0	900	675	241.0	21.50					
+safari	4	262144	p64.jpg	file	0	900	675	249.0	2.88					
+safari	4	262144	p64.jpg	pieces	0	900	675	247.0	2.50	2.81				
+safari	4	262144	p64.jpg	job	0	900	675	248.0	2.50	21.44				
+safari	4	1048576	p12.jpg	whole	0	900	675	67.0	6.19					
+safari	4	1048576	p12.jpg	file	0	900	675	71.0	3.63					
+safari	4	1048576	p12.jpg	pieces	0	900	675	77.0	2.50	3.56				
+safari	4	1048576	p12.jpg	job	0	900	675	75.0	2.50	6.13				
+safari	4	1048576	p48.jpg	whole	0	900	675	194.0	17.19					
+safari	4	1048576	p48.jpg	file	0	900	675	193.0	3.63					
+safari	4	1048576	p48.jpg	pieces	0	900	675	193.0	2.50	3.56				
+safari	4	1048576	p48.jpg	job	0	900	675	189.0	2.50	17.13				
+safari	4	1048576	p12p.jpg	whole	0	900	675	124.0	26.19					
+safari	4	1048576	p12p.jpg	file	0	900	675	128.0	27.25					
+safari	4	1048576	p12p.jpg	pieces	0	900	675	130.0	2.50	27.19				
+safari	4	1048576	p12p.jpg	job	0	900	675	130.0	2.50	26.13				
+safari	4	1048576	p12.png	whole	0	900	675	236.0	17.69					
+safari	4	1048576	p12.png	file	0	900	675	243.0	3.94					
+safari	4	1048576	p12.png	pieces	0	900	675	241.0	2.50	3.88				
+safari	4	1048576	p12.png	job	0	900	675	242.0	2.50	17.63				
+safari	4	1048576	p64.jpg	whole	0	900	675	236.0	21.50					
+safari	4	1048576	p64.jpg	file	0	900	675	240.0	3.63					
+safari	4	1048576	p64.jpg	pieces	0	900	675	240.0	2.50	3.56				
+safari	4	1048576	p64.jpg	job	0	900	675	240.0	2.50	21.44				
+safari	4	16384	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	4	16384	p12.jpg	file	0	900	675	87.0	2.63					
+safari	4	16384	p12.jpg	pieces	0	900	675	74.0	2.50	2.56				
+safari	4	16384	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	4	16384	p48.jpg	whole	0	900	675	183.0	17.19					
+safari	4	16384	p48.jpg	file	0	900	675	254.0	2.63					
+safari	4	16384	p48.jpg	pieces	0	900	675	195.0	2.50	2.56				
+safari	4	16384	p48.jpg	job	0	900	675	190.0	2.50	17.13				
+safari	4	16384	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	4	16384	p12p.jpg	file	0	900	675	145.0	26.25					
+safari	4	16384	p12p.jpg	pieces	0	900	675	130.0	2.50	26.19				
+safari	4	16384	p12p.jpg	job	0	900	675	131.0	2.50	26.13				
+safari	4	16384	p12.png	whole	0	900	675	237.0	17.69					
+safari	4	16384	p12.png	file	0	900	675	306.0	2.94					
+safari	4	16384	p12.png	pieces	0	900	675	242.0	2.50	2.88				
+safari	4	16384	p12.png	job	0	900	675	241.0	2.50	17.63				
+safari	4	16384	p64.jpg	whole	0	900	675	237.0	21.50					
+safari	4	16384	p64.jpg	file	0	900	675	330.0	2.69					
+safari	4	16384	p64.jpg	pieces	0	900	675	246.0	2.50	2.56				
+safari	4	16384	p64.jpg	job	0	900	675	240.0	2.50	21.44				
+safari	4	65536	p12.jpg	whole	0	900	675	67.0	6.19					
+safari	5	65536	p12p.jpg	whole	0	900	675	124.0	26.19					
+safari	5	65536	p12p.jpg	file	0	900	675	135.0	26.31					
+safari	5	65536	p12p.jpg	pieces	0	900	675	130.0	2.50	26.25				
+safari	5	65536	p12p.jpg	job	0	900	675	130.0	2.50	26.13				
+safari	5	65536	p12.png	whole	0	900	675	237.0	17.69					
+safari	5	65536	p12.png	file	0	900	675	255.0	3.00					
+safari	5	65536	p12.png	pieces	0	900	675	241.0	2.50	2.94				
+safari	5	65536	p12.png	job	0	900	675	244.0	2.50	17.63				
+safari	5	65536	p64.jpg	whole	0	900	675	237.0	21.50					
+safari	5	65536	p64.jpg	file	0	900	675	260.0	2.69					
+safari	5	65536	p64.jpg	pieces	0	900	675	241.0	2.50	2.63				
+safari	5	65536	p64.jpg	job	0	900	675	243.0	2.50	21.44				
+safari	5	262144	p12.jpg	whole	0	900	675	67.0	6.19					
+safari	5	262144	p12.jpg	file	0	900	675	70.0	2.88					
+safari	5	262144	p12.jpg	pieces	0	900	675	73.0	2.50	2.81				
+safari	5	262144	p12.jpg	job	0	900	675	71.0	2.50	6.13				
+safari	5	262144	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	5	262144	p48.jpg	file	0	900	675	191.0	2.88					
+safari	5	262144	p48.jpg	pieces	0	900	675	188.0	2.50	2.81				
+safari	5	262144	p48.jpg	job	0	900	675	189.0	2.50	17.13				
+safari	5	262144	p12p.jpg	whole	0	900	675	124.0	26.19					
+safari	5	262144	p12p.jpg	file	0	900	675	128.0	26.50					
+safari	5	262144	p12p.jpg	pieces	0	900	675	130.0	2.50	26.44				
+safari	5	262144	p12p.jpg	job	0	900	675	130.0	2.50	26.13				
+safari	5	262144	p12.png	whole	0	900	675	240.0	17.69					
+safari	5	262144	p12.png	file	0	900	675	242.0	3.19					
+safari	5	262144	p12.png	pieces	0	900	675	241.0	2.50	3.13				
+safari	5	262144	p12.png	job	0	900	675	242.0	2.50	17.63				
+safari	5	262144	p64.jpg	whole	0	900	675	239.0	21.50					
+safari	5	262144	p64.jpg	file	0	900	675	247.0	2.88					
+safari	5	262144	p64.jpg	pieces	0	900	675	239.0	2.50	2.81				
+safari	5	262144	p64.jpg	job	0	900	675	241.0	2.50	21.44				
+safari	5	1048576	p12.jpg	whole	0	900	675	65.0	6.19					
+safari	5	1048576	p12.jpg	file	0	900	675	69.0	3.63					
+safari	5	1048576	p12.jpg	pieces	0	900	675	72.0	2.50	3.56				
+safari	5	1048576	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	5	1048576	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	5	1048576	p48.jpg	file	0	900	675	186.0	3.63					
+safari	5	1048576	p48.jpg	pieces	0	900	675	188.0	2.50	3.56				
+safari	5	1048576	p48.jpg	job	0	900	675	190.0	2.50	17.13				
+safari	5	1048576	p12p.jpg	whole	0	900	675	126.0	26.19					
+safari	5	1048576	p12p.jpg	file	0	900	675	128.0	27.25					
+safari	5	1048576	p12p.jpg	pieces	0	900	675	134.0	2.50	27.19				
+safari	5	1048576	p12p.jpg	job	0	900	675	129.0	2.50	26.13				
+safari	5	1048576	p12.png	whole	0	900	675	238.0	17.69					
+safari	5	1048576	p12.png	file	0	900	675	239.0	3.94					
+safari	5	1048576	p12.png	pieces	0	900	675	241.0	2.50	3.88				
+safari	5	1048576	p12.png	job	0	900	675	242.0	2.50	17.63				
+safari	5	1048576	p64.jpg	whole	0	900	675	235.0	21.50					
+safari	5	1048576	p64.jpg	file	0	900	675	241.0	3.63					
+safari	5	1048576	p64.jpg	pieces	0	900	675	240.0	2.50	3.56				
+safari	5	1048576	p64.jpg	job	0	900	675	240.0	2.50	21.44				
+safari	5	16384	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	5	16384	p12.jpg	file	0	900	675	87.0	2.63					
+safari	5	16384	p12.jpg	pieces	0	900	675	75.0	2.50	2.56				
+safari	5	16384	p12.jpg	job	0	900	675	74.0	2.50	6.13				
+safari	5	16384	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	5	16384	p48.jpg	file	0	900	675	256.0	2.63					
+safari	5	16384	p48.jpg	pieces	0	900	675	196.0	2.50	2.56				
+safari	5	16384	p48.jpg	job	0	900	675	189.0	2.50	17.13				
+safari	5	16384	p12p.jpg	whole	0	900	675	126.0	26.19					
+safari	5	16384	p12p.jpg	file	0	900	675	143.0	26.25					
+safari	5	16384	p12p.jpg	pieces	0	900	675	130.0	2.50	26.19				
+safari	5	16384	p12p.jpg	job	0	900	675	128.0	2.50	26.13				
+safari	5	16384	p12.png	whole	0	900	675	238.0	17.69					
+safari	5	16384	p12.png	file	0	900	675	304.0	2.94					
+safari	5	16384	p12.png	pieces	0	900	675	242.0	2.50	2.88				
+safari	5	16384	p12.png	job	0	900	675	242.0	2.50	17.63				
+safari	5	16384	p64.jpg	whole	0	900	675	236.0	21.50					
+safari	5	16384	p64.jpg	file	0	900	675	326.0	2.69					
+safari	5	16384	p64.jpg	pieces	0	900	675	245.0	2.50	2.56				
+safari	5	16384	p64.jpg	job	0	900	675	241.0	2.50	21.44				
+safari	5	65536	p12.jpg	whole	0	900	675	67.0	6.19					
+safari	5	65536	p12.jpg	file	0	900	675	75.0	2.69					
+safari	5	65536	p12.jpg	pieces	0	900	675	73.0	2.50	2.63				
+safari	5	65536	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	5	65536	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	5	65536	p48.jpg	file	0	900	675	207.0	2.69					
+safari	5	65536	p48.jpg	pieces	0	900	675	193.0	2.50	2.63				
+safari	5	65536	p48.jpg	job	0	900	675	188.0	2.50	17.13				
+safari	6	65536	p12.png	job	0	900	675	242.0	2.50	17.63				
+safari	6	65536	p64.jpg	whole	0	900	675	236.0	21.50					
+safari	6	65536	p64.jpg	file	0	900	675	263.0	2.69					
+safari	6	65536	p64.jpg	pieces	0	900	675	241.0	2.50	2.63				
+safari	6	65536	p64.jpg	job	0	900	675	242.0	2.50	21.44				
+safari	6	262144	p12.jpg	whole	0	900	675	67.0	6.19					
+safari	6	262144	p12.jpg	file	0	900	675	71.0	2.88					
+safari	6	262144	p12.jpg	pieces	0	900	675	74.0	2.50	2.81				
+safari	6	262144	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	6	262144	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	6	262144	p48.jpg	file	0	900	675	190.0	2.88					
+safari	6	262144	p48.jpg	pieces	0	900	675	190.0	2.50	2.81				
+safari	6	262144	p48.jpg	job	0	900	675	191.0	2.50	17.13				
+safari	6	262144	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	6	262144	p12p.jpg	file	0	900	675	129.0	26.50					
+safari	6	262144	p12p.jpg	pieces	0	900	675	130.0	2.50	26.44				
+safari	6	262144	p12p.jpg	job	0	900	675	133.0	2.50	26.13				
+safari	6	262144	p12.png	whole	0	900	675	236.0	17.69					
+safari	6	262144	p12.png	file	0	900	675	243.0	3.19					
+safari	6	262144	p12.png	pieces	0	900	675	244.0	2.50	3.13				
+safari	6	262144	p12.png	job	0	900	675	243.0	2.50	17.63				
+safari	6	262144	p64.jpg	whole	0	900	675	236.0	21.50					
+safari	6	262144	p64.jpg	file	0	900	675	248.0	2.88					
+safari	6	262144	p64.jpg	pieces	0	900	675	240.0	2.50	2.81				
+safari	6	262144	p64.jpg	job	0	900	675	239.0	2.50	21.44				
+safari	6	1048576	p12.jpg	whole	0	900	675	65.0	6.19					
+safari	6	1048576	p12.jpg	file	0	900	675	67.0	3.63					
+safari	6	1048576	p12.jpg	pieces	0	900	675	73.0	2.50	3.56				
+safari	6	1048576	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	6	1048576	p48.jpg	whole	0	900	675	182.0	17.19					
+safari	6	1048576	p48.jpg	file	0	900	675	185.0	3.63					
+safari	6	1048576	p48.jpg	pieces	0	900	675	188.0	2.50	3.56				
+safari	6	1048576	p48.jpg	job	0	900	675	188.0	2.50	17.13				
+safari	6	1048576	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	6	1048576	p12p.jpg	file	0	900	675	128.0	27.25					
+safari	6	1048576	p12p.jpg	pieces	0	900	675	130.0	2.50	27.19				
+safari	6	1048576	p12p.jpg	job	0	900	675	134.0	2.50	26.13				
+safari	6	1048576	p12.png	whole	0	900	675	236.0	17.69					
+safari	6	1048576	p12.png	file	0	900	675	240.0	3.94					
+safari	6	1048576	p12.png	pieces	0	900	675	241.0	2.50	3.88				
+safari	6	1048576	p12.png	job	0	900	675	241.0	2.50	17.63				
+safari	6	1048576	p64.jpg	whole	0	900	675	237.0	21.50					
+safari	6	1048576	p64.jpg	file	0	900	675	238.0	3.63					
+safari	6	1048576	p64.jpg	pieces	0	900	675	241.0	2.50	3.56				
+safari	6	1048576	p64.jpg	job	0	900	675	240.0	2.50	21.44				
+safari	6	16384	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	6	16384	p12.jpg	file	0	900	675	88.0	2.63					
+safari	6	16384	p12.jpg	pieces	0	900	675	74.0	2.50	2.56				
+safari	6	16384	p12.jpg	job	0	900	675	71.0	2.50	6.13				
+safari	6	16384	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	6	16384	p48.jpg	file	0	900	675	253.0	2.63					
+safari	6	16384	p48.jpg	pieces	0	900	675	194.0	2.50	2.56				
+safari	6	16384	p48.jpg	job	0	900	675	188.0	2.50	17.13				
+safari	6	16384	p12p.jpg	whole	0	900	675	123.0	26.19					
+safari	6	16384	p12p.jpg	file	0	900	675	146.0	26.25					
+safari	6	16384	p12p.jpg	pieces	0	900	675	131.0	2.50	26.19				
+safari	6	16384	p12p.jpg	job	0	900	675	134.0	2.50	26.13				
+safari	6	16384	p12.png	whole	0	900	675	236.0	17.69					
+safari	6	16384	p12.png	file	0	900	675	305.0	2.94					
+safari	6	16384	p12.png	pieces	0	900	675	242.0	2.50	2.88				
+safari	6	16384	p12.png	job	0	900	675	242.0	2.50	17.63				
+safari	6	16384	p64.jpg	whole	0	900	675	237.0	21.50					
+safari	6	16384	p64.jpg	file	0	900	675	327.0	2.69					
+safari	6	16384	p64.jpg	pieces	0	900	675	246.0	2.50	2.56				
+safari	6	16384	p64.jpg	job	0	900	675	241.0	2.50	21.44				
+safari	6	65536	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	6	65536	p12.jpg	file	0	900	675	74.0	2.69					
+safari	6	65536	p12.jpg	pieces	0	900	675	73.0	2.50	2.63				
+safari	6	65536	p12.jpg	job	0	900	675	73.0	2.50	6.13				
+safari	6	65536	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	6	65536	p48.jpg	file	0	900	675	204.0	2.69					
+safari	6	65536	p48.jpg	pieces	0	900	675	190.0	2.50	2.63				
+safari	6	65536	p48.jpg	job	0	900	675	188.0	2.50	17.13				
+safari	6	65536	p12p.jpg	whole	0	900	675	126.0	26.19					
+safari	6	65536	p12p.jpg	file	0	900	675	132.0	26.31					
+safari	6	65536	p12p.jpg	pieces	0	900	675	130.0	2.50	26.25				
+safari	6	65536	p12p.jpg	job	0	900	675	131.0	2.50	26.13				
+safari	6	65536	p12.png	whole	0	900	675	236.0	17.69					
+safari	6	65536	p12.png	file	0	900	675	255.0	3.00					
+safari	6	65536	p12.png	pieces	0	900	675	243.0	2.50	2.94				
+safari	7	262144	p12.jpg	pieces	0	900	675	73.0	2.50	2.81				
+safari	7	262144	p12.jpg	job	0	900	675	73.0	2.50	6.13				
+safari	7	262144	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	7	262144	p48.jpg	file	0	900	675	192.0	2.88					
+safari	7	262144	p48.jpg	pieces	0	900	675	189.0	2.50	2.81				
+safari	7	262144	p48.jpg	job	0	900	675	190.0	2.50	17.13				
+safari	7	262144	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	7	262144	p12p.jpg	file	0	900	675	127.0	26.50					
+safari	7	262144	p12p.jpg	pieces	0	900	675	130.0	2.50	26.44				
+safari	7	262144	p12p.jpg	job	0	900	675	130.0	2.50	26.13				
+safari	7	262144	p12.png	whole	0	900	675	241.0	17.69					
+safari	7	262144	p12.png	file	0	900	675	243.0	3.19					
+safari	7	262144	p12.png	pieces	0	900	675	243.0	2.50	3.13				
+safari	7	262144	p12.png	job	0	900	675	243.0	2.50	17.63				
+safari	7	262144	p64.jpg	whole	0	900	675	236.0	21.50					
+safari	7	262144	p64.jpg	file	0	900	675	243.0	2.88					
+safari	7	262144	p64.jpg	pieces	0	900	675	241.0	2.50	2.81				
+safari	7	262144	p64.jpg	job	0	900	675	240.0	2.50	21.44				
+safari	7	1048576	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	7	1048576	p12.jpg	file	0	900	675	68.0	3.63					
+safari	7	1048576	p12.jpg	pieces	0	900	675	73.0	2.50	3.56				
+safari	7	1048576	p12.jpg	job	0	900	675	75.0	2.50	6.13				
+safari	7	1048576	p48.jpg	whole	0	900	675	185.0	17.19					
+safari	7	1048576	p48.jpg	file	0	900	675	187.0	3.63					
+safari	7	1048576	p48.jpg	pieces	0	900	675	189.0	2.50	3.56				
+safari	7	1048576	p48.jpg	job	0	900	675	188.0	2.50	17.13				
+safari	7	1048576	p12p.jpg	whole	0	900	675	124.0	26.19					
+safari	7	1048576	p12p.jpg	file	0	900	675	128.0	27.25					
+safari	7	1048576	p12p.jpg	pieces	0	900	675	129.0	2.50	27.19				
+safari	7	1048576	p12p.jpg	job	0	900	675	130.0	2.50	26.13				
+safari	7	1048576	p12.png	whole	0	900	675	236.0	17.69					
+safari	7	1048576	p12.png	file	0	900	675	239.0	3.94					
+safari	7	1048576	p12.png	pieces	0	900	675	242.0	2.50	3.88				
+safari	7	1048576	p12.png	job	0	900	675	243.0	2.50	17.63				
+safari	7	1048576	p64.jpg	whole	0	900	675	232.0	21.50					
+safari	7	1048576	p64.jpg	file	0	900	675	241.0	3.63					
+safari	7	1048576	p64.jpg	pieces	0	900	675	238.0	2.50	3.56				
+safari	7	1048576	p64.jpg	job	0	900	675	240.0	2.50	21.44				
+safari	7	16384	p12.jpg	whole	0	900	675	65.0	6.19					
+safari	7	16384	p12.jpg	file	0	900	675	87.0	2.63					
+safari	7	16384	p12.jpg	pieces	0	900	675	75.0	2.50	2.56				
+safari	7	16384	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	7	16384	p48.jpg	whole	0	900	675	185.0	17.19					
+safari	7	16384	p48.jpg	file	0	900	675	256.0	2.63					
+safari	7	16384	p48.jpg	pieces	0	900	675	194.0	2.50	2.56				
+safari	7	16384	p48.jpg	job	0	900	675	188.0	2.50	17.13				
+safari	7	16384	p12p.jpg	whole	0	900	675	129.0	26.19					
+safari	7	16384	p12p.jpg	file	0	900	675	142.0	26.25					
+safari	7	16384	p12p.jpg	pieces	0	900	675	131.0	2.50	26.19				
+safari	7	16384	p12p.jpg	job	0	900	675	127.0	2.50	26.13				
+safari	7	16384	p12.png	whole	0	900	675	236.0	17.69					
+safari	7	16384	p12.png	file	0	900	675	308.0	2.94					
+safari	7	16384	p12.png	pieces	0	900	675	242.0	2.50	2.88				
+safari	7	16384	p12.png	job	0	900	675	242.0	2.50	17.63				
+safari	7	16384	p64.jpg	whole	0	900	675	236.0	21.50					
+safari	7	16384	p64.jpg	file	0	900	675	332.0	2.69					
+safari	7	16384	p64.jpg	pieces	0	900	675	248.0	2.50	2.56				
+safari	7	16384	p64.jpg	job	0	900	675	242.0	2.50	21.44				
+safari	7	65536	p12.jpg	whole	0	900	675	67.0	6.19					
+safari	7	65536	p12.jpg	file	0	900	675	74.0	2.69					
+safari	7	65536	p12.jpg	pieces	0	900	675	74.0	2.50	2.63				
+safari	7	65536	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	7	65536	p48.jpg	whole	0	900	675	183.0	17.19					
+safari	7	65536	p48.jpg	file	0	900	675	204.0	2.69					
+safari	7	65536	p48.jpg	pieces	0	900	675	190.0	2.50	2.63				
+safari	7	65536	p48.jpg	job	0	900	675	190.0	2.50	17.13				
+safari	7	65536	p12p.jpg	whole	0	900	675	128.0	26.19					
+safari	7	65536	p12p.jpg	file	0	900	675	132.0	26.31					
+safari	7	65536	p12p.jpg	pieces	0	900	675	129.0	2.50	26.25				
+safari	7	65536	p12p.jpg	job	0	900	675	129.0	2.50	26.13				
+safari	7	65536	p12.png	whole	0	900	675	236.0	17.69					
+safari	7	65536	p12.png	file	0	900	675	256.0	3.00					
+safari	7	65536	p12.png	pieces	0	900	675	241.0	2.50	2.94				
+safari	7	65536	p12.png	job	0	900	675	241.0	2.50	17.63				
+safari	7	65536	p64.jpg	whole	0	900	675	237.0	21.50					
+safari	7	65536	p64.jpg	file	0	900	675	260.0	2.69					
+safari	7	65536	p64.jpg	pieces	0	900	675	242.0	2.50	2.63				
+safari	7	65536	p64.jpg	job	0	900	675	243.0	2.50	21.44				
+safari	7	262144	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	7	262144	p12.jpg	file	0	900	675	71.0	2.88					
+safari	8	262144	p12p.jpg	file	0	900	675	128.0	26.50					
+safari	8	262144	p12p.jpg	pieces	0	900	675	134.0	2.50	26.44				
+safari	8	262144	p12p.jpg	job	0	900	675	129.0	2.50	26.13				
+safari	8	262144	p12.png	whole	0	900	675	238.0	17.69					
+safari	8	262144	p12.png	file	0	900	675	242.0	3.19					
+safari	8	262144	p12.png	pieces	0	900	675	242.0	2.50	3.13				
+safari	8	262144	p12.png	job	0	900	675	243.0	2.50	17.63				
+safari	8	262144	p64.jpg	whole	0	900	675	235.0	21.50					
+safari	8	262144	p64.jpg	file	0	900	675	244.0	2.88					
+safari	8	262144	p64.jpg	pieces	0	900	675	241.0	2.50	2.81				
+safari	8	262144	p64.jpg	job	0	900	675	239.0	2.50	21.44				
+safari	8	1048576	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	8	1048576	p12.jpg	file	0	900	675	68.0	3.63					
+safari	8	1048576	p12.jpg	pieces	0	900	675	72.0	2.50	3.56				
+safari	8	1048576	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	8	1048576	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	8	1048576	p48.jpg	file	0	900	675	188.0	3.63					
+safari	8	1048576	p48.jpg	pieces	0	900	675	190.0	2.50	3.56				
+safari	8	1048576	p48.jpg	job	0	900	675	191.0	2.50	17.13				
+safari	8	1048576	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	8	1048576	p12p.jpg	file	0	900	675	130.0	27.25					
+safari	8	1048576	p12p.jpg	pieces	0	900	675	131.0	2.50	27.19				
+safari	8	1048576	p12p.jpg	job	0	900	675	129.0	2.50	26.13				
+safari	8	1048576	p12.png	whole	0	900	675	239.0	17.69					
+safari	8	1048576	p12.png	file	0	900	675	239.0	3.94					
+safari	8	1048576	p12.png	pieces	0	900	675	242.0	2.50	3.88				
+safari	8	1048576	p12.png	job	0	900	675	244.0	2.50	17.63				
+safari	8	1048576	p64.jpg	whole	0	900	675	236.0	21.50					
+safari	8	1048576	p64.jpg	file	0	900	675	238.0	3.63					
+safari	8	1048576	p64.jpg	pieces	0	900	675	239.0	2.50	3.56				
+safari	8	1048576	p64.jpg	job	0	900	675	240.0	2.50	21.44				
+safari	8	16384	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	8	16384	p12.jpg	file	0	900	675	90.0	2.63					
+safari	8	16384	p12.jpg	pieces	0	900	675	76.0	2.50	2.56				
+safari	8	16384	p12.jpg	job	0	900	675	73.0	2.50	6.13				
+safari	8	16384	p48.jpg	whole	0	900	675	185.0	17.19					
+safari	8	16384	p48.jpg	file	0	900	675	254.0	2.63					
+safari	8	16384	p48.jpg	pieces	0	900	675	194.0	2.50	2.56				
+safari	8	16384	p48.jpg	job	0	900	675	190.0	2.50	17.13				
+safari	8	16384	p12p.jpg	whole	0	900	675	124.0	26.19					
+safari	8	16384	p12p.jpg	file	0	900	675	147.0	26.25					
+safari	8	16384	p12p.jpg	pieces	0	900	675	131.0	2.50	26.19				
+safari	8	16384	p12p.jpg	job	0	900	675	129.0	2.50	26.13				
+safari	8	16384	p12.png	whole	0	900	675	237.0	17.69					
+safari	8	16384	p12.png	file	0	900	675	306.0	2.94					
+safari	8	16384	p12.png	pieces	0	900	675	242.0	2.50	2.88				
+safari	8	16384	p12.png	job	0	900	675	242.0	2.50	17.63				
+safari	8	16384	p64.jpg	whole	0	900	675	236.0	21.50					
+safari	8	16384	p64.jpg	file	0	900	675	328.0	2.69					
+safari	8	16384	p64.jpg	pieces	0	900	675	248.0	2.50	2.56				
+safari	8	16384	p64.jpg	job	0	900	675	240.0	2.50	21.44				
+safari	8	65536	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	8	65536	p12.jpg	file	0	900	675	75.0	2.69					
+safari	8	65536	p12.jpg	pieces	0	900	675	73.0	2.50	2.63				
+safari	8	65536	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	8	65536	p48.jpg	whole	0	900	675	189.0	17.19					
+safari	8	65536	p48.jpg	file	0	900	675	204.0	2.69					
+safari	8	65536	p48.jpg	pieces	0	900	675	190.0	2.50	2.63				
+safari	8	65536	p48.jpg	job	0	900	675	190.0	2.50	17.13				
+safari	8	65536	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	8	65536	p12p.jpg	file	0	900	675	134.0	26.31					
+safari	8	65536	p12p.jpg	pieces	0	900	675	130.0	2.50	26.25				
+safari	8	65536	p12p.jpg	job	0	900	675	130.0	2.50	26.13				
+safari	8	65536	p12.png	whole	0	900	675	237.0	17.69					
+safari	8	65536	p12.png	file	0	900	675	260.0	3.00					
+safari	8	65536	p12.png	pieces	0	900	675	241.0	2.50	2.94				
+safari	8	65536	p12.png	job	0	900	675	241.0	2.50	17.63				
+safari	8	65536	p64.jpg	whole	0	900	675	236.0	21.50					
+safari	8	65536	p64.jpg	file	0	900	675	261.0	2.69					
+safari	8	65536	p64.jpg	pieces	0	900	675	241.0	2.50	2.63				
+safari	8	65536	p64.jpg	job	0	900	675	242.0	2.50	21.44				
+safari	8	262144	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	8	262144	p12.jpg	file	0	900	675	70.0	2.88					
+safari	8	262144	p12.jpg	pieces	0	900	675	73.0	2.50	2.81				
+safari	8	262144	p12.jpg	job	0	900	675	71.0	2.50	6.13				
+safari	8	262144	p48.jpg	whole	0	900	675	183.0	17.19					
+safari	8	262144	p48.jpg	file	0	900	675	191.0	2.88					
+safari	8	262144	p48.jpg	pieces	0	900	675	190.0	2.50	2.81				
+safari	8	262144	p48.jpg	job	0	900	675	191.0	2.50	17.13				
+safari	8	262144	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	9	262144	p64.jpg	whole	0	900	675	239.0	21.50					
+safari	9	262144	p64.jpg	file	0	900	675	243.0	2.88					
+safari	9	262144	p64.jpg	pieces	0	900	675	239.0	2.50	2.81				
+safari	9	262144	p64.jpg	job	0	900	675	240.0	2.50	21.44				
+safari	9	1048576	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	9	1048576	p12.jpg	file	0	900	675	68.0	3.63					
+safari	9	1048576	p12.jpg	pieces	0	900	675	73.0	2.50	3.56				
+safari	9	1048576	p12.jpg	job	0	900	675	73.0	2.50	6.13				
+safari	9	1048576	p48.jpg	whole	0	900	675	183.0	17.19					
+safari	9	1048576	p48.jpg	file	0	900	675	185.0	3.63					
+safari	9	1048576	p48.jpg	pieces	0	900	675	189.0	2.50	3.56				
+safari	9	1048576	p48.jpg	job	0	900	675	191.0	2.50	17.13				
+safari	9	1048576	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	9	1048576	p12p.jpg	file	0	900	675	128.0	27.25					
+safari	9	1048576	p12p.jpg	pieces	0	900	675	130.0	2.50	27.19				
+safari	9	1048576	p12p.jpg	job	0	900	675	132.0	2.50	26.13				
+safari	9	1048576	p12.png	whole	0	900	675	237.0	17.69					
+safari	9	1048576	p12.png	file	0	900	675	239.0	3.94					
+safari	9	1048576	p12.png	pieces	0	900	675	240.0	2.50	3.88				
+safari	9	1048576	p12.png	job	0	900	675	241.0	2.50	17.63				
+safari	9	1048576	p64.jpg	whole	0	900	675	239.0	21.50					
+safari	9	1048576	p64.jpg	file	0	900	675	239.0	3.63					
+safari	9	1048576	p64.jpg	pieces	0	900	675	238.0	2.50	3.56				
+safari	9	1048576	p64.jpg	job	0	900	675	240.0	2.50	21.44				
+safari	9	16384	p12.jpg	whole	0	900	675	67.0	6.19					
+safari	9	16384	p12.jpg	file	0	900	675	87.0	2.63					
+safari	9	16384	p12.jpg	pieces	0	900	675	75.0	2.50	2.56				
+safari	9	16384	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	9	16384	p48.jpg	whole	0	900	675	183.0	17.19					
+safari	9	16384	p48.jpg	file	0	900	675	253.0	2.63					
+safari	9	16384	p48.jpg	pieces	0	900	675	196.0	2.50	2.56				
+safari	9	16384	p48.jpg	job	0	900	675	189.0	2.50	17.13				
+safari	9	16384	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	9	16384	p12p.jpg	file	0	900	675	145.0	26.25					
+safari	9	16384	p12p.jpg	pieces	0	900	675	134.0	2.50	26.19				
+safari	9	16384	p12p.jpg	job	0	900	675	130.0	2.50	26.13				
+safari	9	16384	p12.png	whole	0	900	675	236.0	17.69					
+safari	9	16384	p12.png	file	0	900	675	302.0	2.94					
+safari	9	16384	p12.png	pieces	0	900	675	242.0	2.50	2.88				
+safari	9	16384	p12.png	job	0	900	675	246.0	2.50	17.63				
+safari	9	16384	p64.jpg	whole	0	900	675	237.0	21.50					
+safari	9	16384	p64.jpg	file	0	900	675	328.0	2.69					
+safari	9	16384	p64.jpg	pieces	0	900	675	247.0	2.50	2.56				
+safari	9	16384	p64.jpg	job	0	900	675	239.0	2.50	21.44				
+safari	9	65536	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	9	65536	p12.jpg	file	0	900	675	73.0	2.69					
+safari	9	65536	p12.jpg	pieces	0	900	675	73.0	2.50	2.63				
+safari	9	65536	p12.jpg	job	0	900	675	74.0	2.50	6.13				
+safari	9	65536	p48.jpg	whole	0	900	675	184.0	17.19					
+safari	9	65536	p48.jpg	file	0	900	675	204.0	2.69					
+safari	9	65536	p48.jpg	pieces	0	900	675	192.0	2.50	2.63				
+safari	9	65536	p48.jpg	job	0	900	675	188.0	2.50	17.13				
+safari	9	65536	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	9	65536	p12p.jpg	file	0	900	675	133.0	26.31					
+safari	9	65536	p12p.jpg	pieces	0	900	675	129.0	2.50	26.25				
+safari	9	65536	p12p.jpg	job	0	900	675	130.0	2.50	26.13				
+safari	9	65536	p12.png	whole	0	900	675	236.0	17.69					
+safari	9	65536	p12.png	file	0	900	675	254.0	3.00					
+safari	9	65536	p12.png	pieces	0	900	675	244.0	2.50	2.94				
+safari	9	65536	p12.png	job	0	900	675	245.0	2.50	17.63				
+safari	9	65536	p64.jpg	whole	0	900	675	236.0	21.50					
+safari	9	65536	p64.jpg	file	0	900	675	261.0	2.69					
+safari	9	65536	p64.jpg	pieces	0	900	675	241.0	2.50	2.63				
+safari	9	65536	p64.jpg	job	0	900	675	240.0	2.50	21.44				
+safari	9	262144	p12.jpg	whole	0	900	675	66.0	6.19					
+safari	9	262144	p12.jpg	file	0	900	675	71.0	2.88					
+safari	9	262144	p12.jpg	pieces	0	900	675	73.0	2.50	2.81				
+safari	9	262144	p12.jpg	job	0	900	675	72.0	2.50	6.13				
+safari	9	262144	p48.jpg	whole	0	900	675	182.0	17.19					
+safari	9	262144	p48.jpg	file	0	900	675	194.0	2.88					
+safari	9	262144	p48.jpg	pieces	0	900	675	189.0	2.50	2.81				
+safari	9	262144	p48.jpg	job	0	900	675	189.0	2.50	17.13				
+safari	9	262144	p12p.jpg	whole	0	900	675	125.0	26.19					
+safari	9	262144	p12p.jpg	file	0	900	675	128.0	26.50					
+safari	9	262144	p12p.jpg	pieces	0	900	675	130.0	2.50	26.44				
+safari	9	262144	p12p.jpg	job	0	900	675	129.0	2.50	26.13				
+safari	9	262144	p12.png	whole	0	900	675	236.0	17.69					
+safari	9	262144	p12.png	file	0	900	675	242.0	3.19					
+safari	9	262144	p12.png	pieces	0	900	675	245.0	2.50	3.13				
+safari	9	262144	p12.png	job	0	900	675	244.0	2.50	17.63				
