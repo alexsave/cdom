@@ -54,20 +54,20 @@ b64() { base64 < "$1" | tr -d '\n\r'; }
 t="$top/shim/page.html"
 for m in m0 m1 m2; do
   o="$out/default_$m.html"
-  { sed -n '1,5p' "$t"; echo '<title>a&lt;b &amp; c&gt;</title>'; sed -n '7p' "$t"; sed -n '9,13p' "$t"; table_shim '<script>'
-    echo "cdom.start(\"data:application/wasm;base64,$(b64 "$out/$m.wasm")\", \"app\");"; sed -n '16,$p' "$t"; } > "$o.want"
+  { sed -n '1,5p' "$t"; echo '<title>a&lt;b &amp; c&gt;</title>'; sed -n '7p' "$t"; sed -n '9,11p;13,14p' "$t"; table_shim '<script>'
+    echo "cdom.start(\"data:application/wasm;base64,$(b64 "$out/$m.wasm")\", \"app\");"; sed -n '17,$p' "$t"; } > "$o.want"
   golden "the default page, bundled ($(wc -c < "$out/$m.wasm" | tr -d ' ')-byte module), titled and escaped" "$t" "$o" --wasm "$out/$m.wasm" --title 'a<b & c>'
 done
 o="$out/default_url.html"
-{ sed -n '1,7p' "$t"; sed -n '9,13p' "$t"; table_shim '<script>'; printf '%s\n' 'cdom.start("/w/\"x\\y\x3c/script>\x0a\u2028.wasm", "app");'; sed -n '16,$p' "$t"; } > "$o.want"
+{ sed -n '1,7p' "$t"; sed -n '9,11p;13,14p' "$t"; table_shim '<script>'; printf '%s\n' 'cdom.start("/w/\"x\\y\x3c/script>\x0a\u2028.wasm", "app");'; sed -n '17,$p' "$t"; } > "$o.want"
 golden "the default page, separate: the URL a JavaScript string with \\, \", <, a newline and U+2028 escaped, no title given" "$t" "$o" --wasm-url "$(printf '/w/"x\\y</script>\n\xe2\x80\xa8.wasm')"
 # APP_SIMD's pair: [the module, its SIMD twin], scalar first, both bundled or both URLs
 o="$out/default_pair.html"
-{ sed -n '1,7p' "$t"; sed -n '9,13p' "$t"; table_shim '<script>'
-  echo "cdom.start([\"data:application/wasm;base64,$(b64 "$out/m1.wasm")\",\"data:application/wasm;base64,$(b64 "$out/m2.wasm")\"], \"app\");"; sed -n '16,$p' "$t"; } > "$o.want"
+{ sed -n '1,7p' "$t"; sed -n '9,11p;13,14p' "$t"; table_shim '<script>'
+  echo "cdom.start([\"data:application/wasm;base64,$(b64 "$out/m1.wasm")\",\"data:application/wasm;base64,$(b64 "$out/m2.wasm")\"], \"app\");"; sed -n '17,$p' "$t"; } > "$o.want"
 golden "the default page, bundled with a SIMD twin: the pair of data: URLs, the module first" "$t" "$o" --wasm "$out/m1.wasm" --simd-wasm "$out/m2.wasm"
 o="$out/default_pair_url.html"
-{ sed -n '1,7p' "$t"; sed -n '9,13p' "$t"; table_shim '<script>'; echo 'cdom.start(["a.wasm","a.simd.wasm"], "app");'; sed -n '16,$p' "$t"; } > "$o.want"
+{ sed -n '1,7p' "$t"; sed -n '9,11p;13,14p' "$t"; table_shim '<script>'; echo 'cdom.start(["a.wasm","a.simd.wasm"], "app");'; sed -n '17,$p' "$t"; } > "$o.want"
 golden "the default page, separate with a SIMD twin: the pair of URLs, the module first" "$t" "$o" --wasm-url a.wasm --simd-wasm-url a.simd.wasm
 o="$out/ok.html"
 { sed -n '1,3p' "$pages/ok.html"; table_shim '<script>'; sed -n '5,$p' "$pages/ok.html"; } > "$o.want"
