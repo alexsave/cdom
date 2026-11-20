@@ -37,3 +37,9 @@ function place(parent, node, next) {
     cdomVml.placed(node);
   }
 }
+
+// The VML shapes whose attributes changed during the call into C that just ended, each drawn once now
+// (tools/legacy/vml.js, docs/vml-design.md, section 10).
+function drawHeld() {
+  cdomVml.drawHeld();
+}

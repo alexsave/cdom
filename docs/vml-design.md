@@ -156,20 +156,37 @@ In the XP VM (docs/ie5-design.md, "Driving the XP VM"):
    - no text, and nothing for the rotated or the gradient-filled rect.
    IE then reports six script errors, one per kind not drawn (`cdom: SVG <text> is not drawn in VML ...`, then defs, linearGradient, stop, transform rotate, paint url), in the status bar or as dialogs; that is the report path, not a fault.
 3. IE 5.01 and IE 5.5: the same page, through the test hold (docs/ie5-design.md, section 2): run `python3 tools/ie5hold.py`, copy tests/out/legacy.html to legacy-hold.html with `<img src="http://10.0.2.2:8096/x.gif" width="1" height="1">` added, and open `legacy-hold.html?svg` from Run with IE501 or IE550.
-   IE 5.01 has no document.namespaces, so there only the stylesheet rule sets VML up; whether createElement("v:shape") then draws is the open question this run answers (section 9).
+   The Utilu IE 5.01 draws no VML at all, not even a static page's (section 9), so there the run checks only that the page runs and reports what it does not draw.
 4. IE 7 and IE 8: the IE 9 VM in IE 7 and IE 8 document modes, a copy of legacy.html with an X-UA-Compatible meta, as for P5 in docs/ie6-design.md, opened with ?svg.
    IE 8's standards mode is where VML is most particular (section 9).
 5. Speed: `legacy.html?svgmany=N` (with or without ?svg) builds N paths of the timing case in a 400 by 400 box at (520, 120) and puts the times in the window title: the build in ms, then the ms until a timeout could run, which in IE includes some of the layout.
    Run N = 100, 1,000 and 3,000 in IE 6, and for IE 5.01 the hold copy; note the times, and whether 3,000 raises the slow-script prompt.
 
-## 9. Unverified until real IE runs it
+## 9. What real IE 6 and IE 5.01 showed
 
-- That a VML group's children read style lengths and coordsize as this design assumes.
-  The design keeps every group an identity frame (1 unit a pixel) so either reading gives the same picture, and draws every shape Raphael's way (a 1 px box, coordsize "100,100", the path in hundredths of a pixel).
-- That properties set on a VML node before IE attaches the behavior (as expandos while the svg is off the document) are taken up when it is placed; Raphael 2 set them in that order.
-- That IE 5.01, which has no document.namespaces, draws VML made by createElement("v:shape") with only the stylesheet rule.
-- That IE 8's standards mode draws these nodes with the rule's display:inline-block, and the svg's own position:relative and size.
-- That JScript 5.0's String.prototype.match with a g flag returns every match (numbers() relies on it instead of an exec loop, since JScript 5.0's regular expressions have no lastIndex).
+Run on 2026-11-20 in the XP VM (QEMU, IE 6.0 and the Utilu IE 5.01), first on small static pages, one question each, then on `legacy.html?svg`.
+
+The branch as the cloud machine wrote it drew nothing in IE 6: the six reports fired and the v:shape nodes had their path, but no shape drew, the svg's group measured 120 by 120 in place of 200 by 100, the group had two coordsize attributes (200,100 and 1000,1000), and a `<?import namespace="v" implementation="#default#VML">` sat in the div.
+What each probe showed:
+
+- `document.namespaces.add("v", URN, "#default#VML")`, the three-argument form, imports the behavior into the namespace, so it is bound as each v: node is made; every property script sets after that is lost, whether before or after the node is in the document (a rect drew white with IE's default outline; a shape drew nothing; coordsize stayed beside the default 1000,1000).
+  That was the bug.
+- The two-argument `namespaces.add("v", URN)` with a stylesheet rule giving `behavior: url(#default#VML)` draws, with the properties set before or after the node is placed, and with the rule written `v\:*` or one a tag.
+  vml.js now does that, with one rule a tag (IE 8's standards mode ignores `v\:*`; not run here).
+- A v:group measures what it holds, not its style's width and height (221 by 81 for a 200 by 100 group holding a shape past its edge), and does not clip.
+  A span with position relative, display inline-block and overflow hidden measures 200 by 100 and clips, as an svg does.
+  So the svg is that span, a g a plain span at its top left (the CTM is baked into every point), and VML is only v:shape, v:fill and v:stroke.
+- VML's stroke defaults differ from SVG's: a round join and cap where SVG has a miter join (limit 4) and a butt cap; each v:stroke now says SVG's.
+- IE draws VML written in the page only once the page has finished loading: under the test hold (an image that never answers) a static v:rect draws nothing, while VML made by script draws.
+- The Utilu IE 5.01 draws no VML at all: not the canonical static page (`xmlns:v`, the `v\:*` rule, a v:rect) with `#default#VML`, nor with IE 5.0's `<object id="VMLRender" classid="CLSID:10072CEC-8CC1-11D1-986E-00A0C955B42E">` and `behavior: url(#VMLRender)`, with or without the hold (without it, IE 5.01 reaches Done and crashes, as docs/ie5-design.md says), nor VML made by script in any form (createElement of "v:rect", of `<rect xmlns="urn:..." class="vml">`, with the namespace declared on the html element).
+  The same static page draws in IE 6 on the same machine, so this is the standalone IE 5.01's own limit (it runs beside IE 6's VML renderer, which it does not use), not vml.js's; a real IE 5.0 or 5.5 install is where IE 5's VML could be checked.
+
+After the fix, `legacy.html?svg` in IE 6 draws every shape where headless Chrome draws the real SVG (tools/legacy.mjs's svg case), the svg's span measures 200 by 100, and the six reports fire, each once.
+
+Still unverified, for want of the browser here:
+
+- IE 7, and IE 8's standards mode, with this setup.
+- That JScript 5.0's String.prototype.match with a g flag returns every match (the converter's tokens and numbers() rely on it, since JScript 5.0's regular expressions have no lastIndex); IE 5.01's JScript is 5.1, where the probe has it.
 - VML's fill is even-odd where SVG's default is nonzero, so a self-overlapping path can show a hole SVG would fill.
 
 ## 10. Speed in real IE 6
@@ -201,3 +218,14 @@ Predictions for the two changes made from that, written before measuring them:
 - V4: path() tokenizes the path with one regular expression match and keeps its state in vml.js's scope, not in closures made each call: 500 conversions take 1,500 to 4,000 ms (from 8,422).
 - V5: a container's context (CTM, paint, opacity) is kept on it and handed to what it holds, colours are converted once each, and a VML property is set only when its value changes: with V4, the 500 shapes with d, fill and stroke take 3,000 to 8,000 ms (from 16,250).
 - V6: svg_many(500) through cdom then builds in 5,000 to 12,000 ms (from 23,438).
+
+Measured after the two changes (two runs each where two are given):
+
+- V4 refuted: path() alone took 7,313 ms with the tokenizer (from 8,422), and 5,906 and 6,187 ms once a point's rounding was done without calls (Math.round and String were two calls a coordinate), above the 1,500 to 4,000 predicted.
+  The page that timed it loops on global variables, which IE looks up on window, so its numbers are high; the converter's share of svg_many below is less.
+- V5 refuted: the caches alone (the context, the colours, a property set only when it changes) measured 18,250 ms, inside the noise of the 16,250 before; drawing a shape once when the call into C ends, rather than once an attribute (shim/cdom.js calls drawHeld as the outermost call into C ends, an empty function everywhere but the fourth tier, whose shim-old.js draws the held shapes there), brought it to 11,922 and 12,297 ms, above the 3,000 to 8,000 predicted.
+  JScript on this VM is slow in a way the prediction did not weigh: 30,000 turns of an empty loop take 328 ms, and an empty function's call about 76 microseconds.
+- V6 confirmed: svg_many(500) builds in 5,343 and 4,953 ms (6,968 and 6,453 ms to the next timeout), from 23,438 (25,000): 3.6 to 3.9 times faster in all.
+- svg_many(2,000), which had not finished in 4 minutes, builds in 23,078 ms, 28,938 ms to the next timeout, with no slow-script prompt.
+
+shim/cdom.min.js, which apps inline, is byte-identical after the change: terser drops the empty drawHeld and its call.

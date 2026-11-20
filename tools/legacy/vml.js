@@ -17,6 +17,7 @@ var cdomVml = (function (w, doc) {
   var HIDES = { "clip-path": 1, mask: 1, filter: 1, "marker-start": 1, "marker-mid": 1, "marker-end": 1 };
   var NAMED = /^[a-z]+$/;
   var ready = false;
+  var held = [];                     /* shapes changed during this call into C, drawn once when it ends (drawHeld) */
   var lost = [];                     /* the kinds of SVG met that are not drawn, each once */
   var seen = {};
 
@@ -31,12 +32,19 @@ var cdomVml = (function (w, doc) {
    * the current point, the subpath's start, the last control point, whether the subpath is closed, and the tokens. */
   var out, msx, msy, mtx, mty, x, y, x0, y0, cx, cy, closed, toks, ti, tn;
 
-  /* VML's whole number for x pixels. */
-  function q(x) {
-    return String(Math.round(x * K));
-  }
+  /* The point (px, py), mapped, as VML's two whole numbers: Math.round(v K) each, as floor(v K + 0.5) by truncation,
+   * since in IE 6 a call costs as much as several operations (section 10); exact while it fits 32 bits (21 million
+   * pixels), Math.floor past that. */
   function pt(px, py) {
-    return q(msx * px + mtx) + "," + q(msy * py + mty);
+    var a = (msx * px + mtx) * K + 0.5, b = (msy * py + mty) * K + 0.5, i, j;
+    if (a < 2147483647 && a > -2147483647 && b < 2147483647 && b > -2147483647) {
+      i = a | 0;
+      j = b | 0;
+      if (i > a) i--;
+      if (j > b) j--;
+      return i + "," + j;
+    }
+    return Math.floor(a) + "," + Math.floor(b);
   }
   function moveTo(px, py) {
     out[out.length] = "m" + pt(px, py);
@@ -526,13 +534,35 @@ var cdomVml = (function (w, doc) {
       st.hide.transform = typeof t === "string";
       hidden(el);
     }
-    if (st.kind === 2 || name === "transform" || name === "opacity" || PAINT[name] === 1 ||
+    if (st.kind === 2) hold(el);
+    else if (name === "transform" || name === "opacity" || PAINT[name] === 1 ||
         (st.kind === 0 && (name === "width" || name === "height" || name === "viewBox"))) refresh(el);
   }
   /* el was put somewhere else (the shim's place: cd_move, cd_attach): what it inherits may have changed. */
   function placed(el) {
-    if (el.$vml.kind !== 3) refresh(el);
+    var k = el.$vml.kind;
+    if (k === 2) hold(el);
+    else if (k !== 3) refresh(el);
+  }
+  /* A shape is drawn once when the call into C ends, not once for each of its attributes: its d, fill and stroke were
+   * three draws, and in IE 6 a draw is some twenty calls (docs/vml-design.md, section 10). An svg's and a g's own
+   * changes are drawn at once (the svg's size is its span's), and draw the shapes they hold then too. */
+  function hold(el) {
+    var st = el.$vml;
+    if (st.held) return;
+    st.held = true;
+    held[held.length] = el;
+  }
+  /* The shim's drawHeld, at the end of the outermost call into C (tools/legacy/shim-old.js). */
+  function drawHeld() {
+    var list = held, j;
+    if (!list.length) return;
+    held = [];
+    for (j = 0; j < list.length; j++) {
+      list[j].$vml.held = false;
+      refresh(list[j]);
+    }
   }
 
-  return { K: K, path: path, create: create, attr: attr, placed: placed, lost: lost };
+  return { K: K, path: path, create: create, attr: attr, placed: placed, drawHeld: drawHeld, lost: lost };
 })(window, document);

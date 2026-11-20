@@ -345,7 +345,12 @@ var cdom = (() => {
     }
     store32(tmpSerial0, load32(tmpSerial0) + load32(tmpCount));
     store32(tmpCount, 0);
+    drawHeld();
   }
+  // What a tier holds back until the outermost call into C ends: on the fourth tier (IE 5 to 8) SVG is VML, and
+  // tools/legacy/shim-old.js puts its drawHeld in place of this one, which draws each changed shape once there rather
+  // than once an attribute (docs/vml-design.md, section 10). Everywhere else the browser draws SVG itself.
+  function drawHeld() {}
 
   // Puts a new top-level node where at() said, or into the open element.
   function placeNew(node) {
