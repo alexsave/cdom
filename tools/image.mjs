@@ -98,27 +98,31 @@ async function chunked(name) {
   } else ok(false, `${name}: no p12.png case (IMAGE_BIG=0?)`);
   // cd_job_stop and cd_image_file_stop: no answer, the worker ended, the slot and the memory as before
   const big = p12png >= 0 ? p12png : 0;
-  for (const delay of [0, 30, 120]) {
+  // The test must not depend on how fast the machine decodes: a 900x900 decode that is done before the stop (a fast
+  // CI machine at 120 ms) is a legal race, and then its answer counts once and the slot is free; an answer that was
+  // not there at the stop must never come. "done" is read in the same synchronous turn as the stop, so nothing can
+  // arrive between the two. The last case of each loop blocks the page until the answer is surely queued (the
+  // worker's message waits for the page's next turn) and then stops: that answer must be dropped, whatever the speed.
+  const stopCase = async (what, start, stopFn, delay, settle) => {
     const slot = await b.evaluate('X.slot_probe()'), calls = await b.evaluate('X.file_rec(5)'), live = await b.evaluate('W.live');
-    await b.evaluate(`X.job_start(${big}, 900, 900, 1, 0)`);
-    await sleep(delay);
-    await b.evaluate('X.job_stop()');
-    await sleep(800);
+    const done = await b.evaluate(`(async () => {
+      ${start};
+      ${delay === 'queued' ? 'const t = performance.now(); await new Promise((r) => setTimeout(r, 30)); while (performance.now() - t < 1500);' : `await new Promise((r) => setTimeout(r, ${delay}));`}
+      const done = (X.file_rec(0) | 0) !== -1;
+      ${stopFn};
+      return done;
+    })()`);
+    await sleep(settle);
     const after = { slot: await b.evaluate('X.slot_probe()'), calls: await b.evaluate('X.file_rec(5)'), live: await b.evaluate('W.live') };
-    ok(after.slot === slot && after.calls === calls && after.live === live && live === 0, `${name}: cd_job_stop ${delay} ms after the start: no callback, the worker ended, the callback slot freed`, JSON.stringify({ slot, calls, live, after }));
-  }
+    const want = calls + (done ? 1 : 0);
+    ok(after.slot === slot && after.calls === want && after.live === live && live === 0 && (delay !== 'queued' || !done),
+      `${name}: ${what} ${delay === 'queued' ? 'with the answer queued' : delay + ' ms after the start'}, ${done ? 'the answer was there before the stop (once, slot freed)' : 'no callback, the worker ended, the callback slot freed'}`, JSON.stringify({ slot, calls, live, done, after }));
+  };
+  for (const delay of [0, 30, 120, 'queued']) await stopCase('cd_job_stop', `X.job_start(${big}, 900, 900, 1, 0)`, 'X.job_stop()', delay, 800);
   const pages0 = await b.evaluate('X.memory.buffer.byteLength >> 16');
-  for (const delay of [0, 10, 40]) {
-    const slot = await b.evaluate('X.slot_probe()'), calls = await b.evaluate('X.file_rec(5)');
-    await b.evaluate(`X.file_start(${big}, 900, 900)`);
-    await sleep(delay);
-    await b.evaluate('X.file_stop()');
-    await sleep(300);
-    const after = { slot: await b.evaluate('X.slot_probe()'), calls: await b.evaluate('X.file_rec(5)') };
-    ok(after.slot === slot && after.calls === calls, `${name}: cd_image_file_stop ${delay} ms after the start: no callback, the callback slots freed`, JSON.stringify({ slot, calls, after }));
-  }
+  for (const delay of [0, 10, 40, 'queued']) await stopCase('cd_image_file_stop', `X.file_start(${big}, 900, 900)`, 'X.file_stop()', delay, 300);
   const pages1 = await b.evaluate('X.memory.buffer.byteLength >> 16');
-  ok(pages1 === pages0, `${name}: three stopped decodes leave the memory as it was`, `${pages0} -> ${pages1}`);
+  ok(pages1 === pages0, `${name}: the stopped decodes leave the memory as it was`, `${pages0} -> ${pages1}`);
 }
 try {
   for (const [sjlj, cap, max, simd] of builds) {
