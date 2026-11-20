@@ -987,7 +987,7 @@ The profile (bench/image/profile.mjs, p12g.png at box 900, 12 runs after a warm-
 | cd_image_adler32 | 1.8 | 2.0 | 1.7 | | cd_image_scaler_div_simd | 1.4 | 1.7 | 1.1 |
 | resize, mean | 166.0 | 162.6 | 158.7 | | resize, mean | 57.0 | 68.5 | 62.7 |
 
-(An earlier profile of main, before any change, had 67.7, 49.8, 26.5 and 24.4 ms for the first four, 174.8 resize.)
+(An earlier profile of main, before any change, had 67.7, 49.8, 26.5 and 24.4 ms for the first four, 174.8 resize; the profiles' text is bench/image/results/profile-grey/, and the G3 session's runs are 2026-11-20-png-grey-g3-chrome.tsv, the second 31-round session's -others2.)
 rows is gone from the list (under 0.1 ms): the row loop now only hands rows to the scaler.
 The inflate is the largest part left, then the scaler and the wave, near equal.
 
