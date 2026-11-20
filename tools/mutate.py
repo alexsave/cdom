@@ -9,6 +9,7 @@ import subprocess, sys, pathlib, os, shutil, tempfile, threading, queue, signal
 
 top = pathlib.Path(__file__).resolve().parent.parent
 TEST_TIMEOUT = 150 # s: unit.mjs takes about 10 on a passing tree and waits at most 60 for a broken page
+LONG_TIMEOUT = 900 # s: the image module's runs that make the oracle's inputs and run the fed decoder's tests (CHK, IMGW)
 HUNG = -999
 UNIT = ['node', 'tools/unit.mjs']
 FUZZ = ['node', 'tools/fuzz.mjs']
@@ -928,12 +929,13 @@ def build_and_run(root, cmd, minify=False):
   # the run would wait on it for good. The test runs in a process group of its own (Chrome with it),
   # killed whole past TEST_TIMEOUT; a hang is a broken module, so it counts as caught (HUNG).
   t = subprocess.Popen(cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+  limit = LONG_TIMEOUT if cmd in (CHK, IMGW) else TEST_TIMEOUT
   try:
-    out, _ = t.communicate(timeout=TEST_TIMEOUT)
+    out, _ = t.communicate(timeout=limit)
   except subprocess.TimeoutExpired:
     os.killpg(t.pid, signal.SIGKILL)
     out, _ = t.communicate()
-    return HUNG, f'HUNG: killed after {TEST_TIMEOUT} s\n' + (out or '')
+    return HUNG, f'HUNG: killed after {limit} s\n' + (out or '')
   return t.returncode, out
 
 # A mutant's test may write into the tree it runs in (mk-any-wasm makes cdom.mk's page rule apply to every
