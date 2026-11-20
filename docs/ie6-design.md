@@ -72,11 +72,60 @@ The boot's load() takes either, once.
 
 No canvas and no SVG, for now: an SVG is made of plain elements and draws nothing, and the canvas calls (cd_blit, cd_image_bytes, encode) do nothing and report once why, so the rest of the app runs (Alex's call, 2026-11-20).
 The follow-up Alex asked for is to draw them after all, through VML or as an image baked into the page; it is not part of this change.
-Also no WebSocket, fetch, IndexedDB, audio, file reads (UNSUPPORTED, as on IE 9) or jobs (UNSUPPORTED).
+Also no WebSocket, IndexedDB, audio, file reads (UNSUPPORTED, as on IE 9) or jobs (UNSUPPORTED).
+cd_http works (section 6c).
 No History API: cd_url_go answers 0.
 cd_seed is the IE 9 exception's weak seed.
 A long run of C in one task can raise IE's "a script on this page is causing Internet Explorer to run slowly" prompt, which counts 5,000,000 statements; nothing in cdom can raise that limit for a user.
 Alex's call (2026-11-20): measure first (P2), and only if the prompt shows, design a way for C to split long work across tasks.
+
+## 6b. Float to integer
+
+clang emits the non-trapping conversions (i32 and i64 trunc_sat from f32 and f64) for every C cast of a float to an integer, because nontrapping-fptoint is among its default wasm32 features.
+wasm2js takes the i32 ones, but its i64 lowering fails on the four i64 ones ("local.set's value type must be correct", then "error in validating wasm2js output"), so an app with `(uint64_t)(v * (double)scale + 0.5)` could not be built for any legacy tier.
+The fix is in the legacy build (tools/legacy/build.mjs, wasm2js()), so no app needs a flag.
+When a module has an i64 trunc_sat, the build reads it as text, writes each as the trapping i64.trunc_f32_s, f32_u, f64_s or f64_u, and gives that module to wasm2js; a module with none goes to wasm2js as it is, and the first tier's .wasm is never written.
+Why not the alternatives:
+
+- binaryen's --llvm-nontrapping-fptoint-lowering builds, but is wrong in range: it takes INT32_MAX and UINT32_MAX themselves for out of range (u32(4294967295) is 0, i32(2147483647) is INT32_MIN), and gives the minimum or 0 for everything above.
+  tools/fptoint.mjs catches that (a mutant runs it).
+- -mno-nontrapping-fptoint in cdom.mk would give the same instructions as the rewrite, but needs a second compile of every app for the legacy twin, or the flag on the first tier, where a cast out of range would then trap instead of saturating.
+
+In range (the integer part fits the type) every tier gives the same answer as WebAssembly: tools/fptoint.mjs checks 44 values to i32, u32, i64 and u64, including INT32_MAX, UINT32_MAX, 2^53 + 1, 2^63 - 1024 and 2^64 - 2048, a fixed-point round and the f32 forms, on LEGACY= '', 1, ie9 and ie6.
+Out of range a C cast is undefined, and the tiers differ:
+
+| | WebAssembly (tier 1) | tiers 2 to 4 |
+| --- | --- | --- |
+| i32, u32 | saturates; NaN is 0 | wraps modulo 2^32 (JavaScript's ToInt32 and ToUint32), so u32(-1) is 4294967295 and i32(2^31) is INT32_MIN; NaN and the infinities are 0 |
+| i64, u64 | saturates; NaN is 0 | whatever wasm2js's i64 conversion leaves (it does not trap, and does not saturate): do not rely on it |
+
+An app that needs the saturating answer clamps before it casts.
+
+## 6c. The network
+
+The shim's cd_http (src/cdom_net.c) calls fetch, which IE 5 to 11 have none of.
+The fallback gives the tiers one, in tools/legacy/polyfills.js, so shim/cdom.js and the first tier's files are unchanged: fetch(url, { method, headers, body, signal }) answering { status, arrayBuffer() }, and AbortController for cd_http's deadline.
+It is installed only where fetch is missing.
+The request is an XMLHttpRequest, or, on IE 5 and 6, which have none, new ActiveXObject("Microsoft.XMLHTTP").
+Answers are cdom_net.h's: the status and the body for any HTTP status (404 and its body too); CD_HTTP_FAILED (0) when nothing arrived (a dropped connection, a refused request, a status of 0 or one of WinInet's 12000s, which IE reports as the status; 1223 is 204); CD_HTTP_TIMEOUT (1) when deadline_ms passed first and the request was aborted.
+Each is answered once, from the event loop.
+tools/legacy.mjs runs these on every level (tests/legacy.c net_ask): a text GET beyond ASCII, a binary GET of all 256 byte values, a 404 with its body, a POST with a header, a dropped request, a deadline, and a POST whose body is not UTF-8.
+
+How a body comes back as bytes depends on what the browser lets a script read:
+
+| Tier and browser | Response bytes | Request body |
+| --- | --- | --- |
+| 1 (WebAssembly) | fetch | fetch |
+| 2 (IE 10, 11) | XMLHttpRequest, responseType arraybuffer: exact | the bytes, exact |
+| 3, 4 with overrideMimeType (a browser that has it, Firefox 1.0 on; IE has none) | overrideMimeType("text/plain; charset=x-user-defined") and charCodeAt & 0xff: exact whatever the server labels it | UTF-8 text only (below) |
+| 3, 4 on IE 5 to 9 (no typed arrays, no responseType, no overrideMimeType) | responseText only, no VBScript: exact for ASCII; exact for any bytes when the server labels the body charset=windows-1252 or iso-8859-1 (Windows maps all 256 to a character, mapped back); for any other label the text is encoded as UTF-8, which is exact for UTF-8 text labelled utf-8, and not for a binary body without that label | UTF-8 text only (below) |
+
+A request body on tiers 3 and 4 is sent as a string, which XMLHttpRequest encodes as UTF-8, so a body that is UTF-8 goes as it is and any other (a 0xff byte) answers CD_HTTP_FAILED, never other bytes.
+IE 8 and 9 reach the page's own origin only: their cross-origin object is XDomainRequest, which is not used.
+IE 10 and 11 reach any origin the server allows by CORS, as XMLHttpRequest does.
+No VBScript means no responseBody, so a binary download from IE 5 to 9 needs the server's charset label; a server that cannot send one can send the bytes as base64 text.
+cdp.mjs emulates all this: no fetch, AbortController, overrideMimeType (a page with ?mime in its URL keeps it) or, from IE 9 down, responseType; on LEGACY=ie6 no XMLHttpRequest either (?xhr keeps it, as IE 7 and 8 have), and a stand-in ActiveXObject over the real request with an ActiveX one's surface (its status throws where the request failed).
+String.prototype.trim, which the shim reads headers with, is polyfilled too: the third tier lacked it.
 
 ## 6a. Decisions
 
