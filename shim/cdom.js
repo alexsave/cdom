@@ -1752,6 +1752,11 @@ var cdom = (() => {
       reportError(error);
     }
   }
+  // object's method key with args. IE 6 to 8's DOM methods have no apply, so the fourth tier calls them directly instead
+  // (tools/legacy/shim-old.js).
+  function invoke(object, key, args) {
+    return object[key](...args);
+  }
   // Calls the method at the path's last segment with count values from argsPtr; the result is kept
   // as CD_RESULT, a returned promise's rejection is swallowed and a thrown error is reported.
   function call(id, method, count, argsPtr) {
@@ -1767,7 +1772,7 @@ var cdom = (() => {
     try {
       const keys = segmentsOf(method);
       const object = walkPath(nodes[id], keys, keys.length - 1);
-      const result = object[keys[keys.length - 1]](...args);
+      const result = invoke(object, keys[keys.length - 1], args);
       nodes[RESULT] = result;
       if (result && typeof result.catch === "function") {
         result.catch(() => {});

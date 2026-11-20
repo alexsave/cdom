@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { launch, sleep, BELOW, FETCHED, refused, tierFetched } from './cdp.mjs';
 // LEGACY=1 runs the same seeds as an old browser, on cdom.legacy.js and the wasm2js build (see cdp.mjs), and
-// LEGACY=ie9 on cdom.legacy-ie9.js and the words build; LEGACY=ie8 checks instead that the boot refuses IE 8
+// LEGACY=ie9 on cdom.legacy-ie9.js and the words build, LEGACY=ie6 on cdom.legacy-ie6.js (ES3 on the old DOM); LEGACY=below checks instead that the boot refuses a browser under its floor
 // (refused, in cdp.mjs).
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };

@@ -18,8 +18,13 @@
  * throws one error naming each missing thing, before fetching anything or drawing at all. Without crypto.getRandomValues
  * (IE 9 and 10) the app still starts: the shim's seed() says how, and why cd_seed is then no secret. */
 function cdomBoot(url, mount, env, ready, options) {
+  /* A start that fails rejects its promise, which no browser reports by itself on the old tiers (the polyfilled
+   * Promise has no unhandled-rejection event): it is thrown again from a timeout, so it reaches window.onerror. */
+  function failed(e) {
+    setTimeout(function () { throw e; }, 0);
+  }
   if (typeof WebAssembly === "object") {
-    cdom.start(url, mount, env, options).then(ready);
+    cdom.start(url, mount, env, options).then(ready, failed);
     return;
   }
   var typed = "ArrayBuffer Int8Array Uint8Array Int16Array Uint16Array Int32Array Uint32Array Float32Array Float64Array"
@@ -66,7 +71,7 @@ function cdomBoot(url, mount, env, ready, options) {
     if (--left) return;
     var f = window.cdomFactory;
     window.cdomFactory = undefined;
-    cdom.start(f, mount, env, options).then(ready);
+    cdom.start(f, mount, env, options).then(ready, failed);
   }
   var base = typeof url === "string" ? url : url[0];
   load(old ? "cdom.legacy-ie6.js" : words ? "cdom.legacy-ie9.js" : "cdom.legacy.js", loaded);

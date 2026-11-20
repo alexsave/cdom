@@ -88,6 +88,65 @@ const ES5_SUPPLIED = new Set(['.keys', '.create', '.isArray', '.now', '.trim', '
 // reads getPrototypeOf only when it exists. polyfills-es3.js defines the supplied ones, so it names them all.
 const ES5_ALLOWED = { polyfills: new Set(['.defineProperty']), shim: new Set(['.defineProperty', '.getPrototypeOf']),
   'polyfills-es3': ES5_NAMES };
+// JScript (IE 6 to 8) gives a catch clause no scope of its own: its parameter is a variable of the enclosing function,
+// so `function f(e) { try { ... } catch (e) {} use(e); }` loses f's e to the error. Babel's own helpers do exactly
+// that (_regeneratorDefine2's defineProperty probe, which throws in IE 6, so every async function failed there). So
+// every catch parameter in the fourth tier's file is renamed to a name of its own (catchScoped), and the minified
+// file is refused if a catch parameter's name is used anywhere else in its function (catchLeaks).
+async function catchScoped(src) {
+  const { transformSync } = await import('@babel/core');
+  return transformSync(src, { babelrc: false, configFile: false, sourceType: 'script', comments: false,
+    plugins: [({ types: t }) => ({ visitor: { CatchClause(p) {
+      if (t.isIdentifier(p.node.param)) p.scope.rename(p.node.param.name, p.scope.generateUid('caught'));
+    } } })] }).code;
+}
+function catchLeaks(tree) {
+  const leaks = new Set();
+  const kids = (node, f) => {
+    for (const k in node) {
+      const v = node[k];
+      if (Array.isArray(v)) { for (const c of v) if (c && typeof c.type === 'string') f(c); }
+      else if (v && typeof v.type === 'string') f(v);
+    }
+  };
+  // The names a function binds itself: its name as an expression, its parameters, its vars and function declarations
+  // (not those of the functions inside it).
+  const binds = (fn) => {
+    const out = new Set(fn.params.map((p) => p.name));
+    if (fn.type === 'FunctionExpression' && fn.id) out.add(fn.id.name);
+    const scan = (n) => {
+      if (n.type === 'VariableDeclarator') out.add(n.id.name);
+      if (n.type === 'FunctionDeclaration') { out.add(n.id.name); return; }
+      if (/Function/.test(n.type)) return;
+      kids(n, scan);
+    };
+    kids(fn.body, scan);
+    return out;
+  };
+  // Whether name is used under node, outside skip, where it means the enclosing function's: a function inside that
+  // binds name itself has its own.
+  const uses = (node, name, skip) => {
+    if (node === skip) return false;
+    if (node.type === 'Identifier' && node.name === name) return true;
+    if (/Function/.test(node.type) && binds(node).has(name)) return false;
+    let found = false;
+    kids(node, (c) => { found = found || uses(c, name, skip); });
+    return found;
+  };
+  const walk = (node, fn) => {
+    if (/Function/.test(node.type)) fn = node;
+    if (node.type === 'CatchClause' && node.param && fn) {
+      const n = node.param.name;
+      let found = fn.params.some((p) => p.name === n) || (fn.type === 'FunctionExpression' && fn.id && fn.id.name === n);
+      kids(fn.body, (c) => { found = found || uses(c, n, node); });
+      if (found) leaks.add(n);
+    }
+    kids(node, (c) => walk(c, fn));
+  };
+  walk(tree, null);
+  return [...leaks];
+}
+
 // Each part is checked for ES3 syntax and ES5 names as written (minified, the parts are one file); the reserved words
 // once minified, since terser's ie8 quotes the ones the parts name (promise-polyfill's .catch).
 function es3(name, src, minified = false) {
@@ -107,6 +166,8 @@ function es3(name, src, minified = false) {
     }
   };
   if (minified) walk(tree);
+  const leaks = minified ? catchLeaks(tree) : [];
+  if (leaks.length) throw new Error(`${name}: a catch parameter's name used elsewhere in its function, which JScript's catch would overwrite: ${leaks.join(' ')}`);
   if (bad.size) throw new Error(`${name} names a reserved word as a property, which JScript refuses: ${[...bad].join(' ')}`);
   if (minified) return src;
   const ok = ES5_ALLOWED[name] || new Set(), es5 = new Set();
@@ -127,7 +188,8 @@ function es3(name, src, minified = false) {
 // only, for the files the fourth tier runs (which are then checked as ES3).
 async function small(name, src, ie8 = false) {
   const { minify } = createRequire(path.join(top, 'package.json'))('terser');
-  const { code } = await minify(src, { ecma: 5, ie8, compress: { passes: 2 }, mangle: true, format: { ascii_only: ie8 } });
+  // LEGACY_PRETTY=1 lays the output out one statement a line, so an old browser's line number says where (debugging only).
+  const { code } = await minify(src, { ecma: 5, ie8, compress: { passes: 2 }, mangle: true, format: { ascii_only: ie8, beautify: !!process.env.LEGACY_PRETTY } });
   try { acorn.parse(code, { ecmaVersion: 5, sourceType: 'script' }); } catch (e) {
     throw new Error(`${name} is not ES5 once minified: ${e.message}`);
   }
@@ -259,7 +321,8 @@ async function shim(out, tier) {
     ...(old ? [] : [['pepjs', read(require.resolve('pepjs/dist/pep.js'))]]),
     ['shim', babel],
   ];
-  const body = parts.map(([n, s]) => old ? es3(n, es5(n, s)) : es5(n, s)).join('\n;\n');
+  let body = parts.map(([n, s]) => old ? es3(n, es5(n, s)) : es5(n, s)).join('\n;\n');
+  if (old) body = await catchScoped(body);
   const name = path.basename(out);
   return `/* ${name}: generated by tools/legacy/build.mjs, do not edit. */\n` + await small(name, body, old);
 }
@@ -304,7 +367,7 @@ async function appWords(wasm, out) {
   const words = read(path.join(here, 'words.js'));
   const src = `${note}(function () {\n${words}\n${memoryPass.memoryWords(head, declared(words))}\nwindow.cdomFactory = asmFunc;\n})();\n`;
   es5('wasm2js', src);
-  const code = await small(path.basename(out), src, true);
+  const code = await small(path.basename(out), await catchScoped(src), true);
   memoryPass.noTypedArrays(path.basename(out), code);
   return note + code;
 }

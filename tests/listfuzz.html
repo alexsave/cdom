@@ -6,14 +6,15 @@
 /*CDOM_BOOT*/
 </script>
 <script>
-// The harness uses no Map or URLSearchParams: LEGACY=ie9 and ie9-gaps (tools/cdp.mjs) delete both, and
+// It reads text with innerText (LEGACY=ie6 has no textContent). The harness uses no Map or URLSearchParams: LEGACY=ie9 and ie9-gaps (tools/cdp.mjs) delete both, and
 // only cdom is under test. A key's node and a key's old position are kept in plain objects ({}, not
-// Object.create(null), which LEGACY=ie8 deletes: the keys are numbers, which no Object.prototype member is).
+// Object.create(null), which LEGACY=ie6 deletes: the keys are numbers, which no Object.prototype member is).
 const SEED = +((/[?&]seed=(\d+)/.exec(location.search) || [])[1] || 1);
 let prev = {}, errors = [], rounds = 0, moves = 0, prevKeys = [];
 // Count moves: an insertBefore of a node that is already a child of the list.
 const ib = Node.prototype.insertBefore;
-Node.prototype.insertBefore = function (n, r) { if (n.parentNode === this && this.tagName === 'UL') moves++; return ib.call(this, n, r); };
+// Reflect.apply: LEGACY=ie6 leaves DOM methods no call, as IE 6 to 8's host methods have none.
+Node.prototype.insertBefore = function (n, r) { if (n.parentNode === this && this.tagName === 'UL') moves++; return Reflect.apply(ib, this, [n, r]); };
 function lisLen(a) { const t = []; for (const v of a) { let lo = 0, hi = t.length; while (lo < hi) { const m = (lo + hi) >> 1; if (t[m] < v) lo = m + 1; else hi = m; } t[lo] = v; } return t.length; }
 const checker = (sel, anchored) => (p, n, round) => {
   rounds++;
@@ -23,13 +24,13 @@ const checker = (sel, anchored) => (p, n, round) => {
   let lis = [...document.querySelectorAll(sel)];
   if (anchored) {
     const end = lis.pop();
-    if (!end || end.textContent !== 'end') errors.push(`round ${round}: the anchor is not last (${end && end.textContent})`);
+    if (!end || end.innerText !== 'end') errors.push(`round ${round}: the anchor is not last (${end && end.innerText})`);
   }
   const now = {};
   if (lis.length !== n) errors.push(`round ${round}: ${lis.length} nodes, want ${n}`);
   for (let i = 0; i < Math.min(n, lis.length); i++) {
     const want = String(keys[i]) + ['', '\u00e9', '\u65e5', '\u{1F600}'][keys[i] % 4];
-    if (lis[i].textContent !== want) { errors.push(`round ${round}: [${i}] = ${lis[i].textContent}, want ${want}`); break; }
+    if (lis[i].innerText !== want) { errors.push(`round ${round}: [${i}] = ${lis[i].innerText}, want ${want}`); break; }
     now[keys[i]] = lis[i];
     if (keys[i] in prev && prev[keys[i]] !== lis[i]) { errors.push(`round ${round}: key ${keys[i]} lost its node`); break; }
   }
@@ -50,7 +51,7 @@ cdomBoot('listfuzz.wasm', document.getElementById('m'), env, x => { try { window
       x.run_walks();
       const r = document.querySelector('#m > div:last-of-type');
       const deep = r.querySelector('.w20'), inner = r.querySelector('.w'), w19 = r.querySelector('.w19');
-      if (!deep || deep.textContent !== 'deep' || deep.children.length) errors.push('walks: up from the last node');
+      if (!deep || deep.innerText !== 'deep' || deep.children.length) errors.push('walks: up from the last node');
       if (!inner || inner.tagName !== 'I' || inner.parentNode.tagName !== 'I') errors.push('walks: sel down next next down');
       let d = 0; for (let n = w19; n && n !== r; n = n.parentNode) d++;
       if (!w19 || d !== 19) errors.push('walks: 19 steps landed at depth ' + d);
@@ -60,7 +61,7 @@ cdomBoot('listfuzz.wasm', document.getElementById('m'), env, x => { try { window
     const want = ['plain', 'h\u00e9llo', '\u65e5\u672c', '\u{1F600}x', ''];
     for (const big of [0, 1]) {
       x.run_strings(big);
-      const got = [...document.querySelectorAll('#m > p:last-child > b')].map(b => b.textContent);
+      const got = [...document.querySelectorAll('#m > p:last-child > b')].map(b => b.innerText);
       const exp = []; for (let r = 0; r < (big ? 20 : 1); r++) for (const w of want) exp.push(w + String.fromCharCode(97 + r % 26));
       if (got.join('|') !== exp.join('|')) errors.push(`strings big=${big}: ${got.slice(0, 6).join('|')}`);
     } } catch (e) { errors.push(String(e)); } finally { window.RESULT = { rounds, errors }; } }, { checkAhead: true });

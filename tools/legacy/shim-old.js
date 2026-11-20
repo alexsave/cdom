@@ -10,3 +10,21 @@ function reach(node, type) {
     cdomOld.reach(node, EVENTS[type], delegatedListener[type]);
   }
 }
+
+// IE 6 to 8's DOM methods are host objects with no apply or call (el.focus.apply is undefined), so a method is called
+// directly, by the count of its arguments; past eight, through apply, which a host method then lacks.
+function invoke(object, key, args) {
+  const a = args;
+  switch (a.length) {
+    case 0: return object[key]();
+    case 1: return object[key](a[0]);
+    case 2: return object[key](a[0], a[1]);
+    case 3: return object[key](a[0], a[1], a[2]);
+    case 4: return object[key](a[0], a[1], a[2], a[3]);
+    case 5: return object[key](a[0], a[1], a[2], a[3], a[4]);
+    case 6: return object[key](a[0], a[1], a[2], a[3], a[4], a[5]);
+    case 7: return object[key](a[0], a[1], a[2], a[3], a[4], a[5], a[6]);
+    case 8: return object[key](a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]);
+    default: return object[key].apply(object, a);
+  }
+}
