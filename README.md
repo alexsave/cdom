@@ -217,6 +217,7 @@ cdom.start(/*CDOM_WASM*/, "app");
   `tools/legacy/build.mjs` makes all four (`shim`, `app`, `shim-ie9`, `app-ie9`), and that build needs Node; a browser fetches only its own tier's two.
   They are files beside the page, so a page with this fallback takes `APP_WASM_SEPARATE := 1` (a bundled module has no `url + ".js"` to load).
   Given the pair (`APP_SIMD`), either fallback takes the scalar module's build, `url[0] + ".js"` or `url[0] + ".ie9.js"`.
+  Below IE 5 (Netscape 2 to 4, IE 3 and 4) it takes the frames tier (docs/frames-design.md): `cdom.frames.js`, the WebAssembly interpreter in JavaScript 1.0 `cdom.js1.js`, and `url + ".js1.js"`, the module lowered for it at build time (`shim-js1` and `app-js1`; docs/js1-interp-design.md).
 
 ## Testing an app's page
 

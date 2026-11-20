@@ -49,6 +49,7 @@ There is no `switch`.
 The ops are numbered in the order of their dynamic frequency (measured on tests/frames.c and tests/js1cpu.c, frozen in tools/legacy/js1ops.txt), and the build writes the dispatch as an if-chain over the hottest ops followed by a binary if-tree over the rest.
 Two other shapes are built for the measurement: the chain alone, and the tree alone.
 The number that carries to the old engines is the mean count of comparisons an instruction pays, which the profiling build counts and which does not depend on the browser.
+After P7 refuted that shape (section 10), a fourth was added and ships: the search tree of least expected comparisons for the weights in js1ops.txt, by Knuth's dynamic program (js1lower.mjs, dispatchTree), with no test at all for the last op of a range.
 
 ## 5. Values, i64 and memory
 
@@ -110,4 +111,56 @@ Timings are headless Chrome on a Linux x86-64 VM, indicative only; the repo mana
 
 ## 10. Results
 
-Not measured yet.
+Measured after the predictions were committed (cbf9f33), in headless Chrome 157 on a Linux x86-64 VM under LEGACY=frames, so indicative only.
+`LEGACY=frames node tools/js1measure.mjs` prints them; three runs are in docs/js1-interp-measure.txt, and the ranges below are over those runs.
+The instruction counts come from the profiling build (`node tools/js1interp.mjs profile`) and do not depend on the browser.
+
+| | Predicted | Measured | Verdict |
+| --- | --- | --- | --- |
+| P1, size | interpreter at most 24,000 bytes and 7,000 gzipped; module at most 12,000 and 5,000; both gzipped at most twice the IE 9 build (5,596) | interpreter 24,894 bytes, 6,438 gzipped; module 12,822 bytes, 4,834 gzipped; both 11,272 gzipped, 2.02 times the IE 9 build's 5,576 | refuted (by 894, 822 and 120 bytes) |
+| P2, module format | the digit string at most half the statements' bytes, and at most 3 times their load time | 0.17 of the bytes (12,829 against 77,456; 4,841 against 23,605 gzipped), 0.75 to 0.91 of the time (1.4 to 1.9 ms against 1.6 to 2.1) | confirmed; the digit string ships |
+| P3, tests/frames.c boot and a click | each at most 10 times the IE 9 build | boot 1.01 to 1.53 times (8.2 to 11.6 ms against 7.6 to 8.9); a click 0.93 to 1.24 times (0.92 to 1.17 ms against 0.93 to 1.13) | confirmed |
+| P4, tests/js1cpu.c | 20 to 100 times slower than the IE 9 build; 20 to 200 million instructions a second | loop(1e5): 34 to 47 times warm, 6.1 to 8.6 times cold; rec(1000): 4.5 to 6.8 times warm, 2.2 to 6.9 cold; 61 to 106 million instructions a second warm, 38 to 71 cold | refuted (the ratio is below 20 for the recursion, and cold) |
+| P5, recursion | at least 100,000 frames, a clean trap past the limit, the next call works | 524,285 frames of rec (wi_LIMIT 1,048,576 registers, 2 a frame), "call stack exhausted", and the next call works; the IE 9 build reaches 9,864 to 11,695 in this Chrome | confirmed |
+| P6, register lowering | at most 0.6 of the wasm instructions | loop(1e5) 0.44 (2,300,480 for 5,201,107); rec(1000) 0.61; tests/frames.c's cd_start and grow(5), with stub imports, 0.74 | refuted for the recursion and the app's boot |
+| P7, dispatch | the chain with the tree behind it at most 4 comparisons an instruction, the tree alone at least 6, and the chain with the tree the fastest in Chrome | comparisons: chain with tree 8.54, tree 7.56, chain 9.07, and the weighted tree added after 4.38; loop(1e5) in Chrome: weighted 24.6 to 29.1 ms, chain with tree 23.4 to 31.6, tree 28.4 to 32.6, chain 22.3 to 28 | refuted (8.54 comparisons; no shape is reliably fastest in Chrome) |
+| P8, binaryen's i64 lowering | at least 1.5 times the instructions | frames.wasm 2,908 to 6,237 (2.14 times), memforms.wasm 167 to 758 (4.54 times); but 2,958 (1.02) and 204 (1.22) with -O2 after it | confirmed as stated, and weak as a reason |
+
+What the results say:
+
+- P1: the sizes are within 7% of the guesses, and the gzipped ones within them; the interpreter is the same file for every app, so the per-app cost is the module alone, 4,834 bytes gzipped against the IE 9 build's 5,576.
+- P2: the statements form is six times the bytes and no faster in Chrome; on Netscape 2, where a store costs 35 us and a character read through `charAt` and an object lookup costs an unmeasured amount, js1-statements.html against js1.html answers it there.
+- P3: tests/frames.c's boot and click are the shim's draw (Chrome parsing the written frame), not C: the call into C alone (5,000 calls of the export touch, no draw) is 3.4 to 5.8 times the IE 9 build's, 0.42 to 0.7 us against 0.10 to 0.14, and loading the module (the factory) 1.0 to 1.7 ms against 0.5 to 0.6.
+- P4: the loop is where the interpreter pays its whole dispatch (34 to 47 times); the recursion is calls, where wasm2js's JavaScript calls are themselves costly and the interpreter's are three stores (4.5 to 6.8 times).
+  Cold, before Chrome's optimizing compiler, the gap is 6 to 9 times, which is closer to what an engine with no JIT (all of the frames tier's) should see.
+- P5: C's recursion is bounded by memory, not by the engine: half a million frames here, where Netscape 2 and 3 die at 100 to 300 nested JavaScript calls and the IE 9 build is one JavaScript call a wasm call.
+- P6: the folding pays off on straight-line arithmetic (0.44), less on calls (each costs an enter, a call and a return: 0.61) and on cdom's boot, which is mostly calls of imports with constant arguments that each take a const into an argument slot (0.74, and const is the commonest op of that run).
+- P7: an ordered chain of 8 is too short for cdom's boot, whose ops are spread wide, and the balanced tree ignores the weights; the weighted tree pays 4.38 comparisons on the runs it was weighted from (an in-sample figure).
+  In Chrome the shapes are within the noise of each other, since its optimizing compiler takes the if-tree apart; on the old engines, which interpret their JavaScript, the comparison count is what carries, and js1-tree.html and js1-mixed.html against js1.html measure it there.
+- P8: the lowering's growth comes from --flatten, and binaryen's -O2 takes most of it back; interpreting i64 as pairs was kept anyway, since it needs no second pipeline and the i64 ops are 50 handlers checked one by one against the engine (tools/js1interp.mjs).
+
+What Netscape 2 should see, from docs/descent.md's 27 us a three-operator statement: a handler is about 10 such statements (its dispatch tests, two to four operand lookups, an add per lookup, the store and the step), so about 300 us an instruction, or some 3,000 instructions a second.
+tests/frames.c's boot (2,956 instructions with stub imports, more with the shim's real answers) would take about a second of interpreting, plus the module's decoding and the writing of every word of its two pages of memory (32,768 stores, about 1.1 s at 35 us); tests/js1cpu.c's loop(2000), 46,000 instructions, about 15 s.
+These are estimates for the repo manager to replace with js1.html's.
+
+## 11. Verifying in the real browsers
+
+Alex's XP VM serves pages from the host at http://10.0.2.2:<port>/.
+
+1. Build: `tests/build.sh` writes, in tests/out, js1.html, js1-statements.html, js1-mixed.html and js1-tree.html (each self-contained: the interpreter, the module and the driver inline, since Netscape 2 has no SCRIPT SRC), and frames.html with cdom.frames.js, cdom.js1.js and frames.wasm.js1.js (and frames-body.html, the same with a BODY tag).
+2. Serve tests/out with the mark log, as for docs/ie5-design.md and docs/descent.md's probe: `python3 /Users/alex/VMs/ie9-win7/serve.py <checkout>/tests/out 8000`, whose log holds the /mark/ lines (`python3 -m http.server 8000 --directory tests/out` serves the pages without them; the table on each page shows the same).
+3. In each of Netscape 2.02, 3.04 and 4.08 and IE 4.01, open http://10.0.2.2:8000/js1.html?<tag> (ns2, ns304, ns408, ie4), then js1-statements.html, js1-mixed.html and js1-tree.html with the same tag.
+   Each row of the table, and each mark, is: ua, load (the module's decoding and the memory's words), loop2000, rec100, rec1000 and rec5000 (each with its time, its result, ok when it is the engine's own WebAssembly's, the trap if any, and ips, the interpreter's instructions a second), and done.
+   rec1000 and rec5000 are past the depth at which Netscape 2 and 3 die on JavaScript recursion.
+4. Then http://10.0.2.2:8000/frames.html in Netscape 3.04 and 4.08 and IE 4.01, and the checks of docs/frames-design.md section 12, step 4.
+   Netscape 2 cannot run frames.html: it has no SCRIPT SRC, cdom.frames.js is JavaScript 1.1, and the page's string table is an array literal (section 12 below).
+
+## 12. What is left
+
+- The rest of the frames tier for Netscape 2: cdom.frames.js is JavaScript 1.1 (typeof, new Array, split, new Function), the string table is an array literal, and Netscape 2 has no SCRIPT SRC, so a Netscape 2 page must inline its scripts; the interpreter and its modules are already JavaScript 1.0 and inline (js1.html).
+- Writing every word of the memory at load costs Netscape 2 about a second for two pages; reading a missing key as 0 (`M[i] | 0`) would skip it, if Netscape 2 turns an undefined into 0 there (not measured).
+- i64 to f32 conversion rounds twice above 2^53 (to double, then to float), so it can be one ulp off there; tools/js1interp.mjs tests it within 2^53 and at the edges.
+- No bounds checks on memory, as on the IE 9 build: an address past the end reads 0 and does not trap.
+- memory.grow stops at 1,024 pages (wi_PAGECAP, 64 MiB).
+- The weighted dispatch is weighted from two programs; an app whose op mix differs pays more comparisons (the balanced tree's 7.6 is the bound to expect).
+- The comparison with the transform (branch js1-transform) is the repo manager's, on the real browsers.

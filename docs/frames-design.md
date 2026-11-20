@@ -57,6 +57,7 @@ On this tier the page becomes a frameset whose one frame shows the app:
 
 1. The boot finds no getElementById or no createElement.
 2. It keeps its arguments in globals, and document.writes, while the page is still parsing, two SCRIPT SRCs (cdom.frames.js, the tier's shim, and the app's words build, url + ".ie9.js") and an inline script that calls cdomFramesStart.
+   Since docs/js1-interp-design.md, three: cdom.frames.js, cdom.js1.js (the WebAssembly interpreter in JavaScript 1.0) and url + ".js1.js" (the app's module lowered for it), in place of the words build.
 3. cdomFramesStart document.writes `<frameset rows="*"><frame name="cdomView" src="about:blank"></frameset>`.
    The parser is still in the body, and nothing in it has content yet (the mount is an empty DIV, and SCRIPT does not count), so the FRAMESET replaces the body (HTML5's frameset-ok rule; A13 for the old browsers).
 4. The shim keeps cdom's node tree in the top window, and writes the frame's whole document from it.
@@ -194,6 +195,7 @@ So the language surface the tier needs of the browser is: functions declared at 
 That list is what a Netscape 2 code path would have to give, whichever way it is made (a WebAssembly interpreter in JavaScript 1.0, or a transform of the wasm2js output): that choice is Alex's, after the probe.
 
 The app itself runs from the words build (app-ie9) for the prototype, which is ES3.
+(Since docs/js1-interp-design.md it runs on the interpreter, cdom.js1.js, and its module, app.wasm.js1.js, both JavaScript 1.0: what follows is why the words build could not stay.)
 What Netscape 3 lacks for it: function expressions and nested functions (the whole file is one), array literals (words.js's tables), push (words_init and words_grow), charCodeAt (the base64 data segments), === (16 in tests/out/legacy.wasm.ie9.js) and throw (3 there, wasm2js's traps), Math.imul, clz32 and trunc (frames.js supplies those three).
 And the page: tools/cdpage writes the string table as `var cdomLits=[...]`, an array literal, which Netscape 2 and 3 cannot parse.
 
@@ -219,7 +221,7 @@ Timings are in headless Chrome on a Linux x86-64 VM under LEGACY=frames, and ind
 
 Alex's XP VM serves pages from the host at http://10.0.2.2:<port>/.
 
-1. Build: `tests/build.sh` writes tests/out/frames.html, cdom.frames.js and frames.wasm.ie9.js.
+1. Build: `tests/build.sh` writes tests/out/frames.html, cdom.frames.js and frames.wasm.ie9.js (now cdom.js1.js and frames.wasm.js1.js in its place: docs/js1-interp-design.md, section 11).
 2. Serve tests/out: `python3 -m http.server 8000 --directory tests/out` on the host.
 3. In each of Netscape 2.02, 3.04 and 4.08 and IE 3 and 4, open http://10.0.2.2:8000/frames.html.
    Then frames-body.html, the same page with a BODY tag, which takes the fallback (A14).
