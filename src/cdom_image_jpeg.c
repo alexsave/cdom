@@ -405,7 +405,9 @@ uint32_t cd_image_jpeg_put(cd_image_dec *d, const uint8_t *p, uint32_t n) {
     x->src.next_input_byte = p;
     x->src.bytes_in_buffer = n;
   }
-  if (cd_image_guard(body, x, &x->guard)) {             /* a fatal libjpeg error, or too many scans */
+  int threw = cd_image_guard(body, x, &x->guard);
+  d->warnings = (uint32_t)x->err.num_warnings;
+  if (threw) {                                           /* a fatal libjpeg error, or too many scans */
     int code = x->err.msg_code;
     st = x->too_many_scans || code == JERR_NO_BACKING_STORE ? CD_IMAGE_TOO_BIG
        : code == JERR_OUT_OF_MEMORY ? CD_IMAGE_NO_ROOM
@@ -415,7 +417,6 @@ uint32_t cd_image_jpeg_put(cd_image_dec *d, const uint8_t *p, uint32_t n) {
     return st;
   }
   st = x->status;
-  d->warnings = (uint32_t)x->err.num_warnings;
   if (st == CD_IMAGE_OK) {
     uint8_t *o = cd_image_scaler_take(&x->sc);
     if (!o) return CD_IMAGE_CORRUPT;

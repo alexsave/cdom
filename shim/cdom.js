@@ -1083,7 +1083,26 @@ var cdom = (() => {
         };
         return from(exports.pieces_room() >>> 0, exports.pieces_max() >>> 0, 0);
       };
-      WebAssembly.instantiate(module, { cdjob: { answer: (p, n) => { heard = exports.memory.buffer.slice(p, p + n); } } })
+      // A job that links the image module (APP_JOB_<name>_MODULES, cdom.mk) leaves a libjpeg error the js way
+      // (src/cdom_image_sjlj.c), as the page does: these two are the page's image_call and image_throw.
+      const thrown = {};
+      const image = {
+        image_call: (body, ctx) => {
+          try {
+            exports.cd_image_run(body, ctx);
+            return 0;
+          } catch (e) {
+            if (e !== thrown) {
+              throw e;
+            }
+            return 1;
+          }
+        },
+        image_throw: () => {
+          throw thrown;
+        },
+      };
+      WebAssembly.instantiate(module, { cdjob: { answer: (p, n) => { heard = exports.memory.buffer.slice(p, p + n); } }, cdom: image })
         .then((instance) => {
           exports = instance.exports;
           if (mode === 2) {
