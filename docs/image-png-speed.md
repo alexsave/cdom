@@ -749,6 +749,7 @@ The image bench (bench/image/run.mjs, 9 interleaved rounds, box 900, each run on
 - Q1 refuted: cd_inflate_zlib's self time is 0.936 of main's (58.5 to 54.7 ms, the means of the two runs each), over the 0.85 falsifier: **the step failed** its gate.
 - Q2 refuted: build is 0.94 of main's (7.25 to 6.8 ms), over the 0.80 falsifier.
 - Q3 refuted: natively cd_inflate_zlib's own instructions rose to 328.0 M (the falsifier was above 290 M), and build's fell to 50.7 M (the falsifier was above 45 M). In V8 the fall was 12 to 16% (above).
+  After these measurements the pairing pass lost its count tests (found equivalent by a mutant: an entry read there is never paired yet), which took build to 45.9 M natively, still over the falsifier; the profile and benches above are of the build before that.
 - Q4 refuted: C1 alone saved 9.8 M natively (under 20 M; 18.8 M in V8 12.4); with the exits as returns it is most of the 83.7 M V8 12.4 lost from C1, C2, C4 and C7 together, but the falsifier's count was the native one.
 - Q5 refuted, by a number the counts do not back: C5 alone was 59.5 ms against main's 65.5 in one fresh-page session (a gain over 2 ms), while its instruction counts are main's within 0.3% and the build with all the changes measured 63.5 in the same session; read it as noise, but the falsifier was hit.
 - Q6 refuted: 0.936 of main's in the inflate bench (the falsifier was above 0.90).
