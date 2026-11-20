@@ -853,3 +853,32 @@ On the Mac the image module's times have run at about 0.7 to 0.85 of the VM's, a
 - R4: against the browser in Chrome (C-simd over B1): p12.png 0.80 to 0.90; p12a.png 0.95 to 1.15; p12g.png 1.05 to 1.30.
   That is, the RGBA and grey PNGs are not predicted to beat Chrome's decoder; this is the first Mac measurement of either.
 - R5: against Safari (C-simd over the faster of B1 and B2): under 0.75 for all three PNGs.
+
+## inflate-fast on the Mac: results
+
+bench/image/inflate-mac.sh at 2:39am New York time on 2026-11-20 (Apple arm64; Chrome, then Safari 27.0.1), main at 637f664 (the chunked read) as C-old and C-old-simd, 9 interleaved rounds at box 900.
+The tables are results/2026-11-20-inflate-mac-{chrome,safari}.{log,tsv}. Medians in ms:
+
+| input | browser | C-old | C-old-simd | C-js | C-simd | B1 | B2 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| p12.jpg | Chrome | 59.3 | 52.3 | 59.4 | 52.2 | 62.4 | 69.2 |
+| p12.png | Chrome | 177.9 | 111.2 | 175.8 | 107.7 | 131.0 | 137.9 |
+| p12a.png | Chrome | 243.0 | 154.2 | 239.4 | 149.1 | 152.9 | 160.1 |
+| p12g.png | Chrome | 153.4 | 136.4 | 152.7 | 134.1 | 77.2 | 84.4 |
+| p12.jpg | Safari | 64 | 54 | 63 | 54 | 85 | 76 |
+| p12.png | Safari | 228 | 114 | 228 | 114 | 206 | 196 |
+| p12a.png | Safari | 282 | 158 | 281 | 159 | 235 | 201 |
+| p12g.png | Safari | 158 | 128 | 157 | 128 | 124 | 102 |
+
+The wasm memory after each input is main's (6.1, 17.6, 20.2 and 8.9 MiB).
+
+| id | prediction | measured | verdict |
+| --- | --- | --- | --- |
+| R1 | the three PNGs, C-simd over C-old-simd: 0.94 to 1.00 in Chrome, 0.94 to 1.01 in Safari; falsifier more than 1% slower | Chrome 0.969, 0.967, 0.983; Safari 1.000, 1.006, 1.000 | confirmed: the fast loop ships (3% in Chrome, nothing either way in Safari) |
+| R2 | p12.jpg within 2% of main's | Chrome 0.998, Safari 1.000 | confirmed |
+| R3 | wasm memory as main's | equal | confirmed |
+| R4 | over B1 in Chrome: p12.png 0.80 to 0.90, p12a.png 0.95 to 1.15, p12g.png 1.05 to 1.30 | 0.82, 0.975, 1.74 | p12.png and p12a.png confirmed; p12g.png refuted, far over |
+| R5 | over the faster browser arm in Safari: under 0.75 for all three | 0.58, 0.79, 1.25 | refuted for p12a.png and p12g.png |
+
+What it shows beyond this branch: cdom beats both browsers on RGB PNG and on JPEG, beats Chrome narrowly and Safari by 21% on RGBA, and loses on grey: Chrome's decoder takes 77 ms where cdom takes 134, and Safari's 102 where cdom takes 128.
+The grey PNG is the next PNG work, profiled before anything changes (issue to follow).
