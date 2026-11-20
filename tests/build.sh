@@ -109,7 +109,7 @@ node "$legacy" app-js1 "$here/out/js1cpu.wasm" "$here/out/js1cpu.wasm.js1.js"
 node "$legacy" app-ie9 "$here/out/js1cpu.wasm" "$here/out/js1cpu.wasm.ie9.js"
 node "$here/../tools/js1page.mjs" "$here/out"
 # The JavaScript 1.0 gate over the interpreter and every module file built for it (build.mjs refuses each already).
-node "$here/../tools/js10.mjs" > "$here/out/js10.log" || { cat "$here/out/js10.log" >&2; exit 1; }
+node "$here/../tools/js10.mjs" --files "$here/out/cdom.js1.js" "$here/out/"*.wasm.js1.js > "$here/out/js10.log" || { cat "$here/out/js10.log" >&2; exit 1; }
 # cd_job (tools/job.mjs): the app, and the synthetic job module built as cdom.mk builds one (APP_JOBS): cdom's heap alone
 # (-DCDOM_HEAP_ONLY), mini.c, cdom_job_mod.c, no string table. The cap build has the heap at 100 pages (6.4 MB), for NO_ROOM.
 jobwasm() { # jobwasm <opt> <out.wasm> <sources and extra flags...>

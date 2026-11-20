@@ -51,7 +51,7 @@ const MK = '(func $mk (param i32 i32) (result i64) (i64.or (i64.extend_i32_u (lo
 // stored at address 0 and read from memory.
 function opsModule() {
   const fns = [];
-  const add = (name, params, result, body, kinds) => fns.push({ name, params, result, body, kinds });
+  const add = (name, params, result, body, kinds, list) => fns.push({ name, params, result, body, kinds, list });
   const arg = (k, i) => (k === 'p' ? `(call $mk (local.get ${i}) (local.get ${i + 1}))` : `(local.get ${i})`);
   const sig = (kinds) => { const ps = []; for (const k of kinds) { if (k === 'p') ps.push('i32', 'i32'); else ps.push({ i: 'i32', d: 'f64', f: 'f32' }[k]); } return ps; };
   const args = (kinds) => { let i = 0; return [...kinds].map((k) => { const a = arg(k, i); i += k === 'p' ? 2 : 1; return a; }); };
@@ -65,6 +65,23 @@ function opsModule() {
     op(`i32.${o}`, 'ii', 'i');
     op(`i64.${o}`, 'pp', /^(eq|ne|lt|gt|le|ge)/.test(o) ? 'i' : 'p');
   }
+  // Each i32 op with a constant second operand (the immediate forms) and a constant first one (swapped, mirrored or put
+  // in a slot); each compare as a branch, taken when true (br_if) and when false (if), on registers and on a constant.
+  for (const o of ['add', 'sub', 'mul', 'div_s', 'div_u', 'rem_s', 'rem_u', 'and', 'or', 'xor', 'shl', 'shr_s', 'shr_u', 'rotl', 'rotr',
+    'eq', 'ne', 'lt_s', 'lt_u', 'gt_s', 'gt_u', 'le_s', 'le_u', 'ge_s', 'ge_u']) {
+    for (const k of [7, -1, 31, -0x80000000]) {
+      add(`i32.${o}#${k}`, ['i32'], 'i32', `(i32.${o} (local.get 0) (i32.const ${k}))`, 'i');
+      add(`i32.${o}#${k}r`, ['i32'], 'i32', `(i32.${o} (i32.const ${k}) (local.get 0))`, 'i');
+    }
+  }
+  for (const o of ['eq', 'ne', 'lt_s', 'lt_u', 'gt_s', 'gt_u', 'le_s', 'le_u', 'ge_s', 'ge_u']) {
+    add(`if.${o}`, ['i32', 'i32'], 'i32', `(if (result i32) (i32.${o} (local.get 0) (local.get 1)) (then (i32.const 1)) (else (i32.const 2)))`, 'ii');
+    add(`br_if.${o}`, ['i32', 'i32'], 'i32', `(block $b (br_if $b (i32.${o} (local.get 0) (local.get 1))) (return (i32.const 3))) (i32.const 4)`, 'ii');
+    add(`if.${o}#k`, ['i32'], 'i32', `(if (result i32) (i32.${o} (local.get 0) (i32.const 7)) (then (i32.const 1)) (else (i32.const 2)))`, 'i');
+    add(`br_if.${o}#k`, ['i32'], 'i32', `(block $b (br_if $b (i32.${o} (local.get 0) (i32.const -2))) (return (i32.const 3))) (i32.const 4)`, 'i');
+  }
+  add('if.eqz', ['i32'], 'i32', '(if (result i32) (i32.eqz (local.get 0)) (then (i32.const 1)) (else (i32.const 2)))', 'i');
+  add('br_if.eqz', ['i32'], 'i32', '(block $b (br_if $b (i32.eqz (local.get 0))) (return (i32.const 3))) (i32.const 4)', 'i');
   for (const o of ['eqz', 'clz', 'ctz', 'popcnt', 'extend8_s', 'extend16_s']) op(`i32.${o}`, 'i', 'i');
   for (const o of ['clz', 'ctz', 'popcnt', 'extend8_s', 'extend16_s', 'extend32_s']) op(`i64.${o}`, 'p', 'p');
   op('i64.eqz', 'p', 'i');
@@ -96,11 +113,11 @@ function opsModule() {
   }
   // Control flow and the rest: br_table with values, a loop, select, globals, call_indirect, memory.size, grow, copy, fill.
   add('br_table', ['i32'], 'i32', '(block $d (result i32) (block $c (result i32) (block $b (result i32) (block $a (result i32) (i32.const 100) (local.get 0) (br_table $a $b $c $d))'
-    + ' (i32.const 1) (i32.add)) (i32.const 2) (i32.add)) (i32.const 3) (i32.add))');
+    + ' (i32.const 1) (i32.add)) (i32.const 2) (i32.add)) (i32.const 3) (i32.add))', 'X', [[0], [1], [2], [3], [4], [-1], [1000]]);
   add('loop_sum', ['i32'], 'i32', '(local $s i32) (block $out (loop $l (br_if $out (i32.eqz (local.get 0))) (local.set $s (i32.add (local.get $s) (local.get 0)))'
-    + ' (local.set 0 (i32.sub (local.get 0) (i32.const 1))) (br $l))) (local.get $s)');
-  add('select', ['i32', 'i32', 'i32'], 'i32', '(select (local.get 0) (local.get 1) (local.get 2))');
-  add('select64', ['i32', 'i32', 'i32', 'i32', 'i32'], null, '(i64.store (i32.const 0) (select (call $mk (local.get 0) (local.get 1)) (call $mk (local.get 2) (local.get 3)) (local.get 4)))');
+    + ' (local.set 0 (i32.sub (local.get 0) (i32.const 1))) (br $l))) (local.get $s)', 'X', [[0], [1], [5], [100], [3], [0]]);
+  add('select', ['i32', 'i32', 'i32'], 'i32', '(select (local.get 0) (local.get 1) (local.get 2))', 'X', [[1, 2, 0], [1, 2, 1], [1, 2, -1], [5, -5, 7]]);
+  add('select64', ['i32', 'i32', 'i32', 'i32', 'i32'], null, '(i64.store (i32.const 0) (select (call $mk (local.get 0) (local.get 1)) (call $mk (local.get 2) (local.get 3)) (local.get 4)))', 'X', [[1, 2, 3, 4, 0], [1, 2, 3, 4, 1], [-1, -1, 5, 0, 9]]);
   add('globals', ['i32'], 'i32', '(global.set $g (i32.add (global.get $g) (local.get 0))) (global.set $g64 (i64.add (global.get $g64) (i64.extend_i32_s (local.get 0)))) (i32.xor (global.get $g) (i32.wrap_i64 (i64.shr_u (global.get $g64) (i64.const 7))))');
   add('call_indirect', ['i32', 'i32'], 'i32', '(call_indirect (type $ii) (local.get 0) (local.get 1))');
   add('call_indirect_wrong', ['i32'], 'i32', '(call_indirect (type $v) (local.get 0)) (i32.const 0)');
@@ -108,13 +125,16 @@ function opsModule() {
   add('copy', ['i32', 'i32', 'i32'], null, '(memory.copy (local.get 0) (local.get 1) (local.get 2))');
   add('fill', ['i32', 'i32', 'i32'], null, '(memory.fill (local.get 0) (local.get 1) (local.get 2))');
   add('unreachable', [], 'i32', '(unreachable)');
-  add('if_else', ['i32', 'i32'], 'i32', '(if (result i32) (i32.lt_s (local.get 0) (local.get 1)) (then (i32.sub (local.get 1) (local.get 0))) (else (if (result i32) (i32.eqz (local.get 0)) (then (i32.const 77)) (else (i32.mul (local.get 0) (i32.const 3))))))');
-  add('br_if_value', ['i32'], 'i32', '(block $b (result i32) (drop (br_if $b (i32.const 5) (local.get 0))) (i32.const 9))');
-  add('tee', ['i32'], 'i32', '(local $t i32) (i32.add (local.tee $t (i32.mul (local.get 0) (i32.const 3))) (local.get $t))');
-  add('swap', ['i32', 'i32'], 'i32', '(local $t i32) (local.get 0) (local.get 1) (local.set 0) (local.set 1) (i32.sub (local.get 0) (local.get 1))');
-  add('fact', ['i32'], 'i32', '(if (result i32) (i32.le_s (local.get 0) (i32.const 1)) (then (i32.const 1)) (else (i32.mul (local.get 0) (call $fact (i32.sub (local.get 0) (i32.const 1))))))');
-  add('ret_early', ['i32'], 'i32', '(if (local.get 0) (then (return (i32.const 11)))) (i32.const 22)');
-  add('dead_after_br', ['i32'], 'i32', '(block $b (result i32) (br $b (local.get 0)) (i32.const 1) (i32.add))');
+  add('if_else', ['i32', 'i32'], 'i32', '(if (result i32) (i32.lt_s (local.get 0) (local.get 1)) (then (i32.sub (local.get 1) (local.get 0))) (else (if (result i32) (i32.eqz (local.get 0)) (then (i32.const 77)) (else (i32.mul (local.get 0) (i32.const 3))))))', 'ii');
+  add('br_if_value', ['i32'], 'i32', '(block $b (result i32) (drop (br_if $b (i32.const 5) (local.get 0))) (i32.const 9))', 'i');
+  add('br_if_local', ['i32', 'i32'], 'i32', '(block $b (result i32) (drop (br_if $b (local.get 1) (local.get 0))) (i32.const 9))', 'ii');
+  add('br_if_slot', ['i32', 'i32'], 'i32', '(block $b (result i32) (drop (br_if $b (i32.add (local.get 0) (local.get 1)) (local.get 0))) (i32.const 9))', 'ii');
+  add('tee', ['i32'], 'i32', '(local $t i32) (i32.add (local.tee $t (i32.mul (local.get 0) (i32.const 3))) (local.get $t))', 'i');
+  add('swap', ['i32', 'i32'], 'i32', '(local $t i32) (local.get 0) (local.get 1) (local.set 0) (local.set 1) (i32.sub (local.get 0) (local.get 1))', 'ii');
+  add('fact', ['i32'], 'i32', '(if (result i32) (i32.le_s (local.get 0) (i32.const 1)) (then (i32.const 1)) (else (i32.mul (local.get 0) (call $fact (i32.sub (local.get 0) (i32.const 1))))))', 'X', [[0], [1], [5], [10], [12]]);
+  add('ret_early', ['i32'], 'i32', '(if (local.get 0) (then (return (i32.const 11)))) (i32.const 22)', 'i');
+  add('dead_after_br', ['i32'], 'i32', '(block $b (result i32) (br $b (local.get 0)) (i32.const 1) (i32.add))', 'i');
+  add('locals_zero', ['i32'], 'i32', '(local $a i32) (local $b i64) (local $c f64) (local.set $a (i32.add (local.get $a) (local.get 0))) (i32.add (local.get $a) (i32.wrap_i64 (local.get $b)))', 'i');
   const wat = ['(module', ' (type $ii (func (param i32) (result i32)))', ' (type $v (func))', ' (memory (export "memory") 1 4)',
     ' (global $g (mut i32) (i32.const 5))', ' (global $g64 (mut i64) (i64.const 0x123456789))', ' (table 4 funcref)',
     ' (elem (i32.const 1) $sq $neg)', ' (data (i32.const 100) "\\01\\02\\03\\04\\05\\06\\07\\08\\09\\0a\\0b\\0c\\0d\\0e\\0f\\10")',
@@ -157,6 +177,7 @@ if (on('ops')) {
   const cases = (f) => {
     const k = f.kinds;
     if (!k) return null;
+    if (k === 'X') return f.list;
     if (k === 'L') return [[84], [85], [86], [87], [88], [89], [90], [91], [92]];
     if (k[0] === 'a') { const o = []; for (const at of [0, 1, 2, 3, 5, 6, 7]) for (const v of values(k[1]).slice(0, 30)) o.push([at, ...v]); return o; }
     if (k.length === 1) return values(k).map((v) => [...v]);
@@ -168,7 +189,8 @@ if (on('ops')) {
     const list = cases(f);
     if (!list) continue;
     for (const a of list) {
-      if (f.kinds[0] === 'a') { const W = new Int32Array(w.memory.buffer); for (let i = 0; i < 16; i++) { W[i] = 0; it.ctx.wi_M[i] = 0; } }
+      // A store lands on a pattern, so a store that writes more or less than its bytes shows.
+      if (f.kinds[0] === 'a') { const W = new Int32Array(w.memory.buffer); for (let i = 0; i < 16; i++) { W[i] = 0x5a5a5a5a; it.ctx.wi_M[i] = 0x5a5a5a5a; } }
       let wr, ir, wt = '', itp = '';
       try { wr = w[f.name](...a); } catch (e) { wt = String(e.message); }
       ir = it.exports[f.name](...a);
@@ -177,7 +199,7 @@ if (on('ops')) {
       if (wt || itp) agree = !!wt === !!itp;
       else if (f.result === 'i32') agree = (wr | 0) === (ir | 0);
       else if (f.result) agree = same(wr, ir);
-      else agree = words(8).join() === iwords(8).join();
+      else agree = words(16).join() === iwords(16).join();
       if (!agree && !(bad.get(f.name) || []).length) bad.set(f.name, []);
       if (!agree && bad.get(f.name).length < 3) bad.get(f.name).push(`${f.name}(${a.map(show).join(', ')}): wasm ${wt ? 'trap ' + wt : f.result ? show(wr) : words(8).join(' ')}, interpreter ${itp ? 'trap ' + itp : f.result ? show(ir) : iwords(8).join(' ')}`);
       n++;

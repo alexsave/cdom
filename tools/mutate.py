@@ -52,6 +52,8 @@ FPT9 = ['env', 'LEGACY=ie9', 'node', 'tools/fptoint.mjs']            # and on th
 LEGW2J = ['env', 'LEGACY=1', 'node', 'tools/legacy.mjs']             # the legacy page as a browser without WebAssembly
 FRAMES = ['env', 'LEGACY=frames', 'node', 'tools/frames.mjs']       # the fifth tier: no DOM mutation, frames written whole
 JS11T = ['node', 'tools/js11.mjs']                                   # the frames tier's language gates, in node
+JS1I = ['node', 'tools/js1interp.mjs']                               # the WebAssembly interpreter against the engine's, in node
+JS10T = ['node', 'tools/js10.mjs']                                   # the JavaScript 1.0 gate's checks, and the built files through it
 NOSCRIPT = ['tests/noscript/run.sh']                                 # the no-script fallback: Chrome off and on, lynx, the lens, cdpage's refusals
 
 # name, file, old, new, test command, text the failure must contain
@@ -1001,6 +1003,35 @@ M = [
   ('js11-undefined-allowed', 'tools/legacy/js11.mjs', "const GLOBALS = new Set(['undefined', ", "const GLOBALS = new Set([", JS11T, 'FAIL var u = undefined; is refused'),
   ('js10-typeof-allowed', 'tools/legacy/js11.mjs', "    if (js10 && n.type === 'UnaryExpression' && (n.operator === 'typeof' || n.operator === 'void')) add(n.operator, n);", '', JS11T, 'FAIL js10: if (typeof x == "string") f(); is refused'),
   ('js10-names-allowed', 'tools/legacy/js11.mjs', "      if (js10 && JS10_NAMES.has(n.name)) add(n.name, n);", '', JS11T, 'FAIL js10: var a = new Array(); is refused'),
+  # The frames tier's WebAssembly interpreter in JavaScript 1.0 (docs/js1-interp-design.md): its handlers and helpers
+  # (js1i-), its lowering (js1l-), the JavaScript 1.0 gate (js1g-) and the frames tier on it (js1f-).
+  ('js1i-add64-carry', 'tools/legacy/interp.js', 'hi = H[a] + H[b] + (lo > 4294967295 ? 1 : 0) | 0;', 'hi = H[a] + H[b] | 0;', JS1I, 'FAIL i64.add'),
+  ('js1i-mul-cross', 'tools/legacy/interp.js', '//@ mul rrr\na = R[fp + C[pc + 2]];\nb = R[fp + C[pc + 3]];\nx = a & 65535;\ny = b & 65535;\nR[fp + C[pc + 1]] = x * y + ((a >>> 16) * y + x * (b >>> 16) << 16) | 0;', '//@ mul rrr\na = R[fp + C[pc + 2]];\nb = R[fp + C[pc + 3]];\nx = a & 65535;\ny = b & 65535;\nR[fp + C[pc + 1]] = x * y + ((a >>> 16) * y << 16) | 0;', JS1I, 'FAIL i32.mul'),
+  ('js1i-divs-overflow', 'tools/legacy/interp.js', 'if (b == -1 && a == -2147483648) {\n  wi_trap = 3;', 'if (0) {\n  wi_trap = 3;', JS1I, 'FAIL i32.div_s'),
+  ('js1i-ld-unaligned', 'tools/legacy/interp.js', 'if (a & 3) x = wi_ld32u(a);\nelse x = M[a >> 2];', 'x = M[a >> 2];', JS1I, 'FAIL i32.load'),
+  ('js1i-st8-mask', 'tools/legacy/interp.js', 'M[d] = M[d] & ~(255 << s) | (R[fp + C[pc + 2]] & 255) << s;', 'M[d] = M[d] | (R[fp + C[pc + 2]] & 255) << s;', JS1I, 'FAIL i32.store8'),
+  ('js1i-shru64-high', 'tools/legacy/interp.js', '  lo = hi >>> (s - 32) | 0;\n  hi = 0;', '  lo = hi >> (s - 32);\n  hi = 0;', JS1I, 'FAIL i64.shr_u'),
+  ('js1i-fround-ties', 'tools/legacy/interp.js', '  if (d > 0.5 || (d == 0.5 && f % 2 == 1)) f = f + 1;\n  r = f * wi_P2[q + 1074];', '  if (d >= 0.5) f = f + 1;\n  r = f * wi_P2[q + 1074];', JS1I, 'FAIL f32.'),
+  ('js1i-f64-negative-zero', 'tools/legacy/interp.js', '  if (x < 0 || (x == 0 && 1 / x < 0)) hi = hi | -2147483648;', '  if (x < 0) hi = hi | -2147483648;', JS1I, 'FAIL f64.store'),
+  ('js1i-locals-not-zeroed', 'tools/legacy/interp.js', 'while (a < b) {\n  R[a] = 0;\n  H[a] = 0;\n  a++;\n}', 'while (a < b) {\n  a++;\n}', JS1I, 'FAIL locals_zero'),
+  ('js1i-no-stack-limit', 'tools/legacy/interp.js', '//@ enter kkk\nif (fp + C[pc + 3] > wi_LIMIT) {', '//@ enter kkk\nif (0) {', JS1I, 'FAIL the deepest recursion'),
+  ('js1i-trap-kept', 'tools/legacy/interp.js', '  if (wi_depth == 0) {\n    wi_trap = 0;', '  if (wi_depth == 0) {\n    wi_trap = wi_trap;', JS1I, 'FAIL and the next call works'),
+  ('js1i-brtab-default', 'tools/legacy/interp.js', 'if (a > n) a = n;\npc = C[pc + 3 + a];', 'if (a > n + 1) a = n;\npc = C[pc + 3 + a];', JS1I, 'FAIL br_table'),
+  ('js1i-import-args', 'tools/legacy/interp.js', '  else if (n == 2) x = wi_I[k](R[a], R[a + 1]);', '  else if (n == 2) x = wi_I[k](R[a + 1], R[a]);', JS1I, 'FAIL cd_start makes the same'),
+  ('js1i-grow-pages', 'tools/legacy/interp.js', '  wi_pages = old + n;\n  return old;', '  return old;', JS1I, 'FAIL globals, memory.size, grow'),
+  ('js1i-decode-sign', 'tools/legacy/interp.js', '    if (v % 2) D[k] = -(v + 1) / 2;', '    if (v % 2) D[k] = (v + 1) / 2;', JS1I, 'FAIL loop('),
+  ('js1l-hazard', 'tools/legacy/js1lower.mjs', "for (let j = 0; j < i; j++) if (stack[j].k === 'l' && stack[j].v === x) { materialize(j); hazard = true; }", 'for (let j = 0; j < i; j++) if (false) { materialize(j); hazard = true; }', JS1I, 'FAIL rec(1), a recursion 1 deep'),
+  ('js1l-invert', 'tools/legacy/js1lower.mjs', "const INVERT = { eq: 'ne', ne: 'eq', lts: 'ges',", "const INVERT = { eq: 'ne', ne: 'eq', lts: 'gts',", JS1I, 'FAIL if.lt_s'),
+  ('js1l-branch-value', 'tools/legacy/js1lower.mjs', "      if (stack[i].k === 'c') constInto(want, stack[i]);\n      else emit(is64(lab.result) ? 'mov64' : 'mov', want, reg(i));", "      if (stack[i].k === 'c') constInto(want, stack[i]);", JS1I, 'FAIL br_if_local'),
+  ('js1l-imm-sub', 'tools/legacy/js1lower.mjs', "if (name === 'sub') { name = 'add'; imm = -eb.lo | 0; }", "if (name === 'sub') { name = 'add'; imm = eb.lo; }", JS1I, 'FAIL i32.sub#'),
+  ('js1g-split-allowed', 'tools/legacy/js10.mjs', "'charCodeAt', 'fromCharCode', 'split', ", "'charCodeAt', 'fromCharCode', ", JS10T, 'FAIL .split is refused'),
+  ('js1g-math-log', 'tools/legacy/js10.mjs', "const MATH = new Set(['floor', 'abs', 'sqrt', 'pow', 'round', 'max']);", "const MATH = new Set(['floor', 'abs', 'sqrt', 'pow', 'round', 'max', 'log']);", JS10T, 'FAIL Math.log, not measured, is refused'),
+  ('js1g-free-globals', 'tools/legacy/js10.mjs', '      else if (!scope.has(n.name) && !globals.has(n.name) && !extra.has(n.name) && !PRESENT.has(n.name)) add(', '      else if (false) add(', JS10T, 'FAIL clearTimeout, not measured, is refused'),
+  ('js1g-new-member', 'tools/legacy/js10.mjs', "    if (n.type === 'MemberExpression' && n.object.type === 'NewExpression') add('a member of a new expression', n);", '', JS10T, 'FAIL var t = new Date().getTime(); is refused'),
+  ('js1g-typeof', 'tools/legacy/js10.mjs', "    if (n.type === 'UnaryExpression' && ['delete', 'typeof', 'void'].includes(n.operator)) add(n.operator, n);", "    if (n.type === 'UnaryExpression' && ['delete', 'void'].includes(n.operator)) add(n.operator, n);", JS10T, 'FAIL var t = typeof x; is refused'),
+  ('js1g-interp-not-js10', 'tools/legacy/interp.js', '//@ fabs rr\nx = R[fp + C[pc + 2]];', '//@ fabs rr\nx = R[fp + C[pc + 2]];\nif (typeof x == "string") x = 0;', JS10T, 'interp.js is not JavaScript 1.0: typeof'),
+  ('js1f-trap-unchecked', 'tools/legacy/frames.js', '  if (t) {\n    cf_fail("cdom: C trapped: " + t);', '  if (0) {\n    cf_fail("cdom: C trapped: " + t);', FRAMES, 'FAIL a trap ends the call'),
+  ('js1f-boot-ie9', 'shim/boot.js', '<script src=\\"cdom.js1.js\\"></scr" + "ipt><script src=\\"" + base + ".js1.js\\"', '<script src=\\"" + base + ".ie9.js\\"', FRAMES, 'FAIL tier 5 files only'),
   ('mount-waits-on-gone-domcontentloaded', 'shim/cdom.js', '      return new Promise((resolve) => addEventListener("load", resolve, { once: true })).then(found);', '      return new Promise((resolve) => doc.addEventListener("DOMContentLoaded", resolve, { once: true })).then(found);', LEG, 'FAIL a missing mount is an error once the page has loaded'),
   # no LEGACY=ie6 twin of the one above: dom-old.js listens for DOMContentLoaded as the window's load there, so it is the same wait
   ('mount-missing-no-error', 'shim/cdom.js', '      if (!element) {\n        throw new Error(`cdom: no element has the id ${mount}`);', '      if (false) {\n        throw new Error(`cdom: no element has the id ${mount}`);', LEG, 'FAIL a missing mount is an error once the page has loaded'),

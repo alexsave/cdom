@@ -2,7 +2,8 @@
 // rule: what Netscape 2.02 was measured to lack must be refused, what it was measured to have must pass, and a global
 // or a Math member measured neither way is refused. Then it gates files: node tools/js10.mjs [file ...] takes the
 // files of one page together (a module file calls the interpreter's names), and with no files gates tests/out's
-// cdom.js1.js with each module file there (*.js1.js). Exit 1 on any failure.
+// cdom.js1.js with each module file there (*.js1.js); --files <file ...> gates the files alone, with no checks of the
+// rules (tests/build.sh). Exit 1 on any failure.
 import fs from 'node:fs';
 import path from 'node:path';
 import { lacks10, declared } from './legacy/js10.mjs';
@@ -12,8 +13,9 @@ const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console
 const refused = (src, what, options) => lacks10(src, options).some((f) => f.startsWith(what));
 const passes = (src, options) => { const f = lacks10(src, options); if (f.length) console.log('  ', f.join('; ')); return !f.length; };
 
+const filesOnly = process.argv[2] === '--files';
 // Syntax that did not parse on Netscape 2.02 ("no run").
-for (const [src, what] of [
+if (!filesOnly) for (const [src, what] of [
   ['var t = typeof x;', 'typeof'], ['var v = void 0;', 'void'], ['var o = {};', 'an object literal'], ['var a = [1, 2];', 'an array literal'],
   ['var r = /a/;', 'a regex literal'], ['var f = function () {};', 'a function expression'],
   ['function f() { function g() {} g(); }', 'a nested function declaration'], ['switch (x) { case 1: f(); }', 'switch'],
@@ -25,6 +27,7 @@ for (const [src, what] of [
   const decl = 'var x, o, F; function f() {} function g() {} ';
   ok(refused(decl + src, what), `${src} is refused (${what})`);
 }
+if (!filesOnly) {
 // Names that died at run time (DIED(start)), as properties and as globals.
 for (const m of ['split', 'slice', 'substr', 'replace', 'charCodeAt', 'join', 'sort', 'push', 'pop', 'concat', 'prototype', 'constructor',
   'hasOwnProperty', 'call', 'apply', 'javaEnabled', 'images', 'onerror'])
@@ -49,11 +52,13 @@ eval("1 + 2"); setTimeout("f(1, 2)", 10); window.x = document.title + navigator.
 'new Object, new Date, functions, for, for-in, while, break, continue, ?:, every bitwise operator, charAt, indexOf, lastIndexOf, substring, toUpperCase, escape, the six Math functions, parseInt, parseFloat, eval, setTimeout and the page objects pass');
 ok(passes('wi_call(1);', { known: ['wi_call'] }), "a name another file of the page declares passes, given as known");
 
+}
+
 // The files.
-let files = process.argv.slice(2);
+let files = process.argv.slice(filesOnly ? 3 : 2);
 if (!files.length) {
   const out = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
-  files = [path.join(out, 'cdom.js1.js'), ...fs.readdirSync(out).filter((f) => f.endsWith('.js1.js')).map((f) => path.join(out, f))];
+  files = [path.join(out, 'cdom.js1.js'), ...fs.readdirSync(out).filter((f) => f.endsWith('.wasm.js1.js')).map((f) => path.join(out, f))];
 }
 const srcs = files.map((f) => fs.readFileSync(f, 'utf8'));
 const known = srcs.flatMap((s) => { try { return declared(s); } catch { return []; } });
