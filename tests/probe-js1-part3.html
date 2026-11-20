@@ -1,0 +1,190 @@
+<HTML>
+<HEAD>
+<TITLE>cdom probe-js1</TITLE>
+<SCRIPT LANGUAGE="JavaScript">
+var n = 0;
+var TAG = "" + location.search;
+TAG = TAG.substring(1, TAG.length);
+if (TAG == "") { TAG = "x"; }
+function mark(name, v) {
+  n = n + 1;
+  document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
+}
+var late_n = 0;
+function late(name, v) {
+  late_n = late_n + 1;
+  var u = '/mark/' + TAG + '/p-L' + late_n + '-' + name + '-' + escape("" + v);
+  if (window.Image) {
+    var im = new Image();
+    im.src = u;
+  } else {
+    document.write('<IMG SRC="' + u + '" WIDTH=1 HEIGHT=1>');
+  }
+}
+</SCRIPT>
+</HEAD>
+<BODY>
+<H3>cdom probe-js1</H3>
+<P>Reports to /mark/ as it loads.
+<FORM NAME="f0"><INPUT TYPE=text NAME="t0" VALUE="v0"></FORM>
+<SCRIPT LANGUAGE="JavaScript">
+mark("callee", "start");
+function g(){ return arguments.callee == g; }
+mark("callee", g());
+mark("callee", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("fnLength", "start");
+function g(a,b){ return 1; }
+mark("fnLength", g.length);
+mark("fnLength", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("closureVar", "start");
+function mk(){ var c = 5; function g(){ return c; } return g; } var h = mk();
+mark("closureVar", h());
+mark("closureVar", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("thisInMethod", "start");
+var o = new Object(); function m(){ return this.v; } o.v = 4; o.m = m;
+mark("thisInMethod", o.m());
+mark("thisInMethod", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newCtor", "start");
+function P(x){ this.x = x; } var p = new P(3);
+mark("newCtor", p.x);
+mark("newCtor", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newCtorCall", "start");
+function P(x){ this.x = x; }
+mark("newCtorCall", new P(3).x);
+mark("newCtorCall", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("hasOwnProperty", "start");
+var o = new Object(); o.a = 1;
+mark("hasOwnProperty", o.hasOwnProperty('a'));
+mark("hasOwnProperty", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("toStringObj", "start");
+var o = new Object();
+mark("toStringObj", o.toString());
+mark("toStringObj", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("switch", "start");
+function s(x){ switch (x) { case 1: return 'one'; case 2: return 'two'; default: return 'other'; } }
+mark("switch", s(2));
+mark("switch", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("switchStr", "start");
+function s(x){ switch (x) { case 'a': return 'A'; default: return 'other'; } }
+mark("switchStr", s('a'));
+mark("switchStr", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("doWhile", "start");
+function d(){ var i = 0; do { i++; } while (i < 3); return i; }
+mark("doWhile", d());
+mark("doWhile", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("labeled", "start");
+function l(){ var i = 0; a: for (;;) { i++; if (i > 3) { break a; } } return i; }
+mark("labeled", l());
+mark("labeled", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("regexLit", "start");
+
+mark("regexLit", /a+/.test('caat'));
+mark("regexLit", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("regexExec", "start");
+
+mark("regexExec", /(a+)/.exec('caat')[1]);
+mark("regexExec", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("regexNew", "start");
+
+mark("regexNew", new RegExp('a+').test('caat'));
+mark("regexNew", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("strictEq", "start");
+
+mark("strictEq", 1 === 1);
+mark("strictEq", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("inOp", "start");
+var oo = new Object(); oo.a = 1;
+mark("inOp", 'a' in oo);
+mark("inOp", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tryCatch", "start");
+function tc(){ try { return 1; } catch (e) { return 2; } }
+mark("tryCatch", tc());
+mark("tryCatch", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tryFinally", "start");
+function tf(){ try { return 1; } finally { } }
+mark("tryFinally", tf());
+mark("tryFinally", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("throw", "start");
+function th(){ throw 1; }
+mark("throw", 1);
+mark("throw", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("delete", "start");
+function d(){ var o = new Object(); o.a = 1; delete o.a; return '' + o.a; }
+mark("delete", d());
+mark("delete", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ternary", "start");
+
+mark("ternary", true ? 'y' : 'n');
+mark("ternary", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("comma", "start");
+
+mark("comma", (1,2));
+mark("comma", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("withStmt", "start");
+var o = new Object(); o.a = 5; function w(){ with (o) { return a; } }
+mark("withStmt", w());
+mark("withStmt", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("whileBreakContinue", "start");
+function w(){ var i = 0; var s = 0; while (i < 10) { i++; if (i == 2) { continue; } if (i == 5) { break; } s = s + i; } return s; }
+mark("whileBreakContinue", w());
+mark("whileBreakContinue", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("nestedFunc", "start");
+function outer(){ function inner(){ return 3; } return inner(); }
+mark("nestedFunc", outer());
+mark("nestedFunc", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("done", "end");
+</SCRIPT>
+</BODY>
+</HTML>
