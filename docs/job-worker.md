@@ -187,3 +187,23 @@ Measured after the fix that copies the answer in cd_job_answer (which touches no
 - MP3d: the worker arm's longest main-thread task is under 10 ms; the nothing arm's is the job's whole time.
 - MP3e: a warm job (the module compiled, the blob URL made) adds 5 to 30 ms of wall time over the same work on the main thread; falsifier over 50.
 - MP3f: the nothing arm's cold wall time is within 10% of the worker's job time, and the warm call is faster than the cold one in both arms (Linux: 906.7 cold, 674.5 warm).
+
+### The Mac's results (2026-11-19)
+
+Chrome headless, 5 runs per arm interleaved, load 1.3 to 3.9 (macOS's mediaanalysisd held about a core); rows in docs/job-worker-mac.tsv.
+Medians, MiB of phys_footprint above the page's settled start, then ms.
+
+| id | prediction | measured | verdict |
+| --- | --- | --- | --- |
+| MP0a touch 100 MB | 95 to 105 | 100.20 (100.00 to 100.33) | confirmed |
+| MP0b grow 100 MB unwritten | under 5 | 0.17 (0.06 to 0.19) | confirmed |
+| MP1b nothing, held 60 s idle | 40 to 46 | 46.41 (45.97 to 46.70) | refuted, narrowly: it held 42.1 at 5 s and grew 4 MiB while idle |
+| MP1c nothing, after a forced GC | 40 to 46 | 46.41 (45.97 to 46.70) | refuted the same way: the GC gave nothing back |
+| MP3b worker, held at 1 s, no GC | 0 to 4 (falsifier over 6) | 2.02 (1.88 to 3.23) | confirmed |
+| MP3c worker, after a forced GC | 0 to 3 | 1.56 (0.66 to 1.63) | confirmed |
+| MP3d longest main-thread task | worker under 10; nothing = the job | worker 1.27 (0.86 to 2.75); nothing 842.0 | confirmed |
+| MP3e warm wall added | 5 to 30 (falsifier over 50) | +6.2 paired (1.9 to 10.8): 522.0 against 516.0 | confirmed |
+| MP3f nothing cold = worker's job time; warm under cold | within 10%; both arms | 841.7 against 876.0 (3.9%); warm 516.0 and 522.0 against cold 841.7 and 876.0 | confirmed |
+
+So on the Mac a cd_job hands back all but about 2 MiB of a 42 MB job, keeps the main thread's longest task near 1 ms where the same work in the app blocks it for 842 ms, and costs about 6 ms warm and 34 ms on the first job of a page (the module's compile and the worker's start).
+The app that runs the job itself keeps 46 MiB for good.
