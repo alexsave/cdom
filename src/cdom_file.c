@@ -8,9 +8,9 @@
 #define EXPORT(n) __attribute__((export_name(n)))
 
 IMPORT("file_read") void j_file_read(uint32_t token, cd_id input, uint32_t index, uint32_t max_bytes);
-/* file_open writes the reader and the size at out (two words); file_next answers 1 for a reader closed or with a piece
- * pending (the call traps); file_close answers the pending piece's token, or 0. */
-IMPORT("file_open") uint32_t j_file_open(cd_id input, uint32_t index, uint32_t *out);
+/* file_open writes the reader and the size (on OK); file_next answers 1 for a reader closed or with a piece pending (the
+ * call traps); file_close answers the pending piece's token, or 0. */
+IMPORT("file_open") uint32_t j_file_open(cd_id input, uint32_t index, uint32_t *reader, uint32_t *size);
 IMPORT("file_next") uint32_t j_file_next(uint32_t reader, uint8_t *dst, uint32_t max, uint32_t token);
 IMPORT("file_close") uint32_t j_file_close(uint32_t reader);
 
@@ -39,10 +39,8 @@ EXPORT("cd_file_got") void cd_file_got(uint32_t token, uint32_t status, const ui
 }
 
 uint32_t cd_file_open(cd_id input, uint32_t index, uint32_t *reader, uint32_t *size) {
-  uint32_t out[2] = {0, 0};
-  uint32_t st = j_file_open(input, index, out);
-  *reader = out[0]; *size = out[1];
-  return st;
+  *reader = 0; *size = 0;
+  return j_file_open(input, index, reader, size);
 }
 void cd_file_next_cb(uint32_t reader, uint8_t *dst, uint32_t max, cd_file_piece_fn fn, void *ctx) {
   uint32_t token = cd_cb_new((cd_cb_fn)fn, ctx);
