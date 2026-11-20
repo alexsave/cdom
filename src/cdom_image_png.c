@@ -120,6 +120,9 @@ static void to_rgba(const fmt *f, const uint8_t *r, uint8_t *out) {
 #ifndef PNG_CHUNK
 #define PNG_CHUNK 262144u
 #endif
+/* The room the inflate keeps free for the longest match and a wide copy's overshoot (its FAST_OUT, 290): the floor
+ * less the window and its 1 KB, which cdom_image_inflate.c's static assertion ties to FAST_OUT. */
+#define PNG_MATCH_ROOM (CD_INFLATE_CAP_MIN - CD_INFLATE_WINDOW - 1024u)
 
 typedef struct {
   cd_inflate inf;
@@ -216,9 +219,12 @@ uint32_t cd_image_png_resize(const uint8_t *p, uint32_t len, const cd_image_info
   int rgb_read = !CDOM_IMAGE_SIMD && ctype == 2 && depth == 8 && !x->f.key;
 
   /* one block: the zero row, the RGBA row (unless the rows are read as RGB), then the inflate's buffer: the window,
-   * two rows and the smaller of PNG_CHUNK and the whole image, and never under the inflate's floor */
-  uint64_t row = (uint64_t)stride + 1, all = row * h;
-  uint64_t cap = CD_INFLATE_WINDOW + 2 * row + (all < PNG_CHUNK ? all : PNG_CHUNK);
+   * two rows and PNG_CHUNK; or, when it is smaller, the whole image (never handed over before the end) or the window
+   * and two rows (what the sink keeps once a stream makes more than the image), whichever is larger, and the room the
+   * inflate keeps for the longest match (docs/image-png-speed.md, "The small PNG's buffer"); never under the floor */
+  uint64_t row = (uint64_t)stride + 1, all = row * h, keep = CD_INFLATE_WINDOW + 2 * row;
+  uint64_t cap = (all > keep ? all : keep) + PNG_MATCH_ROOM;
+  if (cap > keep + PNG_CHUNK) cap = keep + PNG_CHUNK;
   if (cap < CD_INFLATE_CAP_MIN) cap = CD_INFLATE_CAP_MIN;
   uint64_t px_n = rgb_read ? 0 : (uint64_t)w * 4;
   uint64_t room = row + px_n + cap;
