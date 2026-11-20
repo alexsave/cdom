@@ -94,11 +94,15 @@ NATIVE_ARM_OBJ = $(foreach a,$(ARMS),$($(a)_NOBJ) $(NATIVE_DIR)/$(a)/bench.o $(N
   $(NATIVE_DIR)/glibc/bench.o $(NATIVE_DIR)/glibc/special.o
 # The native driver and the accuracy sweep use the host's own headers and libc (and MPFR: brew install mpfr, or
 # libmpfr-dev). NATIVE_LIBS is for a Mac's Homebrew paths.
+# msun's k_exp.c holds __ldexp_cexp (for cexp, which no arm uses) beside the __ldexp_exp cosh and sinh need, and it
+# calls sincos: glibc has one, macOS's libm does not, so on the Mac the native links drop unused code (as wasm-ld does).
+comma := ,
+NATIVE_LINK := $(if $(filter Darwin,$(shell uname -s)),-Wl$(comma)-dead_strip)
 MPFR_FLAGS ?= $(if $(wildcard /opt/homebrew/include/mpfr.h),-I/opt/homebrew/include -L/opt/homebrew/lib)
 $(NATIVE_DIR)/bench: native.c arms.h fns.h gen.h $(NATIVE_ARM_OBJ)
-	$(NATIVE_CC) -O2 -std=c2x -Wall -Wextra -Werror -o $@ native.c $(NATIVE_ARM_OBJ) -lm
+	$(NATIVE_CC) -O2 -std=c2x -Wall -Wextra -Werror $(NATIVE_LINK) -o $@ native.c $(NATIVE_ARM_OBJ) -lm
 $(NATIVE_DIR)/accuracy: accuracy.c arms.h fns.h gen.h $(NATIVE_ARM_OBJ)
-	$(NATIVE_CC) -O2 -std=c2x -Wall -Wextra -Werror $(MPFR_FLAGS) -o $@ accuracy.c $(NATIVE_ARM_OBJ) -lmpfr -lgmp -lm
+	$(NATIVE_CC) -O2 -std=c2x -Wall -Wextra -Werror $(MPFR_FLAGS) $(NATIVE_LINK) -o $@ accuracy.c $(NATIVE_ARM_OBJ) -lmpfr -lgmp -lm
 $(NATIVE_ARM_OBJ): | $(foreach a,$(ARMS),$(NATIVE_DIR)/$(a).rename.h)
 
 # The sizes: what one function (sin), each function alone (f-<name>) and every function add to an empty module,

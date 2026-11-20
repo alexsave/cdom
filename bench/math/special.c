@@ -49,7 +49,8 @@ double SP_SYM(bm_eval)(int e, double x, double y);
 enum { DEV_JS = 1, DEV_GLIBC = 2 };   /* the arms a case is known to deviate in */
 #if defined(SP_ARM_js)
 #define SP_ME DEV_JS
-#elif defined(SP_ARM_glibc)
+#elif defined(SP_ARM_glibc) && !defined(__APPLE__)
+/* On a Mac the host libm is Apple's (labelled applelibm), which has none of glibc's deviations. */
 #define SP_ME DEV_GLIBC
 #else
 #define SP_ME 0
