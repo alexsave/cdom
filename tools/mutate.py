@@ -50,6 +50,7 @@ PICK = ['tests/pick/run.sh']                                         # the SIMD 
 FPT1 = ['env', 'LEGACY=1', 'node', 'tools/fptoint.mjs']              # float to integer casts on the second tier
 FPT9 = ['env', 'LEGACY=ie9', 'node', 'tools/fptoint.mjs']            # and on the third (words)
 LEGW2J = ['env', 'LEGACY=1', 'node', 'tools/legacy.mjs']             # the legacy page as a browser without WebAssembly
+NOSCRIPT = ['tests/noscript/run.sh']                                 # the no-script fallback: Chrome off and on, lynx, the lens, cdpage's refusals
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -1068,6 +1069,28 @@ M = [
   ('net-abort-ignored', 'tools/legacy/polyfills.js', 'signal.addEventListener("abort", function () {', 'if (false) signal.addEventListener("abort", function () {', LEG9, 'FAIL on this page: network'),
   ('net-body-not-checked', 'tools/legacy/polyfills.js', 'return new w.TextEncoder().encode(s).length === bytes.length ? s : null;', 'return s;', LEG6, 'FAIL on this page: network'),
   ('net-no-trim', 'tools/legacy/polyfills.js', 'if (!String.prototype.trim) {\n    String.prototype.trim', 'if (false) {\n    String.prototype.trim', LEG9, 'trim is not a function'),
+  # the no-script fallback (docs/noscript-design.md; tools/cdpage.c's block, wrappers and parse check, tools/noscript.mjs, tools/noscript_gif.py, cdom.mk)
+  ('ns-no-hider', 'tools/cdpage.c', 'bstr(o, "<script><!--\\ndocument.write(\\"<!-\\"+\\"-\\");\\n//--></script><noscript>\\n");', 'bstr(o, "<noscript>\\n");', NOSCRIPT, 'FAIL script on: the fallback is in the comment'),
+  ('ns-no-noscript-element', 'tools/cdpage.c', '//--></script><noscript>\\n");', '//--></script>\\n");', NOSCRIPT, 'Chrome with script requested'),
+  ('ns-comment-never-ends', 'tools/cdpage.c', 'bstr(o, "</noscript><wbr -->\\n");', 'bstr(o, "</noscript><wbr>\\n");', NOSCRIPT, 'FAIL script on: the app drew'),
+  ('ns-no-wrap-script', 'tools/cdpage.c', '    if (blank(b, bn)) continue;', '    if (blank(b, bn) || !e.style) continue;', NOSCRIPT, 'FAIL the HTML 2.0 lens'),
+  ('ns-no-wrap-style', 'tools/cdpage.c', '    if (blank(b, bn)) continue;', '    if (blank(b, bn) || e.style) continue;', NOSCRIPT, 'FAIL the HTML 2.0 lens'),
+  ('ns-text-changed', 'tools/cdpage.c', '"Here\'s a snowman";', '"Here is a snowman";', NOSCRIPT, "FAIL script off: the page's text"),
+  ('ns-no-alt', 'tools/cdpage.c', 'img_tag(o, &snow, "[A snowman]");', 'img_tag(o, &snow, "");', NOSCRIPT, 'FAIL lynx -dump shows other text'),
+  ('ns-marker-kept', 'tools/cdpage.c', '      if (a->noscript_shot) noscript_block(o, a->noscript_shot, a->noscript_snowman);', '      if (a->noscript_shot) noscript_block(o, a->noscript_shot, a->noscript_snowman);\n      else bput(o, l, n), bbyte(o, \'\\n\');', NOSCRIPT, 'FAIL CDOM_NOSCRIPT=0'),
+  ('ns-escape-unchecked', 'tools/cdpage.c', '  return st >= DESC ? from : SIZE_MAX;', '  return SIZE_MAX;', NOSCRIPT, 'planted sequence), no fallback: taken'),
+  ('ns-escape-dd-stays', 'tools/cdpage.c', "      if (c == '>' && st == DESC_DD) { st = DATA; break; }\n", '', NOSCRIPT, 'FAIL the parse check and Chrome disagree'),
+  ('ns-escape-no-delim', 'tools/cdpage.c', 'if (c == \'<\' && starts_ci(p + i + 1, n - i - 1, "script") && i + 7 < n && delim(p[i + 7])) { st = DESC;', 'if (c == \'<\' && starts_ci(p + i + 1, n - i - 1, "script") && i + 7 < n) { st = DESC;', NOSCRIPT, 'FAIL the parse check and Chrome disagree'),
+  ('ns-arrow-unchecked', 'tools/cdpage.c', '    if (end && (!had || !blank(end + 3, bn - (size_t)(end + 3 - b))))', '    if (0 && end && (!had || !blank(end + 3, bn - (size_t)(end + 3 - b))))', NOSCRIPT, 'it would end the hiding comment): taken'),
+  ('ns-module-wrapped', 'tools/cdpage.c', '      if (ty && find(ty, (size_t)(p + e.open_end - ty), "module"))', '      if (0)', NOSCRIPT, 'FAIL a module script under the fallback'),
+  ('ns-default-off', 'cdom.mk', 'CDOM_NOSCRIPT ?= 1', 'CDOM_NOSCRIPT ?= 0', NOSCRIPT, 'FAIL no GIFs beside the page'),
+  ('ns-shot-dpr2', 'tools/noscript.mjs', 'deviceScaleFactor: 1, mobile: false', 'deviceScaleFactor: 2, mobile: false', NOSCRIPT, 'FAIL the GIFs'),
+  ('ns-no-glyph', 'tools/noscript.mjs', 'color:#000">\\u2603</div>', 'color:#000"> </div>', NOSCRIPT, 'FAIL the GIFs'),
+  ('ns-animations-run', 'tools/noscript.mjs', "  await b.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }, { name: 'prefers-color-scheme', value: 'light' }] });\n  await b.send('Animation.enable');\n  await b.send('Animation.setPlaybackRate', { playbackRate: 0 });\n", '', NOSCRIPT, 'FAIL determinism'),
+  ('ns-stamp-no-page', 'tools/noscript.mjs', "  `chrome ${chromeId}`, `python ${pv.stdout.trim()}`, `page ${sha(html)}`];", "  `chrome ${chromeId}`, `python ${pv.stdout.trim()}`];", NOSCRIPT, 'FAIL the content stamp: the app drew another word'),
+  ('ns-stamp-never-matches', 'tools/noscript.mjs', "  if (old.join('\\n') === [...head, ...files, ...outs()].join('\\n')) process.exit(0); // up to date: no Chrome", "  if (false) process.exit(0);", NOSCRIPT, 'FAIL the content stamp: a page of the same bytes'),
+  ('ns-gif-random', 'tools/noscript_gif.py', "        order = [c for _, c in sorted(colours, key=lambda nc: (-nc[0], nc[1]))]\n", "        order = [c for _, c in sorted(colours, key=lambda nc: (-nc[0], nc[1]))]\n        import random\n        random.shuffle(order)\n", NOSCRIPT, 'FAIL determinism'),
+  ('ns-gif89a', 'tools/noscript_gif.py', "    out.save(dst, 'GIF', optimize=False, interlace=False)\n    with open(dst, 'rb') as f:\n        head = f.read(6)\n    if head != b'GIF87a':", "    out.save(dst, 'GIF', optimize=False, interlace=False, comment=b'cdom')\n    with open(dst, 'rb') as f:\n        head = f.read(6)\n    if False:", NOSCRIPT, 'FAIL the GIFs'),
 ]
 
 def build_and_run(root, cmd, minify=False):
