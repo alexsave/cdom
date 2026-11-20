@@ -39,12 +39,14 @@ void cd_image_rgb_to_rgba_scalar(const uint8_t *r, uint8_t *out, uint32_t w) {
 
 /* ---- the scaler's row loops (cdom_image.c's cd_image_scaler_row) ---- */
 
-void cd_image_scaler_across_scalar(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw) {
+/* The across loop for pixels of step bytes (4: RGBA, 3: RGB), inlined into each with the step a constant. */
+static inline __attribute__((always_inline)) void across(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw,
+                                                         uint32_t step) {
   memset(h, 0, (size_t)dw * 3 * sizeof(uint32_t));
   /* across: source pixel c covers [c*dw, (c+1)*dw) in units of 1/dw; output pixel ox ends at (ox+1)*sw */
   uint64_t pos = 0, hend = sw;
   uint32_t ox = 0;
-  for (uint32_t c = 0; c < sw; c++, px += 4) {
+  for (uint32_t c = 0; c < sw; c++, px += step) {
     uint64_t cend = (uint64_t)(c + 1) * dw;
     while (pos < cend) {
       uint64_t b = cend < hend ? cend : hend;
@@ -56,6 +58,8 @@ void cd_image_scaler_across_scalar(uint32_t *h, const uint8_t *px, uint32_t sw, 
     }
   }
 }
+void cd_image_scaler_across_scalar(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw) { across(h, px, sw, dw, 4); }
+void cd_image_scaler_across_rgb(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw) { across(h, px, sw, dw, 3); }
 
 void cd_image_scaler_down_scalar(uint64_t *a, const uint32_t *h, uint64_t wgt, uint32_t n) {
   for (uint32_t i = 0; i < n; i++) a[i] += wgt * h[i];

@@ -21,7 +21,6 @@ CDOM_IMAGE_SIMD := $(SIMD)
 include $(CDOM)/cdom.mk
 ifeq ($(LEVEL),mix)
 CDOM_IMAGE_VENDOR_CFLAGS += -O2
-CDOM_IMAGE_MINIZ_CFLAGS += -O2
 endif
 all:
 	$(MAKE) SJLJ=js page
