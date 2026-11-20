@@ -106,3 +106,34 @@ Written before any of it is built or run.
   Falsified outside that range.
 - P4: app.wasm.ie9.js changes by less than 1% in size with terser's ie8 option.
 - P5: the IE 9 VM in IE 8 and IE 7 document modes takes the fourth tier and runs the same page.
+
+## 9. What real IE 6 found
+
+IE 6.0.2900.5512 (Windows XP SP3, the modern.ie image, under QEMU on this Mac: /Users/alex/VMs/ie6-xp, run.sh and vm.py).
+The Chrome profile (LEGACY=ie6) passed before IE 6 ran anything; IE 6 still found five things it could not see.
+Each is fixed, and each that Chrome can imitate is now in the profile, so CI keeps it fixed.
+
+1. JScript's catch has no scope of its own: `catch (e)` writes the enclosing function's `e`.
+   Babel's `_regeneratorDefine2(e, ...)` probes defineProperty in a `catch (e)`, which throws in IE 6, so the generator's methods went onto the error and every async function failed (cdom.start among them, silently).
+   Fix: every catch parameter in the tier's files is renamed apart (es3.mjs, catchScoped), and the minified file is refused if a catch parameter's name is used elsewhere in its function (catchLeaks).
+   Chrome cannot imitate the scope, so tools/es3.mjs checks the gate on planted code.
+2. A failed start rejected a promise nobody watched.
+   Fix: the boot throws the rejection again from a timeout, on every tier, so it reaches window.onerror (tested with ?nolits).
+3. IE 6 to 8's DOM methods are host objects with no apply or call, and Babel compiles `object[key](...args)` to apply.
+   Fix: the shim calls through invoke(), which shim-old.js replaces with a call by argument count; the Chrome profile strips apply and call from the DOM's methods.
+4. JScript's `splice(start)` removes nothing, which would lose every event queued during a call (drain).
+   Fix: polyfills-es3.js detects it and patches splice; the Chrome profile has JScript's splice.
+5. IE 6 says interactive before the parser reaches the end, so a mount after the scripts was not there yet.
+   Fix: the shim also waits while the mount is missing and the page is not complete.
+   Not imitated in Chrome; checked in IE 6 on the keyed benchmark's page, whose mount comes after its scripts.
+
+Also learned: IE 6 caches the tier's two scripts across reloads even with Cache-Control: no-store, so a test in the VM sets IE to check every visit first (HKCU ... Internet Settings, SyncMode5 = 3).
+
+## 10. The predictions, measured
+
+- P1 held: tests/out/legacy.html boots with no script error; a press, drag and release on the pad reach C as pointerdown (buttons 1), pointermove (buttons 1) and pointerup (buttons 0), then click; typing reaches C (propertychange as input) and C's echo shows it; a failed call is reported once and the next op applies; cd_call(focus) focuses the input and C hears its focus event.
+- P2 held: the keyed benchmark's page in IE 6 creates 1,000 rows in 11.5 s, updates every 10th row in 1.0 s, swaps rows in 0.25 s and clears in 1.9 s, with no slow-script prompt.
+  These times are an emulated Pentium III under QEMU's TCG on arm64, so they say nothing about IE 6 on its own hardware.
+  10,000 rows in one task does raise the prompt (Alex's call: measured first; splitting long work across tasks is the follow-up if it matters).
+- P3 held: cdom.legacy-ie6.js is 47,604 bytes minified (15,361 brotli -q 11, 17,137 gzip -9), against 57,376 for the third tier's (which grew from the 52 KB the prediction assumed).
+- P4 held: terser's ie8 adds 0.19% to 0.75% to the words build of the app (listfuzz 24,248 to 24,294 bytes, legacy 17,598 to 17,641, memforms 5,717 to 5,760).
