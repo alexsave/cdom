@@ -965,6 +965,7 @@ M = [
   # no LEGACY=ie6 twin of the one above: dom-old.js listens for DOMContentLoaded as the window's load there, so it is the same wait
   ('mount-missing-no-error', 'shim/cdom.js', '      if (!element) {\n        throw new Error(`cdom: no element has the id ${mount}`);', '      if (false) {\n        throw new Error(`cdom: no element has the id ${mount}`);', LEG, 'FAIL a missing mount is an error once the page has loaded'),
   # IE 5.0 (JScript 5.0, docs/ie5-design.md)
+  ('ie5-holds-fallback-everywhere', 'tools/legacy/polyfills-es3.js', '    holds = new Function("o", "k", "return k in o");', '    throw 0;', LEG6, 'FAIL forEach over 10,000 undefined slots'),
   ('ie5-in-gate-off', 'tools/legacy/es3.mjs', "    if (n.type === 'BinaryExpression' && n.operator === 'in') found++;", '', ES3T, 'FAIL a binary in is refused'),
   ('ie5-numkey-gate-off', 'tools/legacy/es3.mjs', "  if (numKeys) throw", "  if (false) throw", ES3T, 'FAIL { 1: 0 } is refused'),
   ('ie5-regex-flag-gate-off', 'tools/legacy/es3.mjs', "  if (/[^gi]/.test(flags)) return true;", '', ES3T, 'FAIL /a/m is refused'),
