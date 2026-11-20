@@ -307,13 +307,11 @@ if mk "$mo/other.wasm" "$mo/other.html" PAGE="$here/page/ok.html" > "$mo/mk_othe
 elif ! grep -q "No rule to make target .*other.wasm" "$mo/mk_other.log"; then echo "FAIL cdom.mk: other.wasm refused for another reason:"; cat "$mo/mk_other.log"; fail=1
 else echo "ok   cdom.mk's rules leave a .wasm or .html that is not APP_WASM or APP_PAGE alone"; fi
 install='cdom.mk: install LLVM 23 or later: brew install llvm lld   (Debian or Ubuntu: clang-23 and lld-23 from https://apt.llvm.org, then WASM_CC=/usr/lib/llvm-23/bin/clang)'
-# The toolchain check: a WASM_CC that cannot build a wasm32 module (Apple's clang, which finds no wasm-ld
-# on a PATH without Homebrew's; a clang that is not there) stops make with the install command, before
-# the compiler runs, and leaves no module.
-# /usr/bin/clang is Apple's only on macOS: on Linux it is a clang that does build wasm32.
-for cc in /usr/bin/clang "$out/no-such-clang"; do
-  [ -x "$cc" ] || [ "$cc" = "$out/no-such-clang" ] || continue
-  [ "$cc" != /usr/bin/clang ] || [ "$(uname -s)" = Darwin ] || continue
+# The toolchain check: a WASM_CC that cannot build a wasm32 module (a clang with no wasm32 target, here
+# tests/link/no_wasm32_clang, the same on every OS: a real system clang may well build wasm32, as Apple's
+# clang 21 and Linux's do; a clang that is not there) stops make with the install command, before the
+# compiler runs, and leaves no module.
+for cc in "$here/no_wasm32_clang" "$out/no-such-clang"; do
   rm -rf "$out/mk-cc"
   if env PATH=/usr/bin:/bin make -s --no-print-directory -f "$here/app.mk" INCLUDE=first OUT="$out/mk-cc" PAGE= WASM_CC="$cc" "$out/mk-cc/mk_app.wasm" > "$out/mk_cc.log" 2>&1; then
     echo "FAIL cdom.mk built a module with WASM_CC=$cc, which cannot build wasm32"; fail=1
@@ -484,11 +482,13 @@ node "$here/../../tools/edges.mjs" || fail=1
 # reaches only the apps that link it: tests/image/wasm.c built by cdom.mk with CDOM_IMAGE_SJLJ eh has wasm exception
 # handling (try, catch, throw), and with js the shim's two imports and no exception handling; the app of app.mk,
 # with no image module and with it but no call, has neither.
+# Built with -B: an object of the image module depends on its sources, not on cdom.mk's flags, so a module left in
+# tests/out by an earlier build would be read as it was, whatever the flags are now.
 im="$out/image-link"; mkdir -p "$im"
 eh_count() { wasm-dis --all-features "$1" | grep -cE '\b(try|catch|catch_all|throw|rethrow|delegate)\b'; }
 img_imports() { wasm-dis --all-features "$1" | grep -cE '\(import "cdom" "image_(call|throw)"'; }
-if ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=eh "$im/wasm_eh.wasm" 2> "$im/eh.log" ||
-   ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=js "$im/wasm_js.wasm" 2> "$im/js.log"; then
+if ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=eh -B "$im/wasm_eh.wasm" 2> "$im/eh.log" ||
+   ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=js -B "$im/wasm_js.wasm" 2> "$im/js.log"; then
   echo "FAIL the image module's wasm test app does not build:"; cat "$im/eh.log" "$im/js.log"; fail=1
 elif [ "$(eh_count "$im/wasm_eh.wasm")" = 0 ] || [ "$(img_imports "$im/wasm_eh.wasm")" != 0 ]; then
   echo "FAIL CDOM_IMAGE_SJLJ eh: $(eh_count "$im/wasm_eh.wasm") exception-handling instructions (wanted some) and $(img_imports "$im/wasm_eh.wasm") of the shim's imports (wanted none)"; fail=1
@@ -510,7 +510,7 @@ fi
 # that calls the image module: tests/image/wasm.c built with it has some, built without it (the default) none, and the
 # app of app.mk with CDOM_IMAGE_SIMD=1, with no image module and with it but no call, none.
 simd_count() { wasm-dis --all-features "$1" | grep -cE '\b(v128|i8x16|i16x8|i32x4|i64x2|f32x4|f64x2)\.'; }
-if ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=js SIMD=1 "$im/wasm_js_simd.wasm" 2> "$im/simd.log" ||
+if ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=js SIMD=1 -B "$im/wasm_js_simd.wasm" 2> "$im/simd.log" ||
    ! make -s --no-print-directory -f "$here/../image/wasm.mk" OUT="$im" SJLJ=js "$im/wasm_js.wasm" 2> "$im/js.log"; then
   echo "FAIL the image module's wasm test app does not build with and without CDOM_IMAGE_SIMD:"; cat "$im/simd.log" "$im/js.log"; fail=1
 elif [ "$(simd_count "$im/wasm_js_simd.wasm")" = 0 ] || [ "$(simd_count "$im/wasm_js.wasm")" != 0 ]; then
@@ -525,6 +525,14 @@ else
   if [ -n "$bad" ]; then echo "FAIL an app that does not call the image module has SIMD instructions with CDOM_IMAGE_SIMD=1:$bad"; fail=1
   else echo "ok   CDOM_IMAGE_SIMD=1 gives SIMD instructions to an app that calls the image module ($(simd_count "$im/wasm_js_simd.wasm")) and none without it; an app without the module, or with it and no call, has none"; fi
 fi
+# No i64.ctz in the image module, scalar or SIMD: V8 on arm64 lowers it to a call, so the module counts trailing zeros as
+# cd_ctz64 does (src/cdom_image_int.h; docs/image-progressive-speed.md, "ctz on arm64").
+ctz_count() { wasm-dis --all-features "$1" | grep -c 'i64.ctz'; }
+if [ -f "$im/wasm_js.wasm" ] && [ -f "$im/wasm_js_simd.wasm" ]; then
+  if [ "$(ctz_count "$im/wasm_js.wasm")" != 0 ] || [ "$(ctz_count "$im/wasm_js_simd.wasm")" != 0 ]; then
+    echo "FAIL the image module holds i64.ctz: $(ctz_count "$im/wasm_js.wasm") scalar, $(ctz_count "$im/wasm_js_simd.wasm") SIMD (use cd_ctz64)"; fail=1
+  else echo "ok   the image module holds no i64.ctz, scalar or SIMD"; fi
+else echo "FAIL the image module's wasm test apps were not built, so i64.ctz was not checked"; fail=1; fi
 # APP_SIMD := 1 (README.md, "Starting an app"): the image test app builds APP_WASM as without it, byte for byte, and its
 # twin wasm_js.simd.wasm as CDOM_IMAGE_SIMD=1 builds the module, byte for byte; the page starts the pair, bundled or by
 # URL, and a second make is up to date. Refused: APP_SIMD with CDOM_IMAGE_SIMD=1, a value not 0 or 1, an app with no

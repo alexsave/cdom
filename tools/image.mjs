@@ -80,7 +80,8 @@ try {
       if (p12p) {
         const r = await run(p12p[1], 900, 900, null);
         ok(S[r.status] === 'NO_ROOM', `${name}: with ${cap ? `the heap capped at ${cap} pages` : `the module's memory at most ${max} bytes (memory.grow refuses)`}, the 12 MP progressive JPEG is NO_ROOM, not a trap`, JSON.stringify(r));
-      } else ok(false, `${name}: no jpeg-p12-progressive case (IMAGE_BIG=0?)`);
+      } else if (process.env.IMAGE_BIG === '0') console.log(`skip ${name}: the capped run needs the 12 MP progressive JPEG, which IMAGE_BIG=0 leaves out`);
+      else ok(false, `${name}: no jpeg-p12-progressive case in the oracle's cases`);
       const r = await run(small[1], +small[2], +small[3], small[4]);
       ok(r.status === 0 && r.diff === -1, `${name}: then a small JPEG decodes exactly`, JSON.stringify(r));
     }

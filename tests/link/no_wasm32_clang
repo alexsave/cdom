@@ -1,0 +1,11 @@
+#!/bin/sh
+# A C compiler with no wasm32 target, as Apple's clang once was and as a clang built without the
+# WebAssembly backend is: tests/link/run.sh gives it to cdom.mk as WASM_CC, whose toolchain check must
+# stop before the compiler runs. Any wasm32 request fails as such a clang fails; nothing else is asked of it.
+for a in "$@"; do
+  case "$a" in
+    --target=wasm32*|wasm32*) echo "error: unable to create target: 'No available targets are compatible with triple \"wasm32\"'" >&2; exit 1 ;;
+  esac
+done
+echo "no_wasm32_clang: only a wasm32 compile is expected here" >&2
+exit 1
