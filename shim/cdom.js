@@ -864,7 +864,7 @@ var cdom = (() => {
   const readers = [null];
   const posted = [];
   let postPort;
-  function post(f) {
+  function postTask(f) {
     if (typeof MessageChannel === "undefined") {
       setTimeout(f);
       return;
@@ -975,7 +975,7 @@ var cdom = (() => {
       readAhead(r, rd); // the next read is in flight while C uses this piece
       exports.cd_file_piece(token, status, n);
     };
-    post(answer);
+    postTask(answer);
   }
   function file_next(r, dst, max, token) {
     const rd = readers[r];
