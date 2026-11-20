@@ -47,6 +47,8 @@ PROG = ['tests/image/prog.sh']                                       # the progr
 MEMB = ['env', 'IMAGE_WASM=0', 'IMAGE_SIMD=0', 'IMAGE_PROG=0', 'tests/image/run.sh']   # the big inputs' peaks only
 FUZZI = ['env', 'FUZZ_TARGETS=inflate', 'tests/image/fuzz.sh', '60']   # fuzz_inflate alone, 60 s (libFuzzer: FUZZ_CC)
 PICK = ['tests/pick/run.sh']                                         # the SIMD pick (APP_SIMD) in Chrome (tools/pick.mjs)
+FPT1 = ['env', 'LEGACY=1', 'node', 'tools/fptoint.mjs']              # float to integer casts on the second tier
+FPT9 = ['env', 'LEGACY=ie9', 'node', 'tools/fptoint.mjs']            # and on the third (words)
 LEGW2J = ['env', 'LEGACY=1', 'node', 'tools/legacy.mjs']             # the legacy page as a browser without WebAssembly
 
 # name, file, old, new, test command, text the failure must contain
@@ -1051,6 +1053,11 @@ M = [
   ('chunk-job-stop-no-drop', 'src/cdom_job.c', '  cd_cb_drop(token);\n  j_job_stop(token);', '  j_job_stop(token);', IMGW, 'cd_job_stop'),
   ('chunk-job-stop-no-terminate', 'shim/cdom.js', '      if (job.worker) {\n        job.worker.terminate();\n      }', '', IMGW, 'cd_job_stop'),
   ('chunk-job-pieces-past-max', 'shim/cdom.js', '            const k = Math.min(chunk.length - off, max - got, size - at);', '            const k = Math.min(chunk.length - off, max - got + 1, size - at);', IMGW, 'cd_job_pieces_cb: every case'),
+  # the legacy build's float to integer rewrite (tools/legacy/build.mjs, wasm2js; tests/fptoint.c, tools/fptoint.mjs)
+  ('fptoint-not-rewritten', 'tools/legacy/build.mjs', "if (/\\bi64\\.trunc_sat_f(32|64)_[su]\\b/.test(text)) {", 'if (false) {', FPT1, 'Command failed: wasm2js'),
+  ('fptoint-f32-not-rewritten', 'tools/legacy/build.mjs', "/\\bi64\\.trunc_sat_(f(?:32|64)_[su])\\b/g", "/\\bi64\\.trunc_sat_(f(?:64)_[su])\\b/g", FPT9, 'Command failed: wasm2js'),
+  ('fptoint-binaryen-lowering', 'tools/legacy/build.mjs', "js = execFileSync('wasm2js', ['-all', '-O2', input]",
+   "execFileSync('wasm-opt', ['-all', '--llvm-nontrapping-fptoint-lowering', wasm, '-o', path.join(dir, 'l.wasm')]); js = execFileSync('wasm2js', ['-all', '-O2', path.join(dir, 'l.wasm')]", FPT1, 'FAIL 44 values through u64, i64, u32 and i32: in range exact'),
 ]
 
 def build_and_run(root, cmd, minify=False):
