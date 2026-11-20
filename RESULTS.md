@@ -223,14 +223,15 @@ The shim needed one change: `start()` also takes the wasm2js factory in place of
 wasm2js's memory object has a `buffer` getter that returns a new ArrayBuffer after growth, which the shim's view check already handles.
 
 The polyfills are what the scan and the tests asked for, each installed only when missing: `Math.imul`, `clz32`, `fround` and `trunc` (wasm2js lowers i32 multiplies and friends to them), `Uint8Array.prototype.copyWithin` and `fill` (wasm2js lowers `memory.copy` and `memory.fill` to them), `String.prototype.startsWith` and `includes`, `Object.entries` and `globalThis` (the direct-call shim uses both), UTF-8 `TextDecoder` and `TextEncoder` with `encodeInto`, `queueMicrotask` (a MutationObserver, else a timeout), `reportError` (a throw in a timeout), `requestAnimationFrame`, and one for addEventListener: before options objects the third argument was useCapture, so the shim's `{ passive: false }` would have put every delegated listener in the capture phase, and where the options object is not read the polyfill passes its `capture` member instead.
-One more is not about the language: IE 11 has `getRandomValues` only on `window.msCrypto`, and the shim seeds `cd_seed` from `crypto.getRandomValues` (failing at start without it), so `window.crypto` becomes `msCrypto` where only that exists, and under `LEGACY=1` the page has `msCrypto` and no `crypto`, which `tools/legacy.mjs` checks; without the line the page fails at start with the shim's crypto error.
+One more is not about the language: IE 11 has `getRandomValues` only on `window.msCrypto`, and the shim seeds `cd_seed` from `crypto.getRandomValues`, so `window.crypto` becomes `msCrypto` where only that exists, and under `LEGACY=1` the page has `msCrypto` and no `crypto`, which `tools/legacy.mjs` checks; without the line IE 11 would fall to the weak seed meant for IE 9 and 10 alone (see "IE 9, the third tier"), and `tools/legacy.mjs` checks that cd_seed came from crypto on every tier that has it.
 `imul`, `clz32`, `fround`, `startsWith`, `includes` and `Object.entries` are MDN's own polyfills, taken from the page history of mdn/content (MDN now links to core-js and es-shims instead, which are whole libraries; MDN's code samples are CC0).
 MDN never had the others, or had only `fill` borrowed from `Array.prototype`, which IE 11 lacks too, so they are written here, a few lines each; the addEventListener check is MDN's `passiveSupported` test.
 MDN's `clz32` goes through `Math.log`, so the check below includes every power of two and its neighbours, where an engine's rounding would show; in Chrome it is exact on all 96.
 `tools/legacy/build.mjs` refuses to write either file unless it parses as ES5 (acorn), before and after minifying, and names no ES2015 global or method outside a short per-file allow list, and the boot must parse as ES3.
 That scan found real gaps: PEP calls `String.prototype.includes` on touch-action values with no check, wasm2js output calls `copyWithin` and `fill`, and the direct-call shim uses `Object.entries` and `globalThis`, none of which IE 11 has.
 Its allow list also records the names it cannot judge: Babel's helpers name `Symbol` only behind a `typeof` check, and wasm2js output reads the shim's import named `at` (cd_at) off the imports object.
-The targets assumed are IE 11, Safari 9, Chrome 49, Firefox 45, Android 4.4 and iOS 9: typed arrays, nothing from ES2015.
+The targets assumed for `cdom.legacy.js` are IE 11, Safari 9, Chrome 49, Firefox 45, Android 4.4 and iOS 9: typed arrays, nothing from ES2015.
+`cdom.legacy-ie9.js` adds IE 9 to them and assumes no typed arrays at all (see "IE 9, the third tier").
 Each output is rebuilt only when it is missing, differs from what the script last wrote there, or an input it names in `inputs()` (the files by content, wasm2js and node by version) changed since; a build that reads a file `inputs()` does not name throws before writing.
 So `tests/build.sh` with nothing of the fallback changed spends about 0.3 s on it instead of about 2 s, which every unit run and every mutant paid; `tools/legacyfresh.mjs` changes each input in turn and checks that exactly the outputs naming it are rebuilt.
 
@@ -252,6 +253,70 @@ Without `LEGACY` the same tools run on wasm and pass unchanged, as do unit, canv
 Twenty-five mutants on direct calls (boot always or never falling back, no factory, the shim without its factory branch, no capture wrapper or the wrong phase, PEP left out, each UTF-8 branch, the fit check, the surrogate pair, microtasks dropped, reportError silent, startsWith always true, includes ignoring its start, Object.entries one short, no globalThis, and each Math and typed-array polyfill) were all caught, and a sequential boot fails the parallel-fetch check.
 The short fill was caught by a hang (the C looped on bytes it never cleared), so `tools/legacy.mjs` now fails any run that takes over 90 seconds.
 The first round left six alive: a two-byte decode bug that é cannot show (its lead byte reads the same under both masks, so the text now has a Cyrillic letter), and five polyfills the app cannot tell from wrong ones (a wrong imul still gives a consistent intern hash, a short fill leaves bytes that were zero anyway), which is why the built-in comparison exists; it then found that copyWithin threw where the built-in clamps.
+
+#### IE 9, below the floor (2026-11-08, the morning; superseded by "IE 9, the third tier" below)
+
+`LEGACY=ie9` in `tools/cdp.mjs` is `LEGACY=1` and then what IE 9 lacks that IE 11 has, each with the IE version it arrived in, read from mdn/browser-compat-data rather than memory.
+Typed arrays and DataView arrived in IE 10, requestAnimationFrame 10, MutationObserver 11, classList 10, dataset 11, pushState and replaceState 10, WebSocket, Blob, File, FormData and URL 10, indexedDB, atob and btoa 10, performance.now 10 (performance itself is 9's), Map, Set and WeakMap 11, matchMedia, document.hidden and String.prototype.trim 10, devicePixelRatio 11, and crypto.getRandomValues 11, as msCrypto only.
+Symbol, WeakSet, URLSearchParams and an unprefixed Element.matches never arrived; BCD records that by having no IE entry at all.
+The profile keeps performance.getEntriesByType (IE 10), which the harness reads to see what a page fetched.
+`LEGACY=ie9-gaps` is the same with typed arrays and msCrypto put back, so the rest of IE 9's gaps can be tested on a page that boots.
+The fuzz page's harness used Map and URLSearchParams, which both delete, so it now keeps its keys in plain objects.
+
+What broke under `LEGACY=ie9`, on the legacy page, the fuzz page and the keyed app alike: both fallback files were fetched and each failed at its first typed array, `cdom.legacy.js` at the fround polyfill's `new Float32Array(1)` and the wasm2js file at its base64 table's `new Uint8Array(123)` (before `new ArrayBuffer`, which comes later, in asmFunc), and then the boot failed on `cdom.start` of an undefined `cdom`.
+Three errors, two of them inside minified files, and nothing drawn.
+Under `LEGACY=ie9-gaps` every check passes unchanged (`tools/legacy.mjs`, the five fuzz seeds, the keyed smoke): with no MutationObserver, queueMicrotask falls back to a timeout, and requestAnimationFrame to a 16 ms timeout, and the legacy test now checks that those forms are the ones installed and that they work.
+The one gap that did not degrade was devicePixelRatio: without it the viewport record's ratio was 0.
+It was left alone while no browser above the floor lacked it (IE 11 has it); the third tier polyfills it, and performance.now.
+
+The walls are two, not one.
+IE 9 has no typed arrays, and IE 9 and 10 have no crypto.getRandomValues, the only source the shim seeds cd_seed from (a page can fix a seed, but `cdomBoot` passes none, and seeding from Math.random or the clock is what the seed rule forbids).
+So the fallback's real floor was then IE 11, and before this an IE 10 page fetched both files and stopped at a rejected `start()` that promise-polyfill only reported as a console warning.
+Now the boot checks both before it loads anything, and below the floor throws one error naming each missing thing: under `LEGACY=ie9`, "cdom: this browser cannot run cdom without WebAssembly: it has no ArrayBuffer, Int8Array, Uint8Array, Int16Array, Uint16Array, Int32Array, Uint32Array, Float32Array, Float64Array, crypto.getRandomValues", and with typed arrays but no crypto, as in IE 10, the same naming crypto.getRandomValues alone.
+`tools/legacy.mjs`, `fuzz.mjs` and `smoke.mjs` under `LEGACY=ie9` check exactly that: one error (besides the modern shim's own script, which a real old browser fails as a syntax error), no fallback file or wasm fetched, the mount empty, and the legacy page never ready.
+The check runs only without WebAssembly, but every page carries it: the keyed page grows by 470 bytes (158 brotli).
+Mutants caught: no throw, no crypto check, one typed array left out of the list, and crypto read without msCrypto (which `LEGACY=1` catches, since IE 11 has only msCrypto); in the ie9-gaps checks, a requestAnimationFrame calling back without a time and a queueMicrotask that runs at once.
+
+Could IE 9 run without typed arrays at all?
+A typed-array polyfill cannot alias: IE 9 has no Proxy, so `HEAP32[i]` can be intercepted only by a getter and setter per index.
+Measured in headless Chrome at the keyed app's peak memory (3.4 MB, after add on top of runlots), defining just a Uint8 and an Int32 view as accessors over one byte store took 1.2 s and 115 MB of heap, and an aliased 32-bit read and write cost 99 to 143 ns against 1 to 1.5 ns on an Int32Array; each memory.grow would redefine them all.
+That is refuted.
+The other way is memory as a plain Array, every load and store through small functions.
+Binaryen has no such mode: `--instrument-memory` and `--safe-heap` wrap loads and stores but still do them on the typed-array memory.
+A post-pass over wasm2js output would be sound to write, because its memory traffic is regular: in the keyed app 566 `HEAPxx[index]` reads and writes (45 of them byte-wide, none float), plus `bufferView` in exactly four helpers (the data segments' base64 decode, memory.fill, memory.copy and grow), all of which an acorn pass can rewrite and refuse anything else.
+A float app would also need f32 and f64 loads, stores and reinterprets as hand-written IEEE 754 packing, and Math.fround as software rounding.
+In V8 the cost of a word Array is small for 32-bit access (1.4 to 1.7 ns, as fast as an Int32Array) and 8 to 20 times a Uint8Array for a byte's read-modify-write (8 to 12 ns).
+But the shim reads and writes the same memory in about 40 places (strings, the event inbox, cd_val arrays, rects, the viewport, encodeInto, the listen masks), so it would need a second build with every one of them through the same accessors, and a third file per entry.
+And none of it would start the app, because IE 9 still has no crypto.getRandomValues: the keyed smoke could only pass under `LEGACY=ie9` by seeding from what the seed rule forbids.
+So the third tier was not built that morning, and IE 9 and 10 got the boot's error instead.
+The door named then was a seed the server sends (its own cryptographic generator, given to `start` as `options.seed`), and then the word-Array pass above; what was built instead, with a weak seed approved as the one exception, follows.
+
+#### IE 9, the third tier (built 2026-11-08 on the op-stream line, ported onto main 2026-11-19)
+
+IE 9 runs cdom with no WebAssembly and no typed arrays: the same app, wasm2js output rewritten onto C's memory as a plain Array of 32-bit words.
+The floor is now ES5 (IE 9's), and the boot refuses only below it.
+`shim/boot.js` picks one of three tiers and a browser fetches only its own files: WebAssembly (the wasm on the inlined shim); no WebAssembly but typed arrays (IE 10 and 11: `cdom.legacy.js` and `app.wasm.js`); neither (IE 9: `cdom.legacy-ie9.js` and `app.wasm.ie9.js`).
+Without the ES5 the fallback files call (`Object.defineProperty` on a plain object, `Object.create`, `keys`, `getPrototypeOf`, `Array.isArray`, `forEach`, `reduce`, `bind`, `Date.now`, `addEventListener`), as in IE 8, it throws one error naming each missing one, before fetching anything.
+
+The memory: `tools/legacy/words.js` keeps it as one Array of signed 32-bit words, with byte and halfword loads and stores, f32 and f64 packing in software (no Float32Array, Float64Array or DataView), Math.fround in software, memory.copy, fill and grow, and the data segments' base64 straight into the words.
+`tools/legacy/memory.mjs` rewrites wasm2js output from its AST: every `HEAPxx[i]` read and plain store goes to `W` (32 bits) or to words.js's accessors, and each helper wasm2js writes around memory must be token for token the text binaryen 130 writes, or the build fails; a compound store, a store whose value is used, a view passed around, or any typed-array name left in the minified file fails it too.
+`tools/words.mjs` checks words.js against real typed arrays (268,000 checks: every position, sign edges, i64 halves, fround on ties through the subnormals, NaN canonicalisation) and runs `tests/memforms.c` (every way C reaches memory) as wasm, wasm2js and words side by side, every result and byte agreeing.
+The shim reaches C memory through one set of functions (shim/cdom.js, from "C's memory" to its end: views, stale, the loads and stores, bytes, writeBytes, encodeTo, pixels, newWords and the rest); the `shim-ie9` build swaps in `tools/legacy/memory-words.js`'s functions of the same names and refuses the file if a typed array is left outside seed and randomBytes (both behind a check for crypto, which IE 9 has not) or any view of the typed backing is read anywhere.
+The polyfills leave out what needs typed arrays there (TextEncoder.encode makes a plain Array), and add ChildNode.remove (no IE has it), performance.now and devicePixelRatio (IE 10 and 11's).
+
+The seed: IE 9 and 10 have no crypto.getRandomValues, and a static page has no server to send a seed, so `seed()` falls back on `Math.random` mixed with the clock when the page passed no `options.seed` and the browser has no crypto.
+It is the one approved exception to the seed rule: below IE 11 cd_seed is neither secret nor unpredictable, and cdom.h says it is never for secrets (`cd_random_bytes` answers UNAVAILABLE there instead).
+`tools/seeds.mjs` (tests/link's seed gate) now scans the shipped JS too and allows exactly that one Math.random, in seed(), after options.seed and crypto, under that comment; `tests/unit.html` checks the same of the inlined shim, and `tools/legacy.mjs` checks where each tier's seed came from (crypto's wherever it exists, the weak one only on the third).
+
+Ported onto main, the shim's accessor set grew with main's code: runtime strings (str, the ahead range, callEnded), cd_layout's fields, the file module's hand-over, and the shim's own word tables (listenMask, roKey, aheadIndex) through newWords; ascii stays on the views as the hot path of runtime strings, with its own words twin.
+`build.mjs`'s rebuild-on-change scheme names the new inputs (memory-words.js, words.js, memory.mjs), and `tools/legacyfresh.mjs` covers the two new builds; `tools/offsets.mjs` reads the accessors as it read the views.
+The IE 9 profile in `tools/cdp.mjs` (`LEGACY=ie9`, from mdn/browser-compat-data) also deletes FileReader (IE 10), so the file module answers UNSUPPORTED there.
+
+Tested: `tools/legacy.mjs` under no LEGACY, `LEGACY=1`, `ie9`, `ie9-gaps` (IE 9's other gaps on the second tier) and the `ie8` refusal; the five fuzz seeds under `LEGACY=ie9`; the keyed app's smoke (every action, 24 checks) under `LEGACY=ie9`; on the third tier the legacy page also reaches every other shim memory path (a wheel event's floats, cd_rect's doubles, the viewport, a number through a cd_val, cd_blit's pixels, the seed).
+The op-stream branch ran in real IE 9 on Windows 7: tests/legacy.html (typing echoes, focus) and the keyed app (create 1,000 rows, swap, select, delete).
+
+Bytes, keyed entry (minified, brotli in parentheses): `cdom.legacy-ie9.js` 52,040 (15,924) and `app.wasm.ie9.js` 20,493 (7,644), against `cdom.legacy.js` 52,698 (16,117) and `app.wasm.js` 18,403 (6,761).
+Every page pays for the bigger boot and the shim's accessors: the keyed page grows by 1,303 bytes (401 brotli) against main, of which the boot alone is about 1,000 (320) and the minified shim 285 (49).
 
 #### Cheerp, the direct C-to-JS compiler (tried 2026-11-08 on the op-stream line, not adopted)
 
