@@ -5,7 +5,7 @@ const names = ['idct4 (jsimd_idct_4x4 against jpeg_idct_4x4)', 'idct2 (jsimd_idc
   'ycc random widths (jsimd_color_deconvert against libjpeg ycc_extrgbx_convert)', 'ycc every (y, cb, cr)',
   'unfilter (every filter, 1 to 8 bytes a pixel)', 'rgb to rgba', 'scaler across', 'scaler down', 'scaler divide (in doubles)',
   'adler32 (SIMD blocks against a byte at a time)',
-  'paeth runs (the wavefront over 2 to 4 rows, SIMD and scalar, against a row at a time)'];
+  'paeth runs (the SIMD wavefront over 2 to 4 rows, and the scalar run, against a row at a time)'];
 const { instance } = await WebAssembly.instantiate(fs.readFileSync(process.argv[2]), {});
 const x = instance.exports;
 let bad = 0;
