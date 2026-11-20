@@ -21,6 +21,6 @@ cc -msimd128 -Wall -Wextra -Werror -idirafter "$LJT" -I"$src/jsimd" -I"$here" -c
 cc -msimd128 -Wall -Wextra -Werror -idirafter "$LJT" -DCDOM_IMAGE_SIMD=1 -c -o "$o/loops.o" "$src/cdom_image_loops.c"
 cc -msimd128 -Wall -Wextra -Werror -DCDOM_IMAGE_SIMD=1 -c -o "$o/inflate.o" "$src/cdom_image_inflate.c"
 cc -msimd128 -Wall -Wextra -Werror -idirafter "$LJT" -DCDOM_JSIMD -DALIGN_SIZE=8 -c -o "$o/jsimd.o" "$src/jsimd/jsimd_wasm.c"
-for f in wrapper/jidctred-8 wrapper/jdcolor-8 wrapper/jutils-8; do cc -w -I"$LJT" -c -o "$o/$(basename "$f").o" "$LJT/$f.c"; done
+for f in wrapper/jidctred-8 wrapper/jidctint-8 wrapper/jdcolor-8 wrapper/jutils-8; do cc -w -I"$LJT" -c -o "$o/$(basename "$f").o" "$LJT/$f.c"; done
 "$CC" "${CDOM_CFLAGS[@]}" "${CDOM_LDFLAGS[@]}" -Wl,--initial-memory=16777216 -o "$out/simd.wasm" "$o"/*.o || exit 1
 node "$here/simd.mjs" "$out/simd.wasm"

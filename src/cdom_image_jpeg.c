@@ -215,6 +215,7 @@ typedef struct {
   uint32_t failed;            /* libjpeg's error, held while the walker has not reached its verdict (0: none) */
   uint32_t skip;              /* bytes libjpeg skipped past the buffer: the next ones are dropped as they come */
   uint32_t since;             /* output rows since the last step (an output pass that reads nothing is cut every 64) */
+  uint8_t gather;             /* a progressive file: the rest of it gathered before jpeg_start_decompress (below) */
   uint8_t created;            /* jpeg_create_decompress has run */
   uint8_t ran_dry;            /* libjpeg asked for bytes past the end of the file: the file is cut short */
   uint8_t too_many_scans;
@@ -325,6 +326,7 @@ static void body(void *v) {
      * the probe's walk answers for a scan before any frame) */
     if (!walk_done(d)) { x->status = CD_IMAGE_CORRUPT; return; }
     cd_image_target(d->info.width, d->info.height, d->info.orientation, d->box_w, d->box_h, &x->dw, &x->dh);
+    if (d->test_w) { x->dw = d->test_w; x->dh = d->test_h; d->info.orientation = d->test_o; }
     c->out_color_space = JCS_EXT_RGBA;                  /* grey and YCbCr both come out as RGBA with alpha 255 */
     c->do_fancy_upsampling = TRUE;
     c->do_block_smoothing = FALSE;
@@ -345,6 +347,10 @@ static void body(void *v) {
     x->stage = J_START;
   }
   if (x->stage == J_START) {
+    /* A progressive file's scans are decoded by src/cdom_image_jpegp.c, which takes each scan whole from the source and
+     * walks the markers of all of them once, so it needs the rest of the file in the buffer: in pieces, the rest is
+     * gathered first (its coefficients are the most of what it holds, 3 to 6 bytes a pixel, against the file's 0.3) */
+    if (c->progressive_mode && d->buf && d->taken < d->size) { x->gather = 1; return; }
     if (!jpeg_start_decompress(c)) return;              /* suspended while it took in a multi-scan file's scans */
     x->stage = J_ROWS;
   }
@@ -363,6 +369,10 @@ static void body(void *v) {
   x->status = x->ran_dry ? CD_IMAGE_CORRUPT : CD_IMAGE_OK;   /* the file ended before libjpeg was done with it */
 }
 
+#ifdef CDOM_IMAGE_TESTING
+int32_t cd_image_jpeg_fatal;   /* the last decode's fatal libjpeg error (its msg_code), -1 for too many scans, 0: none */
+#endif
+
 static jctx *jctx_new(cd_image_dec *d) {
   jctx *x = cd_alloc_try(sizeof *x);
   if (!x) return 0;
@@ -375,6 +385,9 @@ static jctx *jctx_new(cd_image_dec *d) {
   x->src.init_source = src_init; x->src.fill_input_buffer = src_fill; x->src.skip_input_data = src_skip;
   x->src.resync_to_restart = jpeg_resync_to_restart; x->src.term_source = src_term;
   x->prog.progress_monitor = progress;
+#ifdef CDOM_IMAGE_TESTING
+  cd_image_jpeg_fatal = 0;
+#endif
   return x;
 }
 
@@ -395,6 +408,7 @@ uint32_t cd_image_jpeg_put(cd_image_dec *d, const uint8_t *p, uint32_t n) {
     if (!x) return CD_IMAGE_NO_ROOM;
     d->fmt = x;
   }
+  if (x->gather && d->taken < d->size) { d->used += n; return CD_IMAGE_MORE; }   /* a progressive file's rest, gathered */
   /* the source: the room holds what libjpeg kept (at its front) and the new bytes; or the caller's bytes */
   if (d->buf) {
     uint32_t drop = x->skip < n ? x->skip : n;           /* a skip past the buffer pays off first (nothing kept then) */
@@ -409,6 +423,9 @@ uint32_t cd_image_jpeg_put(cd_image_dec *d, const uint8_t *p, uint32_t n) {
   d->warnings = (uint32_t)x->err.num_warnings;
   if (threw) {                                           /* a fatal libjpeg error, or too many scans */
     int code = x->err.msg_code;
+#ifdef CDOM_IMAGE_TESTING
+    cd_image_jpeg_fatal = x->too_many_scans ? -1 : code;
+#endif
     st = x->too_many_scans || code == JERR_NO_BACKING_STORE ? CD_IMAGE_TOO_BIG
        : code == JERR_OUT_OF_MEMORY ? CD_IMAGE_NO_ROOM
        : CD_IMAGE_CORRUPT;
@@ -429,9 +446,41 @@ uint32_t cd_image_jpeg_put(cd_image_dec *d, const uint8_t *p, uint32_t n) {
   if (keep && x->src.next_input_byte != d->buf) memmove(d->buf, x->src.next_input_byte, keep);
   d->used = keep;
   x->src.next_input_byte = d->buf;
+  if (x->gather && d->cap - d->used < d->size - d->taken) {   /* room for all of the rest */
+    uint32_t cap = d->used + (d->size - d->taken);
+    uint8_t *b = cd_alloc_try(cap);
+    if (!b) return CD_IMAGE_NO_ROOM;
+    memcpy(b, d->buf, d->used);
+    cd_free(d->buf);
+    d->buf = b; d->cap = cap;
+    x->src.next_input_byte = b;
+  }
   if (!d->step && d->used == d->cap && d->taken < d->size) return CD_IMAGE_CORRUPT;   /* a unit larger than the room */
   return CD_IMAGE_MORE;
 }
+
+#ifdef CDOM_IMAGE_TESTING
+/* tests/image/prog.c's and fuzz_jpegp.c's entry, the one the module had before the fed decoder: the whole file in one
+ * put where it lies, to a target of dw x dh as stored, with info's orientation (the walker's verdict as the probe's). */
+uint32_t cd_image_jpeg_resize(const uint8_t *p, uint32_t len, const cd_image_info *info, uint32_t dw, uint32_t dh,
+                              uint8_t **rgba, uint32_t *w, uint32_t *h) {
+  cd_image_dec d;
+  memset(&d, 0, sizeof d);
+  d.size = len; d.taken = len; d.box_w = d.box_h = 1; d.status = CD_IMAGE_MORE; d.format = CD_IMAGE_JPEG;
+  d.info.orientation = 1;
+  d.test_w = dw; d.test_h = dh; d.test_o = info->orientation;
+  uint32_t st = cd_image_jpeg_put(&d, p, len);
+  while (st == CD_IMAGE_MORE && d.step) { d.step = 0; st = cd_image_jpeg_put(&d, p + len, 0); }
+  if (st == CD_IMAGE_MORE) st = CD_IMAGE_CORRUPT;
+  *rgba = st == CD_IMAGE_OK ? d.rgba : 0;
+  *w = st == CD_IMAGE_OK ? d.w : 0;
+  *h = st == CD_IMAGE_OK ? d.h : 0;
+  if (st != CD_IMAGE_OK) cd_free(d.rgba);
+  cd_image_jpeg_end(&d);
+  cd_free(d.walk.exif);
+  return st;
+}
+#endif
 
 void cd_image_jpeg_end(cd_image_dec *d) {
   jctx *x = d->fmt;

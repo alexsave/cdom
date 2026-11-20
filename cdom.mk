@@ -178,7 +178,8 @@ CDOM_IMAGE_LJT  := $(CDOM)/third_party/libjpeg-turbo-3.2.1/src
 CDOM_IMAGE_SRC  :=
 CDOM_IMAGE_PARTS := own inflate vendor sjlj file
 CDOM_IMAGE_FILE_SRC = $(if $(filter file,$(APP_MODULES)),$(CDOM)/src/cdom_image_file.c)
-CDOM_IMAGE_OWN_SRC := $(CDOM)/src/cdom_image.c $(CDOM)/src/cdom_image_jpeg.c $(CDOM)/src/cdom_image_png.c $(CDOM)/src/cdom_image_loops.c
+CDOM_IMAGE_OWN_SRC := $(CDOM)/src/cdom_image.c $(CDOM)/src/cdom_image_jpeg.c $(CDOM)/src/cdom_image_jpegp.c $(CDOM)/src/cdom_image_png.c \
+  $(CDOM)/src/cdom_image_loops.c
 CDOM_IMAGE_OWN_CFLAGS := -isystem $(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV
 # CDOM_IMAGE_SIMD: 0 (the default) is scalar; 1 builds the hot loops with wasm SIMD (-msimd128, src/cdom_image_loops.c and
 # src/jsimd/jsimd_wasm.c, which libjpeg-turbo reaches through its own SIMD dispatch, WITH_SIMD: the three headers in
@@ -194,9 +195,11 @@ endif
 cdom_mk_simd_flags := -msimd128 -DCDOM_IMAGE_SIMD=1 -DCDOM_JSIMD -DMULTIPLIER=int -DALIGN_SIZE=8
 CDOM_IMAGE_OWN_SIMD_SRC := $(CDOM)/src/jsimd/jsimd_wasm.c
 CDOM_IMAGE_OWN_SIMD_CFLAGS := $(cdom_mk_simd_flags)
+# jdphuff.c (libjpeg's progressive decoder) is not compiled, and jdcoefct.c is compiled under another name
+# (src/cdom_image_ljt_coef.c): src/cdom_image_jpegp.c is cdom's progressive path (docs/image-progressive-speed.md).
 CDOM_IMAGE_VENDOR_SRC := $(addprefix $(CDOM_IMAGE_LJT)/,jcomapi.c jdapimin.c jdhuff.c jdinput.c jdmarker.c jdmaster.c \
-  jdphuff.c jmemmgr.c jpeg_nbits.c $(addprefix wrapper/,$(addsuffix -8.c,jdapistd jdcoefct jdcolor jddctmgr jdmainct \
-  jdpostct jdsample jidctint jidctred jutils)))
+  jmemmgr.c jpeg_nbits.c $(addprefix wrapper/,$(addsuffix -8.c,jdapistd jdcolor jddctmgr jdmainct \
+  jdpostct jdsample jidctint jidctred jutils))) $(CDOM)/src/cdom_image_ljt_coef.c
 CDOM_IMAGE_VENDOR_CFLAGS := -w -I$(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV
 CDOM_IMAGE_VENDOR_SIMD_CFLAGS := $(cdom_mk_simd_flags) -I$(CDOM)/src/jsimd/simd
 CDOM_IMAGE_INFLATE_SRC := $(CDOM)/src/cdom_image_inflate.c

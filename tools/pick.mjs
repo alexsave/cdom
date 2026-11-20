@@ -54,7 +54,9 @@ try {
   await b.send('Page.addScriptToEvaluateOnNewDocument', { source: INIT });
   // The probe in the readable shim (the minified one is checked against it by tools/minshim.mjs check).
   const shim = fs.readFileSync(path.join(top, 'shim/cdom.js'), 'utf8');
-  const lit = shim.match(/WebAssembly\.validate\(new Uint8Array\(\[([\d, ]+)\]\)\)/);
+  // The bytes are simdProbe's (their own function, so the IE 9 build can allow that typed array alone), and
+  // WebAssembly.validate takes them.
+  const lit = /WebAssembly\.validate\(simdProbe\(\)\)/.test(shim) && shim.match(/function simdProbe\(\) \{\s*return new Uint8Array\(\[([\d, ]+)\]\);/);
   let made = null;
   try { made = [...execFileSync('wasm-as', ['-all', path.join(top, 'tools/simd-probe.wat'), '-o', '-'])].join(','); } catch {}
   ok(lit && made && lit[1].replace(/ /g, '') === made, `the probe in shim/cdom.js is tools/simd-probe.wat, assembled by wasm-as (${made ? made.split(',').length + ' bytes' : 'no wasm-as'})`);

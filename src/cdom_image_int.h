@@ -39,6 +39,17 @@ void cd_image_scaler_free(cd_image_scaler *s);
 /* The size the image (sw x sh as stored, orientation o) is scaled to, as stored, for a box of bw x bh shown. */
 void cd_image_target(uint32_t sw, uint32_t sh, uint32_t o, uint32_t bw, uint32_t bh, uint32_t *dw, uint32_t *dh);
 
+/* The coefficients libjpeg's IDCT of a size (a component's DCT_scaled_size, 1 to 16) reads, whichever body runs (the C
+ * or the wasm SIMD 2x2 and 4x4): bit 8 * row + column of the natural-order block. docs/image-progressive-speed.md has the
+ * table and where each line of it is in the code; tests/image/simd.c checks it (a coefficient outside it, changed to
+ * anything, changes no output byte). */
+static inline uint64_t cd_image_idct_reads(int size) {
+  uint32_t rc = size == 1 ? 0x01u : size == 2 ? 0xabu : size == 4 ? 0xefu : size >= 3 && size <= 7 ? (1u << size) - 1 : 0xffu;
+  uint64_t m = 0;
+  for (int r = 0; r < 8; r++) if (rc >> r & 1) m |= (uint64_t)rc << (8 * r);
+  return m;
+}
+
 /* The EXIF orientation (1 to 8) of the JPEG at p, or 1 when it has none. */
 uint32_t cd_image_orientation(const uint8_t *p, uint32_t len);
 /* The orientation in an Exif APP1's TIFF header at t, room bytes to the segment's end (at least 8), or 1. */
@@ -95,6 +106,7 @@ struct cd_image_dec {
   cd_image_walk walk;      /* a JPEG's header walker */
   void *fmt;               /* the format's state (cdom_image_jpeg.c, cdom_image_png.c), made when it is needed */
   uint32_t warnings;       /* libjpeg's warnings so far (the tests compare them) */
+  uint32_t test_w, test_h, test_o;   /* tests only (cd_image_jpeg_resize under CDOM_IMAGE_TESTING): a target as given */
 };
 /* cd_image_resize, and libjpeg's warnings through *warnings (when not 0): what the tests compare a fed decode with. */
 uint32_t cd_image_decode(const uint8_t *p, uint32_t len, uint32_t max_w, uint32_t max_h, uint8_t **rgba, uint32_t *w,
@@ -103,6 +115,11 @@ uint32_t cd_image_decode(const uint8_t *p, uint32_t len, uint32_t max_w, uint32_
 uint32_t cd_image_dec_warnings(const cd_image_dec *d);
 uint32_t cd_image_jpeg_put(cd_image_dec *d, const uint8_t *p, uint32_t n);
 void cd_image_jpeg_end(cd_image_dec *d);
+#ifdef CDOM_IMAGE_TESTING
+/* the whole-file JPEG decode to a target given as stored (tests/image/prog.c, fuzz_jpegp.c) */
+uint32_t cd_image_jpeg_resize(const uint8_t *p, uint32_t len, const cd_image_info *info, uint32_t dw, uint32_t dh,
+                              uint8_t **rgba, uint32_t *w, uint32_t *h);
+#endif
 uint32_t cd_image_png_put(cd_image_dec *d, const uint8_t *p, uint32_t n);
 void cd_image_png_end(cd_image_dec *d);
 
@@ -205,4 +222,14 @@ typedef struct {
 void cd_inflate_begin(cd_inflate *z, uint8_t *buf, uint32_t cap, cd_inflate_out out, void *ctx);
 uint32_t cd_inflate_put(cd_inflate *z, const uint8_t *p, uint32_t n, int last);
 uint32_t cd_image_adler32(uint32_t adler, const uint8_t *p, size_t n);
+#ifdef CDOM_IMAGE_TESTING
+/* src/cdom_image_jpegp.c's record of its marker walk and of the scans libjpeg read, for tests/image/walkcheck.h */
+#define CD_IMAGE_JPEGP_NOT_RUN (-2)   /* cd_image_jpegp_walk_n: no walk in this decode */
+#define CD_IMAGE_JPEGP_GAVE_UP (-1)   /* cd_image_jpegp_walk_n: the walk gave up (nothing skipped) */
+extern int32_t cd_image_jpegp_walk_n, cd_image_jpeg_fatal;
+extern uint32_t cd_image_jpegp_read_n, cd_image_jpegp_in_start, cd_image_jpegp_skipped;
+extern uint64_t cd_image_jpegp_walk_list[CD_IMAGE_SCANS_MAX + 2], cd_image_jpegp_read_list[CD_IMAGE_SCANS_MAX + 2];
+uint64_t cd_image_jpegp_scan_code(uint32_t ncomp, const uint8_t *comp, uint32_t ss, uint32_t se, uint32_t ah, uint32_t al);
+#endif
+
 #endif
