@@ -98,6 +98,27 @@ const IE9_GAPS = `
 // innerText, which the harness reads the page with. Under LEGACY=below there is no attachEvent either.
 const IE6_OLD = `
   const define = Object.defineProperty;
+  // IE 6 to 8 refuse an input's type once the input has had a parent, even after it is taken out again: setAttribute
+  // throws "This command is not supported." unless the type is the one it has (measured in IE 6, docs/ie6-design.md).
+  // A lone input takes any type, one IE does not know (search, email, ...) being text, as IE's parser makes it; and
+  // IE's mergeAttributes copies another element's attributes, the type among them, onto an input with a parent.
+  // Before the loop below, which takes apply and call from the DOM's methods.
+  const hadParent = new WeakSet();
+  for (const k of ['appendChild', 'insertBefore', 'replaceChild']) {
+    const f = Node.prototype[k];
+    Node.prototype[k] = function (child) { hadParent.add(child); return Reflect.apply(f, this, arguments); };
+  }
+  const setAttr = Element.prototype.setAttribute;
+  const IE_TYPES = { __proto__: null, text: 1, password: 1, checkbox: 1, radio: 1, submit: 1, reset: 1, file: 1, hidden: 1, image: 1, button: 1 };
+  Element.prototype.setAttribute = function (name, value) {
+    if (this.nodeName !== 'INPUT' || String(name).toLowerCase() !== 'type') return Reflect.apply(setAttr, this, arguments);
+    const v = String(value).toLowerCase();
+    if (hadParent.has(this) && v !== this.type) throw new Error('This command is not supported.');
+    return Reflect.apply(setAttr, this, [name, IE_TYPES[v] ? v : 'text']);
+  };
+  Element.prototype.mergeAttributes = function (from) {
+    for (const a of Array.prototype.slice.call(from.attributes)) Reflect.apply(setAttr, this, [a.name, a.value]);
+  };
   // IE 6 to 8's DOM methods are host objects, not functions: no apply or call (EventTarget's are kept: attachEvent
   // below calls them). Through Reflect: IE9_GAPS took Object.setPrototypeOf.
   for (const proto of [Node.prototype, Element.prototype, HTMLElement.prototype, Document.prototype, HTMLInputElement.prototype])
