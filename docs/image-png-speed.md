@@ -477,3 +477,100 @@ The Mac re-measures; the numbers of this VM (x86-64) are indicative, so these ar
   Falsifier: lag 1 within 1.10 of lag 2, or faster (then the cross-row path was not the critical one, and the lag is not what keeps the wavefront fast).
 - P8. (mine) The microbench of the wavefront on runs of 4 is 0.25 to 0.40 of the one-row loop's time (4 chains where there was 1, short of 0.25 by the extra loads and the two vectors' throughput); runs of 2 with a 2-row variant (one vector) are 0.50 to 0.65.
   Falsifier: runs of 4 above 0.50, or runs of 2 above 0.75.
+
+### What was built (and how it differs from the plan above)
+
+Every number in this part is from this doc's x86-64 cloud VM (Chrome for Testing 153 headless, node 22, LLVM 23.1.6 from its release tarball, since apt.llvm.org is blocked here), so they are indicative; the Mac re-measures.
+The unfilter microbench is `bench/image/paeth/` (build.sh, then `node bench/image/paeth/run.mjs`): p12.png's own filtered rows, unfiltered in wasm by each loop the way the sink hands them over, interleaved rounds, medians; every arm must give the same bytes.
+
+The layout went through three versions, each measured on the microbench at runs of 4 (main's one-row SIMD loop is 1.000):
+
+| version | runs of 4 |
+| --- | --- |
+| the plan: two rows a vector in 16-bit lanes, b loaded back from the row above's stored bytes | 0.88 |
+| the same, b moved into its lanes from the results of 2 steps before (registers), `paeth_v` forced inline (at -Oz clang had made it a call) | 0.67 |
+| four rows in one vector of bytes, b from registers, the raw bytes loaded a step ahead (shipped) | 0.61 |
+
+- Loading b back from memory costs a failed store-to-load forward: the 4-byte load of a 3-byte pixel spans two or three of the narrower stores before it.
+- On this VM the 16-bit loop is bound by its instruction count, not its chain: about 75 x86 instructions a step (V8's code, `node --print-wasm-code`), and a version with the chain cut entirely took the same time.
+- So the shipped loop puts all four rows in one vector of 8-bit lanes (row j in bytes 4j to 4j + 3) and does Paeth in bytes: with p = b - c and q = a - c each made as two saturated halves, pa and pb are their ORs and pc is the distance of the two halves' sums.
+  When p and q share a sign the sum may saturate at 255, but then the true pc is pa + pb, and both compares (pa <= pc, pb <= pc) answer the same for 255 as for the true value; when the signs differ, pc is exact.
+  About 30 wasm operations a step for four pixels, where the 16-bit layout needs about 50.
+- For 3 bytes a pixel each row's fourth byte is the next pixel's raw byte: the loop stores 4 bytes with that byte put back as loaded, and loads the next step's raw bytes before the step's stores (after them, the load overlaps the store just made, another failed forward, and that one sits in the chain).
+- On the Mac both layouts should be bound by the chain (8 NEON operations deep in each), so the difference there is the 8-bit loop's headroom: about 30 operations a step for 4 pipes, against about 50.
+- The lag is 2 (b is a result of 2 steps before, so the shift into the lower row's lanes is a step off the chain); the microbench has lag 1 at 1.06 of lag 2.
+- Runs of 2 and 3 use the same loop, with the rows past the run sharing the last row's bytes, stored before it so the live row's store lands last: runs of 2 at 0.754 (a 2 and a 1 at 0.835, two single rows 1.000), runs of 3 at 0.663, so short runs take the wavefront.
+- The scalar build: four rows interleaved in plain C measured 1.11 times a row at a time (196.7 ms a row at a time, 217.6 interleaved), so the scalar build has none (P5 below), and its `cd_image_unfilter_run` is a row.
+- The sink (`rows()` in src/cdom_image_png.c) passes `cd_image_unfilter_run` the rows that are whole and past the window from the next one (at most the rows left), and it takes a run of up to 4 Paeth rows from them, or the one row of another filter; then each row goes to the RGBA step and the scaler in order.
+  What it keeps is unchanged (the row above the next run), and so is the buffer's formula: a run is rows already in it.
+
+The microbench (9 rounds after one warm-up, ms, the medians):
+
+| loop | ms | of the SIMD row loop |
+| --- | --- | --- |
+| scalar, a row at a time | 196.7 | 1.759 |
+| SIMD, a row at a time (main) | 111.8 | 1.000 |
+| SIMD wavefront, lag 2, runs of 4 | 68.6 | 0.613 |
+| SIMD wavefront, lag 1, runs of 4 | 72.8 | 0.651 |
+| SIMD wavefront, runs of 3 | 74.2 | 0.663 |
+| SIMD wavefront, runs of 2 | 84.3 | 0.754 |
+| SIMD wavefront, runs of 2 then 1 | 93.4 | 0.835 |
+
+Chrome runs the loop faster than node's V8 does: in Chrome's profile the wavefront is 0.31 of main's Paeth, not 0.61.
+
+### Results
+
+The profile (bench/image/profile.mjs, p12.png at box 900, 12 runs after a warm-up, the SIMD pages linked without wasm-opt, so they keep their name sections), the first of two runs; the second gave Paeth 61.3 to 18.8 ms and the resize 185.4 to 142.3:
+
+| function, main (cdc957e) | ms | share | | function, this branch | ms | share |
+| --- | --- | --- | --- | --- | --- | --- |
+| cd_inflate_zlib | 65.5 | 33.6% | | cd_inflate_zlib | 67.3 | 42.7% |
+| cd_image_unfilter_simd (Paeth inlined) | 43.0 | 22.1% | | cd_image_scaler_row | 42.3 | 26.8% |
+| cd_image_scaler_row | 40.9 | 21.0% | | cd_image_unfilter_run_simd (the wavefront) | 20.2 | 12.8% |
+| unfilter_paeth | 19.3 | 9.9% | | build | 8.1 | 5.2% |
+| build | 8.6 | 4.4% | | cd_image_adler32 | 6.3 | 4.0% |
+| cd_image_adler32 | 5.3 | 2.7% | | rows | 5.0 | 3.2% |
+| cd_image_scaler_div_simd | 4.3 | 2.2% | | cd_image_scaler_div_simd | 4.2 | 2.6% |
+| rows | 4.1 | 2.1% | | window.arm | 2.5 | 1.6% |
+| resize, mean | 192.1 | | | resize, mean | 154.4 | |
+
+The bench (bench/image/run.mjs, 9 interleaved rounds at box 900, the 1-minute load 0.58 to 1.13; C-old and C-old-simd are main at cdc957e, built from a worktree as bench/image/old.sh does, plus its SIMD page; bench/image/results/2026-11-20-paeth-wave-chrome.tsv), medians in ms, the wasm memory after the run in MiB:
+
+| input | C-old | C-old-simd | C-js | C-simd | B1 | B2 | wasm MiB, main to this |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| p12.jpg | 89.3 | 76.0 | 88.3 | 78.4 | 109.0 | 109.2 | 6.1 to 6.1 |
+| p12p.jpg | 256.1 | 244.4 | 257.4 | 243.9 | 226.0 | 231.6 | 40.8 to 40.8 |
+| p48.jpg | 244.2 | 238.6 | 241.4 | 230.1 | 393.2 | 398.5 | 17.1 to 17.1 |
+| p12.png | 231.5 | 178.4 | 224.2 | 139.1 | 171.8 | 192.2 | 17.3 to 17.3 |
+
+Per round, C-simd against main's C-simd: p12.png 0.770 (0.660 to 0.829), p12.jpg 1.017 (0.994 to 1.549), p12p.jpg 0.964, p48.jpg 0.973.
+
+- P1 confirmed: Paeth's self time is 0.32 of main's (62.3 to 20.2 ms; the second run 0.31), inside 0.28 to 0.42.
+- P2 missed its range, not falsified: p12.png's C-simd is 22% faster than main's (178.4 to 139.1 ms; per round 0.770), under the 25 to 33% predicted and over the 15% falsifier. The other stages stayed as they were (the inflate 65.5 ms, the scaler 40.9), so Paeth's 42 ms is 22% of this VM's whole run. C-simd is now under B1 here (139.1 against 171.8).
+- P3 refuted, narrowly: p12.jpg's C-simd median is 3.2% over main's (78.4 against 76.0), over the 3% line; p12p.jpg is within it (0.2%). Per round the p12.jpg ratio is 1.017, and the JPEG path's code is untouched (the module's PNG part and its layout are what changed), so I read it as noise, but the line was 3%.
+- P4 confirmed: the wasm memory after p12.png is the same bytes (18,153,472 for both SIMD pages, 18,087,936 for both scalar ones).
+- P5 refuted: four rows interleaved in plain C are 1.11 times a row at a time, over the 0.85 falsifier; dropped from the scalar build.
+- P6 refuted on its own range, on the side it predicted: 1.11 is over the 1.05 top (the interleave is slower, not the same); its falsifier (under 0.85) is not hit.
+- P7 refuted: lag 1 is 1.06 times lag 2, under 1.10. On this VM the loop is bound by its instruction count, so a longer chain shows only a little; the Mac, bound by the chain, is where the lag should matter.
+- P8 refuted: runs of 4 are 0.61 of the one-row loop in node (falsifier 0.50), and runs of 2 are 0.75 (falsifier 0.75, on the line). In Chrome the same loop is 0.31, inside P1's range: node 22's V8 makes slower code of it than Chrome 153's.
+
+### Tests
+
+- tests/image/simd.c, "paeth runs": `cd_image_unfilter_run_simd` and `_scalar` against `cd_image_unfilter_scalar` row by row, on blocks of rows whose filters are Paeth runs of 1 to 5 with 0 to 2 rows of None, Sub, Up and Avg between (and runs that meet, and one run of 5), 3 and 4 bytes a pixel, widths 1 to 9 pixels and 4031 and 4032 (and some rows not a whole number of pixels), a zero or a random row above the first, handed over a random number of rows at a time as the sink does; every byte compared, the rows each call answers checked against the run there, and the block's last byte is the last byte of memory (a read past the last row traps). 1,488 cases from the test's seed.
+- tests/image/oracle.py: png-paeth-runs-rgb and -rgba (403 x 300, rows in Paeth runs of 1 to 5, each followed by a row of None, Sub, Up or Avg in turn, the first row Paeth), and png-paeth-runs-far-rgb (rows that repeat every 26, so the stream copies each row from near the window's far end); pixels from a formula, so the older inputs are unchanged; Pillow decodes each file to its pixels first; the peak limits are what main held for these files (576 and 578 KB, rounded up, and the file).
+- tools/mutate.py, the mutants, each caught by the assertion named:
+
+| mutant | what it breaks | caught by |
+| --- | --- | --- |
+| paeth-wave-lag-off-by-one | row 1 runs 1 pixel off the lag its lanes' b assume | simd.sh, FAIL paeth runs |
+| paeth-wave-c-old | the lagging rows keep an old up-left pixel (c) | simd.sh, FAIL paeth runs |
+| paeth-wave-tail-drop-last | a run of 4 leaves its last row's tail bytes filtered | simd.sh, FAIL paeth runs |
+| paeth-wave-keep-off | 3 bytes a pixel: the next pixel's raw byte overwritten | simd.sh, FAIL paeth runs |
+| paeth-wave-store-order | runs of 2 and 3: the rows past the run stored after the last row | simd.sh, FAIL paeth runs |
+| paeth-run-not-broken | a row of another filter taken into the run | simd.sh, FAIL paeth runs |
+| paeth-run-not-broken-png | the same, through the PNG path | tests/image/run.sh in Chrome, FAIL wasm_js_simd: png-paeth-runs-rgb |
+| png-sink-keeps-row-short | the sink drops the row above the next run | the native tests, png-paeth-runs-rgb |
+| png-sink-run-past-window | a run takes rows still inside the window | tests/image/run.sh in Chrome, FAIL wasm_js_simd: png-paeth-runs-far-rgb |
+| png-sink-run-scaled-once | only a run's first row reaches the scaler | tests/image/run.sh in Chrome, FAIL wasm_js_simd: png-paeth-runs-rgb |
+
+png-sink-run-past-window was missed by the first oracle case (no match there reads the rows near the window's far edge); png-paeth-runs-far-rgb was added for it, and catches it.
