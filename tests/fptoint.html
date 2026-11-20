@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><title>fptoint</title></head><body><div id="m"></div>
+<script>
+/*CDOM_SHIM*/
+</script>
+<script>
+/*CDOM_BOOT*/
+</script>
+<script>
+// tools/fptoint.mjs drives this page on every tier; ES3, as the page of tests/legacy.html is.
+var ERRORS = [];
+window.onerror = function (message, file, line, column, error) {
+  ERRORS.push(error ? error.name + ': ' + error.message : String(message));
+};
+cdomBoot('fptoint.wasm', document.getElementById('m'), {}, function (x) { window.X = x; window.READY = true; });
+</script></body></html>

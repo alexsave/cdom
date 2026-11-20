@@ -68,6 +68,12 @@ wasm -O2 "$here/out/legacy.simd.wasm" -msimd128 "$here/legacy.c" "$here/../src/c
 cmp "$here/out/legacy.wasm.lits" "$here/out/legacy.simd.wasm.lits"
 page "$here/legacy.html" "$here/out/legacy.shim.html" "$here/out/legacy.wasm"
 node "$legacy" page "$here/out/legacy.shim.html" "$here/out/legacy.html"
+# Float to integer casts on every tier (tools/fptoint.mjs): clang's non-trapping conversions through wasm2js.
+wasm -O2 "$here/out/fptoint.wasm" "$here/fptoint.c" "$here/../src/cdom.c" "$here/../src/mini.c"
+node "$legacy" app "$here/out/fptoint.wasm" "$here/out/fptoint.wasm.js"
+node "$legacy" app-ie9 "$here/out/fptoint.wasm" "$here/out/fptoint.wasm.ie9.js"
+page "$here/fptoint.html" "$here/out/fptoint.shim.html" "$here/out/fptoint.wasm"
+node "$legacy" page "$here/out/fptoint.shim.html" "$here/out/fptoint.html"
 # The script engine probe (docs/ie5-design.md), served beside the pages for the XP VM's browsers.
 cp "$here/probe.html" "$here/out/probe.html"
 # The hold that keeps the Utilu IE 5.01 and 5.5 builds from crashing at a page's Done (tools/ie5hold.py) is the test
