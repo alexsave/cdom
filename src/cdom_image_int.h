@@ -22,13 +22,14 @@ typedef struct {
   uint64_t ypos;            /* position in the vertical sum, in units of 1/dh of a source row */
   uint32_t oy;              /* the next output row to finish */
   uint32_t row;             /* source rows taken so far */
-  uint32_t step;            /* bytes a source pixel: 4 (RGBA, alpha ignored; init's), or 3 (RGB, set after init) */
+  uint32_t step;            /* bytes a source pixel: 4 (RGBA, alpha ignored; init's), 3 (RGB) or 1 (grey: one sum a
+                             * pixel through across, down and the divide, made R, G and B as it is stored), set after init */
 } cd_image_scaler;
 
 /* 1 on success, 0 when the heap has no room (nothing is held then). Sizes are 1 to 65535 a side. */
 int cd_image_scaler_init(cd_image_scaler *s, uint32_t sw, uint32_t sh, uint32_t dw, uint32_t dh, uint32_t orientation);
-/* One source row of sw pixels, step bytes each, R, G and B first (RGBA, alpha ignored, or RGB). Rows past sh are
- * ignored. */
+/* One source row of sw pixels, step bytes each, R, G and B first (RGBA, alpha ignored, or RGB), or one grey byte each.
+ * Rows past sh are ignored. */
 void cd_image_scaler_row(cd_image_scaler *s, const uint8_t *rgba);
 /* The image, which the caller owns, once all sh rows went in; 0 otherwise. Either way the scaler holds nothing
  * after it. */
@@ -155,6 +156,9 @@ void cd_image_scaler_across_scalar(uint32_t *h, const uint8_t *px, uint32_t sw, 
 void cd_image_scaler_across_simd(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw);
 /* across on sw RGB pixels (3 bytes each), scalar in both builds: the PNG path's RGB read (cd_image_scaler.step 3). */
 void cd_image_scaler_across_rgb(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw);
+/* across on sw grey pixels (1 byte each), scalar in both builds: h gets dw sums, one an output pixel, each equal to the three
+ * across makes for the pixels as RGBA (R = G = B): the PNG path's grey read (cd_image_scaler.step 1). */
+void cd_image_scaler_across_grey(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw);
 void cd_image_scaler_down_scalar(uint64_t *a, const uint32_t *h, uint64_t wgt, uint32_t n);
 void cd_image_scaler_down_simd(uint64_t *a, const uint32_t *h, uint64_t wgt, uint32_t n);
 /* The scaler's divide: out[i] = min(255, (2 * a[i] + t) / (2 * t)) for i below n, where t (at most 2^32) is the weights'
