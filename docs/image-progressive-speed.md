@@ -437,3 +437,11 @@ apt.llvm.org answers 403 here as it did for the earlier jobs, so LLVM 23 is the 
 binaryen 130 is the release tarball ci.yml names (its sha256 checked), Chrome 153 with `CHROME_ARGS=--no-sandbox`, `npm ci` at the root and in tools/legacy, Python 3.11 with numpy and Pillow 13.0.0, libjpeg-turbo-progs 2.1.5 and zlib1g-dev from Ubuntu.
 The native tests use the same LLVM 23 clang (`HOST_CC`, `FUZZ_CC`): Ubuntu's clang 18 here has no sanitizer runtimes installed.
 With LLVM 23 the eh-way wasm builds (`CDOM_IMAGE_SJLJ=eh`), which this branch could not run before, build and pass.
+
+| run | result |
+| --- | --- |
+| tests/image/run.sh, all steps, the big inputs | pass (4 min 37 s): 9,201 native checks, inflate_diff, wasm js and eh ways each scalar and SIMD, the capped heap and memory, simd.sh, prog.sh |
+| tests/image/prog.sh, the whole corpus at every scale | 1,079 files, 8,632 decodes, 0 differences; OK 5,888, TOO_BIG 8, CORRUPT 2,736; 15,361 scans skipped; walks: 6,984 equal (24 of them where libjpeg stopped first), 1,648 gave up, 0 against libjpeg; peak held 957.0 MB against libjpeg's 1,309.6 MB |
+| tests/image/prog.sh --fuzz 900 | 21,604 inputs run (837 in the grown corpus), with the walk differential: no difference, crash or leak |
+| tests/image/fuzz.sh 600 | fuzz_jpeg 5,787 runs, fuzz_png 53,519, fuzz_inflate 904,360: no crash, leak or limit |
+| bench/image/run.mjs, one round, box 900 (not a timing: the Mac re-measures) | p12p.jpg decodes to 900 x 675 in C-js, C-eh and C-simd, wasm memory 26.1 MiB as before |
