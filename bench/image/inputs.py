@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The image bench's inputs (docs/image-design.md, "The bench"): four synthetic photos, made from one seed.
+"""The image bench's inputs (docs/image-design.md, "The bench"): seven synthetic images, made from one seed.
 
 Usage: python3 -I bench/image/inputs.py [OUT_DIR]      (default bench/image/inputs, ignored by git)
 
@@ -7,6 +7,11 @@ Usage: python3 -I bench/image/inputs.py [OUT_DIR]      (default bench/image/inpu
   p12p.jpg  the same pixels, progressive (optimized)   how editors and some browsers save
   p48.jpg   8064 x 6048, baseline, 4:2:0, quality 90   a 48 MP camera's full-size JPEG
   p12.png   4032 x 3024 RGB, compress level 6          a large PNG (a screenshot or an edited export)
+  p12a.png  p12.png's pixels with a smooth alpha (RGBA)   a PNG with transparency (docs/image-png-speed.md)
+  p12g.png  p12.png's pixels as 8-bit grey                a grey PNG
+  p24.png   5664 x 4248 RGB (24 MP), compress level 6     a larger PNG
+The last three draw nothing from the rng (made after the first four, which stay as they were): the alpha is Pillow's
+radial gradient, scaled up.
   The progressive set (docs/image-progressive-speed.md), from the same scene and grain (no more random draws):
   p12p444.jpg  p12's pixels, progressive, 4:4:4 (optimized)
   p24p.jpg     6000 x 4000, progressive, 4:2:0 (optimized)      a 24 MP camera's progressive JPEG
@@ -134,13 +139,21 @@ def main():
     p12.save(os.path.join(out, "p12p444.jpg"), "JPEG", quality=90, subsampling=0, progressive=True, optimize=True)
     del p12
     save_jpeg(with_grain(render(scene, 8064, 6048), tile), os.path.join(out, "p48.jpg"), False)
+    p12 = with_grain(render(scene, 4032, 3024), tile)   # the same pixels as p12.png
+    alpha = Image.radial_gradient("L").resize(p12.size, Image.BICUBIC).point(lambda v: 255 - v * 191 // 255)
+    p12.convert("L").save(os.path.join(out, "p12g.png"), "PNG", compress_level=6)
+    p12.putalpha(alpha)                                   # opaque at the centre, a quarter at the corners
+    p12.save(os.path.join(out, "p12a.png"), "PNG", compress_level=6)
+    del p12
+    with_grain(render(scene, 5664, 4248), tile).save(os.path.join(out, "p24.png"), "PNG", compress_level=6)
     save_jpeg(with_grain(render(scene, 6000, 4000), tile), os.path.join(out, "p24p.jpg"), True)
     script = os.path.join(out, "many-scans.txt")
     open(script, "w").write(MANY_SCANS)
     jpegtran(["-scans", script], os.path.join(out, "p12.jpg"), os.path.join(out, "p12pmany.jpg"))
     os.remove(script)
     jpegtran(["-progressive"], os.path.join(out, "p48.jpg"), os.path.join(out, "p48p.jpg"))
-    for n in ["p12.jpg", "p12p.jpg", "p48.jpg", "p12.png", "p12p444.jpg", "p24p.jpg", "p12pmany.jpg", "p48p.jpg"]:
+    for n in ["p12.jpg", "p12p.jpg", "p48.jpg", "p12.png", "p12a.png", "p12g.png", "p24.png",
+              "p12p444.jpg", "p24p.jpg", "p12pmany.jpg", "p48p.jpg"]:
         im = Image.open(os.path.join(out, n))
         print(f"{n}\t{im.size[0]}x{im.size[1]}\t{os.path.getsize(os.path.join(out, n))}\tprogressive={im.info.get('progressive', 0)}")
 

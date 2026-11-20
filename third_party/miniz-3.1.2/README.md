@@ -1,6 +1,7 @@
 # miniz 3.1.2, the inflate section only (tinfl)
 
-cdom's image module (`src/cdom_image_png.c`, `APP_MODULES += image`) inflates PNG image data with this.
+Not in cdom's image module any more: since branch png-fast (docs/image-png-speed.md) the PNG path inflates with cdom's own `src/cdom_image_inflate.c`, so an app that ships the module ships none of miniz and owes it no notice.
+It stays here as the baseline the inflate bench measures against (`bench/image/inflate/`, the `tinfl` arms); the cdom manager may drop it with that arm.
 
 - Version: 3.1.2.
 - Source: https://github.com/richgel999/miniz/releases/download/3.1.2/miniz-3.1.2.zip

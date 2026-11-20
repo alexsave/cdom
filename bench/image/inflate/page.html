@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><title>inflate bench</title></head><body><script>
+// bench/image/inflate/run.mjs drives this page: go(wasm, arm, input) loads one build of wasm.c, puts the PNG in its
+// memory and times run(arm), the inflate and the rows handed on, nothing else.
+window.go = async (wasm, arm, input) => {
+  const { instance } = await WebAssembly.instantiateStreaming(fetch(wasm), {});
+  const x = instance.exports;
+  const data = new Uint8Array(await (await fetch(input)).arrayBuffer());
+  const p = x.room(data.length);
+  new Uint8Array(x.memory.buffer, p, data.length).set(data);
+  const t0 = performance.now();
+  const made = x.run(arm, p, data.length);
+  const ms = performance.now() - t0;
+  return { ms, made, bytes: x.memory.buffer.byteLength, file: data.length };
+};
+</script></body></html>
