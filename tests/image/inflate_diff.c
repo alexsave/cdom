@@ -480,7 +480,21 @@ static void header_case(const char *what, uint32_t cmf, int fdict, int fcheck_ok
   agree(w.b, w.n, what, expect);
   free(w.b);
 }
+/* a stored block of "hello" whose NLEN is LEN's complement or not, the adler32 of "hello" after it: only the NLEN
+ * check stands between a wrong one and OK */
+static void stored_case(const char *what, int nlen_ok) {
+  bw w = {0};
+  static const uint8_t o[5] = {'h', 'e', 'l', 'l', 'o'};
+  put(&w, 0x78, 8); put(&w, 0x01, 8); put(&w, 1, 1); put(&w, 0, 2); align(&w);
+  put(&w, 5, 16); put(&w, nlen_ok ? (~5u & 0xffff) : (~5u & 0xffff) ^ 0x100, 16);
+  for (int i = 0; i < 5; i++) put(&w, o[i], 8);
+  trailer(&w, o, 5);
+  agree(w.b, w.n, what, nlen_ok);
+  free(w.b);
+}
 static void headers(void) {
+  stored_case("a stored block, NLEN right", 1);
+  stored_case("a stored block, NLEN wrong", 0);
   header_case("header 78 01 (a good one)", 0x78, 0, 1, 1);
   header_case("header CM 7", 0x77, 0, 1, 0);
   header_case("header CINFO 8", 0x88, 0, 1, 0);

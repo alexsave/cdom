@@ -9,7 +9,7 @@ import subprocess, sys, pathlib, os, shutil, tempfile, threading, queue, signal
 
 top = pathlib.Path(__file__).resolve().parent.parent
 TEST_TIMEOUT = 150 # s: unit.mjs takes about 10 on a passing tree and waits at most 60 for a broken page
-LONG_TIMEOUT = 900 # s: the image module's runs that make the oracle's inputs and run the fed decoder's tests (CHK, IMGW)
+LONG_TIMEOUT = 900 # s: the image module's runs, which make the oracle's inputs and run the fed decoder's tests (CHK, IMG, IMGBIG, IMGW)
 HUNG = -999
 UNIT = ['node', 'tools/unit.mjs']
 FUZZ = ['node', 'tools/fuzz.mjs']
@@ -740,7 +740,7 @@ M = [
   ('png-grey-unscaled', 'src/cdom_image_png.c', 'uint32_t g = d == 8 ? v : v * 255 / mask;', 'uint32_t g = v;', IMG, 'png-grey'),
   ('png-bit-order', 'src/cdom_image_png.c', '(r[x / per] >> (8 - d - d * (x % per)))', '(r[x / per] >> (d * (x % per)))', IMG, 'png-'),
   ('png-palette-trns', 'src/cdom_image_png.c', 'if (ctype == 3) for (uint32_t i = 0; i < n && i < 256; i++) x->f.pal[4 * i + 3] = data[i];', 'if (ctype == 3) {}', IMG, 'png-palette'),
-  ('png-plte-257', 'src/cdom_image_png.c', 'if (l % 3 || l > 768)', 'if (l % 3)', IMG, '257 palette entries'),
+  ('png-plte-257', 'src/cdom_image_png.c', 'if (l % 3 || l > 768)', 'if (l % 3)', IMG, 'AddressSanitizer'),
   ('png-plte-not-3', 'src/cdom_image_png.c', 'if (l % 3 || l > 768)', 'if (l > 768)', IMG, 'multiple of 3'),
   ('png-no-plte', 'src/cdom_image_png.c', 'if (x->f.ctype == 3 && !x->seen_plte) return CD_IMAGE_CORRUPT;', 'if (0 && x->f.ctype == 3 && !x->seen_plte) return CD_IMAGE_CORRUPT;', IMG, 'no PLTE'),
   ('png-bad-stream', 'src/cdom_image_png.c', 'if (st != CD_INFLATE_OK) return CD_IMAGE_CORRUPT;', 'if (st > CD_INFLATE_STOPPED) return CD_IMAGE_CORRUPT;', IMG, 'png-adler-mismatch'),
@@ -767,7 +767,7 @@ M = [
   ('inflate-lit2-too-long', 'src/cdom_image_inflate.c', 'l1 + E_BITS(e2) <= root) t[i] = LIT2(', 'l1 + E_BITS(e2) <= root + 1) t[i] = LIT2(', IMG, 'FAIL inflate_diff'),
   ('inflate-subtable-size', 'src/cdom_image_inflate.c', '          room -= count[ll] - j;', '          room -= count[ll];', IMG, 'FAIL inflate_diff'),
   ('inflate-third-literal', 'src/cdom_image_inflate.c', '              b >>= e3 & 63;\n              e = lt[b & lm];', '              b >>= e3 & 63;\n              e = lt[(b >> 1) & lm];', IMG, 'FAIL inflate_diff'),
-  ('inflate-stored-nlen', 'src/cdom_image_inflate.c', 'if (cut(s) || len != (~nlen & 0xffff)) return bad;', 'if (cut(s) || (len != (~nlen & 0xffff) && 0)) return bad;', IMG, 'FAIL inflate_diff'),
+  ('inflate-stored-nlen', 'src/cdom_image_inflate.c', 'if (cut(s) || len != (~nlen & 0xffff)) return bad;', 'if (cut(s) || (len != (~nlen & 0xffff) && 0)) return bad;', IMG, 'a stored block, NLEN wrong: zlib refuses, cdom answers 0'),
   ('inflate-sink-overdrops', 'src/cdom_image_inflate.c', '  if (drop < 0 || (uint64_t)drop > can) return 0;', '  if (drop < 0 || (uint64_t)drop > can + (uint64_t)o->pos) return 0;', IMG, 'in greedy'),
   ('inflate-adler-unchecked', 'src/cdom_image_inflate.c', 'return a == o->adler ? CD_INFLATE_OK : bad;', 'return a == o->adler || 1 ? CD_INFLATE_OK : bad;', IMG, 'png-adler-mismatch'),
   ('inflate-adler-weight', 'src/cdom_image_inflate.c', 'co = 1 | 3ull << 16 | 5ull << 32 | 7ull << 48;', 'co = 1 | 3ull << 16 | 5ull << 32 | 6ull << 48;', IMG, 'adler32 of'),
@@ -966,7 +966,7 @@ def build_and_run(root, cmd, minify=False):
   # the run would wait on it for good. The test runs in a process group of its own (Chrome with it),
   # killed whole past TEST_TIMEOUT; a hang is a broken module, so it counts as caught (HUNG).
   t = subprocess.Popen(cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
-  limit = LONG_TIMEOUT if cmd in (CHK, IMGW) else TEST_TIMEOUT
+  limit = LONG_TIMEOUT if cmd in (CHK, IMG, IMGBIG, IMGW) else TEST_TIMEOUT
   try:
     out, _ = t.communicate(timeout=limit)
   except subprocess.TimeoutExpired:
