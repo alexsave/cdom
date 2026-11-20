@@ -585,3 +585,28 @@ Main on the Mac: Paeth 70.8 ms of a 163.7 ms profiled resize; the bench's p12.pn
 - W3: in Safari, p12.png's C-simd falls by at least 0.15 (to 137 ms or less). Falsifier: less than 0.10.
 - W4: C-js (no scalar change) and the JPEG inputs are within 3% of main in both browsers.
 - W5: the wasm memory after p12.png is unchanged.
+
+### Paeth as a wavefront: the Mac's results (2026-11-19)
+
+Chrome 157.0.8103.79 headless, then Safari 27.0.1; load 2.2 to 3.0; the per-run tables are bench/image/results/2026-11-19-wave-mac-chrome.tsv and -safari.tsv.
+Chrome's profile (12 runs, the SIMD page without wasm-opt): resize 117.6 ms mean against 163.7 on main; cd_inflate_zlib 59.0 ms, cd_image_unfilter_run_simd 23.7, cd_image_scaler_row 22.5, build 4.5, cd_image_adler32 2.7.
+
+| input | browser | C-old (main) | C-js | C-simd | B1 | B2 |
+| --- | --- | --- | --- | --- | --- | --- |
+| p12.jpg | Chrome | 58.8 | 58.8 | 51.8 | 63.3 | 69.8 |
+| p12p.jpg | Chrome | 136.3 | 136.6 | 131.7 | 122.9 | 128.5 |
+| p48.jpg | Chrome | 170.3 | 171.6 | 160.1 | 216.1 | 259.7 |
+| p12.png | Chrome | 178.5 | 179.5 | 111.9 | 131.7 | 139.9 |
+| p12.jpg | Safari | 66 | 67 | 55 | 87 | 79 |
+| p12p.jpg | Safari | 144 | 143 | 136 | 167 | 154 |
+| p48.jpg | Safari | 177 | 177 | 165 | 373 | 333 |
+| p12.png | Safari | 234 | 232 | 118 | 207 | 196 |
+
+- W1 confirmed: Paeth 23.7 ms in Chrome's profile (0.33 of 70.8).
+- W2 confirmed: Chrome's p12.png C-simd is 111.9 ms against B1's 131.7, 15% under the browser's own decode.
+- W3 confirmed: Safari's p12.png C-simd falls from 161 to 118 ms (0.27), against B1's 207.
+- W4 confirmed: C-js and the JPEG inputs are within 1.5% of main in both browsers.
+- W5 confirmed: 17.6 MiB after p12.png, as main.
+
+So PNG now beats the browser in both: 0.85 of Chrome's createImageBitmap and 0.57 of Safari's.
+The next hotspot is the inflate (59.0 ms, half the resize), then Paeth and the scaler at about 23 ms each.
