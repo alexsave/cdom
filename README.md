@@ -293,8 +293,8 @@ flowchart TB
   cd_file_read_cb(input, 0, 30000000, got, 0);   /* APP_MODULES += file image */
   ```
 
-  It is libjpeg-turbo 3.2.1's decoder and miniz 3.1.2's inflate (`third_party/`, each directory's README has the version, the archive's sha256, the licence and every edit; `tools/third_party.py check` makes them again from the archives and compares).
-  **An app that ships it must say, in its documentation, "This software is based in part on the work of the Independent JPEG Group", and include miniz's MIT notice** (`third_party/miniz-3.1.2/LICENSE`); libjpeg-turbo's BSD notice is asked only of programs that include its TurboJPEG API, which is not here.
+  It is libjpeg-turbo 3.2.1's decoder (`third_party/`, whose README has the version, the archive's sha256, the licence and every edit; `tools/third_party.py check` makes it again from the archive and compares) and cdom's own inflate for PNG (`src/cdom_image_inflate.c`, docs/image-png-speed.md).
+  **An app that ships it must say, in its documentation, "This software is based in part on the work of the Independent JPEG Group"**; libjpeg-turbo's BSD notice is asked only of programs that include its TurboJPEG API, which is not here.
   It adds 27.5 KB brotli to an app (JPEG 23.1, PNG 5.0; `bench/image/sizes/run.sh`), and nothing to an app that does not call it.
   libjpeg leaves a fatal error with longjmp; `CDOM_IMAGE_SJLJ` picks how: `js` (the default: a try in the shim, every browser cdom runs in, wasm2js too) or `eh` (wasm exception handling: Chrome 95, Firefox 100, Safari 15.2); docs/image-design.md has both, and the numbers.
   `CDOM_IMAGE_SIMD=1` builds the hot loops (the IDCTs, YCbCr to RGBA, the scaler, the PNG unfilter and RGB to RGBA) with hand-written wasm SIMD: bit-exact with the scalar default, 6% to 13% faster on the bench on an Apple Silicon Mac in Chrome (12% on the PNG since the Paeth fix; 5% to 14% on an x86 VM), 2.1 KB brotli more, and the module then needs wasm SIMD (Chrome 91, Firefox 89, Safari 16.4); docs/image-simd-hand.md has the profile, the predictions and the numbers.

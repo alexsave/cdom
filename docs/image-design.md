@@ -7,7 +7,8 @@ It ports raceclub PR #10 (branch photo-low-peak, head a7270e4) into cdom, with e
 ## The module
 
 - `src/cdom_image.h` is the interface: `cd_image_probe` and `cd_image_resize(p, len, max_w, max_h, &rgba, &w, &h)`, which fits the image inside the box after orientation, never enlarges it, and answers an RGBA block of cdom's heap that the caller frees with `cd_free`.
-- `APP_MODULES += image` links it (cdom.mk): four parts, so libjpeg-turbo and miniz build with `-w` and their own `-I`, cdom's three files with the app's flags, and the one file that calls setjmp with the flags of its way out.
+- `APP_MODULES += image` links it (cdom.mk): four parts, so libjpeg-turbo builds with `-w` and its own `-I`, cdom's three files with the app's flags, cdom's inflate with the app's flags and `CDOM_IMAGE_INFLATE_CFLAGS`, and the one file that calls setjmp with the flags of its way out.
+- Since branch png-fast the PNG path inflates with cdom's own inflate, not miniz's tinfl, and hands RGB rows to the scaler with no RGBA row between: docs/image-png-speed.md has why and the numbers. Where this doc names tinfl or miniz below, it is the module as it was first ported.
 - The statuses: `OK`, `NOT_IMAGE`, `TOO_BIG`, `UNSUPPORTED`, `CORRUPT`, `NO_ROOM`, and `BAD_BOX` (a box of 0 or over `CD_IMAGE_BOX_MAX`, 8192, the caller's own mistake; one status more than the plan listed, so a bad call is never read as a bad file).
 - The limits, each a named constant in the header: a side of at most 65,500, at most 64 MP, at most 96 MiB held by the JPEG decoder, at most 500 scans.
 

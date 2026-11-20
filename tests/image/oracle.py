@@ -241,6 +241,20 @@ def png_cases():
              bw, bh, area_avg(p, *fit_box(w, h, bw, bh)))
     for (bw, bh) in [(0, 300), (300, 0), (8193, 300), (300, 8193)]:
         status_case(f"png-box{bw}x{bh}", f("rgb.png"), bw, bh, "BAD_BOX")
+    # png-fast-2 (docs/image-png-speed.md): a small PNG holds the 32 KB window and little more, not a 256 KB chunk; a
+    # wide RGB one read as RGB (the scalar build) holds no RGBA row. The limits are the file and what the module holds
+    # (the peaks measured, 48 and 197 KB, and a margin under the 256 KB chunk and the 31 KB row they would add). The
+    # pixels are a formula: nothing is drawn from the rng, so every later input is as it was.
+    y, x = np.mgrid[0:16, 0:16]
+    s16 = np.stack([x * 16, y * 16, (x + y) * 8], 2).astype(np.uint8)
+    a16 = ((x * 13 + y * 7) % 256).astype(np.uint8)
+    path = write_png("small16rgba.png", 16, 16, 6, 8, [r.reshape(-1) for r in np.concatenate([s16, a16[..., None]], 2)])
+    case("png-small16-rgba", path, 300, 300, area_avg(over_white(s16, a16), *fit_box(16, 16, 300, 300)),
+         maxkb=os.path.getsize(path) // 1024 + 56)
+    y, x = np.mgrid[0:3, 0:8000]
+    wide = np.stack([x % 251, (x // 7 + y * 40) % 256, (x * 3 + y) % 253], 2).astype(np.uint8)
+    path = write_png("wide8000x3.png", 8000, 3, 2, 8, [r.reshape(-1) for r in wide])
+    case("png-wide8000x3-rgb", path, 300, 300, area_avg(wide, *fit_box(8000, 3, 300, 300)), maxkb=os.path.getsize(path) // 1024 + 212)
 
 # ---------- JPEG ----------
 
