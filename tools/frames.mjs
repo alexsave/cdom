@@ -70,12 +70,25 @@ const TREE_IDS = `(function () { var out = [];
   }
   walk(cf_mount, false); return out; })()`;
 
+// Wraps every function of the shim (cf_) and of the app file (c_), cdomF's handlers, the app's exports (cf_raw) and the
+// shim's imports (cf_imports.cdom), each counting the depth in window.__D and its most in window.__maxD.
+const DEPTH_WRAP = `(function () {
+  window.__D = 0; window.__maxD = 0;
+  function wrap(o, k) { var f = o[k]; o[k] = function () { if (++window.__D > window.__maxD) window.__maxD = window.__D;
+    try { return f.apply(this, arguments); } finally { window.__D--; } }; }
+  var k, all = [[window, /^(c|cf)_/], [cdomF, /./], [cf_raw, /./], [cf_imports.cdom, /./]], i;
+  for (i = 0; i < all.length; i++) for (k in all[i][0]) if (all[i][1].test(k) && typeof all[i][0][k] === 'function') wrap(all[i][0], k);
+  return 1; })()`;
+let maxDepth = 0, depthBefore = 0;
 const port = srv.address().port;
 const measure = !!process.env.FRAMES_MEASURE;
 run: try {
   await b.send('Page.navigate', { url: `http://127.0.0.1:${port}/frames.html` });
   ok(await until('!!window.READY && window.cdomF && cdomF.draws > 0'), 'booted, and the frame drawn');
   if (!(await E('!!window.READY'))) break run;
+  // The call depth (docs/js1-transform-design.md, T5), measured only: every function of the shim and the app file, the
+  // shim's handlers, the app's exports and the shim's imports, counted on the way in and out from here on.
+  if (measure) await E(DEPTH_WRAP);
   ok(...tierFetched(await E(FETCHED), 'frames'));
   ok(await E('typeof cdom === "undefined" && typeof document.getElementById === "undefined" && typeof document.createElement === "undefined"'
     + ` && typeof ${F}.createElement === "undefined" && typeof ${F}.body.appendChild === "undefined" && typeof ${F}.body.addEventListener === "undefined"`
@@ -182,6 +195,7 @@ run: try {
   ok(!(await E('cdomF.errors.length')), `no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
   ok(!errs().length, `no page exceptions: ${JSON.stringify(errs())}`);
 
+  depthBefore = measure ? await E("window.__maxD") : 0;
   // A trap in C. The transformed file has no throw: C sets its flag and each function returns up the chain, the shim
   // notes it, and the call ends as any other, drawing what C did before it (docs/js1-transform-design.md, section 5).
   // The IE 9 build (FRAMES_APP=ie9) throws instead, out of a call that never comes back to the shim (no finally in
@@ -208,6 +222,7 @@ run: try {
       `the next click works as before: ${JSON.stringify(await textOf('#countp'))}, want count ${was + 2}, and nothing more noted`);
   }
 
+  if (measure) maxDepth = await E('window.__maxD');
   if (measure) {
     // Redraw cost: a page grown to n nodes, X.touch() (one text changed) timed whole and cf_html() alone, 10 of each.
     const median = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
@@ -265,8 +280,35 @@ run: try {
         out[k] = [(await E('history.length')) - before, await E('frames[0].document.body ? frames[0].document.body.innerText : ""')];
       }
       console.log('measure history', JSON.stringify(out));
+      // The JS 1 transform's measurements (docs/js1-transform-design.md, T4 and T2 and T3), for whichever app file this run
+      // serves (FRAMES_APP=ie9: the IE 9 build): the boot of frames.html to its first draw, from the CDP side, polled every
+      // 2 ms; a click on its button, called in the page; js1cpu's loop and recursions, timed in the page. The page's clock
+      // is new Date() (1 ms), so each in-page sample is the mean of several in a row; the median of 7 samples is kept.
+      const median = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
+      const boots = [];
+      for (let i = 0; i < 7; i++) {
+        const t0 = Date.now();
+        await b.send('Page.navigate', { url: `http://127.0.0.1:${port}/frames.html` });
+        while (!(await E('!!window.READY && window.cdomF && cdomF.draws > 0')) && Date.now() - t0 < 20000) await sleep(2);
+        boots.push(Date.now() - t0);
+      }
+      const clicks = [];
+      for (let i = 0; i < 7; i++) {
+        clicks.push(await E(`(function () { var t = new Date().getTime(), i; for (i = 0; i < 20; i++) ${F}.querySelector("#inc").onclick();
+          return (new Date().getTime() - t) / 20; })()`));
+      }
+      const app = IE9_APP ? 'ie9' : 'js1';
+      console.log(`measure ${app} boot ms ${median(boots)} (${boots}), click ms ${median(clicks)} (${clicks}), count ${await stat(STAT.count)}`);
+      await b.send('Page.navigate', { url: `http://127.0.0.1:${port}/js1cpu.html` });
+      ok(await until('!!window.READY'), 'js1cpu.html booted');
+      const inPage = (call, n) => E(`(function () { var t = new Date().getTime(), i; for (i = 0; i < ${n}; i++) ${call}; return (new Date().getTime() - t) / ${n}; })()`);
+      const loops = [], recs = [];
+      for (let i = 0; i < 7; i++) { loops.push(await inPage('X.loop(100000)', 50)); recs.push(await inPage('X.recs(1000, 20)', 50)); }
+      console.log(`measure ${app} js1cpu loop(100000) ms ${median(loops)} (${loops}), recs(1000, 20) ms ${median(recs)} (${recs}), answers ${await E('X.loop(100000) >>> 0')} ${await E('X.recs(1000, 20) >>> 0')}`);
+      console.log(`measure ${app} size ${fs.statSync(path.join(root, `frames.wasm.${app === 'ie9' ? 'ie9' : 'js1'}.js`)).size}`);
     }
   }
+  if (measure && maxDepth) console.log(`measure ${IE9_APP ? 'ie9' : 'js1'} depth: ${depthBefore} JavaScript frames at most before the trap section, ${maxDepth} with it (trap_deep(5) recurses)`);
   await b.close(); srv.close();
 }
 console.log(fails ? `${fails} FAILED` : 'all ok');
