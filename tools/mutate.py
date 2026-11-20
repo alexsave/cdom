@@ -51,6 +51,7 @@ FPT1 = ['env', 'LEGACY=1', 'node', 'tools/fptoint.mjs']              # float to 
 FPT9 = ['env', 'LEGACY=ie9', 'node', 'tools/fptoint.mjs']            # and on the third (words)
 LEGW2J = ['env', 'LEGACY=1', 'node', 'tools/legacy.mjs']             # the legacy page as a browser without WebAssembly
 FRAMES = ['env', 'LEGACY=frames', 'node', 'tools/frames.mjs']       # the fifth tier: no DOM mutation, frames written whole
+FRAMES9 = ['env', 'LEGACY=frames', 'FRAMES_APP=ie9', 'node', 'tools/frames.mjs']  # the same on the IE 9 build, whose traps throw
 JS11T = ['node', 'tools/js11.mjs']                                   # the frames tier's language gates, in node
 JS10T = ['node', 'tools/js10.mjs']                                   # the JavaScript 1.0 gate (Netscape 2.02), in node
 JS1T = ['node', 'tools/js1.mjs']                                     # the JS 1 transform on planted code, js1cpu against wasm, the depth
@@ -988,7 +989,9 @@ M = [
   ('frames-change-drawn-at-once', 'tools/legacy/frames.js', '  if (cf_dirty && later) {', '  if (false) {', FRAMES, 'FAIL the click that left the field still reached C'),
   ('frames-no-input-on-change', 'tools/legacy/frames.js', '  if (now != x.seen) {', '  if (false) {', FRAMES, 'FAIL leaving the field: one input'),
   ('frames-checkbox-no-change', 'tools/legacy/frames.js', '      cf_fire(x, cf_INPUT, 0);\n      cf_fire(x, cf_CHANGE, 0);\n', '      cf_fire(x, cf_INPUT, 0);\n', FRAMES, "FAIL the checkbox's change reached C"),
-  ('frames-recover-off', 'tools/legacy/frames.js', '  if (cf_busy || cf_holds) {', '  if (false) {', FRAMES, 'FAIL the next click recovers'),
+  # a call that never comes back: the IE 9 build's thrown trap (the transformed file's traps return; a stack overflow on
+  # Netscape 2 and 3 is the same case there)
+  ('frames-recover-off', 'tools/legacy/frames.js', '  if (cf_busy || cf_holds) {', '  if (false) {', FRAMES9, 'FAIL the next click recovers'),
   ('frames-history-entry', 'tools/legacy/frames.js', '  d.close();\n  cf_drawing = 0;', '  d.close();\n  w.location.hash = "cdomfocus";\n  cf_drawing = 0;', FRAMES, 'FAIL no redraw added a history entry'),
   ('frames-utf8-two-bytes', 'tools/legacy/frames.js', '      u = (c & 31) << 6 | cf_load8(p) & 63;\n      p++;', '      u = (c & 31) << 6 | cf_load8(p) & 63;', FRAMES, 'FAIL the input reached C, which read the value'),
   ('frames-encode-two-bytes', 'tools/legacy/frames.js', '      cf_store8(p + cf_wrote, 192 | u >> 6);', '      cf_store8(p + cf_wrote, 224 | u >> 6);', FRAMES, 'FAIL the input reached C, which read the value'),

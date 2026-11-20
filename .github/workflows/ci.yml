@@ -92,6 +92,7 @@ jobs:
           LEGACY=ie6 node tools/fptoint.mjs
           LEGACY=ie6 node tools/fuzz.mjs
           LEGACY=frames node tools/frames.mjs
+          LEGACY=frames FRAMES_APP=ie9 node tools/frames.mjs
           node tools/words.mjs
           WORDS=words1 node tools/words.mjs
           node tools/es3.mjs
