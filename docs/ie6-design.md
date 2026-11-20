@@ -147,3 +147,5 @@ Also learned: IE 6 caches the tier's two scripts across reloads even with Cache-
 - P3 held: cdom.legacy-ie6.js is 47,604 bytes minified (15,361 brotli -q 11, 17,137 gzip -9), against 57,376 for the third tier's (which grew from the 52 KB the prediction assumed).
   Without the generator runtime (finding 6) it is 43,317 bytes (14,062 brotli), below the predicted range; the third tier's is 53,101 (16,336) and the second's 53,797 (16,427).
 - P4 held: terser's ie8 adds 0.19% to 0.75% to the words build of the app (listfuzz 24,248 to 24,294 bytes, legacy 17,598 to 17,641, memforms 5,717 to 5,760).
+- P5 held: IE 9 (the Windows 7 VM) in IE 7 and IE 8 document modes (an X-UA-Compatible meta on a copy of the legacy page) took the fourth tier, fetching cdom.legacy-ie6.js and legacy.wasm.ie9.js, and passed the same checks: the broken image's error, pointer down, moves and up with their buttons, click, typing echoed by C, focus.
+  Its engine there is still JScript 9.0 (ScriptEngineMajorVersion), so these modes check the old DOM, not JScript 5's quirks; real IE 6 is what checked those (section 9).
