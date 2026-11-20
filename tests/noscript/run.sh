@@ -166,7 +166,7 @@ else bad "the lens does not see the script source in a page with no wrappers"; f
 printf '<!doctype html>\n<title>own</title>\n<style>\n/*CDOM_CSS*/\n</style>\n<body>\n  /*CDOM_NOSCRIPT*/\n<main id="app"></main>\n<script>\n/*CDOM_SHIM*/\ncdom.start(/*CDOM_WASM*/, "app");\n</script>\n' > "$app/own.html"
 grep -v CDOM_NOSCRIPT "$app/own.html" > "$app/plain.html"
 if ! mk APP_PAGE_SRC=own.html APP_PAGE=build/own.html > "$out/own.log" 2>&1; then bad "an own page with /*CDOM_NOSCRIPT*/ does not build:"; cat "$out/own.log"
-elif [ ! -f "$app/build/own.noscript.gif" ] || ! "$PY" "$top/tools/html2lens.py" "$app/build/own.html" | grep -qxF "TEXT $TEXT"; then bad "an own page with the marker: no own.noscript.gif, or the lens does not show the paragraph"
+elif "$PY" "$top/tools/html2lens.py" "$app/build/own.html" > "$out/own.lens"; [ ! -f "$app/build/own.noscript.gif" ] || ! grep -qxF "TEXT $TEXT" "$out/own.lens"; then bad "an own page with the marker: no own.noscript.gif, or the lens does not show the paragraph"
 else ok "an own page with /*CDOM_NOSCRIPT*/ (APP_PAGE_SRC) gets the fallback and its own screenshot, own.noscript.gif"; fi
 if ! mk APP_PAGE_SRC=plain.html APP_PAGE=build/plain.html > "$out/plain.log" 2>&1; then bad "an own page without the marker does not build:"; cat "$out/plain.log"
 elif [ -e "$app/build/plain.noscript.gif" ] || [ -e "$app/build/plain.html.noscript" ] || grep -qF -e '<!--' -e '<noscript' "$app/build/plain.html"; then bad "an own page without the marker got a fallback, a wrapper or a GIF"
