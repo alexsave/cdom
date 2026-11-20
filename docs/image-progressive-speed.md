@@ -220,6 +220,7 @@ All four candidates are in `src/cdom_image_jpegp.c` (about 700 lines), with no e
 - **(b2) skipped scans.**
   As in step 2's plan; a scan's touched range is Ss to Se + 15 (a corrupt first scan can write that far, and 63 at most), and the walk gives up (nothing skipped) on any marker or scan header it does not follow as libjpeg does, including libjpeg's own quirk in matching component ids.
   At start of each scan the scan libjpeg read is checked against the walk; a scan the walk did not see after one was skipped stops the decode (`JERR_NOTIMPL`, CORRUPT), which the fuzz runs never reached.
+  (The review of this branch found a file that reaches it: a zero-length COM after the first scan; see "The marker walk, after review" below.)
   With the standard script it skips every luma AC scan at 1/8 (p48p.jpg at a 900 box: the 4 luma AC scans of its 10; chroma, at 2x2, needs its AC), and nothing at 2/8.
 - **(c)** one call per scan instead of one per block, the DC blocks' offsets in an MCU computed once per scan, and no whole-image `jzero_far` beyond the smaller store.
 
@@ -342,4 +343,97 @@ Memory for p12p.jpg is 26.1 MiB, from 40.8.
 - A file whose whole coefficients exceed the budget at full size but whose kept coefficients fit now decodes instead of TOO_BIG (p48p.jpg at a 900 box; the oracle's 4096 x 4096 4:4:4 at 2/8).
   The over-budget oracle case moved to 8/8, where the store is libjpeg's size and the answer is still TOO_BIG, and the 2/8 decode of the same file became a case that must succeed under a peak limit.
 - The bench gained four inputs (no new random draws; `inputs.py` now needs jpegtran for two of them) and `bench/image/scans.py`; `build-main*/` (main's pages, built by hand for comparison) is ignored by git.
-- The block-smoothing path of libjpeg (`do_block_smoothing`) is not in cdom's controller: cdom turns it off, as it always did; buffered-image mode, which cdom never uses, is left to libjpeg's controller (whose entropy decoder would then stop with JERR_NOT_COMPILED).
+- The block-smoothing path of libjpeg (`do_block_smoothing`) is not in cdom's controller: cdom turns it off, as it always did; buffered-image mode, which cdom never uses, was left to libjpeg's controller (whose entropy decoder would then stop with JERR_NOT_COMPILED), and is now refused when the decoder is set up (below).
+
+## The marker walk, after review (branch jpeg-progressive-fast-2)
+
+A review of this branch found one bug in the walk (b2) and three gaps; this section is the follow-up, in the order the work was done.
+
+### The bug, reproduced first
+
+The walk ended at a marker segment whose length field is 0 or 1 (`if (len < 2 || at + len > n) break;`) and kept the scans it had so far.
+libjpeg does not stop there: `skip_variable` and `get_interesting_appn` (jdmarker.c) subtract 2 from the length and skip nothing when the result is not positive, and `next_marker` goes on to the next marker.
+A later scan was then one the walk had not seen; when the walk had already skipped a scan, or a store had been made without the nonzero mask the scan needs (a component at IDCT size 1), start_pass stopped the decode with `JERR_NOTIMPL`, CORRUPT where libjpeg decodes the image.
+The trigger is any progressive file with `FF FE 00 00` (a COM of length 0) after the first scan's data, decoded at 1/8.
+The corpus was extended first (below) and run on the walk as it was: tests/image/prog.sh gave 63 differences, every one a 1/8 decode, new status CORRUPT and libjpeg's OK, on the files with a COM, APP0, APP1, APP14, APP15, DNL or DAC segment of length 0 or 1 after the first or a middle scan (6 files of each kind, over three base files) and the three files with every accepted kind after every scan.
+
+### The fix: the walk is read_markers, byte for byte
+
+Each marker the walk meets after a scan's data is taken as `read_markers` and `next_marker` take it:
+
+| marker | libjpeg (jdmarker.c) | the walk |
+| --- | --- | --- |
+| APPn | `get_interesting_appn` (APP0, APP14) or `skip_variable`: the length less 2 is skipped when positive, nothing when not | the same: a length of 0 or 1 consumes the two length bytes and the walk goes on |
+| COM, DNL | `skip_variable` | the same |
+| DAC | `skip_variable` (this build has no arithmetic decoding, so `get_dac` is `skip_variable`) | the same |
+| DHT | `get_dht`: tables while more than 16 bytes are left; a count over 256 or over what is left, a table number over 3 (DC or AC), or a length that does not end at a table's end is an error | the same reading and the same checks; where get_dht errs the walk gives up |
+| DQT | `get_dqt`: tables of 65 or 129 bytes (by the precision nibble) while bytes are left; a table number over 3 or a length that does not end at a table's end is an error | the same; gives up where get_dqt errs |
+| DRI | `get_dri`: a length other than 4 is an error | the same; gives up there |
+| SOS | `get_sos`, then jdphuff.c's start_pass checks the band | the same checks, the band check now jdphuff.c's whole one (Ah and Al too); gives up at any of them, and at a header that is not all in the file |
+| RSTn, TEM | no length; the next marker follows | the same |
+| fill bytes (0xFF 0xFF ...) and 0xFF 0x00, stray bytes | `next_marker` skips them (a warning for stray bytes) | the same |
+| EOI | the end | the end |
+| SOI, SOFn, JPGn, RESn, anything else | an error | gives up |
+
+Past the end of the file cdom's source gives 0xFF 0xD9 at every refill, and its skip stops at the end; the walk reads those bytes as libjpeg would (a DHT, DQT or DRI cut by the end of the file is read on into them, and errs or not as libjpeg's does), and from any offset past the end the next marker is that EOI.
+After a scan's data the walk was already right: the data ends at the first marker that is neither 0xFF 0x00 nor RSTn, which is where libjpeg's entropy decoder stops too, except for a marker below 0xC0 inside a scan with restarts, which `jpeg_resync_to_restart` skips and decodes past; the walk gives up there (it is a marker libjpeg refuses at the top level), so nothing is skipped.
+TEM is the one marker below 0xC0 it follows, and there the two end at the same marker anyway.
+Giving up is always safe: nothing is skipped, and every store keeps all the coefficients the IDCT reads with the mask wherever an AC coefficient is decoded, as before.
+The `JERR_NOTIMPL` stops in start_pass stay as a last check; the walk differential below asserts they are never reached.
+
+### The walk differential
+
+`tests/image/walkcheck.h`, run after every new-side decode in tests/image/prog.c and in the fuzz target tests/image/fuzz_jpegp.c.
+cdom's start_pass records each scan as libjpeg's `read_markers` hands it over (components, Ss, Se, Ah, Al), first thing, before any check or skip decision; the walk records its own list.
+The check: the two lists are the same, in order; or the walk gave up, and then no scan was skipped in that decode (and the decode equals libjpeg's, which prog.c and the fuzz target already check).
+The one difference allowed: libjpeg stopped first with an error the walk does not model (a Huffman table a scan names that is missing or bad, raised inside start_pass; a missing quantization table; the MCU size; the memory budget; the scan cap), and its list is then a prefix of the walk's.
+An error libjpeg stops with that the walk does model (a table segment, a marker, a scan header or band) fails the check unless the walk gave up, even where the lists happen to agree.
+Files libjpeg reads to the end without an error carry `-follow` in their names, and on those the walk must not give up, so a walk that gives up where it need not (a mutant that refuses TEM or 0xFF 0x00) fails too.
+On the corpus: 6,984 walks equal to libjpeg's list (24 of them a longer list where libjpeg stopped first, the files with undefined Huffman tables in a later scan), 1,648 gave up, none against libjpeg.
+
+### jpeg_read_coefficients
+
+`jinit_d_coef_controller` took cdom's path for any progressive file with `need_full_buffer`, which would leave `coef_arrays` 0 for `jpeg_read_coefficients`.
+In fact jdtrans.c sets `buffered_image` before it calls `jinit_d_coef_controller(cinfo, TRUE)` (lines 107 and 136 of libjpeg-turbo 3.2.1's, which is not vendored: cdom does not build it), so that call already went to libjpeg's controller, whose first `decode_mcu` would have been cdom's `no_mcu` (JERR_NOT_COMPILED).
+The simpler of the two choices, and the one that cannot be got wrong: a progressive file in buffered-image mode is refused when the decoder is set up (`ERREXIT(JERR_NOT_COMPILED)`), before any scan, whichever way it came; cdom uses neither mode.
+tests/image/prog.c checks it through the libjpeg API with `buffered_image` set, as jdtrans.c does, on the corpus's first progressive file.
+
+### The new corpus cases
+
+tests/image/progcorpus.py, with the same seed (20261120), the new files after the old ones (the old files are the same bytes): 1,079 files, from 716.
+- Between two scans (after the first and after a middle one, in a 4:2:0, a grey and a 4:4:4 file with a restart every MCU): COM of length 0, 1, 2, text, and marker-shaped bytes inside; APP0, APP1, APP14, APP15 of length 0 or 1; JFIF APP0, short and full Adobe APP14, a long APP2; DNL and DAC, with and without length; DRI to 0 and to 5, and of lengths 5 and 0; DHT of length 2, 0, 1, too short, of table number 5; DQT of length 2, 0, of table number 4, too short; RSTn, TEM, fill bytes, stray bytes; after a COM: stray bytes, 0xFF 0x00, fill bytes, RSTn, TEM (right after a scan's data, bytes are more of the data); SOI, SOF0, JPG0 and RES markers.
+- Every accepted kind after every scan of a file, two a gap.
+- A later scan with a band libjpeg refuses (Ah 3, Al 1), and one naming Huffman tables never defined.
+- The file ending: at the end of a COM, of a zero-length COM, of a one-length APP1, of an empty DHT, of a DRI; inside a DRI, a DQT (in its tables, and right after its length), a DHT, a COM whose length runs past the end, a length field, an SOS header; right after a marker; in fill bytes.
+- Wide: 4100 x 24 (4:2:0), 4001 x 9 (4:4:4), 65,500 x 8 grey (8,188 blocks a row), 9000 x 17 (4:2:2).
+- 3x1 and 1x3 luma sampling (chroma 1x1) at 203 x 137, 137 x 203, 61 x 7, 7 x 61.
+- Grey at 1 x 7, 7 x 1, 13 x 29, 255 x 3, 9 x 9, 127 x 129.
+- Each shape with the standard script, with a restart every MCU, and with the split script; each file at every scale 1/8 to 8/8, against libjpeg's own path, as before.
+
+### The mutants
+
+Each in tools/mutate.py, run through tools/mutate.py itself (tests/build.sh works here, with the LLVM 23 below), each caught by its own FAIL text:
+
+| mutant | what breaks | caught by |
+| --- | --- | --- |
+| jpegp-walk-short-length | a length 0 or 1 ends the walk (the bug) | prog.sh, `walk: libjpeg read a scan the walk did not see` |
+| jpegp-walk-dht-length | the walk takes a DHT whose length get_dht refuses | prog.sh, `walk: libjpeg stopped with an error the walk did not give up at` |
+| jpegp-walk-dht-index | the walk takes a DHT of table number 5 | the same |
+| jpegp-walk-dqt-index | the walk takes a DQT of table number 4 | the same |
+| jpegp-walk-dri-length | the walk takes a DRI of length 5 or 0 | the same |
+| jpegp-walk-ahal | the walk takes a refinement band with Al not Ah - 1 | the same |
+| jpegp-walk-eof-bytes | past the end of the file the walk reads zeros | the same (the DQT cut after its length) |
+| jpegp-walk-tem | the walk gives up at TEM | prog.sh, `walk: gave up on markers libjpeg reads without an error` |
+| jpegp-walk-stuffed | the walk gives up at 0xFF 0x00 after a segment | the same |
+| jpegp-walk-band | the walk reads Se as Ss | prog.sh, `walk: a scan of the walk is not the one libjpeg read` |
+| jpegp-buffered | buffered-image mode gets cdom's controller | prog.sh, `in buffered-image mode: taken` |
+
+The first run of the new mutants caught 21 of 25 (the new ones and this branch's earlier jpegp and idct ones); the four misses were the test setup, each fixed and rerun through tools/mutate.py: jpegp-walk-dht-index did not compile (an unused variable; the mutant now keeps it used), jpegp-walk-stuffed found a gap in the corpus (bytes right after a scan's data are data, so 0xFF 0x00 at the top level needs a segment before it; the COM-then-bytes cases were added), and jpegp-window-all and jpegp-store-full met a broken Pillow on the machine's path (reinstalled).
+On the rerun those two were counted caught only as HUNG: their test (tests/image/run.sh with the big inputs) takes 172 and 180 s here, over tools/mutate.py's 150 s limit; a one-off loop over the same two table entries, with no limit, saw each fail on its own text (`jpeg-prog444-over-budget: status OK, wanted TOO_BIG`; `jpeg-p12-progressive: peak 40662 KB ... limit 29088 KB`).
+
+### The toolchain, and the runs
+
+apt.llvm.org answers 403 here as it did for the earlier jobs, so LLVM 23 is the official release tarball from GitHub (llvm-project's llvmorg-23.1.6, LLVM-23.1.6-Linux-X64.tar.xz, unpacked and linked at /usr/lib/llvm-23, so `WASM_CC=/usr/lib/llvm-23/bin/clang` as in ci.yml); it needed no libicu.
+binaryen 130 is the release tarball ci.yml names (its sha256 checked), Chrome 153 with `CHROME_ARGS=--no-sandbox`, `npm ci` at the root and in tools/legacy, Python 3.11 with numpy and Pillow 13.0.0, libjpeg-turbo-progs 2.1.5 and zlib1g-dev from Ubuntu.
+The native tests use the same LLVM 23 clang (`HOST_CC`, `FUZZ_CC`): Ubuntu's clang 18 here has no sanitizer runtimes installed.
+With LLVM 23 the eh-way wasm builds (`CDOM_IMAGE_SJLJ=eh`), which this branch could not run before, build and pass.
