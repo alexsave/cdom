@@ -39,6 +39,34 @@ export async function catchScoped(src) {
       if (t.isIdentifier(p.node.param)) p.scope.rename(p.node.param.name, p.scope.generateUid('caught'));
     } } })] }).code;
 }
+// JScript 5.0's Error(n) takes a number, not a message, so new Error("x") has no message there, and every error the tier's
+// file throws would reach window.onerror blank. Each new Error(m) or Error(m) becomes cdomError(m) (polyfills.js),
+// which makes the error and sets message by hand; es3() refuses a minified file with one left (errorsWithMessage).
+export async function messages(src) {
+  const { transformSync } = await import('@babel/core');
+  return transformSync(src, { babelrc: false, configFile: false, sourceType: 'script', comments: false,
+    plugins: [({ types: t }) => ({ visitor: { 'NewExpression|CallExpression'(p) {
+      const n = p.node;
+      if (t.isIdentifier(n.callee, { name: 'Error' }) && n.arguments.length && !p.scope.getBinding('Error')) {
+        p.replaceWith(t.callExpression(t.identifier('cdomError'), [n.arguments[0]]));
+      }
+    } } })] }).code;
+}
+// How many errors tree makes with a message through Error itself: new Error(m) or Error(m).
+export function errorsWithMessage(tree) {
+  let found = 0;
+  const walk = (n) => {
+    if ((n.type === 'NewExpression' || n.type === 'CallExpression') && n.callee.type === 'Identifier' && n.callee.name === 'Error' &&
+      n.arguments.length) found++;
+    for (const k in n) {
+      const v = n[k];
+      if (Array.isArray(v)) { for (const c of v) if (c && typeof c.type === 'string') walk(c); }
+      else if (v && typeof v.type === 'string' && k !== 'loc') walk(v);
+    }
+  };
+  walk(tree);
+  return found;
+}
 export function catchLeaks(tree) {
   const leaks = new Set();
   const kids = (node, f) => {
@@ -112,6 +140,7 @@ export function es3(name, src, minified = false) {
   if (binaryIn(tree)) throw new Error(`${name} uses the binary in operator, which JScript 5.0 (IE 5.0) refuses as a syntax error (only for-in has in there)`);
   const leaks = minified ? catchLeaks(tree) : [];
   if (leaks.length) throw new Error(`${name}: a catch parameter's name used elsewhere in its function, which JScript's catch would overwrite: ${leaks.join(' ')}`);
+  if (minified && errorsWithMessage(tree)) throw new Error(`${name} makes an Error with a message, which JScript 5.0 (IE 5.0) drops (Error(n) takes a number there): cdomError(m) makes one`);
   if (numKeys) throw new Error(`${name} has a number as an object literal's key, which JScript 5.0 (IE 5.0) refuses as a syntax error`);
   if (regexes.size) throw new Error(`${name} has a regular expression JScript 5.0 (IE 5.0) refuses as a syntax error (a flag but g and i, a lazy quantifier, or a group with ?): ${[...regexes].join(' ')}`);
   if (bad.size) throw new Error(`${name} names a reserved word as a property, which JScript refuses: ${[...bad].join(' ')}`);
@@ -202,9 +231,10 @@ export function oldDomLeftovers(src) {
 }
 
 // The names JScript 5.0 lacks in shim/boot.js, which every browser runs before the tier's polyfills, as tokens: a method
-// after a dot, a global bare.
+// after a dot, a global bare; and an Error made with a message, which JScript 5.0 drops (the boot's error() sets it).
 export function boot50(src) {
   const names = new Set(JSCRIPT55), found = new Set();
+  if (errorsWithMessage(acorn.parse(src, { ecmaVersion: 3, allowReserved: true }))) found.add('Error(message)');
   let prev = null;
   for (const t of acorn.tokenizer(src, { ecmaVersion: 3, allowReserved: true })) {
     if (t.type.label === 'name') {

@@ -964,6 +964,17 @@ M = [
   ('mount-waits-on-gone-domcontentloaded', 'shim/cdom.js', '      return new Promise((resolve) => addEventListener("load", resolve, { once: true })).then(found);', '      return new Promise((resolve) => doc.addEventListener("DOMContentLoaded", resolve, { once: true })).then(found);', LEG, 'FAIL a missing mount is an error once the page has loaded'),
   # no LEGACY=ie6 twin of the one above: dom-old.js listens for DOMContentLoaded as the window's load there, so it is the same wait
   ('mount-missing-no-error', 'shim/cdom.js', '      if (!element) {\n        throw new Error(`cdom: no element has the id ${mount}`);', '      if (false) {\n        throw new Error(`cdom: no element has the id ${mount}`);', LEG, 'FAIL a missing mount is an error once the page has loaded'),
+  # IE 5.0 (JScript 5.0, docs/ie5-design.md)
+  ('ie5-in-gate-off', 'tools/legacy/es3.mjs', "    if (n.type === 'BinaryExpression' && n.operator === 'in') found++;", '', ES3T, 'FAIL a binary in is refused'),
+  ('ie5-numkey-gate-off', 'tools/legacy/es3.mjs', "  if (numKeys) throw", "  if (false) throw", ES3T, 'FAIL { 1: 0 } is refused'),
+  ('ie5-regex-flag-gate-off', 'tools/legacy/es3.mjs', "  if (/[^gi]/.test(flags)) return true;", '', ES3T, 'FAIL /a/m is refused'),
+  ('ie5-regex-group-gate-off', 'tools/legacy/es3.mjs', "    if (c === '?' && (prev === '(' || prev === 'q')) return true;", '', ES3T, 'FAIL /a+?/ is refused'),
+  ('ie5-error-gate-off', 'tools/legacy/es3.mjs', "  if (minified && errorsWithMessage(tree)) throw", "  if (false) throw", ES3T, 'FAIL new Error("x") is refused'),
+  ('ie5-error-not-rewritten', 'tools/legacy/es3.mjs', "        p.replaceWith(t.callExpression(t.identifier('cdomError'), [n.arguments[0]]));", '', ES3T, "FAIL messages rewrites the global Error's"),
+  ('ie5-boot-error-gate-off', 'tools/legacy/es3.mjs', "found.add('Error(message)');", "0;", ES3T, 'FAIL boot50 finds an Error made with a message'),
+  ('ie5-boot50-off', 'tools/legacy/es3.mjs', "      if (names.has(key)) found.add(key);", '', ES3T, 'FAIL boot50 finds push, undefined and apply'),
+  ('ie5-jscript55-unlisted', 'tools/legacy/es3.mjs', "'.propertyIsEnumerable', '.isPrototypeOf', 'encodeURI', 'decodeURI', 'encodeURIComponent', 'decodeURIComponent', '.toFixed',", "'.propertyIsEnumerable', '.isPrototypeOf', 'encodeURI', 'decodeURI', 'encodeURIComponent', 'decodeURIComponent',", ES3T, 'FAIL toFixed (JScript 5.5) is refused'),
+  ('ie5-replace-fn-gate-off', 'tools/legacy/es3.mjs', "  if (replaceWithFunction(tree)) throw", "  if (false) throw", ES3T, 'FAIL replace with a function is refused'),
   ('ie6-old-dom-gate-off', 'tools/legacy/es3.mjs', "    if (dot && ((called.has(k.value) && call) || props.has(k.value))) left.add('.' + k.value);", '', ES3T, 'FAIL a call, a property and a global left are found'),
   ('ie6-old-dom-call-not-rewritten', 'tools/legacy/es3.mjs', "        if (m && (own(OLD_DOM.call, m) || (own(OLD_DOM.zero, m) && !p.node.arguments.length))) {", "        if (false) {", ES3T, 'W3C DOM the old DOM lacks left in the shim'),
   ('ie6-invoke-through-apply', 'tools/legacy/shim-old.js', '    case 0: return object[key]();', '    case 0: return object[key].apply(object, a);', LEG6, 'FAIL focus delivered once'),
