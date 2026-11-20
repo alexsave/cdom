@@ -77,12 +77,16 @@ jobs:
       # The no-WebAssembly tiers: wasm2js on typed arrays (IE 10 and 11), on words (IE 9), and on words in ES3 on the
       # old DOM (IE 6 to 8: LEGACY=ie6, and the keyed fuzz there too); the floor below them (LEGACY=below); and the
       # words memory, its pass and the shim-ie9 gate, and the fourth tier's checks, in node.
-      - name: tools/legacy.mjs (LEGACY=1, ie9, ie6, below), tools/fuzz.mjs (LEGACY=ie6), tools/words.mjs and tools/es3.mjs
+      - name: tools/legacy.mjs (LEGACY=1, ie9, ie6, below), tools/fptoint.mjs (every tier), tools/fuzz.mjs (LEGACY=ie6), tools/words.mjs and tools/es3.mjs
         run: |
           LEGACY=1 node tools/legacy.mjs
           LEGACY=ie9 node tools/legacy.mjs
           LEGACY=ie6 node tools/legacy.mjs
           LEGACY=below node tools/legacy.mjs
+          node tools/fptoint.mjs
+          LEGACY=1 node tools/fptoint.mjs
+          LEGACY=ie9 node tools/fptoint.mjs
+          LEGACY=ie6 node tools/fptoint.mjs
           LEGACY=ie6 node tools/fuzz.mjs
           node tools/words.mjs
           node tools/es3.mjs

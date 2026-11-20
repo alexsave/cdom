@@ -317,12 +317,9 @@
     };
     /* The text of a body of bytes, or null when the bytes are not UTF-8 (the polyfilled decoder makes U+FFFD of what is not). */
     var textOf = function (bytes) {
-      var s = new w.TextDecoder().decode(bytes), again = new w.TextEncoder().encode(s), i;
-      if (again.length !== bytes.length) return null;
-      for (i = 0; i < again.length; i++) {
-        if (again[i] !== bytes[i]) return null;
-      }
-      return s;
+      var s = new w.TextDecoder().decode(bytes);
+      /* One byte that is not UTF-8 becomes U+FFFD, which is three bytes: the lengths differ whenever the bytes were not UTF-8. */
+      return new w.TextEncoder().encode(s).length === bytes.length ? s : null;
     };
     w.fetch = function (url, init) {
       init = init || {};
