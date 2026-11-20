@@ -76,7 +76,7 @@ var cdomOld = (function (w, doc) {
     if (POINTER[type] === 1) return w.PointerEvent ? null : IE_TYPE[type];
     if (type !== "wheel") return null;
     var d = doc.createElement("div");
-    return "onwheel" in d ? null : "onmousewheel" in d ? "mousewheel" : "DOMMouseScroll";
+    return d.onwheel !== void 0 ? null : d.onmousewheel !== void 0 ? "mousewheel" : "DOMMouseScroll";
   }
 
   /* The field hook: f hears type from every field inside node as it would from a bubble. */
@@ -228,7 +228,7 @@ var cdomOld = (function (w, doc) {
 
   /* x.textContent = value. */
   function setText(x, value) {
-    if ("textContent" in x) {
+    if (x.textContent !== void 0) {
       x.textContent = value;
       return;
     }
@@ -243,7 +243,7 @@ var cdomOld = (function (w, doc) {
     if (x.parentNode) x.parentNode.removeChild(x);
   }
   function prevElement(x) {
-    if ("previousElementSibling" in x) return x.previousElementSibling;
+    if (x.previousElementSibling !== void 0) return x.previousElementSibling;
     var s = x.previousSibling;
     while (s && s.nodeType !== 1) s = s.previousSibling;
     return s;

@@ -6,13 +6,30 @@
  * Also JScript's own bug: splice(start) with no count removes nothing (the standard removes to the end).
  * And what JScript 5.0 (IE 5.0) lacks of what JScript 5.5 has, which the rest of this file and every later part call:
  * the global undefined, Array's push, pop, shift, unshift and splice, Function's call and apply, and Object's
- * hasOwnProperty. So those come first, each written without the others.
+ * hasOwnProperty, and TypeError. So those come first, each written without the others.
  * ES3, as JScript 5.0 reads it. */
 (function (w) {
   var O = Object, A = Array.prototype, F = Function.prototype, P = O.prototype;
 
+  /* JScript 5.0 has no binary in, only for-in (`k in o` is a syntax error there, which fails the whole file): o holds the
+   * key k when its value there is not undefined, or else when a for-in over o lists it. es3() refuses a binary in. */
+  function holds(o, k) {
+    if (o[k] !== void 0) return true;
+    for (var x in o) {
+      if (x == k) return true;
+    }
+    return false;
+  }
   /* JScript 5.0 has no global named undefined: reading it throws. As a property of the window it is one. */
   w["undefined"] = void 0;
+  /* JScript 5.0 has Error alone, no TypeError: the files here throw one only on a misuse, which must still throw an
+   * error, not "TypeError is undefined". Its message is in description too, as JScript's own errors carry it. */
+  if (!w.TypeError) w.TypeError = function (message) {
+    var e = new Error();
+    e.name = "TypeError";
+    e.message = e.description = message;
+    return e;
+  };
   if (!A.push) A.push = function () {
     for (var i = 0; i < arguments.length; i++) this[this.length] = arguments[i];
     return this.length;
@@ -74,7 +91,7 @@
    * same value under it. It cannot tell an own property that equals the prototype's, which nothing here sets. */
   if (!P.hasOwnProperty) P.hasOwnProperty = function (k) {
     var proto = this.constructor && this.constructor.prototype;
-    if (this[k] === void 0 && !(k in this)) return false;
+    if (!holds(this, k)) return false;
     return !proto || proto === this || proto[k] !== this[k];
   };
   var has = P.hasOwnProperty;
@@ -121,7 +138,7 @@
     var n = this.length >>> 0, i = from | 0;
     if (i < 0) i = Math.max(n + i, 0);
     for (; i < n; i++) {
-      if (i in this && this[i] === v) return i;
+      if (holds(this, i) && this[i] === v) return i;
     }
     return -1;
   };
@@ -130,38 +147,38 @@
     if (i < 0) i = n + i;
     if (i >= n) i = n - 1;
     for (; i >= 0; i--) {
-      if (i in this && this[i] === v) return i;
+      if (holds(this, i) && this[i] === v) return i;
     }
     return -1;
   };
   if (!A.forEach) A.forEach = function (f, self) {
     for (var i = 0, n = this.length >>> 0; i < n; i++) {
-      if (i in this) f.call(self, this[i], i, this);
+      if (holds(this, i)) f.call(self, this[i], i, this);
     }
   };
   if (!A.map) A.map = function (f, self) {
     var n = this.length >>> 0, out = new Array(n);
     for (var i = 0; i < n; i++) {
-      if (i in this) out[i] = f.call(self, this[i], i, this);
+      if (holds(this, i)) out[i] = f.call(self, this[i], i, this);
     }
     return out;
   };
   if (!A.filter) A.filter = function (f, self) {
     var out = [];
     for (var i = 0, n = this.length >>> 0; i < n; i++) {
-      if (i in this && f.call(self, this[i], i, this)) out.push(this[i]);
+      if (holds(this, i) && f.call(self, this[i], i, this)) out.push(this[i]);
     }
     return out;
   };
   if (!A.some) A.some = function (f, self) {
     for (var i = 0, n = this.length >>> 0; i < n; i++) {
-      if (i in this && f.call(self, this[i], i, this)) return true;
+      if (holds(this, i) && f.call(self, this[i], i, this)) return true;
     }
     return false;
   };
   if (!A.every) A.every = function (f, self) {
     for (var i = 0, n = this.length >>> 0; i < n; i++) {
-      if (i in this && !f.call(self, this[i], i, this)) return false;
+      if (holds(this, i) && !f.call(self, this[i], i, this)) return false;
     }
     return true;
   };
@@ -169,12 +186,12 @@
     var n = this.length >>> 0, i = 0, acc;
     if (arguments.length > 1) acc = init;
     else {
-      while (i < n && !(i in this)) i++;
+      while (i < n && !holds(this, i)) i++;
       if (i >= n) throw new TypeError("Array.prototype.reduce: an empty array and no initial value");
       acc = this[i++];
     }
     for (; i < n; i++) {
-      if (i in this) acc = f(acc, this[i], i, this);
+      if (holds(this, i)) acc = f(acc, this[i], i, this);
     }
     return acc;
   };
