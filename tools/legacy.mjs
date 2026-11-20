@@ -158,6 +158,12 @@ run: try {
   const W = 1 << 16;
   ok(wholes.join() === [21, 21, 21, 21, W | 21, W | 21].join(), `cd_input_whole says the whole length, cut or not, and whether it fitted: ${wholes.join()}`);
 
+  // A click on an element after a text node and an element: the paragraph's listener hears it with the path down to
+  // the <i>, its index among the elements before it (1: the <b>), not among the text nodes too, at depth 1.
+  await click('#pathi');
+  const cp = await E('X.click_path()');
+  ok(cp === (1 << 16 | 1), `a click on the <i> reaches the paragraph with depth 1, path 1: depth ${cp >> 16}, path ${cp & 0xffff}`);
+
   // A failing call is reported and the batch goes on.
   await E('ERRORS.length = 0');
   await click('#err'); await sleep(50);

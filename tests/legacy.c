@@ -13,7 +13,7 @@
 /* Every delivered event: its type, the listening id and four record fields. */
 IMPORT("ev") void ev(int32_t type, int32_t id, int32_t x, int32_t y, int32_t pointer, int32_t buttons);
 
-enum { PAD, TEXT, ECHO, ERR, FOCUS, FILE, CANVAS, BROKEN, NIDS };
+enum { PAD, TEXT, ECHO, ERR, FOCUS, FILE, CANVAS, BROKEN, PATHP, NIDS };
 static cd_id ids[NIDS];
 static char io[256];
 
@@ -43,6 +43,14 @@ void cd_main(void) {
    * fourth tier (IE 6 to 8, no capture phase), from the image itself (tools/legacy/shim-old.js, reach). */
   ids[BROKEN] = el("img", "broken", "position:fixed;left:300px;top:40px;width:4px;height:4px");
   cd_close();
+  /* A click on the <i> reaches the paragraph's listener with the path down to it: the <i>'s index among the elements
+   * before it (the <b>), not among the text nodes too (dom-old.js's previousElementSibling on the fourth tier). */
+  ids[PATHP] = el("p", "pathp", "position:fixed;left:300px;top:80px");
+  cd_text("a ");
+  cd_open("b"); cd_text("b"); cd_close();
+  cd_text(" c ");
+  cd_open("i"); cd_attr("id", "pathi"); cd_text("iii"); cd_close();
+  cd_close();
   static const uint32_t pad_evs[] = {CD_EV_POINTERDOWN, CD_EV_POINTERMOVE, CD_EV_POINTERUP, CD_EV_CLICK, CD_EV_WHEEL};
   for (uint32_t i = 0; i < sizeof pad_evs / 4; i++) { cd_sel(ids[PAD]); cd_listen(ids[PAD], pad_evs[i]); }
   cd_sel(ids[TEXT]); cd_listen(ids[TEXT], CD_EV_INPUT);
@@ -51,15 +59,18 @@ void cd_main(void) {
   cd_sel(ids[FOCUS]); cd_listen(ids[FOCUS], CD_EV_CLICK);
   /* Listened for before its src is set, so the error cannot come first. */
   cd_sel(ids[BROKEN]); cd_listen(ids[BROKEN], CD_EV_ERROR);
+  cd_sel(ids[PATHP]); cd_listen(ids[PATHP], CD_EV_CLICK);
   cd_set_attr(ids[BROKEN], "src", "no-such-image.png");
 }
 
 static float wheel_dx, wheel_dy;
+static int32_t click_path = -1; /* the last click on the paragraph: its depth << 16 | its path */
 
 void cd_on_event(const cd_event_rec *e) {
   cd_id id = (cd_id)e->id;
   ev(e->type, e->id, e->x, e->y, e->pointer, e->buttons);
   if (e->type == CD_EV_WHEEL) { wheel_dx = e->dx; wheel_dy = e->dy; }
+  if (e->type == CD_EV_CLICK && id == ids[PATHP]) click_path = (int32_t)(e->depth << 16 | e->path);
   if (e->type == CD_EV_INPUT && id == ids[TEXT]) {
     /* The value comes in through encodeInto and goes back out through the decoder, as the echo's text. */
     uint32_t n;
@@ -111,6 +122,7 @@ EXPORT("blit") void blit(void) {
   cd_flush();
 }
 EXPORT("seed") uint32_t seed(void) { return cd_seed; }
+EXPORT("click_path") int32_t click_path_of(void) { return click_path; }
 EXPORT("whole") uint32_t whole(uint32_t cap) { /* 1 << 16 when it fitted, and the length */
   uint32_t n, fits = (uint32_t)cd_input_whole(ids[TEXT], io, cap < sizeof io ? cap : sizeof io, &n);
   return fits << 16 | n;
