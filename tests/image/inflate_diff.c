@@ -2,9 +2,11 @@
  * (tests/image/run.sh). A seeded corpus (INFLATE_SEED, the one random source): data of many kinds compressed by
  * zlib at every strategy (stored, fixed, dynamic, Huffman only, RLE) and window size, and streams written here by
  * hand (fixed and stored blocks with chosen matches: distance 1 runs, length 258, distances at the 32 KB edge, a
- * distance one past the output). Each stream is inflated by zlib (one call, a large buffer) and by cdom's, from
- * pieces of random sizes, each its own heap block so a read past one is caught, into the smallest buffer the
- * contract allows or a larger one: the two must agree (both OK and the same bytes, or both refuse). Then every
+ * distance one past the output). Each stream is inflated by zlib (one call, a large buffer) and by cdom's, pushed
+ * (cd_inflate_put) in pieces each its own heap block so a read past one is caught, into the smallest buffer the
+ * contract allows or a larger one: the two must agree (both OK and the same bytes, or both refuse). The pieces: the
+ * whole stream in one, every byte its own, 7 bytes, 4093 bytes, and random sizes from the seed (with empty pieces,
+ * and last given with the final piece or in a put of its own); agree() runs every way, the rest take turns. Then every
  * stream is cut short at many points (cdom's must answer CORRUPT, as zlib refuses) and damaged at random bits and
  * bytes (cdom's must agree with zlib on each).
  * Usage: inflate_diff [cases=400]; prints "ok inflate_diff: ..." or the first disagreement, and exits 1 on one. */
@@ -45,11 +47,18 @@ static int zlib_inflate(const uint8_t *s, size_t n, size_t *made) {
 
 /* ---- cdom's ---- */
 typedef struct { uint8_t **p; uint32_t *n; uint32_t k, at; uint8_t *got; size_t got_n, got_cap; int stop_at, greedy; } feed;
-static int more(void *c, const uint8_t **p, uint32_t *n) {
-  feed *f = c;
-  if (f->at == f->k) return 0;
-  *p = f->p[f->at]; *n = f->n[f->at]; f->at++;
-  return 1;
+static int64_t out(void *c, uint8_t *b, uint32_t n, int last);
+/* The pieces, pushed in order: last with the final one, or (half the time, from the seed) in an empty put of its own. */
+static uint32_t push(cd_inflate *z, uint8_t *buf, uint32_t cap, feed *f) {
+  cd_inflate_begin(z, buf, cap, out, f);
+  int apart = !f->k || below(2);
+  uint32_t st = CD_INFLATE_MORE;
+  for (f->at = 0; f->at < f->k && st == CD_INFLATE_MORE; f->at++)
+    st = cd_inflate_put(z, f->p[f->at], f->n[f->at], !apart && f->at + 1 == f->k);
+  if (st == CD_INFLATE_MORE && apart) st = cd_inflate_put(z, 0, 0, 1);
+  if (st == CD_INFLATE_MORE) { CHECK(0, "a put with last answered MORE"); st = CD_INFLATE_CORRUPT; }
+  if (cd_inflate_put(z, (const uint8_t *)"zz", 2, 1) != st) CHECK(0, "a put after the end answered another status");
+  return st;
 }
 static int64_t out(void *c, uint8_t *b, uint32_t n, int last) {
   feed *f = c;
@@ -63,20 +72,29 @@ static int64_t out(void *c, uint8_t *b, uint32_t n, int last) {
   return d;
 }
 static cd_inflate dec;
-/* cdom's inflate of s[0 .. n) in random pieces into a buffer of cap bytes (0: the smallest allowed) */
+/* The ways to cut a stream into pieces: random sizes, whole, then fixed sizes of 1, 7 and 4093 bytes. */
+enum { P_RANDOM, P_WHOLE, P_1, P_7, P_4093, P_WAYS };
+static const char *way_name[P_WAYS] = {"random pieces", "whole", "1-byte pieces", "7-byte pieces", "4093-byte pieces"};
+static int way = -1;          /* the way the next cdom_inflate cuts; -1: each call the next in turn */
+static uint32_t turn;
+static long by_way[P_WAYS];   /* streams pushed each way */
+/* cdom's inflate of s[0 .. n) in pieces into a buffer of cap bytes (0: the smallest allowed) */
 static uint32_t cdom_inflate(const uint8_t *s, size_t n, uint32_t cap, feed *f) {
-  uint32_t k = 0, most = 1 + (n > 0 ? (uint32_t)n : 0);
+  int w = way >= 0 ? way : (int)(turn++ % P_WAYS);
+  by_way[w]++;
+  uint32_t k = 0, most = 1 + 2 * (n > 0 ? (uint32_t)n : 0);
   f->p = malloc(sizeof *f->p * most); f->n = malloc(sizeof *f->n * most);
   for (size_t at = 0; at < n;) {
-    uint32_t want = below(4) == 0 ? 1 + below(8) : below(4) == 0 ? 1 + below(200) : 1 + below(70000);
+    uint32_t want = w == P_WHOLE ? (uint32_t)n : w == P_1 ? 1 : w == P_7 ? 7 : w == P_4093 ? 4093
+                  : below(4) == 0 ? 1 + below(8) : below(4) == 0 ? 1 + below(200) : 1 + below(70000);
     if (want > n - at) want = (uint32_t)(n - at);
     f->p[k] = malloc(want); memcpy(f->p[k], s + at, want); f->n[k] = want; k++; at += want;
-    if (below(16) == 0) { f->p[k] = malloc(1); f->n[k] = 0; k++; }   /* an empty piece (an IDAT of 0 bytes) */
+    if (w == P_RANDOM && below(16) == 0) { f->p[k] = malloc(1); f->n[k] = 0; k++; }   /* an empty piece (an IDAT of 0 bytes) */
   }
   f->k = k; f->at = 0; f->got_n = 0;
   if (!cap) cap = CD_INFLATE_WINDOW + 1314 + below(3) * below(300000);
   uint8_t *buf = malloc(cap);
-  uint32_t st = cd_inflate_zlib(&dec, buf, cap, more, out, f);
+  uint32_t st = push(&dec, buf, cap, f);
   free(buf);
   for (uint32_t i = 0; i < k; i++) free(f->p[i]);
   free(f->p); free(f->n);
@@ -89,20 +107,23 @@ static void agree(const uint8_t *s, size_t n, const char *what, int expect_ok) {
   size_t zn;
   int zr = zlib_inflate(s, n, &zn);
   if (zr < 0) return;
-  feed f = {0};
-  uint32_t st = cdom_inflate(s, n, 0, &f);
-  if (zr == 1) {
-    CHECK(st == CD_INFLATE_OK, "%s: zlib inflates %zu bytes, cdom answers %u", what, zn, st);
-    if (st == CD_INFLATE_OK) {
-      CHECK(f.got_n == zn && (!zn || !memcmp(f.got, z_out, zn)), "%s: %zu bytes from cdom, %zu from zlib, or they differ", what, f.got_n, zn);
-      compared++;
+  for (way = 0; way < P_WAYS; way++) {
+    feed f = {0};
+    uint32_t st = cdom_inflate(s, n, 0, &f);
+    if (zr == 1) {
+      CHECK(st == CD_INFLATE_OK, "%s, %s: zlib inflates %zu bytes, cdom answers %u", what, way_name[way], zn, st);
+      if (st == CD_INFLATE_OK) {
+        CHECK(f.got_n == zn && (!zn || !memcmp(f.got, z_out, zn)), "%s, %s: %zu bytes from cdom, %zu from zlib, or they differ", what, way_name[way], f.got_n, zn);
+        compared++;
+      }
+    } else {
+      CHECK(st == CD_INFLATE_CORRUPT, "%s, %s: zlib refuses, cdom answers %u (%zu bytes)", what, way_name[way], st, f.got_n);
+      refused_both++;
     }
-  } else {
-    CHECK(st == CD_INFLATE_CORRUPT, "%s: zlib refuses, cdom answers %u (%zu bytes)", what, st, f.got_n);
-    refused_both++;
+    free(f.got);
   }
+  way = -1;
   if (expect_ok >= 0) CHECK(zr == expect_ok, "%s: zlib answers %d, the test expected %d", what, zr, expect_ok);
-  free(f.got);
 }
 
 /* ---- data ---- */
@@ -242,7 +263,7 @@ static void greedy(void) {
   if (compress2(s, &n, d, dn, 6) != Z_OK) abort();
   feed f = {0};
   f.greedy = 1;
-  uint32_t st = cdom_inflate(s, n, 0, &f);
+  uint32_t st = cdom_inflate(s, n, CD_INFLATE_CAP_MIN, &f);   /* a buffer under the output, so the sink is handed bytes before the end */
   CHECK(st == CD_INFLATE_STOPPED, "a sink that drops the window: cdom answers %u", st);
   free(f.got);
   free(d); free(s);
@@ -348,7 +369,7 @@ static void dist_edge(void) {
       uint32_t cap = 1u << 20;
       uint8_t *mem = malloc(cap + 16);
       memset(mem, 'Z', 16);
-      uint32_t st = cd_inflate_zlib(&dec, mem + 16, cap, more, out, &f);
+      uint32_t st = push(&dec, mem + 16, cap, &f);
       if (ok) CHECK(st == CD_INFLATE_OK && f.got_n == n && !memcmp(f.got, o, n), "%s, a distance equal to the output: cdom answers %u", loop, st);
       else CHECK(st == CD_INFLATE_CORRUPT, "%s, a distance one past the output: cdom answers %u, not CORRUPT", loop, st);
       for (uint32_t i = 0; i < k; i++) free(pp[i]);
@@ -605,7 +626,9 @@ int main(int argc, char **argv) {
     agree(w.b, w.n, ok ? "distance = output" : "distance = output + 1", ok);
     free(w.b);
   }
-  printf("%s inflate_diff: %ld streams equal to zlib's output, %ld refused by both, %ld cuts CORRUPT, %ld damaged agreeing (seed %u)\n",
-         fails ? "FAIL" : "ok  ", compared, refused_both, cut_checked, damaged_checked, INFLATE_SEED);
+  printf("%s inflate_diff: %ld streams equal to zlib's output, %ld refused by both, %ld cuts CORRUPT, %ld damaged agreeing (seed %u);"
+         " pushed whole %ld, in 1-byte pieces %ld, 7 %ld, 4093 %ld, random %ld\n",
+         fails ? "FAIL" : "ok  ", compared, refused_both, cut_checked, damaged_checked, INFLATE_SEED,
+         by_way[P_WHOLE], by_way[P_1], by_way[P_7], by_way[P_4093], by_way[P_RANDOM]);
   return fails != 0;
 }
