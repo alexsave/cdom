@@ -7,6 +7,8 @@
 // with why; a test that can reach cd_seed pins it through the page instead (tests/unit.html).
 // An app draws from cd_rand (src/cdom.c, the one generator, seeded from cd_seed), so no file under demo/
 // or tutorial/ carries a generator of its own: a xorshift step (a shift by 13) there fails too.
+// The shipped JS (every tracked .js under shim/ and tools/legacy/, the files a page runs) draws from no
+// generator nothing can seed: no Math.random, with one exception, JS_EXCEPTION below.
 // Fails naming each file and line. Run by tests/link/run.sh; standalone: node tools/seeds.mjs [dir].
 import fs from 'node:fs';
 import path from 'node:path';
@@ -28,6 +30,15 @@ const ALLOWED = {
     why: 'allocator stress fixture run without the shim (no cd_seed); fixed so a failure reproduces',
   },
 };
+// The one approved exception in the shipped JS: shim/cdom.js's seed() falls back on Math.random and the clock
+// when the page passed no options.seed and the browser has no crypto.getRandomValues (IE 9 and 10, which have
+// no cryptographic generator, on a static page with no server to send a seed). Exactly one Math.random, in
+// seed(), after both of those, under a comment that says below IE 11 cd_seed is neither secret nor
+// unpredictable; shim/cdom.min.js, made from it by tools/minshim.mjs, carries the same one.
+const JS_DIRS = ['shim/', 'tools/legacy/'];
+const JS_RANDOM = /Math\.random\b/g;
+const JS_EXCEPTION = { file: 'shim/cdom.js', min: 'shim/cdom.min.js', start: '\n  function seed(options) {', end: '\n  }\n',
+  comment: 'neither secret nor unpredictable' };
 const files = execFileSync('git', ['ls-files', '-z', '--', '*.c', '*.h'], { cwd: top, encoding: 'utf8' }).split('\0').filter(Boolean);
 let hits = 0;
 const used = new Set();
@@ -62,7 +73,49 @@ for (const f of Object.keys(ALLOWED)) {
     hits++;
   }
 }
+const jsFiles = execFileSync('git', ['ls-files', '-z', '--', '*.js'], { cwd: top, encoding: 'utf8' }).split('\0')
+  .filter((f) => f && JS_DIRS.some((d) => f.startsWith(d)));
+const count = (text) => (text.match(JS_RANDOM) || []).length;
+for (const f of jsFiles) {
+  let text;
+  try {
+    text = fs.readFileSync(path.join(top, f), 'utf8');
+  } catch {
+    continue;
+  }
+  const n = count(text);
+  if (f === JS_EXCEPTION.min) {
+    if (n !== 1) {
+      console.log(`FAIL ${f}: ${n} Math.random, want the one of ${JS_EXCEPTION.file}'s seed() (tools/minshim.mjs makes it)`);
+      hits++;
+    }
+    continue;
+  }
+  const from = f === JS_EXCEPTION.file ? text.indexOf(JS_EXCEPTION.start) : -1;
+  const to = from < 0 ? -1 : text.indexOf(JS_EXCEPTION.end, from);
+  const body = to < 0 ? '' : text.slice(from, to);
+  text.split('\n').forEach((line, i) => {
+    if (!count(line)) return;
+    const at = text.split('\n').slice(0, i).join('\n').length + 1; // the line's offset
+    if (f === JS_EXCEPTION.file && from >= 0 && at > from && at < to) return; // seed()'s, checked below
+    console.log(`FAIL ${f}:${i + 1}: Math.random, a generator nothing can seed (seeds from cd_seed, or options.seed in the shim): ${line.trim().slice(0, 120)}`);
+    hits++;
+  });
+  if (f !== JS_EXCEPTION.file) continue;
+  // The exception itself: one draw, after options.seed and crypto.getRandomValues, under its comment.
+  const order = [body.indexOf('options.seed'), body.indexOf('crypto.getRandomValues'), body.search(JS_RANDOM)];
+  const why = from < 0 || to < 0 ? 'no seed(options) function'
+    : count(body) !== 1 ? `${count(body)} Math.random in seed(), want exactly 1`
+    : !(order[0] >= 0 && order[0] < order[1] && order[1] < order[2]) ? 'Math.random is not after options.seed and crypto.getRandomValues'
+    : !body.includes(JS_EXCEPTION.comment) ? `no comment that cd_seed is then "${JS_EXCEPTION.comment}"`
+    : '';
+  if (why) {
+    console.log(`FAIL ${f}: the one allowed seed exception (seed() without options.seed or crypto): ${why}`);
+    hits++;
+  }
+}
 if (!hits) {
-  console.log(`ok   seeds: none of ${files.length} tracked C files seeds a generator with a literal (${used.size} allowed fixture)`);
+  console.log(`ok   seeds: none of ${files.length} tracked C files seeds a generator with a literal (${used.size} allowed fixture); ` +
+    `${jsFiles.length} shipped JS files draw no Math.random but seed()'s one exception`);
 }
 process.exit(hits ? 1 : 0);

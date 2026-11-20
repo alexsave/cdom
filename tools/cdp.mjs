@@ -11,7 +11,81 @@ export const sleep = ms => new Promise(r => setTimeout(r, ms));
 // events, so trusted ones are stopped at the window and only PEP's, made from mouse events, get through.
 // addEventListener reads its third argument as useCapture, as before options objects; __adds logs what
 // each call passed (type, typeof, capture) for tools/legacy.mjs.
-export const LEGACY = process.env.LEGACY === '1';
+// No IE has ChildNode.remove, so LEGACY=1 deletes it too, and the polyfill puts it back.
+// LEGACY=ie9 is all of that and then IE 9: IE9_GAPS below deletes what IE 9 lacks that IE 11 has, and IE9_WALLS
+// its typed arrays and msCrypto, so the boot takes the third tier (shim/boot.js).
+// LEGACY=ie9-gaps is IE 9 with those two walls put back, so IE 9's other gaps are also tested on the second tier.
+// LEGACY=ie8 is IE 9 and then what IE 8 lacks of the ES5 the fallback needs (IE8_ES5): the boot must refuse it.
+export const LEVEL = process.env.LEGACY || '';
+if (LEVEL && !['1', 'ie9', 'ie9-gaps', 'ie8'].includes(LEVEL)) throw new Error(`cdp: LEGACY=${LEVEL}: want 1, ie9, ie9-gaps or ie8`);
+export const LEGACY = !!LEVEL;
+// The boot's tier (shim/boot.js): 1 wasm, 2 wasm2js on typed arrays, 3 wasm2js on words; 0 refused.
+export const TIER = !LEVEL ? 1 : LEVEL === 'ie8' ? 0 : LEVEL === 'ie9' ? 3 : 2;
+export const IE9 = TIER === 3;
+export const BELOW = TIER === 0; // below cdom's floor: the boot must refuse it
+// The files of each tier, for a page whose wasm is app (a name without .wasm): only its own may be fetched.
+// The files of each tier, for a page whose wasm is app (a name without .wasm): only its own may be fetched. wasm names
+// what the first tier fetches, when the page starts a pair (APP_SIMD) and this Chrome takes the SIMD twin; the
+// fallbacks take the scalar module's builds, and fetch no .wasm at all.
+export const TIER_FILES = (app, wasm = `${app}.wasm`) => ({ 1: [wasm], 2: ['cdom.legacy.js', `${app}.wasm.js`], 3: ['cdom.legacy-ie9.js', `${app}.wasm.ie9.js`] });
+// [pass, message] for the files a page fetched: all of its tier's, none of another's, and only the tier's own .wasm.
+export function tierFetched(got, app, wasm) {
+  const files = TIER_FILES(app, wasm), want = files[TIER] || [], other = Object.entries(files).filter(([t]) => +t !== TIER).flatMap(([, f]) => f);
+  const wasms = got.filter((f) => f.endsWith('.wasm'));
+  return [want.every((f) => got.includes(f)) && !other.some((f) => got.includes(f)) && wasms.every((f) => want.includes(f)),
+    `tier ${TIER} files only (${want.join(' ') || 'none'}): fetched ${got.filter((f) => /\.(js|wasm)$/.test(f)).join(' ')}`];
+}
+// What IE 9 lacks that IE 11 has, each with the IE version it arrived in, from mdn/browser-compat-data
+// (main, read 2026-11-08); "never" is a feature BCD lists with no IE entry, which is how BCD records an IE
+// that never had it. ES5 itself (Object.create, defineProperty, bind, forEach, getPrototypeOf) is IE 9's.
+// Kept on purpose: performance (IE 9) and performance.getEntriesByType (IE 10), which the harness reads to
+// see what a page fetched (FETCHED); the app never calls it.
+const IE9_WALLS = `
+  // Typed arrays, IE 10: ArrayBuffer, DataView and every view, Uint8ClampedArray included.
+  for (const k of ['ArrayBuffer', 'DataView', 'Int8Array', 'Uint8Array', 'Uint8ClampedArray', 'Int16Array',
+    'Uint16Array', 'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array', 'BigInt64Array', 'BigUint64Array',
+    'Float16Array', 'SharedArrayBuffer']) delete window[k];
+  // crypto.getRandomValues, IE 11 (as msCrypto): IE 9 and 10 have no cryptographic generator at all.
+  delete window.msCrypto;`;
+const IE9_GAPS = `
+  // requestAnimationFrame and cancelAnimationFrame, IE 10 (and no prefixed ones to fall back on).
+  for (const k of ['requestAnimationFrame', 'cancelAnimationFrame', 'webkitRequestAnimationFrame',
+    'webkitCancelAnimationFrame', 'webkitCancelRequestAnimationFrame']) delete window[k];
+  // MutationObserver, IE 11.
+  delete window.MutationObserver; delete window.WebKitMutationObserver;
+  // classList and DOMTokenList, IE 10; dataset (DOMStringMap), IE 11.
+  delete Element.prototype.classList; delete window.DOMTokenList;
+  delete HTMLElement.prototype.dataset; delete window.DOMStringMap;
+  // history.pushState and replaceState, IE 10.
+  delete History.prototype.pushState; delete History.prototype.replaceState;
+  // WebSocket, Blob, File, FileReader, FormData, URL (with createObjectURL), IE 10; URLSearchParams, never.
+  for (const k of ['WebSocket', 'Blob', 'File', 'FileReader', 'FormData', 'URL', 'URLSearchParams']) delete window[k];
+  // indexedDB, atob and btoa, IE 10.
+  for (const k of ['indexedDB', 'IDBFactory', 'IDBDatabase', 'IDBKeyRange', 'IDBRequest', 'IDBTransaction',
+    'IDBObjectStore']) delete window[k];
+  delete window.atob; delete window.btoa;
+  // performance.now, IE 10 (performance itself is IE 9's).
+  delete Performance.prototype.now;
+  // Map, Set and WeakMap, IE 11; WeakSet and Symbol, never; Object.setPrototypeOf, IE 11.
+  for (const k of ['Map', 'Set', 'WeakMap', 'WeakSet', 'Symbol']) delete window[k];
+  delete Object.setPrototypeOf;
+  // matchMedia, document.hidden and String.prototype.trim, IE 10; devicePixelRatio, IE 11.
+  delete window.matchMedia; delete Document.prototype.hidden; delete String.prototype.trim;
+  delete window.devicePixelRatio;
+  // Element.matches, never: IE 9 to 11 have it only as msMatchesSelector.
+  Element.prototype.msMatchesSelector = Element.prototype.matches; delete Element.prototype.matches;`;
+// What IE 8 lacks of the ES5 that shim/boot.js checks for, from mdn/browser-compat-data: each IE 9. IE 8's
+// defineProperty works on DOM objects alone and throws on others. IE 8 also has no addEventListener and no
+// Element Traversal, which this profile keeps: the test pages' own scripts listen with addEventListener.
+const IE8_ES5 = `
+  const defineProperty = Object.defineProperty;
+  Object.defineProperty = function (o, k, d) {
+    if (!(o instanceof Node) && o !== window) throw new TypeError('Object.defineProperty: IE 8 takes only DOM objects');
+    return defineProperty(o, k, d);
+  };
+  for (const k of ['create', 'keys', 'getPrototypeOf']) delete Object[k];
+  delete Array.isArray; delete Array.prototype.forEach; delete Array.prototype.reduce; delete Function.prototype.bind;
+  delete Date.now;`;
 const OLD = `(() => {
   for (const k of ['WebAssembly', 'TextDecoder', 'TextEncoder', 'queueMicrotask', 'reportError', 'Promise', 'fetch',
     'PointerEvent', 'globalThis']) delete window[k];
@@ -19,6 +93,7 @@ const OLD = `(() => {
   window.__noCrypto = typeof crypto === 'undefined';
   for (const k of ['imul', 'clz32', 'fround', 'trunc']) delete Math[k];
   delete Object.entries; delete String.prototype.startsWith; delete String.prototype.includes;
+  delete Element.prototype.remove; delete CharacterData.prototype.remove; delete DocumentType.prototype.remove;
   const ta = Object.getPrototypeOf(Uint8Array.prototype); delete ta.copyWithin; delete ta.fill;
   for (const t of ['pointerdown', 'pointerup', 'pointermove', 'pointerover', 'pointerout', 'pointercancel',
     'pointerenter', 'pointerleave', 'gotpointercapture', 'lostpointercapture'])
@@ -26,7 +101,7 @@ const OLD = `(() => {
   const P = EventTarget.prototype, add = P.addEventListener, rem = P.removeEventListener;
   const adds = window.__adds = [];
   P.addEventListener = function (t, f, c) { adds.push([t, typeof c, !!c]); return add.call(this, t, f, !!c); };
-  P.removeEventListener = function (t, f, c) { return rem.call(this, t, f, !!c); };
+  P.removeEventListener = function (t, f, c) { return rem.call(this, t, f, !!c); };${LEVEL.startsWith('ie') ? IE9_GAPS : ''}${TIER === 3 || BELOW ? IE9_WALLS : ''}${BELOW ? IE8_ES5 : ''}
 })();`;
 // The scripts a page fetched, by file name, to prove which path it took.
 export const FETCHED = "performance.getEntriesByType('resource').map(r => r.name.split('/').pop().split('?')[0])";
@@ -94,7 +169,15 @@ export async function launch(args = []) { // args: Chrome flags of the caller's 
   await new Promise(r => ws.onopen = r);
   let id = 0; const pend = new Map();
   const api = {};
-  ws.onmessage = m => { const d = JSON.parse(m.data); if (d.id && pend.has(d.id)) { pend.get(d.id)(d); pend.delete(d.id); } else if (d.method && api.onEvent) api.onEvent(d); };
+  // exceptions: every uncaught page exception since the last navigation, as "file:line message".
+  const exceptions = [];
+  const thrown = (d) => {
+    if (d.method === 'Page.frameNavigated' && !d.params.frame.parentId) exceptions.length = 0;
+    if (d.method !== 'Runtime.exceptionThrown') return;
+    const x = d.params.exceptionDetails;
+    exceptions.push(`${(x.url || '').split('/').pop()}:${x.lineNumber + 1} ${x.exception?.description?.split('\n')[0] || x.text}`);
+  };
+  ws.onmessage = m => { const d = JSON.parse(m.data); if (d.id && pend.has(d.id)) { pend.get(d.id)(d); pend.delete(d.id); } else if (d.method) { thrown(d); if (api.onEvent) api.onEvent(d); } };
   const send = (method, params = {}, sessionId) => new Promise(r => { const i = ++id; pend.set(i, r); ws.send(JSON.stringify({ id: i, method, params, sessionId })); });
   const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank', newWindow: true });
   const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true });
@@ -115,5 +198,24 @@ export async function launch(args = []) { // args: Chrome flags of the caller's 
     await sleep(300);
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   };
-  return Object.assign(api, { pid: proc.pid, version: ver.Browser, send: s, sendBrowser: send, targetId, evaluate, close });
+  return Object.assign(api, { pid: proc.pid, version: ver.Browser, send: s, sendBrowser: send, targetId, evaluate, close, exceptions });
+}
+
+// Under LEGACY=ie8 the boot must refuse the browser cleanly (see shim/boot.js): one error naming each missing
+// thing, neither fallback's files nor the wasm fetched, and nothing drawn in mount (a selector). Returns the
+// checks as [pass, message] pairs. The shim the page inlines fails first in Chrome, on TextDecoder; a real
+// old browser fails that script with a SyntaxError instead, LEGACY=1 sees the same one, and it is not counted.
+export const FLOOR = ['Object.defineProperty', 'Object.create', 'Object.keys', 'Object.getPrototypeOf', 'Array.isArray',
+  'Array.prototype.forEach', 'Array.prototype.reduce', 'Function.prototype.bind', 'Date.now'];
+export const REFUSAL = `cdom: this browser cannot run cdom: it has no ${FLOOR.join(', ')}`;
+export async function refused(b, mount) {
+  for (let i = 0; i < 100 && (await b.evaluate('document.readyState')) !== 'complete'; i++) await sleep(50);
+  await sleep(500); // a fallback file still loading would have run by now
+  const errs = b.exceptions.filter(e => !/^[\w.-]+\.html:\d+ ReferenceError: TextDecoder is not defined$/.test(e));
+  const got = (await b.evaluate(FETCHED)).filter(f => /\.(js|wasm)$/.test(f) && f !== 'cdom.js');
+  return [
+    [errs.length === 1 && errs[0].endsWith(`Error: ${REFUSAL}`), `one error, the boot's, naming all ${FLOOR.length} missing: ${JSON.stringify(errs)}`],
+    [!got.length, `no fallback file or wasm fetched: ${got.join(' ')}`],
+    [await b.evaluate(`document.querySelector(${JSON.stringify(mount)}).childNodes.length === 0`), `nothing drawn in ${mount}`],
+  ];
 }

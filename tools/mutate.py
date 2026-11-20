@@ -22,6 +22,9 @@ PAGE = ['tests/page/run.sh']
 TUT = ['tutorial/run.sh']
 FILE = ['node', 'tools/file.mjs']
 LEG = ['node', 'tools/legacy.mjs']
+LEG1 = ['env', 'LEGACY=1', 'node', 'tools/legacy.mjs']       # the second tier: wasm2js on typed arrays (IE 10, 11)
+LEG9 = ['env', 'LEGACY=ie9', 'node', 'tools/legacy.mjs']     # the third: wasm2js on words, no typed arrays (IE 9)
+WORDS = ['node', 'tools/words.mjs']                          # words.js, the words pass and the shim-ie9 gate, in node
 JOB = ['node', 'tools/job.mjs']
 RESIZE = ['tools/resize_ban.sh']
 IMG = ['env', 'IMAGE_BIG=0', 'IMAGE_WASM=0', 'tests/image/run.sh']   # the image module, native, small inputs
@@ -29,6 +32,8 @@ IMGBIG = ['env', 'IMAGE_WASM=0', 'tests/image/run.sh']               # with the 
 IMGW = ['env', 'IMAGE_BIG=0', 'tests/image/run.sh']                  # and in wasm, both ways out (tools/image.mjs)
 CHK = ['env', 'IMAGE_BIG=0', 'IMAGE_WASM=0', 'IMAGE_SIMD=0', 'tests/image/run.sh']   # the image module natively, with the fed decoder's tests (test_chunked.c)
 SIMD = ['tests/image/simd.sh']                                       # the SIMD loops against their scalar twins, in node
+PROG = ['tests/image/prog.sh']                                       # the progressive decoder against libjpeg's own
+MEMB = ['env', 'IMAGE_WASM=0', 'IMAGE_SIMD=0', 'IMAGE_PROG=0', 'tests/image/run.sh']   # the big inputs' peaks only
 FUZZI = ['env', 'FUZZ_TARGETS=inflate', 'tests/image/fuzz.sh', '60']   # fuzz_inflate alone, 60 s (libFuzzer: FUZZ_CC)
 PICK = ['tests/pick/run.sh']                                         # the SIMD pick (APP_SIMD) in Chrome (tools/pick.mjs)
 LEGW2J = ['env', 'LEGACY=1', 'node', 'tools/legacy.mjs']             # the legacy page as a browser without WebAssembly
@@ -51,11 +56,11 @@ M = [
   ('raf-no-time', 'shim/cdom.js', 'requestAnimationFrame((time) => exports.cd_raf(token, time))', 'requestAnimationFrame(() => exports.cd_raf(token, 0))', UNIT, 'FAIL a timer and a frame'),
   ('timer-token', 'shim/cdom.js', 'setTimeout(() => exports.cd_timer(token, handle), ms)', 'setTimeout(() => exports.cd_timer(token + 1, handle), ms)', UNIT, 'FAIL a timer and a frame'),
   ('event-no-flush', 'src/cdom.c', '  else cd_on_event(&inbox);\n  cd_flush();', '  else cd_on_event(&inbox);', UNIT, 'FAIL resize'),
-  ('resize-size', 'shim/cdom.js', '= viewport ? innerWidth : point.clientX | 0;', '= viewport ? innerHeight : point.clientX | 0;', UNIT, 'FAIL resize'),
+  ('resize-size', 'shim/cdom.js', 'store32(evX, viewport ? innerWidth : point.clientX | 0);', 'store32(evX, viewport ? innerHeight : point.clientX | 0);', UNIT, 'FAIL resize'),
   ('visibility-target', 'src/cdom.c', '{ return ev == CD_EV_RESIZE ? CD_WINDOW : CD_DOCUMENT; }', '{ (void)ev; return CD_WINDOW; }', UNIT, 'FAIL visibilitychange'),
   ('viewport-dpr', 'shim/cdom.js', 'Math.round(devicePixelRatio * 100)', '100', UNIT, 'FAIL the device pixel ratio'),
-  ('viewport-order', 'shim/cdom.js', '    i32[record + viewportW] = innerWidth;\n    i32[record + viewportH] = innerHeight;', '    i32[record + viewportW] = innerHeight;\n    i32[record + viewportH] = innerWidth;', UNIT, 'FAIL the viewport'),
-  ('ws-bytes', 'shim/cdom.js', 'bytes(ptr, incoming.length).set(incoming);', 'bytes(ptr, incoming.length).set(incoming.reverse());', UNIT, 'FAIL net'),
+  ('viewport-order', 'shim/cdom.js', '    store32(record + viewportW, innerWidth);\n    store32(record + viewportH, innerHeight);', '    store32(record + viewportW, innerHeight);\n    store32(record + viewportH, innerWidth);', UNIT, 'FAIL the viewport'),
+  ('ws-bytes', 'shim/cdom.js', 'writeBytes(ptr, incoming, incoming.length);', 'writeBytes(ptr, incoming.reverse(), incoming.length);', UNIT, 'FAIL net'),
   ('http-no-body', 'shim/cdom.js', 'body: bodyLen ? copyBytes(bodyPtr, bodyLen) : undefined,', 'body: undefined,', UNIT, 'FAIL net'),
   ('http-no-headers', 'shim/cdom.js', 'headers: headerList(headersPtr, headersLen),', 'headers: [],', UNIT, 'FAIL headers'),
   ('http-status', 'shim/cdom.js', 'status = response.status;', 'status = 200;', UNIT, 'FAIL headers'),
@@ -90,7 +95,7 @@ M = [
   ('str-ascii-case3', 'shim/cdom.js', 'case 3: return v + fromCode(b[p], b[p + 1], b[p + 2]);', 'case 3: return v + fromCode(b[p], b[p + 1]);', UNIT, 'FAIL a runtime string of 0 to 300 bytes'),
   ('str-ascii-step7', 'shim/cdom.js', 'for (; n >= 8; p += 8, n -= 8) {', 'for (; n >= 8; p += 7, n -= 8) {', UNIT, 'FAIL a runtime string of 0 to 300 bytes'),
   ('str-lits-off-by-one', 'shim/cdom.js', 'return lits[(s - litBase) >> 2];', 'return lits[((s - litBase) >> 2) + 1];', UNIT, 'FAIL'), # the page cannot even start: every slot reads the next entry
-  ('str-lifetime-unchecked', 'shim/cdom.js', '    if (k >= u32[tmpCount]) {', '    if (false) {', UNIT, 'FAIL a cd_tmp used after another call'),
+  ('str-lifetime-unchecked', 'shim/cdom.js', '    if (k >= load32(tmpCount)) {', '    if (false) {', UNIT, 'FAIL a cd_tmp used after another call'),
   ('str-tmp-done-missing', 'src/cdom.c', 'void cd_set_class(cd_id id, cd_str v) { ready(); j_set_class(id, v.v); tmp_done(); }', 'void cd_set_class(cd_id id, cd_str v) { ready(); j_set_class(id, v.v); }', UNIT, 'FAIL a cd_tmp used after another call'),
   ('str-cap-unchecked', 'src/cdom.c', '  if (tmp.n == CD_TMP_CAP) __builtin_trap();\n', '', UNIT, 'FAIL 32 cd_tmp are alive at once'),
   ('str-litq-always', 'src/cdom.h', '#define CD_LITQ(s) (__builtin_strncmp(CD_SPELL(s), "\\"", 1) == 0 && \\\n                    __builtin_constant_p(__builtin_strlen(CD_CHARP(s))))', '#define CD_LITQ(s) 1', UNIT, 'not a string literal'),
@@ -104,7 +109,7 @@ M = [
   ('ahead-not-reset-at-end', 'shim/cdom.js', '  function callEnded() {\n    aheadText = null;\n', '  function callEnded() {\n', UNIT, 'FAIL cd_tmp_ahead: the range is gone when the call into C returns'),
   ('ahead-zero-keeps', 'shim/cdom.js', '    if (!len) {\n      aheadText = null;\n      return;\n    }', '    if (!len) {\n      return;\n    }', UNIT, 'FAIL cd_tmp_ahead(0, 0) ends the range'),
   ('ahead-check-off', 'shim/cdom.js', 'if (checkAhead && text !== readString(q, n)) {', 'if (false) {', UNIT, 'FAIL checkAhead on: a byte changed inside a live range throws'),
-  ('tmp-window-kept-after-throw', 'shim/cdom.js', '    u32[tmpSerial0] += u32[tmpCount];\n    u32[tmpCount] = 0;\n', '', UNIT, 'FAIL a cd_tmp made before a throw is dead in the next call'),
+  ('tmp-window-kept-after-throw', 'shim/cdom.js', '    store32(tmpSerial0, load32(tmpSerial0) + load32(tmpCount));\n    store32(tmpCount, 0);\n', '', UNIT, 'FAIL a cd_tmp made before a throw is dead in the next call'),
   # read-only strings: a pointer into read-only data is its own id (docs/strings-plain-c.md, option B)
   ('ro-range-data-end', 'src/cdom.c', 'extern const char __rodata_start[], __rodata_end[];\ncd_str cd_tmpz(const char *s) {\n  if ((uintptr_t)s - (uintptr_t)__rodata_start < (uintptr_t)__rodata_end - (uintptr_t)__rodata_start)', 'extern const char __rodata_start[], __data_end[];\ncd_str cd_tmpz(const char *s) {\n  if ((uintptr_t)s - (uintptr_t)__rodata_start < (uintptr_t)__data_end - (uintptr_t)__rodata_start)', UNIT, 'FAIL read-only strings: a mutable static'),
   ('ro-range-swapped', 'src/cdom.c', '  if ((uintptr_t)s - (uintptr_t)__rodata_start < (uintptr_t)__rodata_end - (uintptr_t)__rodata_start)', '  if ((uintptr_t)s - (uintptr_t)__rodata_end < (uintptr_t)__rodata_start - (uintptr_t)__rodata_end)', UNIT, 'FAIL read-only strings: a mutable static'),
@@ -152,10 +157,10 @@ M = [
   ('grow-refusal-unsigned', 'src/cdom.c', '  return (intptr_t)__builtin_wasm_memory_grow(0, pages) >= 0;', '  return __builtin_wasm_memory_grow(0, pages) >= 0;', ALLOC, 'FAIL cd_alloc_try when memory.grow refuses'),
   ('realloc-alloc-copy', 'src/cdom.c', '  void *q = may_fail ? heap_alloc_try((uint32_t)n) : heap_alloc((uint32_t)n);\n', '  void *q = heap_alloc_or((uint32_t)n, may_fail);\n', LINK, 'FAIL realloc carries a copy of the allocator'),
   ('foreign-free', 'src/cdom.c', '  if ((uintptr_t)p < heap_lo + 8 || (uintptr_t)p >= heap_ptr) __builtin_trap(); /* not from this heap */', '  (void)heap_lo;', LINK, 'FAIL an app that replaces malloc alone'),
-  ('image-pixels', 'shim/cdom.js', 'new Uint8ClampedArray(memory.buffer, pixelsPtr, width * height * channels)', 'new Uint8ClampedArray(memory.buffer, pixelsPtr + 4, width * height * channels)', UNIT, 'FAIL cd_encode_image'),
+  ('image-pixels', 'shim/cdom.js', 'pixels(pixelsPtr, width, height, channels, context)', 'pixels(pixelsPtr + 4, width, height, channels, context)', UNIT, 'FAIL cd_encode_image'),
   ('image-token', 'shim/cdom.js', 'deliver(exports.cd_encoded, token, await blob.arrayBuffer())', 'deliver(exports.cd_encoded, token + 1, await blob.arrayBuffer())', UNIT, 'FAIL cd_encode_image'),
-  ('image-rgb', 'shim/cdom.js', 'rgba[to + 1] = pixels[from + 1];', 'rgba[to + 1] = pixels[from + 2];', UNIT, 'FAIL cd_encode_image_in with RGB'),
-  ('image-place', 'shim/cdom.js', 'putImageData(new ImageData(pixels, width, height), x, y)', 'putImageData(new ImageData(pixels, width, height), 0, 0)', UNIT, 'FAIL cd_encode_image_in with RGB'),
+  ('image-rgb', 'shim/cdom.js', 'rgba[to + 1] = data[from + 1];', 'rgba[to + 1] = data[from + 2];', UNIT, 'FAIL cd_encode_image_in with RGB'),
+  ('image-place', 'shim/cdom.js', 'putImageData(pixels(pixelsPtr, width, height, channels, context), x, y)', 'putImageData(pixels(pixelsPtr, width, height, channels, context), 0, 0)', UNIT, 'FAIL cd_encode_image_in with RGB'),
   ('image-bytes', 'shim/cdom.js', 'new Blob([copyBytes(bytesPtr, length)]', 'new Blob([copyBytes(bytesPtr + 1, length)]', UNIT, 'FAIL cd_encode_image'),
   ('image-set-early', 'shim/cdom.js', '    image.src = url;\n', '    image.src = url;\n    node.style.setProperty(name, `url(${url})`);\n', UNIT, 'FAIL cd_set_image_bytes sets the url once'),
   ('image-unanswered', 'shim/cdom.js', '      exports.cd_image(token, 1);', '', UNIT, 'FAIL cd_set_image_bytes sets the url once'),
@@ -169,20 +174,20 @@ M = [
   ('store-miss', 'shim/cdom.js', 'exports.cd_store_got(token, 0, -1)', 'exports.cd_store_got(token, 0, 0)', UNIT, 'FAIL cd_store: a missing'),
   ('store-no-deadline', 'shim/cdom.js', 'setTimeout(answer, ms);', '', UNIT, 'FAIL cd_store: a get not answered'),
   ('store-no-flush', 'src/cdom_store.c', '((cd_store_fn)fn)(ctx, p, len);\n  cd_flush();', '((cd_store_fn)fn)(ctx, p, len);', UNIT, 'FAIL cd_store: a put'),
-  ('rect-order', 'shim/cdom.js', '.set([box.left, box.top, box.width, box.height])', '.set([box.top, box.left, box.width, box.height])', UNIT, 'FAIL cd_rect'),
+  ('rect-order', 'shim/cdom.js', 'const edges = [box.left, box.top, box.width, box.height];', 'const edges = [box.top, box.left, box.width, box.height];', UNIT, 'FAIL cd_rect'),
   ('rect-untransformed', 'shim/cdom.js', 'const box = node.getBoundingClientRect();', 'const box = { left: node.offsetLeft, top: node.offsetTop, width: node.offsetWidth, height: node.offsetHeight };', UNIT, 'FAIL cd_rect'),
   ('now-zero', 'shim/cdom.js', '    return performance.now();', '    return 0;', UNIT, 'FAIL cd_now'),
   ('input-no-prevent', 'shim/cdom.js', '    if (flags & 1) {', '    if (false) {', UNIT, 'FAIL a mousedown and a touchstart'),
   ('input-touch-point', 'shim/cdom.js', '    return event.changedTouches ? event.changedTouches[0] : event;', '    return event;', UNIT, 'FAIL a mousedown and a touchstart'),
-  ('input-mask-16', 'shim/cdom.js', '  let listenMask = new Uint32Array(2048);', '  let listenMask = new Uint16Array(2048);', UNIT, 'FAIL a mousedown and a touchstart'),
+  ('input-mask-16', 'shim/cdom.js', '    listenMask[id * 2 + (type >> 5)] |= 1 << (type & 31);', '    listenMask[id * 2 + (type >> 5)] |= (1 << (type & 31)) & 0xffff;', UNIT, 'FAIL a mousedown and a touchstart'),
   ('input-win-viewport', 'shim/cdom.js', '    const viewport = type === RESIZE || type === VISIBILITY;', '    const viewport = true;', UNIT, 'FAIL the document'),
   ('input-unwin-noop', 'shim/cdom.js', '    nodes[id].removeEventListener(EVENTS[type], listener);', '', UNIT, 'FAIL the document'),
   ('input-win-twice', 'shim/cdom.js', '    if (hostListeners[slot]) {\n      return;\n    }\n    const listener', '    const listener', UNIT, 'FAIL the document'),
   ('input-touchmove-passive', 'shim/cdom.js', 'listener, { passive: false });', 'listener);', UNIT, 'FAIL a touchmove on the document'),
-  ('input-no-char', 'shim/cdom.js', 'key.length === 1 ? key.charCodeAt(0) : 0;', 'key.length === 1 ? 0 : 0;', UNIT, 'FAIL a keydown on the document'),
-  ('input-no-editing', 'shim/cdom.js', '      | (editing(event.target) << 4);', ';', UNIT, 'FAIL a keydown on the document'),
+  ('input-no-char', 'shim/cdom.js', 'key.length === 1 ? key.charCodeAt(0) : 0);', 'key.length === 1 ? 0 : 0);', UNIT, 'FAIL a keydown on the document'),
+  ('input-no-editing', 'shim/cdom.js', '      | (editing(event.target) << 4));', ');', UNIT, 'FAIL a keydown on the document'),
   ('input-prevent-c', 'src/cdom.c', 'void cd_prevent_default(void) { inbox.flags |= CD_PREVENT; }', 'void cd_prevent_default(void) { }', UNIT, 'FAIL a mousedown and a touchstart'),
-  ('input-no-time', 'shim/cdom.js', '    i32[evMs] = Math.round(event.timeStamp || 0);', '    i32[evMs] = Math.round(performance.now());', UNIT, 'FAIL a mousedown and a touchstart'),
+  ('input-no-time', 'shim/cdom.js', '    store32(evMs, Math.round(event.timeStamp || 0));', '    store32(evMs, Math.round(performance.now()));', UNIT, 'FAIL a mousedown and a touchstart'),
   ('hit-bottom-first', 'shim/cdom.js', '    for (const node of doc.elementsFromPoint(x, y)) {', '    for (const node of [...doc.elementsFromPoint(x, y)].reverse()) {', UNIT, 'FAIL cd_hit'),
   ('hit-not-listening', 'shim/cdom.js', '      if (node.$i !== undefined && (listenMask[node.$i * 2] | listenMask[node.$i * 2 + 1])) {\n        return node.$i;', '      if (node.$i !== undefined) {\n        return node.$i;', UNIT, 'FAIL cd_hit'),
   ('hit-topmost-only', 'shim/cdom.js', '    for (const node of doc.elementsFromPoint(x, y)) {', '    for (const node of [doc.elementFromPoint(x, y)]) {', UNIT, 'FAIL cd_hit: through a layer'),
@@ -226,14 +231,14 @@ M = [
   ('random-one-call', 'src/cdom_random.c', '    uint32_t n = len < CD_RANDOM_CHUNK ? len : CD_RANDOM_CHUNK;', '    uint32_t n = len;', UNIT, 'FAIL cd_random_bytes: 200,000 bytes'),
   ('random-chunk-small', 'src/cdom_random.h', '#define CD_RANDOM_CHUNK 65536', '#define CD_RANDOM_CHUNK 32768', UNIT, 'FAIL cd_random_bytes: 200,000 bytes'),
   ('random-no-advance', 'src/cdom_random.c', '    p += n;\n', '', UNIT, 'FAIL cd_random_bytes: 200,000 bytes'),
-  ('random-offset', 'shim/cdom.js', '    crypto.getRandomValues(bytes(bufferPtr, length));', '    crypto.getRandomValues(bytes(bufferPtr + 1, length));', UNIT, 'FAIL cd_random_bytes: 200,000 bytes'),
-  ('random-noop', 'shim/cdom.js', '    crypto.getRandomValues(bytes(bufferPtr, length));', '    bytes(bufferPtr, length);', UNIT, 'FAIL cd_random_bytes: two fills differ'),
+  ('random-offset', 'shim/cdom.js', '    randomBytes(bufferPtr, length);', '    randomBytes(bufferPtr + 1, length);', UNIT, 'FAIL cd_random_bytes: 200,000 bytes'),
+  ('random-noop', 'shim/cdom.js', '    randomBytes(bufferPtr, length);', '    bytes(bufferPtr, length);', UNIT, 'FAIL cd_random_bytes: two fills differ'),
   ('random-zero-asks', 'src/cdom_random.c', '  while (len) {', '  for (int once = 1; once || len; once = 0) {', UNIT, 'FAIL cd_random_bytes: two fills differ'),
   ('random-unavailable-ok', 'shim/cdom.js', '    if (!globalThis.crypto || !crypto.getRandomValues) {\n      return 0;', '    if (!globalThis.crypto || !crypto.getRandomValues) {\n      return 1;', UNIT, 'FAIL no crypto.getRandomValues'),
   ('random-unavailable-ignored', 'src/cdom_random.c', '    if (!j_random(p, n)) return CD_RANDOM_UNAVAILABLE;', '    j_random(p, n);', UNIT, 'FAIL no crypto.getRandomValues'),
   ('url-parts-swapped', 'shim/cdom.js', 'const URL_PARTS = ["pathname", "search", "hash"];', 'const URL_PARTS = ["pathname", "hash", "search"];', UNIT, 'FAIL cd_url_read'),
   ('url-all-path-only', 'shim/cdom.js', '    return location.pathname + location.search + location.hash;', '    return location.pathname;', UNIT, 'FAIL cd_url_read'),
-  ('url-read-overflow', 'shim/cdom.js', '    bytes(destPtr, capacity).set(encoded.subarray(0, capacity));', '    bytes(destPtr, encoded.length).set(encoded);', UNIT, 'FAIL cd_url_read'),
+  ('url-read-overflow', 'shim/cdom.js', '    writeBytes(destPtr, encoded, Math.min(capacity, encoded.length));', '    writeBytes(destPtr, encoded, encoded.length);', UNIT, 'FAIL cd_url_read'),
   ('url-read-written', 'shim/cdom.js', '    return encoded.length;', '    return Math.min(encoded.length, capacity);', UNIT, 'FAIL cd_url_read'),
   ('url-push-is-replace', 'src/cdom_url.c', '{ return j_url_go(path, len, 0); }', '{ return j_url_go(path, len, 1); }', UNIT, 'FAIL cd_url_push adds'),
   ('url-replace-is-push', 'src/cdom_url.c', '{ return j_url_go(path, len, 1); }', '{ return j_url_go(path, len, 0); }', UNIT, 'FAIL cd_url_push adds'),
@@ -302,8 +307,8 @@ M = [
   ('host-capture-off', 'shim/cdom.js', '{ capture: (type >= FOCUS && type <= PAUSE) || type === CANCEL || type === CLOSE, passive: false }', '{ capture: false, passive: false }', HOST, 'FAIL img load delivered'),
   ('dialog-no-capture', 'shim/cdom.js', ' || type === CANCEL || type === CLOSE, passive: false }', ', passive: false }', UNIT, 'FAIL a <dialog>'),
   ('host-mask-one-word', 'shim/cdom.js', 'listenMask[node.$i * 2 + word] & bit', 'listenMask[node.$i * 2] & bit', HOST, 'FAIL synthetic'),
-  ('host-pointer-fields', 'shim/cdom.js', '    i32[evPointer] = pointer ? event.pointerId : 0;', '    i32[evPointer] = 0;', HOST, 'FAIL pointerdown with pointer id'),
-  ('host-wheel-dy', 'shim/cdom.js', '    f32[evDy] = wheel ? event.deltaY : 0;', '    f32[evDy] = 0;', HOST, 'FAIL wheel deltaY'),
+  ('host-pointer-fields', 'shim/cdom.js', '    store32(evPointer, pointer ? event.pointerId : 0);', '    store32(evPointer, 0);', HOST, 'FAIL pointerdown with pointer id'),
+  ('host-wheel-dy', 'shim/cdom.js', '    storeF32(evDy, wheel ? event.deltaY : 0);', '    storeF32(evDy, 0);', HOST, 'FAIL wheel deltaY'),
   ('host-no-stop', 'shim/cdom.js', '      event.stopPropagation();', '', HOST, 'FAIL click stopped at the mount'),
   ('host-stop-c', 'src/cdom.c', 'void cd_stop_propagation(void) { inbox.flags |= CD_STOP; }', 'void cd_stop_propagation(void) { }', HOST, 'FAIL click stopped at the mount'),
   ('host-flags-kept', 'src/cdom.c', '  inbox.flags = 0;\n  uint32_t id = (uint32_t)inbox.id;', '  uint32_t id = (uint32_t)inbox.id;', HOST, 'FAIL the next click is not prevented'),
@@ -313,7 +318,7 @@ M = [
   ('host-set-custom', 'shim/cdom.js', '        object.setProperty(property, value);', '        object[property] = value;', HOST, 'FAIL set custom property'),
   ('host-call-result', 'shim/cdom.js', '      nodes[RESULT] = result;\n', '', HOST, 'FAIL contains(node) read back'),
   ('host-val-obj', 'shim/cdom.js', '          object[key] = value;', '', HOST, 'FAIL scrollIntoView'),
-  ('host-val-num', 'shim/cdom.js', '      case 0: return [f64[(at + valNum) >> 1], index + 1];', '      case 0: return [u32[at + valNum], index + 1];', HOST, 'FAIL set number'),
+  ('host-val-num', 'shim/cdom.js', '      case 0: return [loadF64((at + valNum) >> 1), index + 1];', '      case 0: return [load32(at + valNum), index + 1];', HOST, 'FAIL set number'),
   ('host-get-id-result', 'shim/cdom.js', '    return index === RESULT ? nodes.indexOf(value, RESULT + 1) : index;', '    return index;', HOST, 'FAIL id of a node CD_RESULT also holds'),
   ('host-path-cache-shared', 'shim/cdom.js', 'return segments[(path - litBase) >> 2] ??= str(path).split(".");', 'return segments[0] ??= str(path).split(".");', HOST, 'FAIL'),
   ('host-unlisten-node', 'shim/cdom.js', '      listenMask[id * 2 + (type >> 5)] &= ~(1 << (type & 31));', '', HOST, 'FAIL cd_unlisten: the node no longer hears'),
@@ -333,7 +338,7 @@ M = [
   ('seed-option-ignored', 'shim/cdom.js', '    if (options && options.seed !== undefined) {', '    if (false) {', UNIT, 'FAIL options.seed is cd_seed'),
   ('seed-math-random', 'shim/cdom.js', '    return crypto.getRandomValues(new Uint32Array(1))[0];', '    return (Math.random() * 4294967296) >>> 0;', UNIT, 'FAIL the shim draws no stray random'),
   ('url-step-negated', 'shim/cdom.js', 'history.go(delta)', 'history.go(-delta)', UNIT, 'FAIL cd_url_step'),
-  ('canvas-blit-offset', 'shim/cdom.js', 'new Uint8ClampedArray(memory.buffer, pixelsPtr, width * height * 4)', 'new Uint8ClampedArray(memory.buffer, pixelsPtr + 4, width * height * 4)', CANVAS, 'blit: byte'),
+  ('canvas-blit-offset', 'shim/cdom.js', 'pixels(pixelsPtr, width, height, 4, canvas.$g)', 'pixels(pixelsPtr + 4, width, height, 4, canvas.$g)', CANVAS, 'blit: byte'),
   ('frames-double', 'src/cdom.c', '  if (frames_on && !frames_asked) {', '  if (frames_on && (frames_asked || 1)) {', CANVAS, 'frame loop doubled'),
   ('frames-backwards', 'shim/cdom.js', 'exports.cd_raf(token, time))', 'exports.cd_raf(token, -time))', CANVAS, 'frame times going backwards'),
   ('frames-no-stop', 'src/cdom.c', '  if (!frames_on) return;\n', '', CANVAS, 'frames after a stop from outside a frame'),
@@ -408,8 +413,8 @@ M = [
   ('libc-no-real-copy', 'src/mini.c', '__attribute__((weak)) void *memcpy(void *restrict d, const void *restrict s, size_t n) { return __builtin_memcpy(d, s, n); }\n', '', LINK, "FAIL string.h (cdom flags): taking memcpy's address"),
   # offsets from cd_layout, none in the shim: a literal put back (each still right at run time, so only the
   # scan, tools/offsets.mjs, sees it), and the map and the shim out of step (the page sees each field)
-  ('offsets-literal', 'shim/cdom.js', '    i32[evButtons] = pointer ? event.buttons : 0;', '    i32[evType + 13] = pointer ? event.buttons : 0;', UNIT, 'FAIL the shim indexes C memory by a literal offset: cdom.js:'),
-  ('offsets-bare-base', 'shim/cdom.js', '    const tag = u32[at + valTag];', '    const tag = u32[at];', UNIT, 'FAIL the shim indexes C memory by a literal offset: cdom.js:'),
+  ('offsets-literal', 'shim/cdom.js', '    store32(evButtons, pointer ? event.buttons : 0);', '    store32(evType + 13, pointer ? event.buttons : 0);', UNIT, 'FAIL the shim indexes C memory by a literal offset: cdom.js:'),
+  ('offsets-bare-base', 'shim/cdom.js', '    const tag = load32(at + valTag);', '    const tag = load32(at);', UNIT, 'FAIL the shim indexes C memory by a literal offset: cdom.js:'),
   ('offsets-size', 'shim/cdom.js', 'const at = (ptr >> 2) + index * valWords;', 'const at = (ptr >> 2) + index * 4;', UNIT, 'FAIL the shim indexes C memory by a literal offset: cdom.js:'),
   ('offsets-rec-step', 'shim/cdom.js', 'const at = (tmpRecords >> 2) + k * recWords;', 'const at = (tmpRecords >> 2) + k * 2;', UNIT, 'FAIL the shim indexes C memory by a literal offset: cdom.js:'),
   ('offsets-event-order', 'src/cdom.c', 'X(offsetof(cd_event_rec, pointer)) \\\n  X(offsetof(cd_event_rec, buttons))', 'X(offsetof(cd_event_rec, buttons)) \\\n  X(offsetof(cd_event_rec, pointer))', UNIT, "FAIL the shim's view of C's structs"),
@@ -818,7 +823,7 @@ M = [
   ('pick-probe-broken', 'shim/cdom.js', '65, 0, 253, 15, 11]', '65, 0, 254, 15, 11]', PICK, 'FAIL bundled page, readable shim: the real Chrome gets the SIMD module'),  # the probe is no valid module (an opcode no browser has), so validate is false everywhere
   ('pick-bundle-order', 'tools/cdpage.c', '        module_at(o, a->wasm, a->wasm_url);', '        module_at(o, a->simd_wasm ? a->simd_wasm : a->wasm, a->wasm_url);', PICK, 'FAIL bundled page, readable shim: with no wasm SIMD'),  # the bundled pair's first entry is the twin
   ('pick-lits-unchecked', 'cdom.mk', '\t$(if $(filter $@,$(cdom_mk_simd_wasm)),@$(call cdom_mk_lits_same,$(APP_WASM),$@))\n', '', LINK, 'FAIL APP_SIMD: a twin with a string literal APP_WASM lacks builds'),  # the twin's string table is never compared with APP_WASM's
-  ('pick-boot-simd', 'shim/boot.js', 'url : url[0]) + ".js"', 'url : url[1]) + ".js"', LEGW2J, 'FAIL booted'),  # the no-WebAssembly fallback loads the twin's wasm2js build, which is not there
+  ('pick-boot-simd', 'shim/boot.js', 'var base = typeof url === "string" ? url : url[0];', 'var base = typeof url === "string" ? url : url[1];', LEGW2J, 'FAIL booted'),  # the no-WebAssembly fallback loads the twin's wasm2js build, which is not there
   ('rgba-alpha', 'src/cdom_image_loops.c', '0, 1, 2, 16, 3, 4, 5, 16, 6, 7, 8, 16, 9, 10, 11, 16));', '0, 1, 2, 16, 3, 4, 5, 16, 6, 7, 8, 16, 9, 10, 11, 0));', SIMD, 'FAIL rgb to rgba'),  # the last pixel of 4 gets the red byte of the first as its alpha
   ('rgba-read-past', 'src/cdom_image_loops.c', 'for (; x + 6 <= w; x += 4)', 'for (; x + 5 <= w; x += 4)', SIMD, 'FAIL rgb to rgba'),  # the loop reads a byte past the row (a trap at the top of memory)
   ('across-store-lane', 'src/cdom_image_loops.c', 'wasm_v128_store32_lane(q + 2, sum, 2);', 'wasm_v128_store32_lane(q + 2, sum, 3);', SIMD, 'FAIL scaler across'),  # a pixel's blue sum is stored from its alpha lane
@@ -832,6 +837,33 @@ M = [
   ('div-cap', 'src/cdom_image_loops.c', 'const V cap = wasm_i32x4_const_splat(255);', 'const V cap = wasm_i32x4_const_splat(254);', SIMD, 'FAIL scaler divide'),  # the quotient is capped at 254, not 255
   ('div-trunc-round', 'src/cdom_image_loops.c', 'wasm_u32x4_trunc_sat_f64x2_zero(wasm_f64x2_div(x, d))', 'wasm_u32x4_trunc_sat_f64x2_zero(wasm_f64x2_nearest(wasm_f64x2_div(x, d)))', SIMD, 'FAIL scaler divide'),  # the quotient is rounded to nearest, not truncated
   ('div-read-past', 'src/cdom_image_loops.c', 'for (; i + 2 <= n; i += 2) {\n    V v = wasm_v128_load(a + i);', 'for (; i + 1 <= n; i += 2) {\n    V v = wasm_v128_load(a + i);', SIMD, 'FAIL scaler divide'),  # the loop reads and writes two sums when one is left (a trap at the top of memory)
+  # the progressive decoder and its store (src/cdom_image_jpegp.c, docs/image-progressive-speed.md): each must make the
+  # differential test against libjpeg's own (tests/image/prog.sh), the IDCT table test (simd.sh) or a peak case fail
+  ('jpegp-deposit', 'src/cdom_image_jpegp.c', '(l1 & (0 - (w >> 62 & 1)))', '(l1 & (0 - (w >> 61 & 1)))', PROG, 'FAIL progressive differential'),  # the second correction bit of a step goes to the wrong coefficient
+  ('jpegp-correct-sign', 'src/cdom_image_jpegp.c', '*c = (int16_t)(*c + (*c >= 0 ? p1 : -p1));', '*c = (int16_t)(*c + p1);', PROG, 'FAIL progressive differential'),  # a correction moves a negative coefficient toward zero
+  ('jpegp-new-sign', 'src/cdom_image_jpegp.c', 'v[pc->slot[j]] = (int16_t)(ng >> j & 1 ? -p1 : p1);', 'v[pc->slot[j]] = (int16_t)(ng >> j & 1 ? p1 : -p1);', PROG, 'FAIL progressive differential'),  # a new coefficient of a refinement takes the opposite sign
+  ('jpegp-refine-eobrun', 'src/cdom_image_jpegp.c', '    s->eobrun--;\n  }\n  for (uint64_t q = cm', '  }\n  for (uint64_t q = cm', PROG, 'FAIL progressive differential'),  # an EOB run of a refinement never ends
+  ('jpegp-first-run', 'src/cdom_image_jpegp.c', 'k += (fe >> 8) & 15;', 'k += (fe >> 8) & 7;', PROG, 'FAIL progressive differential'),  # the one-lookup path of a first scan loses the run's top bit
+  ('jpegp-dc-refine', 'src/cdom_image_jpegp.c', 'v[0] = (int16_t)(v[0] | (1 << al));', 'v[0] = (int16_t)(v[0] | (2 << al));', PROG, 'FAIL progressive differential'),  # a DC refinement sets the wrong bit
+  ('jpegp-insufficient', 'src/cdom_image_jpegp.c', 'b->cinfo->entropy->insufficient_data = TRUE; }\n  b->real = 0;', '}\n  b->real = 0;', PROG, 'FAIL progressive differential'),  # running past the scan's data does not stop the rest of the interval (a cut file)
+  ('jpegp-restart-eob', 'src/cdom_image_jpegp.c', '  s->eobrun = 0;\n  s->rtg = cinfo->restart_interval;', '  s->rtg = cinfo->restart_interval;', PROG, 'FAIL progressive differential'),  # a restart marker leaves an EOB run running
+  ('jpegp-skip-all', 'src/cdom_image_jpegp.c', 'if (!is_dc) x->skip = !(touched(', 'if (!is_dc) x->skip = 1 || !(touched(', PROG, 'FAIL progressive differential'),  # every AC scan is skipped, read or not
+  ('jpegp-no-closure', 'src/cdom_image_jpegp.c', '{ pc->dec |= t; changed = 1; }', '{ changed = 0; }', PROG, 'FAIL progressive differential'),  # a scan is skipped when only a later scan that is decoded touches its band
+  ('idct-reads-small', 'src/cdom_image_int.h', 'size == 2 ? 0xabu', 'size == 2 ? 0xa9u', SIMD, 'FAIL unread'),  # the 2x2 table drops row and column 1, which the 2x2 reads
+  ('idct-reads-large', 'src/cdom_image_int.h', 'size == 2 ? 0xabu', 'size == 2 ? 0xafu', SIMD, 'FAIL unread'),  # the 2x2 table keeps row and column 2, which no 2x2 reads
+  ('jpegp-window-all', 'src/cdom_image_jpegp.c', 'pc->win = (uint32_t)cp->v_samp_factor;', 'pc->win = pc->nrows;', MEMB, 'jpeg-prog444-over-budget: status OK'),  # the store's window is the whole array, which realize_virt_arrays then holds whatever the budget
+  ('jpegp-store-full', 'src/cdom_image_jpegp.c', 'uint64_t nat = cd_image_idct_reads(size), z = 0;', 'uint64_t nat = cd_image_idct_reads(size) | ~0ull, z = 0;', MEMB, 'jpeg-p12-progressive: peak'),  # the store keeps every coefficient at 2/8
+  ('jpegp-walk-short-length', 'src/cdom_image_jpegp.c', 'at += len >= 2 ? len : 2;', 'if (len < 2) break;\n      at += len;', PROG, 'walk: libjpeg read a scan the walk did not see'),  # an APPn, COM, DNL or DAC segment of length 0 or 1 ends the walk (the bug of #66: libjpeg skips nothing and goes on)
+  ('jpegp-walk-dht-length', 'src/cdom_image_jpegp.c', '      if (left != 0) return;                              /* JERR_BAD_LENGTH */\n      at = q;\n    } else if (m == 0xdb)', '      at = q;\n    } else if (m == 0xdb)', PROG, 'walk: libjpeg stopped with an error the walk did not give up at'),  # the walk takes a DHT whose length get_dht refuses
+  ('jpegp-walk-dht-index', 'src/cdom_image_jpegp.c', '        if ((index & 0x10 ? index - 0x10 : index) >= NUM_HUFF_TBLS) return;   /* JERR_DHT_INDEX */\n', '        (void)index;\n', PROG, 'walk: libjpeg stopped with an error the walk did not give up at'),  # the walk takes a DHT of a table number get_dht refuses
+  ('jpegp-walk-dqt-index', 'src/cdom_image_jpegp.c', '        if ((t & 15) >= NUM_QUANT_TBLS) return;           /* JERR_DQT_INDEX */\n', '', PROG, 'walk: libjpeg stopped with an error the walk did not give up at'),  # the walk takes a DQT of a table number get_dqt refuses
+  ('jpegp-walk-dri-length', 'src/cdom_image_jpegp.c', '      if (len != 4) return;                               /* JERR_BAD_LENGTH */\n', '', PROG, 'walk: libjpeg stopped with an error the walk did not give up at'),  # the walk takes a DRI of a length get_dri refuses
+  ('jpegp-walk-ahal', 'src/cdom_image_jpegp.c', '  if (q->ah != 0 && q->al != q->ah - 1) return 0;\n', '', PROG, 'walk: libjpeg stopped with an error the walk did not give up at'),  # the walk takes a refinement band (Al not Ah - 1) jdphuff.c's start_pass refuses
+  ('jpegp-walk-eof-bytes', 'src/cdom_image_jpegp.c', '((i - n) & 1) ? 0xd9 : 0xff; }', '0; }', PROG, 'walk: libjpeg stopped with an error the walk did not give up at'),  # past the end of the file the walk reads zeros, not the source's 0xFF 0xD9
+  ('jpegp-walk-tem', 'src/cdom_image_jpegp.c', 'if (m == 0x01 || (m >= 0xd0 && m <= 0xd7)) goto next;', 'if (m >= 0xd0 && m <= 0xd7) goto next;', PROG, 'walk: gave up on markers libjpeg reads without an error'),  # the walk gives up at a TEM between scans
+  ('jpegp-walk-stuffed', 'src/cdom_image_jpegp.c', 'if (m == 0) { at = scan_end(p + at, n - at) + at; continue; }', 'if (m == 0) return;', PROG, 'walk: gave up on markers libjpeg reads without an error'),  # the walk gives up at 0xFF 0x00 after a segment between scans, which next_marker skips
+  ('jpegp-walk-band', 'src/cdom_image_jpegp.c', 'q->ss = p[at + 3 + 2 * c];', 'q->ss = p[at + 4 + 2 * c];', PROG, 'walk: a scan of the walk is not the one libjpeg read'),  # the walk reads Se as Ss
+  ('jpegp-buffered', 'src/cdom_image_jpegp.c', '  if (cinfo->buffered_image) ERREXIT(cinfo, JERR_NOT_COMPILED);\n', '', PROG, 'in buffered-image mode: taken'),  # a progressive file in buffered-image mode (jpeg_read_coefficients' way in) gets cdom's controller, which has no coefficient arrays
   ('simd-flags-everywhere', 'cdom.mk', 'CDOM_IMAGE_OWN_SIMD_CFLAGS := $(cdom_mk_simd_flags)\n', 'CDOM_IMAGE_OWN_SIMD_CFLAGS := $(cdom_mk_simd_flags)\nCDOM_CFLAGS += $(if $(filter 1,$(CDOM_IMAGE_SIMD)),$(cdom_mk_simd_flags))\n', LINK, 'FAIL an app that does not call the image module has SIMD instructions'),  # -msimd128 for every file, not the image module's
   ('simd-default-on', 'cdom.mk', 'CDOM_IMAGE_SIMD ?= 0', 'CDOM_IMAGE_SIMD ?= 1', LINK, 'FAIL CDOM_IMAGE_SIMD:'),  # the default is SIMD, not scalar
   ('simd-adler-weight-16', 'src/cdom_image_inflate.c', 'w_lo = wasm_i16x8_make(16, 15,', 'w_lo = wasm_i16x8_make(17, 15,', SIMD, 'FAIL adler32'),  # the high weight of a block's first byte
@@ -856,6 +888,11 @@ M = [
   ('ban-src', 'src/cdom_file.c', 'void cd_file_read_cb(', '/* resizeWidth */\nvoid cd_file_read_cb(', RESIZE, 'FAIL resize ban: src/cdom_file.c'),
   ('ban-mk', 'cdom.mk', 'CDOM_OPT ?= -Oz\n', 'CDOM_OPT ?= -Oz\n# drawImage(img, 0, 0, w, h)\n', RESIZE, 'FAIL resize ban: cdom.mk'),
   ('ban-tools', 'tools/minshim.mjs', "import fs from 'node:fs';", "import fs from 'node:fs';\nconst q = { imageSmoothingQuality: 'low' };", RESIZE, 'FAIL resize ban: tools/minshim.mjs'),
+  # the third tier, IE 9 (shim/boot.js, tools/legacy/memory-words.js, the seed exception, the shim-ie9 gate)
+  ('ie9-boot-typed-when-absent', 'shim/boot.js', '    if (!window[typed[i]]) words = true;', '    if (!window[typed[i]]) words = false;', LEG9, 'FAIL booted'),
+  ('ie9-words-load8-off-by-one', 'tools/legacy/memory-words.js', 'function load8(ptr) {\n  return memory.load8_u(ptr);', 'function load8(ptr) {\n  return memory.load8_u(ptr + 1);', LEG9, 'FAIL booted'),
+  ('ie9-seed-weak-with-crypto', 'shim/cdom.js', '    if (globalThis.crypto && crypto.getRandomValues) {\n      return crypto.getRandomValues', '    if (false) {\n      return crypto.getRandomValues', LEG1, 'FAIL cd_seed from crypto.getRandomValues, never Math.random, where crypto exists'),
+  ('ie9-shim-gate-lets-typed-through', 'tools/legacy/memory.mjs', "if (node.type === 'Identifier' && names.has(node.name) && !SHIM_TYPED_ALLOWED.has(fn))", "if (false)", WORDS, 'FAIL the shim-ie9 gate'),
   ('encode-quality-unchecked', 'src/cdom.c', '|| y + h > H || quality > 100) __builtin_trap();', '|| y + h > H) __builtin_trap();', UNIT, "FAIL cd_encode_image's quality"),
   # cd_job (src/cdom_job.c, src/cdom_job_mod.c, tools/job.mjs; cdom.mk's job rule and tools/cdpage's --job in tests/link and tests/page)
   ('job-no-terminate', 'shim/cdom.js', '        worker.terminate();\n        delete jobLive[token];\n        jobAnswer(token, status, output);', '        delete jobLive[token];\n        jobAnswer(token, status, output);', JOB, 'FAIL one worker, ended when it answered'),

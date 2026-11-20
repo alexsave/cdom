@@ -171,7 +171,8 @@ flowchart LR
 - A program's libc comes from cdom: `src/libc/string.h`, `src/libc/stdio.h` (`snprintf` and `vsnprintf`, integers and strings, no floats, and `FILE` as an incomplete type for headers that name it), `src/libc/stdlib.h` (the heap's `malloc`, `calloc`, `realloc` and `free`, and `abs` and `labs`) and `src/mini.c` (add `-isystem cdom/src/libc`).
 - The I/O calls external adapters build on (the `_cb` forms, the socket calls, `cd_page_origin`, `cd_random_bytes`, `cd_timer_stop`, `cd_epoch_ms`, `cd_now` and the program's libc) are a stable contract, written at the top of `src/cdom.h`: they change only additively, and `tests/link/contract.c` fails to compile if one changes in place.
 - Apps inline `shim/cdom.min.js`, the same shim minified by cdom, so an app needs no JavaScript toolchain.
-- A browser without WebAssembly runs the same app through wasm2js on an ES5 shim (see RESULTS.md, "Without WebAssembly", and "Starting an app" below).
+- A browser without WebAssembly runs the same app through wasm2js on an ES5 shim, down to IE 9: with typed arrays (IE 10 and 11) on them, and without (IE 9) on C's memory kept in a plain Array of 32-bit words (see RESULTS.md, "Without WebAssembly" and "IE 9, the third tier", and "Starting an app" below).
+  The floor is ES5: below it (IE 8) the boot refuses, with one error naming what is missing.
 
 ## Starting an app
 
@@ -209,11 +210,13 @@ cdom.start(/*CDOM_WASM*/, "app");
 - `mount` is the element the app's `CD_MOUNT` is, or its id; given an id that the parser has not reached yet, the wasm loads while the page parses and the app starts once the DOM is ready.
 - `env` is an object of the app's own imports, the wasm's `env` module (functions its C declares with `__attribute__((import_module("env"), import_name("...")))`), and may be left out.
 - `options.openStore`, when true, opens the store (`src/cdom_store.h`) while the wasm is fetched and compiled, so an app that reads its store as it starts finds it open at its first get.
-- `options.seed` fixes `cd_seed` (`src/cdom.h`), the app's one seed for its random draws, so one line makes a run deterministic; without it the seed is 32 bits from `crypto.getRandomValues`, and a page without that fails at start.
+- `options.seed` fixes `cd_seed` (`src/cdom.h`), the app's one seed for its random draws, so one line makes a run deterministic; without it the seed is 32 bits from `crypto.getRandomValues`.
+  A browser with neither (IE 9 and 10) gets the one exception to the seed rule: `Math.random` mixed with the clock, so below IE 11 `cd_seed` is neither secret nor unpredictable; it is for an app's own draws, never for secrets (`cd_random_bytes` answers UNAVAILABLE there).
 - The shim's state (the node table, the memory, the module's exports) is one per page, so a second call would replace the first app's; a page runs one cdom app.
-- A page that must run without WebAssembly starts through `shim/boot.js` instead: `cdomBoot(url, mount, env, ready)` calls `cdom.start` itself when WebAssembly exists, and otherwise loads the ES5 shim and the wasm2js build (`url + ".js"`) and starts those; `tools/legacy/build.mjs` makes both, and that build needs Node.
-  Both are files beside the page, so a page with this fallback takes `APP_WASM_SEPARATE := 1` (a bundled module has no `url + ".js"` to load).
-  Given the pair, it loads the scalar module's wasm2js build, `url[0] + ".js"`.
+- A page that must run without WebAssembly starts through `shim/boot.js` instead: `cdomBoot(url, mount, env, ready, options)` calls `cdom.start` itself when WebAssembly exists; otherwise, with typed arrays, it loads the ES5 shim (`cdom.legacy.js`) and the wasm2js build (`url + ".js"`), and without them (IE 9) their words twins (`cdom.legacy-ie9.js` and `url + ".ie9.js"`), and starts those.
+  `tools/legacy/build.mjs` makes all four (`shim`, `app`, `shim-ie9`, `app-ie9`), and that build needs Node; a browser fetches only its own tier's two.
+  They are files beside the page, so a page with this fallback takes `APP_WASM_SEPARATE := 1` (a bundled module has no `url + ".js"` to load).
+  Given the pair (`APP_SIMD`), either fallback takes the scalar module's build, `url[0] + ".js"` or `url[0] + ".ie9.js"`.
 
 ## Testing an app's page
 
@@ -348,7 +351,7 @@ flowchart TB
 
 ## Working on cdom
 
-- Tests: `tutorial/run.sh` (builds and drives every lesson), `tests/page/run.sh` (the page tool alone), `tests/lits/run.sh` (the literal tool alone), `tests/build.sh`, then `node tools/unit.mjs`, `node tools/alloc.mjs`, `node tools/job.mjs`, `node tools/fuzz.mjs`, `node tools/canvas.mjs`, `node tools/host.mjs`, `tests/link/run.sh` and `node tools/legacy.mjs`; RESULTS.md, "Reproduce", has the benchmark commands.
+- Tests: `tutorial/run.sh` (builds and drives every lesson), `tests/page/run.sh` (the page tool alone), `tests/lits/run.sh` (the literal tool alone), `tests/build.sh`, then `node tools/unit.mjs`, `node tools/alloc.mjs`, `node tools/job.mjs`, `node tools/fuzz.mjs`, `node tools/canvas.mjs`, `node tools/host.mjs`, `tests/link/run.sh`, `node tools/legacy.mjs` (with `LEGACY=1` and `LEGACY=ie9` for the old tiers) and `node tools/words.mjs`; RESULTS.md, "Reproduce", has the benchmark commands.
 - `shim/cdom.min.js` is generated by `node tools/minshim.mjs` and committed, and `tests/build.sh` checks it against `cdom.js`.
 - cdom's own builds (`tests/build.sh`, `tests/link/run.sh`, `bench/build.sh`) read the same flag set as cdom.mk through `tools/cdomflags.sh`, which fails when one of them spells a flag of the set itself.
 - cdom and its sibling C library have no cycle: the library may depend on cdom (only its browser adapter does, built against cdom's I/O contract), and cdom never depends on the library.

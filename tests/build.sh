@@ -34,11 +34,14 @@ page "$here/unit.html" "$here/out/unit.html" "$here/out/unit.wasm"
 wasm -O2 "$here/out/unit_check.wasm" -DCD_STATE_CHECK "$here/unit.c" "$here/../src/cdom.c" "$here/../src/cdom_net.c" "$here/../src/cdom_store.c" "$here/../src/cdom_audio.c" "$here/../src/cdom_random.c" "$here/../src/cdom_url.c" "$here/../src/cdom_locale.c" "$here/../src/cdom_share.c" "$here/../src/cdom_fonts.c" "$here/../src/cdom_ui.c" "$here/../src/cdom_file.c" "$here/../src/cdom_image_sjlj.c" -DCDOM_IMAGE_SJLJ_JS "$here/../src/mini.c"
 page "$here/unit.html" "$here/out/unit_check.html" "$here/out/unit_check.wasm"
 page "$here/../demo/click.html" "$here/out/click.html" "$here/out/click.wasm"
-# The fuzz page and the legacy page go through the boot, so LEGACY=1 runs them on the wasm2js build.
+# The fuzz page and the legacy page go through the boot, so LEGACY=1 runs them on the wasm2js build, and
+# LEGACY=ie9 on its words build.
 page "$here/listfuzz.html" "$here/out/listfuzz.shim.html" "$here/out/listfuzz.wasm"
 node "$legacy" page "$here/out/listfuzz.shim.html" "$here/out/listfuzz.html"
 node "$legacy" shim "$here/out/cdom.legacy.js"
+node "$legacy" shim-ie9 "$here/out/cdom.legacy-ie9.js"
 node "$legacy" app "$here/out/listfuzz.wasm" "$here/out/listfuzz.wasm.js"
+node "$legacy" app-ie9 "$here/out/listfuzz.wasm" "$here/out/listfuzz.wasm.ie9.js"
 # The _try allocations at a small cap, and on an app's own allocator (tools/alloc.mjs, in Node).
 wasm -O2 "$here/out/alloc_try.wasm" -DCDOM_HEAP_PAGES_MAX=40 "$here/alloc_try.c" "$here/../src/cdom.c" "$here/../src/mini.c"
 # The same cases with no cap of cdom's but a memory whose maximum is 40 pages: memory.grow itself refuses.
@@ -57,12 +60,18 @@ wasm -O2 "$here/out/host.wasm" "$here/host.c" "$here/../src/cdom.c" "$here/../sr
 page "$here/host.html" "$here/out/host.html" "$here/out/host.wasm"
 wasm -O2 "$here/out/legacy.wasm" "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/cdom_job.c" "$here/../src/cdom_image_sjlj.c" -DCDOM_IMAGE_SJLJ_JS "$here/../src/mini.c"
 node "$legacy" app "$here/out/legacy.wasm" "$here/out/legacy.wasm.js"
+node "$legacy" app-ie9 "$here/out/legacy.wasm" "$here/out/legacy.wasm.ie9.js"
 # The page starts the pair [legacy.wasm, legacy.simd.wasm], as an APP_SIMD page does: the twin is the same sources with
 # -msimd128, the same string table (as cdom.mk requires), and the fallback takes the scalar one's wasm2js build.
 wasm -O2 "$here/out/legacy.simd.wasm" -msimd128 "$here/legacy.c" "$here/../src/cdom.c" "$here/../src/cdom_file.c" "$here/../src/cdom_job.c" "$here/../src/cdom_image_sjlj.c" -DCDOM_IMAGE_SJLJ_JS "$here/../src/mini.c"
 cmp "$here/out/legacy.wasm.lits" "$here/out/legacy.simd.wasm.lits"
 page "$here/legacy.html" "$here/out/legacy.shim.html" "$here/out/legacy.wasm"
 node "$legacy" page "$here/out/legacy.shim.html" "$here/out/legacy.html"
+# Every memory access form as wasm, as wasm2js output and through the words pass, for tools/words.mjs to run side
+# by side: no cdom in it, so no string table either (no cdlits).
+"$CC" -O2 "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -o "$here/out/memforms.wasm" "$here/memforms.c"
+node "$legacy" app "$here/out/memforms.wasm" "$here/out/memforms.wasm.js"
+node "$legacy" app-ie9 "$here/out/memforms.wasm" "$here/out/memforms.wasm.ie9.js"
 # cd_job (tools/job.mjs): the app, and the synthetic job module built as cdom.mk builds one (APP_JOBS): cdom's heap alone
 # (-DCDOM_HEAP_ONLY), mini.c, cdom_job_mod.c, no string table. The cap build has the heap at 100 pages (6.4 MB), for NO_ROOM.
 jobwasm() { # jobwasm <opt> <out.wasm> <sources and extra flags...>
