@@ -35,6 +35,7 @@ ok(/ES5 names/.test(refusal('dom-old', 'Object.defineProperty(o, "a", {});')), '
 ok(refusal('polyfills', 'Object.defineProperty(o, "a", {});') === '', 'polyfills.js may try defineProperty');
 ok(refusal('shim', '[1].forEach(f); [1].indexOf(1); f.bind(o); Object.keys(o); Date.now();') === '', 'the supplied ES5 names pass');
 ok(/ES5 names/.test(refusal('shim', 'var j = JSON.stringify(o);')), 'JSON is refused (IE 6 and 7 have none)');
+ok(/__proto__/.test(refusal('shim', 'f.__proto__ = g;')), '__proto__ is refused (Firefox 1.0 crashes on a function whose __proto__ was set)');
 
 // The old DOM's table: each W3C call rewritten to its dom-old.js helper, and any left over found.
 const out = transformSync('x.style.setProperty(a, b); y.textContent = ""; v = z.previousElementSibling; addEventListener("t", f);' +

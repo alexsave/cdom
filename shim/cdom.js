@@ -633,7 +633,7 @@ var cdom = (() => {
     canvas.height = fullHeight;
     const context = canvas.getContext("2d");
     context.putImageData(pixels(pixelsPtr, width, height, channels, context), x, y);
-    canvas.toBlob(async (blob) => deliver(exports.cd_encoded, token, await blob.arrayBuffer()), str(mime), quality / 100);
+    canvas.toBlob((blob) => blob.arrayBuffer().then((data) => deliver(exports.cd_encoded, token, data)), str(mime), quality / 100);
   }
   // An image file's bytes in C memory as a url(blob:) on a style property, set once the image has
   // decoded (so no frame paints the property with nothing behind it), then answered with
@@ -1345,23 +1345,21 @@ var cdom = (() => {
     return database;
   }
   // One read on the store in a transaction of its own; a promise of its result.
-  async function storeRequest(makeRequest) {
-    const db = await openDatabase();
-    return promised(makeRequest(db.transaction("kv", "readonly").objectStore("kv")));
+  function storeRequest(makeRequest) {
+    return openDatabase().then((db) => promised(makeRequest(db.transaction("kv", "readonly").objectStore("kv"))));
   }
   // One write in a transaction of its own; a promise that resolves when the transaction commits (its
   // complete event) and rejects when it aborts. The request's success is not the write
   // kept: the transaction can still abort after it, and a reload before complete loses the write.
-  async function storeWrite(makeRequest) {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
+  function storeWrite(makeRequest) {
+    return openDatabase().then((db) => new Promise((resolve, reject) => {
       const transaction = db.transaction("kv", "readwrite");
       transaction.oncomplete = () => resolve();
       // A request that fails fires error, which bubbles to the transaction and aborts it, so abort
       // is the one failure event (abort() and a forced close fire it too).
       transaction.onabort = () => reject(transaction.error);
       makeRequest(transaction.objectStore("kv"));
-    });
+    }));
   }
   // Keeps a copy of the bytes under the key, then answers with token: 1 kept (committed), 0
   // failed. The key and the bytes are read now: C's memory may hold something else once the
@@ -1836,7 +1834,15 @@ var cdom = (() => {
   // wasm loads while the parser and the stylesheets run, and the app starts once the DOM is ready.
   // options.openStore: an app that reads its store as it starts opens it now, while the wasm is
   // fetched and compiled, so its first get finds the database open. options.seed: cd_seed (seed()).
-  async function start(url, mount, env, options) {
+  // Promises, not async functions: compiled for the old tiers, an async function brings Babel's generator runtime,
+  // which sets a function's __proto__ where there is no Object.setPrototypeOf, and that crashes Firefox 1.0.
+  // A throw anywhere rejects the promise, as an async function's would.
+  function start(url, mount, env, options) {
+    return new Promise((resolve) => {
+      resolve(starting(url, mount, env, options));
+    });
+  }
+  function starting(url, mount, env, options) {
     // The page's string table, written before the shim by the build (tools/cdpage).
     const table = globalThis.cdomLits;
     if (!table) {
@@ -1868,26 +1874,34 @@ var cdom = (() => {
     if (Array.isArray(url)) {
       url = url[+WebAssembly.validate(simdProbe())];
     }
-    let instance;
+    return instantiate(url, imports).then((instance) => parsed(mount).then((element) => begin(instance, element, table, options)));
+  }
+  // A promise of the module's instance: the wasm2js build called with the imports, or the wasm fetched and compiled.
+  function instantiate(url, imports) {
     if (typeof url === "function") {
       copiedOnGrow = true;
-      instance = { exports: url(imports) };
-    } else {
-      const response = fetch(url);
-      if (WebAssembly.instantiateStreaming) {
-        instance = (await WebAssembly.instantiateStreaming(response, imports)).instance;
-      } else {
-        instance = (await WebAssembly.instantiate(await (await response).arrayBuffer(), imports)).instance;
-      }
+      return Promise.resolve({ exports: url(imports) });
     }
-    if (typeof mount === "string") {
-      // IE 6 to 8 say interactive before the parser has reached the end, so a mount not parsed yet is waited for
-      // too, until the page is complete.
-      if (doc.readyState === "loading" || (doc.readyState !== "complete" && !doc.getElementById(mount))) {
-        await new Promise((resolve) => doc.addEventListener("DOMContentLoaded", resolve, { once: true }));
-      }
-      mount = doc.getElementById(mount);
+    const response = fetch(url);
+    if (WebAssembly.instantiateStreaming) {
+      return WebAssembly.instantiateStreaming(response, imports).then((result) => result.instance);
     }
+    return response.then((got) => got.arrayBuffer()).then((wasm) => WebAssembly.instantiate(wasm, imports)).then((result) => result.instance);
+  }
+  // A promise of the mount: the element given, or the one of that id once the parser has made it. IE 6 to 8 say
+  // interactive before the parser has reached the end, so a mount not parsed yet is waited for too, until the page is
+  // complete.
+  function parsed(mount) {
+    if (typeof mount !== "string") {
+      return Promise.resolve(mount);
+    }
+    if (doc.readyState === "loading" || (doc.readyState !== "complete" && !doc.getElementById(mount))) {
+      return new Promise((resolve) => doc.addEventListener("DOMContentLoaded", resolve, { once: true })).then(() => doc.getElementById(mount));
+    }
+    return Promise.resolve(doc.getElementById(mount));
+  }
+  // The app's start, once its module and its mount are there: the exports, wrapped.
+  function begin(instance, mount, table, options) {
     nodes[0] = mount;
     nodes[WINDOW] = window;
     nodes[DOCUMENT] = doc;
