@@ -161,12 +161,13 @@ static uint32_t orient_walk(cd_image_walk *w, const uint8_t *p, uint32_t n, uint
       if (!w->exif) {
         w->exif = cd_alloc_try((uint32_t)len);
         if (!w->exif) return CD_IMAGE_NO_ROOM;
-        w->exif_n = 0;
+        memcpy(w->exif, w->og + 4, 6);             /* "Exif\0\0", read already (perhaps in a piece before) */
+        w->exif_n = 6;
       }
       while (w->exif_n < len && from + w->exif_n < end) {
         uint64_t at = from + w->exif_n, k = end - at;
         if (k > len - w->exif_n) k = len - w->exif_n;
-        memcpy(w->exif + w->exif_n, p + (at - base), (size_t)k);   /* at >= base: the walk takes the bytes in order */
+        memcpy(w->exif + w->exif_n, p + (at - base), (size_t)k);   /* at >= base: the bytes before were read */
         w->exif_n += (uint32_t)k;
       }
       if (w->exif_n < len) return CD_IMAGE_MORE;

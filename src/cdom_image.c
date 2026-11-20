@@ -91,6 +91,8 @@ void cd_image_take(cd_image_dec *d, uint8_t **rgba, uint32_t *w, uint32_t *h) {
   d->rgba = 0;
 }
 
+uint32_t cd_image_dec_warnings(const cd_image_dec *d) { return d->warnings; }
+
 void cd_image_end(cd_image_dec *d) {
   if (!d) return;
   dec_free(d);
@@ -101,6 +103,10 @@ void cd_image_end(cd_image_dec *d) {
  * and the steps that take no bytes run here. */
 uint32_t cd_image_resize(const uint8_t *p, uint32_t len, uint32_t max_w, uint32_t max_h, uint8_t **rgba,
                          uint32_t *w, uint32_t *h) {
+  return cd_image_decode(p, len, max_w, max_h, rgba, w, h, 0);
+}
+uint32_t cd_image_decode(const uint8_t *p, uint32_t len, uint32_t max_w, uint32_t max_h, uint8_t **rgba, uint32_t *w,
+                         uint32_t *h, uint32_t *warnings) {
   *rgba = 0; *w = 0; *h = 0;
   if (bad_box(max_w, max_h)) return CD_IMAGE_BAD_BOX;
   cd_image_dec d;
@@ -110,6 +116,7 @@ uint32_t cd_image_resize(const uint8_t *p, uint32_t len, uint32_t max_w, uint32_
   while (st == CD_IMAGE_MORE && d.step) { d.step = 0; st = feed(&d, 0, 0); }
   if (st == CD_IMAGE_MORE) st = CD_IMAGE_CORRUPT;      /* not reached: with every byte in, only steps answer MORE */
   if (st == CD_IMAGE_OK) cd_image_take(&d, rgba, w, h);
+  if (warnings) *warnings = d.warnings;
   dec_free(&d);
   return st;
 }
