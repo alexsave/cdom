@@ -16,9 +16,9 @@
 #   CDOM_SRC      the core sources every app links (cdom.c, and mini.c, the program's libc)
 #   CDOM_NET_SRC, CDOM_STORE_SRC, CDOM_RANDOM_SRC, CDOM_AUDIO_SRC, CDOM_URL_SRC, CDOM_LOCALE_SRC,
 #   CDOM_SHARE_SRC, CDOM_FONTS_SRC, CDOM_UI_SRC, CDOM_FILE_SRC, CDOM_JOB_SRC
-#   CDOM_IMAGE_PARTS (own inflate vendor sjlj) and their _SRC and _CFLAGS: the image module
-#                 (src/cdom_image.h), which is parts only: cdom's files, its inflate, libjpeg-turbo, and the
-#                 setjmp file
+#   CDOM_IMAGE_PARTS (own inflate vendor sjlj file) and their _SRC and _CFLAGS: the image module
+#                 (src/cdom_image.h), which is parts only: cdom's files, its inflate, libjpeg-turbo, the
+#                 setjmp file, and (with the file module too) the glue to a picked file
 #   CDOM_IMAGE_SJLJ  how the image module leaves a fatal libjpeg error (src/cdom_image_sjlj.c): js (the default,
 #                 a try and catch in the shim; plain wasm, every browser cdom runs in, and wasm2js) or eh (wasm
 #                 exception handling: Chrome 95, Firefox 100, Safari 15.2, and no wasm2js)
@@ -166,15 +166,17 @@ CDOM_UI_SRC     := $(CDOM)/src/cdom_ui.c
 CDOM_FILE_SRC   := $(CDOM)/src/cdom_file.c
 CDOM_JOB_SRC    := $(CDOM)/src/cdom_job.c
 CDOM_JOB_MOD_SRC := $(CDOM)/src/cdom_job_mod.c
-# The image module: four parts, so libjpeg-turbo (third_party/, with its README) builds with -w and its own -I,
+# The image module: five parts, so libjpeg-turbo (third_party/, with its README) builds with -w and its own -I,
 # cdom's own files with the app's flags and only libjpeg's headers' directory (as -isystem), the PNG path's
 # inflate (cdom's own) with the app's flags and CDOM_IMAGE_INFLATE_CFLAGS (empty; a SIMD build adds -msimd128,
-# which gives its adler32 and match copies wasm SIMD), and the one file that calls setjmp
-# with the flags of the CDOM_IMAGE_SJLJ way.
+# which gives its adler32 and match copies wasm SIMD), the one file that calls setjmp
+# with the flags of the CDOM_IMAGE_SJLJ way, and the glue to a picked file (src/cdom_image_file.c, cd_image_file_cb),
+# which has files only when APP_MODULES has file too.
 CDOM_IMAGE_SJLJ ?= js
 CDOM_IMAGE_LJT  := $(CDOM)/third_party/libjpeg-turbo-3.2.1/src
 CDOM_IMAGE_SRC  :=
-CDOM_IMAGE_PARTS := own inflate vendor sjlj
+CDOM_IMAGE_PARTS := own inflate vendor sjlj file
+CDOM_IMAGE_FILE_SRC = $(if $(filter file,$(APP_MODULES)),$(CDOM)/src/cdom_image_file.c)
 CDOM_IMAGE_OWN_SRC := $(CDOM)/src/cdom_image.c $(CDOM)/src/cdom_image_jpeg.c $(CDOM)/src/cdom_image_png.c $(CDOM)/src/cdom_image_loops.c
 CDOM_IMAGE_OWN_CFLAGS := -isystem $(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV
 # CDOM_IMAGE_SIMD: 0 (the default) is scalar; 1 builds the hot loops with wasm SIMD (-msimd128, src/cdom_image_loops.c and
