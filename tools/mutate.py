@@ -4,12 +4,19 @@ fail for that reason (its message is matched), and the source is restored after 
 on an error. Mutants run in parallel, each worker in a private copy of the tracked tree (so the real
 tree is never mutated, and an interrupted run leaves nothing behind); the test drivers serve on free
 ports and Chrome takes a free debugging port, so the workers never collide.
+A mutant whose text to mutate is not in its file exactly once stops the run before any mutant runs.
+A test killed at TEST_TIMEOUT is not a catch, unless the mutant's entry ends in HANGS: the hang is then its
+expected symptom (a C loop that never ends), and the timeout or its failure message both count.
 Usage: python3 tools/mutate.py [-j N] [name ...]   (N workers, default half the cores)"""
 import subprocess, sys, pathlib, os, shutil, tempfile, threading, queue, signal
 
 top = pathlib.Path(__file__).resolve().parent.parent
-TEST_TIMEOUT = 150 # s: unit.mjs takes about 10 on a passing tree and waits at most 60 for a broken page
+# s: the test command alone (not the build). unit.mjs takes about 10 on a passing tree and waits at most 60 for a
+# broken page; tests/link/run.sh and the wasm image suites take minutes on a loaded machine, and a test cut off
+# there was never really run, so a timeout is a miss unless the entry says HANGS.
+TEST_TIMEOUT = 600
 HUNG = -999
+HANGS = 'hangs' # an entry's optional seventh field: the mutant makes the test hang, and that is the catch
 UNIT = ['node', 'tools/unit.mjs']
 FUZZ = ['node', 'tools/fuzz.mjs']
 LINK = ['tests/link/run.sh']
@@ -449,11 +456,11 @@ M = [
   ('page-two-taken', 'tools/cdpage.c', '      if (++marks > 1) die(', '      if (++marks > 2) die(', LINK, 'FAIL cdom_page (first) refused the two page for another reason'),
   ('page-none-taken', 'tools/cdpage.c', '  if (marks != 1)\n', '  if (marks > 1)\n', LINK, 'FAIL cdom_page (first) took the none page'),
   ('page-partial-kept', 'tools/cdpage.c', '  if (marks != 1)\n', '  if (marks != 1 && fopen(a->out, "w"))\n', LINK, 'FAIL cdom_page (first) refused the none page but left a file'),
-  ('mk-wasm-no-libc', 'cdom.mk', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -I$(CDOM)/src', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
+  ('mk-wasm-no-libc', 'cdom.mk', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -isystem $(CDOM)/src/libc -I$(CDOM)/src', 'CDOM_CFLAGS := --target=wasm32 -std=c23 -nostdlib -mbulk-memory -I$(CDOM)/src', LINK, "fatal error: 'stdlib.h' file not found"),  # tests/build.sh takes cdom.mk's flags (tools/cdomflags.sh): its first module stops at cdom.c's include
   # cdlits, which the rule runs on the linked module, refuses a module with no cdom in it before run.sh can look at its exports
   ('mk-wasm-no-cdom', 'cdom.mk', 'cdom_mk_app_src = $(APP_SRC) $(CDOM_SRC)', 'cdom_mk_app_src = $(APP_SRC)', LINK, "cdlits: not a cdom module"),
   ('mk-modules-dropped', 'cdom.mk', ' $(foreach m,$(APP_MODULES),$(CDOM_$(call cdom_mk_up,$(m))_SRC))', '', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
-  ('mk-modules-unchecked', 'cdom.mk', 'cdom_mk_known = $(if $(cdom_mk_unknown),', 'cdom_mk_known = $(if ,', LINK, 'FAIL cdom.mk (first) refused APP_MODULES for another reason'),  # make still stops, at the missing file, without saying why
+  ('mk-modules-unchecked', 'cdom.mk', 'cdom_mk_known = $(if $(cdom_mk_unknown),', 'cdom_mk_known = $(if ,', LINK, 'FAIL cdom.mk (first) took APP_MODULES naming no module'),  # an unknown module has no sources, so make builds the app without it
   ('mk-goal-taken', 'cdom.mk', '\n.cdom-mk-sources:', '\ncdom-mk-sources:', LINK, 'FAIL cdom.mk (first) took the default goal'),
   ('mk-read-early', 'cdom.mk', 'cdom_mk_app_src = $(APP_SRC)', 'cdom_mk_app_src := $(APP_SRC)', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
   ('mk-target-early', 'cdom.mk', '%.wasm: $$(call cdom_mk_for,$$(APP_WASM) $$(cdom_mk_simd_wasm),', '$(APP_WASM): $$(call cdom_mk_for,$$(APP_WASM) $$(cdom_mk_simd_wasm),', LINK, "FAIL cdom.mk's APP_WASM rule (first) does not build an app"),
@@ -465,11 +472,11 @@ M = [
   ('mk-bundle-off', 'cdom.mk', 'cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))', 'cdom_mk_bundled =', LINK, 'FAIL APP_PAGE (first) bundled into a page that loads its module by URL'),
   ('mk-separate-ignored', 'cdom.mk', 'cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))', 'cdom_mk_bundled = $(APP_WASM)', LINK, 'FAIL cdom_page (first) refused a page whose marker is alone'),
   ('mk-b64-wrapped', 'tools/cdpage.c', '    bput(o, q, 4);\n  }\n  if (n - i == 1) {', "    bput(o, q, 4);\n    if ((i + 3) % 57 == 0) bbyte(o, '\\n');\n  }\n  if (n - i == 1) {", LINK, 'FAIL the default page (first), bundled, is not shim/page.html'),  # base64 in lines of 76, as GNU base64 writes it, not one line
-  ('mk-page-no-wasm-dep', 'cdom.mk', '$$(CDOM_PAGE_TOOL) $$(APP_WASM) $$(cdom_mk_simd_wasm))', '$$(CDOM_PAGE_TOOL) $$(cdom_mk_simd_wasm))', LINK, 'FAIL the default page (first), bundled, is up to date with a newer module'),
+  ('mk-page-no-wasm-dep', 'cdom.mk', '$$(CDOM_PAGE_TOOL) $$(APP_WASM) $$(cdom_mk_simd_wasm) $$(cdom_mk_job_files))', '$$(CDOM_PAGE_TOOL) $$(cdom_mk_simd_wasm) $$(cdom_mk_job_files))', LINK, 'FAIL the default page (first), bundled, is up to date with a newer module'),
   ('mk-no-default-page', 'cdom.mk', 'cdom_mk_page_src = $(or $(APP_PAGE_SRC),$(CDOM_PAGE))', 'cdom_mk_page_src = $(APP_PAGE_SRC)', LINK, 'FAIL the default page (first) does not build'),
   ('mk-title-full-name', 'cdom.mk', '$(or $(APP_TITLE),$(basename $(notdir $(APP_WASM))))', '$(or $(APP_TITLE),$(notdir $(APP_WASM)))', LINK, 'FAIL the default page (first), bundled, is not shim/page.html'),
   ('mk-wasm-intermediate', 'cdom.mk', '$$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src)', '$$(if $$(APP_WASM),$$(cdom_mk_app_src)', LINK, "FAIL the starter's page does not start its bundled module"),  # make deletes the module after the page
-  ('mk-toolchain-unchecked', 'cdom.mk', 'cdom_mk_toolchain = printf', 'cdom_mk_toolchain = true || printf', LINK, 'which cannot build wasm32, did not stop'),  # /usr/bin/clang on macOS, no-such-clang everywhere
+  ('mk-toolchain-unchecked', 'cdom.mk', 'cdom_mk_toolchain = printf', 'cdom_mk_toolchain = true || printf', LINK, 'no_wasm32_clang, which cannot build wasm32, did not stop'),  # tests/link/no_wasm32_clang, a compiler with no wasm32 target on every OS
   # the wasm-ld version check (tests/link/stub_clang.sh): LLD 18 and 22 refused with the version and the fix, LLD 23 builds
   ('mk-toolchain-no-rodata', 'cdom.mk', 'const char *f(void) { return __rodata_start; }', 'void f(void) {}', LINK, 'FAIL cdom.mk with wasm-ld 18.1.3, older than LLVM 23, did not stop at the toolchain check naming its version'),
   ('mk-toolchain-no-version', 'cdom.mk', 'links with $$("$$($(WASM_CC) --target=wasm32 -print-prog-name=wasm-ld)" --version 2> /dev/null | head -1), which', 'links with a wasm-ld which', LINK, 'FAIL cdom.mk with wasm-ld 18.1.3, older than LLVM 23, did not stop at the toolchain check naming its version'),
@@ -482,7 +489,7 @@ M = [
   ('page-url-unescaped', 'tools/cdpage.c', '    if (c == \'\\\\\' || c == \'"\') { bbyte(o, \'\\\\\'); bbyte(o, c); }', "    if (c == '\\\\') { bbyte(o, '\\\\'); bbyte(o, c); }", LINK, 'FAIL the default page (first), APP_WASM_SEPARATE: APP_WASM_URL'),
   ('page-title-unescaped', 'tools/cdpage.c', '    else if (*s == \'<\') bstr(o, "&lt;");\n', '', LINK, 'FAIL the default page (first), APP_WASM_SEPARATE: not shim/page.html'),
   # tools/cdpage standing alone (tests/page/run.sh): the page from its parts
-  ('cdpage-table-after-shim', 'tools/cdpage.c', '      put_lines(o, lits.p, lits.n);\n      bstr(o, "</script>\\n");\n      bput(o, script.p, script.n);\n      bbyte(o, \'\\n\');\n      if (!slurp(a->shim, &shim)) die("%s: cannot read the shim %s", page_name, a->shim);\n      put_lines(o, shim.p, shim.n);\n', '      if (!slurp(a->shim, &shim)) die("%s: cannot read the shim %s", page_name, a->shim);\n      put_lines(o, shim.p, shim.n);\n      put_lines(o, lits.p, lits.n);\n      bstr(o, "</script>\\n");\n      bput(o, script.p, script.n);\n      bbyte(o, \'\\n\');\n', PAGE, 'FAIL the default page, bundled (8-byte module), titled and escaped: the page is not its parts'),
+  ('cdpage-table-after-shim', 'tools/cdpage.c', '      put_lines(o, lits.p, lits.n);\n      if (a->njobs) {', '      if (!slurp(a->shim, &shim)) die("%s: cannot read the shim %s", page_name, a->shim);\n      put_lines(o, shim.p, shim.n);\n      put_lines(o, lits.p, lits.n);\n      if (a->njobs) {', PAGE, 'FAIL the default page, bundled (8-byte module), titled and escaped: the page is not its parts'),
   ('cdpage-no-final-newline', 'tools/cdpage.c', "  if (n && p[n - 1] != '\\n') bbyte(o, '\\n');\n", '', PAGE, 'FAIL the default page, bundled (8-byte module), titled and escaped: the page is not its parts'),
   ('cdpage-b64-unpadded', 'tools/cdpage.c', "    char q[4] = { A[v >> 18], A[v >> 12 & 63], '=', '=' };\n    bput(o, q, 4);", "    char q[4] = { A[v >> 18], A[v >> 12 & 63], '=', '=' };\n    bput(o, q, 2);", PAGE, 'FAIL the default page, bundled (10-byte module), titled and escaped: the page is not its parts'),
   # tools/cdpage, the stylesheets (tests/page/run.sh): discovery and its order, the list file, the </style escape,
@@ -517,12 +524,12 @@ M = [
   ('css-bom-kept', 'tools/cdpage.c', '    if (n >= 3 && p[0] == 0xef && p[1] == 0xbb && p[2] == 0xbf) p += 3, n -= 3;\n', '', PAGE, 'FAIL the edges:'),
   ('css-no-last-newline', 'tools/cdpage.c', "    if (o->n > at && o->p[o->n - 1] != '\\n') bbyte(o, '\\n');\n", "    if (0 && o->n > at && o->p[o->n - 1] != '\\n') bbyte(o, '\\n');\n", PAGE, 'FAIL the edges:'),
   ('css-comments-kept', 'tools/cdpage.c', "        if (from != SIZE_MAX && (j == n || p[j] == '\\n')) {", "        if (0 && from != SIZE_MAX && (j == n || p[j] == '\\n')) {", PAGE, 'FAIL comments:'),
-  ('css-inline-comments-dropped', 'tools/cdpage.c', '        from = blank ? line_at : SIZE_MAX;', '        from = line_at;', PAGE, 'FAIL comments:'),  # a comment beside a rule goes with its line, and the rule with it
+  ('css-inline-comments-dropped', 'tools/cdpage.c', '        from = blank ? line_at : SIZE_MAX;', '        from = blank >= 0 ? line_at : SIZE_MAX;', PAGE, 'FAIL comments:'),  # a comment beside a rule goes with its line, and the rule with it
   # cdom.mk and the stylesheets (tests/link/run.sh, the fixture apps of tests/link/apps, and tests/link/css.mjs in Chrome):
   # discovery through make, rebuilding on a stylesheet change only, the first build, an own page, the cascade
-  ('mk-css-dir-dropped', 'cdom.mk', ')--css-dir src\n', ')\n', LINK, 'FAIL discovery: the css app'),
-  ('mk-css-walk-app-dir', 'cdom.mk', ')--css-dir src\n', ')--css-dir .\n', LINK, 'FAIL an own page that links static/app.css does not build'),
-  ('mk-csslist-not-prereq', 'cdom.mk', '$$(APP_WASM) $$(cdom_mk_simd_wasm)) $$(cdom_mk_csslist)', '$$(APP_WASM) $$(cdom_mk_simd_wasm))', LINK, 'FAIL rebuilding: a.css edited, and make -q says'),
+  ('mk-css-dir-dropped', 'cdom.mk', ')--css-dir src $(9)\n', ') $(9)\n', LINK, 'FAIL discovery: the css app'),
+  ('mk-css-walk-app-dir', 'cdom.mk', ')--css-dir src $(9)\n', ')--css-dir . $(9)\n', LINK, 'FAIL an own page that links static/app.css does not build'),
+  ('mk-csslist-not-prereq', 'cdom.mk', '$$(cdom_mk_simd_wasm) $$(cdom_mk_job_files)) $$(cdom_mk_csslist)', '$$(cdom_mk_simd_wasm) $$(cdom_mk_job_files))', LINK, 'FAIL rebuilding: a.css edited, and make -q says'),
   ('mk-css-files-prereq', 'cdom.mk', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) ] && [ -d $(call cdom_mk_q,$(@D)) ] \\\n  && $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) --css-list src $(call cdom_mk_q,$@.csslist))$@.csslist)', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(wildcard src/*.css src/*/*.css src/*/*/*.css))', LINK, 'FAIL rebuilding: a/new.css'),
   ('mk-csslist-no-shell', 'cdom.mk', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) ] && [ -d $(call cdom_mk_q,$(@D)) ] \\\n  && $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) --css-list src $(call cdom_mk_q,$@.csslist))$@.csslist)', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$@.csslist)', LINK, 'FAIL rebuilding: a.css edited, and make -q says'),
   ('mk-csslist-not-in-recipe', 'cdom.mk', '\t$(CDOM_PAGE_TOOL) --css-list src $(call cdom_mk_q,$@.csslist)\n', '', LINK, 'a second make is not up to date'),
@@ -550,7 +557,7 @@ M = [
   ('region-no-cleanup', 'src/cdom.c', '    c.fn(c.ctx);\n', '    (void)c;\n', UNIT, 'FAIL nested regions: taking'),
   ('region-cleanups-after-free', 'src/cdom.c', '  while (r->nfns) {\n    cd_cleanup c = r->fns[--r->nfns];\n    releasing++;\n    c.fn(c.ctx);\n    releasing--;\n  }\n  uint32_t i = 0;\n  if (dom && r->parent) cd_clear(r->parent);\n  else if (dom) { cd_remove(r->root); i = 1; } /* the root is ids[0] */\n  for (; i < r->n; i++) cd_id_free(r->ids[i]);\n', '  uint32_t i = 0;\n  if (dom && r->parent) cd_clear(r->parent);\n  else if (dom) { cd_remove(r->root); i = 1; } /* the root is ids[0] */\n  for (; i < r->n; i++) cd_id_free(r->ids[i]);\n  while (r->nfns) {\n    cd_cleanup c = r->fns[--r->nfns];\n    releasing++;\n    c.fn(c.ctx);\n    releasing--;\n  }\n', UNIT, 'FAIL nested regions: taking'),
   ('region-kid-dom', 'src/cdom.c', '    take(k, 0);\n', '    take(k, 1);\n', UNIT, 'FAIL nested regions: taking'),
-  ('region-no-unlink', 'src/cdom.c', '    region_unlink(r);\n    take(r, 1);', '    take(r, 1);', UNIT, 'FAIL nested regions: a child hidden alone'),
+  ('region-no-unlink', 'src/cdom.c', '    region_unlink(r);\n    take(r, 1);', '    take(r, 1);', UNIT, 'FAIL nested regions: a child hidden alone', HANGS),  # shown again, the child is pushed on its parent's list a second time (r->next == r), and the walk of that list never ends
   ('region-up-ignored', 'src/cdom.c', '  if (r->up) {\n    if (!r->up->shown)', '  if (in) {\n    if (!r->up->shown)', UNIT, 'FAIL t_region_handoff'),
   ('region-forget-dom', 'src/cdom.c', '  region_unlink(r);\n  take(r, 0);\n}', '  region_unlink(r);\n  take(r, 1);\n}', UNIT, 'FAIL cd_region_forget'),
   ('region-cleanup-dom-ok', 'src/cdom.c', '  if (releasing) __builtin_trap(); /* a cleanup changed the DOM */\n', '', UNIT, 'FAIL traps: '),
@@ -683,7 +690,7 @@ M = [
   ('stdio-file-complete', 'src/libc/stdio.h', 'typedef struct cd_no_file FILE;', 'typedef struct cd_no_file { int fd; } FILE;', LINK, 'FAIL stdio.h (cdom flags): a FILE could be declared'),
   ('stdio-no-file', 'src/libc/stdio.h', 'typedef struct cd_no_file FILE;', '', LINK, 'FAIL stdlib.h (cdom flags): a file that uses'),
   ('part-flags-dropped', 'cdom.mk', '$(APP_CFLAGS) $(call cdom_mk_obj_flags,$@) -c', '$(APP_CFLAGS) -c', LINK, 'FAIL cdom.mk (first): a module with a part does not build'),
-  ('part-flags-leak', 'cdom.mk', '$(cdom_mk_mod_ldflags) $(APP_LDFLAGS) -o $@.linked', '$(cdom_mk_mod_ldflags) $(foreach o,$(cdom_mk_objs),$(call cdom_mk_obj_flags,$(o))) $(APP_LDFLAGS) -o $@.linked', LINK, 'FAIL cdom.mk (first): an app file sees'),
+  ('part-flags-leak', 'cdom.mk', '$(cdom_mk_mod_ldflags) $(APP_LDFLAGS) -o $@.linked', '$(cdom_mk_mod_ldflags) $(foreach o,$(call cdom_mk_objs,$@),$(call cdom_mk_obj_flags,$(o))) $(APP_LDFLAGS) -o $@.linked', LINK, 'FAIL cdom.mk (first): an app file sees'),
   ('module-one-file', 'cdom.mk', '$(foreach m,$(APP_MODULES),$(CDOM_$(call cdom_mk_up,$(m))_SRC))', '$(foreach m,$(APP_MODULES),$(firstword $(CDOM_$(call cdom_mk_up,$(m))_SRC)))', LINK, 'FAIL cdom.mk (first): the module'),
   ('module-ldflags-dropped', 'cdom.mk', '$(CDOM_LDFLAGS) $(cdom_mk_mod_ldflags) $(APP_LDFLAGS)', '$(CDOM_LDFLAGS) $(APP_LDFLAGS)', LINK, 'FAIL cdom.mk (first): the module'),
   ('part-dup-unchecked', 'cdom.mk', 'not a cdom module ($(CDOM_MODULES))))$(cdom_mk_unique)', 'not a cdom module ($(CDOM_MODULES))))', LINK, 'doubled part'),
@@ -882,7 +889,7 @@ M = [
   ('png-sink-run-scaled-once', 'src/cdom_image_png.c', '    for (uint32_t j = 0; j < k; j++, cur += row) {', '    for (uint32_t j = 0; j < 1; j++, cur += row) {', IMGW, 'FAIL wasm_js_simd: png-paeth-runs-rgb'),  # only a run's first row reaches the scaler
   ('simd-emit-alpha', 'src/cdom_image.c', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 255;', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 254;', IMGW, 'FAIL wasm_js_simd: '),  # the SIMD build's emit writes the wrong alpha
   ('sjlj-sp-kept-low', 'src/cdom_image_sjlj.c', '  sp_set(sp);', '  sp_set(sp_get() + 0 * sp);', UNIT, "FAIL the image module's guard"),
-  ('sjlj-eh-val-zero', 'src/cdom_image_sjlj_eh.c', 'jb->arg.val = val ? val : 1;', 'jb->arg.val = 0 * val;', IMGW, 'wasm_eh: jpeg-dqt-bad'),
+  ('sjlj-eh-val-zero', 'src/cdom_image_sjlj_eh.c', 'jb->arg.val = val ? val : 1;', 'jb->arg.val = 0 * val;', IMGW, 'wasm_eh: jpeg-dqt-bad', HANGS),  # setjmp answers 0, the first pass, so the decode starts again, meets the same error and jumps again, for good
   ('shim-image-swallows', 'shim/cdom.js', '      if (e !== IMAGE_THROW) throw e;\n', '', UNIT, 'a trap inside the body'),
   ('shim-image-answers-0', 'shim/cdom.js', '      if (e !== IMAGE_THROW) throw e;\n      return 1;', '      if (e !== IMAGE_THROW) throw e;\n      return 0;', UNIT, "FAIL the image module's guard"),
   ('shim-image-throws-error', 'shim/cdom.js', '    throw IMAGE_THROW;', '    throw new Error("image");', UNIT, "FAIL the image module's guard"),
@@ -927,7 +934,7 @@ M = [
   ('job-rule-no-heap-only', 'cdom.mk', '$(CDOM_CFLAGS) -DCDOM_HEAP_ONLY $(APP_JOB_CFLAGS)', '$(CDOM_CFLAGS) $(APP_JOB_CFLAGS)', LINK, 'FAIL cdom.mk\'s job rule does not build a job module'),
   ('job-rule-any-name', 'cdom.mk', '$$(call cdom_mk_for,$$(cdom_mk_job_files),$$@,$$(cdom_mk_job_src) $$(CDOM_HEADERS))', '$$(cdom_mk_job_src) $$(CDOM_HEADERS)', LINK, 'FAIL cdom.mk built a .job.wasm that APP_JOBS does not name'),
   ('job-page-always-bundled', 'cdom.mk', 'cdom_mk_job_args = $(if $(APP_WASM_SEPARATE),,$(foreach', 'cdom_mk_job_args = $(if x,$(foreach', LINK, 'FAIL a page with APP_WASM_SEPARATE carries the job module'),
-  ('job-page-no-jobs', 'cdom.mk', ',$(APP_WASM).lits,$(cdom_mk_job_args))', ',$(APP_WASM).lits)', LINK, 'FAIL a bundled page does not carry its job module'),
+  ('job-page-no-jobs', 'cdom.mk', ',$(cdom_mk_simd_url),$(cdom_mk_job_args))', ',$(cdom_mk_simd_url))', LINK, 'FAIL a bundled page does not carry its job module'),
   ('job-page-name', 'tools/cdpage.c', 'bstr(o, "var cdomJobs={");', 'bstr(o, "var cdomJob={");', PAGE, 'FAIL two job modules bundled'),
   ('job-page-no-comma', 'tools/cdpage.c', '          if (j) bbyte(o, \',\');\n', '', PAGE, 'FAIL two job modules bundled'),
   ('job-page-name-raw', 'tools/cdpage.c', '          js_string(o, name);\n', '          bbyte(o, \'"\');\n          bstr(o, name);\n          bbyte(o, \'"\');\n', PAGE, 'FAIL two job modules bundled'),
@@ -945,7 +952,8 @@ def build_and_run(root, cmd, minify=False):
   if b.returncode: return 1, 'BUILD FAILED ' + b.stderr[-400:]
   # A mutant can make C loop forever (a cycle in a list it walks): the page then never answers, and
   # the run would wait on it for good. The test runs in a process group of its own (Chrome with it),
-  # killed whole past TEST_TIMEOUT; a hang is a broken module, so it counts as caught (HUNG).
+  # killed whole past TEST_TIMEOUT. That counts as caught only for an entry marked HANGS (the worker decides):
+  # for any other a timeout is a test that never finished, so it says nothing about the mutant.
   t = subprocess.Popen(cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
   try:
     out, _ = t.communicate(timeout=TEST_TIMEOUT)
@@ -991,6 +999,10 @@ only = set(args)
 unknown = sorted(only - {m[0] for m in M})
 if unknown: sys.exit('mutate.py: no mutant named ' + ', '.join(unknown)) # else a mistyped list runs nothing and passes
 todo = [m for m in M if not only or m[0] in only]
+# A mutant whose text is gone (the file moved on) would test nothing: stop before running any.
+dead = [f'{m[0]}: the text to mutate is in {m[1]} {(top / m[1]).read_text().count(m[2])} times, not once' for m in todo
+        if (top / m[1]).read_text().count(m[2]) != 1]
+if dead: sys.exit('mutate.py: FAIL dead mutants\n  ' + '\n  '.join(dead))
 results = {}
 lock = threading.Lock()
 work = queue.Queue()
@@ -1002,12 +1014,13 @@ def worker(w):
   root = base / f'w{w}'
   copy_tree(root)
   while True:
-    try: k, (name, f, old, new, cmd, want) = work.get_nowait()
+    try: k, (name, f, old, new, cmd, want, *opts) = work.get_nowait()
     except queue.Empty: return
+    hangs = HANGS in opts
     p = root / f
     src = p.read_text()
     if src.count(old) != 1:
-      line, ok = f'SKIP {name}: the text to mutate is not in {f} once', False
+      line, ok = f'FAIL {name}: the text to mutate is not in {f} once', False
     else:
       try:
         p.write_text(src.replace(old, new))
@@ -1015,14 +1028,15 @@ def worker(w):
       finally:
         p.write_text(src)
         touched = restore_tree(root)
-      ok = code == HUNG or (code != 0 and want in out)
-      why = '' if ok else f' (exit {code}; ' + ('the FAIL text is there' if want in out else 'no ' + repr(want)) + ')'
+      ok = hangs if code == HUNG else code != 0 and want in out
+      why = '' if ok else f' (timed out after {TEST_TIMEOUT} s, and the entry is not marked HANGS)' if code == HUNG \
+        else f' (exit {code}; ' + ('the FAIL text is there' if want in out else 'no ' + repr(want)) + ')'
       if not ok: # the whole output, kept past the run, since the tail shown here may not hold the cause
         (missed_dir / f'{name}.log').write_text(out)
         why += f' full output: {missed_dir / (name + ".log")}'
       if touched: # a mutant whose test rewrote tracked files: they are back, so the next mutant runs on the real tree
         why += ' (its test changed ' + ', '.join(touched) + '; restored)'
-      line = ('caught (HUNG, killed) ' if code == HUNG else 'caught ' if ok else 'MISSED ') + name + why + ('' if ok else '\n  ' + out[-600:].replace('\n', '\n  '))
+      line = ('caught (HUNG, killed) ' if code == HUNG and ok else 'caught ' if ok else 'MISSED ') + name + why + ('' if ok else '\n  ' + out[-600:].replace('\n', '\n  '))
     with lock:
       results[k] = ok
       print(line, flush=True)
