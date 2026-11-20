@@ -156,4 +156,5 @@ What the VM should look for, unmeasured by docs/descent.md: string escapes `\x00
 - tools/js11.mjs: the member of a new expression and isNaN, planted.
 - `WORDS=words1 node tools/words.mjs`: words1.js against typed arrays, and memforms through the transform.
 - `LEGACY=frames node tools/frames.mjs`: the frames tier on the transformed file, with the trap section rewritten for the flag (a trap ends the call without a throw, what C did before it is drawn, it is noted once, a trap five calls deep stops every caller, the next click works), and frames-ns.html; `FRAMES_APP=ie9` runs the same on the IE 9 build, with the old trap section.
-- tools/mutate.py: the mutants named `js1-`, `js10-`, `words1-`, `js11-new-member-allowed` and `js11-isnan-allowed`.
+- tools/mutate.py: the mutants named `js1-`, `js10-`, `words1-`, `js11-new-member-allowed` and `js11-isnan-allowed`, 24, each caught by its own assertion.
+  The frames tier's 33 earlier mutants (frames-, js11-, js10-) were run again on the transformed file: 32 caught as they were, and frames-recover-off, whose path only a call that never comes back takes, now runs under FRAMES_APP=ie9 (as CI does too) and is caught there.
