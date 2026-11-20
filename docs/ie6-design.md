@@ -60,7 +60,8 @@ Each helper uses the W3C call when the object has it, and the old one otherwise,
 The event object handed to the shim has what post() and the drop read: target (srcElement), clientX and clientY, button (IE's 1, 4, 2 as 0, 1, 2), buttons, pointerId 1 for the pointer types, keyCode, the modifier keys, timeStamp, deltaY from wheelDelta, and preventDefault and stopPropagation as returnValue and cancelBubble.
 IE 6 to 8 do not bubble change, submit or input (IE has no input event).
 For those, the listener on the mount is made on each field when it gets focus (focusin bubbles in IE): change and submit as they are, input as propertychange on value.
-Events that do not bubble in any IE and are not focus or blur (scroll, load and error inside the mount, the media events) are not delivered on this tier; listeners on the window and the document are direct and are delivered.
+Events that do not bubble in IE and are not focus or blur (scroll, load and error inside the mount, the media events) are attached to the node itself on this tier: when C listens for one of them on a node, dom-old.js attaches a listener to that node that hands the event to the mount's listener, as if it had bubbled there (Alex's call, 2026-11-20).
+Listeners on the window and the document are direct already.
 
 ## 5. The boot loads scripts the old way
 
@@ -69,10 +70,22 @@ The boot's load() takes either, once.
 
 ## 6. What the tier does not do
 
-No canvas (cd_blit, cd_image_bytes and encode throw on a missing getContext), no SVG, no WebSocket, fetch, IndexedDB, audio, file reads (UNSUPPORTED, as on IE 9) or jobs (UNSUPPORTED).
+No canvas and no SVG, for now: an SVG is made of plain elements and draws nothing, and the canvas calls (cd_blit, cd_image_bytes, encode) do nothing and report once why, so the rest of the app runs (Alex's call, 2026-11-20).
+The follow-up Alex asked for is to draw them after all, through VML or as an image baked into the page; it is not part of this change.
+Also no WebSocket, fetch, IndexedDB, audio, file reads (UNSUPPORTED, as on IE 9) or jobs (UNSUPPORTED).
 No History API: cd_url_go answers 0.
 cd_seed is the IE 9 exception's weak seed.
 A long run of C in one task can raise IE's "a script on this page is causing Internet Explorer to run slowly" prompt, which counts 5,000,000 statements; nothing in cdom can raise that limit for a user.
+Alex's call (2026-11-20): measure first (P2), and only if the prompt shows, design a way for C to split long work across tasks.
+
+## 6a. Decisions
+
+Alex answered four questions on 2026-11-20:
+
+1. The tier is for IE 6, 7 and 8 alike, not IE 6 alone: IE 8 is no longer refused.
+2. Non-bubbling events inside the mount are attached to their node, not left out (section 4).
+3. The slow-script prompt: measure, then decide (section 6).
+4. SVG and canvas draw nothing for now; VML or a baked image later (section 6).
 
 ## 7. Tests
 
