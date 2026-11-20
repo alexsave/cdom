@@ -372,6 +372,9 @@ M = [
   ('on-event-strong', 'src/cdom.c', '__attribute__((weak)) void cd_on_event(const cd_event_rec *) { }\n', '', LINK, 'undefined symbol: cd_on_event'),
   # app helpers: cd_timer_stop and cd_timer_cb
   ('timer-stop-no-clear', 'shim/cdom.js', '    clearTimeout(handle);\n', '', UNIT, 'FAIL cd_timer_stop and cd_timer_cb'),
+  ('timer-zero-timeout', 'shim/cdom.js', '    if (!ms) {\n      const handle = 0x40000000', '    if (false) {\n      const handle = 0x40000000', UNIT, 'FAIL a 0 ms timer is the next task'),
+  ('timer-zero-stop-ignored', 'shim/cdom.js', '    if (soon[handle]) {\n      delete soon[handle];\n      return;\n    }\n', '', UNIT, 'FAIL a 0 ms timer is the next task'),
+  ('timer-zero-fires-stopped', 'shim/cdom.js', '        if (soon[handle]) {\n          delete soon[handle];\n          exports.cd_timer', '        if (true) {\n          delete soon[handle];\n          exports.cd_timer', UNIT, 'FAIL a 0 ms timer is the next task'),
   ('timer-stop-one', 'src/cdom.c', 'for (pair_ent *e; (e = pair_any(&timers, token));) {', 'for (pair_ent *e = pair_any(&timers, token); e; e = 0) {', UNIT, 'FAIL cd_timer_stop and cd_timer_cb'),
   ('timer-stop-keeps-slot', 'src/cdom.c', '  cd_cb_drop(token);\n}', '}', UNIT, 'FAIL cd_timer_stop and cd_timer_cb'),
   ('timer-same-generation', 'src/cdom.c', '  c->gen = (c->gen + 1) & 0x7fffu;\n', '', UNIT, 'FAIL cd_timer_stop and cd_timer_cb'),

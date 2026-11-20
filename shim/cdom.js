@@ -748,12 +748,32 @@ var cdom = (() => {
     }
     return 1;
   }
-  // A timer: C keeps the handle (by token) to stop it, and is told which one fired.
+  // A timer: C keeps the handle (by token) to stop it, and is told which one fired. A 0 ms timer is the next
+  // task (postTask), never a setTimeout: browsers clamp a nested 0 ms timeout to 4 ms and throttle timeouts in a
+  // window that is not in front (Safari by seconds), and a 0 ms timer is how C yields and goes on (the steps of
+  // cd_image_file_cb). Its handle is from its own range, past any setTimeout id.
+  const soon = {};
+  let soonNext = 0;
   function timer(ms, token) {
+    if (!ms) {
+      const handle = 0x40000000 + (soonNext = (soonNext + 1) & 0x3fffffff);
+      soon[handle] = 1;
+      postTask(() => {
+        if (soon[handle]) {
+          delete soon[handle];
+          exports.cd_timer(token, handle);
+        }
+      });
+      return handle;
+    }
     const handle = setTimeout(() => exports.cd_timer(token, handle), ms);
     return handle;
   }
   function timer_stop(handle) {
+    if (soon[handle]) {
+      delete soon[handle];
+      return;
+    }
     clearTimeout(handle);
   }
   function raf(token) {
