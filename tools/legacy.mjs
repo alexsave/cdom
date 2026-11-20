@@ -238,6 +238,13 @@ run: try {
     const bad = exprs.filter((x, i) => page[i] !== show(new Function('return ' + x)()));
     ok(!bad.length, `polyfills agree with the built-ins on ${exprs.length} cases: ${bad.map(x => `${x} gave ${page[exprs.indexOf(x)]}`).join('; ')}`);
     ok(await E('globalThis === window'), 'globalThis is the window');
+    // holds() takes the binary in where the browser has one: its for-in fallback, JScript 5.0's alone, is a pass over the
+    // array per slot, which over 10,000 slots holding undefined takes seconds.
+    if (TIER === 4) {
+      const [calls, ms] = await E('(function () { var a = [], n = 0, i, t; for (i = 0; i < 10000; i++) a[i] = undefined; t = Date.now();' +
+        ' a.forEach(function () { n++; }); return [n, Date.now() - t]; })()');
+      ok(calls === 10000 && ms < 500, `forEach over 10,000 undefined slots: ${calls} calls in ${ms} ms (under 500: holds takes the in operator)`);
+    }
     ok(await E(`!/native code/.test(String(Object.entries)) && !/native code/.test(String(Math.imul) + String(Math.clz32) + String(Math.trunc)${typed
       ? ' + String(Math.fround) + String(Uint8Array.prototype.fill) + String(Uint8Array.prototype.copyWithin)' : ''}${TIER === 4
       ? ' && !/native code/.test(String(Array.prototype.indexOf) + String(Array.prototype.map) + String(Object.keys) + String(Function.prototype.bind) + String(Array.isArray))' : ''})`), 'those were the polyfills');

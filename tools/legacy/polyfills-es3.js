@@ -11,14 +11,21 @@
 (function (w) {
   var O = Object, A = Array.prototype, F = Function.prototype, P = O.prototype;
 
-  /* JScript 5.0 has no binary in, only for-in (`k in o` is a syntax error there, which fails the whole file): o holds the
-   * key k when its value there is not undefined, or else when a for-in over o lists it. es3() refuses a binary in. */
-  function holds(o, k) {
-    if (o[k] !== void 0) return true;
-    for (var x in o) {
-      if (x == k) return true;
-    }
-    return false;
+  /* JScript 5.0 has no binary in, only for-in (`k in o` is a syntax error there, which fails the whole file, so es3()
+   * refuses one written here). Where in exists (IE 6 to 8, Firefox 1.0) it is used through new Function, chosen once:
+   * JScript 5.0 throws that syntax error when new Function runs, so it is caught here. Only JScript 5.0 takes the fallback,
+   * which is O(n) a key: o holds k when its value there is not undefined, or else when a for-in over o lists it. */
+  var holds;
+  try {
+    holds = new Function("o", "k", "return k in o");
+  } catch (noIn) {
+    holds = function (o, k) {
+      if (o[k] !== void 0) return true;
+      for (var x in o) {
+        if (x == k) return true;
+      }
+      return false;
+    };
   }
   /* JScript 5.0 has no global named undefined: reading it throws. As a property of the window it is one. */
   w["undefined"] = void 0;
