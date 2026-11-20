@@ -574,6 +574,8 @@ var cdomVml = (function (w, doc) {
     var st = el.$vml, own = within(el, ctx), m = own.m, paint = own.paint, a = st.a, s = el.style;
     var px = num(paint["font-size"], 16) * m[1], style = paint["font-style"] || "normal";
     var weight = paint["font-weight"] || "normal", family = paint["font-family"] || "serif";
+    /* A family the browser lacks falls back to its default, serif in an SVG, not IE's default for HTML (sans here) */
+    if (!/(^|,)\s*(serif|sans-serif|monospace|cursive|fantasy)\s*$/.test(family)) family += ", serif";
     var fill = paint["fill"] !== void 0 ? paint["fill"] : "black", anchor = paint["text-anchor"];
     var left = m[0] * num(a.x, 0) + m[2], top = m[1] * num(a.y, 0) + m[3] - ascent(style, weight, family) * px / 100;
     s.fontSize = Math.round(px * 100) / 100 + "px";

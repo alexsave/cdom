@@ -1034,6 +1034,7 @@ M = [
   ('vml-other-tiers-not-svg', 'shim/cdom.js', '      push(doc.createElementNS(SVG, name));', '      push(doc.createElement(name));', LEG9, 'FAIL the svg is real SVG'),
   ('vml-text-top-not-baseline', 'tools/legacy/vml.js', ' - ascent(style, weight, family) * px / 100;', ';', LEG6, 'FAIL <text> as a span in its font'),
   ('vml-text-size-unscaled', 'tools/legacy/vml.js', 'var px = num(paint["font-size"], 16) * m[1]', 'var px = num(paint["font-size"], 16)', LEG6, 'FAIL <text> as a span in its font'),
+  ('vml-text-no-serif-fallback', 'tools/legacy/vml.js', '    if (!/(^|,)\\s*(serif|sans-serif|monospace|cursive|fantasy)\\s*$/.test(family)) family += ", serif";\n', '', LEG6, 'FAIL <text> as a span in its font'),
   ('vml-current-color-unresolved', 'tools/legacy/vml.js', '      v = cs && cs.color ? cs.color : v;\n', '', LEG6, 'FAIL a currentColor fill is the CSS color'),
   ('vml-nested-svg-at-origin', 'tools/legacy/vml.js', '      s.left = Math.round(m[0] * num(a.x, 0) + m[2]) + "px";', '      s.left = Math.round(m[2]) + "px";', LEG6, 'FAIL the svg in the svg is a span'),
   ('vml-slice-as-meet', 'tools/legacy/vml.js', '    s = /slice/.test(par) ? Math.max(sx, sy) : Math.min(sx, sy);', '    s = Math.min(sx, sy);', LEG6, 'FAIL its rect drawn from its corner'),

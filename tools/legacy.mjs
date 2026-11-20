@@ -289,9 +289,9 @@ run: try {
       var img = document.createElement('img'), s = e.style, r;
       img.width = 1; img.height = 1; img.style.verticalAlign = 'baseline'; e.appendChild(img);
       r = img.getBoundingClientRect().bottom - svg.getBoundingClientRect().top; e.removeChild(img);
-      return [e.tagName.toLowerCase(), s.position, s.left, s.fontSize, s.fontStyle, s.color, getComputedStyle(e).color, Math.round(r), e.innerText];
+      return [e.tagName.toLowerCase(), s.position, s.left, s.fontSize, s.fontStyle, s.fontFamily, s.color, getComputedStyle(e).color, Math.round(r), e.innerText];
     })(document.getElementById('st'), document.getElementById('svg'))`);
-    ok(JSON.stringify(text) === JSON.stringify(['span', 'absolute', '2px', '20px', 'italic', '', 'rgb(18, 49, 35)', 90, 'x']),
+    ok(JSON.stringify(text) === JSON.stringify(['span', 'absolute', '2px', '20px', 'italic', 'KaTeX_Math, serif', '', 'rgb(18, 49, 35)', 90, 'x']),
       `<text> as a span in its font, its baseline at y: ${JSON.stringify(text)}`);
     ok((await vmlOf('scc')).fillcolor === '#123123', `a currentColor fill is the CSS color: ${(await vmlOf('scc')).fillcolor}`);
     // The svg in the svg: a span at x and y, its width and height, clipping; its viewBox sliced to fill it (scale 1 inside).

@@ -253,6 +253,7 @@ EXPORT("svg") void svg(void) {
   /* What a LaTeX formula is made of (foolish-utils latex/): text in a font, paint from the CSS color, and an svg in the
    * svg (a radical's sign, sliced to its width). */
   shape("text", "st"); cd_attr("x", "1"); cd_attr("y", "45"); cd_attr("font-size", "10"); cd_attr("font-style", "italic");
+  cd_attr("font-family", "KaTeX_Math");
   cd_attr("fill", "currentColor"); cd_text("x"); cd_close();
   shape("rect", "scc"); cd_attr("x", "30"); cd_attr("y", "40"); cd_attr("width", "4"); cd_attr("height", "4"); cd_attr("fill", "currentColor"); cd_close();
   shape("svg", "sn"); cd_attr("x", "50"); cd_attr("y", "20"); cd_attr("width", "20"); cd_attr("height", "10");
