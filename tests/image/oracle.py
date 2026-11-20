@@ -168,6 +168,10 @@ def pack_bits(vals, depth):
         rows.append(b.astype(np.uint8))
     return rows
 
+# The grey cases' peak limits beyond the file (KB): what the grey read holds for each, rounded up (docs/image-png-speed.md,
+# "Grey PNG"); main (59380c1) held 1 KB more for each (its RGBA row of 403 x 4 bytes).
+GREY_HELD = {"grey": 407, "grey-key": 407, "grey-alpha": 526, "grey1": 322, "grey2": 322, "grey4": 348, "far-grey": 407}
+
 def png_cases():
     W, H = 1203, 802            # odd sizes: no row or column ends where an output pixel does
     pic = picture(W, H)
@@ -305,6 +309,56 @@ def png_cases():
     assert np.array_equal(np.asarray(Image.open(path).convert("RGB")), farp), path
     case("png-paeth-runs-far-rgb", path, 300, 300, area_avg(farp, *fit_box(403, 300, 300, 300)),
          maxkb=-(-os.path.getsize(path) // 1024) + 577 + 3)
+    # Grey PNG (docs/image-png-speed.md, "Grey PNG"): the sink hands over runs of up to 16 Paeth rows of 1 byte a pixel
+    # and 8 of 2 (the wavefront from 3 rows), and the scaler reads grey as one channel. The rows: Paeth runs of every
+    # length 1 to 17, each followed by a row of None, Sub, Up or Avg in turn, the first row Paeth; 8-bit grey, with a
+    # colour key, grey+alpha, and 1, 2 and 4 bits (which keep their own unpacking), an odd width; then narrow greys and
+    # a far-repeat grey. Pixels from a formula (nothing from the rng), each file decoded by Pillow first. The peak limits
+    # are the file and GREY_HELD: what the grey read holds, under main's.
+    gplan = []
+    while len(gplan) < 300:
+        for run in range(1, 18):
+            gplan += [4] * run + [len(gplan) % 4]
+    gplan = gplan[:300]
+    gy = ((x * x * 7 + y * 13 + (x ^ y)) % 256).astype(np.uint8)
+    gk = int(gy[100, 200])
+    for (name, ctype, depth, rows, want, held) in [
+            ("grey", 0, 8, [r for r in gy], gy, 0),
+            ("grey-key", 0, 8, [r for r in gy], np.where(gy == gk, 255, gy).astype(np.uint8), 0),
+            ("grey-alpha", 4, 8, [r.reshape(-1) for r in np.stack([gy, ra], 2)], None, 0),
+            ("grey1", 0, 1, pack_bits(gy >> 7, 1), ((gy >> 7) * 255).astype(np.uint8), 0),
+            ("grey2", 0, 2, pack_bits(gy >> 6, 2), ((gy >> 6).astype(np.uint32) * 255 // 3).astype(np.uint8), 0),
+            ("grey4", 0, 4, pack_bits(gy >> 4, 4), ((gy >> 4).astype(np.uint32) * 255 // 15).astype(np.uint8), 0)]:
+        path = write_png(f"paethruns-{name}.png", 403, 300, ctype, depth, rows, plan=gplan,
+                         trns=struct.pack(">H", gk) if name == "grey-key" else None)
+        im = Image.open(path)
+        if ctype == 4:
+            assert np.array_equal(np.asarray(im.convert("LA")), np.stack([gy, ra], 2)), path
+            rgb = over_white(np.stack([gy] * 3, 2), ra)
+        else:
+            assert np.array_equal(np.asarray(im.convert("L")), gy if name == "grey-key" else want), path   # Pillow scales low bits as the module does
+            rgb = np.stack([want] * 3, 2)
+        case(f"png-paeth-runs-{name}", path, 300, 300, area_avg(rgb, *fit_box(403, 300, 300, 300)),
+             maxkb=-(-os.path.getsize(path) // 1024) + GREY_HELD[name])
+    # narrow greys (1 to 33 pixels) under a box of 4, so the scaler reduces each, with the same plan
+    for w in (1, 2, 3, 5, 17, 33):
+        ny, nx = np.mgrid[0:60, 0:w]
+        ng = ((nx * 37 + ny * ny * 5) % 256).astype(np.uint8)
+        path = write_png(f"grey-w{w}.png", w, 60, 0, 8, [r for r in ng], plan=gplan[:60])
+        assert np.array_equal(np.asarray(Image.open(path).convert("L")), ng), path
+        case(f"png-grey-w{w}", path, 4, 4, area_avg(np.stack([ng] * 3, 2), *fit_box(w, 60, 4, 4)))
+    # rows that repeat every 80 (403 + 1 bytes each: 80 rows are 32,320, near the window's far end), so the stream copies
+    # each row from the one 80 above: a run of up to 16 that took rows still inside the window would hand those copies
+    # unfiltered bytes
+    gfar = gy[np.arange(300) % 80]
+    fplan = [gplan[i % 80] for i in range(300)]
+    path = write_png("paethruns-far-grey.png", 403, 300, 0, 8, [r for r in gfar], plan=fplan)
+    assert np.array_equal(np.asarray(Image.open(path).convert("L")), gfar), path
+    case("png-paeth-runs-far-grey", path, 300, 300, area_avg(np.stack([gfar] * 3, 2), *fit_box(403, 300, 300, 300)),
+         maxkb=-(-os.path.getsize(path) // 1024) + GREY_HELD["far-grey"])
+    # 16-bit grey and grey+alpha stay refused
+    status_case("png-grey16", write_png("grey16.png", 403, 30, 0, 16, [np.repeat(r, 2) for r in gy[:30]]), 300, 300, "UNSUPPORTED")
+    status_case("png-grey-alpha16", write_png("greya16.png", 403, 30, 4, 16, [np.repeat(r, 4) for r in gy[:30]]), 300, 300, "UNSUPPORTED")
 
 # ---------- JPEG ----------
 
