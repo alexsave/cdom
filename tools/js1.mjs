@@ -110,7 +110,15 @@ export function loadJs1(file, { count = true } = {}) {
   }
   const env = { out: (v) => { st.depth++; if (st.depth > st.max) st.max = st.depth; ctx.log.push(v | 0); st.depth--; } };
   const o = ctx.window.cdomFactory({ env });
-  return { o, ctx, st };
+  ctx.X = o;
+  // A call with a time limit: a miscompiled loop that never ends is a hung call (the string 'hung'), not a hung run.
+  const call = (name, ...a) => {
+    try { return vm.runInContext(`X[${JSON.stringify(name)}](${a.map(Number).join(',')})`, ctx, { timeout: 5000 }); } catch (e) {
+      if (/timed out/.test(String(e))) { st.depth = 0; return 'hung'; }
+      throw e;
+    }
+  };
+  return { o, ctx, st, call };
 }
 async function loadWasm(file) {
   const log = [];
@@ -146,7 +154,7 @@ for (const [name, ...args] of CASES) {
   W.log.length = 0; J.ctx.log.length = 0;
   let wr, wt = false;
   try { wr = W.x[name](...args); } catch (e) { wt = e instanceof WebAssembly.RuntimeError; if (!wt) throw e; }
-  const jr = J.o[name](...args), jt = !!J.o.js1_trap;
+  const jr = J.call(name, ...args), jt = !!J.o.js1_trap;
   const same = wt === jt && (wt || wr === jr) && W.log.join(',') === J.ctx.log.join(',');
   if (same) agree++;
   else if (!first) first = `${name}(${args}) wasm ${wt ? 'trap' : wr} [${W.log.slice(0, 40)}] js1 ${jt ? 'trap' : jr} [${J.ctx.log.slice(0, 40)}]`;
@@ -160,9 +168,9 @@ ok(diff < 0, `the memory agrees word for word after every case${diff < 0 ? '' : 
 const bp = W.x.buf();
 ok(words(new Uint8Array(W.x.memory.buffer), bp, 64).length > 0 && J.o.buf() === bp, 'buf() is the same address in both');
 // Traps: each one in its own case above; here, that a trap does not leave the next call broken.
-J.o.trap(1); const afterTrap = J.o.loop(10);
+J.call('trap', 1); const afterTrap = J.call('loop', 10);
 ok(J.o.js1_trap === 0 && afterTrap === W.x.loop(10), `after a trap the next call runs: trap flag ${J.o.js1_trap}, loop(10) ${afterTrap}`);
-J.o.deeptrap(30); const sp = J.ctx.JP;
+J.call('deeptrap', 30); const sp = J.ctx.JP;
 ok(J.o.js1_trap === 1 && sp === 0, `a trap 30 calls down puts the explicit stack back: JP ${sp}`);
 
 // Depth: the 1000-deep recursion runs at a constant JavaScript depth, at or under js1c's bound.
@@ -170,12 +178,12 @@ const lowered = js1File + '.lowered.wasm';
 const said = spawnSync(path.join(top, 'tools/out/js1c'), [lowered, path.join(out, 'js1.tmp.js')], { encoding: 'utf8' });
 fs.unlinkSync(path.join(out, 'js1.tmp.js'));
 const B = +(/JS depth bound (\d+)/.exec(said.stderr) || [0, 0])[1];
-J.st.max = 0; J.o.rec(1000);
+J.st.max = 0; J.call('rec', 1000);
 const d1000 = J.st.max;
-J.st.max = 0; J.o.rec(10);
+J.st.max = 0; J.call('rec', 10);
 ok(d1000 <= B && d1000 === J.st.max, `rec(1000) reaches JavaScript depth ${d1000}, the same as rec(10) (${J.st.max}), at or under the bound ${B}`);
 let dmax = 0;
-for (const [name, ...args] of CASES) { J.st.max = 0; J.o[name](...args); if (J.st.max > dmax) dmax = J.st.max; }
+for (const [name, ...args] of CASES) { J.st.max = 0; J.call(name, ...args); if (J.st.max > dmax) dmax = J.st.max; }
 ok(dmax <= B, `the deepest JavaScript depth over every case is ${dmax}, at or under the bound ${B}`);
 // The gate on every js1c output this build wrote.
 for (const f of fs.readdirSync(out).filter((f) => f.endsWith('.js1.js'))) {
@@ -186,7 +194,7 @@ for (const f of fs.readdirSync(out).filter((f) => f.endsWith('.js1.js'))) {
 {
   const S = loadJs1(js1File, { count: false });
   S.ctx.JB = 50;
-  let r = S.o.rec(1000), steps = 0;
+  let r = S.call('rec', 1000), steps = 0;
   const paused = S.o.js1_paused;
   while (S.o.js1_paused && steps < 100000) { S.o.js1_more(); steps++; }
   r = S.o.js1_result;

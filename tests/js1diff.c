@@ -64,6 +64,8 @@ EXPORT("dbl") int dbl(int a, int b) {
   m[0] = x; __builtin_memcpy(w, (const void *)&m[0], 8); out((int)w[0]); out((int)w[1]);
   m[0] = 5e-320; __builtin_memcpy(w, (const void *)&m[0], 8); out((int)w[0]); out((int)w[1]);
   out((int)(m[0] * 1e300 * 1e20));
+  m[0] = x * 1e-315; __builtin_memcpy(w, (const void *)&m[0], 8); out((int)w[0]); out((int)w[1]); /* a subnormal at run time */
+  out((int)(m[0] * 1e300 * 1e25));
   u64 bits = __builtin_bit_cast(u64, y); out64(bits);
   out((int)(__builtin_bit_cast(double, bits ^ (1ull << 63)) * 4));
   out(__builtin_isnan(z - z)); out(z > 1e308);
@@ -111,10 +113,13 @@ EXPORT("mem") int mem(int a) {
   packed[1].c = (char)a; packed[1].i = a * 77; packed[1].s = (short)(a - 9); packed[1].d = a / 7.0;
   packed[2].i = packed[1].i + 1;
   out(packed[1].c); out(packed[1].i); out(packed[1].s); out((int)(packed[1].d * 1e6)); out(packed[2].i);
-  __builtin_memset(bytes + 3, a, 21);
-  __builtin_memmove(bytes + 10, bytes, 30);
-  __builtin_memmove(bytes, bytes + 5, 30);
-  __builtin_memcpy(bytes + 40, bytes + 8, 16);
+  /* Sizes from the argument, so clang leaves memory.fill and memory.copy (a constant size it expands into loads). */
+  int k = (a & 3) + 1;
+  __builtin_memset(bytes + 3, a, (unsigned)(20 + k));
+  __builtin_memmove(bytes + 10, bytes, (unsigned)(29 + k));
+  __builtin_memmove(bytes, bytes + 5, (unsigned)(29 + k));
+  __builtin_memcpy(bytes + 40, bytes + 8, (unsigned)(12 + 4 * k));
+  __builtin_memmove(bytes + 8, bytes + 4, (unsigned)(16 * k));
   for (i = 0; i < 64; i++) sum = sum * 3 + bytes[i];
   out(sum);
   return sum;
