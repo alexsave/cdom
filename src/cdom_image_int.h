@@ -63,9 +63,9 @@ uint32_t cd_image_png_resize(const uint8_t *p, uint32_t len, const cd_image_info
 int cd_image_unfilter_scalar(uint32_t f, uint8_t *cur, const uint8_t *prev, uint32_t n, uint32_t bpp);
 int cd_image_unfilter_simd(uint32_t f, uint8_t *cur, const uint8_t *prev, uint32_t n, uint32_t bpp);
 /* PNG rows as the sink hands them over: row is a row's filter byte, its n bytes after it, and the rows after it one pitch
- * apart (avail of them whole, avail at least 1); prev is the first's row above (n bytes). A run of 2 to 4 Paeth rows (at
- * most avail, 3 and 4 bytes a pixel) is unfiltered as a wavefront (docs/image-png-speed.md, "Paeth as a wavefront"),
- * any other first row alone. Answers the rows done, 0 for an unknown filter. */
+ * apart (avail of them whole, avail at least 1); prev is the first's row above (n bytes). The SIMD body unfilters a run of
+ * 2 to 4 Paeth rows (at most avail, 3 and 4 bytes a pixel) as a wavefront (docs/image-png-speed.md, "Paeth as a
+ * wavefront"), any other first row alone; the scalar body always one row. Answers the rows done, 0 for an unknown filter. */
 uint32_t cd_image_unfilter_run_scalar(uint8_t *row, uint32_t pitch, const uint8_t *prev, uint32_t n, uint32_t bpp, uint32_t avail);
 uint32_t cd_image_unfilter_run_simd(uint8_t *row, uint32_t pitch, const uint8_t *prev, uint32_t n, uint32_t bpp, uint32_t avail);
 /* A row of w 8-bit RGB pixels as RGBA with alpha 255. */

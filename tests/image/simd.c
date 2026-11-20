@@ -10,7 +10,7 @@
  *   ycc_all        the same on every (y, cb, cr) of 8 bits: 16,777,216 pixels
  *   unfilter       cd_image_unfilter_simd against cd_image_unfilter_scalar: every filter (and two that are none), 1, 2,
  *                  3, 4, 6 and 8 bytes a pixel, widths 0 to 64 pixels and some larger, random and edge bytes
- *   runs           cd_image_unfilter_run_simd and _scalar (the Paeth wavefront over runs of up to 4 rows) against
+ *   runs           cd_image_unfilter_run_simd (the Paeth wavefront over runs of up to 4 rows), and _scalar, against
  *                  cd_image_unfilter_scalar row by row: plans of Paeth runs of 1 to 5 rows with None, Sub, Up and Avg
  *                  rows between, 3 and 4 bytes a pixel, widths 1 to 9 pixels and 4031 and 4032, a zero or a random row
  *                  above the first, handed over a random number of rows at a time
@@ -289,7 +289,7 @@ static void unfilter_all(void) {
 
 /* PNG rows as the sink hands them over (cd_image_unfilter_run): a block of rows, each its filter byte and n bytes, the
  * filters a plan of Paeth runs of 1 to 5 rows with rows of the other filters between. The reference unfilters it row by
- * row with cd_image_unfilter_scalar; the runs (the SIMD one, and the scalar build's wavefront) are driven as the sink does,
+ * row with cd_image_unfilter_scalar; the runs (the SIMD one; and the scalar one, which is a row at a time) are driven as the sink does,
  * a random number of rows at a time (the rows past the window). Every byte is compared, and the rows each call answers
  * against the run the plan has there. The block's last byte is the end of memory (a read past the last row traps). */
 static void runs_case(uint32_t bpp, uint32_t n, const uint8_t *plan, uint32_t rows, int zero_prev, int scalar_run) {
@@ -309,7 +309,7 @@ static void runs_case(uint32_t bpp, uint32_t n, const uint8_t *plan, uint32_t ro
     if (avail > rows - done) avail = rows - done;
     uint32_t want = 0;
     while (want < avail && want < 4 && plan[done + want] == 4) want++;
-    if (want < 2) want = 1;
+    if (want < 2 || scalar_run) want = 1;
     uint8_t *row = got + done * pitch;
     const uint8_t *above = done ? row - pitch + 1 : prev;
     uint32_t k = scalar_run ? cd_image_unfilter_run_scalar(row, pitch, above, n, bpp, avail)
