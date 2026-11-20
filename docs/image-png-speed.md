@@ -882,3 +882,60 @@ The wasm memory after each input is main's (6.1, 17.6, 20.2 and 8.9 MiB).
 
 What it shows beyond this branch: cdom beats both browsers on RGB PNG and on JPEG, beats Chrome narrowly and Safari by 21% on RGBA, and loses on grey: Chrome's decoder takes 77 ms where cdom takes 134, and Safari's 102 where cdom takes 128.
 The grey PNG is the next PNG work, profiled before anything changes (issue to follow).
+
+## Grey PNG
+
+The goal (Alex): cdom's grey PNG resize at least as fast as the browser's.
+On Alex's Mac (Chrome 157, the SIMD page, box 900) p12g.png (4032 x 3024, 8-bit grey, colour type 0) takes 134.1 ms against B1's 77.2: 1.74 times, the one format where cdom loses.
+The Mac's native profile (bench/image/native.c, scalar) has cd_image_unfilter_scalar at 42% of the self time, cd_image_scaler_across_scalar 32%, the inflate 13% and rows (grey to RGBA) 10%.
+Chrome's profile of the SIMD page had one function at 63% (91 ms).
+p12g.png's rows on this machine's inputs: 3,015 Paeth, 8 Sub, 1 Up; the Paeth rows come in 9 runs of 50 to 703 rows.
+
+The two causes, as the code reads:
+
+- src/cdom_image_loops.c: the wavefront (`wave_v`) is for 3 and 4 bytes a pixel; `cd_image_unfilter_run_simd` gives a 1-byte row to `cd_image_unfilter_simd`, which gives every filter but Up to `cd_image_unfilter_scalar`, whose Paeth has one chain from each byte to the next.
+- src/cdom_image_png.c: every grey row goes through `to_rgba` (4 bytes a pixel) and the scaler's across loop runs on 4 channels, where a grey image has one; RGB has its own read (`cd_image_scaler_across_rgb`), grey has none.
+
+### The machine
+
+A Linux x86-64 cloud VM, not the Mac, so the numbers are ratios against main measured in the same session, arms interleaved; the dispatcher re-measures on the Mac.
+
+| thing | value |
+| --- | --- |
+| CPU | "Intel(R) Xeon(R) Processor @ 2.10GHz", 4 cores |
+| OS | Ubuntu 24.04, kernel 6.18.44 (a cloud VM) |
+| Chrome | Google Chrome for Testing 153.0.8010.12, headless, CHROME_ARGS=--no-sandbox, through tools/cdp.mjs |
+| clang | clang 23.1.6 (the LLVM-23.1.6-Linux-X64 release tarball, at /usr/lib/llvm-23; apt.llvm.org not tried, the earlier jobs found it refused), wasm-ld from it |
+| binaryen | version 130, the release tarball, its sha256 as in ci.yml (on PATH for the bench pages, as on the Mac; not for the profile pages, which keep their name section) |
+| node | v22 (to drive Chrome) |
+| inputs | bench/image/inputs.py with /usr/bin/python3 (3.13, Pillow 12.3.0, numpy 2.5.3): p12g.png 6,017,051 bytes |
+
+### The changes to try
+
+- G1, a wavefront for 1 byte a pixel: 16 rows in one vector of bytes (row j in byte j), each row LAG (2) bytes behind the one above; row 0's b loaded from the row above the run, row j's b the result row j - 1 made LAG steps before, moved up a lane.
+  The sink's run grows from 4 to 16 rows for 1 byte a pixel (the same buffer: p12g.png's hand-overs hold about 65 rows past the window).
+  The same loop for 2 bytes a pixel (grey+alpha, 8-bit) with 8 rows, if it costs little.
+- G2, a grey read through the scaler: one channel across, down and divided (`dw` sums, not `3 dw`), expanded to RGBA only as the output row is stored; 8-bit grey with no colour key read as it lies in the inflate's buffer (no RGBA row), and the other greys (1, 2 and 4 bits, a colour key, grey+alpha) made into a row of 1 byte a pixel by their own unpacking, then read the same way.
+  Byte-exact by construction: for a grey pixel R = G = B, so the three sums of today's scaler are equal integers and give equal bytes.
+
+16-bit PNGs are refused (UNSUPPORTED) by this decoder, so "16-bit greys" is out of this step; their refusal is kept and tested.
+
+### Predictions (written before any measurement)
+
+The whole resize: bench/image/run.mjs, box 900, 9 interleaved rounds, each run on a fresh page, medians; main's pages (C-old scalar, C-old-simd SIMD) built from origin/main as bench/image/inflate-mac.sh builds them.
+The self times: bench/image/profile.mjs, 12 runs after a warm-up, the SIMD pages linked without wasm-opt.
+The base I predict from (not measured yet): main's p12g.png C-simd on this VM about 144 ms (inflate-fast's table above: 143.8), of which the scalar 1-byte unfilter about 70 ms, cd_image_scaler_row about 35 ms (it is p12.png's, the same pixel count), the inflate about 22 ms (6.0 MB of file against p12.png's 15.2), rows (to_rgba) about 8 ms.
+
+| id | prediction | falsifier |
+| --- | --- | --- |
+| H1 | G1 alone: p12g.png C-simd at 0.60 of main's (0.50 to 0.70) | above 0.75 |
+| H2 | G1: the 1-byte wavefront's self time (in cd_image_unfilter_run_simd) 13 ms (8 to 20), against about 70 for the scalar Paeth it replaces in cd_image_unfilter_simd | above 25 ms |
+| H3 | G2 alone: p12g.png C-simd at 0.80 of main's (0.72 to 0.88) | above 0.92 |
+| H4 | G2: cd_image_scaler_row with the grey read 11 ms (6 to 16) against about 35; rows' self time under 3 ms (to_rgba gone for 8-bit grey) | the scaler above 20 ms |
+| H5 | G1 and G2: p12g.png C-simd at 0.40 of main's (0.30 to 0.50) | above 0.70 (the brief's falsifier for the whole task) |
+| H6 | G1 and G2: p12g.png C-simd under B1 on this VM, at 0.55 of B1 (0.42 to 0.70) | at or above B1 |
+| H7 | the scalar build (C-js, which takes G2 only): p12g.png at 0.82 of C-old's (0.72 to 0.92) | above 0.95 |
+| H8 | p12.jpg, p12.png and p12a.png, C-simd and C-js, within 2% of main's (per-round median ratio) | any of them more than 2% off |
+| H9 | the wasm memory after p12g.png: equal to main's or lower (the RGBA row of 16,128 bytes goes), at most 1 page (64 KiB) lower | higher than main's |
+| H10 | the image module grows by 0.4 to 1.5 KB brotli (q 11) in the SIMD page and 0.1 to 0.6 KB in the scalar one | outside those ranges |
+| H11 | a run of 2 or 3 Paeth rows through the 16-row loop is slower than the scalar rows (16 lanes of work for 2), so the loop is used from some run length up; a microbench decides the length, predicted 3 (2 to 5) | the 16-row loop faster than the scalar Paeth at runs of 2 by more than 1.2 times |
