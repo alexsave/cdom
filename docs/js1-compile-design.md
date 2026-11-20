@@ -1,0 +1,119 @@
+# js1c: a WebAssembly to JavaScript 1.0 compiler, in C, with an explicit stack
+
+The frames tier (docs/frames-design.md) loads the app's IE 9 build, which no frames-tier browser can parse.
+docs/descent.md (on main) has what Netscape 2.02, 3.04, 4.08 and IE 4.01 really do.
+This is the third way down to them, beside js1-transform (rewriting wasm2js's output) and js1-interp (a wasm interpreter in JavaScript 1.0): a compiler, tools/js1c.c, that reads the app's .wasm and writes JavaScript 1.0 directly.
+This document was written before the code; the predictions of section 9 were committed before any measuring and are not edited.
+
+## 1. The pipeline
+
+1. clang builds the module as for every tier (tests/build.sh's `wasm`, cdom.mk's flags), and tools/cdlits takes the string table out.
+2. binaryen's wasm-opt (version 130, the one CI already fetches) lowers what JavaScript 1.0 cannot do natively, in this order: `--legalize-js-interface --remove-non-js-ops --flatten --i64-to-i32-lowering -O2`.
+   legalize-js-interface splits any i64 of an import or export into two i32 halves; remove-non-js-ops turns the i64 multiply, divide, remainder, rotates, counts and the f32 and f64 rounding that JavaScript lacks into calls of small wasm helpers it links in; flatten is what i64-to-i32-lowering requires; i64-to-i32-lowering leaves only i32 (with the high half of a returned i64 in a global); -O2 shrinks what flatten grew.
+   The features stay on as clang writes them (bulk memory, sign extension, the non-trapping float to int conversions, mutable globals); js1c handles them itself.
+3. tools/js1c reads the lowered .wasm and writes app.wasm.js1.js.
+   It refuses, with the reason, anything it does not handle: an i64 or v128 left over, a second memory or table, an opcode it does not know.
+4. tools/js10.mjs, the JavaScript 1.0 gate, checks the output, and the build stops on a failure.
+
+## 2. The language the output uses
+
+Only what docs/descent.md measured working in Netscape 2.02:
+functions declared at the top level, `var`, `if`/`else`, `while`, `for`, `break`, `continue`, `return`, `?:`, the comma operator, `==` and `!=`, every arithmetic and bitwise operator, `new Object()` and `new Array(n)` used as plain objects with number keys, `o.m(x)` and `o[k](x)` calls, a function name assigned to a property (`o.m = f`), string `charAt`, `indexOf`, `substring` and `length`, `parseInt` with a radix, `Math.floor`, `Math.abs`, `Math.sqrt`, `Math.pow`, `Math.log`, `setTimeout` with a string.
+Never: `typeof`, `void`, literals of any object, array or regular expression, function expressions, nested functions, `switch`, `do`-`while`, labels, `===`, `!==`, `in`, `instanceof`, `try`, `throw`, `with`, `delete`, `arguments`, a member of a `new` expression, the globals `undefined`, `NaN`, `Infinity` and `isNaN`, `charCodeAt`, `fromCharCode`, `split`, `join`, `slice`, `substr`, `replace`, `prototype`, `Math.imul`, `Math.fround`.
+NaN is written `(0/0)` and Infinity `(1/0)`; a comparison used as a value is written `(a<b?1:0)`, never relying on a boolean's conversion.
+
+## 3. Calls: the explicit stack and the driver
+
+Every wasm function is one of two kinds, decided at build time from the call graph:
+
+- direct: it makes no indirect call, it is not on a cycle of the call graph, and the longest chain of calls below it is at most DEPTH (8) functions, all of them direct.
+  It compiles to a plain JavaScript function with its parameters and its return value, and it is called directly.
+- driven: every other function.
+  It compiles to a JavaScript function of no parameters that never calls another driven function.
+
+A driven function's call of a driven function:
+
+1. spills, onto the explicit stack (a plain object, J.S, of numbers with a stack pointer), the locals live at the call (the rest are not written), then the call site's number and its own function number;
+2. puts the arguments in the argument registers, and the callee's number in the driver's register;
+3. returns to the driver.
+
+The driver loop calls the function its register names, through a table of the functions (`JF[k]()`), until the register is 0.
+A driven function's return puts the value in the return register, takes the caller's number from the stack's top as the next to run, and sets the resume flag.
+The caller, entered with the flag, reads its call site number, restores its locals, pops its frame and goes back to the call site, where it takes the return value.
+
+Going back to a call site inside nested loops and ifs is done as Asyncify does it, on the structured code: the call sites are numbered in order, so every statement covers a range of them; in resume mode every statement whose range does not hold the site is skipped, every if takes the branch that holds it without evaluating its condition, and every loop is entered.
+A normal run pays for it one test of the resume variable a statement that contains a call, and nothing in straight code without calls.
+
+So the JavaScript call depth is at most: the shim's own, plus the export's wrapper, plus the driver, plus one driven function, plus DEPTH direct functions, plus an import.
+js1c computes the bound at build time, prints it, and refuses a module whose bound is over 32; a driven function's import can call an export back (the shim does not today), which starts a nested driver on the same explicit stack and adds the same bound again.
+
+An indirect call (call_indirect) checks the table index and the function's type number, and always goes through the driver; a direct function that is in the table or exported gets a small driven wrapper too.
+
+## 4. Control flow inside a function
+
+block, loop and if become `while (1) { ... break; }` loops, `while (1) { ... }` for a wasm loop, and `if`; a branch to the innermost of them is `break` or `continue`; a branch further out sets a branch variable and breaks, and each loop that a branch crosses tests it on the way out (only those that one does).
+br_table becomes a tree of ifs on the index.
+A block or if with a result has a variable it is assigned to.
+
+Expressions: js1c keeps wasm's value stack as JavaScript expressions and writes them out as one expression where wasm nests them, putting a pending value into a temporary only when something with a side effect comes before its use (a store, a call, a set of a local or global, a branch).
+
+## 5. Memory
+
+C's memory is a plain object of 32-bit words (J.M[address >> 2]), the layout of tools/legacy/words.js: the shim reads it as memory.words, as it reads the IE 9 build's.
+An i32 load at an address known 4-aligned is one read; any other load or store of 8, 16 or 32 bits shifts and masks, across two words where it straddles one.
+A missing word reads as 0 (`undefined | 0`), so memory is never filled with zeros.
+f64 loads and stores convert between a double and its two words by arithmetic (Math.log, Math.pow, Math.floor), as words.js does without typed arrays; f32 the same on one word, and f32 arithmetic is rounded to f32 by the same routine.
+memory.size and memory.grow move a page count only; memory.copy and memory.fill are loops over bytes, by words where both ends are aligned.
+
+The data segments: two forms, chosen by a flag, measured in section 9:
+
+- statements: one `M[k]=v;` per non-zero word;
+- digits: the non-zero words as a string of base 36 numbers, each a skip and a value, decoded by indexOf, substring and parseInt, in strings of at most 4,096 characters each.
+
+## 6. Traps
+
+No throw: a trap (unreachable, an integer divide by zero or overflow, a float to integer conversion out of range, an indirect call of the wrong type or out of the table) sets J.T and returns.
+A direct call of a function that can trap is followed by `if (JT) return`, a driven function's return to the driver is checked there, and the driver stops.
+The export's wrapper puts the stack pointer back and sets the exports object's `trap` to 1; the frames shim (cf_cRun) then leaves its counts up, as a throw out of the call did, and the next entry recovers (frames-design.md section 4).
+Loads and stores out of bounds do not trap (the memory is an object of any size); that is the one difference from wasm, and a test notes it.
+
+## 7. Imports and exports
+
+The output defines one global function, cdomFactoryJs1(imports), and sets window.cdomFactory to it, as the IE 9 build does; the frames shim calls it the same way.
+An import is called as a method of its module's object (`I.open(x)`, `I["class"](x)`), so the shim's cdom imports are used by the same names.
+The exports object has one property a function, each a wrapper that starts the driver on the export, plus memory (with its words) and trap.
+
+## 8. Time slicing
+
+The driver counts the functions it runs; with a budget set (J1 slicing on), it stops after that many with the state kept, and the export returns as paused; the caller continues with Jrun(), from a `setTimeout("...", 0)`.
+The frames tier's exports run with no budget (the shim expects an answer); tests/out/js1diff.html, the page for the real browsers, runs its long tests sliced.
+
+## 9. Predictions
+
+Written before any measuring; each has a falsifier.
+Timings are node 22 on a Linux x86-64 VM, indicative only (the real browsers are the repo manager's to measure, section 11).
+
+- Q1, size: tests/frames.c's js1c output is at most 2.0 times the bytes of its IE 9 build (frames.wasm.ie9.js as tests/build.sh writes it, already minified), and at most 1.6 times gzipped (gzip -9).
+  Falsifier: either ratio larger.
+- Q2, statements: the js1c output of tests/frames.c has at most 1.5 statements a wasm instruction of the lowered module (acorn's count of statement nodes).
+  Falsifier: more.
+- Q3, integer loop: 1e5 iterations of integer ops (tests/js1diff.c's loop) run in node in at most 1.5 times the IE 9 build's time and at most 10 times plain wasm's.
+  Falsifier: slower than either.
+- Q4, recursion: 1000-deep recursion (the same test) runs in the js1c output in at most 5 times the IE 9 build's time; the IE 9 build itself runs it in node.
+  Falsifier: more than 5 times.
+- Q5, depth: the JavaScript call depth reached, counted in node by wrapping every compiled function, is at most the static bound js1c prints, for every test of tests/js1diff.c and for tests/frames.c's whole run, and that bound is at most 12 (the 1000-deep recursion included).
+  Falsifier: a depth over the bound, or a bound over 12.
+- Q6, data: the digits form is at least 40% smaller than the statements form for frames.wasm's data, and has at least 90% fewer statements; in node, each loads in under 5 ms.
+  Falsifier: less saving, or a load over 5 ms.
+- Q7, slicing: the integer loop sliced at a budget of 1,000 driver steps is at most 5% slower than unsliced (both in node, the yields excluded).
+  Falsifier: more than 5%.
+- Q8, correctness: every export of tests/js1diff.c gives the same results through js1c as plain wasm, bit for bit, the trap included.
+  Falsifier: any difference.
+
+## 10. Results
+
+To be filled in after measuring.
+
+## 11. Verifying in the real browsers
+
+To be filled in with the files and the URL.
