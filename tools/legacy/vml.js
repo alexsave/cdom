@@ -7,6 +7,7 @@
 var cdomVml = (function (w, doc) {
   var K = 100;                       /* VML path units per pixel: VML takes whole numbers only */
   var URN = "urn:schemas-microsoft-com:vml";
+  var TAGS = ["shape", "fill", "stroke"];  /* every v: tag made here (make), each with its behavior rule */
   var SHAPE = { path: 1, rect: 1, circle: 1, ellipse: 1, line: 1, polyline: 1, polygon: 1 };
   /* Inherited from the nearest svg or g that sets them, as SVG's presentation attributes are. */
   var PAINT = { fill: 1, stroke: 1, "stroke-width": 1, "fill-opacity": 1, "stroke-opacity": 1 };
@@ -286,19 +287,22 @@ var cdomVml = (function (w, doc) {
     e.message = m;
     if (typeof w.reportError === "function") w.reportError(e);
   }
+  /* Measured in IE 6 (docs/vml-design.md, section 9): the namespace with two arguments, before any v: node is made,
+   * and the behavior from a stylesheet rule. The three-argument add (an implementation, "#default#VML") binds the
+   * behavior as the node is made, and then every property set by script is lost: the fill, the path, and coordsize,
+   * which stays beside the default 1000,1000. One rule a tag, since IE 8's standards mode ignores v\:*. */
   function setup() {
     ready = true;
-    var ns = doc.namespaces;
+    var ns = doc.namespaces, ss, j;
     if (ns && ns.add) {
-      try {
-        ns.add("v", URN, "#default#VML");
-      } catch (caughtVml) {
-        try { ns.add("v", URN); } catch (caughtVml2) {}
-      }
+      try { ns.add("v", URN); } catch (caughtVml) {}
     }
     try {
-      if (doc.createStyleSheet) doc.createStyleSheet().addRule("v\\:*", "behavior:url(#default#VML);display:inline-block");
-    } catch (caughtVml3) {}
+      if (doc.createStyleSheet) {
+        ss = doc.createStyleSheet();
+        for (j = 0; j < TAGS.length; j++) ss.addRule("v\\:" + TAGS[j], "behavior:url(#default#VML)");
+      }
+    } catch (caughtVml2) {}
   }
   function make(tag) {
     if (!ready) setup();
@@ -307,21 +311,20 @@ var cdomVml = (function (w, doc) {
 
   /* --- the nodes ---------------------------------------------------------------------------------------------- */
 
-  /* The VML node for the SVG element tag. Its state is node.$vml: kind (0 the svg, 1 a g, 2 a shape, 3 not drawn), the
-   * SVG attributes set on it (a), what hides it (hide), and for a shape its v:fill and v:stroke and the last path key. */
+  /* The node for the SVG element tag. Its state is node.$vml: kind (0 the svg, 1 a g, 2 a shape, 3 not drawn), the
+   * SVG attributes set on it (a), what hides it (hide), and for a shape its v:fill and v:stroke and the last path key.
+   * The svg and a g are spans, not v:group: IE 6 measures a v:group by what it holds, not by its width and height, and
+   * does not clip to it, where a span with overflow hidden is the svg's box and clips as an svg does (docs/vml-design.md,
+   * section 9). Every point is baked through the CTM, so a g needs no frame of its own, only a place to hold its shapes
+   * at the svg's top left. */
   function create(tag) {
     var el, st;
     if (tag === "svg" || tag === "g") {
-      el = make("group");
+      el = doc.createElement("span");
       st = { kind: tag === "svg" ? 0 : 1, tag: tag, a: {}, hide: {} };
       el.$vml = st;
-      if (tag === "g") {
-        el.style.cssText = "position:absolute;left:0;top:0;width:1px;height:1px";
-        el.coordsize = "1,1";
-        el.coordorigin = "0,0";
-      } else {
-        frame(el);
-      }
+      if (tag === "g") el.style.cssText = "position:absolute;left:0;top:0";
+      else frame(el);
       return el;
     }
     if (SHAPE[tag] === 1) {
@@ -334,6 +337,9 @@ var cdomVml = (function (w, doc) {
       el.path = "m0,0 e";
       st.vf = make("fill");
       st.vs = make("stroke");
+      st.vs.joinstyle = "miter";     /* SVG's defaults; VML's are a round join and a round cap */
+      st.vs.miterlimit = "4";
+      st.vs.endcap = "flat";
       el.appendChild(st.vf);
       el.appendChild(st.vs);
       return el;
@@ -344,14 +350,13 @@ var cdomVml = (function (w, doc) {
     el.$vml = { kind: 3, tag: tag, a: {}, hide: {} };
     return el;
   }
-  /* The svg's box: its size in pixels (300 by 150 when it says none, as a browser's), an identity frame. */
+  /* The svg's box: its size in pixels (300 by 150 when it says none, as a browser's), clipping what it holds. */
   function frame(el) {
-    var a = el.$vml.a, W = Math.round(num(a.width, 300)), H = Math.round(num(a.height, 150)), s = el.style;
+    var a = el.$vml.a, s = el.style;
     s.position = "relative";
-    s.width = W + "px";
-    s.height = H + "px";
-    el.coordsize = W + "," + H;
-    el.coordorigin = "0,0";
+    s.overflow = "hidden";
+    s.width = Math.round(num(a.width, 300)) + "px";
+    s.height = Math.round(num(a.height, 150)) + "px";
     hidden(el);
   }
   /* The svg's CTM: its viewBox into its box, preserveAspectRatio's default (xMidYMid meet). */
