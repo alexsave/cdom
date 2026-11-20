@@ -7,6 +7,7 @@
 #include "../src/cdom.h"
 #include "../src/cdom_file.h"
 #include "../src/cdom_job.h"
+#include "../src/cdom_net.h"
 
 #define EXPORT(n) __attribute__((export_name(n)))
 #define IMPORT(n) __attribute__((import_module("env"), import_name(n)))
@@ -168,3 +169,47 @@ EXPORT("sj") uint32_t sj(void) {
   uint32_t r = (uint32_t)cd_image_guard(lg_returns, &k, &lg_slot);
   return all && r == 0 && k == 1 && lg_sp() == before;
 }
+
+/* The network on every tier (cdom_net.h; the old tiers have no fetch, so tools/legacy/polyfills.js stands XMLHttpRequest, or
+ * ActiveX on IE 5 and 6, in its place). net_ask(k) makes request k against tools/legacy.mjs's server, and net_seen(k, f)
+ * is what came: f 0 the status (-1 before the answer), 1 the body's length, 2 whether it was what the server sent, 3 how many answers.
+ *   0 GET a text body with a character beyond ASCII (UTF-8)      3 POST with a header, echoed back
+ *   1 GET the 256 byte values in order, and again reversed        4 a request the server drops: CD_HTTP_FAILED
+ *   2 GET a path with no file: 404 and its body                   5 a request the server never answers, deadline 200 ms: CD_HTTP_TIMEOUT
+ *   6 POST a body that is not UTF-8 (0xff 'A'): echoed back where the browser can send bytes (typed arrays), and where it
+ *     can send only text (IE 9 and below: XMLHttpRequest sends a string as UTF-8) CD_HTTP_FAILED, never other bytes */
+#define NET_N 7
+static int32_t net_rec[NET_N][4];
+static const char net_text[] = "hello \xc3\xa9 \xe2\x82\xac net\n";
+static const char net_missing[] = "no such thing\n";
+static const char net_echo[] = "POST yes|ping \xc3\xa9";
+static const char net_echo_raw[] = "POST yes|\xff" "A";
+static const struct { const char *method, *url, *headers, *body; uint32_t deadline; } net_req[NET_N] = {
+  {"GET", "/net/text", "", 0, 0}, {"GET", "/net/bin", "", 0, 0}, {"GET", "/net/missing", "", 0, 0},
+  {"POST", "/net/echo", "X-Cdom: yes\nContent-Type: text/plain; charset=utf-8\n", "ping \xc3\xa9", 0},
+  {"GET", "/net/drop", "", 0, 0}, {"GET", "/net/hang", "", 0, 200},
+  {"POST", "/net/echo", "X-Cdom: yes\n", "\xff" "A", 0},
+};
+static void net_on(void *ctx, uint32_t status, const uint8_t *p, uint32_t len) {
+  uintptr_t k = (uintptr_t)ctx;
+  const char *want = k == 0 ? net_text : k == 2 ? net_missing : k == 3 ? net_echo : net_echo_raw;
+  uint32_t want_len = k == 0 ? sizeof net_text - 1 : k == 2 ? sizeof net_missing - 1 : k == 3 ? sizeof net_echo - 1 : sizeof net_echo_raw - 1;
+  int32_t same = len == want_len;
+  if (k == 1) same = len == 512;
+  if (k == 4 || k == 5) same = len == 0;
+  for (uint32_t i = 0; same && i < len; i++) {
+    if (k == 1) same = p[i] == (uint8_t)(i < 256 ? i : 511 - i);
+    else same = p[i] == (uint8_t)want[i];
+  }
+  net_rec[k][0] = (int32_t)status, net_rec[k][1] = (int32_t)len, net_rec[k][2] = same, net_rec[k][3]++;
+}
+EXPORT("net_ask") void net_ask(uint32_t k) {
+  const char *h = net_req[k].headers, *b = net_req[k].body;
+  uint32_t hl = 0, bl = 0;
+  while (h[hl]) hl++;
+  while (b && b[bl]) bl++;
+  net_rec[k][0] = -1;
+  cd_http_cb(net_on, (void *)(uintptr_t)k, net_req[k].method, net_req[k].method[0] == 'G' ? 3 : 4, net_req[k].url,
+             (uint32_t)__builtin_strlen(net_req[k].url), h, hl, b, bl, net_req[k].deadline);
+}
+EXPORT("net_seen") int32_t net_seen(uint32_t k, uint32_t f) { return net_rec[k][f]; }
