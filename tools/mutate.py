@@ -1132,7 +1132,7 @@ M = [
   ('ns-gif89a', 'tools/noscript_gif.py', "    out.save(dst, 'GIF', optimize=False, interlace=False)\n    with open(dst, 'rb') as f:\n        head = f.read(6)\n    if head != b'GIF87a':", "    out.save(dst, 'GIF', optimize=False, interlace=False, comment=b'cdom')\n    with open(dst, 'rb') as f:\n        head = f.read(6)\n    if False:", NOSCRIPT, 'FAIL the GIFs'),
   # js1c, the wasm to JavaScript 1.0 compiler (tools/js1c.c, tools/js10.mjs, docs/js1-compile-design.md)
   ('js1c-mul-overflows', 'tools/js1c.c', '"function JMu(a,b){return (a&65535)*b+((a>>>16)*b&65535)*65536|0;}\\n"', '"function JMu(a,b){return (a&65535)*b+((a>>>16)*b)*65536|0;}\\n"', JS1, 'FAIL every export agrees with wasm'),
-  ('js1c-spills-nothing', 'tools/js1c.c', '    bcopy(s->spill, r);', '    memset(s->spill, 0, sizeof(uint64_t) * (size_t)nwords);', JS1, 'FAIL every export agrees with wasm'),
+  ('js1c-spills-nothing', 'tools/js1c.c', '    bsetcopy(s->spill, r);', '    memset(s->spill, 0, sizeof(uint64_t) * (size_t)nwords);', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-resume-evaluates-if', 'tools/js1c.c', '      else if (guarded && tl) bs(b, "R||");', '      else if (guarded && tl) bs(b, "");', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-branch-not-carried', 'tools/js1c.c', '  if (here && !further) bf(b, "if(B){B=0;%s}", act);', '  if (here && !further) bs(b, "B=0;");', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-unreachable-no-flag', 'tools/js1c.c', '  case S_UNR: bs(b, "JT=1;return 0;"); break;', '  case S_UNR: bs(b, "return 0;"); break;', JS1, 'FAIL every export agrees with wasm'),
