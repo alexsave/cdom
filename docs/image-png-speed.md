@@ -1076,3 +1076,14 @@ On the Mac's numbers (main 134.1 ms against B1's 77.2) the same ratio would be a
 - A transposed 16 x 16 block (16 vector loads and stores a 16 steps, in place of 32 lane loads and stores a step) was not tried: on this VM the lane traffic binds, but the Mac's cores are bound by the Paeth chain (8 operations a step), where the transpose saves nothing.
 - The scaler's across loop for grey is scalar in both builds, like the RGB read's.
 - bench/image/paeth/run.mjs runs grey arms on a grey input; bench/image/.gitignore has build-old-simd/ and build-prof-simd/.
+
+## Grey PNG on the Mac: predictions (written before the run)
+
+Written 2026-11-20 by the dispatcher, before any Mac run of this branch; the run is bench/image/inflate-mac.sh (main's scalar and SIMD pages against this branch's, 9 interleaved rounds at box 900, Chrome then Safari).
+Main on the Mac (the inflate-fast run): p12g.png C-simd 134.1 ms in Chrome (B1 77.2) and 128 in Safari (B2 102).
+On the VM this branch took p12g.png's C-simd to 0.358 of main's; the Mac's Paeth chain is cheaper per byte than the VM's, so the wavefront gains less there, and the scaler's share is larger.
+
+- K1: p12g.png C-simd over C-old-simd: 0.35 to 0.55 in Chrome and in Safari. Falsifier: above 0.70 in either.
+- K2: p12g.png C-simd under Chrome's B1 (77.2 on main's run) and under Safari's best (102). Falsifier: over either.
+- K3: p12.jpg, p12.png, p12a.png C-simd within 2% of main's in both browsers.
+- K4: wasm memory after each input equal to main's.
