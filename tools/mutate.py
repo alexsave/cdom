@@ -1061,7 +1061,7 @@ M = [
   ('ns-text-changed', 'tools/cdpage.c', '"Here\'s a snowman";', '"Here is a snowman";', NOSCRIPT, "FAIL script off: the page's text"),
   ('ns-no-alt', 'tools/cdpage.c', 'img_tag(o, &snow, "[A snowman]");', 'img_tag(o, &snow, "");', NOSCRIPT, 'FAIL lynx -dump shows other text'),
   ('ns-marker-kept', 'tools/cdpage.c', '      if (a->noscript_shot) noscript_block(o, a->noscript_shot, a->noscript_snowman);', '      if (a->noscript_shot) noscript_block(o, a->noscript_shot, a->noscript_snowman);\n      else bput(o, l, n), bbyte(o, \'\\n\');', NOSCRIPT, 'FAIL CDOM_NOSCRIPT=0'),
-  ('ns-escape-unchecked', 'tools/cdpage.c', '  return st >= DESC ? from : SIZE_MAX;', '  return SIZE_MAX;', NOSCRIPT, 'planted sequence), no fallback: taken'),
+  ('ns-escape-unchecked', 'tools/cdpage.c', '  return st >= DESC ? from : SIZE_MAX;', '  return (void)st, (void)from, SIZE_MAX;', NOSCRIPT, 'planted sequence), no fallback: taken'),
   ('ns-escape-dd-stays', 'tools/cdpage.c', "      if (c == '>' && st == DESC_DD) { st = DATA; break; }\n", '', NOSCRIPT, 'FAIL the parse check and Chrome disagree'),
   ('ns-escape-no-delim', 'tools/cdpage.c', 'if (c == \'<\' && starts_ci(p + i + 1, n - i - 1, "script") && i + 7 < n && delim(p[i + 7])) { st = DESC;', 'if (c == \'<\' && starts_ci(p + i + 1, n - i - 1, "script") && i + 7 < n) { st = DESC;', NOSCRIPT, 'FAIL the parse check and Chrome disagree'),
   ('ns-arrow-unchecked', 'tools/cdpage.c', '    if (end && (!had || !blank(end + 3, bn - (size_t)(end + 3 - b))))', '    if (0 && end && (!had || !blank(end + 3, bn - (size_t)(end + 3 - b))))', NOSCRIPT, 'it would end the hiding comment): taken'),
