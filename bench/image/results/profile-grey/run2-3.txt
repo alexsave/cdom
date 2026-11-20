@@ -1,0 +1,44 @@
+# p12g.png build-prof0 Chrome/153.0.8010.12: 12 runs, resize 162.6 ms mean, sampled 190.9 ms per run
+ 39.8%     65.4 ms  cd_image_unfilter_scalar
+ 27.8%     45.6 ms  cd_image_scaler_row
+ 14.1%     23.1 ms  run_on
+ 14.0%     23.0 ms  rows
+  1.8%      3.0 ms  build
+  1.2%      2.0 ms  cd_image_adler32
+  0.6%      1.0 ms  window.arm
+  0.3%      0.4 ms  fetch
+  0.1%      0.2 ms  flush
+  0.1%      0.1 ms  sym_entry
+# p12g.png build-prof-simd Chrome/153.0.8010.12: 12 runs, resize 68.5 ms mean, sampled 96.8 ms per run
+ 35.2%     24.9 ms  run_on
+ 25.0%     17.6 ms  cd_image_scaler_row
+ 24.3%     17.2 ms  cd_image_unfilter_run_simd
+  5.1%      3.6 ms  build
+  3.3%      2.3 ms  cd_image_adler32
+  2.3%      1.7 ms  cd_image_scaler_div_simd
+  1.5%      1.0 ms  window.arm
+  1.3%      0.9 ms  cd_image_unfilter_scalar
+  0.8%      0.5 ms  fetch
+  0.2%      0.2 ms  cd_inflate_put
+# p12g.png build-prof0 Chrome/153.0.8010.12: 12 runs, resize 158.7 ms mean, sampled 185.7 ms per run
+ 40.1%     64.4 ms  cd_image_unfilter_scalar
+ 26.9%     43.2 ms  cd_image_scaler_row
+ 14.5%     23.2 ms  rows
+ 14.2%     22.8 ms  run_on
+  1.9%      3.0 ms  build
+  1.0%      1.7 ms  cd_image_adler32
+  0.7%      1.1 ms  window.arm
+  0.3%      0.6 ms  fetch
+  0.1%      0.1 ms  flush
+  0.0%      0.1 ms  cd_inflate_put
+# p12g.png build-prof-simd Chrome/153.0.8010.12: 12 runs, resize 62.7 ms mean, sampled 90.3 ms per run
+ 36.9%     23.8 ms  run_on
+ 24.5%     15.8 ms  cd_image_unfilter_run_simd
+ 24.1%     15.5 ms  cd_image_scaler_row
+  4.8%      3.1 ms  build
+  2.5%      1.6 ms  cd_image_adler32
+  2.0%      1.3 ms  cd_image_unfilter_scalar
+  1.7%      1.1 ms  cd_image_scaler_div_simd
+  1.5%      1.0 ms  window.arm
+  0.8%      0.5 ms  fetch
+  0.2%      0.1 ms  sym_entry
