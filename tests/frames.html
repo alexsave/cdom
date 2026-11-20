@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><title>frames</title></head><div id="m"></div>
+<script>
+/*CDOM_SHIM*/
+</script>
+<script>
+/*CDOM_BOOT*/
+</script>
+<script>
+// The frames tier's page (tests/frames.c, docs/frames-design.md). Written as the frames tier's own code is, so a real
+// Netscape 3 can parse it: functions declared at the top level, no literals. No BODY tag: a FRAMESET written after one
+// is ignored, and tests/build.sh makes frames-body.html, the same page with one, for the frameset written over it.
+function framesReady(x) {
+  X = x;
+  READY = 1;
+}
+READY = 0;
+var framesOptions = new Object();
+framesOptions.seed = 7;
+cdomBoot("frames.wasm", "m", null, framesReady, framesOptions);
+</script></html>

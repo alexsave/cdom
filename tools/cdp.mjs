@@ -18,12 +18,14 @@ export const sleep = ms => new Promise(r => setTimeout(r, ms));
 // LEGACY=ie6 is IE 9 and then what IE 6 lacks beyond it (IE6_OLD): ES5 and the W3C DOM of dom-old.js's table, with
 // attachEvent in their place, so the boot takes the fourth tier.
 // LEGACY=below is IE 6 without attachEvent either: below the floor, which the boot must refuse.
+// LEGACY=frames is IE 6 and then no DOM mutation at all (FRAMES_OLD), in every frame: the fifth tier, where only
+// document.write builds anything (docs/frames-design.md; tools/frames.mjs drives it).
 export const LEVEL = process.env.LEGACY || '';
-if (LEVEL && !['1', 'ie9', 'ie9-gaps', 'ie6', 'below'].includes(LEVEL)) throw new Error(`cdp: LEGACY=${LEVEL}: want 1, ie9, ie9-gaps, ie6 or below`);
+if (LEVEL && !['1', 'ie9', 'ie9-gaps', 'ie6', 'below', 'frames'].includes(LEVEL)) throw new Error(`cdp: LEGACY=${LEVEL}: want 1, ie9, ie9-gaps, ie6, below or frames`);
 export const LEGACY = !!LEVEL;
 // The boot's tier (shim/boot.js): 1 wasm, 2 wasm2js on typed arrays, 3 wasm2js on words, 4 that in ES3 on the old
-// DOM; 0 refused.
-export const TIER = !LEVEL ? 1 : LEVEL === 'below' ? 0 : LEVEL === 'ie6' ? 4 : LEVEL === 'ie9' ? 3 : 2;
+// DOM, 5 the frames tier; 0 refused.
+export const TIER = !LEVEL ? 1 : LEVEL === 'below' ? 0 : LEVEL === 'frames' ? 5 : LEVEL === 'ie6' ? 4 : LEVEL === 'ie9' ? 3 : 2;
 export const IE9 = TIER === 3;
 export const BELOW = TIER === 0; // below cdom's floor: the boot must refuse it
 // IE 9's gaps above its walls (IE9_GAPS) are in the page: every IE level.
@@ -33,7 +35,7 @@ export const GAPS = LEVEL !== '' && LEVEL !== '1';
 // what the first tier fetches, when the page starts a pair (APP_SIMD) and this Chrome takes the SIMD twin; the
 // fallbacks take the scalar module's builds, and fetch no .wasm at all.
 export const TIER_FILES = (app, wasm = `${app}.wasm`) => ({ 1: [wasm], 2: ['cdom.legacy.js', `${app}.wasm.js`], 3: ['cdom.legacy-ie9.js', `${app}.wasm.ie9.js`],
-  4: ['cdom.legacy-ie6.js', `${app}.wasm.ie9.js`] });
+  4: ['cdom.legacy-ie6.js', `${app}.wasm.ie9.js`], 5: ['cdom.frames.js', `${app}.wasm.ie9.js`] });
 // [pass, message] for the files a page fetched: all of its tier's, none of another's, and only the tier's own .wasm.
 export function tierFetched(got, app, wasm) {
   const files = TIER_FILES(app, wasm), want = files[TIER] || [], other = Object.values(files).flat().filter((f) => !want.includes(f));
@@ -141,6 +143,23 @@ const IE6_OLD = `
     const i = attached.findIndex((r) => r[0] === this && r[1] === on && r[2] === f);
     if (i >= 0) { rem.call(this, attached[i][4], attached[i][3], false); attached.splice(i, 1); }
   };`}`;
+// What the frames tier's browsers (Netscape 2 to 4, IE 3 and 4) lack beyond IE 6 (LEGACY=frames): any way to change a
+// document after it has loaded, so only document.write and open builds one. Deleted in every frame (this runs in each
+// on its creation): making nodes, putting them in and taking them out, markup set from script, attributes, and the
+// listeners (attachEvent too, which IE6_OLD put in). Kept for the harness: querySelector, getBoundingClientRect and
+// innerText's getter (its setter goes).
+const FRAMES_OLD = `
+  for (const k of ['createElement', 'createElementNS', 'createTextNode', 'createComment', 'createDocumentFragment',
+    'getElementById', 'importNode', 'adoptNode', 'append', 'prepend', 'replaceChildren']) delete Document.prototype[k];
+  for (const k of ['appendChild', 'insertBefore', 'removeChild', 'replaceChild']) delete Node.prototype[k];
+  for (const k of ['innerHTML', 'outerHTML', 'insertAdjacentHTML', 'insertAdjacentElement', 'insertAdjacentText', 'append',
+    'prepend', 'before', 'after', 'replaceWith', 'replaceChildren', 'setAttribute', 'removeAttribute', 'setAttributeNS',
+    'toggleAttribute', 'attachShadow', 'setHTMLUnsafe']) delete Element.prototype[k];
+  delete ShadowRoot.prototype.innerHTML;
+  for (const k of ['before', 'after', 'replaceWith']) delete CharacterData.prototype[k];
+  const inner = Reflect.getOwnPropertyDescriptor(HTMLElement.prototype, 'innerText');
+  Reflect.defineProperty(HTMLElement.prototype, 'innerText', { configurable: true, get: inner.get });
+  delete P.attachEvent; delete P.detachEvent;`;
 const OLD = `(() => {
   for (const k of ['WebAssembly', 'TextDecoder', 'TextEncoder', 'queueMicrotask', 'reportError', 'Promise', 'fetch',
     'PointerEvent', 'globalThis']) delete window[k];
@@ -156,7 +175,7 @@ const OLD = `(() => {
   const P = EventTarget.prototype, add = P.addEventListener, rem = P.removeEventListener;
   const adds = window.__adds = [];
   P.addEventListener = function (t, f, c) { adds.push([t, typeof c, !!c]); return add.call(this, t, f, !!c); };
-  P.removeEventListener = function (t, f, c) { return rem.call(this, t, f, !!c); };${GAPS ? IE9_GAPS : ''}${TIER >= 3 || BELOW ? IE9_WALLS : ''}${TIER === 4 || BELOW ? IE6_OLD : ''}
+  P.removeEventListener = function (t, f, c) { return rem.call(this, t, f, !!c); };${GAPS ? IE9_GAPS : ''}${TIER >= 3 || BELOW ? IE9_WALLS : ''}${TIER >= 4 || BELOW ? IE6_OLD : ''}${TIER === 5 ? FRAMES_OLD : ''}
 })();`;
 // The scripts a page fetched, by file name, to prove which path it took.
 // A plain loop: under LEGACY=below no polyfill puts Array.prototype.map back.
