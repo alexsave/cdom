@@ -334,7 +334,8 @@ function lowerExpressions(ast, math) {
       if (p.node.operator === '+') p.replaceWith(t.binaryExpression('-', p.node.argument, num(0)));
     },
     Identifier(p) {
-      if (!p.isReferencedIdentifier() || p.scope.hasBinding(p.node.name)) return;
+      // getBinding, not hasBinding: Babel's hasBinding counts the builtins (Infinity, NaN) as bound.
+      if (!p.isReferencedIdentifier() || p.scope.getBinding(p.node.name)) return;
       if (p.node.name === 'Infinity') p.replaceWith(id('c_INF'));
       else if (p.node.name === 'NaN') p.replaceWith(id('c_NAN'));
     },

@@ -8,8 +8,16 @@ import vm from 'node:vm';
 import { createRequire } from 'node:module';
 
 const SEED = 0x9e3779b9; // the one seed: change it here to try other inputs
-const src = fs.readFileSync(path.resolve(path.dirname(new URL(import.meta.url).pathname), 'legacy/words.js'), 'utf8');
+// WORDS=words1 checks tools/legacy/words1.js instead, the same memory in JavaScript 1.0 for the frames tier's app file
+// (docs/js1-transform-design.md), and the memforms end to end on that file (memforms.wasm.js1.js) in place of the words
+// build, each in a context that also lacks what Netscape 2 to 4 and IE 4 lack and wasm2js output calls.
+const ONE = process.env.WORDS === 'words1';
+const src = fs.readFileSync(path.resolve(path.dirname(new URL(import.meta.url).pathname), ONE ? 'legacy/words1.js' : 'legacy/words.js'), 'utf8');
+const OLD = `delete Math.imul; delete Math.clz32; delete Math.trunc; delete Math.fround; delete String.prototype.charCodeAt;
+  delete String.fromCharCode; delete Array.prototype.push; delete Array.prototype.pop; delete Array.prototype.slice;
+  delete Array.prototype.splice; delete Array.prototype.concat; delete Function.prototype.call; delete Function.prototype.apply;`;
 const w = vm.createContext({});
+if (ONE) vm.runInContext(OLD, w);
 vm.runInContext(src, w);
 const W = () => w.W;
 
@@ -193,7 +201,7 @@ section('grow adds zero pages at the end and keeps what was there', () => {
   w.words_init(65536); w.store8(65535, 0xab); W()[100] = -5;
   w.words_grow(2);
   ok(w.WBYTES === 3 * 65536 && W().length === 3 * 16384, `size after grow: ${w.WBYTES} bytes, ${W().length} words`);
-  ok(w.load8_u(65535) === 0xab && W()[100] === -5 && W().slice(16384).every((x) => x === 0), 'old bytes kept, new ones zero');
+  ok(w.load8_u(65535) === 0xab && W()[100] === -5 && [...W()].slice(16384).every((x) => x === 0), 'old bytes kept, new ones zero');
 });
 
 section('data segments: base64 decoded into the words, every length and offset, the bytes around untouched', () => {
@@ -219,10 +227,11 @@ section('tests/memforms.c: its words build agrees with wasm2js output on every r
     if (strip) vm.runInContext(`for (const k of ${JSON.stringify(['ArrayBuffer', 'SharedArrayBuffer', 'DataView', 'Int8Array', 'Uint8Array',
       'Uint8ClampedArray', 'Int16Array', 'Uint16Array', 'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array', 'BigInt64Array',
       'BigUint64Array', 'Float16Array', 'Atomics'])}) delete globalThis[k];`, ctx);
+    if (strip && ONE) vm.runInContext(OLD, ctx);
     vm.runInContext(fs.readFileSync(path.join(out, file), 'utf8'), ctx);
     return ctx.window.cdomFactory({ env: { setTempRet0: (v) => { hi = v; } } });
   };
-  const js = load('memforms.wasm.ie9.js', true), ref = load('memforms.wasm.js', false);
+  const js = load(ONE ? 'memforms.wasm.js1.js' : 'memforms.wasm.ie9.js', true), ref = load('memforms.wasm.js', false);
   const wasm = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(path.join(out, 'memforms.wasm'))), {}).exports;
   const i64 = (lo) => (BigInt(hi) << 32n) | BigInt(lo >>> 0);
   const join = (lo, h) => BigInt.asIntN(64, (BigInt(h) << 32n) | BigInt(lo >>> 0));
