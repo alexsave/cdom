@@ -107,10 +107,6 @@ var cdomVml = (function (w, doc) {
         i++;
       } else if (!cmd || cmd === "z" || cmd === "Z") {
         break;                                 /* a number with no command to repeat */
-      } else if (cmd === "M") {
-        cmd = "L";                             /* pairs after a move are lines */
-      } else if (cmd === "m") {
-        cmd = "l";
       }
       up = cmd.toUpperCase();
       rel = cmd !== up;
@@ -134,7 +130,7 @@ var cdomVml = (function (w, doc) {
       var ox = rel ? x : 0, oy = rel ? y : 0;
       if (up === "M") {
         moveTo(args[0] + ox, args[1] + oy);
-        cmd = rel ? "l" : "L";
+        cmd = rel ? "l" : "L";                 /* pairs after a move are lines */
       } else if (up === "L") {
         lineTo(args[0] + ox, args[1] + oy);
       } else if (up === "H") {

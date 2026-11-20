@@ -45,6 +45,7 @@ is('M0 0 C1 2 3 4 5 6 T11 6', 'm0,0 c100,200,300,400,500,600 c500,600,700,600,11
 // Numbers as SVG writes them.
 is('M.5.5L1e1-2', 'm50,50 l1000,-200 e', 'numbers run together, an exponent, a sign as separator');
 is('M1,2,3,4', 'm100,200 l300,400 e', 'commas');
+is('M1.5.5L2.25.75', 'm150,50 l225,75 e', 'a number ends at a second point');
 is('M 1e+1 2E-1 L -.5 +3', 'm1000,20 l-50,300 e', 'exponent signs, a leading point and plus');
 is('M0.004 0.005', 'm0,1 e', 'rounding to a hundredth of a pixel');
 is('\tM1\n2\rL3\f4 ', 'm100,200 l300,400 e', 'every SVG white space');
