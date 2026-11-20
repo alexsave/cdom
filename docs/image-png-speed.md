@@ -1087,3 +1087,26 @@ On the VM this branch took p12g.png's C-simd to 0.358 of main's; the Mac's Paeth
 - K2: p12g.png C-simd under Chrome's B1 (77.2 on main's run) and under Safari's best (102). Falsifier: over either.
 - K3: p12.jpg, p12.png, p12a.png C-simd within 2% of main's in both browsers.
 - K4: wasm memory after each input equal to main's.
+
+## Grey PNG on the Mac: results
+
+bench/image/inflate-mac.sh origin/main png-grey at about 5am New York time on 2026-11-20 (Apple arm64; Chrome, then Safari 27.0.1), main at 59380c1, 9 interleaved rounds at box 900; results/2026-11-20-png-grey-{chrome,safari}.{log,tsv}. Medians, C-simd against main's C-simd and the browser:
+
+| input | browser | main C-simd | this branch C-simd | B1 | B2 |
+| --- | --- | --- | --- | --- | --- |
+| p12g.png | Chrome | 135.5 | 47.2 | 77.2 | 84.1 |
+| p12g.png | Safari | 129 | 53 | 122 | 101 |
+| p12.jpg | Chrome / Safari | 52.2 / 55 | 52.1 / 54 | 62.8 / 85 | 69.2 / 77 |
+| p12.png | Chrome / Safari | 107.9 / 115 | 108.0 / 115 | 132.2 / 205 | 139.6 / 197 |
+| p12a.png | Chrome / Safari | 150.0 / 161 | 150.3 / 162 | 154.4 / 233 | 162.1 / 201 |
+
+The scalar page (C-js) takes p12g.png from 153.2 to 108.1 ms in Chrome and from 158 to 109 in Safari.
+
+| id | prediction | measured | verdict |
+| --- | --- | --- | --- |
+| K1 | p12g.png C-simd over main's: 0.35 to 0.55 in both; falsifier above 0.70 | Chrome 0.348, Safari 0.411 | Safari confirmed; Chrome just under its range on the fast side, not falsified |
+| K2 | p12g.png under Chrome's B1 and Safari's best | 47.2 against 77.2; 53 against 101 | confirmed |
+| K3 | p12.jpg, p12.png, p12a.png within 2% of main's | 0.998, 1.001, 1.002 in Chrome; 0.982, 1.000, 1.006 in Safari | confirmed |
+| K4 | wasm memory equal to main's | equal, but p12g.png one page lower (8.8 against 8.9 MiB: the RGBA row is gone) | refuted on the good side |
+
+With this branch cdom's resize is faster than both browsers on every input of the bench: baseline and progressive JPEG, and RGB, RGBA and grey PNG.
