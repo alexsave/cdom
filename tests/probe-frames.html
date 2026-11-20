@@ -1,0 +1,23 @@
+<HTML>
+<HEAD>
+<TITLE>cdom probe-frames</TITLE>
+<SCRIPT LANGUAGE="JavaScript">
+// The top script: g's onload calls go(), which writes a document into frame f from outside (parent.f.document.open,
+// write, close).  The page written into f marks "childwrote" itself, by an image, so a mark shows it was written and ran.
+var TAG = "" + location.search;
+TAG = TAG.substring(1, TAG.length);
+if (TAG == "") { TAG = "x"; }
+function go() {
+  parent.f.document.open();
+  parent.f.document.write('<HTML><BODY>written into f<IMG SRC="/mark/' + TAG + '/p-f1-childwrote-yes" WIDTH=1 HEIGHT=1>');
+  parent.f.document.write('<SCRIPT LANGUAGE="JavaScript">document.write("<IMG SRC=/mark/' + TAG + '/p-f2-childscript-ran WIDTH=1 HEIGHT=1>");</SCRIPT>');
+  parent.f.document.write('</BODY></HTML>');
+  parent.f.document.close();
+}
+</SCRIPT>
+</HEAD>
+<FRAMESET ROWS="50%,50%">
+<FRAME NAME="f" SRC="probe-frames-f.html">
+<FRAME NAME="g" SRC="probe-frames-g.html">
+</FRAMESET>
+</HTML>
