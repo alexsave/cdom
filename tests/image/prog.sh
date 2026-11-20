@@ -14,12 +14,10 @@ top="$(cd "$here/../.." && pwd)"
 out="$top/tests/out/image/prog-test"
 . "$top/tools/cdomflags.sh"
 var() { cdom_mk_var "$1"; }
-read -r -a OWN <<< "$(var CDOM_IMAGE_OWN_SRC)"
+read -r -a OWN <<< "$(var CDOM_IMAGE_OWN_SRC) $(var CDOM_IMAGE_INFLATE_SRC)"   # the inflate part is cdom's own, as run.sh builds it
 read -r -a VENDOR <<< "$(var CDOM_IMAGE_VENDOR_SRC)"
-read -r -a MINIZ <<< "$(var CDOM_IMAGE_MINIZ_SRC)"
 read -r -a OWNF <<< "$(var CDOM_IMAGE_OWN_CFLAGS)"
 read -r -a VENDORF <<< "$(var CDOM_IMAGE_VENDOR_CFLAGS)"
-read -r -a MINIZF <<< "$(var CDOM_IMAGE_MINIZ_CFLAGS)"
 LJT="$top/third_party/libjpeg-turbo-3.2.1/src"
 HCC="${HOST_CC:-clang}"
 bin="${LLVM_BIN:-$(dirname "$(readlink -f "$(command -v "$HCC")")")}"
@@ -39,7 +37,6 @@ build() {
   # this tree's module
   for f in "${OWN[@]}" "$top/src/cdom_image_sjlj.c"; do "$HCC" "${H[@]}" -Wall -Wextra -Werror -DCDOM_IMAGE_TESTING "${OWNF[@]}" -c -o "$o/new/$(basename "$f" .c).o" "$f" || return 1; done
   for f in "${VENDOR[@]}"; do "$HCC" "${H[@]}" "${VENDORF[@]}" -c -o "$o/new/v_$(basename "$f" .c).o" "$f" || return 1; done
-  for f in "${MINIZ[@]}"; do "$HCC" "${H[@]}" "${MINIZF[@]}" -c -o "$o/new/m_$(basename "$f" .c).o" "$f" || return 1; done
   # libjpeg's own progressive path: the same files but cdom's two, and jdphuff.c and jdcoefct.c as upstream builds them
   for f in "${OWN[@]}" "$top/src/cdom_image_sjlj.c"; do
     [ "$(basename "$f")" = cdom_image_jpegp.c ] && continue
@@ -49,7 +46,6 @@ build() {
     [ "$(basename "$f")" = cdom_image_ljt_coef.c ] && continue
     "$HCC" "${H[@]}" "${VENDORF[@]}" -c -o "$o/ref/v_$(basename "$f" .c).o" "$f" || return 1
   done
-  for f in "${MINIZ[@]}"; do "$HCC" "${H[@]}" "${MINIZF[@]}" -c -o "$o/ref/m_$(basename "$f" .c).o" "$f" || return 1; done
   # one relocatable object, through the compiler's own linker (ld.lld reads only ELF; macOS objects are Mach-O)
   "$HCC" -r -nostdlib -o "$o/ref.o" "$o"/ref/*.o || return 1
   # ref_ goes after Mach-O's leading underscore (C's ref_x is _ref_x there)

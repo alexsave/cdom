@@ -18,6 +18,10 @@
  *   div            the scaler's divide, in doubles: sums up to 255 t, t up to 65500 squared, and the sums at the edges of the quotient
  *   across, down   the scaler's two row loops: random sizes from 1 to 64 pixels and more, edge weights and sums, and an
  *                  output that starts as garbage (across writes every sum, down adds to what is there)
+ *   adler32        cd_image_adler32 (src/cdom_image_inflate.c, whose 16-byte blocks are SIMD here) against a byte at a time
+ *                  with the modulo at every byte: every length 0 to 64, lengths about one, two and three times zlib's NMAX
+ *                  (5552, the most bytes between two modulos) with 0 to 15 bytes of tail, random lengths up to 100,000,
+ *                  random and all-255 bytes (the largest sums), and starting values with s1 and s2 at their largest
  *
  * Every input and output buffer is placed so that its last byte is the last byte of the module's memory (and the other one
  * far below), so a read or a write past the end is a trap, not a quiet wrong byte; a write before the start or past the
@@ -440,6 +444,32 @@ static void div_all(void) {
     }
 }
 
+/* ---- adler32 ---- */
+
+static uint32_t adler_bytes(uint32_t a, const uint8_t *s, uint32_t n) {   /* the definition, one byte at a time */
+  uint32_t s1 = a & 0xffff, s2 = a >> 16;
+  for (uint32_t i = 0; i < n; i++) { s1 = (s1 + s[i]) % 65521u; s2 = (s2 + s1) % 65521u; }
+  return s2 << 16 | s1;
+}
+static void adler_case(uint32_t n, int kind) {
+  uint8_t *s = place(n, 1, 0);
+  for (uint32_t i = 0; i < n; i++) s[i] = kind == 0 ? (uint8_t)rnd() : kind == 1 ? 255 : byte_edge();
+  uint32_t a = below(3) == 0 ? 1u : below(2) ? 65520u << 16 | 65520u : below(65521) << 16 | below(65521);
+  if (cd_image_adler32(a, s, n) != adler_bytes(a, s, n)) note(1);
+}
+static void adler_all(void) {
+  uint32_t k = 0;
+  for (uint32_t n = 0; n <= 64; n++)
+    for (int rep = 0; rep < 12; rep++) { cases = k++; adler_case(n, rep % 3); }
+  for (uint32_t m = 1; m <= 3; m++)                                  /* about m x NMAX, and its tails of 0 to 15 bytes */
+    for (int d = -48; d <= 48; d++)
+      for (int kind = 0; kind < 2; kind++) { cases = k++; adler_case(m * 5552u + (uint32_t)d, kind); }
+  for (uint32_t t = 0; t < 16; t++)                                  /* whole blocks, then a tail of t */
+    for (int rep = 0; rep < 8; rep++) { cases = k++; adler_case(16 * (1 + below(2000)) + t, rep % 3); }
+  for (int rep = 0; rep < 200; rep++) { cases = k++; adler_case(below(100001), rep % 3); }
+  cases = k++; adler_case(100000, 1);                                /* 18 NMAX runs of 255s */
+}
+
 /* ---- the entry ---- */
 
 EXPORT("run") uint32_t run(uint32_t loop) {
@@ -456,7 +486,8 @@ EXPORT("run") uint32_t run(uint32_t loop) {
     case 6: across_all(); break;
     case 7: down_all(); break;
     case 8: div_all(); break;
-    case 9: unread_cases(); break;
+    case 9: adler_all(); break;
+    case 10: unread_cases(); break;
     default: return 0xffffffffu;
   }
   (void)fails;
