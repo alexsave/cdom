@@ -41,7 +41,7 @@ jobs:
           curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
           echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm.list
           sudo apt-get update -qq
-          sudo apt-get install -y -qq clang-23 lld-23 llvm-23 libjpeg-turbo-progs
+          sudo apt-get install -y -qq clang-23 lld-23 llvm-23 libjpeg-turbo-progs lynx
           echo "WASM_CC=/usr/lib/llvm-23/bin/clang" >> "$GITHUB_ENV"
           # Ubuntu's binaryen (116) writes wasm2js output of another shape than tools/legacy/build.mjs reads (brew has 130).
           b=binaryen-version_130-x86_64-linux.tar.gz
@@ -59,7 +59,7 @@ jobs:
       - name: Toolchain (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install llvm lld binaryen libjpeg-turbo
+          brew install llvm lld binaryen libjpeg-turbo lynx
           p="$(brew --prefix libjpeg-turbo)/bin"
           echo "CJPEG=$p/cjpeg" >> "$GITHUB_ENV"
           echo "DJPEG=$p/djpeg" >> "$GITHUB_ENV"
@@ -100,3 +100,7 @@ jobs:
         run: tests/page/run.sh
       - name: tests/pick/run.sh (APP_SIMD's pick in Chrome)
         run: tests/pick/run.sh
+      # The no-script fallback (docs/noscript-design.md): Chrome with script off and on, lynx -dump, the HTML 2.0 lens,
+      # the GIFs and their stamp, and tools/cdpage's parse check against Chrome's parser.
+      - name: tests/noscript/run.sh
+        run: tests/noscript/run.sh

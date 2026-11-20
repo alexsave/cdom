@@ -132,7 +132,7 @@ try {
   await size(snow);
   const px = Math.round(snow.h * 0.84);
   const doc = `<!doctype html><meta charset="utf-8"><body style="margin:0;background:#fff"><div style="width:${snow.w}px;height:${snow.h}px;`
-    + `font:${px}px/${snow.h}px 'DejaVu Sans','Noto Sans Symbols','Apple Symbols','Segoe UI Symbol',sans-serif;text-align:center;color:#000">☃</div>`;
+    + `font:${px}px/${snow.h}px 'DejaVu Sans','Noto Sans Symbols','Apple Symbols','Segoe UI Symbol',sans-serif;text-align:center;color:#000">\u2603</div>`;
   await b.send('Page.navigate', { url: `data:text/html;charset=utf-8,${encodeURIComponent(doc)}` });
   state = '';
   for (let i = 0; i < 200 && !state; i++) {
