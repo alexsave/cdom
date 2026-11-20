@@ -107,39 +107,99 @@ static uint64_t touched(uint32_t ss, uint32_t se) {
   return (hi == 63 ? ~0ull : (2ull << hi) - 1) & ~((1ull << ss) - 1);
 }
 
-/* A band libjpeg's start_pass accepts (a scan it refuses stops the decode, so nothing after it matters) */
+/* A scan jdphuff.c's start_pass accepts (a scan it refuses stops the decode with JERR_BAD_PROGRESSION) */
 static int scan_ok(const pscan *q) {
-  return q->ss <= q->se && q->se <= 63 && (q->ss != 0 || q->se == 0) && (q->ss == 0 || q->ncomp == 1);
+  if (q->ss == 0 ? q->se != 0 : q->ss > q->se || q->se >= DCTSIZE2 || q->ncomp != 1) return 0;
+  if (q->ah != 0 && q->al != q->ah - 1) return 0;
+  return q->al <= 13;
 }
 
-/* Walks the file's markers from the first scan's data, as libjpeg's read_markers will: every scan's components and
- * band. Leaves x->scans 0 at anything it does not fully follow (a marker it does not know, a scan header libjpeg would
- * refuse), and then nothing is skipped. */
+#ifdef CDOM_IMAGE_TESTING
+/* What the walk found, for tests/image/walkcheck.h: the count of scans (CD_IMAGE_JPEGP_GAVE_UP when it gave up, and
+ * CD_IMAGE_JPEGP_NOT_RUN before it runs), and each scan as cd_image_jpegp_scan_code packs it. The scans libjpeg read are
+ * the ones its read_markers handed to start_pass, recorded there before anything else. */
+int32_t cd_image_jpegp_walk_n = CD_IMAGE_JPEGP_NOT_RUN;
+uint64_t cd_image_jpegp_walk_list[CD_IMAGE_SCANS_MAX + 2];
+uint32_t cd_image_jpegp_read_n, cd_image_jpegp_in_start;
+uint64_t cd_image_jpegp_read_list[CD_IMAGE_SCANS_MAX + 2];
+uint64_t cd_image_jpegp_scan_code(uint32_t ncomp, const uint8_t *comp, uint32_t ss, uint32_t se, uint32_t ah, uint32_t al) {
+  uint64_t c = ncomp;
+  for (uint32_t i = 0; i < ncomp && i < MAX_COMPS_IN_SCAN; i++) c |= (uint64_t)comp[i] << (4 + 4 * i);
+  return c | (uint64_t)ss << 20 | (uint64_t)se << 28 | (uint64_t)ah << 36 | (uint64_t)al << 40;
+}
+#endif
+
+/* The byte libjpeg reads at offset i of the file: past its end, cdom's source (src/cdom_image_jpeg.c, src_fill) gives
+ * 0xFF 0xD9 at every refill, so the reads go on as 0xFF, 0xD9, 0xFF, ... */
+static uint32_t vb(const uint8_t *p, size_t n, size_t i) { return i < n ? p[i] : ((i - n) & 1) ? 0xd9 : 0xff; }
+
+/* Walks the file's markers from the first scan's data as libjpeg's read_markers and next_marker (jdmarker.c) will,
+ * byte for byte: every scan's components and band, in order. Where libjpeg would stop with an error (a table segment
+ * it refuses, a marker it does not take, a scan header or band it refuses), and at a scan header past the end of the
+ * file or a scan more than the cap allows, it gives up: x->scans stays 0, and then nothing is skipped and every store
+ * keeps what libjpeg's keeps. */
 static void walk(j_decompress_ptr cinfo, pctx *x) {
   const uint8_t *p = cinfo->src->next_input_byte;
   size_t n = cinfo->src->bytes_in_buffer;
   uint32_t cap = CD_IMAGE_SCANS_MAX + 2, ns = 0;
+#ifdef CDOM_IMAGE_TESTING
+  cd_image_jpegp_walk_n = CD_IMAGE_JPEGP_GAVE_UP;
+#endif
   pscan *s = (*cinfo->mem->alloc_small)((j_common_ptr)cinfo, JPOOL_IMAGE, cap * sizeof *s);
   s[0].ncomp = (uint8_t)cinfo->comps_in_scan;
   for (int i = 0; i < cinfo->comps_in_scan; i++) s[0].comp[i] = (uint8_t)cinfo->cur_comp_info[i]->component_index;
   s[0].ss = (uint8_t)cinfo->Ss; s[0].se = (uint8_t)cinfo->Se; s[0].ah = (uint8_t)cinfo->Ah; s[0].al = (uint8_t)cinfo->Al;
   if (!scan_ok(&s[0])) return;
   ns = 1;
-  size_t at = scan_end(p, n);
+  size_t at = scan_end(p, n);                             /* the first marker after the data (see scan_end) */
   for (;;) {
-    if (at >= n) break;                                   /* the file ends: libjpeg reads its own EOI there */
+    /* next_marker: 0xFF and more 0xFF, then the marker; 0xFF 0x00 is data, and the search goes on past it. Past the
+     * end of the file the source gives 0xFF 0xD9, an EOI, from any offset: libjpeg reads no more scans. */
     while (at < n && p[at] == 0xff) at++;
     if (at >= n) break;
     uint32_t m = p[at++];
-    if (m == 0) { at = scan_end(p + at, n - at) + at; continue; }   /* cannot follow 0xFF: next_marker skips it */
+    if (m == 0) { at = scan_end(p + at, n - at) + at; continue; }
     if (m == 0xd9) break;                                 /* EOI */
     if (m == 0x01 || (m >= 0xd0 && m <= 0xd7)) goto next; /* TEM, RSTn: no length */
-    if (at + 2 > n) break;
-    uint32_t len = (uint32_t)p[at] << 8 | p[at + 1];
-    if (m == 0xda) {                                      /* SOS: as get_sos reads it */
-      if (at + 3 > n) break;
-      uint32_t c = p[at + 2];
-      if (len != c * 2 + 6 || c < 1 || c > MAX_COMPS_IN_SCAN || at + len > n || ns >= cap) return;
+    uint32_t len = vb(p, n, at) << 8 | vb(p, n, at + 1);
+    if ((m >= 0xe0 && m <= 0xef) || m == 0xfe || m == 0xdc || m == 0xcc) {
+      /* APPn (get_interesting_appn, skip_variable), COM and DNL (skip_variable), DAC (skip_variable: this build has no
+       * arithmetic decoding): the length less 2 is skipped when it is positive, and nothing when it is not. A skip past
+       * the end stops at the end (src_skip), and an EOI follows; so does a length that is not all in the file. */
+      if (at + 2 > n) break;
+      at += len >= 2 ? len : 2;
+    } else if (m == 0xc4) {                               /* DHT, as get_dht reads it */
+      size_t q = at + 2;
+      long left = (long)len - 2;
+      while (left > 16) {
+        uint32_t index = vb(p, n, q++), count = 0;
+        for (int i = 0; i < 16; i++) count += vb(p, n, q++);
+        left -= 1 + 16;
+        if (count > 256 || (long)count > left) return;    /* JERR_BAD_HUFF_TABLE */
+        q += count;
+        left -= (long)count;
+        if ((index & 0x10 ? index - 0x10 : index) >= NUM_HUFF_TBLS) return;   /* JERR_DHT_INDEX */
+      }
+      if (left != 0) return;                              /* JERR_BAD_LENGTH */
+      at = q;
+    } else if (m == 0xdb) {                               /* DQT, as get_dqt reads it */
+      size_t q = at + 2;
+      long left = (long)len - 2;
+      while (left > 0) {
+        uint32_t t = vb(p, n, q++);
+        if ((t & 15) >= NUM_QUANT_TBLS) return;           /* JERR_DQT_INDEX */
+        q += t >> 4 ? 2 * DCTSIZE2 : DCTSIZE2;
+        left -= t >> 4 ? 2 * DCTSIZE2 + 1 : DCTSIZE2 + 1;
+      }
+      if (left != 0) return;                              /* JERR_BAD_LENGTH */
+      at = q;
+    } else if (m == 0xdd) {                               /* DRI, as get_dri reads it */
+      if (len != 4) return;                               /* JERR_BAD_LENGTH */
+      at += 4;
+    } else if (m == 0xda) {                               /* SOS, as get_sos reads it */
+      uint32_t c = vb(p, n, at + 2);
+      if (len != c * 2 + 6 || c < 1 || c > MAX_COMPS_IN_SCAN) return;   /* JERR_BAD_LENGTH */
+      if (at + len > n || ns >= cap) return;              /* a header libjpeg reads past the end; over the cap */
       pscan *q = &s[ns];
       int cur[MAX_COMPS_IN_SCAN] = {-1, -1, -1, -1};
       for (uint32_t i = 0; i < c; i++) {
@@ -147,27 +207,31 @@ static void walk(j_decompress_ptr cinfo, pctx *x) {
         int found = -1;
         for (int ci = 0; ci < cinfo->num_components && ci < MAX_COMPS_IN_SCAN; ci++)
           if ((uint32_t)cinfo->comp_info[ci].component_id == id && cur[ci] < 0) { found = ci; break; }
-        if (found < 0) return;
+        if (found < 0) return;                            /* JERR_BAD_COMPONENT_ID */
         for (uint32_t pi = 0; pi < i; pi++) if (cur[pi] == found) return;
         cur[i] = found;
         q->comp[i] = (uint8_t)found;
       }
       q->ncomp = (uint8_t)c;
       q->ss = p[at + 3 + 2 * c]; q->se = p[at + 4 + 2 * c]; q->ah = p[at + 5 + 2 * c] >> 4; q->al = p[at + 5 + 2 * c] & 15;
-      if (!scan_ok(q)) return;
+      if (!scan_ok(q)) return;                            /* start_pass: JERR_BAD_PROGRESSION */
       ns++;
       at += len;
       at = scan_end(p + at, n - at) + at;
       continue;
-    }
-    if (!((m >= 0xe0 && m <= 0xef) || m == 0xfe || m == 0xc4 || m == 0xdb || m == 0xdd || m == 0xcc || m == 0xdc)) return;
-    if (len < 2 || at + len > n) break;                   /* libjpeg reaches the end of the file in it */
-    at += len;
+    } else return;                                        /* SOI, SOFn, JPGn, RESn and the rest: libjpeg stops */
+    if (at >= n) break;     /* a segment that ends at or past the end: libjpeg reads its EOI next (after a DHT or DQT
+                             * read past the end, from the 0xFF 0xD9 it read last or the next ones) */
   next:
     while (at < n && p[at] != 0xff) at++;                 /* next_marker: bytes before a marker are skipped */
   }
   x->scans = s;
   x->nscans = ns;
+#ifdef CDOM_IMAGE_TESTING
+  cd_image_jpegp_walk_n = (int32_t)ns;
+  for (uint32_t i = 0; i < ns; i++)
+    cd_image_jpegp_walk_list[i] = cd_image_jpegp_scan_code(s[i].ncomp, s[i].comp, s[i].ss, s[i].se, s[i].ah, s[i].al);
+#endif
 }
 
 /* ---- the entropy decoder: start of a scan ---- */
@@ -210,6 +274,17 @@ static boolean no_mcu(j_decompress_ptr cinfo, JBLOCKROW *b) { (void)b; ERREXIT(c
 /* jdphuff.c's start_pass_phuff_decoder, the same checks and the same warnings, then this decoder's own setup. */
 static void start_pass(j_decompress_ptr cinfo) {
   pctx *x = (pctx *)cinfo->entropy;
+#ifdef CDOM_IMAGE_TESTING
+  {                                                       /* the scan libjpeg's read_markers read */
+    uint8_t comp[MAX_COMPS_IN_SCAN] = {0};
+    for (int ci = 0; ci < cinfo->comps_in_scan; ci++) comp[ci] = (uint8_t)cinfo->cur_comp_info[ci]->component_index;
+    if (cd_image_jpegp_read_n < CD_IMAGE_SCANS_MAX + 2)
+      cd_image_jpegp_read_list[cd_image_jpegp_read_n] = cd_image_jpegp_scan_code((uint32_t)cinfo->comps_in_scan, comp,
+          (uint32_t)cinfo->Ss, (uint32_t)cinfo->Se, (uint32_t)cinfo->Ah, (uint32_t)cinfo->Al);
+    cd_image_jpegp_read_n++;
+    cd_image_jpegp_in_start = 1;
+  }
+#endif
   int is_dc = cinfo->Ss == 0, bad = 0;
   if (is_dc) { if (cinfo->Se != 0) bad = 1; }
   else { if (cinfo->Ss > cinfo->Se || cinfo->Se >= DCTSIZE2) bad = 1; if (cinfo->comps_in_scan != 1) bad = 1; }
@@ -243,6 +318,9 @@ static void start_pass(j_decompress_ptr cinfo) {
     }
   }
   x->pub.insufficient_data = FALSE;
+#ifdef CDOM_IMAGE_TESTING
+  cd_image_jpegp_in_start = 0;
+#endif
   /* Skip or decode: the walk must have seen this scan as libjpeg read it; a scan it did not see is decoded, and when
    * an earlier scan was skipped or a store has no mask for it, the decode cannot be libjpeg's, so it stops. */
   uint32_t i = x->scan_at++;
@@ -708,10 +786,15 @@ static uint64_t need_zz(int size) {
 }
 
 void jinit_d_coef_controller(j_decompress_ptr cinfo, boolean need_full_buffer) {
-  if (!cinfo->progressive_mode || !need_full_buffer || cinfo->buffered_image || cinfo->entropy->start_pass != start_pass) {
+  if (!cinfo->progressive_mode || !need_full_buffer || cinfo->entropy->start_pass != start_pass) {
     cdom_ljt_d_coef_controller(cinfo, need_full_buffer);
     return;
   }
+  /* A progressive file in buffered-image mode, which is also how jpeg_read_coefficients comes here (jdtrans.c sets
+   * buffered_image before it calls this): refused. This controller keeps no whole coefficient arrays (coef_arrays is
+   * 0) and decodes only for the output passes of jdmaster.c's plain decode, and libjpeg's own controller could not
+   * decode it either, since jdphuff.c is not built (decode_mcu is no_mcu). cdom asks for neither. */
+  if (cinfo->buffered_image) ERREXIT(cinfo, JERR_NOT_COMPILED);
   if (cinfo->data_precision != 8) ERREXIT1(cinfo, JERR_BAD_PRECISION, cinfo->data_precision);
   pctx *x = (pctx *)cinfo->entropy;
   walk(cinfo, x);

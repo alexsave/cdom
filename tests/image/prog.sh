@@ -54,10 +54,10 @@ build() {
   "$OBJCOPY" --redefine-syms="$o/ref.syms" "$o/ref.o" "$o/ref_renamed.o" || return 1
   "$HCC" "${H[@]}" -Wall -Wextra -Werror -c -o "$o/host_alloc.o" "$here/host_alloc.c" || return 1
   if [ -n "$fuzz" ]; then
-    "$HCC" "${H[@]}" -Wall -Wextra -Werror -c -o "$o/fuzz.o" "$here/fuzz_jpegp.c" || return 1
+    "$HCC" "${H[@]}" -Wall -Wextra -Werror -DCDOM_IMAGE_TESTING -I"$LJT" -c -o "$o/fuzz.o" "$here/fuzz_jpegp.c" || return 1
     "$HCC" "${H[@]}" -fsanitize=fuzzer -o "$out/fuzz_jpegp" "$o"/new/*.o "$o/ref_renamed.o" "$o/host_alloc.o" "$o/fuzz.o"
   else
-    "$HCC" "${H[@]}" -Wall -Wextra -Werror -c -o "$o/prog.o" "$here/prog.c" || return 1
+    "$HCC" "${H[@]}" -Wall -Wextra -Werror -DCDOM_IMAGE_TESTING -I"$LJT" -c -o "$o/prog.o" "$here/prog.c" || return 1
     "$HCC" "${H[@]}" -o "$out/prog" "$o"/new/*.o "$o/ref_renamed.o" "$o/host_alloc.o" "$o/prog.o"
   fi
 }
@@ -78,7 +78,7 @@ if [ -n "$fuzz" ]; then
 fi
 fail=0
 for d in "$out/corpus" "$@"; do
-  if "$out/prog" "$d" > "$out/prog.log" 2>&1; then echo "ok   progressive differential: $(tail -1 "$out/prog.log")"
+  if "$out/prog" "$d" > "$out/prog.log" 2>&1; then grep '^ok ' "$out/prog.log"; echo "ok   progressive differential: $(tail -1 "$out/prog.log")"
   else fail=1; echo "FAIL progressive differential ($d):"; grep -v '^prog:' "$out/prog.log" | head -20; tail -1 "$out/prog.log"; fi
 done
 exit $fail
