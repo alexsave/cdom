@@ -73,6 +73,7 @@ static void fed(const uint8_t *f, uint32_t size, uint32_t bw, uint32_t bh, uint3
     uint32_t max;
     uint8_t *room = cd_image_room(d, &max);
     uint32_t n = 0;
+    if (max > CD_IMAGE_PIECE || max > size - at) { CHECK(0, "the room is %u bytes, past a piece or the file's %u left", max, size - at); break; }
     if (max) {
       n = first && !at ? first : piece == RANDOM ? 1 + rnd() % 70000 : piece ? piece : max;
       if (n > max) n = max;
@@ -172,7 +173,23 @@ static void test_edges(const char *dir) {
     k++;
   }
   closedir(dd);
-  CHECK(k >= 8, "only %d edge inputs", k);
+  CHECK(k >= 10, "only %d edge inputs", k);
+  /* the walker's own mistakes would be the whole decode's too: these must decode to their plain twin's pixels */
+  static const char *twins[][2] = {{"e-zero.png", "e-plain.png"}, {"e-idat3.png", "e-plain.png"}, {"e-text.png", "e-plain.png"},
+                                   {"e-com.jpg", "e-plain.jpg"}, {"e-fill.jpg", "e-plain.jpg"}};
+  for (size_t i = 0; i < sizeof twins / sizeof *twins; i++) {
+    char pa[1024], pb[1024];
+    snprintf(pa, sizeof pa, "%s/%s", dir, twins[i][0]); snprintf(pb, sizeof pb, "%s/%s", dir, twins[i][1]);
+    size_t na, nb; uint8_t *a = read_file(pa, &na), *b = read_file(pb, &nb);
+    result ra, rb;
+    if (a && b) {
+      whole(a, (uint32_t)na, 300, 300, &ra); whole(b, (uint32_t)nb, 300, 300, &rb);
+      CHECK(ra.status == CD_IMAGE_OK && rb.status == CD_IMAGE_OK && ra.w == rb.w && ra.h == rb.h && !memcmp(ra.rgba, rb.rgba, (size_t)ra.w * ra.h * 4),
+            "%s: differs from %s (%s %ux%u, %s %ux%u)", twins[i][0], twins[i][1], sname(ra.status), ra.w, ra.h, sname(rb.status), rb.w, rb.h);
+      cd_free(ra.rgba); cd_free(rb.rgba);
+    } else CHECK(0, "no %s or %s", pa, pb);
+    free(a); free(b);
+  }
   printf("2, 3. the edge inputs (%d: split chunks, markers, fill, COM, Exif behind APP2, restarts) at every piece size: as whole\n", k);
 }
 static void test_splits(void) {
@@ -352,10 +369,11 @@ static void test_cancel(const char *path) {
   if (!in) { printf("     (no %s: cancel skipped)\n", path); return; }
   size_t base = host_live;
   result r, all;
-  fed(in, (uint32_t)n, 900, 900, 65536, 0, 0, &all);
+  const uint32_t piece = n > (1u << 20) ? 65536 : 4093;   /* the big ones at 64 KiB, the small ones at 4093 */
+  fed(in, (uint32_t)n, 900, 900, piece, 0, 0, &all);
   cd_free(all.rgba);
   for (uint32_t k = 1; k < all.puts; k++) {
-    fed(in, (uint32_t)n, 900, 900, 65536, 0, k, &r);
+    fed(in, (uint32_t)n, 900, 900, piece, 0, k, &r);
     CHECK(r.status == 99, "%s: cancel after %u puts", path, k);
     CHECK(host_live == base, "%s: cd_image_end after %u of %u puts left %zd bytes", path, k, all.puts, (ssize_t)(host_live - base));
     cancels++;
@@ -431,12 +449,12 @@ static void test_no_room(const char *path, uint32_t piece) {
 }
 
 /* ---- 9. a progressive JPEG's output pass in steps ---- */
-static void test_steps(const char *path) {
+static void test_steps(const char *path, uint32_t box) {
   size_t n; uint8_t *in = read_file(path, &n);
   if (!in) { printf("     (no %s: steps skipped)\n", path); return; }
   result a, b;
-  whole(in, (uint32_t)n, 900, 900, &a);
-  fed(in, (uint32_t)n, 900, 900, 1u << 20, 0, 0, &b);
+  whole(in, (uint32_t)n, box, box, &a);
+  fed(in, (uint32_t)n, box, box, 1u << 20, 0, 0, &b);
   same(path, &a, &b, 1);
   CHECK(b.steps >= 10, "%s: %u steps with no bytes wanted, wanted at least 10", path, b.steps);
   printf("9. %s: %u steps of its output pass with the room 0, the pixels as whole\n", path, b.steps);
@@ -466,14 +484,14 @@ int main(void) {
   if (want("short")) { test_short_and_errors("inputs/s420.jpg"); test_short_and_errors("inputs/rgb.png"); }
   char p[1024];
   const char *dir = bench ? bench : "inputs";
-  if (want("cancel")) {
-    snprintf(p, sizeof p, "%s/p12.jpg", dir); test_cancel(p);
-    snprintf(p, sizeof p, "%s/p12p.jpg", dir); test_cancel(p);
-    snprintf(p, sizeof p, "%s/p12.png", dir); test_cancel(p);
+  if (want("cancel")) {   /* the design's three (the oracle's or the bench's big inputs), and three small ones, which are always there */
+    static const char *big[] = {"p12.jpg", "p12p.jpg", "p12.png"}, *small[] = {"inputs/s420.jpg", "inputs/prog.jpg", "inputs/rgb.png"};
+    for (int i = 0; i < 3; i++) { snprintf(p, sizeof p, "%s/%s", dir, big[i]); test_cancel(p); }
+    for (int i = 0; i < 3; i++) test_cancel(small[i]);
   }
   if (want("cut")) { test_cut("inputs/s420.jpg"); test_cut("inputs/prog.jpg"); test_cut("inputs/rgb.png"); }
   if (want("noroom")) { test_no_room("inputs/s420.jpg", 4093); test_no_room("inputs/prog.jpg", 4093); test_no_room("inputs/rgba.png", 4093); }
-  if (want("steps")) { snprintf(p, sizeof p, "%s/p12p.jpg", dir); test_steps(p); }
+  if (want("steps")) { snprintf(p, sizeof p, "%s/p12p.jpg", dir); test_steps(p, 900); test_steps("inputs/prog.jpg", 1203); }
   printf("%d checks, %d failures (%ld fed decodes, %ld through the glue, %ld splits, %ld cancels, %ld rooms)\n", checks, failures,
          fed_runs, glue_runs, splits, cancels, rooms);
   return failures != 0;

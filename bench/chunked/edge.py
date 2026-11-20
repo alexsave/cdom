@@ -11,6 +11,8 @@ Usage: python3 -I bench/chunked/edge.py OUT_DIR       (Pillow; cjpeg from libjpe
   e-fill.jpg      5,000 fill bytes (FF) before every marker after SOI
   e-icc-exif.jpg  an APP2 of 65,533 bytes, then the EXIF (orientation 6): the frame lies past 64 KiB
   e-restart.jpg   restart markers every MCU row (cjpeg -restart 1)
+  e-plain.png     the PNGs' pixels as Pillow writes them, and e-plain.jpg the JPEG the three before e-restart are made from:
+                  what e-zero, e-idat3 and e-text, and e-com and e-fill, must decode to (tests/image/test_chunked.c)
 """
 import io, os, random, struct, subprocess, sys, zlib
 from PIL import Image
@@ -45,6 +47,7 @@ def main():
     open(os.path.join(out, "e-idat3.png"), "wb").write(png(w, h, 2, rgb, [1, 2, 3, 4, 5, 6, 7]))
     text = b"Comment\0" + bytes(rng.randrange(32, 127) for _ in range(200000 - 8))
     open(os.path.join(out, "e-text.png"), "wb").write(png(w, h, 2, rgb, [100000], chunk(b"tEXt", text)))
+    Image.frombytes("RGB", (w, h), b"".join(rgb)).save(os.path.join(out, "e-plain.png"))
     pal = bytes(rng.randrange(256) for _ in range(3 * 16))
     trns = bytes(rng.randrange(256) for _ in range(16))
     idx = [bytes(rng.randrange(16) for _ in range(w)) for _ in range(h)]
@@ -52,6 +55,7 @@ def main():
 
     img = Image.frombytes("RGB", (w, h), b"".join(rgb)).resize((640, 480))
     b = io.BytesIO(); img.save(b, "JPEG", quality=85); j = b.getvalue()
+    open(os.path.join(out, "e-plain.jpg"), "wb").write(j)
     com = b"\xff\xfe" + struct.pack(">H", 65535) + bytes(rng.randrange(256) & 0x7f for _ in range(65533))
     open(os.path.join(out, "e-com.jpg"), "wb").write(j[:2] + com + j[2:])
     # fill bytes before every marker after SOI, up to the scan (entropy data cannot hold them)
