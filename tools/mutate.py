@@ -33,6 +33,7 @@ IMG = ['env', 'IMAGE_BIG=0', 'IMAGE_WASM=0', 'tests/image/run.sh']   # the image
 IMGBIG = ['env', 'IMAGE_WASM=0', 'tests/image/run.sh']               # with the big inputs (budget, peaks)
 IMGW = ['env', 'IMAGE_BIG=0', 'tests/image/run.sh']                  # and in wasm, both ways out (tools/image.mjs)
 SIMD = ['tests/image/simd.sh']                                       # the SIMD loops against their scalar twins, in node
+FUZZI = ['env', 'FUZZ_TARGETS=inflate', 'tests/image/fuzz.sh', '60']   # fuzz_inflate alone, 60 s (libFuzzer: FUZZ_CC)
 PICK = ['tests/pick/run.sh']                                         # the SIMD pick (APP_SIMD) in Chrome (tools/pick.mjs)
 LEGW2J = ['env', 'LEGACY=1', 'node', 'tools/legacy.mjs']             # the legacy page as a browser without WebAssembly
 
@@ -735,18 +736,54 @@ M = [
   ('png-palette-trns', 'src/cdom_image_png.c', 'if (ctype == 3) for (uint32_t i = 0; i < n && i < 256; i++) x->f.pal[4 * i + 3] = data[i];', 'if (ctype == 3) {}', IMG, 'png-palette'),
   ('png-plte-257', 'src/cdom_image_png.c', 'if (n % 3 || n > 768)', 'if (n % 3)', IMG, 'AddressSanitizer'),
   ('png-plte-not-3', 'src/cdom_image_png.c', 'if (n % 3 || n > 768)', 'if (n > 768)', IMG, 'multiple of 3'),
-  ('png-no-plte', 'src/cdom_image_png.c', 'if (ctype == 3 && !seen_plte) { st = CD_IMAGE_CORRUPT; break; }', 'if (0 && ctype == 3 && !seen_plte) { st = CD_IMAGE_CORRUPT; break; }', IMG, 'no PLTE'),
-  ('png-no-checksum-end', 'src/cdom_image_png.c', 'if (st == CD_IMAGE_OK && !ended) st = CD_IMAGE_CORRUPT;', 'if (0) st = CD_IMAGE_CORRUPT;', IMG, 'png-adler-missing'),
-  ('png-stops-at-last-row', 'src/cdom_image_png.c', 'if (ts == TINFL_STATUS_DONE) { ended = 1; break; }', 'if (ts == TINFL_STATUS_DONE || done == h) { ended = 1; break; }', IMG, 'png-adler-missing'),
-  ('png-bad-stream', 'src/cdom_image_png.c', '        if (ts < TINFL_STATUS_DONE) { st = CD_IMAGE_CORRUPT; break; }   /* a bad stream, or its adler32 differs */\n', '', IMG, 'png-adler-mismatch', HANGS),  # tinfl keeps answering FAILED and takes no byte, so the inflate loop never ends
+  ('png-no-plte', 'src/cdom_image_png.c', 'if (ctype == 3 && !seen_plte) st = CD_IMAGE_CORRUPT;', 'if (0 && ctype == 3 && !seen_plte) st = CD_IMAGE_CORRUPT;', IMG, 'no PLTE'),
+  ('png-bad-stream', 'src/cdom_image_png.c', 'cd_inflate_zlib(&x->inf, buf, (uint32_t)cap, idat, rows, x) != CD_INFLATE_OK', 'cd_inflate_zlib(&x->inf, buf, (uint32_t)cap, idat, rows, x) > CD_INFLATE_STOPPED', IMG, 'png-adler-mismatch'),
   ('png-interlaced', 'src/cdom_image_png.c', 'if (d[12] || bd == 16) return CD_IMAGE_UNSUPPORTED;', 'if (bd == 16) return CD_IMAGE_UNSUPPORTED;', IMG, 'interlaced'),
   ('png-16-bit', 'src/cdom_image_png.c', 'if (d[12] || bd == 16) return CD_IMAGE_UNSUPPORTED;', 'if (d[12]) return CD_IMAGE_UNSUPPORTED;', IMG, '16-bit'),
   ('png-pixels-unchecked', 'src/cdom_image_png.c', '|| (uint64_t)w * h > CD_IMAGE_PIXELS_MAX) return CD_IMAGE_TOO_BIG;', ') return CD_IMAGE_TOO_BIG;', IMG, 'PNG over'),
   ('png-side-unchecked', 'src/cdom_image_png.c', 'if (w > CD_IMAGE_SIDE_MAX || h > CD_IMAGE_SIDE_MAX || (uint64_t)w * h', 'if ((uint64_t)w * h', IMG, 'PNG side'),
-  ('png-rows-kept', 'src/cdom_image_png.c', '  cd_free(x->rows);\n  cd_free(x);\n  return st;', '  cd_free(x);\n  return st;', IMG, 'left'),
-  ('png-whole-image', 'src/cdom_image_png.c', 'uint64_t room = (uint64_t)(stride + 1) * 2 + (uint64_t)w * 4;', 'uint64_t room = (uint64_t)(stride + 1) * 2 + (uint64_t)w * 4 + (uint64_t)h * stride;', IMGBIG, 'png-p12: peak'),
-  ('png-idat-not-entered', 'src/cdom_image_png.c', 'if (ts == TINFL_STATUS_NEEDS_MORE_INPUT && in_pos >= n) break;', 'if (ts == TINFL_STATUS_NEEDS_MORE_INPUT && in_pos >= n) { st = CD_IMAGE_CORRUPT; break; }', IMG, 'png-rgba'),
-  ('png-window-wrap', 'src/cdom_image_png.c', 'dict_ofs = (dict_ofs + (uint32_t)out_n) & (TINFL_LZ_DICT_SIZE - 1);', 'dict_ofs = (dict_ofs + (uint32_t)out_n) % (TINFL_LZ_DICT_SIZE - 1);', IMG, 'png-'),
+  ('png-rows-kept', 'src/cdom_image_png.c', '  cd_free(x->zero);\n  cd_free(x);\n  return st;', '  cd_free(x);\n  return st;', IMG, 'left'),
+  ('png-whole-image', 'src/cdom_image_png.c', 'uint64_t room = row + px_n + cap;', 'uint64_t room = row + px_n + cap + (uint64_t)h * stride;', IMGBIG, 'png-p12: peak'),
+  ('png-idat-not-entered', 'src/cdom_image_png.c', '    if (!memcmp(type, "IDAT", 4)) return 1;', '    if (!memcmp(type, "IDAT", 4)) { x->len = 0; return 1; }', IMG, 'png-rgba'),
+  ('png-window-unfiltered', 'src/cdom_image_png.c', 'n > CD_INFLATE_WINDOW ? n - CD_INFLATE_WINDOW : 0;', 'n > CD_INFLATE_WINDOW ? n - CD_INFLATE_WINDOW / 8 : 0;', IMG, 'png-'),
+  # png-fast-2: the inflate's buffer of a small PNG, and no RGBA row on the RGB read (the oracle's small and wide cases)
+  ('png-cap-whole-chunk', 'src/cdom_image_png.c', 'uint64_t cap = CD_INFLATE_WINDOW + 2 * row + (all < PNG_CHUNK ? all : PNG_CHUNK);', 'uint64_t cap = CD_INFLATE_WINDOW + 2 * row + (all < PNG_CHUNK ? PNG_CHUNK : PNG_CHUNK);', IMG, 'png-small16-rgba: peak'),
+  ('png-cap-no-floor', 'src/cdom_image_png.c', '  if (cap < CD_INFLATE_CAP_MIN) cap = CD_INFLATE_CAP_MIN;\n', '', IMG, 'png-small16-rgba: status CORRUPT'),
+  ('png-rgba-row-on-rgb-read', 'src/cdom_image_png.c', 'uint64_t px_n = rgb_read ? 0 : (uint64_t)w * 4;', 'uint64_t px_n = (uint64_t)w * 4;', IMG, 'png-wide8000x3-rgb: peak'),
+  # png-fast (docs/image-png-speed.md): the row flow, the fused RGB read, and cdom's inflate against zlib (inflate_diff)
+  ('png-prev-row-dropped', 'src/cdom_image_png.c', 'uint32_t drop = x->done ? x->row_at - row : x->row_at;', 'uint32_t drop = x->row_at;', IMG, 'png-'),
+  ('png-rgb-key-fused', 'src/cdom_image_png.c', 'int rgb_read = !CDOM_IMAGE_SIMD && ctype == 2 && depth == 8 && !x->f.key;', 'int rgb_read = !CDOM_IMAGE_SIMD && ctype == 2 && depth == 8;', IMG, 'png-rgb-key'),
+  ('img-step-rgba', 'src/cdom_image_loops.c', '{ across(h, px, sw, dw, 3); }', '{ across(h, px, sw, dw, 4); }', IMG, 'png-rgb'),
+  ('inflate-dist-past-start', 'src/cdom_image_inflate.c', 'if (dist > o->total + (uint64_t)(out - out0)) { bad = 1; break; }', 'if (dist > o->total + (uint64_t)(out - out0) + 1) { bad = 1; break; }', IMG, 'fast loop, a distance one past the output: cdom answers 0'),
+  ('inflate-dist-past-start-checked', 'src/cdom_image_inflate.c', '    if (dist > o->total) return 0;', '    if (dist > o->total + 1) return 0;', IMG, 'checked loop, a distance one past the output: cdom answers 0'),
+  ('inflate-copy-overlap', 'src/cdom_image_inflate.c', '  if (dist >= 16) {\n    do { memcpy(o, s, 16);', '  if (dist >= 8) {\n    do { memcpy(o, s, 16);', IMG, 'memcpy-param-overlap'),
+  ('inflate-incomplete-code', 'src/cdom_image_inflate.c', 'if (left > 0 && (codes || max != 1)) return 0;', 'if (left > 0 && codes) return 0;', IMG, 'an incomplete'),
+  ('inflate-lit2-too-long', 'src/cdom_image_inflate.c', 'l1 + E_BITS(e2) <= root) t[i] = LIT2(', 'l1 + E_BITS(e2) <= root + 1) t[i] = LIT2(', IMG, 'FAIL inflate_diff'),
+  ('inflate-subtable-size', 'src/cdom_image_inflate.c', '          room -= count[ll] - j;', '          room -= count[ll];', IMG, 'FAIL inflate_diff'),
+  ('inflate-third-literal', 'src/cdom_image_inflate.c', '              b >>= e3 & 63;\n              e = lt[b & lm];', '              b >>= e3 & 63;\n              e = lt[(b >> 1) & lm];', IMG, 'FAIL inflate_diff'),
+  ('inflate-stored-nlen', 'src/cdom_image_inflate.c', 'if (cut(&s) || len != (~nlen & 0xffff)) return st;', 'if (cut(&s) || (len != (~nlen & 0xffff) && 0)) return st;', IMG, 'FAIL inflate_diff'),
+  ('inflate-sink-overdrops', 'src/cdom_image_inflate.c', '  if (drop < 0 || (uint64_t)drop > can) return 0;', '  if (drop < 0 || (uint64_t)drop > can + (uint64_t)o->pos) return 0;', IMG, 'in greedy'),
+  ('inflate-adler-unchecked', 'src/cdom_image_inflate.c', 'return a == o.adler ? CD_INFLATE_OK : st;', 'return a == o.adler || 1 ? CD_INFLATE_OK : st;', IMG, 'png-adler-mismatch'),
+  ('inflate-adler-weight', 'src/cdom_image_inflate.c', 'co = 1 | 3ull << 16 | 5ull << 32 | 7ull << 48;', 'co = 1 | 3ull << 16 | 5ull << 32 | 6ull << 48;', IMG, 'adler32 of'),
+  ('inflate-reads-past-piece', 'src/cdom_image_inflate.c', '#define FAST_IN 32', '#define FAST_IN 4', IMG, 'AddressSanitizer'),
+  ('inflate-sink-ignored', 'src/cdom_image_inflate.c', '  if (drop < 0 || (uint64_t)drop > can) return 0;', '  if (drop < 0) drop = 0;\n  if ((uint64_t)drop > can) return 0;', IMG, 'a sink that stops'),
+  # png-fast-2 (docs/image-png-speed.md, "png-fast-2"): the review's gaps, each caught by its own case in inflate_diff
+  ('inflate-hlit-287', 'src/cdom_image_inflate.c', 'if (nlen > 286 || ndist > 30) return 0;', 'if (ndist > 30) return 0;', IMG, 'HLIT 30 (287 literal/length codes): zlib refuses, cdom answers 0'),
+  ('inflate-hdist-31', 'src/cdom_image_inflate.c', 'if (nlen > 286 || ndist > 30) return 0;', 'if (nlen > 286) return 0;', IMG, 'HDIST 30 (31 distance codes): zlib refuses, cdom answers 0'),
+  ('inflate-repeat-first', 'src/cdom_image_inflate.c', 'if (sym == 16) { if (!i) return 0; v = lens[i - 1];', 'if (sym == 16) { v = i ? lens[i - 1] : 0;', IMG, 'a code 16 first (a repeat of no length): zlib refuses, cdom answers 0'),
+  ('inflate-repeat-past-end', 'src/cdom_image_inflate.c', 'if (i + rep > nlen + ndist) return 0;', 'if (i + rep > nlen + ndist + 1) return 0;', IMG, 'a repeat one past HLIT + HDIST: zlib refuses, cdom answers 0'),
+  ('inflate-repeat-unchecked', 'src/cdom_image_inflate.c', '    if (i + rep > nlen + ndist) return 0;\n', '', IMG, 'index 316 out of bounds'),
+  ('inflate-block-type-3', 'src/cdom_image_inflate.c', '    } else if (type == 3) {\n      return st;\n    } else {', '    } else {', IMG, 'block type 3 (the good block\'s bits): zlib refuses, cdom answers 0'),
+  ('inflate-header-cm', 'src/cdom_image_inflate.c', '(cmf & 15) != 8 || (cmf >> 4) > 7', '(cmf >> 4) > 7', IMG, 'header CM 7: zlib refuses, cdom answers 0'),
+  ('inflate-header-cinfo', 'src/cdom_image_inflate.c', '(cmf & 15) != 8 || (cmf >> 4) > 7', '(cmf & 15) != 8', IMG, 'header CINFO 8: zlib refuses, cdom answers 0'),
+  ('inflate-header-fcheck', 'src/cdom_image_inflate.c', ' || (cmf * 256 + flg) % 31 || (flg & 32)', ' || (flg & 32)', IMG, 'header FCHECK wrong: zlib refuses, cdom answers 0'),
+  ('inflate-header-fdict', 'src/cdom_image_inflate.c', ' || (cmf * 256 + flg) % 31 || (flg & 32)', ' || (cmf * 256 + flg) % 31', IMG, 'header FDICT set: zlib refuses, cdom answers 0'),
+  ('inflate-fixed-286', 'src/cdom_image_inflate.c', '  return BAD;\n}\n\nstatic uint32_t rev', '  return OTHER(c, O_END, 0, 0);\n}\n\nstatic uint32_t rev', IMG, 'fixed literal/length symbol 286: zlib refuses, cdom answers 0'),
+  ('inflate-fixed-dist-30', 'src/cdom_image_inflate.c', 'dist_base[sym]) : BAD;', 'dist_base[sym]) : LENE(c, c, 1);', IMG, 'fixed distance code 30: zlib refuses, cdom answers 0'),
+  ('inflate-fixed-dist-no-30-31', 'src/cdom_image_inflate.c', '  lens[30] = lens[31] = 5;', '', IMG, 'FAIL inflate_diff'),
+  ('inflate-stops-on-good', 'src/cdom_image_inflate.c', 'o->cap - o->pos < FAST_OUT) { *st = CD_INFLATE_STOPPED; return 0; }', 'o->cap - o->pos < FAST_OUT + 2048) { *st = CD_INFLATE_STOPPED; return 0; }', FUZZI, 'FAIL fuzz_inflate found'),
+  ('inflate-lt-short', 'src/cdom_image_int.h', '#define CD_INFLATE_LT 2340u', '#define CD_INFLATE_LT 2339u', IMG, 'the largest tables (2340 and 592 entries): zlib inflates 8 bytes, cdom answers 1'),
+  ('inflate-dt-short', 'src/cdom_image_int.h', '#define CD_INFLATE_DT 592u', '#define CD_INFLATE_DT 591u', IMG, 'the largest tables (2340 and 592 entries): zlib inflates 8 bytes, cdom answers 1'),
   ('png-grey-key', 'src/cdom_image_png.c', '} else if (f->key && v == f->key_g) {', '} else if (0) {', IMG, 'png-grey-key'),
   ('png-rgb-key', 'src/cdom_image_png.c', 'if (r[0] == f->key_rgb[0] && r[1]', 'if (0 && r[0] == f->key_rgb[0] && r[1]', IMG, 'png-rgb-key'),
   ('png-rgb-key-low-byte', 'src/cdom_image_png.c', ' && !data[0] && !data[2] && !data[4]) {', ') {', IMG, 'png-rgb-key-over-255'),
@@ -796,6 +833,9 @@ M = [
   ('div-read-past', 'src/cdom_image_loops.c', 'for (; i + 2 <= n; i += 2) {\n    V v = wasm_v128_load(a + i);', 'for (; i + 1 <= n; i += 2) {\n    V v = wasm_v128_load(a + i);', SIMD, 'FAIL scaler divide'),  # the loop reads and writes two sums when one is left (a trap at the top of memory)
   ('simd-flags-everywhere', 'cdom.mk', 'CDOM_IMAGE_OWN_SIMD_CFLAGS := $(cdom_mk_simd_flags)\n', 'CDOM_IMAGE_OWN_SIMD_CFLAGS := $(cdom_mk_simd_flags)\nCDOM_CFLAGS += $(if $(filter 1,$(CDOM_IMAGE_SIMD)),$(cdom_mk_simd_flags))\n', LINK, 'FAIL an app that does not call the image module has SIMD instructions'),  # -msimd128 for every file, not the image module's
   ('simd-default-on', 'cdom.mk', 'CDOM_IMAGE_SIMD ?= 0', 'CDOM_IMAGE_SIMD ?= 1', LINK, 'FAIL CDOM_IMAGE_SIMD:'),  # the default is SIMD, not scalar
+  ('simd-adler-weight-16', 'src/cdom_image_inflate.c', 'w_lo = wasm_i16x8_make(16, 15,', 'w_lo = wasm_i16x8_make(17, 15,', SIMD, 'FAIL adler32'),  # the high weight of a block's first byte
+  ('simd-adler-step-16', 'src/cdom_image_inflate.c', '(uint64_t)s1 * (16 * k) + 16 * hp + h2', '(uint64_t)s1 * (16 * k) + 15 * hp + h2', SIMD, 'FAIL adler32'),  # s2's 16 x s1 before each block, per lane
+  ('simd-adler-no-nmax', 'src/cdom_image_inflate.c', '    if (k > ADLER_NMAX / 16) k = ADLER_NMAX / 16;\n    v128_t', '    v128_t', SIMD, 'FAIL adler32'),  # no modulo every NMAX bytes: the lanes wrap
   ('simd-emit-alpha', 'src/cdom_image.c', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 255;', '    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 254;', IMGW, 'FAIL wasm_js_simd: '),  # the SIMD build's emit writes the wrong alpha
   ('sjlj-sp-kept-low', 'src/cdom_image_sjlj.c', '  sp_set(sp);', '  sp_set(sp_get() + 0 * sp);', UNIT, "FAIL the image module's guard"),
   ('sjlj-eh-val-zero', 'src/cdom_image_sjlj_eh.c', 'jb->arg.val = val ? val : 1;', 'jb->arg.val = 0 * val;', IMGW, 'wasm_eh: jpeg-dqt-bad', HANGS),  # setjmp answers 0, the first pass, so the decode starts again, meets the same error and jumps again, for good
