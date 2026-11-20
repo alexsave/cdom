@@ -15,9 +15,10 @@
 #   CDOM_LDFLAGS  the link flags of a cdom module
 #   CDOM_SRC      the core sources every app links (cdom.c, and mini.c, the program's libc)
 #   CDOM_NET_SRC, CDOM_STORE_SRC, CDOM_RANDOM_SRC, CDOM_AUDIO_SRC, CDOM_URL_SRC, CDOM_LOCALE_SRC,
-#   CDOM_SHARE_SRC, CDOM_FONTS_SRC, CDOM_UI_SRC, CDOM_FILE_SRC
-#   CDOM_IMAGE_PARTS (own vendor miniz sjlj) and their _SRC and _CFLAGS: the image module (src/cdom_image.h),
-#                 which is parts only: cdom's files, libjpeg-turbo, miniz's inflate, and the setjmp file
+#   CDOM_SHARE_SRC, CDOM_FONTS_SRC, CDOM_UI_SRC, CDOM_FILE_SRC, CDOM_JOB_SRC
+#   CDOM_IMAGE_PARTS (own inflate vendor sjlj) and their _SRC and _CFLAGS: the image module
+#                 (src/cdom_image.h), which is parts only: cdom's files, its inflate, libjpeg-turbo, and the
+#                 setjmp file
 #   CDOM_IMAGE_SJLJ  how the image module leaves a fatal libjpeg error (src/cdom_image_sjlj.c): js (the default,
 #                 a try and catch in the shim; plain wasm, every browser cdom runs in, and wasm2js) or eh (wasm
 #                 exception handling: Chrome 95, Firefox 100, Safari 15.2, and no wasm2js)
@@ -35,8 +36,8 @@
 #                 the link adds CDOM_<NAME>_LDFLAGS. Within a part no two files share a base name.
 #   CDOM_SHIM     the minified shim (shim/cdom.min.js) a page inlines
 #   CDOM_OPT      the optimization level of the APP_WASM rule (-Oz unless the app sets it)
-#   WASM_CC       a clang that targets wasm32 (Homebrew's llvm on macOS unless set, since Apple's clang does not;
-#                 clang elsewhere)
+#   WASM_CC       a clang that targets wasm32, with wasm-ld from LLVM 23 or later (Homebrew's llvm on macOS
+#                 unless set, since Apple's clang finds no wasm-ld; clang elsewhere)
 #   HOST_CC       the C compiler for cdom's build tools (tools/cdlits.c, tools/cdpage.c), cc unless set
 #   CDOM_LITS     the built tools/cdlits, which every link goes through: it strips the string table out of
 #                 the module and writes it beside it as $(APP_WASM).lits, for the page
@@ -44,8 +45,17 @@
 #
 #   APP_WASM, APP_SRC, APP_MODULES, APP_CFLAGS, APP_LDFLAGS
 #                 the app's module: $(APP_WASM) is built from $(APP_SRC), $(CDOM_SRC) and the optional
-#                 modules APP_MODULES names (net store random audio url locale share fonts ui file image: their
+#                 modules APP_MODULES names (net store random audio url locale share fonts ui file image job: their
 #                 CDOM_<NAME>_SRC) with $(CDOM_OPT) $(CDOM_CFLAGS) $(APP_CFLAGS) $(CDOM_LDFLAGS) $(APP_LDFLAGS)
+#   APP_JOBS, APP_JOB_<name>_SRC, APP_JOB_CFLAGS, APP_JOB_LDFLAGS
+#                 the app's job modules (src/cdom_job.h, src/cdom_job_mod.h): for each name in APP_JOBS,
+#                 $(dir $(APP_WASM))<name>.job.wasm is built from $(APP_JOB_<name>_SRC) with cdom's heap alone
+#                 (src/cdom.c under -DCDOM_HEAP_ONLY), src/mini.c and src/cdom_job_mod.c, with $(CDOM_OPT)
+#                 $(CDOM_CFLAGS) $(APP_JOB_CFLAGS) $(CDOM_LDFLAGS) $(APP_JOB_LDFLAGS). The app names the module in
+#                 cd_job_cb as "<name>.job.wasm". A bundled page (the default) carries each in var cdomJobs, written
+#                 by tools/cdpage beside the string table, so the page needs no change; with APP_WASM_SEPARATE the
+#                 module is the file beside the page, which the name is the URL of. A job has no string table and
+#                 goes through no cdlits: it has no DOM and no string literals to move.
 #   APP_PAGE, APP_PAGE_SRC, APP_TITLE, APP_WASM_SEPARATE, APP_WASM_URL
 #                 the app's page: $(APP_PAGE) is $(APP_PAGE_SRC) (or, unset, the default page below) with
 #                 the shim inlined at the line that holds only the marker /*CDOM_SHIM*/ (inside a <script>),
@@ -109,8 +119,9 @@
 # beside the page, so it takes APP_WASM_SEPARATE := 1. Large apps, and hosts that cache a hashed .wasm
 # for long, opt out too.
 #
-# The APP_WASM rule first checks that WASM_CC builds a wasm32 module at all, and when it does not (Apple's
-# clang, or no wasm-ld), stops with the command that installs one, instead of a linker error.
+# The APP_WASM rule first checks that WASM_CC builds a wasm32 module with wasm-ld from LLVM 23 or later, and
+# when it does not (Apple's clang, no wasm-ld, or an older one), stops with what it found and the command
+# that installs one, instead of a linker error.
 # A new app: make -C path/to/cdom new DIR=path/to/app (tools/new.sh) writes a Makefile of the APP_* lines
 # its app needs and this include, src/app.c, src/app.css and a .gitignore: nothing this file could own.
 #
@@ -122,8 +133,9 @@
 # turns off clang's builtins and costs cdom code size); string.h works under it, so an app may add it.
 # Optimization, warnings and -Wl,--strip-all are the app's choice (APP_CFLAGS, APP_LDFLAGS, CDOM_OPT).
 CDOM ?= $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
-# Homebrew's llvm on macOS (Apple's clang has no wasm32), the clang on the PATH elsewhere (Linux
-# distributions' clang targets wasm32; wasm-ld comes with lld).
+# Homebrew's llvm on macOS (Apple's clang finds no wasm-ld), the clang on the PATH elsewhere (Linux
+# distributions' clang targets wasm32 and wasm-ld comes with lld, but cdom needs LLVM 23 or later, which
+# Ubuntu 24.04 and Debian 13 do not ship: apt.llvm.org's clang-23, with WASM_CC set to it).
 ifeq ($(shell uname -s),Darwin)
 WASM_CC ?= /opt/homebrew/opt/llvm/bin/clang
 else
@@ -152,16 +164,19 @@ CDOM_SHARE_SRC  := $(CDOM)/src/cdom_share.c
 CDOM_FONTS_SRC  := $(CDOM)/src/cdom_fonts.c
 CDOM_UI_SRC     := $(CDOM)/src/cdom_ui.c
 CDOM_FILE_SRC   := $(CDOM)/src/cdom_file.c
-# The image module: four parts, so libjpeg-turbo and miniz (third_party/, each with its README) build with -w and
-# their own -I, cdom's three files with the app's flags and only the vendor headers' directories (as -isystem),
-# and the one file that calls setjmp with the flags of the CDOM_IMAGE_SJLJ way.
+CDOM_JOB_SRC    := $(CDOM)/src/cdom_job.c
+CDOM_JOB_MOD_SRC := $(CDOM)/src/cdom_job_mod.c
+# The image module: four parts, so libjpeg-turbo (third_party/, with its README) builds with -w and its own -I,
+# cdom's own files with the app's flags and only libjpeg's headers' directory (as -isystem), the PNG path's
+# inflate (cdom's own) with the app's flags and CDOM_IMAGE_INFLATE_CFLAGS (empty; a SIMD build adds -msimd128,
+# which gives its adler32 and match copies wasm SIMD), and the one file that calls setjmp
+# with the flags of the CDOM_IMAGE_SJLJ way.
 CDOM_IMAGE_SJLJ ?= js
 CDOM_IMAGE_LJT  := $(CDOM)/third_party/libjpeg-turbo-3.2.1/src
-CDOM_IMAGE_MZ   := $(CDOM)/third_party/miniz-3.1.2
 CDOM_IMAGE_SRC  :=
-CDOM_IMAGE_PARTS := own vendor miniz sjlj
+CDOM_IMAGE_PARTS := own inflate vendor sjlj
 CDOM_IMAGE_OWN_SRC := $(CDOM)/src/cdom_image.c $(CDOM)/src/cdom_image_jpeg.c $(CDOM)/src/cdom_image_png.c $(CDOM)/src/cdom_image_loops.c
-CDOM_IMAGE_OWN_CFLAGS := -isystem $(CDOM_IMAGE_LJT) -isystem $(CDOM_IMAGE_MZ) -DNO_GETENV -DNO_PUTENV
+CDOM_IMAGE_OWN_CFLAGS := -isystem $(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV
 # CDOM_IMAGE_SIMD: 0 (the default) is scalar; 1 builds the hot loops with wasm SIMD (-msimd128, src/cdom_image_loops.c and
 # src/jsimd/jsimd_wasm.c, which libjpeg-turbo reaches through its own SIMD dispatch, WITH_SIMD: the three headers in
 # src/jsimd/simd/ answer its "../simd/" includes). A SIMD module needs a browser with wasm SIMD (Chrome 91, Firefox 89,
@@ -181,13 +196,14 @@ CDOM_IMAGE_VENDOR_SRC := $(addprefix $(CDOM_IMAGE_LJT)/,jcomapi.c jdapimin.c jdh
   jdpostct jdsample jidctint jidctred jutils)))
 CDOM_IMAGE_VENDOR_CFLAGS := -w -I$(CDOM_IMAGE_LJT) -DNO_GETENV -DNO_PUTENV
 CDOM_IMAGE_VENDOR_SIMD_CFLAGS := $(cdom_mk_simd_flags) -I$(CDOM)/src/jsimd/simd
-CDOM_IMAGE_MINIZ_SRC := $(CDOM_IMAGE_MZ)/tinfl.c
-CDOM_IMAGE_MINIZ_CFLAGS := -w -I$(CDOM_IMAGE_MZ) -include $(CDOM)/src/cdom_image_miniz.h
+CDOM_IMAGE_INFLATE_SRC := $(CDOM)/src/cdom_image_inflate.c
+CDOM_IMAGE_INFLATE_CFLAGS ?=
+CDOM_IMAGE_INFLATE_SIMD_CFLAGS := -msimd128
 CDOM_IMAGE_SJLJ_SRC = $(CDOM)/src/cdom_image_sjlj.c $(if $(filter eh,$(CDOM_IMAGE_SJLJ)),$(CDOM)/src/cdom_image_sjlj_eh.c)
 cdom_mk_sjlj_js := -DCDOM_IMAGE_SJLJ_JS
 cdom_mk_sjlj_eh := -DCDOM_IMAGE_SJLJ_EH -mexception-handling -mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=true
 CDOM_IMAGE_SJLJ_CFLAGS = $(or $(cdom_mk_sjlj_$(CDOM_IMAGE_SJLJ)),$(error cdom.mk: CDOM_IMAGE_SJLJ is $(CDOM_IMAGE_SJLJ), not js or eh))
-CDOM_IMAGE_DEPS := $(wildcard $(CDOM_IMAGE_LJT)/*.h $(CDOM_IMAGE_LJT)/*.c $(CDOM)/src/jsimd/*.c $(CDOM)/src/jsimd/simd/*.h) $(CDOM_IMAGE_MZ)/tinfl.h
+CDOM_IMAGE_DEPS := $(wildcard $(CDOM_IMAGE_LJT)/*.h $(CDOM_IMAGE_LJT)/*.c $(CDOM)/src/jsimd/*.c $(CDOM)/src/jsimd/simd/*.h)
 CDOM_HEADERS    := $(wildcard $(CDOM)/src/*.h $(CDOM)/src/libc/*.h)
 CDOM_SHIM       := $(CDOM)/shim/cdom.min.js
 
@@ -209,20 +225,20 @@ CDOM_PAGE_TOOL  := $(CDOM)/tools/out/cdpage
 # out.wasm and out.wasm.lits. Make the rule depend on $(CDOM_LITS).
 cdom_lits = $(CDOM_LITS) $(1) $(2) $(2).lits
 
-# $(call cdom_page,in.html,out.html[,module.wasm[,lits]]): the page with the string table and the shim at
+# $(call cdom_page,in.html,out.html[,module.wasm[,lits[,more cdpage arguments]]]): the page with the string table and the shim at
 # its /*CDOM_SHIM*/ line and, when a module is named, that module bundled at its /*CDOM_WASM*/ (tools/cdpage);
 # out.html is written only when the page holds its markers as the APP_PAGE rule needs them (the header
 # above). Make the rule depend on $(CDOM_PAGE_TOOL).
-cdom_page = $(call cdom_mk_page,$(1),$(2),$(3),,,$(if $(3),$(3).lits,$(4)))
-# $(call cdom_mk_page,in,out,module to bundle,URL for /*CDOM_WASM*/,title for /*CDOM_TITLE*/,lits file[,SIMD twin to bundle,its URL]): the recipe
+cdom_page = $(call cdom_mk_page,$(1),$(2),$(3),,,$(if $(3),$(3).lits,$(4)),,,$(5))
+# $(call cdom_mk_page,in,out,module to bundle,URL for /*CDOM_WASM*/,title for /*CDOM_TITLE*/,lits file[,SIMD twin to bundle,its URL[,more cdpage arguments]]): the recipe
 # of cdom_page and the APP_PAGE rule, one run of tools/cdpage, which writes out only once the whole page is
 # made. cdom_mk_q quotes a value for the shell.
 cdom_mk_q = '$(subst ','\'',$(1))'
 cdom_mk_page = $(CDOM_PAGE_TOOL) --page $(call cdom_mk_q,$(1)) --out $(call cdom_mk_q,$(2)) --shim $(call cdom_mk_q,$(CDOM_SHIM)) \
   --lits $(call cdom_mk_q,$(6))$(if $(3), --wasm $(call cdom_mk_q,$(3)))$(if $(4), --wasm-url $(call cdom_mk_q,$(4)))$(if $(5), --title $(call cdom_mk_q,$(5))) \
-  $(if $(7),--simd-wasm $(call cdom_mk_q,$(7)) )$(if $(8),--simd-wasm-url $(call cdom_mk_q,$(8)) )--css-dir src
+  $(if $(7),--simd-wasm $(call cdom_mk_q,$(7)) )$(if $(8),--simd-wasm-url $(call cdom_mk_q,$(8)) )--css-dir src $(9)
 
-CDOM_MODULES := net store random audio url locale share fonts ui file image
+CDOM_MODULES := net store random audio url locale share fonts ui file image job
 
 # The APP_WASM and APP_PAGE rules. Their targets are the names APP_WASM and APP_PAGE hold, which an app
 # may set after this include, so they are pattern rules (%.wasm and %.html: APP_WASM ends in .wasm,
@@ -292,6 +308,16 @@ cdom_mk_for = $(if $(filter $(2),$(1)),$(3),$(2).cdom-mk-none)
 cdom_mk_lits_same = cmp -s $(call cdom_mk_q,$(1).lits) $(call cdom_mk_q,$(2).lits) || { rm -f $(call cdom_mk_q,$(2)) $(call cdom_mk_q,$(2).lits); \
   echo "cdom.mk: $(2) has other string literals than $(1) (the page's one table serves both: a SIMD build may not add or change one)" >&2; exit 1; }
 
+# The job modules (APP_JOBS): $(dir $(APP_WASM))<name>.job.wasm, each its own link of cdom's heap alone. The rule applies only
+# to a file APP_JOBS names, as the APP_WASM rule does; a job's name is the target's base name before .job.wasm.
+cdom_mk_job_files = $(foreach j,$(APP_JOBS),$(dir $(APP_WASM))$(j).job.wasm)
+cdom_mk_job_name = $(patsubst %.job.wasm,%,$(notdir $(1)))
+cdom_mk_job_src = $(APP_JOB_$(call cdom_mk_job_name,$(1))_SRC) $(CDOM)/src/cdom.c $(CDOM)/src/mini.c $(CDOM_JOB_MOD_SRC)
+%.job.wasm: $$(call cdom_mk_for,$$(cdom_mk_job_files),$$@,$$(cdom_mk_job_src) $$(CDOM_HEADERS))
+	@mkdir -p $(@D)
+	@$(cdom_mk_toolchain)
+	$(WASM_CC) $(CDOM_OPT) $(CDOM_CFLAGS) -DCDOM_HEAP_ONLY $(APP_JOB_CFLAGS) $(CDOM_LDFLAGS) $(APP_JOB_LDFLAGS) -o $@ $(call cdom_mk_job_src,$@)
+
 # A module part's object (the variables above): its file, compiled with the app's flags and then the part's. For
 # any other .cdom.o the prerequisite is a file nothing makes, so this rule does not apply.
 %.cdom.o: $$(or $$(call cdom_mk_obj_src,$$@),$$@.cdom-mk-none) $$(CDOM_HEADERS) $$(cdom_mk_mod_deps)
@@ -304,6 +330,8 @@ cdom_mk_lits_same = cmp -s $(call cdom_mk_q,$(1).lits) $(call cdom_mk_q,$(2).lit
 cdom_mk_page_src = $(or $(APP_PAGE_SRC),$(CDOM_PAGE))
 cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))
 cdom_mk_wasm_url = $(if $(APP_WASM_SEPARATE),$(or $(APP_WASM_URL),$(notdir $(APP_WASM))))
+# The page's job modules, bundled (unless APP_WASM_SEPARATE): one --job name=file each.
+cdom_mk_job_args = $(if $(APP_WASM_SEPARATE),,$(foreach j,$(APP_JOBS),--job $(call cdom_mk_q,$(j).job.wasm=$(dir $(APP_WASM))$(j).job.wasm)))
 cdom_mk_title = $(if $(APP_PAGE_SRC),,$(or $(APP_TITLE),$(basename $(notdir $(APP_WASM)))))
 # APP_SIMD: the twin, bundled too, or its URL: APP_SIMD_WASM_URL, else the scalar URL with .simd.wasm for its .wasm.
 cdom_mk_simd_bundled = $(if $(APP_WASM_SEPARATE),,$(cdom_mk_simd_wasm))
@@ -320,19 +348,27 @@ cdom_mk_simd_url = $(strip $(if $(and $(APP_WASM_SEPARATE),$(cdom_mk_simd_wasm))
 cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) ] && [ -d $(call cdom_mk_q,$(@D)) ] \
   && $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) --css-list src $(call cdom_mk_q,$@.csslist))$@.csslist)
 %.csslist: ;
-%.html: $$(call cdom_mk_for,$$(APP_PAGE),$$@,$$(cdom_mk_page_src) $$(CDOM_SHIM) $$(CDOM_PAGE_TOOL) $$(APP_WASM) $$(cdom_mk_simd_wasm)) $$(cdom_mk_csslist)
+%.html: $$(call cdom_mk_for,$$(APP_PAGE),$$@,$$(cdom_mk_page_src) $$(CDOM_SHIM) $$(CDOM_PAGE_TOOL) $$(APP_WASM) $$(cdom_mk_simd_wasm) $$(cdom_mk_job_files)) $$(cdom_mk_csslist)
 	$(if $(APP_PAGE_SRC)$(APP_WASM),,$(error cdom.mk: the default page starts APP_WASM, and APP_WASM is unset))
 	@mkdir -p $(@D)
 	$(CDOM_PAGE_TOOL) --css-list src $(call cdom_mk_q,$@.csslist)
-	$(call cdom_mk_page,$(cdom_mk_page_src),$@,$(cdom_mk_bundled),$(cdom_mk_wasm_url),$(cdom_mk_title),$(APP_WASM).lits,$(cdom_mk_simd_bundled),$(cdom_mk_simd_url))
+	$(call cdom_mk_page,$(cdom_mk_page_src),$@,$(cdom_mk_bundled),$(cdom_mk_wasm_url),$(cdom_mk_title),$(APP_WASM).lits,$(cdom_mk_simd_bundled),$(cdom_mk_simd_url),$(cdom_mk_job_args))
 
-# The toolchain check before the APP_WASM rule compiles: a one-function module through WASM_CC, its
-# wasm32 target and wasm-ld. When that fails (Apple's clang finds no wasm-ld; WASM_CC is not there), make
-# stops with the command that installs a toolchain, not at a linker error.
-cdom_mk_toolchain = printf 'void f(void) {}\n' | $(WASM_CC) --target=wasm32 -nostdlib -Wl,--no-entry -x c -o '$@.probe' - \
-  2> /dev/null && rm -f '$@.probe' || { rm -f '$@.probe'; \
-  echo "cdom.mk: $(WASM_CC) cannot build a wasm32 module (that takes clang with the wasm32 target, and wasm-ld)" >&2; \
-  echo "cdom.mk: install them with: brew install llvm lld   (Debian or Ubuntu: apt install clang lld)" >&2; \
+# The toolchain check before the APP_WASM rule compiles: a module through WASM_CC, its wasm32 target and
+# wasm-ld, that takes the address of __rodata_start, which wasm-ld defines from LLVM 23 on (src/cdom.c,
+# cd_tmpz, needs it, so an older linker fails there). When the probe fails, make stops with what it found
+# and the command that installs a toolchain, not at a linker error: a WASM_CC that builds no wasm32 module
+# at all (Apple's clang finds no wasm-ld; WASM_CC is not there), or one whose wasm-ld is older than 23
+# (Ubuntu 24.04's clang 18, Debian 13's clang 19), named with its version.
+cdom_mk_install = install LLVM 23 or later: brew install llvm lld   (Debian or Ubuntu: clang-23 and lld-23 from https://apt.llvm.org, then WASM_CC=/usr/lib/llvm-23/bin/clang)
+cdom_mk_probe = $(WASM_CC) --target=wasm32 -nostdlib -Wl,--no-entry -x c -o '$@.probe' - 2> /dev/null
+cdom_mk_toolchain = printf 'extern const char __rodata_start[];\n__attribute__((export_name("f"))) const char *f(void) { return __rodata_start; }\n' \
+  | $(cdom_mk_probe) && rm -f '$@.probe' || { \
+  if printf 'void f(void) {}\n' | $(cdom_mk_probe); then rm -f '$@.probe'; \
+    echo "cdom.mk: $(WASM_CC) links with $$("$$($(WASM_CC) --target=wasm32 -print-prog-name=wasm-ld)" --version 2> /dev/null | head -1), which does not define __rodata_start: cdom needs wasm-ld from LLVM 23 or later" >&2; \
+  else rm -f '$@.probe'; \
+    echo "cdom.mk: $(WASM_CC) cannot build a wasm32 module (that takes clang with the wasm32 target, and wasm-ld)" >&2; fi; \
+  echo "cdom.mk: $(cdom_mk_install)" >&2; \
   exit 1; }
 
 # The sources, named. A pattern rule whose prerequisite neither exists nor is named by any rule does not

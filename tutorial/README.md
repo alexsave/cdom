@@ -5,20 +5,21 @@ Every lesson puts the same app in React next to it, so you can read cdom in term
 
 | Lesson | What it teaches | The React it replaces | Page, brotli |
 | --- | --- | --- | ---: |
-| [1. Hello](01-hello/) | building a page: `cd_open`, `cd_text`, `cd_attr`, plain string literals | JSX | 8.9 KB |
-| [2. Counter](02-counter/) | state in C variables, ids, `cd_on` handlers, updating one node | `useState`, `onClick` | 9.9 KB |
-| [3. Input](03-input/) | reading a text field, derived state, strings with a length | a controlled `<input>` | 10.0 KB |
-| [4. Show and hide](04-regions/) | regions: parts of the page that come and go | `{open && <Panel/>}` | 11.1 KB |
-| [5. Todo list](05-todo/) | the keyed list: `cd_list_update` with create, patch and destroy | `items.map(i => <li key={i.id}>)` | 14.4 KB |
-| [6. Stopwatch](06-stopwatch/) | time: frames, timers and the clock | `useEffect`, `setInterval`, cleanup | 13.7 KB |
-| [7. Particles](07-particles/) | pixels from C to a canvas, with a seeded random generator | `useRef`, `useEffect`, a canvas loop | 12.0 KB |
+| [1. Hello](01-hello/) | building a page: `cd_open`, `cd_text`, `cd_attr`, plain string literals | JSX | 9.4 KB |
+| [2. Counter](02-counter/) | state in C variables, ids, `cd_on` handlers, updating one node | `useState`, `onClick` | 10.4 KB |
+| [3. Input](03-input/) | reading a text field, derived state, strings with a length | a controlled `<input>` | 10.7 KB |
+| [4. Show and hide](04-regions/) | regions: parts of the page that come and go | `{open && <Panel/>}` | 11.9 KB |
+| [5. Todo list](05-todo/) | the keyed list: `cd_list_update` with create, patch and destroy | `items.map(i => <li key={i.id}>)` | 15.4 KB |
+| [6. Stopwatch](06-stopwatch/) | time: frames, timers and the clock | `useEffect`, `setInterval`, cleanup | 14.5 KB |
+| [7. Particles](07-particles/) | pixels from C to a canvas, with a seeded random generator | `useRef`, `useEffect`, a canvas loop | 12.6 KB |
 
-"Page, brotli" is the whole page as it is served: the HTML, the stylesheet, the shim and the module bundled in it, measured with `brotli -q 11` on 2026-11-18, in thousands of bytes.
+"Page, brotli" is the whole page as it is served: the HTML, the stylesheet, the shim and the module bundled in it, measured with `brotli -q 11` (brotli 1.1.0, `make` with clang 23.1.0 and binaryen 130, as CI installs them) on 2026-11-19, in thousands of bytes (1000, not 1024).
+To re-measure: `make -C tutorial/0N-name`, then `brotli -q 11 -c tutorial/0N-name/build/index.html | wc -c`.
 For scale, the benchmark's React entry, a table of rows about as big as lesson 5, ships 51.4 KB brotli in all ([RESULTS.md](../RESULTS.md#startup-memory-and-bytes)).
 
 ## Running a lesson
 
-You need a clang that targets wasm32 (on macOS, `brew install llvm lld`; on Debian or Ubuntu, `apt install clang lld` and `make WASM_CC=clang`).
+You need a clang that targets wasm32, with wasm-ld from LLVM 23 or later (on macOS, `brew install llvm lld`; on Debian or Ubuntu, `clang-23` and `lld-23` from [apt.llvm.org](https://apt.llvm.org) and `make WASM_CC=/usr/lib/llvm-23/bin/clang`, since the distributions' `clang` and `lld` are older and `make` stops at them).
 No Node, npm or bundler is involved in building an app.
 
 ```sh

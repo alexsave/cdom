@@ -94,7 +94,7 @@ uint32_t cd_image_orientation(const uint8_t *p, uint32_t len) {
 int cd_image_scaler_init(cd_image_scaler *s, uint32_t sw, uint32_t sh, uint32_t dw, uint32_t dh, uint32_t o) {
   memset(s, 0, sizeof *s);
   if (o < 1 || o > 8) o = 1;
-  s->sw = sw; s->sh = sh; s->dw = dw; s->dh = dh; s->o = o;
+  s->sw = sw; s->sh = sh; s->dw = dw; s->dh = dh; s->o = o; s->step = 4;
   s->ow = o >= 5 ? dh : dw;
   s->oh = o >= 5 ? dw : dh;
   uint64_t out = (uint64_t)dw * dh * 4;
@@ -163,7 +163,8 @@ void cd_image_scaler_row(cd_image_scaler *s, const uint8_t *px) {
   s->row++;
   const uint32_t sw = s->sw, dw = s->dw, dh = s->dh, sh = s->sh;
   uint32_t *h = s->hrow;
-  cd_image_scaler_across(h, px, sw, dw);
+  if (s->step == 3) cd_image_scaler_across_rgb(h, px, sw, dw);   /* RGB rows as they are (the scalar build's PNG path) */
+  else cd_image_scaler_across(h, px, sw, dw);
   /* down: this source row covers [row*dh, (row+1)*dh) in units of 1/dh; output row oy ends at (oy+1)*sh */
   uint64_t rend = (uint64_t)s->row * dh;
   while (s->ypos < rend) {

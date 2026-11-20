@@ -2174,6 +2174,15 @@ EXPORT("t_ui_build") void t_ui_build(void) {
   cd_button("go", "Go", ui_clicked, CD_CTX_OF(7), &ui_label);
   cd_button(CD_NONE, "Plain", ui_clicked, CD_CTX_OF(8), nullptr);
 }
+EXPORT("t_ui_runtime") void t_ui_runtime(void) { /* text built at run time: cd_tmp is read after the element and class calls */
+  char buf[16];
+  __builtin_memcpy(buf, "lap 7", 5);
+  cd_id s = section("uirt");
+  cd_at(s, CD_APPEND);
+  cd_el_text("span", "rt", cd_tmp(buf, 5));
+  __builtin_memcpy(buf, "00:01", 5);
+  cd_el_text("em", CD_NONE, cd_tmp(buf, 5));
+}
 EXPORT("t_ui_relabel") void t_ui_relabel(void) { cd_set_text_node(ui_label, "Going"); }
 EXPORT("t_ui_clicks") uint32_t t_ui_clicks(uint32_t k) { return k ? ui_click_ctx : ui_clicks; }
 static char ui_room[48];

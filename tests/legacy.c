@@ -6,6 +6,7 @@
  * the seed. tests/legacy.html boots it and tools/legacy.mjs drives it, with LEGACY=1, ie9 or none. */
 #include "../src/cdom.h"
 #include "../src/cdom_file.h"
+#include "../src/cdom_job.h"
 
 #define EXPORT(n) __attribute__((export_name(n)))
 #define IMPORT(n) __attribute__((import_module("env"), import_name(n)))
@@ -121,6 +122,16 @@ EXPORT("file_ask") void file_ask(void) {
   cd_file_read_cb(ids[FILE], 0, 100, on_read, nullptr);
 }
 EXPORT("file_seen") int32_t file_seen_k(uint32_t k) { return file_seen[k]; }
+
+/* A job on the old tiers (cdom_job.h): no WebAssembly there (tools/legacy.mjs takes it away), so cd_job_cb answers UNSUPPORTED,
+ * from the event loop, and starts no worker. seen(0, 1): the status and the length. */
+static int32_t job_seen[2] = {-1, -1};
+static void on_job(void *, uint32_t status, const uint8_t *, uint32_t len) { job_seen[0] = (int32_t)status, job_seen[1] = (int32_t)len; }
+EXPORT("job_ask") void job_ask(void) {
+  job_seen[0] = job_seen[1] = -1;
+  cd_job_cb("x.job.wasm", "abc", 3, "", 0, on_job, nullptr);
+}
+EXPORT("job_seen") int32_t job_seen_k(uint32_t k) { return job_seen[k]; }
 
 /* The image module's js way out of a libjpeg error (src/cdom_image_sjlj.c) on this tier too, wasm2js included: a body
  * that throws from 20 frames down answers 1, 500 times in one call, the stack pointer where it was after; a body that

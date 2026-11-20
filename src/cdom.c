@@ -220,6 +220,10 @@ void *cd_realloc_try(void *p, uint32_t n) {
   return heap_realloc_or(p, n, 1);
 }
 
+/* A job module (src/cdom_job_mod.c) links only the heap above: -DCDOM_HEAP_ONLY ends this file here, so
+ * no DOM import or export comes with it. An app's build never sets it, and its bytes do not change. */
+#ifndef CDOM_HEAP_ONLY
+
 /* ---- calls ----
  * Every DOM operation is its own import, called the moment C emits it. A string is a cd_str: a literal's
  * slot (the shim finds its text in the page's table) or a runtime string's serial (the shim reads its
@@ -322,9 +326,10 @@ cd_str cd_tmp(const char *s, uint32_t len) {
 /* A pointer into read-only data is its own id: the shim keeps its string by address.
  * C never writes const data, so one address names one string for the life of the page.
  * Mutable statics, the stack and the heap lie outside the range and are read on every use.
- * wasm-ld defines the two symbols from LLVM 22; the weak declarations leave the range empty on an older
- * linker, and then every string takes the path below: the same page, slower. */
-extern const char __rodata_start[] __attribute__((weak)), __rodata_end[] __attribute__((weak));
+ * wasm-ld defines the two symbols from LLVM 23 on; an older one leaves them undefined and the link fails,
+ * which cdom.mk's toolchain check turns into the version it found and the fix. There is no fallback: a
+ * cd_bound_set value and the shim's string cache need a literal to be its own id. */
+extern const char __rodata_start[], __rodata_end[];
 cd_str cd_tmpz(const char *s) {
   if ((uintptr_t)s - (uintptr_t)__rodata_start < (uintptr_t)__rodata_end - (uintptr_t)__rodata_start)
     return (cd_str){(uint32_t)(uintptr_t)s};
@@ -1632,3 +1637,5 @@ int cd_req_current(const cd_req *r, void *ctx, uint16_t *index) {
 }
 void cd_req_end(cd_req *r, int ok) { r->state = ok ? CD_REQ_OK : CD_REQ_FAILED; }
 void cd_req_drop(cd_req *r) { r->state = CD_REQ_IDLE; } /* the next begin moves the generation on */
+
+#endif /* CDOM_HEAP_ONLY */

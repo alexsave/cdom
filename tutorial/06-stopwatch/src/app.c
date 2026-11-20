@@ -86,8 +86,8 @@ static cd_id lap_create(void *, uint32_t i, uint32_t *data) {
   format_time(split, split_cs[n - 1]);
 
   cd_id row = cd_open_id("li");
-  cd_open("span"); cd_class("name"); cd_text(name); cd_close();
-  cd_open("span"); cd_class("split"); cd_text(split); cd_close();
+  cd_el_text("span", "name", name);
+  cd_el_text("span", "split", split);
   cd_close();
   *data = 0; /* a row keeps nothing of its own: no ids and no handlers */
   return row;
