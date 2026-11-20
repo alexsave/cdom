@@ -553,8 +553,10 @@ static uint32_t run_on(cd_inflate *z, const uint8_t *p, uint32_t n, int last, ui
  * CD_INFLATE_CARRY (or the input ends), so each run over it takes LOOK or more; once what it leaves lies in the
  * new bytes, the run goes on over those where they are, and keeps their own tail in the carry. */
 uint32_t cd_inflate_put(cd_inflate *z, const uint8_t *p, uint32_t n, int last) {
+  static const uint8_t none[1];
   uint32_t used, st;
   if (z->stage == S_DONE) return z->status;
+  if (!p) p = none;                                         /* n is 0: no arithmetic on a null pointer */
   while (z->carry_n) {
     uint32_t k = CD_INFLATE_CARRY - z->carry_n;
     if (k > n) k = n;
