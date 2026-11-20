@@ -1,0 +1,43 @@
+# The interpreter's ops in the order of their dynamic frequency, the most frequent first, each with its weight in parts
+# per million of the instructions run (docs/js1-interp-design.md, section 4). js1lower.mjs numbers the ops in this order
+# (an op not named here comes after, by name, weight 0) and shapes the dispatch from the weights. Written by
+# JS1_ORDER=<file> node tools/js1interp.mjs profile: tests/frames.c's boot and tests/js1cpu.c, each weighing half.
+const 212864
+addi 73423
+add 68687
+ld 60555
+andi 55387
+st 33322
+jne 28624
+jz 28248
+shrui 28054
+sub 27947
+xor 27885
+muli 27885
+select 27778
+rotl 27609
+remu 27609
+xori 27609
+ltsi 27609
+mov 27447
+enter 25649
+call 25310
+ret0 21143
+ld8u 20467
+callimp 20129
+jnz 20067
+jltu 7273
+shl 5751
+ret 4506
+st8 3890
+jltui 2537
+jgeui 1184
+shli 1015
+jltsi 677
+jmp 507
+jgeu 507
+memgrow 169
+memsize 169
+memfill 169
+ori 169
+or 169
