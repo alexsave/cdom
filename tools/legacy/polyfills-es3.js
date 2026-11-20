@@ -6,7 +6,7 @@
  * Also JScript's own bug: splice(start) with no count removes nothing (the standard removes to the end).
  * And what JScript 5.0 (IE 5.0) lacks of what JScript 5.5 has, which the rest of this file and every later part call:
  * the global undefined, Array's push, pop, shift, unshift and splice, Function's call and apply, and Object's
- * hasOwnProperty, and TypeError. So those come first, each written without the others.
+ * hasOwnProperty, and TypeError (made by polyfills.js's cdomError, which it calls only once an error is thrown). So those come first, each written without the others.
  * ES3, as JScript 5.0 reads it. */
 (function (w) {
   var O = Object, A = Array.prototype, F = Function.prototype, P = O.prototype;
@@ -23,11 +23,10 @@
   /* JScript 5.0 has no global named undefined: reading it throws. As a property of the window it is one. */
   w["undefined"] = void 0;
   /* JScript 5.0 has Error alone, no TypeError: the files here throw one only on a misuse, which must still throw an
-   * error, not "TypeError is undefined". Its message is in description too, as JScript's own errors carry it. */
+   * error, not "TypeError is undefined". */
   if (!w.TypeError) w.TypeError = function (message) {
-    var e = new Error();
+    var e = w.cdomError(message);
     e.name = "TypeError";
-    e.message = e.description = message;
     return e;
   };
   if (!A.push) A.push = function () {

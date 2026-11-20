@@ -10,6 +10,16 @@
   "use strict";
   var M = Math;
 
+  /* JScript 5.0's (IE 5.0's) Error(n) takes a number, not a message: new Error("x") there has no message. Every error the
+   * fourth tier's files make with a message, the shim's and the app's (app.wasm.ie9.js, which the third tier runs too),
+   * is made by this instead: build.mjs's pass (es3.mjs's messages) rewrites each new Error(m) to cdomError(m), and es3()
+   * refuses one left. The message is in description too, as JScript's own errors carry it. */
+  w.cdomError = function (message) {
+    var e = new Error();
+    e.message = e.description = message;
+    return e;
+  };
+
   /* wasm2js lowers i32 multiply, count-leading-zeros, f32 rounding and truncation to these. */
   /* MDN's Math.imul polyfill (its first form). */
   if (!M.imul) M.imul = function (a, b) {

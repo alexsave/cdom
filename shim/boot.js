@@ -23,6 +23,13 @@ function cdomBoot(url, mount, env, ready, options) {
   function failed(e) {
     setTimeout(function () { throw e; }, 0);
   }
+  /* JScript 5.0 (IE 5.0) takes a number in Error(n), not a message: the message is set by hand (build.mjs refuses an
+   * Error(message) here). */
+  function error(message) {
+    var e = new Error();
+    e.message = e.description = message;
+    return e;
+  }
   if (typeof WebAssembly === "object") {
     cdom.start(url, mount, env, options).then(ready, failed);
     return;
@@ -49,7 +56,7 @@ function cdomBoot(url, mount, env, ready, options) {
   /* The boot runs before any polyfill, so it names nothing JScript 5.0 (IE 5.0) lacks: no push, no undefined. */
   if (!d.getElementById) lack[lack.length] = "document.getElementById";
   if (!d.addEventListener && !d.attachEvent) lack[lack.length] = "addEventListener or attachEvent";
-  if (lack.length) throw new Error("cdom: this browser cannot run cdom: it has no " + lack.join(", "));
+  if (lack.length) throw error("cdom: this browser cannot run cdom: it has no " + lack.join(", "));
   var head = d.getElementsByTagName("head")[0];
   /* IE 6 to 8 fire no load on a script: readystatechange, loaded or complete (either may come, and IE 9 and 10 fire
    * both kinds), so next runs once. */
@@ -61,7 +68,7 @@ function cdomBoot(url, mount, env, ready, options) {
       s.onload = s.onreadystatechange = null;
       next();
     };
-    s.onerror = function () { throw new Error("cdom: could not load " + src); };
+    s.onerror = function () { throw error("cdom: could not load " + src); };
     s.src = src;
     head.appendChild(s);
   }

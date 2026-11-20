@@ -2,7 +2,7 @@
 // for each: what JScript refuses or reads differently must fail the build, and what it reads as written must pass.
 // node tools/es3.mjs; exit 1 on any failure. Needs `npm ci` in tools/legacy (Babel and acorn).
 import { createRequire } from 'node:module';
-import { es3, catchScoped, oldDom, oldDomLeftovers } from './legacy/es3.mjs';
+import { es3, catchScoped, oldDom, oldDomLeftovers, messages, boot50 } from './legacy/es3.mjs';
 
 const require = createRequire(new URL('./legacy/package.json', import.meta.url));
 const { transformSync } = require('@babel/core');
@@ -36,6 +36,33 @@ ok(refusal('polyfills', 'Object.defineProperty(o, "a", {});') === '', 'polyfills
 ok(refusal('shim', '[1].forEach(f); [1].indexOf(1); f.bind(o); Object.keys(o); Date.now();') === '', 'the supplied ES5 names pass');
 ok(/ES5 names/.test(refusal('shim', 'var j = JSON.stringify(o);')), 'JSON is refused (IE 6 and 7 have none)');
 ok(/__proto__/.test(refusal('shim', 'f.__proto__ = g;')), '__proto__ is refused (Firefox 1.0 crashes on a function whose __proto__ was set)');
+
+// JScript 5.0 (IE 5.0, measured in IE 5.01 by tests/probe.html): no binary in, no number as an object's key, no regex
+// flag but g and i, no lazy quantifier and no (? group; each a syntax error that fails the whole file.
+ok(/binary in/.test(refusal('t', 'if ("a" in o) f();')), 'a binary in is refused');
+ok(refusal('t', 'for (var k in o) f(k);') === '', 'for-in passes');
+ok(/number as an object/.test(refusal('t', 'x = { 1: 0 };', true)), '{ 1: 0 } is refused');
+ok(refusal('t', 'x = { "1": 0 };', true) === '', '{ "1": 0 } passes');
+ok(/regular expression/.test(refusal('t', 'r = /a/m;', true)), '/a/m is refused');
+ok(/regular expression/.test(refusal('t', 'r = /a+?/;', true)), '/a+?/ is refused');
+ok(/regular expression/.test(refusal('t', 'r = /(?:a)/;', true)), '/(?:a)/ is refused');
+ok(refusal('t', 'r = /^\\s+|[?(]\\?$/gi;', true) === '', 'g, i, an escaped ? and ? in a class pass');
+// JScript 5.0's Error(n) takes a number: an Error made with a message is refused, and messages() rewrites it to cdomError.
+ok(/Error with a message/.test(refusal('t', 'throw new Error("x");', true)), 'new Error("x") is refused');
+ok(/Error with a message/.test(refusal('t', 'throw Error("x");', true)), 'Error("x") is refused');
+ok(refusal('t', 'var e = new Error(); e.message = "x";', true) === '', 'new Error() passes');
+const msg = (await messages('throw new Error("a"); throw Error("b"); function f(Error) { return new Error("c"); }')).replace(/\s+/g, ' ');
+ok(msg.includes('throw cdomError("a")') && msg.includes('throw cdomError("b")') && msg.includes('new Error("c")'),
+  `messages rewrites the global Error's, not a local one's: ${msg}`);
+ok(refusal('t', msg.replace('new Error("c")', 'c'), true) === '', 'and what it makes passes');
+// The boot runs before any polyfill: none of what JScript 5.5 added, and no Error made with a message.
+ok(JSON.stringify(boot50('a.push(1); var u = undefined; f.apply(o, b);')) === '[".push","undefined",".apply"]',
+  `boot50 finds push, undefined and apply: ${JSON.stringify(boot50('a.push(1); var u = undefined; f.apply(o, b);'))}`);
+ok(JSON.stringify(boot50('throw new Error("x");')) === '["Error(message)"]', 'boot50 finds an Error made with a message');
+ok(JSON.stringify(boot50('a[a.length] = 1; var e = new Error(); e.message = "x"; throw e;')) === '[]', 'boot50 passes the boot\'s own forms');
+ok(/ES5 names/.test(refusal('shim', 'var s = n.toFixed(2);')), 'toFixed (JScript 5.5) is refused');
+ok(refusal('shim', 'a.push(1); f.call(o); o.hasOwnProperty(k);') === '', 'the JScript 5.5 names polyfills-es3.js supplies pass');
+ok(/replace with a function/.test(refusal('t', 's.replace(/a/g, function (m) { return m; });')), 'replace with a function is refused');
 
 // The old DOM's table: each W3C call rewritten to its dom-old.js helper, and any left over found.
 const out = transformSync('x.style.setProperty(a, b); y.textContent = ""; v = z.previousElementSibling; addEventListener("t", f);' +
