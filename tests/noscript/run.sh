@@ -116,10 +116,12 @@ t_hit=$(since "$t")
 if [ "$m1" = "$(mtimes "$shot" "$snow" "$page.noscript")" ]; then ok "the content stamp: a page rewritten with the same bytes makes neither GIF again"
 else bad "the content stamp: a page of the same bytes made the GIFs again"; fi
 echo "measure P5: that make (the page rewritten, the stamp matching) took ${t_hit} s"
+sleep 1 # macOS's make 3.81 compares whole seconds: the edit must be a second newer than the module it made
 subst "$app/src/app.c" 'cd_text("cdom")' 'cd_text("cdom!")'
 mk > "$out/make4.log" 2>&1
 if cmp -s "$shot" "$out/shot1.gif"; then bad "the content stamp: the app drew another word, and the screenshot is the old one"
 else ok "the content stamp: the app draws another word, and the screenshot is made again"; fi
+sleep 1 # macOS's make 3.81 compares whole seconds: the edit must be a second newer than the module it made
 subst "$app/src/app.c" 'cd_text("cdom!")' 'cd_text("cdom")'
 mk > "$out/make5.log" 2>&1
 if cmp -s "$shot" "$out/shot1.gif"; then ok "determinism: the app put back, the screenshot is the first one's bytes again"
