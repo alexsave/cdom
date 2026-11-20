@@ -39,7 +39,7 @@ cat "$out-env.txt"
 node test.mjs > "$out-tests.txt" 2>&1; tail -1 "$out-tests.txt"
 ./sizes.sh > "$out-sizes.tsv" || exit 1
 { uptime; ./build/native/bench time "$rounds" "$ms"; uptime; } > "$out-native.tsv" 2>&1; echo "native: $(grep -c '^native' "$out-native.tsv") runs"
-{ uptime; ./build/native-O2/bench time "$rounds" "$ms" | sed 's/^native\t/native-O2\t/'; uptime; } > "$out-native-O2.tsv" 2>&1; echo "native -O2: $(grep -c '^native-O2' "$out-native-O2.tsv") runs"
+{ uptime; ./build/native-O2/bench time "$rounds" "$ms" | awk 'BEGIN { FS = OFS = "\t" } $1 == "native" { $1 = "native-O2" } 1'; uptime; } > "$out-native-O2.tsv" 2>&1; echo "native -O2: $(grep -c '^native-O2' "$out-native-O2.tsv") runs"
 { uptime; node run.mjs node "$rounds" "$ms"; uptime; } > "$out-node.tsv" 2>&1; echo "node: $(grep -c '^node' "$out-node.tsv") runs"
 for br in $browsers; do
   { uptime; node run.mjs "$br" "$rounds" "$ms"; uptime; } > "$out-$br.tsv" 2>&1; echo "$br: $(grep -c "^$br" "$out-$br.tsv") runs"
