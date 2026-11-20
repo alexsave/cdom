@@ -970,7 +970,7 @@ M = [
   ('ie5-regex-flag-gate-off', 'tools/legacy/es3.mjs', "  if (/[^gi]/.test(flags)) return true;", '', ES3T, 'FAIL /a/m is refused'),
   ('ie5-regex-group-gate-off', 'tools/legacy/es3.mjs', "    if (c === '?' && (prev === '(' || prev === 'q')) return true;", '', ES3T, 'FAIL /a+?/ is refused'),
   ('ie5-error-gate-off', 'tools/legacy/es3.mjs', "  if (minified && errorsWithMessage(tree)) throw", "  if (false) throw", ES3T, 'FAIL new Error("x") is refused'),
-  ('ie5-error-not-rewritten', 'tools/legacy/es3.mjs', "        p.replaceWith(t.callExpression(t.identifier('cdomError'), [n.arguments[0]]));", '', ES3T, "FAIL messages rewrites the global Error's"),
+  ('ie5-error-not-rewritten', 'tools/legacy/es3.mjs', "        p.replaceWith(t.callExpression(t.identifier('cdomError'), [n.arguments[0]]));", '', ES3T, 'cdom.legacy-ie6.js makes an Error with a message'),
   ('ie5-boot-error-gate-off', 'tools/legacy/es3.mjs', "found.add('Error(message)');", "0;", ES3T, 'FAIL boot50 finds an Error made with a message'),
   ('ie5-boot50-off', 'tools/legacy/es3.mjs', "      if (names.has(key)) found.add(key);", '', ES3T, 'FAIL boot50 finds push, undefined and apply'),
   ('ie5-jscript55-unlisted', 'tools/legacy/es3.mjs', "'.propertyIsEnumerable', '.isPrototypeOf', 'encodeURI', 'decodeURI', 'encodeURIComponent', 'decodeURIComponent', '.toFixed',", "'.propertyIsEnumerable', '.isPrototypeOf', 'encodeURI', 'decodeURI', 'encodeURIComponent', 'decodeURIComponent',", ES3T, 'FAIL toFixed (JScript 5.5) is refused'),
