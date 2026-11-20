@@ -23,9 +23,11 @@ const F = 'frames[0].document';
 const mouse = (type, x, y, buttons = 0, button = 'none') =>
   b.send('Input.dispatchMouseEvent', { type, x, y, buttons, button, clickCount: type === 'mouseMoved' ? 0 : 1 });
 // An element of the frame by selector, its centre in the top window's coordinates (the frame fills the window).
-const centre = (sel) => E(`(function () { var r = ${F}.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();
+// [-1, -1] when there is no such element (a broken shim), which clickAt does not click.
+const centre = (sel) => E(`(function () { var e = ${F}.querySelector(${JSON.stringify(sel)}), r; if (!e) return [-1, -1]; r = e.getBoundingClientRect();
   return [Math.round((r.left + r.right) / 2), Math.round((r.top + r.bottom) / 2)]; })()`);
 async function clickAt(x, y) {
+  if (x < 0) return;
   await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y, 1, 'left'); await sleep(30);
   await mouse('mouseReleased', x, y, 0, 'left'); await sleep(60);
 }
@@ -34,9 +36,10 @@ const draws = () => E('cdomF.draws');
 const stat = (k) => E(`X.stat(${k})`);
 const STAT = { count: 0, path: 1, inputs: 2, changes: 3, checks: 4, focuses: 5, blurs: 6, ticks: 7, items: 8 };
 const textOf = (sel) => E(`(function () { var e = ${F}.querySelector(${JSON.stringify(sel)}); return e ? e.innerText : null; })()`);
-const valueOf = (sel) => E(`${F}.querySelector(${JSON.stringify(sel)}).value`);
 // The field the frame's form calls name cN for the tree's input of id attribute id.
-const field = (id) => `${F}.forms[0].elements[(function () { var i; for (i = 0; i < cf_nfields; i++) if (cf_pair(cf_fields[i].a, "id") === ${JSON.stringify(id)}) return i; return -1; })()]`;
+// A stand-in with no value and methods that do nothing when there is no such field (a broken shim), so a check fails
+// on its own assertion and the run goes on.
+const field = (id) => `(${F}.forms[0].elements[(function () { var i; for (i = 0; i < cf_nfields; i++) if (cf_pair(cf_fields[i].a, "id") === ${JSON.stringify(id)}) return i; return -1; })()] || { select: function () {}, setSelectionRange: function () {} })`;
 // Waits until expr is true, or n tries of 20 ms.
 async function until(expr, n = 100) {
   for (let i = 0; i < n && !(await E(expr)); i++) await sleep(20);
@@ -91,7 +94,7 @@ run: try {
   ok(await E(`!${F}.querySelector("#hidden") && !${F}.querySelector("#pic") && !${F}.querySelector("svg")`), 'display: none and the SVG are not written');
   ok(await E(`(function () { var s = ${F}.querySelector("#styled"), f = s.querySelector("font"); return !!f && f.getAttribute("color") === "red"
     && !!s.querySelector("b i u") && !s.getAttribute("style"); })()`), 'color, font-weight, font-style and text-decoration as FONT COLOR, B, I and U, and no style attribute');
-  ok(await E(`${F}.querySelector("#title font").getAttribute("color") === "#800000"`), "the heading's color as FONT COLOR");
+  ok(await E(`(function () { var f = ${F}.querySelector("#title font"); return !!f && f.getAttribute("color") === "#800000"; })()`), "the heading's color as FONT COLOR");
   ok(await E(`(function () { var i = ${F}.querySelector("#inc"); return i.tagName === "INPUT" && i.type === "button" && i.value === "inc" && i.form === ${F}.forms[0]; })()`),
     'the button is an INPUT TYPE=button with its text as the value, in the one FORM');
 
@@ -166,6 +169,10 @@ run: try {
   ok(await until('X.stat(7) === 1') && (await textOf('#tickp')) === 'ticks 1', `a timer reached C and was drawn: ${JSON.stringify(await textOf('#tickp'))}`);
   ok((await draws()) === d + 1, `a timer draws once: ${(await draws()) - d}`);
 
+  // Many ops in one call: still one draw.
+  d = await draws();
+  await E('X.grow(5)');
+  ok((await draws()) === d + 1 && (await E(`${F}.querySelectorAll("#list li").length`)) === 5, `an export of 15 ops (5 items) draws once: ${(await draws()) - d}`);
   ok((await E('history.length')) === h0, `no redraw added a history entry: ${h0} then ${await E('history.length')}`);
   await matches('at the end');
   ok(!(await E('cdomF.errors.length')), `no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
@@ -191,10 +198,13 @@ run: try {
     for (const want of [1000, 2000, 4000]) {
       const have = await E(nodes);
       if (have < want) await E(`X.grow(${Math.ceil((want - have) / 3)})`);
+      // No performance.now under LEGACY=frames (IE 9 has none) and no Date.now (IE 6): the clock is new Date(), 1 ms
+      // apart, so each sample is the mean of 10 in a row, and the median of 7 samples is kept.
       const n = await E(nodes), whole = [], ser = [];
-      for (let i = 0; i < 10; i++) {
-        whole.push(await E('(function () { var t = performance.now(); X.touch(); return performance.now() - t; })()'));
-        ser.push(await E('(function () { var t = performance.now(); cf_html(); return performance.now() - t; })()'));
+      const mean10 = (call) => E(`(function () { var t = new Date().getTime(), i; for (i = 0; i < 10; i++) ${call}; return (new Date().getTime() - t) / 10; })()`);
+      for (let i = 0; i < 7; i++) {
+        whole.push(await mean10('X.touch()'));
+        ser.push(await mean10('cf_html()'));
       }
       rows.push({ nodes: n, us_node: +(median(whole) * 1000 / n).toFixed(2), serialize_us_node: +(median(ser) * 1000 / n).toFixed(2), bytes: await E('cdomF.bytes') });
     }
@@ -232,7 +242,8 @@ run: try {
           await E(`(function () { var w = frames[0], d = w.document, h = "<p>" + ${i} + "</p>"; window.__h = h; ${how} })()`);
           await sleep(40);
         }
-        out[k] = (await E('history.length')) - before;
+        // What the frame shows after: the last rewrite's text, or the rewrite did not happen and the count says nothing.
+        out[k] = [(await E('history.length')) - before, await E('frames[0].document.body ? frames[0].document.body.innerText : ""')];
       }
       console.log('measure history', JSON.stringify(out));
     }
