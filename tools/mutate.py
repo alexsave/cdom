@@ -35,6 +35,7 @@ LEG6 = ['env', 'LEGACY=ie6', 'node', 'tools/legacy.mjs']     # the fourth: words
 LEGBELOW = ['env', 'LEGACY=below', 'node', 'tools/legacy.mjs']  # under the fourth tier's floor: refused
 FUZZ6 = ['env', 'LEGACY=ie6', 'node', 'tools/fuzz.mjs']      # the keyed fuzz on the fourth tier
 ES3T = ['node', 'tools/es3.mjs']                             # the fourth tier's checks and passes, in node
+VMLT = ['node', 'tools/vml.mjs']                             # the fourth tier's SVG path converter (vml.js), in node
 JOB = ['node', 'tools/job.mjs']
 RESIZE = ['tools/resize_ban.sh']
 IMG = ['env', 'IMAGE_BIG=0', 'IMAGE_WASM=0', 'tests/image/run.sh']   # the image module, native, small inputs
@@ -981,6 +982,41 @@ M = [
   ('ie5-jscript55-unlisted', 'tools/legacy/es3.mjs', "'.propertyIsEnumerable', '.isPrototypeOf', 'encodeURI', 'decodeURI', 'encodeURIComponent', 'decodeURIComponent', '.toFixed',", "'.propertyIsEnumerable', '.isPrototypeOf', 'encodeURI', 'decodeURI', 'encodeURIComponent', 'decodeURIComponent',", ES3T, 'FAIL toFixed (JScript 5.5) is refused'),
   ('ie5-hold-in-shipped', 'tools/legacy/dom-old.js', '  function remove(x) {', '  // http://10.0.2.2:8096/x.gif\n  function remove(x) {', ES3T, 'the IE 5 test hold (port 8096) is in a shipped or built file'),
   ('ie5-replace-fn-gate-off', 'tools/legacy/es3.mjs', "  if (replaceWithFunction(tree)) throw", "  if (false) throw", ES3T, 'FAIL replace with a function is refused'),
+  # SVG through VML on the fourth tier (docs/vml-design.md)
+  ('vml-h-as-v', 'tools/legacy/vml.js', '        lineTo(args[0] + ox, y);', '        lineTo(x, args[0] + oy);', VMLT, 'FAIL H, V, h and v as l'),
+  ('vml-pairs-after-m-moves', 'tools/legacy/vml.js', '        cmd = "L";                             /* pairs after a move are lines */', '        cmd = "M";', VMLT, 'FAIL pairs after M are lines'),
+  ('vml-z-no-move-back', 'tools/legacy/vml.js', '    function lineTo(px, py) {\n      if (closed) moveTo(x0, y0);', '    function lineTo(px, py) {', VMLT, 'FAIL L after Z starts at the subpath start'),
+  ('vml-s-no-reflection', 'tools/legacy/vml.js', '        var ax = prev === "C" || prev === "S" ? 2 * x - cx : x, ay = prev === "C" || prev === "S" ? 2 * y - cy : y;', '        var ax = x, ay = y;', VMLT, 'FAIL S reflects the C before'),
+  ('vml-t-no-reflection', 'tools/legacy/vml.js', '          qx = prev === "Q" || prev === "T" ? 2 * x - cx : x;', '          qx = x;', VMLT, 'FAIL T reflects the Q before'),
+  ('vml-q-half-not-two-thirds', 'tools/legacy/vml.js', 'curveTo(sx0 + 2 / 3 * (qx - sx0),', 'curveTo(sx0 + 1 / 2 * (qx - sx0),', VMLT, 'FAIL Q: '),
+  ('vml-number-one-point', 'tools/legacy/vml.js', '      if (d.charAt(i) === ".") {\n        i++;', '      if (d.charAt(i) === "." && !digits) {\n        i++;', VMLT, 'FAIL numbers run together'),
+  ('vml-malformed-goes-on', 'tools/legacy/vml.js', '      if (k < need) break;\n', '', VMLT, 'FAIL a missing number ends the path'),
+  ('vml-floor-not-round', 'tools/legacy/vml.js', '    return String(Math.round(x * K));', '    return String(Math.floor(x * K));', VMLT, 'FAIL rounding to a hundredth of a pixel'),
+  ('vml-ctm-ignored', 'tools/legacy/vml.js', '      return q(sx * px + tx) + "," + q(sy * py + ty);', '      return q(px) + "," + q(py);', VMLT, 'FAIL the CTM'),
+  ('vml-arc-relative-end-absolute', 'tools/legacy/vml.js', '        arc(args[0], args[1], args[2], args[3], args[4], args[5] + ox, args[6] + oy);', '        arc(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);', VMLT, 'FAIL a, relative'),
+  ('vml-arc-radii-not-scaled', 'tools/legacy/vml.js', '      if (lam > 1) {', '      if (false) {', VMLT, 'FAIL radii too small scale up'),
+  ('vml-arc-sweep-ignored', 'tools/legacy/vml.js', '      if (sweep && dt < 0) dt += 2 * Math.PI;\n      else ', '      ', VMLT, 'FAIL a half circle the other way'),
+  ('vml-arc-half-turns', 'tools/legacy/vml.js', 'Math.ceil(Math.abs(dt) / (Math.PI / 2) - 1e-9)', 'Math.ceil(Math.abs(dt) / Math.PI - 1e-9)', VMLT, 'of the true arc (tolerance'),
+  ('vml-no-namespace', 'tools/legacy/vml.js', '        ns.add("v", URN, "#default#VML");', '        0;', LEG6, 'FAIL the VML namespace added and the behavior rule made'),
+  ('vml-no-behavior-rule', 'tools/legacy/vml.js', '      if (doc.createStyleSheet) doc.createStyleSheet().addRule(', '      if (false) doc.createStyleSheet().addRule(', LEG6, 'FAIL the VML namespace added and the behavior rule made'),
+  ('vml-svg-plain-element', 'tools/legacy/dom-old.js', ' : w.cdomVml.create(tag);', ' : d.createElement(tag);', LEG6, 'FAIL the svg is a v:group'),
+  ('vml-viewbox-ignored', 'tools/legacy/vml.js', '    if (vb.length !== 4 || vb[2] <= 0 || vb[3] <= 0) return [1, 1, 0, 0];', '    return [1, 1, 0, 0];', LEG6, 'FAIL <path> as a v:shape'),
+  ('vml-stroke-weight-unscaled', 'tools/legacy/vml.js', '    var weight = num(paint["stroke-width"], 1) * Math.sqrt(m[0] * m[1]);', '    var weight = num(paint["stroke-width"], 1);', LEG6, 'FAIL <path> as a v:shape'),
+  ('vml-g-transform-ignored', 'tools/legacy/vml.js', '    own = st.kind === 0 ? rootMatrix(a) : a.transform ? transform(a.transform) : null;', '    own = st.kind === 0 ? rootMatrix(a) : null;', LEG6, 'FAIL <path in a g> as a v:shape'),
+  ('vml-paint-not-inherited', 'tools/legacy/vml.js', '    for (k in ctx.paint) {', '    for (k in {}) {', LEG6, 'FAIL <path in a g> as a v:shape'),
+  ('vml-opacity-not-multiplied', 'tools/legacy/vml.js', '    return { m: m, paint: paint, opacity: ctx.opacity * num(a.opacity, 1) };', '    return { m: m, paint: paint, opacity: ctx.opacity };', LEG6, 'FAIL <polygon> as a v:shape'),
+  ('vml-short-hex-kept', 'tools/legacy/vml.js', 'return "#" + v.charAt(1) + v.charAt(1) + v.charAt(2) + v.charAt(2) + v.charAt(3) + v.charAt(3);', 'return v;', LEG6, 'FAIL <circle> as a v:shape'),
+  ('vml-rgb-refused', 'tools/legacy/vml.js', '    if (/^rgb\\(/.test(v)) {', '    if (false) {', LEG6, 'FAIL <rect> as a v:shape'),
+  ('vml-line-filled', 'tools/legacy/vml.js', '    var fill = st.tag === "line" ? "" : paintOf(', '    var fill = paintOf(', LEG6, 'FAIL <line> as a v:shape'),
+  ('vml-circle-no-ry', 'tools/legacy/vml.js', '      ry = t === "circle" ? rx : num(a.ry, 0);', '      ry = num(a.ry, 0);', LEG6, 'FAIL <circle> as a v:shape'),
+  ('vml-polygon-open', 'tools/legacy/vml.js', '    return t === "polygon" ? s + "Z" : s;', '    return s;', LEG6, 'FAIL <polygon> as a v:shape'),
+  ('vml-unsupported-shown', 'tools/legacy/vml.js', '    el = doc.createElement("span");\n    el.style.display = "none";\n', '    el = doc.createElement("span");\n', LEG6, 'FAIL text and the gradient are hidden spans'),
+  ('vml-rotate-drawn', 'tools/legacy/vml.js', '      st.hide.transform = typeof t === "string";', '      st.hide.transform = false;', LEG6, 'FAIL text and the gradient are hidden spans, the rotated rect is hidden'),
+  ('vml-report-silent', 'tools/legacy/vml.js', '    if (typeof w.reportError === "function") w.reportError(e);', '', LEG6, 'FAIL each reported once through window.onerror'),
+  ('vml-report-every-time', 'tools/legacy/vml.js', '    if (seen.hasOwnProperty(kind)) return;\n', '', LEG6, 'nothing is reported twice'),
+  ('vml-path-kept-on-change', 'tools/legacy/vml.js', '    if (key !== st.key) {', '    if (!st.key) {', LEG6, 'FAIL cd_set_attr of d reached the v:shape'),
+  ('vml-place-not-redrawn', 'tools/legacy/shim-old.js', '  if (node.$vml) {\n    cdomVml.placed(node);\n  }\n', '', LEG6, "FAIL the g's transform changed while its path was detached"),
+  ('vml-other-tiers-not-svg', 'shim/cdom.js', '      push(doc.createElementNS(SVG, name));', '      push(doc.createElement(name));', LEG9, 'FAIL the svg is real SVG'),
   ('ie6-old-dom-gate-off', 'tools/legacy/es3.mjs', "    if (dot && ((called.has(k.value) && call) || props.has(k.value))) left.add('.' + k.value);", '', ES3T, 'FAIL a call, a property and a global left are found'),
   ('ie6-old-dom-call-not-rewritten', 'tools/legacy/es3.mjs', "        if (m && (own(OLD_DOM.call, m) || (own(OLD_DOM.zero, m) && !p.node.arguments.length))) {", "        if (false) {", ES3T, 'W3C DOM the old DOM lacks left in the shim'),
   ('ie6-invoke-through-apply', 'tools/legacy/shim-old.js', '    case 0: return object[key]();', '    case 0: return object[key].apply(object, a);', LEG6, 'FAIL focus delivered once'),
