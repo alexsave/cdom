@@ -257,6 +257,14 @@ run: try {
       await click('#inc');
       ok((await textOf('#countp')) === 'count 1', `and a click there reaches C: ${JSON.stringify(await textOf('#countp'))}`);
     }
+    // The copy for the XP VM whose string table Netscape 3 parses (tools/js1table.mjs): the same page, the same run.
+    await b.send('Page.navigate', { url: `http://127.0.0.1:${port}/frames-ns.html` });
+    ok(await until('!!window.READY && window.cdomF && cdomF.draws > 0') && (await E('cdomLits.length')) === 4,
+      'frames-ns.html (the table as new Array() and assignments): booted and drawn');
+    if (await E('frames.length === 1')) {
+      await click('#inc');
+      ok((await textOf('#countp')) === 'count 1', `and a click there reaches C: ${JSON.stringify(await textOf('#countp'))}`);
+    }
     if (measure) {
       // History: what each way of rewriting the frame does to the top's history.length, 20 rewrites each, in a page
       // of its own (the same frameset, under LEGACY=frames).

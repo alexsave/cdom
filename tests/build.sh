@@ -92,6 +92,9 @@ page "$here/frames.html" "$here/out/frames.shim.html" "$here/out/frames.wasm"
 node "$legacy" page "$here/out/frames.shim.html" "$here/out/frames.html"
 sed 's|</head><div id="m">|</head><body><div id="m">|' "$here/out/frames.html" > "$here/out/frames-body.html"
 grep -q '<body><div id="m">' "$here/out/frames-body.html"
+# The two pages again with a string table Netscape 3 parses (tools/js1table.mjs), for the XP VM.
+node "$here/../tools/js1table.mjs" "$here/out/frames.html" "$here/out/frames-ns.html"
+node "$here/../tools/js1table.mjs" "$here/out/js1cpu.html" "$here/out/js1cpu-ns.html"
 # The script engine probe (docs/ie5-design.md), served beside the pages for the XP VM's browsers.
 cp "$here/probe.html" "$here/out/probe.html"
 # The hold that keeps the Utilu IE 5.01 and 5.5 builds from crashing at a page's Done (tools/ie5hold.py) is the test
