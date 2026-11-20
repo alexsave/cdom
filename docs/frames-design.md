@@ -194,6 +194,7 @@ So the language surface the tier needs of the browser is: functions declared at 
 That list is what a Netscape 2 code path would have to give, whichever way it is made (a WebAssembly interpreter in JavaScript 1.0, or a transform of the wasm2js output): that choice is Alex's, after the probe.
 
 The app itself runs from the words build (app-ie9) for the prototype, which is ES3.
+Since branch js1-compile it runs from tools/js1c's JavaScript 1.0 build (url + ".js1.js", docs/js1-compile-design.md) instead, and what follows is what the words build would have needed.
 What Netscape 3 lacks for it: function expressions and nested functions (the whole file is one), array literals (words.js's tables), push (words_init and words_grow), charCodeAt (the base64 data segments), === (16 in tests/out/legacy.wasm.ie9.js) and throw (3 there, wasm2js's traps), Math.imul, clz32 and trunc (frames.js supplies those three).
 And the page: tools/cdpage writes the string table as `var cdomLits=[...]`, an array literal, which Netscape 2 and 3 cannot parse.
 
