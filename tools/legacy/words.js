@@ -12,7 +12,9 @@
  * the payload kept only through loads, stores and copies of the bits themselves, which go through the integer
  * paths here and are exact; wasm2js itself keeps floats as JavaScript numbers, which cannot carry one.
  *
- * ES5, and no name here may collide with one in the wasm2js output (the build checks). */
+ * ES5, and no name here may collide with one in the wasm2js output (the build checks). Nothing JScript 5.0 (IE 5.0) lacks
+ * either, not even what polyfills-es3.js supplies (push, apply, undefined, ...): the app file runs as soon as it arrives,
+ * and the boot fetches it beside the shim, so it can run before the polyfills have (the build checks, boot50). */
 var W = [];          /* the memory */
 var WBYTES = 0;      /* its size in bytes: a whole number of 64 KiB pages */
 var WS = [0, 0, 0, 0]; /* the reinterpret scratch: i32 0 and 1 are the f64's low and high words, i32 2 the f32 */
@@ -20,7 +22,7 @@ var WS = [0, 0, 0, 0]; /* the reinterpret scratch: i32 0 and 1 are the f64's low
  * so a table lookup replaces Math.pow, which old engines do not promise to get exact. */
 var P2 = (function () {
   var t = [], i, v = 4.9406564584124654e-324;
-  for (i = 0; i < 2098; i++, v *= 2) t.push(v);
+  for (i = 0; i < 2098; i++, v *= 2) t[i] = v;
   return t;
 })();
 function pow2(n) { return P2[n + 1074]; }
@@ -31,13 +33,13 @@ var F32_HALF_PAST_MAX = pow2(128) - pow2(103);
 function words_init(bytes) {
   var n = bytes >>> 2, i;
   W = [];
-  for (i = 0; i < n; i++) W.push(0);
+  for (i = 0; i < n; i++) W[i] = 0;
   WBYTES = bytes;
 }
 /* pages more 64 KiB pages of zeros, at the end. */
 function words_grow(pages) {
-  var n = pages << 14, i;
-  for (i = 0; i < n; i++) W.push(0);
+  var n = pages << 14, i, at = W.length;
+  for (i = 0; i < n; i++) W[at + i] = 0;
   WBYTES += pages << 16;
 }
 
@@ -171,7 +173,7 @@ function words_fill(dest, v, n) {
 /* A data segment: base64 decoded straight into the words, from byte address at. */
 var B64 = (function () {
   var t = [], c = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/", i;
-  for (i = 0; i < 123; i++) t.push(0);
+  for (i = 0; i < 123; i++) t[i] = 0;
   for (i = 0; i < 64; i++) t[c.charCodeAt(i)] = i;
   return t;
 })();

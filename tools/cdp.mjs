@@ -99,6 +99,28 @@ const IE9_GAPS = `
 // for VML (below).
 const IE6_OLD = `
   const define = Object.defineProperty;
+  // IE 6 to 8 refuse an input's type once the input has had a parent, even after it is taken out again: setAttribute
+  // throws "This command is not supported." unless the type is the one it has (measured in IE 6, docs/ie6-design.md).
+  // A lone input takes any type, one IE does not know (search, email, ...) being text, as IE's parser makes it; and
+  // IE's mergeAttributes copies another element's attributes, the type among them, onto an input with a parent.
+  // Before the loop below, which takes apply and call from the DOM's methods.
+  // A mark on the node, not a WeakSet: IE9_GAPS took WeakSet.
+  const HAD = '__ieHadParent';
+  for (const k of ['appendChild', 'insertBefore', 'replaceChild']) {
+    const f = Node.prototype[k];
+    Node.prototype[k] = function (child) { if (child && !child[HAD]) define(child, HAD, { value: true }); return Reflect.apply(f, this, arguments); };
+  }
+  const nativeSetAttr = Element.prototype.setAttribute;
+  const IE_TYPES = { __proto__: null, text: 1, password: 1, checkbox: 1, radio: 1, submit: 1, reset: 1, file: 1, hidden: 1, image: 1, button: 1 };
+  Element.prototype.setAttribute = function (name, value) {
+    if (this.nodeName !== 'INPUT' || String(name).toLowerCase() !== 'type') return Reflect.apply(nativeSetAttr, this, arguments);
+    const v = String(value).toLowerCase();
+    if (this[HAD] && v !== this.type) throw new Error('This command is not supported.');
+    return Reflect.apply(nativeSetAttr, this, [name, IE_TYPES[v] ? v : 'text']);
+  };
+  Element.prototype.mergeAttributes = function (from) {
+    for (const a of Array.prototype.slice.call(from.attributes)) Reflect.apply(nativeSetAttr, this, [a.name, a.value]);
+  };
   // A VML stand-in (tools/legacy/vml.js, docs/vml-design.md): Chrome draws no VML, but IE's setup calls are here and
   // recorded in window.__vml (namespaces.add's arguments, createStyleSheet's rules), and every element made with a v: tag
   // is recorded too, so a test reads the VML the shim built. Chrome makes an unknown element of v:shape, which keeps the

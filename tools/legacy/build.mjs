@@ -212,6 +212,10 @@ async function appWords(wasm, out) {
   memoryPass ??= await import('./memory.mjs');
   const [head, note] = wasm2js(wasm, out);
   const words = read(path.join(here, 'words.js'));
+  es3Pass ??= await import('./es3.mjs');
+  // It runs as the app file arrives, which can be before the shim and its polyfills (the boot fetches both at once).
+  const newer = es3Pass.boot50(words.replace(/\/\*[\s\S]*?\*\//g, ''));
+  if (newer.length) throw new Error(`tools/legacy/words.js names what JScript 5.0 (IE 5.0) lacks: ${newer.join(' ')}`);
   const src = `${note}(function () {\n${words}\n${memoryPass.memoryWords(head, declared(words))}\nwindow.cdomFactory = asmFunc;\n})();\n`;
   es5('wasm2js', src);
   es3Pass ??= await import('./es3.mjs');

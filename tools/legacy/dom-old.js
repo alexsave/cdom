@@ -215,6 +215,16 @@ var cdomOld = (function (w, doc) {
       w.cdomVml.attr(el, name, value);  /* an SVG attribute on its VML node */
       return;
     }
+    /* IE 5 to 8 refuse an input's type once the input has had a parent, even after it is taken out again: setAttribute
+     * throws "This command is not supported." unless it is the type the input has. The shim appends each element as it
+     * opens, so every typed input has one. A lone input takes any type (one IE does not know is text), and
+     * mergeAttributes carries it onto the input (measured in IE 6, docs/ie6-design.md). */
+    if (el.mergeAttributes && el.nodeName === "INPUT" && name.toLowerCase() === "type") {
+      var lone = doc.createElement("input");
+      lone.setAttribute("type", value);
+      if (lone.type !== el.type) el.mergeAttributes(lone, false);
+      return;
+    }
     if (!attrsAreProperties) {
       el.setAttribute(name, value);
       return;
