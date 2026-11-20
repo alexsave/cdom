@@ -33,8 +33,8 @@ BM_FNS(BM_IMPS)
 #define ONE2(name) EXPORT(f_##name) double f_##name(double x, double y) { return CALL(name)(x, y); } \
   EXPORT(f_##name##f) float f_##name##f(float x, float y) { return CALL(name##f)(x, y); }
 #ifdef BM_LACK_fmod
-#define fmod(x, y) (x)
-#define fmodf(x, y) (x)
+#define fmod(x, y) ((void)(y), (x))
+#define fmodf(x, y) ((void)(y), (x))
 #endif
 #define ONE(name, arity, doms) ONE##arity(name)
 BM_FNS(ONE)

@@ -20,7 +20,13 @@ typedef struct {
   int (*sp_run)(void);
   const char *(*sp_text)(void);
 } bm_arm;
-#define BM_ARM_ROW(a) { #a, a##_bm_doms, a##_bm_fill, a##_bm_run, a##_bm_eval, a##_bm_digest, a##_sp_run, a##_sp_text },
+/* The host libm's arm is glibc on Linux; on a Mac it is the system's libm, so it is named for that. */
+#ifdef __APPLE__
+#define BM_LABEL(a) (sizeof #a == sizeof "glibc" && #a[0] == 'g' ? "applelibm" : #a)
+#else
+#define BM_LABEL(a) #a
+#endif
+#define BM_ARM_ROW(a) { BM_LABEL(a), a##_bm_doms, a##_bm_fill, a##_bm_run, a##_bm_eval, a##_bm_digest, a##_sp_run, a##_sp_text },
 static const bm_arm bm_arms[] = { BM_NATIVE_ARMS(BM_ARM_ROW) };
 #define BM_NARMS ((int)(sizeof bm_arms / sizeof bm_arms[0]))
 #endif

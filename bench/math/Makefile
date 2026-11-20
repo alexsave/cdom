@@ -1,6 +1,7 @@
 # The math bench (docs/math-design.md): each arm's wasm module, its native twin, and the tools that run them.
-#   make            build/<arm>.wasm for every arm (musl msun core ours js1 jsn), build/native/bench and
-#                   build/native/accuracy (the native driver and the accuracy sweep, every arm linked in)
+#   make            build/<arm>.wasm for every arm (musl msun core ours js1 jsn) and build/native/bench (the native
+#                   driver: every arm's native twin and glibc linked in)
+#   make accuracy   build/native/accuracy, the accuracy sweep (every native arm against MPFR, which it needs)
 #   make sizes      build/size/<arm>-{empty,sin,all}.wasm, each through wasm-opt -O3 (sizes.sh measures them)
 # Each arm's wasm module is built as a cdom app's code is: cdom.mk's WASM_CC, CDOM_CFLAGS, CDOM_LDFLAGS and CDOM_OPT
 # (-Oz unless set), with compat/ first on the include path (its math.h, fenv.h and the rest stand in for the libc
@@ -44,7 +45,8 @@ ours_SRC := $(wildcard ours/*.c)
 ours_FLAGS := -Wall -Wextra -Werror -Iours
 RENAME_KEEP := sqrt sqrtf fabs fabsf floor floorf ceil ceilf trunc truncf rint rintf nearbyint copysign copysignf fmax fmin fmaxf fminf round roundf
 
-all: $(addprefix $(OUT)/,$(addsuffix .wasm,$(ARMS) js1 jsn)) $(OUT)/native/bench $(OUT)/native/accuracy
+all: $(addprefix $(OUT)/,$(addsuffix .wasm,$(ARMS) js1 jsn)) $(OUT)/native/bench
+accuracy: $(OUT)/native/accuracy
 
 # $(call arm,name): the rules of one arm.
 define arm
@@ -111,7 +113,9 @@ $(OUT)/size/js1-%.wasm: size.c $(HDRS)
 	$(WASM_OPT) -O3 $@.linked -o $@ && rm -f $@.linked
 sizes: $(foreach a,$(ARMS) js1,$(foreach k,$(SIZE_KINDS),$(OUT)/size/$(a)-$(k).wasm))
 
+print-cc:
+	@echo $(WASM_CC)
 clean:
 	rm -rf $(OUT)
-.PHONY: all sizes clean
+.PHONY: all accuracy sizes print-cc clean
 .SECONDARY:

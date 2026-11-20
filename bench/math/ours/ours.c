@@ -9,19 +9,20 @@
 #include <math.h>
 #include <stdint.h>
 #include "coef.h"
+/* The helpers are always inlined: at cdom's -Oz clang would otherwise call each split and two_prod. */
 
-static inline uint64_t asu(double x) { union { double d; uint64_t u; } v = { x }; return v.u; }
-static inline double asd(uint64_t u) { union { uint64_t u; double d; } v = { u }; return v.d; }
+static inline __attribute__((always_inline)) uint64_t asu(double x) { union { double d; uint64_t u; } v = { x }; return v.u; }
+static inline __attribute__((always_inline)) double asd(uint64_t u) { union { uint64_t u; double d; } v = { u }; return v.d; }
 /* round to the nearest integer, for |x| < 2^51, by the 1.5 * 2^52 trick (no call, the same on every target). */
-static inline double round_int(double x) { return (x + 0x1.8p52) - 0x1.8p52; }
+static inline __attribute__((always_inline)) double round_int(double x) { return (x + 0x1.8p52) - 0x1.8p52; }
 /* a = hi + lo exactly (Veltkamp), for |a| < 2^995. */
-static inline void split(double a, double *hi, double *lo) {
+static inline __attribute__((always_inline)) void split(double a, double *hi, double *lo) {
   double c = 134217729.0 * a;
   *hi = c - (c - a);
   *lo = a - *hi;
 }
 /* a * b = p + *e exactly (Dekker), barring overflow. */
-static inline double two_prod(double a, double b, double *e) {
+static inline __attribute__((always_inline)) double two_prod(double a, double b, double *e) {
   double p = a * b, ah, al, bh, bl;
   split(a, &ah, &al);
   split(b, &bh, &bl);
@@ -29,24 +30,24 @@ static inline double two_prod(double a, double b, double *e) {
   return p;
 }
 /* a + b = s + *e exactly (Knuth); fast_two_sum needs |a| >= |b|. */
-static inline double two_sum(double a, double b, double *e) {
+static inline __attribute__((always_inline)) double two_sum(double a, double b, double *e) {
   double s = a + b, bb = s - a;
   *e = (a - (s - bb)) + (b - bb);
   return s;
 }
-static inline double fast_two_sum(double a, double b, double *e) {
+static inline __attribute__((always_inline)) double fast_two_sum(double a, double b, double *e) {
   double s = a + b;
   *e = b - (s - a);
   return s;
 }
-static inline double horner(const double *c, int n, double x) {
+static inline __attribute__((always_inline)) double horner(const double *c, int n, double x) {
   double r = c[n - 1];
   for (int i = n - 2; i >= 0; i--) r = c[i] + x * r;
   return r;
 }
 #define N(a) ((int)(sizeof(a) / sizeof((a)[0])))
 /* y * 2^k for an integer k from -1100 to 1100, with one rounding unless the result is subnormal. */
-static inline double scale(double y, int k) {
+static inline __attribute__((always_inline)) double scale(double y, int k) {
   if (k > 1023) return y * 0x1p1023 * asd((uint64_t)(k - 1023 + 1023) << 52);
   if (k < -1022) return y * asd((uint64_t)(k + 1000 + 1023) << 52) * 0x1p-1000;
   return y * asd((uint64_t)(k + 1023) << 52);
@@ -66,12 +67,12 @@ static int rem_pio2(double x, double *hi, double *lo) {
   return fabs(fn) < 0x1p30 ? (int)fn : (int)(fn - 4.0 * floor(fn * 0.25));
 }
 /* sin(x + y), |x| <= pi/4, |y| tiny beside x. */
-static inline double sin_k(double x, double y) {
+static inline __attribute__((always_inline)) double sin_k(double x, double y) {
   double z = x * x, v = z * x;
   return x + (y - 0.5 * z * y + v * horner(SIN, N(SIN), z));
 }
 /* cos(x + y), |x| <= pi/4: 1 - z/2 is rounded once and its error carried. */
-static inline double cos_k(double x, double y) {
+static inline __attribute__((always_inline)) double cos_k(double x, double y) {
   double z = x * x, hz = 0.5 * z, w = 1.0 - hz;
   return w + (((1.0 - w) - hz) + (z * z * horner(COS, N(COS), z) - x * y));
 }
@@ -136,9 +137,9 @@ double tan(double x) {
 /* ---- asin, acos, atan, atan2 ---- */
 
 /* asin(x) - x for |x| <= 1/2, as x * z * P(z). */
-static inline double asin_tail(double x, double z) { return x * z * horner(ASIN, N(ASIN), z); }
+static inline __attribute__((always_inline)) double asin_tail(double x, double z) { return x * z * horner(ASIN, N(ASIN), z); }
 /* sqrt(z) = s + *lo to about 2^-100. */
-static inline double sqrt_dd(double z, double *lo) {
+static inline __attribute__((always_inline)) double sqrt_dd(double z, double *lo) {
   double s = sqrt(z), e, p = two_prod(s, s, &e);
   *lo = ((z - p) - e) / (s + s);
   return s;
@@ -232,7 +233,7 @@ double exp(double x) {
   return scale(y, (int)fn);
 }
 /* 2^(r + rl), |r| <= 1/2 + tiny: 1 + r ln2 in double-double, then r^2 P(r) (pow takes it too). */
-static inline double exp2_k(double r, double rl) {
+static inline __attribute__((always_inline)) double exp2_k(double r, double rl) {
   double ae, ah = two_prod(r, LN2D_HI, &ae), al = ae + r * LN2D_LO + rl * LN2D_HI;
   double tail = r * r * horner(EXP2 + 1, N(EXP2) - 1, r);
   double be, bh = fast_two_sum(1.0, ah, &be);
@@ -247,7 +248,7 @@ double exp2(double x) {
   return scale(exp2_k(r, 0), (int)fn);
 }
 /* expm1(r) for |r| <= ln2/2. */
-static inline double expm1_k(double r) { return r + (0.5 * r * r + r * r * r * horner(EXPM1, N(EXPM1), r)); }
+static inline __attribute__((always_inline)) double expm1_k(double r) { return r + (0.5 * r * r + r * r * r * horner(EXPM1, N(EXPM1), r)); }
 double expm1(double x) {
   if (x != x) return x + x;
   if (x > 0x1.62e42fefa39efp+9) return INFINITY;
@@ -273,7 +274,7 @@ double expm1(double x) {
 /* ---- log, log2, log10, log1p ---- */
 
 /* x = 2^k m, m in [sqrt2/2, sqrt2); returns m - 1 (exact) and sets k. x positive and finite. */
-static inline double reduce_log(double x, int *k) {
+static inline __attribute__((always_inline)) double reduce_log(double x, int *k) {
   uint64_t u = asu(x);
   int kk = 0;
   if (u < 0x0010000000000000ull) { x *= 0x1p54; u = asu(x); kk = -54; }
@@ -284,7 +285,7 @@ static inline double reduce_log(double x, int *k) {
   return asd(((uint64_t)hx << 32) | (u & 0xffffffffull)) - 1.0;
 }
 /* log(1 + f) - f + f^2/2 as s (f^2/2 + R), with s = f/(2 + f): the part of the series past f - f^2/2. */
-static inline double log_tail(double f, double hfsq) {
+static inline __attribute__((always_inline)) double log_tail(double f, double hfsq) {
   double s = f / (2.0 + f), z = s * s;
   return s * (hfsq + z * horner(LOG, N(LOG), z));
 }
@@ -298,7 +299,7 @@ double log(double x) {
   return dk * LN2_HI - ((hfsq - (log_tail(f, hfsq) + dk * LN2_LO)) - f);
 }
 /* log(1 + f) = *hi + *lo to about 2^-60, hi with no rounding error carried. */
-static inline double log1p_dd(double f, double *lo) {
+static inline __attribute__((always_inline)) double log1p_dd(double f, double *lo) {
   double hfsq = 0.5 * f * f, hi = f - hfsq;
   *lo = ((f - hi) - hfsq) + log_tail(f, hfsq);
   return hi;
