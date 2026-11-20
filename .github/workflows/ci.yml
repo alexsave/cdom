@@ -74,6 +74,13 @@ jobs:
         run: tests/build.sh
       - name: tools/unit.mjs
         run: node tools/unit.mjs
+      # The no-WebAssembly tiers: wasm2js on typed arrays (IE 10 and 11) and on words (IE 9), and the words
+      # memory, its pass and the shim-ie9 gate in node.
+      - name: tools/legacy.mjs (LEGACY=1, LEGACY=ie9) and tools/words.mjs
+        run: |
+          LEGACY=1 node tools/legacy.mjs
+          LEGACY=ie9 node tools/legacy.mjs
+          node tools/words.mjs
       - name: tests/image/run.sh (tools/alloc.mjs reads its outputs)
         run: tests/image/run.sh
       - name: tools/alloc.mjs

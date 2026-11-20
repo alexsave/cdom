@@ -5,11 +5,19 @@
  *                  jpeg_idct_2x2 (jidctred.c, built here without SIMD): random coefficient blocks, quantization tables
  *                  and output columns, including the extreme values that make the C's 32-bit arithmetic wrap and the
  *                  blocks whose columns or rows hold only a DC term (the C's shortcuts)
+ *   unread         every IDCT the decoder can pick (jpeg_idct_1x1 to 7x7 and islow, scalar, and the SIMD 2x2 and 4x4)
+ *                  against cd_image_idct_reads, the table the progressive store keeps by: changing every coefficient
+ *                  outside it, to any value, changes no output byte; and every coefficient inside it changes the
+ *                  output in some case (the table is no larger than it must be)
  *   ycc            jsimd_color_deconvert against libjpeg's own YCbCr to RGBA (jdcolor.c, built here without SIMD, reached
  *                  through jinit_color_deconverter): widths 1 to 64 and more, random rows
  *   ycc_all        the same on every (y, cb, cr) of 8 bits: 16,777,216 pixels
  *   unfilter       cd_image_unfilter_simd against cd_image_unfilter_scalar: every filter (and two that are none), 1, 2,
  *                  3, 4, 6 and 8 bytes a pixel, widths 0 to 64 pixels and some larger, random and edge bytes
+ *   runs           cd_image_unfilter_run_simd (the Paeth wavefront over runs of up to 4 rows), and _scalar, against
+ *                  cd_image_unfilter_scalar row by row: plans of Paeth runs of 1 to 5 rows with None, Sub, Up and Avg
+ *                  rows between, 3 and 4 bytes a pixel, widths 1 to 9 pixels and 4031 and 4032, a zero or a random row
+ *                  above the first, handed over a random number of rows at a time
  *   rgba           cd_image_rgb_to_rgba_simd against the scalar: widths 0 to 64 and some larger
  *   div            the scaler's divide, in doubles: sums up to 255 t, t up to 65500 squared, and the sums at the edges of the quotient
  *   across, down   the scaler's two row loops: random sizes from 1 to 64 pixels and more, edge weights and sums, and an
@@ -165,6 +173,58 @@ static void idct_cases(int n4) {
   }
 }
 
+/* ---- the coefficients each IDCT reads ---- */
+
+extern void jpeg_idct_1x1(j_decompress_ptr, jpeg_component_info *, JCOEFPTR, JSAMPARRAY, JDIMENSION);
+extern void jpeg_idct_3x3(j_decompress_ptr, jpeg_component_info *, JCOEFPTR, JSAMPARRAY, JDIMENSION);
+extern void jpeg_idct_5x5(j_decompress_ptr, jpeg_component_info *, JCOEFPTR, JSAMPARRAY, JDIMENSION);
+extern void jpeg_idct_6x6(j_decompress_ptr, jpeg_component_info *, JCOEFPTR, JSAMPARRAY, JDIMENSION);
+extern void jpeg_idct_7x7(j_decompress_ptr, jpeg_component_info *, JCOEFPTR, JSAMPARRAY, JDIMENSION);
+extern void jpeg_idct_islow(j_decompress_ptr, jpeg_component_info *, JCOEFPTR, JSAMPARRAY, JDIMENSION);
+
+typedef void (*idct_fn)(j_decompress_ptr, jpeg_component_info *, JCOEFPTR, JSAMPARRAY, JDIMENSION);
+
+static void idct_run(idct_fn f, int size, struct jpeg_decompress_struct *cinfo, jpeg_component_info *comp, JCOEF *c, uint8_t out[8][8]) {
+  JSAMPROW rows[8];
+  memset(out, 0, 64);
+  for (int r = 0; r < size; r++) rows[r] = out[r];
+  f(cinfo, comp, c, rows, 0);
+}
+
+static void unread_cases(void) {
+  static const struct { int size; idct_fn f; } t[] = {
+    {1, jpeg_idct_1x1}, {2, jpeg_idct_2x2}, {2, jsimd_idct_2x2}, {3, jpeg_idct_3x3}, {4, jpeg_idct_4x4},
+    {4, jsimd_idct_4x4}, {5, jpeg_idct_5x5}, {6, jpeg_idct_6x6}, {7, jpeg_idct_7x7}, {8, jpeg_idct_islow}};
+  struct jpeg_decompress_struct cinfo;
+  jpeg_component_info comp;
+  memset(&cinfo, 0, sizeof cinfo);
+  make_range_table(&cinfo);
+  static JCOEF coef[64], other[64];
+  static int quant[64];
+  uint8_t a[8][8], b[8][8];
+  for (uint32_t e = 0; e < sizeof t / sizeof t[0]; e++) {
+    uint64_t reads = cd_image_idct_reads(t[e].size), seen = 0;
+    for (uint32_t k = 0; k < 6000; k++) {
+      cases = e * 6000 + k;
+      fill_block(coef, (int)(k % 13));
+      fill_quant(quant, (int)((k / 13) % 5));
+      comp.dct_table = quant;
+      idct_run(t[e].f, t[e].size, &cinfo, &comp, coef, a);
+      memcpy(other, coef, sizeof coef);                 /* every coefficient outside the table: any value */
+      for (int i = 0; i < 64; i++) if (!(reads >> i & 1)) other[i] = (JCOEF)rnd();
+      idct_run(t[e].f, t[e].size, &cinfo, &comp, other, b);
+      if (neq(a, b, 64)) note(1 + e);
+      memcpy(other, coef, sizeof coef);                 /* one coefficient inside it: changed */
+      int j;
+      do j = (int)below(64); while (!(reads >> j & 1));
+      other[j] = (JCOEF)(other[j] + 1 + (int)below(300));
+      idct_run(t[e].f, t[e].size, &cinfo, &comp, other, b);
+      if (neq(a, b, 64)) seen |= 1ull << j;
+    }
+    if (seen != reads) note(100 + e);                   /* a coefficient in the table that never mattered */
+  }
+}
+
 /* ---- YCbCr to RGBA ---- */
 
 static void *arena_alloc(j_common_ptr c, int pool, size_t n) {
@@ -281,6 +341,63 @@ static void unfilter_all(void) {
     uint32_t bpp = bpps[below(6)], n = bpp * (65 + below(800));
     unfilter_case(below(5), bpp, n, (int)(i % 5), (int)(i & 1));
   }
+}
+
+/* PNG rows as the sink hands them over (cd_image_unfilter_run): a block of rows, each its filter byte and n bytes, the
+ * filters a plan of Paeth runs of 1 to 5 rows with rows of the other filters between. The reference unfilters it row by
+ * row with cd_image_unfilter_scalar; the runs (the SIMD one; and the scalar one, which is a row at a time) are driven as the sink does,
+ * a random number of rows at a time (the rows past the window). Every byte is compared, and the rows each call answers
+ * against the run the plan has there. The block's last byte is the end of memory (a read past the last row traps). */
+static void runs_case(uint32_t bpp, uint32_t n, const uint8_t *plan, uint32_t rows, int zero_prev, int scalar_run) {
+  const uint32_t pitch = n + 1, size = pitch * rows;
+  uint8_t *ref = place(size, 0, 40), *got = place(size, 1, 0);
+  uint8_t *prev = place(n + 1, 0, 50) + 1;
+  for (uint32_t i = 0; i < n; i++) prev[i] = zero_prev ? 0 : byte_edge();
+  for (uint32_t r = 0; r < rows; r++) {
+    ref[r * pitch] = got[r * pitch] = plan[r];
+    for (uint32_t i = 1; i < pitch; i++) ref[r * pitch + i] = got[r * pitch + i] = below(4) ? (uint8_t)rnd() : byte_edge();
+  }
+  for (uint32_t r = 0; r < rows; r++)
+    if (!cd_image_unfilter_scalar(plan[r], ref + r * pitch + 1, r ? ref + (r - 1) * pitch + 1 : prev, n, bpp)) note(5);
+  uint32_t done = 0;
+  while (done < rows) {
+    uint32_t avail = below(3) ? 1 + below(6) : rows - done;
+    if (avail > rows - done) avail = rows - done;
+    uint32_t want = 0;
+    while (want < avail && want < 4 && plan[done + want] == 4) want++;
+    if (want < 2 || scalar_run) want = 1;
+    uint8_t *row = got + done * pitch;
+    const uint8_t *above = done ? row - pitch + 1 : prev;
+    uint32_t k = scalar_run ? cd_image_unfilter_run_scalar(row, pitch, above, n, bpp, avail)
+                            : cd_image_unfilter_run_simd(row, pitch, above, n, bpp, avail);
+    if (k != want) { note(4); break; }
+    done += k;
+  }
+  if (neq(ref, got, size)) note(1);
+}
+static void runs_all(void) {
+  static const uint32_t widths[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 4031, 4032};
+  uint32_t k = 0;
+  uint8_t plan[24];
+  for (uint32_t b = 3; b <= 4; b++)
+    for (uint32_t wi = 0; wi < sizeof widths / sizeof widths[0]; wi++)
+      for (int rep = 0; rep < (widths[wi] > 9 ? 6 : 40); rep++) {
+        /* a plan: runs of Paeth of each length 1 to 5 in a rotating order, 0 to 2 rows of None, Sub, Up or Avg between
+         * (rep 0 and 1: no rows between, so runs meet; rep 2: one run of 5 alone) */
+        uint32_t rows = 0;
+        if (rep == 2) { for (; rows < 5; rows++) plan[rows] = 4; }
+        else for (uint32_t r = 0; r < 5 && rows < 20; r++) {
+          uint32_t len = 1 + (r + (uint32_t)rep) % 5;
+          for (uint32_t i = 0; i < len; i++) plan[rows++] = 4;
+          uint32_t gap = rep < 2 ? 0 : below(3);
+          for (uint32_t i = 0; i < gap; i++) plan[rows++] = (uint8_t)below(4);
+        }
+        uint32_t n = widths[wi] * b + (rep % 7 == 6 ? below(b) : 0);   /* mostly whole pixels; a few not */
+        cases = k++;
+        runs_case(b, n, plan, rows, rep % 3 == 0, 0);
+        cases = k++;
+        runs_case(b, n, plan, rows, rep % 3 == 0, 1);
+      }
 }
 
 static void rgba_all(void) {
@@ -431,6 +548,8 @@ EXPORT("run") uint32_t run(uint32_t loop) {
     case 7: down_all(); break;
     case 8: div_all(); break;
     case 9: adler_all(); break;
+    case 10: unread_cases(); break;
+    case 11: runs_all(); break;
     default: return 0xffffffffu;
   }
   (void)fails;

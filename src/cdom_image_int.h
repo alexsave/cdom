@@ -39,6 +39,17 @@ void cd_image_scaler_free(cd_image_scaler *s);
 /* The size the image (sw x sh as stored, orientation o) is scaled to, as stored, for a box of bw x bh shown. */
 void cd_image_target(uint32_t sw, uint32_t sh, uint32_t o, uint32_t bw, uint32_t bh, uint32_t *dw, uint32_t *dh);
 
+/* The coefficients libjpeg's IDCT of a size (a component's DCT_scaled_size, 1 to 16) reads, whichever body runs (the C
+ * or the wasm SIMD 2x2 and 4x4): bit 8 * row + column of the natural-order block. docs/image-progressive-speed.md has the
+ * table and where each line of it is in the code; tests/image/simd.c checks it (a coefficient outside it, changed to
+ * anything, changes no output byte). */
+static inline uint64_t cd_image_idct_reads(int size) {
+  uint32_t rc = size == 1 ? 0x01u : size == 2 ? 0xabu : size == 4 ? 0xefu : size >= 3 && size <= 7 ? (1u << size) - 1 : 0xffu;
+  uint64_t m = 0;
+  for (int r = 0; r < 8; r++) if (rc >> r & 1) m |= (uint64_t)rc << (8 * r);
+  return m;
+}
+
 /* The EXIF orientation (1 to 8) of the JPEG at p, or 1 when it has none. */
 uint32_t cd_image_orientation(const uint8_t *p, uint32_t len);
 
@@ -62,6 +73,12 @@ uint32_t cd_image_png_resize(const uint8_t *p, uint32_t len, const cd_image_info
  * for the first); 0 for an unknown filter. */
 int cd_image_unfilter_scalar(uint32_t f, uint8_t *cur, const uint8_t *prev, uint32_t n, uint32_t bpp);
 int cd_image_unfilter_simd(uint32_t f, uint8_t *cur, const uint8_t *prev, uint32_t n, uint32_t bpp);
+/* PNG rows as the sink hands them over: row is a row's filter byte, its n bytes after it, and the rows after it one pitch
+ * apart (avail of them whole, avail at least 1); prev is the first's row above (n bytes). The SIMD body unfilters a run of
+ * 2 to 4 Paeth rows (at most avail, 3 and 4 bytes a pixel) as a wavefront (docs/image-png-speed.md, "Paeth as a
+ * wavefront"), any other first row alone; the scalar body always one row. Answers the rows done, 0 for an unknown filter. */
+uint32_t cd_image_unfilter_run_scalar(uint8_t *row, uint32_t pitch, const uint8_t *prev, uint32_t n, uint32_t bpp, uint32_t avail);
+uint32_t cd_image_unfilter_run_simd(uint8_t *row, uint32_t pitch, const uint8_t *prev, uint32_t n, uint32_t bpp, uint32_t avail);
 /* A row of w 8-bit RGB pixels as RGBA with alpha 255. */
 void cd_image_rgb_to_rgba_scalar(const uint8_t *r, uint8_t *out, uint32_t w);
 void cd_image_rgb_to_rgba_simd(const uint8_t *r, uint8_t *out, uint32_t w);
@@ -79,12 +96,14 @@ void cd_image_scaler_div_scalar(uint8_t *out, const uint64_t *a, uint32_t n, uin
 void cd_image_scaler_div_simd(uint8_t *out, const uint64_t *a, uint32_t n, uint64_t t);
 #if CDOM_IMAGE_SIMD
 #define cd_image_unfilter cd_image_unfilter_simd
+#define cd_image_unfilter_run cd_image_unfilter_run_simd
 #define cd_image_rgb_to_rgba cd_image_rgb_to_rgba_simd
 #define cd_image_scaler_across cd_image_scaler_across_simd
 #define cd_image_scaler_down cd_image_scaler_down_simd
 #define cd_image_scaler_div cd_image_scaler_div_simd
 #else
 #define cd_image_unfilter cd_image_unfilter_scalar
+#define cd_image_unfilter_run cd_image_unfilter_run_scalar
 #define cd_image_rgb_to_rgba cd_image_rgb_to_rgba_scalar
 #define cd_image_scaler_across cd_image_scaler_across_scalar
 #define cd_image_scaler_down cd_image_scaler_down_scalar
@@ -120,4 +139,14 @@ typedef int (*cd_inflate_in)(void *ctx, const uint8_t **p, uint32_t *n);
 typedef int64_t (*cd_inflate_out)(void *ctx, uint8_t *buf, uint32_t n, int last);
 uint32_t cd_inflate_zlib(cd_inflate *z, uint8_t *buf, uint32_t cap, cd_inflate_in more, cd_inflate_out out, void *ctx);
 uint32_t cd_image_adler32(uint32_t adler, const uint8_t *p, size_t n);
+#ifdef CDOM_IMAGE_TESTING
+/* src/cdom_image_jpegp.c's record of its marker walk and of the scans libjpeg read, for tests/image/walkcheck.h */
+#define CD_IMAGE_JPEGP_NOT_RUN (-2)   /* cd_image_jpegp_walk_n: no walk in this decode */
+#define CD_IMAGE_JPEGP_GAVE_UP (-1)   /* cd_image_jpegp_walk_n: the walk gave up (nothing skipped) */
+extern int32_t cd_image_jpegp_walk_n, cd_image_jpeg_fatal;
+extern uint32_t cd_image_jpegp_read_n, cd_image_jpegp_in_start, cd_image_jpegp_skipped;
+extern uint64_t cd_image_jpegp_walk_list[CD_IMAGE_SCANS_MAX + 2], cd_image_jpegp_read_list[CD_IMAGE_SCANS_MAX + 2];
+uint64_t cd_image_jpegp_scan_code(uint32_t ncomp, const uint8_t *comp, uint32_t ss, uint32_t se, uint32_t ah, uint32_t al);
+#endif
+
 #endif

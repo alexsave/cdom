@@ -126,12 +126,12 @@ def paeth(a, b, c):
     pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
     return np.where((pa <= pb) & (pa <= pc), a, np.where(pb <= pc, b, c))
 
-def filtered(rows, bpp):
-    """Row i gets filter i % 5, so every filter is used, the first row's included."""
+def filtered(rows, bpp, plan=None):
+    """Row i gets filter i % 5, so every filter is used, the first row's included; or plan[i], when a plan is given."""
     out = bytearray()
     prev = np.zeros_like(rows[0])
     for i, cur in enumerate(rows):
-        fl = i % 5
+        fl = i % 5 if plan is None else plan[i]
         left = np.concatenate([np.zeros(bpp, np.uint8), cur[:-bpp]]) if len(cur) > bpp else np.zeros_like(cur)
         ul = np.concatenate([np.zeros(bpp, np.uint8), prev[:-bpp]]) if len(cur) > bpp else np.zeros_like(cur)
         if fl == 0: r = cur
@@ -143,9 +143,9 @@ def filtered(rows, bpp):
         prev = cur
     return bytes(out)
 
-def png_bytes(w, h, ctype, depth, rows, plte=None, trns=None, idat_split=None, zdata=None):
+def png_bytes(w, h, ctype, depth, rows, plte=None, trns=None, idat_split=None, zdata=None, plan=None):
     bpp = max(1, {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[ctype] * depth // 8)
-    z = zdata if zdata is not None else zlib.compress(filtered(rows, bpp), 6)
+    z = zdata if zdata is not None else zlib.compress(filtered(rows, bpp, plan), 6)
     d = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, depth, ctype, 0, 0, 0))
     if plte is not None: d += chunk(b"PLTE", bytes(plte))
     if trns is not None: d += chunk(b"tRNS", bytes(trns))
@@ -255,6 +255,35 @@ def png_cases():
     wide = np.stack([x % 251, (x // 7 + y * 40) % 256, (x * 3 + y) % 253], 2).astype(np.uint8)
     path = write_png("wide8000x3.png", 8000, 3, 2, 8, [r.reshape(-1) for r in wide])
     case("png-wide8000x3-rgb", path, 300, 300, area_avg(wide, *fit_box(8000, 3, 300, 300)), maxkb=os.path.getsize(path) // 1024 + 212)
+    # Paeth as a wavefront (docs/image-png-speed.md): the sink hands over runs of up to 4 Paeth rows, so the rows here are
+    # Paeth runs of every length 1 to 5 (a 5 is a 4 and a 1), each followed by a row of None, Sub, Up or Avg in turn,
+    # and the first row Paeth (its row above is the zero row); RGB and RGBA, an odd width. The pixels are a formula
+    # (nothing from the rng); Pillow decodes each file to them first, so the filters written are checked apart from
+    # this module. The peak limit is what the module held before the wavefront for these files (main at cdc957e: 576 and
+    # 578 KB, rounded up, and the file), so a run takes no more memory.
+    plan = []
+    while len(plan) < 300:
+        for run in (1, 2, 3, 4, 5):
+            plan += [4] * run + [len(plan) % 4]
+    plan = plan[:300]
+    y, x = np.mgrid[0:300, 0:403]
+    runs = np.stack([(x * x * 7 + y * 13) % 256, (x * y * 3 + y * y) % 251, (x * 5 + y * 11 + (x ^ y)) % 256], 2).astype(np.uint8)
+    ra = ((x * 3 + y * 5) % 256).astype(np.uint8)
+    for (name, ctype, px, rgb, held) in [("rgb", 2, runs, runs, 577), ("rgba", 6, np.concatenate([runs, ra[..., None]], 2), over_white(runs, ra), 579)]:
+        path = write_png(f"paethruns-{name}.png", 403, 300, ctype, 8, [r.reshape(-1) for r in px], plan=plan)
+        assert np.array_equal(np.asarray(Image.open(path).convert("RGBA" if ctype == 6 else "RGB")), px), path
+        case(f"png-paeth-runs-{name}", path, 300, 300, area_avg(rgb, *fit_box(403, 300, 300, 300)),
+             maxkb=-(-os.path.getsize(path) // 1024) + held)
+    # and rows that repeat every 26 (pixels and filters; 26 rows of 1,210 bytes are 31,460, near the 32 KB window's far
+    # end and under zlib's farthest match, 32,506), so the stream copies each row from the one 26 above: a run that took
+    # rows the sink must still leave filtered (inside the window) would hand those copies unfiltered bytes
+    far = [4, 0, 4, 4, 1, 4, 4, 4, 2, 4, 4, 4, 4, 3, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 1, 2]
+    assert len(far) == 26
+    farp = runs[np.arange(300) % 26]
+    path = write_png("paethruns-far.png", 403, 300, 2, 8, [r.reshape(-1) for r in farp], plan=[far[i % 26] for i in range(300)])
+    assert np.array_equal(np.asarray(Image.open(path).convert("RGB")), farp), path
+    case("png-paeth-runs-far-rgb", path, 300, 300, area_avg(farp, *fit_box(403, 300, 300, 300)),
+         maxkb=-(-os.path.getsize(path) // 1024) + 577)
 
 # ---------- JPEG ----------
 
@@ -355,16 +384,20 @@ def big_cases():
     im.save(f("p12p.jpg"), "JPEG", quality=90, subsampling=2, progressive=True, optimize=True)
     write_png("p12.png", 4032, 3024, 2, 8, [r.reshape(-1) for r in p12])
     jpeg_case("jpeg-p12", f("p12.jpg"), 900, 900, maxkb=os.path.getsize(f("p12.jpg")) // 1024 + 6 * 1024)
-    jpeg_case("jpeg-p12-progressive", f("p12p.jpg"), 900, 900, maxkb=os.path.getsize(f("p12p.jpg")) // 1024 + 44 * 1024)
+    # progressive at 2/8: the store keeps 25 coefficients and a mask for luma, 49 and a mask for chroma (21.1 MB here;
+    # libjpeg's whole buffer was 36.6 MB), docs/image-progressive-speed.md
+    jpeg_case("jpeg-p12-progressive", f("p12p.jpg"), 900, 900, maxkb=os.path.getsize(f("p12p.jpg")) // 1024 + 26 * 1024)
     case("png-p12", f("p12.png"), 900, 900, area_avg(p12, *fit_box(4032, 3024, 900, 900)),
          maxkb=os.path.getsize(f("p12.png")) // 1024 + 6 * 1024)
     del p12, im
-    # the memory budget (CD_IMAGE_MEM_MAX, 96 MiB): a progressive 4:4:4 JPEG holds 6 bytes a pixel of coefficients, so
-    # 16 MP (96,000,000 bytes) fits and 4096 x 4096 (100,663,296, the budget itself, before libjpeg's other blocks)
-    # does not; a 4:2:0 non-interleaved baseline at 33 MP (3 bytes a pixel) is the same budget from item 1's side
-    for (w, h, sub, prog, name, want) in [(4000, 4000, 0, True, "jpeg-prog444-16mp", "OK"),
-                                          (4096, 4096, 0, True, "jpeg-prog444-over-budget", "TOO_BIG"),
-                                          (7000, 5000, 2, False, "jpeg-noninter-35mp-over-budget", "TOO_BIG")]:
+    # the memory budget (CD_IMAGE_MEM_MAX, 96 MiB). A progressive JPEG's store (src/cdom_image_jpegp.c) keeps, per
+    # block, only the coefficients the IDCT reads: at 8/8 all 64, as libjpeg's 128 bytes, so 4:4:4 holds 6 bytes a pixel
+    # and 4096 x 4096 (100,663,296, the budget itself) does not fit; at 2/8 (a 900 box) 25 and a nonzero mask, 58 bytes
+    # a block, so the same file decodes in under half of it. A 4:2:0 non-interleaved baseline at 33 MP (3 bytes a pixel,
+    # libjpeg's own store) is the same budget from item 1's side.
+    for (w, h, sub, prog, name, box, want) in [(4000, 4000, 0, True, "jpeg-prog444-16mp", 900, "OK"),
+                                               (4096, 4096, 0, True, "jpeg-prog444-over-budget", 4096, "TOO_BIG"),
+                                               (7000, 5000, 2, False, "jpeg-noninter-35mp-over-budget", 900, "TOO_BIG")]:
         g = Image.fromarray(big_picture(w, h))
         path = f(name + ".jpg")
         if prog: g.save(path, "JPEG", quality=90, subsampling=sub, progressive=True)
@@ -372,8 +405,11 @@ def big_cases():
             g.save(f("tmp.jpg"), "JPEG", quality=90, subsampling=sub)
             subprocess.run([JPEGTRAN, "-scans", f("one-per-comp.txt"), "-outfile", path, f("tmp.jpg")], check=True)
         del g
-        if want == "OK": jpeg_case(name, path, 900, 900, maxkb=os.path.getsize(path) // 1024 + 100 * 1024)
-        else: status_case(name, path, 900, 900, want)
+        if want == "OK": jpeg_case(name, path, box, box, maxkb=os.path.getsize(path) // 1024 + 100 * 1024)
+        else: status_case(name, path, box, box, want)
+    # the over-budget file at 2/8: 45.6 MB of coefficients (3 x 262,144 blocks x 58 bytes), and the scaler
+    path = f("jpeg-prog444-over-budget.jpg")
+    jpeg_case("jpeg-prog444-4096-at-2of8", path, 900, 900, maxkb=os.path.getsize(path) // 1024 + 48 * 1024)
 
 def scaler_cases():
     for (sw, sh, dw, dh, o) in [(1000, 750, 900, 675, 1), (1203, 802, 300, 200, 1), (999, 1001, 7, 9, 1), (64, 64, 64, 64, 1),

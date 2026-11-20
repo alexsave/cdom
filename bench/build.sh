@@ -29,11 +29,14 @@ build() { # name, version note, extra flags...
   "$CDOM_PAGE_TOOL" --page "$out/index.named.html" --out "$out/index.src.html" --shim "$top/shim/cdom.min.js" --lits "$out/app.wasm.lits"
   rm -f "$out/app.wasm.lits" # inlined in the page now
   rm "$out/index.named.html"
-  # The boot goes in a script of its own after the shim's; without WebAssembly it loads these two instead.
+  # The boot goes in a script of its own after the shim's; without WebAssembly it loads two of these instead:
+  # the first pair with typed arrays, the second without (shim/boot.js).
   node "$legacy" page "$out/index.src.html" "$out/index.html"
   rm "$out/index.src.html"
   node "$legacy" shim "$out/cdom.legacy.js"
   node "$legacy" app "$out/app.wasm" "$out/app.wasm.js"
+  node "$legacy" shim-ie9 "$out/cdom.legacy-ie9.js"
+  node "$legacy" app-ie9 "$out/app.wasm" "$out/app.wasm.ie9.js"
   cat > "$out/package.json" <<JSON
 {
   "name": "js-framework-benchmark-$name",

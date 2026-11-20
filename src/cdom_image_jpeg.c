@@ -178,6 +178,10 @@ static void body(void *v) {
   x->status = x->ran_dry ? CD_IMAGE_CORRUPT : CD_IMAGE_OK;   /* the file ended before libjpeg was done with it */
 }
 
+#ifdef CDOM_IMAGE_TESTING
+int32_t cd_image_jpeg_fatal;   /* the last decode's fatal libjpeg error (its msg_code), -1 for too many scans, 0: none */
+#endif
+
 uint32_t cd_image_jpeg_resize(const uint8_t *p, uint32_t len, const cd_image_info *info, uint32_t dw, uint32_t dh,
                               uint8_t **rgba, uint32_t *w, uint32_t *h) {
   jctx *x = cd_alloc_try(sizeof *x);
@@ -193,8 +197,14 @@ uint32_t cd_image_jpeg_resize(const uint8_t *p, uint32_t len, const cd_image_inf
   x->src.next_input_byte = p; x->src.bytes_in_buffer = len;
   x->prog.progress_monitor = progress;
   uint32_t st;
+#ifdef CDOM_IMAGE_TESTING
+  cd_image_jpeg_fatal = 0;
+#endif
   if (cd_image_guard(body, x, &x->guard)) {           /* a fatal libjpeg error, or too many scans */
     int code = x->err.msg_code;
+#ifdef CDOM_IMAGE_TESTING
+    cd_image_jpeg_fatal = x->too_many_scans ? -1 : code;
+#endif
     st = x->too_many_scans || code == JERR_NO_BACKING_STORE ? CD_IMAGE_TOO_BIG
        : code == JERR_OUT_OF_MEMORY ? CD_IMAGE_NO_ROOM
        : CD_IMAGE_CORRUPT;
