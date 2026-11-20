@@ -458,3 +458,36 @@ For reference, main on the Mac (docs/image-png-speed.md, "The Mac"): p12p.jpg C-
 - Q4: p48p.jpg, refused by main (TOO_BIG), decodes, in under 0.75 of p48.jpg's C-simd time on the same build, in both browsers.
 - Q5: the baseline inputs (p12.jpg, p48.jpg) and p12.png: C-js within 3% of C-old in both browsers.
 - Q6: the wasm memory after p12p.jpg is 24.5 to 27.5 MiB (main 40.8).
+
+### The Mac's results (2026-11-19)
+
+Chrome 157.0.8103.79 headless, then Safari 27.0.1, 9 interleaved rounds at box 900, load 3.2 to 4.5 at the ends (macOS's mediaanalysisd held about a core; every run passed the load gate).
+Medians in ms; the per-run tables are bench/image/results/2026-11-19-prog-mac-chrome.tsv and -safari.tsv.
+
+| input | browser | C-old (main) | C-js | C-simd | B1 | B2 | wasm MiB, main to new |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| p12p.jpg | Chrome | 137.1 | 129.7 | 122.7 | 122.2 | 129.2 | 40.8 to 26.1 |
+| p24p.jpg | Chrome | 267.8 | 250.2 | 237.5 | 231.1 | 253.5 | 77.7 to 48.8 |
+| p12p444.jpg | Chrome | 210.3 | 195.2 | 184.9 | 176.1 | 178.7 | 77.2 to 39.1 |
+| p12pmany.jpg | Chrome | 168.7 | 147.1 | 140.5 | 139.6 | 144.3 | 40.8 to 26.1 |
+| p48p.jpg | Chrome | TOO_BIG | 93.4 | 85.1 | 443.7 | 482.2 | refused to 38.6 |
+| p12.jpg | Chrome | 58.9 | 58.7 | 51.8 | 61.8 | 68.0 | 6.1 to 6.1 |
+| p48.jpg | Chrome | 170.2 | 169.2 | 161.2 | 214.5 | 256.5 | 17.1 to 17.1 |
+| p12.png | Chrome | 178.6 | 179.1 | 157.0 | 131.1 | 140.0 | 17.6 to 17.6 |
+| p12p.jpg | Safari | 143 | 119 | 113 | 159 | 151 | 40.8 to 26.1 |
+| p24p.jpg | Safari | 271 | 222 | 209 | 906 | 883 | 77.7 to 48.8 |
+| p12p444.jpg | Safari | 212 | 179 | 168 | 228 | 221 | 77.2 to 39.1 |
+| p12pmany.jpg | Safari | 166 | 131 | 123 | 181 | 171 | 40.8 to 26.1 |
+| p48p.jpg | Safari | TOO_BIG | 97 | 88 | 1952 | 1912 | refused to 38.6 |
+| p12.jpg | Safari | 63 | 63 | 54 | 84 | 76 | 6.1 to 6.1 |
+| p48.jpg | Safari | 176 | 176 | 165 | 364 | 331 | 17.1 to 17.1 |
+| p12.png | Safari | 231 | 230 | 161 | 205 | 195 | 17.6 to 17.6 |
+
+- Q1 refuted: p12p.jpg's C-js is 0.946 of C-old's in Chrome (past the 0.85 falsifier) and 0.832 in Safari (outside the range, inside the falsifier). The VM's 0.64 does not carry over: on the Mac main's progressive path was already within 12% of Chrome's decoder, where on the VM it was 8% slower than B1.
+- Q2 refuted, by 0.5 ms: Chrome's C-simd is 122.7 against B1's 122.2 on p12p.jpg, a tie inside both spreads; on the other progressive inputs C-simd is 0.6% to 5% behind B1, and 10 to 5 times ahead on p48p.jpg.
+- Q3 confirmed: in Safari every progressive input's C-simd is under B1's (113 against 159 on p12p.jpg, 209 against 906 on p24p.jpg).
+- Q4 confirmed: p48p.jpg decodes in 0.53 of p48.jpg's C-simd time in both browsers (85.1 against 161.2; 88 against 165).
+- Q5 confirmed: the baseline inputs and p12.png are within 0.6% of main.
+- Q6 confirmed: 26.1 MiB after p12p.jpg.
+
+So on the Mac the gain is mostly memory (36% to 49% less on every progressive input, and 48 MP progressive files now decode) and Safari speed; in Chrome the speed is a tie with its own decoder, and why Chrome gains so much less than Safari from the same wasm is open (a profile of p12p.jpg in both is the next step).
