@@ -201,8 +201,9 @@ static int build(const uint8_t *lens, uint32_t n, uint32_t *t, uint32_t tn, uint
      * the second (index i >> l1, below i) is still a one-symbol entry. */
     for (uint32_t i = (1u << root); i-- > 0;) {
       uint32_t e = t[i], l1 = E_BITS(e), e2 = t[i >> l1];
-      /* without branches: e and e2 one-literal entries (class literal, count 1), their bits together in the level */
-      uint32_t pair = ((e & 0xff0000c0u) == 1u << 24) & ((e2 & 0xff0000c0u) == 1u << 24) & (l1 + E_BITS(e2) <= root);
+      /* without branches: e and e2 literals (each one literal: neither is paired yet), their bits together in the
+       * level */
+      uint32_t pair = (((e | e2) & 0xc0u) == 0) & (l1 + E_BITS(e2) <= root);
       t[i] = pair ? LIT2(l1 + E_BITS(e2), (e >> 8) & 255, (e2 >> 8) & 255) : e;
     }
   }
