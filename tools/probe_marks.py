@@ -8,7 +8,8 @@ A test block writes <name>-start, then <name>-<value>, then <name>-ok.  So, per 
   DIED(start)         the block started and never finished: a run-time error
   no run              no mark at all: the block did not parse (or the page stopped before it)
 The tests are listed in the order of tests/probe-js1.html, then any other name seen.
-Usage: probe_marks.py <serve.log> [tag ...] [--md]      (no tags: every tag in the log)
+Usage: probe_marks.py <serve.log> [tag ...] [--md] [--na tag=name,name ...]   (no tags: every tag in the log)
+--na marks tests a browser's run did not collect (its page stalled), "n/c", instead of "no run".
 No JSON: the log is text and so is the table."""
 import re
 import sys
@@ -32,6 +33,9 @@ def load(path):
             continue
         tag, n, name, val = m.groups()
         marks.setdefault(tag, []).append((n, name, unescape(val)))
+    # Browsers fetch images in parallel, so the log's order is not the page's: sort by n (the late marks, L1 ..., last).
+    for tag in marks:
+        marks[tag].sort(key=lambda m: (0, int(m[0])) if m[0].isdigit() else (1, int(m[0][1:])) if re.fullmatch(r'L\d+', m[0]) else (2, 0))
     return marks
 
 
@@ -39,7 +43,7 @@ def results(marks):
     """{name: value-or-state} for one tag."""
     started, finished, values = set(), set(), {}
     for n, name, val in marks:
-        if val == "start" and name not in started:
+        if val == "start":
             started.add(name)
         elif val == "ok" and name in started:
             finished.add(name)
@@ -64,8 +68,15 @@ def test_order(here):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    md = "--md" in sys.argv
+    argv = sys.argv[1:]
+    na = {}
+    while "--na" in argv:
+        i = argv.index("--na")
+        tag, names = argv[i + 1].split("=")
+        na.setdefault(tag, set()).update(names.split(","))
+        del argv[i:i + 2]
+    args = [a for a in argv if not a.startswith("--")]
+    md = "--md" in argv
     if not args:
         raise SystemExit(__doc__)
     marks = load(args[0])
@@ -80,7 +91,8 @@ def main():
     for name in order:
         row = [name]
         for t in tags:
-            row.append(per[t].get(name, "no run" if marks.get(t) else "-"))
+            cell = per[t].get(name, "n/c" if name in na.get(t, ()) else "no run" if marks.get(t) else "-")
+            row.append(" ".join(cell.split()))
         rows.append(row)
     if md:
         print("| " + " | ".join(rows[0]) + " |")

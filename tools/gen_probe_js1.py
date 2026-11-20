@@ -7,7 +7,14 @@ A block reports through document.write of a 1x1 image, /mark/<tag>/p-<n>-<name>-
 n counts, so the order survives.  The tag is the page's query string (probe-js1.html?ns2).
 tools/probe_marks.py reads a serve.py log and prints the table.
 Run: python3 tools/gen_probe_js1.py > tests/probe-js1.html
+     python3 tools/gen_probe_js1.py part 1 30 > tests/probe-js1-part1.html   (30 tests from the 31st: for IE 4, which stopped
+     on the whole page after 40 blocks)
+     python3 tools/gen_probe_js1.py speed speedLoop > tests/probe-speed-loop.html   (one speed test alone, one page each: the
+     marks of a page reach the server only when its scripts end in Netscape 2, so the wall time of a page, from its GET
+     to its marks, is the measure, and the in-engine ms is Date's, which Netscape 2 gets wrong)
 Written for JS 1.0: no typeof, no try, no literals, no function expressions in the helper block."""
+
+import sys
 
 HEAD = """<HTML>
 <HEAD>
@@ -47,7 +54,8 @@ TESTS = [
     ("appName", "", "navigator.appName"),
     ("onerror_pre", "", "window.onerror"),
     # arrays and types
-    ("newArray3", "", "new Array(3).length"),
+    ("newArray3", "var a = new Array(3);", "a.length"),
+    ("newArrayCall", "", "new Array(3).length"),
     ("typeof", "", "typeof 1"),
     ("typeofUndef", "", "typeof zzUndefined"),
     ("void", "", "void 0"),
@@ -69,7 +77,8 @@ TESTS = [
     ("arrNoLen", "var o = new Object(); o.length = 0;", "o.length"),
     ("ctorProp", "function A(){}; var a = new A();", "a.constructor == A"),
     ("instanceof", "function A(){}; var a = new A();", "a instanceof A"),
-    ("dateGetTime", "", "new Date().getTime() > 0"),
+    ("dateGetTime", "var d = new Date();", "d.getTime() > 0"),
+    ("dateGetTimeCall", "", "new Date().getTime() > 0"),
     ("isNaN", "", "isNaN(NaN)"),
     ("NaNGlobal", "", "NaN"),
     ("InfinityGlobal", "", "Infinity"),
@@ -130,6 +139,11 @@ TESTS = [
     ("forInVar", "var o = new Object(); o.a = 1; function fi(){ var s = ''; for (var k in o) { s = s + k; } return s; }", "fi()"),
     ("argsLength", "function g(){ return arguments.length; }", "g(1,2,3)"),
     ("argsIndex", "function g(){ return arguments[1]; }", "g(1,2,3)"),
+    ("fnArguments", "function g(){ return g.arguments.length; }", "g(1,2,3)"),
+    ("hasArrayObject", "", "window.Array"),
+    ("hasDateObject", "", "window.Date"),
+    ("recurse300", "function r(n){ if (n == 0) { return 0; } return 1 + r(n-1); }", "r(300)"),
+    ("recurse500", "function r(n){ if (n == 0) { return 0; } return 1 + r(n-1); }", "r(500)"),
     ("callee", "function g(){ return arguments.callee == g; }", "g()"),
     ("fnLength", "function g(a,b){ return 1; }", "g.length"),
     ("recurse100", "function r(n){ if (n == 0) { return 0; } return 1 + r(n-1); }", "r(100)"),
@@ -137,7 +151,8 @@ TESTS = [
     ("recurse5000", "function r(n){ if (n == 0) { return 0; } return 1 + r(n-1); }", "r(5000)"),
     ("closureVar", "function mk(){ var c = 5; function g(){ return c; } return g; } var h = mk();", "h()"),
     ("thisInMethod", "var o = new Object(); function m(){ return this.v; } o.v = 4; o.m = m;", "o.m()"),
-    ("newCtor", "function P(x){ this.x = x; }", "new P(3).x"),
+    ("newCtor", "function P(x){ this.x = x; } var p = new P(3);", "p.x"),
+    ("newCtorCall", "function P(x){ this.x = x; }", "new P(3).x"),
     ("hasOwnProperty", "var o = new Object(); o.a = 1;", "o.hasOwnProperty('a')"),
     ("toStringObj", "var o = new Object();", "o.toString()"),
     # statements
@@ -180,7 +195,6 @@ TESTS = [
     ("historyLength", "", "history.length"),
     ("javaEnabled", "", "navigator.javaEnabled()"),
     ("pluginsLen", "", "navigator.plugins.length"),
-    ("onerrorAssign", "function eh(m,u,l){ return true; } window.onerror = eh;", "window.onerror == eh"),
     ("documentGetElementById", "", "document.getElementById"),
     ("documentAll", "", "document.all"),
     ("documentLayers", "", "document.layers"),
@@ -190,25 +204,38 @@ TESTS = [
     ("documentBgColor", "", "document.bgColor"),
 ]
 
-# Speed: ms from new Date().getTime().  A start mark, the ms, an ok mark.
+# Speed: ms from T().  A start mark, the ms, an ok mark.
+TDEF = "function T(){ var d = new Date(); return d.getTime(); } "
 SPEED = [
-    ("speedLoop", "function t(){ var x = 0; var i; var a = new Date().getTime(); for (i = 0; i < 100000; i++) { x = (x + i) & 0xffff; } return (new Date().getTime() - a) + 'ms x=' + x; }", "t()"),
-    ("speedObjKeys", "function t(){ var m = new Object(); var i; var a = new Date().getTime(); for (i = 0; i < 100000; i++) { m[i & 1023] = i; } return (new Date().getTime() - a) + 'ms m5=' + m[5]; }", "t()"),
-    ("speedArrKeys", "function t(){ var m = new Array(1024); var i; var a = new Date().getTime(); for (i = 0; i < 100000; i++) { m[i & 1023] = i; } return (new Date().getTime() - a) + 'ms m5=' + m[5]; }", "t()"),
-    ("speedConcat", "function t(){ var s = ''; var i; var a = new Date().getTime(); for (i = 0; i < 10000; i++) { s = s + 'a'; } return (new Date().getTime() - a) + 'ms len=' + s.length; }", "t()"),
-    ("speedCharCodeAt", "function t(){ var s = ''; var i; for (i = 0; i < 10000; i++) { s = s + 'a'; } var x = 0; var a = new Date().getTime(); for (i = 0; i < 10000; i++) { x = x + s.charCodeAt(i); } return (new Date().getTime() - a) + 'ms x=' + x; }", "t()"),
-    ("speedCall", "function f(x){ return x + 1; } function t(){ var x = 0; var i; var a = new Date().getTime(); for (i = 0; i < 100000; i++) { x = f(x); } return (new Date().getTime() - a) + 'ms x=' + x; }", "t()"),
+    ("speedLoop", TDEF + "function t(){ var x = 0; var i; var a = T(); for (i = 0; i < 100000; i++) { x = (x + i) & 0xffff; } return (T() - a) + 'ms x=' + x; }", "t()"),
+    ("speedObjKeys", TDEF + "function t(){ var m = new Object(); var i; var a = T(); for (i = 0; i < 100000; i++) { m[i & 1023] = i; } return (T() - a) + 'ms m5=' + m[5]; }", "t()"),
+    ("speedArrKeys", TDEF + "function t(){ var m = new Array(1024); var i; var a = T(); for (i = 0; i < 100000; i++) { m[i & 1023] = i; } return (T() - a) + 'ms m5=' + m[5]; }", "t()"),
+    ("speedConcat", TDEF + "function t(){ var s = ''; var i; var a = T(); for (i = 0; i < 10000; i++) { s = s + 'a'; } return (T() - a) + 'ms len=' + s.length; }", "t()"),
+    ("speedCharCodeAt", TDEF + "function t(){ var s = 'aaaaaaaaaa'; var i; for (i = 0; i < 10; i++) { s = s + s; } if (!s.charCodeAt) { return 'absent'; } var x = 0; var a = T(); for (i = 0; i < 10000; i++) { x = x + s.charCodeAt(i); } return (T() - a) + 'ms x=' + x + ' len=' + s.length; }", "t()"),
+    ("speedConcat1000", TDEF + "function t(){ var s = ''; var i; var a = T(); for (i = 0; i < 1000; i++) { s = s + 'a'; } return (T() - a) + 'ms len=' + s.length; }", "t()"),
+    ("speedConcat2000", TDEF + "function t(){ var s = ''; var i; var a = T(); for (i = 0; i < 2000; i++) { s = s + 'a'; } return (T() - a) + 'ms len=' + s.length; }", "t()"),
+    ("speedCall", TDEF + "function f(x){ return x + 1; } function t(){ var x = 0; var i; var a = T(); for (i = 0; i < 100000; i++) { x = f(x); } return (T() - a) + 'ms x=' + x; }", "t()"),
 ]
 
 
 def block(name, defs, expr):
-    return ('<SCRIPT LANGUAGE="JavaScript">\n%s\nmark("%s", "start");\nmark("%s", %s);\nmark("%s", "ok");\n</SCRIPT>\n'
-            % (defs, name, name, expr, name))
+    """Start first, then the definitions, so a run-time error in them still shows as start without ok."""
+    return ('<SCRIPT LANGUAGE="JavaScript">\nmark("%s", "start");\n%s\nmark("%s", %s);\nmark("%s", "ok");\n</SCRIPT>\n'
+            % (name, defs, name, expr, name))
 
 
 def main():
     out = [HEAD]
-    for name, defs, expr in TESTS + SPEED:
+    if sys.argv[1:2] == ["part"]:
+        # part <k> <size>: tests k*size .. (k+1)*size, for an engine that hangs on one block of the whole page
+        k, size = int(sys.argv[2]), int(sys.argv[3])
+        out.append("".join(block(*t) for t in TESTS[k * size:(k + 1) * size] if not t[0].startswith("recurse")))
+        out.append('<SCRIPT LANGUAGE="JavaScript">\nmark("done", "end");\n</SCRIPT>\n</BODY>\n</HTML>\n')
+        print("".join(out), end="")
+        return
+    which = [a for a in sys.argv[1:] if a != "speed"]
+    tests = [t for t in SPEED if t[0] == which[0]] if which else (SPEED if "speed" in sys.argv[1:] else TESTS)
+    for i, (name, defs, expr) in enumerate(tests):
         out.append(block(name, defs, expr))
     out.append('<SCRIPT LANGUAGE="JavaScript">\nmark("done", "end");\n</SCRIPT>\n</BODY>\n</HTML>\n')
     print("".join(out), end="")

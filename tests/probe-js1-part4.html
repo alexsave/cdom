@@ -1,0 +1,190 @@
+<HTML>
+<HEAD>
+<TITLE>cdom probe-js1</TITLE>
+<SCRIPT LANGUAGE="JavaScript">
+var n = 0;
+var TAG = "" + location.search;
+TAG = TAG.substring(1, TAG.length);
+if (TAG == "") { TAG = "x"; }
+function mark(name, v) {
+  n = n + 1;
+  document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
+}
+var late_n = 0;
+function late(name, v) {
+  late_n = late_n + 1;
+  var u = '/mark/' + TAG + '/p-L' + late_n + '-' + name + '-' + escape("" + v);
+  if (window.Image) {
+    var im = new Image();
+    im.src = u;
+  } else {
+    document.write('<IMG SRC="' + u + '" WIDTH=1 HEIGHT=1>');
+  }
+}
+</SCRIPT>
+</HEAD>
+<BODY>
+<H3>cdom probe-js1</H3>
+<P>Reports to /mark/ as it loads.
+<FORM NAME="f0"><INPUT TYPE=text NAME="t0" VALUE="v0"></FORM>
+<SCRIPT LANGUAGE="JavaScript">
+mark("fnAssignedVar", "start");
+var f = function(){ return 7; };
+mark("fnAssignedVar", f());
+mark("fnAssignedVar", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("evalBasic", "start");
+
+mark("evalBasic", eval('1+2'));
+mark("evalBasic", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("evalFn", "start");
+
+mark("evalFn", eval('function(){}'));
+mark("evalFn", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("setTimeoutStr", "start");
+setTimeout("late('tstr','fired')", 200);
+mark("setTimeoutStr", 'set');
+mark("setTimeoutStr", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("setTimeoutFn", "start");
+function lf(){ late('tfn','fired'); } setTimeout(lf, 200);
+mark("setTimeoutFn", 'set');
+mark("setTimeoutFn", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("setInterval", "start");
+var ic = 0; function iv(){ ic++; if (ic == 3) { late('interval','3'); clearInterval(ih); } } var ih = setInterval(iv, 50);
+mark("setInterval", 'set');
+mark("setInterval", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("documentImages", "start");
+
+mark("documentImages", document.images.length);
+mark("documentImages", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("documentImagesType", "start");
+
+mark("documentImagesType", document.images);
+mark("documentImagesType", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newImage", "start");
+var im = new Image(); im.src = '/mark/' + TAG + '/p-img-newImage-loaded';
+mark("newImage", im.src);
+mark("newImage", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("formsLength", "start");
+
+mark("formsLength", document.forms.length);
+mark("formsLength", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("formRead", "start");
+
+mark("formRead", document.forms[0].elements[0].value);
+mark("formRead", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("formWrite", "start");
+document.forms[0].elements[0].value = 'v1';
+mark("formWrite", document.forms[0].elements[0].value);
+mark("formWrite", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("formByName", "start");
+
+mark("formByName", document.f0.t0.value);
+mark("formByName", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("locationHref", "start");
+
+mark("locationHref", location.href);
+mark("locationHref", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("documentLastModified", "start");
+
+mark("documentLastModified", document.lastModified);
+mark("documentLastModified", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("windowName", "start");
+
+mark("windowName", window.name);
+mark("windowName", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("historyLength", "start");
+
+mark("historyLength", history.length);
+mark("historyLength", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("javaEnabled", "start");
+
+mark("javaEnabled", navigator.javaEnabled());
+mark("javaEnabled", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("pluginsLen", "start");
+
+mark("pluginsLen", navigator.plugins.length);
+mark("pluginsLen", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("documentGetElementById", "start");
+
+mark("documentGetElementById", document.getElementById);
+mark("documentGetElementById", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("documentAll", "start");
+
+mark("documentAll", document.all);
+mark("documentAll", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("documentLayers", "start");
+
+mark("documentLayers", document.layers);
+mark("documentLayers", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("documentCookie", "start");
+
+mark("documentCookie", document.cookie);
+mark("documentCookie", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("screenWidth", "start");
+
+mark("screenWidth", screen.width);
+mark("screenWidth", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("innerWidth", "start");
+
+mark("innerWidth", window.innerWidth);
+mark("innerWidth", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("documentBgColor", "start");
+
+mark("documentBgColor", document.bgColor);
+mark("documentBgColor", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("done", "end");
+</SCRIPT>
+</BODY>
+</HTML>

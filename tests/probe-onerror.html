@@ -1,0 +1,34 @@
+<HTML>
+<HEAD>
+<TITLE>cdom probe-onerror</TITLE>
+<SCRIPT LANGUAGE="JavaScript">
+// Does window.onerror get called, with what, and does the browser survive it?  Its own page: Netscape 3.04 died on
+// probe-js1.html with a handler installed.  The page needs the tag in its query string, like probe-js1.html.
+var TAG = "" + location.search;
+TAG = TAG.substring(1, TAG.length);
+if (TAG == "") { TAG = "x"; }
+var n = 0;
+function mark(name, v) {
+  n = n + 1;
+  document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
+}
+var seen = "";
+function oe(m, u, l) {
+  seen = "called";
+  return true;
+}
+mark("onerrorbefore", window.onerror);
+window.onerror = oe;
+mark("onerrorafter", window.onerror == oe);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("raise", "start");
+zzNoSuchFunction();
+mark("raise", "survived");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("handler", seen);
+mark("done", "end");
+</SCRIPT>
+</HEAD>
+</HTML>
