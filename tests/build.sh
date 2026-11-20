@@ -68,6 +68,14 @@ wasm -O2 "$here/out/legacy.simd.wasm" -msimd128 "$here/legacy.c" "$here/../src/c
 cmp "$here/out/legacy.wasm.lits" "$here/out/legacy.simd.wasm.lits"
 page "$here/legacy.html" "$here/out/legacy.shim.html" "$here/out/legacy.wasm"
 node "$legacy" page "$here/out/legacy.shim.html" "$here/out/legacy.html"
+# The script engine probe (docs/ie5-design.md), served beside the pages for the XP VM's browsers.
+cp "$here/probe.html" "$here/out/probe.html"
+# The hold that keeps the Utilu IE 5.01 and 5.5 builds from crashing at a page's Done (tools/ie5hold.py) is the test
+# rig's alone: no shipped file and no built page may name its port.
+if grep -l "10.0.2.2:8096" "$here/../shim/"*.js "$here/../tools/legacy/"*.js "$here/"*.html "$here/out/cdom.legacy"*.js \
+  "$here/out/"*.wasm.js "$here/out/"*.ie9.js "$here/out/legacy.html"; then
+  echo "build.sh: the IE 5 test hold (port 8096) is in a shipped or built file" >&2; exit 1
+fi
 # Every memory access form as wasm, as wasm2js output and through the words pass, for tools/words.mjs to run side
 # by side: no cdom in it, so no string table either (no cdlits).
 "$CC" -O2 "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -o "$here/out/memforms.wasm" "$here/memforms.c"
