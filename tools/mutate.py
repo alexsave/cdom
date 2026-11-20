@@ -21,6 +21,7 @@ PAGE = ['tests/page/run.sh']
 TUT = ['tutorial/run.sh']
 FILE = ['node', 'tools/file.mjs']
 LEG = ['node', 'tools/legacy.mjs']
+JOB = ['node', 'tools/job.mjs']
 RESIZE = ['tools/resize_ban.sh']
 IMG = ['env', 'IMAGE_BIG=0', 'IMAGE_WASM=0', 'tests/image/run.sh']   # the image module, native, small inputs
 IMGBIG = ['env', 'IMAGE_WASM=0', 'tests/image/run.sh']               # with the big inputs (budget, peaks)
@@ -854,6 +855,34 @@ M = [
   ('ban-mk', 'cdom.mk', 'CDOM_OPT ?= -Oz\n', 'CDOM_OPT ?= -Oz\n# drawImage(img, 0, 0, w, h)\n', RESIZE, 'FAIL resize ban: cdom.mk'),
   ('ban-tools', 'tools/minshim.mjs', "import fs from 'node:fs';", "import fs from 'node:fs';\nconst q = { imageSmoothingQuality: 'low' };", RESIZE, 'FAIL resize ban: tools/minshim.mjs'),
   ('encode-quality-unchecked', 'src/cdom.c', '|| y + h > H || quality > 100) __builtin_trap();', '|| y + h > H) __builtin_trap();', UNIT, "FAIL cd_encode_image's quality"),
+  # cd_job (src/cdom_job.c, src/cdom_job_mod.c, tools/job.mjs; cdom.mk's job rule and tools/cdpage's --job in tests/link and tests/page)
+  ('job-no-terminate', 'shim/cdom.js', '        worker.terminate();\n        jobAnswer(token, status, output);', '        jobAnswer(token, status, output);', JOB, 'FAIL one worker, ended when it answered'),
+  ('job-no-transfer', 'shim/cdom.js', 'worker.postMessage([compiled, input, args], file ? [args] : [input, args]);', 'worker.postMessage([compiled, input, args], []);', JOB, 'FAIL the input and args are transferred'),
+  ('job-compile-each', 'shim/cdom.js', 'const module = jobModules[name] || (jobModules[name] = fetch(', 'const module = (jobModules[name] = fetch(', JOB, 'FAIL the module is fetched and compiled once'),
+  ('job-no-blob', 'shim/cdom.js', 'URL.createObjectURL(new Blob(["(" + jobWorker + ")()"], { type: "text/javascript" }))', '"data:text/javascript," + encodeURIComponent("(" + jobWorker + ")()")', JOB, 'FAIL the worker comes from a blob: URL'),
+  ('job-trap-ok', 'shim/cdom.js', '(error) => postMessage([error === 1 ? 1 : 2]));', '(error) => postMessage([0]));', JOB, 'FAIL FAILED: a job that traps'),
+  ('job-room-failed', 'shim/cdom.js', 'status = code > 1 ? 2 : code;', 'status = code ? 2 : 0;', JOB, 'FAIL NO_ROOM: a job that cannot get its memory'),
+  ('job-input-room-failed', 'shim/cdom.js', '(error) => postMessage([error === 1 ? 1 : 2]));', '(error) => postMessage([2]));', JOB, 'FAIL NO_ROOM: a 20 MB file the capped job cannot hold'),
+  ('job-file-read-on-main', 'shim/cdom.js', '    if (!input) {\n      setTimeout(() => jobAnswer(token, 4));', '    if (input && input.arrayBuffer) {\n      input.arrayBuffer();\n    }\n    if (!input) {\n      setTimeout(() => jobAnswer(token, 4));', JOB, 'FAIL the file never entered the app'),
+  ('job-shared-worker', 'shim/cdom.js', 'worker = new Worker(jobScript);', 'worker = globalThis.jobOne || (globalThis.jobOne = new Worker(jobScript));', JOB, 'FAIL both jobs answered'),
+  ('job-no-unsupported-worker', 'shim/cdom.js', 'if (typeof Worker === "undefined" || typeof WebAssembly === "undefined") {', 'if (typeof WebAssembly === "undefined") {', JOB, 'FAIL UNSUPPORTED: no Worker'),
+  ('job-no-unsupported-wasm', 'shim/cdom.js', 'if (typeof Worker === "undefined" || typeof WebAssembly === "undefined") {', 'if (typeof Worker === "undefined") {', JOB, 'FAIL UNSUPPORTED: no WebAssembly'),
+  ('job-nofile-status', 'shim/cdom.js', '      setTimeout(() => jobAnswer(token, 4));', '      setTimeout(() => jobAnswer(token, 2));', JOB, 'FAIL NO_FILE'),
+  ('job-unsupported-sync', 'shim/cdom.js', '      setTimeout(() => jobAnswer(token, 3));', '      jobAnswer(token, 3);', JOB, 'FAIL UNSUPPORTED is answered from the event loop too'),
+  ('job-legacy-no-unsupported', 'shim/cdom.js', 'if (typeof Worker === "undefined" || typeof WebAssembly === "undefined") {', 'if (typeof Worker === "undefined") {', LEG, 'FAIL the old tiers (no WebAssembly): cd_job_cb answers UNSUPPORTED'),
+  ('job-answer-leaks', 'src/cdom_job.c', '  cd_flush();\n  cd_free((void *)p);', '  cd_flush();', JOB, 'FAIL the answer\'s bytes are freed after the callback'),
+  ('job-room-limit', 'src/cdom_job_mod.c', 'return cd_alloc_try(n ? n : 1);', 'return cd_alloc(n ? n : 1);', JOB, 'FAIL NO_ROOM: a 20 MB file the capped job cannot hold'),
+  ('job-heap-whole', 'src/cdom.c', '#ifndef CDOM_HEAP_ONLY\n', '#ifndef CDOM_HEAP_ONLY_X\n', LINK, 'undefined symbol: cd_main'),
+  ('job-mod-dom-import', 'src/cdom_job_mod.c', '__attribute__((export_name("job_room"))) void *job_room(uint32_t n) { return cd_alloc_try(n ? n : 1); }', '__attribute__((import_module("cdom"), import_name("now"))) double j_now(void);\n__attribute__((export_name("job_room"))) void *job_room(uint32_t n) { return j_now() > 0 ? cd_alloc_try(n ? n : 1) : 0; }', LINK, 'FAIL a job module\'s imports are not cdjob.answer alone'),
+  ('job-rule-no-heap-only', 'cdom.mk', '$(CDOM_CFLAGS) -DCDOM_HEAP_ONLY $(APP_JOB_CFLAGS)', '$(CDOM_CFLAGS) $(APP_JOB_CFLAGS)', LINK, 'FAIL cdom.mk\'s job rule does not build a job module'),
+  ('job-rule-any-name', 'cdom.mk', '$$(call cdom_mk_for,$$(cdom_mk_job_files),$$@,$$(cdom_mk_job_src) $$(CDOM_HEADERS))', '$$(cdom_mk_job_src) $$(CDOM_HEADERS)', LINK, 'FAIL cdom.mk built a .job.wasm that APP_JOBS does not name'),
+  ('job-page-always-bundled', 'cdom.mk', 'cdom_mk_job_args = $(if $(APP_WASM_SEPARATE),,$(foreach', 'cdom_mk_job_args = $(if x,$(foreach', LINK, 'FAIL a page with APP_WASM_SEPARATE carries the job module'),
+  ('job-page-no-jobs', 'cdom.mk', ',$(APP_WASM).lits,$(cdom_mk_job_args))', ',$(APP_WASM).lits)', LINK, 'FAIL a bundled page does not carry its job module'),
+  ('job-page-name', 'tools/cdpage.c', 'bstr(o, "var cdomJobs={");', 'bstr(o, "var cdomJob={");', PAGE, 'FAIL two job modules bundled'),
+  ('job-page-no-comma', 'tools/cdpage.c', '          if (j) bbyte(o, \',\');\n', '', PAGE, 'FAIL two job modules bundled'),
+  ('job-page-name-raw', 'tools/cdpage.c', '          js_string(o, name);\n', '          bbyte(o, \'"\');\n          bstr(o, name);\n          bbyte(o, \'"\');\n', PAGE, 'FAIL two job modules bundled'),
+  ('job-page-no-eq-check', 'tools/cdpage.c', 'if (!eq || eq == a->jobs[j]) die(', 'if (eq == a->jobs[j]) die(', PAGE, 'FAIL refuses jobname'),
+  ('job-page-empty-ok', 'tools/cdpage.c', 'if (!slurp(eq + 1, &job) || !job.n) die(', 'if (!slurp(eq + 1, &job)) die(', PAGE, 'FAIL refuses jobempty'),
 ]
 
 def build_and_run(root, cmd, minify=False):
