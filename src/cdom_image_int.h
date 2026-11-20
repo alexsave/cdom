@@ -43,6 +43,11 @@ void cd_image_target(uint32_t sw, uint32_t sh, uint32_t o, uint32_t bw, uint32_t
  * or the wasm SIMD 2x2 and 4x4): bit 8 * row + column of the natural-order block. docs/image-progressive-speed.md has the
  * table and where each line of it is in the code; tests/image/simd.c checks it (a coefficient outside it, changed to
  * anything, changes no output byte). */
+/* The index of x's lowest set bit; x is not 0. As 63 - clz(x & -x), not __builtin_ctzll: V8 on arm64 lowers i64.ctz to a
+ * call (5.78 ns a step of a dependent chain on Alex's Mac, Chrome 157) and i64.clz to one clz instruction (2.38 ns):
+ * docs/image-progressive-speed.md, "ctz on arm64". tests/link/run.sh refuses an image module that holds an i64.ctz. */
+static inline int cd_ctz64(uint64_t x) { return 63 - __builtin_clzll(x & (0 - x)); }
+
 static inline uint64_t cd_image_idct_reads(int size) {
   uint32_t rc = size == 1 ? 0x01u : size == 2 ? 0xabu : size == 4 ? 0xefu : size >= 3 && size <= 7 ? (1u << size) - 1 : 0xffu;
   uint64_t m = 0;
