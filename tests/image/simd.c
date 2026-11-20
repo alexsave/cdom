@@ -10,6 +10,10 @@
  *   ycc_all        the same on every (y, cb, cr) of 8 bits: 16,777,216 pixels
  *   unfilter       cd_image_unfilter_simd against cd_image_unfilter_scalar: every filter (and two that are none), 1, 2,
  *                  3, 4, 6 and 8 bytes a pixel, widths 0 to 64 pixels and some larger, random and edge bytes
+ *   runs           cd_image_unfilter_run_simd and _scalar (the Paeth wavefront over runs of up to 4 rows) against
+ *                  cd_image_unfilter_scalar row by row: plans of Paeth runs of 1 to 5 rows with None, Sub, Up and Avg
+ *                  rows between, 3 and 4 bytes a pixel, widths 1 to 9 pixels and 4031 and 4032, a zero or a random row
+ *                  above the first, handed over a random number of rows at a time
  *   rgba           cd_image_rgb_to_rgba_simd against the scalar: widths 0 to 64 and some larger
  *   div            the scaler's divide, in doubles: sums up to 255 t, t up to 65500 squared, and the sums at the edges of the quotient
  *   across, down   the scaler's two row loops: random sizes from 1 to 64 pixels and more, edge weights and sums, and an
@@ -283,6 +287,63 @@ static void unfilter_all(void) {
   }
 }
 
+/* PNG rows as the sink hands them over (cd_image_unfilter_run): a block of rows, each its filter byte and n bytes, the
+ * filters a plan of Paeth runs of 1 to 5 rows with rows of the other filters between. The reference unfilters it row by
+ * row with cd_image_unfilter_scalar; the runs (the SIMD one, and the scalar build's wavefront) are driven as the sink does,
+ * a random number of rows at a time (the rows past the window). Every byte is compared, and the rows each call answers
+ * against the run the plan has there. The block's last byte is the end of memory (a read past the last row traps). */
+static void runs_case(uint32_t bpp, uint32_t n, const uint8_t *plan, uint32_t rows, int zero_prev, int scalar_run) {
+  const uint32_t pitch = n + 1, size = pitch * rows;
+  uint8_t *ref = place(size, 0, 40), *got = place(size, 1, 0);
+  uint8_t *prev = place(n + 1, 0, 50) + 1;
+  for (uint32_t i = 0; i < n; i++) prev[i] = zero_prev ? 0 : byte_edge();
+  for (uint32_t r = 0; r < rows; r++) {
+    ref[r * pitch] = got[r * pitch] = plan[r];
+    for (uint32_t i = 1; i < pitch; i++) ref[r * pitch + i] = got[r * pitch + i] = below(4) ? (uint8_t)rnd() : byte_edge();
+  }
+  for (uint32_t r = 0; r < rows; r++)
+    if (!cd_image_unfilter_scalar(plan[r], ref + r * pitch + 1, r ? ref + (r - 1) * pitch + 1 : prev, n, bpp)) note(5);
+  uint32_t done = 0;
+  while (done < rows) {
+    uint32_t avail = below(3) ? 1 + below(6) : rows - done;
+    if (avail > rows - done) avail = rows - done;
+    uint32_t want = 0;
+    while (want < avail && want < 4 && plan[done + want] == 4) want++;
+    if (want < 2) want = 1;
+    uint8_t *row = got + done * pitch;
+    const uint8_t *above = done ? row - pitch + 1 : prev;
+    uint32_t k = scalar_run ? cd_image_unfilter_run_scalar(row, pitch, above, n, bpp, avail)
+                            : cd_image_unfilter_run_simd(row, pitch, above, n, bpp, avail);
+    if (k != want) { note(4); break; }
+    done += k;
+  }
+  if (neq(ref, got, size)) note(1);
+}
+static void runs_all(void) {
+  static const uint32_t widths[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 4031, 4032};
+  uint32_t k = 0;
+  uint8_t plan[24];
+  for (uint32_t b = 3; b <= 4; b++)
+    for (uint32_t wi = 0; wi < sizeof widths / sizeof widths[0]; wi++)
+      for (int rep = 0; rep < (widths[wi] > 9 ? 6 : 40); rep++) {
+        /* a plan: runs of Paeth of each length 1 to 5 in a rotating order, 0 to 2 rows of None, Sub, Up or Avg between
+         * (rep 0 and 1: no rows between, so runs meet; rep 2: one run of 5 alone) */
+        uint32_t rows = 0;
+        if (rep == 2) { for (; rows < 5; rows++) plan[rows] = 4; }
+        else for (uint32_t r = 0; r < 5 && rows < 20; r++) {
+          uint32_t len = 1 + (r + (uint32_t)rep) % 5;
+          for (uint32_t i = 0; i < len; i++) plan[rows++] = 4;
+          uint32_t gap = rep < 2 ? 0 : below(3);
+          for (uint32_t i = 0; i < gap; i++) plan[rows++] = (uint8_t)below(4);
+        }
+        uint32_t n = widths[wi] * b + (rep % 7 == 6 ? below(b) : 0);   /* mostly whole pixels; a few not */
+        cases = k++;
+        runs_case(b, n, plan, rows, rep % 3 == 0, 0);
+        cases = k++;
+        runs_case(b, n, plan, rows, rep % 3 == 0, 1);
+      }
+}
+
 static void rgba_all(void) {
   uint32_t k = 0;
   for (uint32_t w = 0; w <= 64 + 40; w++)
@@ -431,6 +492,7 @@ EXPORT("run") uint32_t run(uint32_t loop) {
     case 7: down_all(); break;
     case 8: div_all(); break;
     case 9: adler_all(); break;
+    case 10: runs_all(); break;
     default: return 0xffffffffu;
   }
   (void)fails;

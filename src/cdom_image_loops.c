@@ -33,6 +33,61 @@ int cd_image_unfilter_scalar(uint32_t f, uint8_t *cur, const uint8_t *prev, uint
   return 1;
 }
 
+/* The run of Paeth rows that starts at row (its filter byte first), at most most rows and 4: rows that are all Paeth, one
+ * pitch apart. A row of another filter ends it (0 when the first is one). */
+static uint32_t paeth_run(const uint8_t *row, uint32_t pitch, uint32_t most) {
+  uint32_t k = 0;
+  while (k < most && k < 4 && row[(size_t)k * pitch] == 4) k++;
+  return k;
+}
+
+/* Paeth as a wavefront (docs/image-png-speed.md, "Paeth as a wavefront"): row j + 1 runs LAG pixels behind row j, so each
+ * row's chain (its left pixel to the next) is in flight beside the others. Its b and c are row j's pixels, stored LAG and
+ * LAG + 1 steps before they are read back: a whole step's latency covers the store and the load, and the critical chain
+ * stays a's alone. */
+#define LAG 2
+
+/* The scalar wavefront over k rows (2 to 4): plain C, the compiler sees k independent chains. Whole pixels in the wave;
+ * the bytes past them (n not a whole number of pixels) after it, row by row. */
+static inline __attribute__((always_inline)) void paeth_px_s(uint8_t *cur, const uint8_t *up, uint32_t i, const uint32_t bpp) {
+  for (uint32_t ch = 0; ch < bpp; ch++) cur[i + ch] = (uint8_t)(cur[i + ch] + paeth(cur[i + ch - bpp], up[i + ch], up[i + ch - bpp]));
+}
+static inline __attribute__((always_inline)) void wave_s(uint8_t *cur, size_t pitch, const uint8_t *prev, uint32_t n,
+                                                         const uint32_t bpp, const uint32_t k) {
+  uint8_t *o[4];
+  const uint8_t *u[4];
+  for (uint32_t j = 0; j < k; j++) { o[j] = cur + j * pitch; u[j] = j ? o[j - 1] : prev; }
+  const uint32_t w = n / bpp, lo = (k - 1) * LAG + 1, t_end = w + (k - 1) * LAG;
+  for (uint32_t t = 0; t < t_end; t++) {
+    if (t >= lo && t < w) {                     /* every row inside, none at its first pixel */
+      for (uint32_t j = 0; j < k; j++) paeth_px_s(o[j], u[j], (t - j * LAG) * bpp, bpp);
+      continue;
+    }
+    for (uint32_t j = 0; j < k; j++) {
+      if (t < j * LAG || t - j * LAG >= w) continue;
+      uint32_t x = t - j * LAG;
+      if (x) paeth_px_s(o[j], u[j], x * bpp, bpp);
+      else for (uint32_t ch = 0; ch < bpp; ch++) o[j][ch] = (uint8_t)(o[j][ch] + u[j][ch]);
+    }
+  }
+  for (uint32_t j = 0; j < k; j++)
+    for (uint32_t i = w * bpp; i < n; i++)
+      o[j][i] = (uint8_t)(o[j][i] + (i >= bpp ? paeth(o[j][i - bpp], u[j][i], u[j][i - bpp]) : u[j][i]));
+}
+static void paeth_rows_scalar(uint8_t *cur, size_t pitch, const uint8_t *prev, uint32_t n, uint32_t bpp, uint32_t k) {
+  if (bpp == 3) { if (k == 4) wave_s(cur, pitch, prev, n, 3, 4); else if (k == 3) wave_s(cur, pitch, prev, n, 3, 3); else wave_s(cur, pitch, prev, n, 3, 2); }
+  else { if (k == 4) wave_s(cur, pitch, prev, n, 4, 4); else if (k == 3) wave_s(cur, pitch, prev, n, 4, 3); else wave_s(cur, pitch, prev, n, 4, 2); }
+}
+
+#ifndef CDOM_PAETH_WAVE_SCALAR
+#define CDOM_PAETH_WAVE_SCALAR 1
+#endif
+uint32_t cd_image_unfilter_run_scalar(uint8_t *row, uint32_t pitch, const uint8_t *prev, uint32_t n, uint32_t bpp, uint32_t avail) {
+  uint32_t k = CDOM_PAETH_WAVE_SCALAR && (bpp == 3 || bpp == 4) ? paeth_run(row, pitch, avail) : 0;
+  if (k >= 2) { paeth_rows_scalar(row + 1, pitch, prev, n, bpp, k); return k; }
+  return avail && cd_image_unfilter_scalar(row[0], row + 1, prev, n, bpp) ? 1 : 0;
+}
+
 void cd_image_rgb_to_rgba_scalar(const uint8_t *r, uint8_t *out, uint32_t w) {
   for (uint32_t x = 0; x < w; x++, r += 3, out += 4) { out[0] = r[0]; out[1] = r[1]; out[2] = r[2]; out[3] = 255; }
 }
@@ -177,6 +232,107 @@ static inline void unfilter_paeth(uint8_t *cur, const uint8_t *prev, uint32_t n,
   }
 }
 
+/* The SIMD wavefront: rows j and j + 1 in one vector of 16-bit lanes (row j in lanes 0 to 3, row j + 1 in 4 to 7), rows 2
+ * and 3 in a second (K is 4; 2: the first only), row j + 1 LAG pixels behind row j. Step t makes pixel t - j * LAG of
+ * row j. b is loaded from the row above (prev for row 0, the row before it for the others, which stored that pixel LAG
+ * steps before), c is the step before's b, a the step before's result. A lane outside its row (before its first pixel,
+ * past its last, or a row past k) reads zeros (z) and is not stored, so its a and c are zero when its row starts (Paeth of
+ * a = c = 0 is b, the first pixel's rule). The pixels in the wave are those whose 4-byte load stays in the row (wv); the
+ * bytes after them are made after the wave, row by row (each needs only its own row and the one above, both done). */
+static inline V paeth_v(V a, V b, V c, V raw, V lo8) {
+  V t = wasm_i16x8_sub(b, c), u = wasm_i16x8_sub(a, c);
+  V pa = wasm_i16x8_abs(t), pb = wasm_i16x8_abs(u), pc = wasm_i16x8_abs(wasm_i16x8_add(t, u));
+  V ma = wasm_i16x8_le(pa, wasm_i16x8_min(pb, pc)), mb = wasm_i16x8_le(pb, pc);
+  return wasm_v128_and(wasm_i16x8_add(wasm_v128_bitselect(a, wasm_v128_bitselect(b, c, mb), ma), raw), lo8);
+}
+static inline V ld2(const uint8_t *p, const uint8_t *q) {   /* 4 bytes of each, in 16-bit lanes 0 to 3 and 4 to 7 */
+  return wasm_u16x8_extend_low_u8x16(wasm_v128_load32_lane(q, wasm_v128_load32_zero(p), 1));
+}
+static inline void st_hi(uint8_t *p, V v, const uint32_t bpp) {   /* bytes 4 to 7 (or 6) of v */
+  if (bpp == 4) wasm_v128_store32_lane(p, v, 1);
+  else { wasm_v128_store16_lane(p, v, 2); wasm_v128_store8_lane(p + 2, v, 6); }
+}
+static inline __attribute__((always_inline)) void wave_v(uint8_t *cur, size_t pitch, const uint8_t *prev, uint32_t n,
+                                                         const uint32_t bpp, const uint32_t K, uint32_t k) {
+  int m = 0xff;                                 /* the mask clang cannot see, as unfilter_paeth's */
+  __asm__("" : "+r"(m));
+  const V lo8 = wasm_i16x8_splat((int16_t)m);
+  uint8_t z[8] = {0};
+  uint8_t *o[4];
+  const uint8_t *u[4];
+  for (uint32_t j = 0; j < K; j++) {
+    o[j] = j < k ? cur + j * pitch : z;
+    u[j] = j < k ? (j ? o[j - 1] : prev) : z;
+  }
+  const uint32_t wv = n >= 4 ? (n - 4) / bpp + 1 : 0, lo = (k - 1) * LAG, t_end = wv + (k - 1) * LAG;
+  V aA = wasm_i8x16_const_splat(0), cA = aA, aB = aA, cB = aA;
+  uint32_t t = 0;
+  for (int part = 0; part < 3; part++) {
+    /* part 0: the steps before every row is inside (t below lo); 1: every row inside (lo to wv); 2: the steps after */
+    uint32_t stop = part == 0 ? (lo < t_end ? lo : t_end) : part == 1 ? wv : t_end;
+    if (part == 1) {
+      if (t >= stop) continue;
+      uint8_t *o0 = o[0] + (t - 0 * LAG) * bpp, *o1 = o[1] + (t - 1 * LAG) * bpp;
+      const uint8_t *u0 = u[0] + (t - 0 * LAG) * bpp, *u1 = u[1] + (t - 1 * LAG) * bpp;
+      uint8_t *o2 = 0, *o3 = 0;
+      const uint8_t *u2 = 0, *u3 = 0;
+      size_t s2 = 0, s3 = 0;
+      if (K == 4) {
+        s2 = k > 2 ? bpp : 0; s3 = k > 3 ? bpp : 0;
+        o2 = o[2] + (k > 2 ? (t - 2 * LAG) * bpp : 0); o3 = o[3] + (k > 3 ? (t - 3 * LAG) * bpp : 0);
+        u2 = u[2] + (k > 2 ? (t - 2 * LAG) * bpp : 0); u3 = u[3] + (k > 3 ? (t - 3 * LAG) * bpp : 0);
+      }
+      for (; t < stop; t++) {
+        V bA = ld2(u0, u1), rA = ld2(o0, o1);
+        aA = paeth_v(aA, bA, cA, rA, lo8);
+        cA = bA;
+        V nA = wasm_u8x16_narrow_i16x8(aA, aA);
+        st_px(o0, nA, bpp); st_hi(o1, nA, bpp);
+        o0 += bpp; o1 += bpp; u0 += bpp; u1 += bpp;
+        if (K == 4) {
+          V bB = ld2(u2, u3), rB = ld2(o2, o3);
+          aB = paeth_v(aB, bB, cB, rB, lo8);
+          cB = bB;
+          V nB = wasm_u8x16_narrow_i16x8(aB, aB);
+          st_px(o2, nB, bpp); st_hi(o3, nB, bpp);
+          o2 += s2; o3 += s3; u2 += s2; u3 += s3;
+        }
+      }
+      continue;
+    }
+    for (; t < stop; t++) {
+      const uint8_t *pu[4], *po[4];
+      int in[4];
+      for (uint32_t j = 0; j < K; j++) {
+        in[j] = j < k && t >= j * LAG && t - j * LAG < wv;
+        size_t i = in[j] ? (size_t)(t - j * LAG) * bpp : 0;
+        pu[j] = in[j] ? u[j] + i : z; po[j] = in[j] ? o[j] + i : z;
+      }
+      V bA = ld2(pu[0], pu[1]), rA = ld2(po[0], po[1]);
+      aA = paeth_v(aA, bA, cA, rA, lo8);
+      cA = bA;
+      V nA = wasm_u8x16_narrow_i16x8(aA, aA);
+      if (in[0]) st_px(o[0] + (size_t)t * bpp, nA, bpp);
+      if (in[1]) st_hi(o[1] + (size_t)(t - LAG) * bpp, nA, bpp);
+      if (K == 4) {
+        V bB = ld2(pu[2], pu[3]), rB = ld2(po[2], po[3]);
+        aB = paeth_v(aB, bB, cB, rB, lo8);
+        cB = bB;
+        V nB = wasm_u8x16_narrow_i16x8(aB, aB);
+        if (in[2]) st_px(o[2] + (size_t)(t - 2 * LAG) * bpp, nB, bpp);
+        if (in[3]) st_hi(o[3] + (size_t)(t - 3 * LAG) * bpp, nB, bpp);
+      }
+    }
+  }
+  for (uint32_t j = 0; j < k; j++)
+    for (uint32_t i = wv * bpp; i < n; i++)
+      o[j][i] = (uint8_t)(o[j][i] + (i >= bpp ? paeth(o[j][i - bpp], u[j][i], u[j][i - bpp]) : u[j][i]));
+}
+static void paeth_rows_simd(uint8_t *cur, size_t pitch, const uint8_t *prev, uint32_t n, uint32_t bpp, uint32_t k) {
+  if (bpp == 3) { if (k == 2) wave_v(cur, pitch, prev, n, 3, 2, 2); else wave_v(cur, pitch, prev, n, 3, 4, k); }
+  else { if (k == 2) wave_v(cur, pitch, prev, n, 4, 2, 2); else wave_v(cur, pitch, prev, n, 4, 4, k); }
+}
+
 int cd_image_unfilter_simd(uint32_t f, uint8_t *cur, const uint8_t *prev, uint32_t n, uint32_t bpp) {
   if (f == 0) return 1;
   if (f == 2) { unfilter_up(cur, prev, n); return 1; }
@@ -187,6 +343,12 @@ int cd_image_unfilter_simd(uint32_t f, uint8_t *cur, const uint8_t *prev, uint32
     if (f == 1) unfilter_sub(cur, n, 4); else if (f == 3) unfilter_avg(cur, prev, n, 4); else unfilter_paeth(cur, prev, n, 4);
   } else return cd_image_unfilter_scalar(f, cur, prev, n, bpp);   /* 1 and 2 bytes a pixel (grey, palette, grey+alpha) */
   return 1;
+}
+
+uint32_t cd_image_unfilter_run_simd(uint8_t *row, uint32_t pitch, const uint8_t *prev, uint32_t n, uint32_t bpp, uint32_t avail) {
+  uint32_t k = bpp == 3 || bpp == 4 ? paeth_run(row, pitch, avail) : 0;
+  if (k >= 2) { paeth_rows_simd(row + 1, pitch, prev, n, bpp, k); return k; }
+  return avail && cd_image_unfilter_simd(row[0], row + 1, prev, n, bpp) ? 1 : 0;
 }
 
 /* ---- RGB to RGBA ---- */
