@@ -231,25 +231,33 @@ static void emit(cd_image_scaler *s, uint32_t y) {
     case 8: at = ((ptrdiff_t)(oh - 1) * ow + y) * 4; step = -(ptrdiff_t)ow * 4; break;
     default: at = (ptrdiff_t)y * ow * 4; step = 4; break;
   }
+  const uint32_t ch = s->step == 1 ? 1 : 3;   /* sums a pixel: grey's one is R, G and B */
 #if CDOM_IMAGE_SIMD
   const uint8_t *q = (const uint8_t *)(s->acc + (size_t)dw * 3);
-  cd_image_scaler_div((uint8_t *)q, s->acc, dw * 3, t);
-  for (uint32_t x = 0; x < dw; x++, at += step, q += 3) {
-    uint8_t *d = s->out + at;
-    d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 255;
-  }
+  cd_image_scaler_div((uint8_t *)q, s->acc, dw * ch, t);
+  if (ch == 1)
+    for (uint32_t x = 0; x < dw; x++, at += step, q++) {
+      uint8_t *d = s->out + at;
+      d[0] = d[1] = d[2] = q[0]; d[3] = 255;
+    }
+  else
+    for (uint32_t x = 0; x < dw; x++, at += step, q += 3) {
+      uint8_t *d = s->out + at;
+      d[0] = q[0]; d[1] = q[1]; d[2] = q[2]; d[3] = 255;
+    }
 #else
   const uint64_t *a = s->acc;
-  for (uint32_t x = 0; x < dw; x++, at += step, a += 3) {
+  for (uint32_t x = 0; x < dw; x++, at += step, a += ch) {
     uint8_t *d = s->out + at;
-    for (int k = 0; k < 3; k++) {
+    for (uint32_t k = 0; k < ch; k++) {
       uint64_t v = (a[k] * 2 + t) / t2;
       d[k] = v > 255 ? 255 : (uint8_t)v;
     }
+    if (ch == 1) d[1] = d[2] = d[0];
     d[3] = 255;
   }
 #endif
-  memset(s->acc, 0, (size_t)dw * 3 * sizeof(uint64_t));
+  memset(s->acc, 0, (size_t)dw * ch * sizeof(uint64_t));
 }
 
 void cd_image_scaler_row(cd_image_scaler *s, const uint8_t *px) {
@@ -257,7 +265,9 @@ void cd_image_scaler_row(cd_image_scaler *s, const uint8_t *px) {
   s->row++;
   const uint32_t sw = s->sw, dw = s->dw, dh = s->dh, sh = s->sh;
   uint32_t *h = s->hrow;
-  if (s->step == 3) cd_image_scaler_across_rgb(h, px, sw, dw);   /* RGB rows as they are (the scalar build's PNG path) */
+  const uint32_t n = s->step == 1 ? dw : dw * 3;   /* the sums: grey's one a pixel */
+  if (s->step == 1) cd_image_scaler_across_grey(h, px, sw, dw);   /* grey rows, a byte a pixel (the PNG path) */
+  else if (s->step == 3) cd_image_scaler_across_rgb(h, px, sw, dw);   /* RGB rows as they are (the scalar build's PNG path) */
   else cd_image_scaler_across(h, px, sw, dw);
   /* down: this source row covers [row*dh, (row+1)*dh) in units of 1/dh; output row oy ends at (oy+1)*sh */
   uint64_t rend = (uint64_t)s->row * dh;
@@ -265,7 +275,7 @@ void cd_image_scaler_row(cd_image_scaler *s, const uint8_t *px) {
     uint64_t yend = (uint64_t)(s->oy + 1) * sh;
     uint64_t b = rend < yend ? rend : yend;
     uint64_t wgt = b - s->ypos;
-    cd_image_scaler_down(s->acc, h, wgt, dw * 3);
+    cd_image_scaler_down(s->acc, h, wgt, n);
     s->ypos = b;
     if (b == yend) { emit(s, s->oy); s->oy++; }
   }

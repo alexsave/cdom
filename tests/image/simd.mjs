@@ -6,7 +6,8 @@ const names = ['idct4 (jsimd_idct_4x4 against jpeg_idct_4x4)', 'idct2 (jsimd_idc
   'unfilter (every filter, 1 to 8 bytes a pixel)', 'rgb to rgba', 'scaler across', 'scaler down', 'scaler divide (in doubles)',
   'adler32 (SIMD blocks against a byte at a time)',
   'unread coefficients (every IDCT size, scalar and SIMD, against cd_image_idct_reads)',
-  'paeth runs (the SIMD wavefronts over 2 to 4 rows of 3 and 4 bytes, 2 to 16 of 1 and 2 to 8 of 2, and the scalar run, against a row at a time)'];
+  'paeth runs (the SIMD wavefronts over 2 to 4 rows of 3 and 4 bytes, 3 to 16 of 1 and 3 to 8 of 2, and the scalar run, against a row at a time)',
+  'scaler across grey (the grey read against across on the pixels as RGBA)'];
 const { instance } = await WebAssembly.instantiate(fs.readFileSync(process.argv[2]), {});
 const x = instance.exports;
 let bad = 0;

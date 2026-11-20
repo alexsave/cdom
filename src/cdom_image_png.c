@@ -1,6 +1,6 @@
 /* cdom_image's PNG path: chunks walked as the file's bytes come (any split, cdom_image.h's fed decoder), IDAT pushed
  * into cdom's inflate (cdom_image_inflate.c) wherever a piece ends, inflated into a bounded buffer, each row unfiltered where it lies in that buffer once no later match can read it, turned into RGBA
- * (composited on white), then fed to the streaming scaler.
+ * (composited on white; grey and grey+alpha into one grey byte a pixel), then fed to the streaming scaler.
  * Refused: interlaced and 16-bit (UNSUPPORTED). Checked: the zlib stream's adler32 (a mismatch, or a stream that
  * stops before its checksum, is CORRUPT). Not checked: the chunk CRCs (a damaged chunk shows as damage, or fails
  * the adler32 when it is in the image data). */
@@ -56,7 +56,7 @@ typedef struct {
   uint8_t pal[256 * 4];       /* palette RGBA; entries past PLTE are opaque black, as libpng's */
 } fmt;
 
-/* The unfiltered row as RGBA pixels. */
+/* The unfiltered row as RGBA pixels: RGB (8-bit, with a colour key), RGBA, palette (grey and grey+alpha are to_grey's). */
 static void to_rgba(const fmt *f, const uint8_t *r, uint8_t *out) {
   uint32_t w = f->w;
   switch (f->ctype) {
@@ -76,30 +76,33 @@ static void to_rgba(const fmt *f, const uint8_t *r, uint8_t *out) {
         out[3] = 255;
       }
       break;
-    case 4:
-      for (uint32_t x = 0; x < w; x++, r += 2, out += 4) {
-        uint8_t g = r[1] == 255 ? r[0] : over(r[0], r[1]);
-        out[0] = out[1] = out[2] = g; out[3] = 255;
-      }
-      break;
-    default: {                                          /* 0 (grey) and 3 (palette), 1 to 8 bits */
+    default: {                                          /* 3 (palette), 1 to 8 bits */
       uint32_t d = f->depth, mask = (1u << d) - 1, per = 8 / d;
       for (uint32_t x = 0; x < w; x++, out += 4) {
         uint32_t v = d == 8 ? r[x] : (uint32_t)(r[x / per] >> (8 - d - d * (x % per))) & mask;
-        if (f->ctype == 3) {
-          const uint8_t *e = f->pal + 4 * v;
-          uint32_t a = e[3];
-          if (a == 255) { out[0] = e[0]; out[1] = e[1]; out[2] = e[2]; }
-          else { out[0] = over(e[0], a); out[1] = over(e[1], a); out[2] = over(e[2], a); }
-        } else if (f->key && v == f->key_g) {
-          out[0] = out[1] = out[2] = 255;
-        } else {
-          uint32_t g = d == 8 ? v : v * 255 / mask;
-          out[0] = out[1] = out[2] = (uint8_t)g;
-        }
+        const uint8_t *e = f->pal + 4 * v;
+        uint32_t a = e[3];
+        if (a == 255) { out[0] = e[0]; out[1] = e[1]; out[2] = e[2]; }
+        else { out[0] = over(e[0], a); out[1] = over(e[1], a); out[2] = over(e[2], a); }
         out[3] = 255;
       }
     }
+  }
+}
+
+/* The unfiltered row as grey, a byte a pixel (the scaler's grey read, cd_image_scaler.step 1): grey+alpha composited on
+ * white, grey of 1 to 8 bits with a colour key's pixels white and the rest scaled to 8 bits. Each byte is the R, G and B
+ * the RGBA row had for the pixel. 8-bit grey with no key is read as it lies, with no row between. */
+static void to_grey(const fmt *f, const uint8_t *r, uint8_t *out) {
+  uint32_t w = f->w;
+  if (f->ctype == 4) {
+    for (uint32_t x = 0; x < w; x++, r += 2) out[x] = r[1] == 255 ? r[0] : over(r[0], r[1]);
+    return;
+  }
+  uint32_t d = f->depth, mask = (1u << d) - 1, per = 8 / d;
+  for (uint32_t x = 0; x < w; x++) {
+    uint32_t v = d == 8 ? r[x] : (uint32_t)(r[x / per] >> (8 - d - d * (x % per))) & mask;
+    out[x] = (uint8_t)(f->key && v == f->key_g ? 255 : d == 8 ? v : v * 255 / mask);
   }
 }
 
@@ -114,6 +117,10 @@ static void to_rgba(const fmt *f, const uint8_t *r, uint8_t *out) {
  * less the window and its 1 KB, which cdom_image_inflate.c's static assertion ties to FAST_OUT. */
 #define PNG_MATCH_ROOM (CD_INFLATE_CAP_MIN - CD_INFLATE_WINDOW - 1024u)
 
+/* How a row reaches the scaler: made RGBA (to_rgba), made grey (to_grey), or as it lies (RGB in the scalar build, 8-bit
+ * grey with no colour key). */
+enum { READ_RGBA, READ_GREY, READ_AS_IS };
+
 /* The chunk walk's states: a chunk's length and type (gathered across pieces), its payload, its CRC (counted past). */
 enum { W_HEAD, W_DATA, W_CRC };
 /* What a payload is to the walk: image data, a palette or transparency (before the first IDAT, gathered), or passed. */
@@ -127,7 +134,8 @@ typedef struct {
   uint32_t row_at;            /* where the next row (its filter byte first) starts in the inflate's buffer */
   uint32_t done;              /* rows finished */
   uint8_t *zero;              /* the row above the first: zeros */
-  uint8_t *px;                /* one RGBA row */
+  uint8_t *px;                /* one RGBA row, or one grey row (a byte a pixel), or none (the rows read as they are) */
+  uint32_t read;              /* how a row reaches the scaler: READ_RGBA, READ_GREY (through px) or READ_AS_IS */
   /* the chunk walk, at the file's position at */
   uint64_t at;
   uint32_t state, kind;
@@ -154,7 +162,8 @@ static int64_t rows(void *c, uint8_t *b, uint32_t n, int last) {
     uint32_t k = cd_image_unfilter_run(cur, row, prev + 1, x->stride, x->bpp, avail < left ? avail : left);
     if (!k) return -1;
     for (uint32_t j = 0; j < k; j++, cur += row) {   /* then to the scaler in order, one at a time */
-      if (x->sc.step == 3) cd_image_scaler_row(&x->sc, cur + 1);   /* RGB as it is: the scaler reads 3 bytes a pixel */
+      if (x->read == READ_AS_IS) cd_image_scaler_row(&x->sc, cur + 1);   /* RGB (3 bytes a pixel) or grey (1) as it is */
+      else if (x->read == READ_GREY) { to_grey(&x->f, cur + 1, x->px); cd_image_scaler_row(&x->sc, x->px); }
       else { to_rgba(&x->f, cur + 1, x->px); cd_image_scaler_row(&x->sc, x->px); }
     }
     x->row_at += k * row;
@@ -189,17 +198,22 @@ static void chunk_end(pctx *x) {
  * image), whichever is larger, and the room the inflate keeps for the longest match (docs/image-png-speed.md, "The
  * small PNG's buffer"); never under the inflate's floor. 8-bit RGB with no colour key, in the scalar build: the rows go to the scaler as they are,
  * with no RGBA row between (none is allocated). The SIMD build keeps the RGBA row: its RGB to RGBA and across loops in
- * SIMD are faster than the scalar RGB read (docs/image-png-speed.md, "With image-simd's loops"). */
+ * SIMD are faster than the scalar RGB read (docs/image-png-speed.md, "With image-simd's loops"). Grey and grey+alpha, in
+ * both builds: the scaler reads one byte a pixel (docs/image-png-speed.md, "Grey PNG"), 8-bit grey with no colour key as
+ * it lies (no row), the others through a grey row of a byte a pixel. */
 static uint32_t first_idat(cd_image_dec *d, pctx *x) {
   if (x->f.ctype == 3 && !x->seen_plte) return CD_IMAGE_CORRUPT;
   x->saw_idat = 1;
-  int rgb_read = !CDOM_IMAGE_SIMD && x->f.ctype == 2 && x->f.depth == 8 && !x->f.key;
+  const uint32_t ct = x->f.ctype;
+  int grey = ct == 0 || ct == 4;
+  int rgb_read = !CDOM_IMAGE_SIMD && ct == 2 && x->f.depth == 8 && !x->f.key;
+  x->read = rgb_read || (ct == 0 && x->f.depth == 8 && !x->f.key) ? READ_AS_IS : grey ? READ_GREY : READ_RGBA;
   uint64_t row = (uint64_t)x->stride + 1, all = row * x->h;
   uint64_t keep = CD_INFLATE_WINDOW + 2 * row;
   uint64_t cap = (all > keep ? all : keep) + PNG_MATCH_ROOM;
   if (cap > keep + PNG_CHUNK) cap = keep + PNG_CHUNK;
   if (cap < CD_INFLATE_CAP_MIN) cap = CD_INFLATE_CAP_MIN;
-  uint64_t px_n = rgb_read ? 0 : (uint64_t)x->f.w * 4;
+  uint64_t px_n = x->read == READ_AS_IS ? 0 : (uint64_t)x->f.w * (x->read == READ_GREY ? 1 : 4);
   uint64_t room = row + px_n + cap;
   x->zero = room <= 0xffffffffu ? cd_alloc_try((uint32_t)room) : 0;
   if (!x->zero) return CD_IMAGE_NO_ROOM;
@@ -209,6 +223,7 @@ static uint32_t first_idat(cd_image_dec *d, pctx *x) {
   memset(x->zero, 0, x->stride + 1);
   x->px = x->zero + row;
   if (rgb_read) x->sc.step = 3;
+  if (grey) x->sc.step = 1;
   cd_inflate_begin(&x->inf, x->px + px_n, (uint32_t)cap, rows, x);
   return CD_IMAGE_MORE;
 }
