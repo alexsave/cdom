@@ -36,7 +36,7 @@ var cdomF = new Object();
 cdomF.errors = new Array();
 cdomF.draws = 0;
 
-/* C's memory: the app's words (memory.words of the .ie9.js build), as tools/legacy/memory-words.js reads them. */
+/* C's memory: the app's words (memory.words of the .js1.js build, tools/js1c), as tools/legacy/memory-words.js reads them. */
 var cf_raw = null;   /* the module's exports */
 var cf_mem = null;   /* its memory */
 var cf_W = null;     /* memory.words */
@@ -905,6 +905,9 @@ function cf_cRun(name, a, b, c, d, e, f, g, h) {
   var r;
   cf_busy++;
   r = cf_raw[name](a, b, c, d, e, f, g, h);
+  /* The .js1.js build cannot throw (JavaScript 1.0): a trap ends the call with js1_trap set, and the counts stay up
+   * as a throw would leave them, for the next entry to recover (docs/js1-compile-design.md, section 6). */
+  if (cf_raw.js1_trap) return 0;
   cf_busy--;
   if (cf_busy == 0) cf_callEnded();
   return r;
