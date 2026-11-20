@@ -1,0 +1,108 @@
+<html><head></head><body><p>probe</p>
+<!-- What each old browser's script engine has, one /mark/ request per probe to the serving server's log (docs/ie5-design.md has the table); no title, which the Utilu IE 5.01 build crashes on sooner. -->
+<script>
+// Each result goes to /mark/<order>-<name>-<result>: a synchronous XMLHTTP request where IE has ActiveXObject (it is
+// in the log before a native crash can lose it), else an image request, which every browser makes (the order number
+// sorts marks that arrive out of order, and defeats the cache).
+var order = 0, held = [];
+function mark(t) {
+  var u = "/mark/" + (order++) + "-" + t;
+  if (window.ActiveXObject) {
+    try { var x = new ActiveXObject("Microsoft.XMLHTTP"); x.open("GET", u, false); x.send(null); return; } catch (e) {}
+  }
+  var i = new Image();
+  held[held.length] = i;
+  i.src = u + "?" + order;
+}
+function t(name, src) { var r; try { r = "ok-" + eval(src); } catch (e) { r = "err-" + escape(e.message || e.description); } mark("probe-" + name + "-" + r); }
+mark("probe-engine-" + (typeof ScriptEngineMajorVersion != "undefined" ? ScriptEngineMajorVersion() + "." + ScriptEngineMinorVersion() : "none") + "-" + escape(navigator.userAgent));
+t("in", '"a" in {a:1}');
+t("inArr", '0 in [5]');
+t("instanceof", '[] instanceof Array');
+t("trycatch", '1');
+t("undef", 'typeof undefined');
+t("push", 'typeof [].push');
+t("regexpI", '/a/i.test("A")');
+t("charAt", '"ab".charAt(1)');
+t("lastIndex", 'typeof /a/g.lastIndex');
+t("fnLiteral", '(function(){return 3})()');
+t("nested", '(function(){ var f = function g(){ return typeof g; }; return f(); })()');
+t("switch", '(function(){switch(2){case 2: return "s";}})()');
+t("strictEq", '1 === 1');
+t("delete", '(function(){var o={a:1}; delete o.a; return typeof o.a;})()');
+t("labels", '(function(){ a: for(;;){ break a; } return 1; })()');
+t("Error", 'typeof Error + new Error("x").message');
+t("toString16", '(255).toString(16)');
+t("fromCharCode", 'String.fromCharCode(65,66)');
+t("arguments", '(function(){return arguments.length})(1,2)');
+t("callee", '(function(){return typeof arguments.callee})()');
+t("doWhile", '(function(){var i=0; do { i++; } while(i<3); return i;})()');
+t("void", 'typeof void 0');
+t("charCodeAt", '"A".charCodeAt(0)');
+t("ushr", '(-1>>>0)');
+t("concat", '[1].concat([2]).length');
+t("sliceNeg", '[1,2,3].slice(-1)[0]');
+t("split", '"a,b".split(",").length');
+t("splitRe", '"a1b".split(/\\d/).length');
+t("splitEmpty", '"".split(",").length');
+t("replaceRe", '"aa".replace(/a/g,"b")');
+t("execGroup", '/(a)(b)?/.exec("a")[2]');
+t("nonGreedy", '/a+?/.exec("aa")[0]');
+t("lookahead", '/a(?=b)/.test("ab")');
+t("noncap", '/(?:a)/.test("a")');
+t("getYear", 'typeof new Date().getTime()');
+t("fnApply", 'typeof Function.prototype.apply');
+t("encodeURI", 'typeof encodeURIComponent');
+t("toFixed", 'typeof (1).toFixed');
+t("sortFn", '[3,1,2].sort(function(a,b){return a-b}).join("")');
+t("arrLen", '(function(){var a=[]; a[5]=1; return a.length})()');
+t("objLit", '({"a-b":1})["a-b"]');
+t("hex", '0xff');
+t("typeofNull", 'typeof null');
+t("nan", 'isNaN(NaN)');
+t("cond", 'true ? "t" : "f"');
+t("comma", '(1,2)');
+t("throwObj", '(function(){ try { throw {m:1}; } catch(e) { return e.m; } })()');
+t("finally", '(function(){ var r=0; try { r=1; } finally { r=2; } return r; })()');
+t("Math", 'Math.floor(1.5)');
+t("protoChain", '(function(){ function A(){}; A.prototype.x=1; return new A().x; })()');
+t("ctorProp", '(function(){ function A(){}; return new A().constructor === A; })()');
+t("fnLength", '(function(a,b){}).length');
+t("RegExpCtor", 'new RegExp("a","g").global');
+t("escapeU", 'escape("☃")');
+t("unicodeStr", '"☃".length');
+t("numKey", '({1:2})[1]');
+t("strNumKey", '({"1":2})[1]');
+t("bangFn", '!function(){}()');
+t("tinyNum", '5e-324 > 0');
+t("trailingObjComma", 'eval("({a:1,})").a');
+t("quotedReserved", '({"default":1})["default"]');
+t("regexClassSlash", '/[/]/.test("/")');
+t("regexFlagM", 'typeof /a/m');
+t("emptyRegex", '/(?=)/');
+t("strIndex", '"ab"[1]');
+t("arrayHoles", '[,1].length');
+t("nestedFnDecl", '(function(){ if (1) { function q(){ return 1; } } return q(); })()');
+t("errorCtorMsg", 'new Error("x").description');
+t("errorName", 'new TypeError("x").name');
+t("TypeError", 'typeof TypeError');
+t("RangeError", 'typeof RangeError');
+t("charCodeNaN", 'isNaN("".charCodeAt(0))');
+t("numberToString2", '(5).toString(2)');
+t("unsignedShift", '(4294967295 >>> 0)');
+t("imul", 'typeof Math.imul');
+t("fround", 'typeof Math.fround');
+t("clz32", 'typeof Math.clz32');
+t("parseIntHex", 'parseInt("ff", 16)');
+t("getterSyntax", 'eval("({get a(){return 1}})").a');
+t("instanceofFn", '(function(){} instanceof Function)');
+t("arrayCtorLen", 'new Array(3).length');
+t("joinUndef", '[undefined, null, 1].join("-")');
+t("sliceArgs", 'Array.prototype.slice.call((function(){return arguments})(1,2)).length');
+t("concatArgs", '[].concat(1,[2,3]).length');
+t("lastIndexOfStr", '"aba".lastIndexOf("a")');
+t("substrNeg", '"abc".substr(-1)');
+t("dateNow", 'typeof Date.now');
+t("windowProp", 'typeof window.undefined');
+mark("probe-done");
+</script></body></html>
