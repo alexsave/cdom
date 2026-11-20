@@ -41,15 +41,65 @@ void cd_image_target(uint32_t sw, uint32_t sh, uint32_t o, uint32_t bw, uint32_t
 
 /* The EXIF orientation (1 to 8) of the JPEG at p, or 1 when it has none. */
 uint32_t cd_image_orientation(const uint8_t *p, uint32_t len);
+/* The orientation in an Exif APP1's TIFF header at t, room bytes to the segment's end (at least 8), or 1. */
+uint32_t cd_image_exif_orientation(const uint8_t *t, uint64_t room);
 
-/* The formats, behind the checks cdom_image.c makes (the magic, the box). The probes fill info and apply
- * the limits; the decoders answer with *rgba, *w and *h set only on OK. */
+/* The probes (cd_image_probe, for bytes in memory), behind the magic: they fill info and apply the limits. */
 uint32_t cd_image_jpeg_probe(const uint8_t *p, uint32_t len, cd_image_info *info);
 uint32_t cd_image_png_probe(const uint8_t *p, uint32_t len, cd_image_info *info);
-uint32_t cd_image_jpeg_resize(const uint8_t *p, uint32_t len, const cd_image_info *info, uint32_t dw, uint32_t dh,
-                              uint8_t **rgba, uint32_t *w, uint32_t *h);
-uint32_t cd_image_png_resize(const uint8_t *p, uint32_t len, const cd_image_info *info, uint32_t dw, uint32_t dh,
-                             uint8_t **rgba, uint32_t *w, uint32_t *h);
+
+/* ---- the fed decoder (cdom_image.h, cd_image_begin) ----
+ * cdom_image.c owns the block, the room and the first bytes (which say the format); the formats take the bytes from
+ * there: cd_image_jpeg_put and cd_image_png_put get the next n bytes of the file at p, where they lie (in the room, or,
+ * for cd_image_resize, the caller's own bytes, all of the rest of the file), and answer MORE or a final status;
+ * their _end frees what they hold. */
+
+/* A JPEG keeps what libjpeg has not used of a piece (a suspended marker segment, at most 65,535 bytes after FF and its
+ * code, or an MCU) in front of the next: the room is a piece and this much more. */
+#define CD_IMAGE_JPEG_KEEP (68u << 10)
+
+/* The JPEG header walker: every byte goes through it before libjpeg sees it, and it applies cd_image_jpeg_probe's
+ * rules (a walk to the first SOF) and cd_image_orientation's (a walk to the scan for the first Exif APP1) as the bytes
+ * come, keeping only the bytes it reads (a segment's length, the SOF's first 8, the Exif segment) and counting past the
+ * rest. Its verdict is the probe's; positions are the file's. */
+typedef struct {
+  uint32_t live;           /* 1 once the format is known to be JPEG and the walks started */
+  uint32_t ps;             /* the probe's walk: its state */
+  uint64_t pat;            /* the next byte it reads */
+  uint32_t marker, seg, pn;
+  uint8_t pg[8];           /* a length, or a SOF's first 8 bytes, gathered */
+  uint32_t verdict;        /* MORE until the walk ends, then the probe's status */
+  uint32_t os;             /* the orientation's walk */
+  uint64_t oat;
+  uint32_t oseg, on;
+  uint8_t og[10];          /* a segment's first 4 bytes, then (an APP1) the 6 after */
+  uint8_t *exif;           /* an Exif segment gathered across pieces (cd_alloc_try), or 0 */
+  uint32_t exif_n;
+  uint32_t orientation;    /* 0 until the walk ends, then 1 to 8 */
+  uint32_t w, h, progressive;
+} cd_image_walk;
+
+struct cd_image_dec {
+  uint32_t size;           /* the file's bytes */
+  uint32_t taken;          /* those put so far */
+  uint32_t box_w, box_h;
+  uint32_t status;         /* MORE until the final status */
+  uint32_t format;         /* 0 until the first bytes say, then CD_IMAGE_JPEG or CD_IMAGE_PNG */
+  uint8_t *buf;            /* the room's block (cd_image_begin), or 0 (cd_image_resize: the bytes are the caller's) */
+  uint32_t cap;
+  uint32_t used;           /* bytes at buf's front, waiting: the first bytes before the format is known, a JPEG's keep */
+  uint32_t step;           /* 1: the next put is a step of work that takes no bytes */
+  uint8_t *rgba;           /* after OK, until taken */
+  uint32_t w, h;
+  cd_image_info info;
+  cd_image_walk walk;      /* a JPEG's header walker */
+  void *fmt;               /* the format's state (cdom_image_jpeg.c, cdom_image_png.c), made when it is needed */
+  uint32_t warnings;       /* libjpeg's warnings so far (the tests compare them) */
+};
+uint32_t cd_image_jpeg_put(cd_image_dec *d, const uint8_t *p, uint32_t n);
+void cd_image_jpeg_end(cd_image_dec *d);
+uint32_t cd_image_png_put(cd_image_dec *d, const uint8_t *p, uint32_t n);
+void cd_image_png_end(cd_image_dec *d);
 
 /* The hot loops (cdom_image_loops.c): each has a scalar body, always built, and a wasm SIMD body, built when
  * CDOM_IMAGE_SIMD is 1 (cdom.mk: make variable CDOM_IMAGE_SIMD=1, -msimd128; 0, the default, is scalar). The name
@@ -101,23 +151,53 @@ void cd_image_scaler_div_simd(uint8_t *out, const uint64_t *a, uint32_t n, uint6
 typedef void (*cd_image_body)(void *ctx);
 int cd_image_guard(cd_image_body body, void *ctx, void **slot);
 _Noreturn void cd_image_throw(void *guard);
-/* cdom's inflate (cdom_image_inflate.c): one zlib stream, from pieces of input, into buf (cap bytes), which a sink
- * empties from the front. more(ctx, &p, &n) answers the next piece (1), or 0 at the end of the input. out(ctx, buf,
- * n, last) gets the bytes made and not yet dropped, buf[0 .. n), each time the buffer is nearly full and once at the
- * end (last 1, after the adler32 matched); it answers how many bytes to drop from the front, at most n less
- * CD_INFLATE_WINDOW (the window the stream may still copy from) or any number up to n when last, or -1 to stop.
+/* cdom's inflate (cdom_image_inflate.c): one zlib stream, pushed in pieces of any size, into buf (cap bytes), which a
+ * sink empties from the front. cd_inflate_begin readies z; then cd_inflate_put(z, p, n, last) gives it the next n
+ * bytes of the stream (any n, 0 too), last 1 when no more will come. It decodes while at least CD_INFLATE_LOOK
+ * bytes are ahead of it (or last is set), so no block header and no symbol is ever cut; the tail it cannot use yet,
+ * under CD_INFLATE_LOOK bytes, it keeps in z (its carry) and puts in front of the next bytes. p is read during the
+ * call only. It answers CD_INFLATE_MORE until the stream ends, then its final answer, which every later put answers
+ * again (bytes after the stream are not read): OK, CORRUPT (a stream zlib 1.3.1 refuses, one cut short, or an
+ * adler32 that differs) or STOPPED.
+ * out(ctx, buf, n, last) gets the bytes made and not yet dropped, buf[0 .. n), each time the buffer is nearly full and
+ * once at the end (last 1, after the adler32 matched); it answers how many bytes to drop from the front, at most n
+ * less CD_INFLATE_WINDOW (the window the stream may still copy from) or any number up to n when last, or -1 to stop.
  * The adler32 is taken over the bytes before the sink sees them, so the sink may change, in place, the bytes in
  * front of n - CD_INFLATE_WINDOW, which no later match reads (the PNG path unfilters its rows there). cap is at
  * least CD_INFLATE_CAP_MIN (less is CORRUPT), and must leave room for the longest match beside what the sink keeps.
- * The answer: OK, CORRUPT (a stream zlib 1.3.1 refuses, one cut short, or an adler32 that differs) or STOPPED. */
+ * Every state between two symbols lives in z (no globals, nothing on the stack between puts). */
 #define CD_INFLATE_WINDOW 32768u
 #define CD_INFLATE_CAP_MIN (CD_INFLATE_WINDOW + 1314u)   /* the window, the longest match and its overshoot, 1 KB more */
 #define CD_INFLATE_LT 2340u   /* the literal/length table: 2^11 first-level entries and the second levels (zlib's enough) */
 #define CD_INFLATE_DT 592u    /* the distance table: 2^9 and the second levels */
-enum { CD_INFLATE_OK = 0, CD_INFLATE_CORRUPT = 1, CD_INFLATE_STOPPED = 2 };
-typedef struct { uint32_t lt[CD_INFLATE_LT], dt[CD_INFLATE_DT]; } cd_inflate;
-typedef int (*cd_inflate_in)(void *ctx, const uint8_t **p, uint32_t *n);
+#define CD_INFLATE_LOOK 1024u /* the look-ahead: the longest dynamic block header (under 600 bytes) and symbol (48 bits) */
+#define CD_INFLATE_CARRY (2 * CD_INFLATE_LOOK)   /* the carry: a tail under LOOK and the next bytes, so each use of it takes LOOK or more */
+enum { CD_INFLATE_OK = 0, CD_INFLATE_CORRUPT = 1, CD_INFLATE_STOPPED = 2, CD_INFLATE_MORE = 3 };
 typedef int64_t (*cd_inflate_out)(void *ctx, uint8_t *buf, uint32_t n, int last);
-uint32_t cd_inflate_zlib(cd_inflate *z, uint8_t *buf, uint32_t cap, cd_inflate_in more, cd_inflate_out out, void *ctx);
+typedef struct {
+  uint32_t lt[CD_INFLATE_LT], dt[CD_INFLATE_DT];
+  /* the input: the bit buffer (the next bits from bit 0), its bits, zero bytes put in past the end (last only) */
+  uint64_t bb;
+  uint32_t bl, pad;
+  const uint8_t *in, *end; /* the bytes being read */
+  int last;                /* no more bytes after end */
+  /* the output */
+  uint8_t *buf;            /* buf[0 .. pos) made and not dropped */
+  uint32_t cap, pos;
+  uint32_t adl;            /* buf[0 .. adl) is in the adler32 */
+  uint32_t adler;
+  uint64_t total;          /* bytes made since the start */
+  cd_inflate_out out;
+  void *ctx;
+  /* where the stream is between puts */
+  uint32_t stage;          /* the zlib header, a block's header, a Huffman block, a stored block, the adler32, done */
+  uint32_t final;          /* the block being read is the last */
+  uint32_t stored;         /* a stored block's bytes left */
+  uint32_t status;         /* the final answer, once done */
+  uint32_t carry_n;
+  uint8_t carry[CD_INFLATE_CARRY];
+} cd_inflate;
+void cd_inflate_begin(cd_inflate *z, uint8_t *buf, uint32_t cap, cd_inflate_out out, void *ctx);
+uint32_t cd_inflate_put(cd_inflate *z, const uint8_t *p, uint32_t n, int last);
 uint32_t cd_image_adler32(uint32_t adler, const uint8_t *p, size_t n);
 #endif
