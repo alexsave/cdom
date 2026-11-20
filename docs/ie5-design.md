@@ -55,7 +55,7 @@ IE 7 and IE 8 from the same collection do not start on this XP at all ("The ordi
 - The VM is /Users/alex/VMs/ie6-xp (run.sh, vm.py for screenshots, keys and taps through QMP's tablet).
 - The Utilu IE Collection (archive.org item iecollection1721, sha1 4ad24d25a7ffd1c1daf36e46399cf7e02554269f) has `C:\Program Files\Utilu IE Collection\IE501\iexplore.exe`, IE550 and IE600.
 - Launch a browser with Start, Run (`vm.py tap 40 465`, then `tap 238 400`), the quoted exe path and the URL, then `vm.py key ret`; the Windows key alone did not open Run reliably.
-- Never type in the address bar of IE 5.01: it crashes there too. Start each page from Run instead.
+- Never type in the address bar of IE 5.01, which crashes it too; start each page from Run instead.
 - Serve the worktree's build with `python3 /Users/alex/VMs/ie9-win7/serve.py /Users/alex/Dev/cdom-ie5/tests/out 8099`; the guest reaches it at http://10.0.2.2:8099/.
 - Progress that survives a crash: a synchronous request to /mark/<step> through ActiveXObject("Microsoft.XMLHTTP") shows in the server's log.
 
