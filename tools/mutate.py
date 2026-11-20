@@ -1065,7 +1065,7 @@ M = [
   ('ns-escape-dd-stays', 'tools/cdpage.c', "      if (c == '>' && st == DESC_DD) { st = DATA; break; }\n", '', NOSCRIPT, 'FAIL the parse check and Chrome disagree'),
   ('ns-escape-no-delim', 'tools/cdpage.c', 'if (c == \'<\' && starts_ci(p + i + 1, n - i - 1, "script") && i + 7 < n && delim(p[i + 7])) { st = DESC;', 'if (c == \'<\' && starts_ci(p + i + 1, n - i - 1, "script") && i + 7 < n) { st = DESC;', NOSCRIPT, 'FAIL the parse check and Chrome disagree'),
   ('ns-arrow-unchecked', 'tools/cdpage.c', '    if (end && (!had || !blank(end + 3, bn - (size_t)(end + 3 - b))))', '    if (0 && end && (!had || !blank(end + 3, bn - (size_t)(end + 3 - b))))', NOSCRIPT, 'it would end the hiding comment): taken'),
-  ('ns-module-wrapped', 'tools/cdpage.c', '      if (ty && find(ty, (size_t)(p + e.open_end - ty), "module"))', '      if (0)', NOSCRIPT, 'FAIL a module script under the fallback'),
+  ('ns-module-wrapped', 'tools/cdpage.c', '      if (ty && find(ty, (size_t)(p + e.open_end - ty), "module"))', '      if (ty && 0)', NOSCRIPT, 'FAIL a module script under the fallback'),
   ('ns-default-off', 'cdom.mk', 'CDOM_NOSCRIPT ?= 1', 'CDOM_NOSCRIPT ?= 0', NOSCRIPT, 'FAIL no GIFs beside the page'),
   ('ns-shot-dpr2', 'tools/noscript.mjs', 'deviceScaleFactor: 1, mobile: false', 'deviceScaleFactor: 2, mobile: false', NOSCRIPT, 'FAIL the GIFs'),
   ('ns-no-glyph', 'tools/noscript.mjs', 'color:#000">\\u2603</div>', 'color:#000"> </div>', NOSCRIPT, 'FAIL the GIFs'),
