@@ -886,7 +886,7 @@ M = [
   ('job-page-empty-ok', 'tools/cdpage.c', 'if (!slurp(eq + 1, &job) || !job.n) die(', 'if (!slurp(eq + 1, &job)) die(', PAGE, 'FAIL refuses jobempty'),
   # The chunked read (docs/chunked-file-read-design.md, section 8's mutation list, and the build's own parts).
   # The prototype's eight, as the build has them:
-  ('chunk-skip-dropped', 'src/cdom_image_jpeg.c', '    x->skip = (uint32_t)(past < left ? past : left);\n', '', CHK, 'e-com.jpg at 300x300, pieces of'),
+  ('chunk-skip-dropped', 'src/cdom_image_jpeg.c', '    x->skip = (uint32_t)(past < left ? past : left);\n', '    (void)past; (void)left;\n', CHK, 'e-com.jpg at 300x300, pieces of'),
   ('chunk-skip-one-long', 'src/cdom_image_jpeg.c', '    x->skip = (uint32_t)(past < left ? past : left);\n', '    x->skip = (uint32_t)(past < left ? past + 1 : left);\n', CHK, 'e-com.jpg at 300x300, pieces of'),
   ('chunk-keep-byte-lost', 'src/cdom_image_jpeg.c', '  d->used = keep;\n', '  d->used = keep > 1 ? keep - 1 : keep;\n', CHK, 'pieces of 1:'),
   ('chunk-png-crc-3', 'src/cdom_image_png.c', '      x->at += 4;\n      x->state = W_HEAD;', '      x->at += x->len ? 4 : 3;\n      x->state = W_HEAD;', CHK, 'e-zero.png: differs from e-plain.png'),

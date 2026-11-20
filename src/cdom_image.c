@@ -113,7 +113,7 @@ uint32_t cd_image_decode(const uint8_t *p, uint32_t len, uint32_t max_w, uint32_
   dec_init(&d, len, max_w, max_h);
   d.taken = len;
   uint32_t st = feed(&d, p, len);
-  while (st == CD_IMAGE_MORE && d.step) { d.step = 0; st = feed(&d, 0, 0); }
+  while (st == CD_IMAGE_MORE && d.step) { d.step = 0; st = feed(&d, p + len, 0); }
   if (st == CD_IMAGE_MORE) st = CD_IMAGE_CORRUPT;      /* not reached: with every byte in, only steps answer MORE */
   if (st == CD_IMAGE_OK) cd_image_take(&d, rgba, w, h);
   if (warnings) *warnings = d.warnings;
