@@ -98,6 +98,7 @@ fi
 "$CC" -O2 "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -o "$here/out/js1diff.wasm" "$here/js1diff.c"
 "$here/../tools/js1.sh" "$here/out/js1diff.wasm" "$here/out/js1diff.wasm.js1.js"
 node "$legacy" app-ie9 "$here/out/js1diff.wasm" "$here/out/js1diff.wasm.ie9.js"
+node "$here/../tools/js1.mjs" page # tests/out/js1diff.html, for the real browsers (docs/js1-compile-design.md, section 11)
 # Every memory access form as wasm, as wasm2js output and through the words pass, for tools/words.mjs to run side
 # by side: no cdom in it, so no string table either (no cdlits).
 "$CC" -O2 "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -o "$here/out/memforms.wasm" "$here/memforms.c"
