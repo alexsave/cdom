@@ -5,6 +5,10 @@
  *                  jpeg_idct_2x2 (jidctred.c, built here without SIMD): random coefficient blocks, quantization tables
  *                  and output columns, including the extreme values that make the C's 32-bit arithmetic wrap and the
  *                  blocks whose columns or rows hold only a DC term (the C's shortcuts)
+ *   unread         every IDCT the decoder can pick (jpeg_idct_1x1 to 7x7 and islow, scalar, and the SIMD 2x2 and 4x4)
+ *                  against cd_image_idct_reads, the table the progressive store keeps by: changing every coefficient
+ *                  outside it, to any value, changes no output byte; and every coefficient inside it changes the
+ *                  output in some case (the table is no larger than it must be)
  *   ycc            jsimd_color_deconvert against libjpeg's own YCbCr to RGBA (jdcolor.c, built here without SIMD, reached
  *                  through jinit_color_deconverter): widths 1 to 64 and more, random rows
  *   ycc_all        the same on every (y, cb, cr) of 8 bits: 16,777,216 pixels
@@ -166,6 +170,58 @@ static void idct_cases(int n4) {
       if (neq(ra[r], rb[r], span)) note(1 + (uint32_t)r);       /* the pixels, and every other byte of the row, equal */
       if (!canary_ok(rb[r], span, top && r == rows - 1)) note(10 + (uint32_t)r);
     }
+  }
+}
+
+/* ---- the coefficients each IDCT reads ---- */
+
+extern void jpeg_idct_1x1(j_decompress_ptr, jpeg_component_info *, JCOEFPTR, JSAMPARRAY, JDIMENSION);
+extern void jpeg_idct_3x3(j_decompress_ptr, jpeg_component_info *, JCOEFPTR, JSAMPARRAY, JDIMENSION);
+extern void jpeg_idct_5x5(j_decompress_ptr, jpeg_component_info *, JCOEFPTR, JSAMPARRAY, JDIMENSION);
+extern void jpeg_idct_6x6(j_decompress_ptr, jpeg_component_info *, JCOEFPTR, JSAMPARRAY, JDIMENSION);
+extern void jpeg_idct_7x7(j_decompress_ptr, jpeg_component_info *, JCOEFPTR, JSAMPARRAY, JDIMENSION);
+extern void jpeg_idct_islow(j_decompress_ptr, jpeg_component_info *, JCOEFPTR, JSAMPARRAY, JDIMENSION);
+
+typedef void (*idct_fn)(j_decompress_ptr, jpeg_component_info *, JCOEFPTR, JSAMPARRAY, JDIMENSION);
+
+static void idct_run(idct_fn f, int size, struct jpeg_decompress_struct *cinfo, jpeg_component_info *comp, JCOEF *c, uint8_t out[8][8]) {
+  JSAMPROW rows[8];
+  memset(out, 0, 64);
+  for (int r = 0; r < size; r++) rows[r] = out[r];
+  f(cinfo, comp, c, rows, 0);
+}
+
+static void unread_cases(void) {
+  static const struct { int size; idct_fn f; } t[] = {
+    {1, jpeg_idct_1x1}, {2, jpeg_idct_2x2}, {2, jsimd_idct_2x2}, {3, jpeg_idct_3x3}, {4, jpeg_idct_4x4},
+    {4, jsimd_idct_4x4}, {5, jpeg_idct_5x5}, {6, jpeg_idct_6x6}, {7, jpeg_idct_7x7}, {8, jpeg_idct_islow}};
+  struct jpeg_decompress_struct cinfo;
+  jpeg_component_info comp;
+  memset(&cinfo, 0, sizeof cinfo);
+  make_range_table(&cinfo);
+  static JCOEF coef[64], other[64];
+  static int quant[64];
+  uint8_t a[8][8], b[8][8];
+  for (uint32_t e = 0; e < sizeof t / sizeof t[0]; e++) {
+    uint64_t reads = cd_image_idct_reads(t[e].size), seen = 0;
+    for (uint32_t k = 0; k < 6000; k++) {
+      cases = e * 6000 + k;
+      fill_block(coef, (int)(k % 13));
+      fill_quant(quant, (int)((k / 13) % 5));
+      comp.dct_table = quant;
+      idct_run(t[e].f, t[e].size, &cinfo, &comp, coef, a);
+      memcpy(other, coef, sizeof coef);                 /* every coefficient outside the table: any value */
+      for (int i = 0; i < 64; i++) if (!(reads >> i & 1)) other[i] = (JCOEF)rnd();
+      idct_run(t[e].f, t[e].size, &cinfo, &comp, other, b);
+      if (neq(a, b, 64)) note(1 + e);
+      memcpy(other, coef, sizeof coef);                 /* one coefficient inside it: changed */
+      int j;
+      do j = (int)below(64); while (!(reads >> j & 1));
+      other[j] = (JCOEF)(other[j] + 1 + (int)below(300));
+      idct_run(t[e].f, t[e].size, &cinfo, &comp, other, b);
+      if (neq(a, b, 64)) seen |= 1ull << j;
+    }
+    if (seen != reads) note(100 + e);                   /* a coefficient in the table that never mattered */
   }
 }
 
@@ -492,7 +548,8 @@ EXPORT("run") uint32_t run(uint32_t loop) {
     case 7: down_all(); break;
     case 8: div_all(); break;
     case 9: adler_all(); break;
-    case 10: runs_all(); break;
+    case 10: unread_cases(); break;
+    case 11: runs_all(); break;
     default: return 0xffffffffu;
   }
   (void)fails;

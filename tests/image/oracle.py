@@ -384,16 +384,20 @@ def big_cases():
     im.save(f("p12p.jpg"), "JPEG", quality=90, subsampling=2, progressive=True, optimize=True)
     write_png("p12.png", 4032, 3024, 2, 8, [r.reshape(-1) for r in p12])
     jpeg_case("jpeg-p12", f("p12.jpg"), 900, 900, maxkb=os.path.getsize(f("p12.jpg")) // 1024 + 6 * 1024)
-    jpeg_case("jpeg-p12-progressive", f("p12p.jpg"), 900, 900, maxkb=os.path.getsize(f("p12p.jpg")) // 1024 + 44 * 1024)
+    # progressive at 2/8: the store keeps 25 coefficients and a mask for luma, 49 and a mask for chroma (21.1 MB here;
+    # libjpeg's whole buffer was 36.6 MB), docs/image-progressive-speed.md
+    jpeg_case("jpeg-p12-progressive", f("p12p.jpg"), 900, 900, maxkb=os.path.getsize(f("p12p.jpg")) // 1024 + 26 * 1024)
     case("png-p12", f("p12.png"), 900, 900, area_avg(p12, *fit_box(4032, 3024, 900, 900)),
          maxkb=os.path.getsize(f("p12.png")) // 1024 + 6 * 1024)
     del p12, im
-    # the memory budget (CD_IMAGE_MEM_MAX, 96 MiB): a progressive 4:4:4 JPEG holds 6 bytes a pixel of coefficients, so
-    # 16 MP (96,000,000 bytes) fits and 4096 x 4096 (100,663,296, the budget itself, before libjpeg's other blocks)
-    # does not; a 4:2:0 non-interleaved baseline at 33 MP (3 bytes a pixel) is the same budget from item 1's side
-    for (w, h, sub, prog, name, want) in [(4000, 4000, 0, True, "jpeg-prog444-16mp", "OK"),
-                                          (4096, 4096, 0, True, "jpeg-prog444-over-budget", "TOO_BIG"),
-                                          (7000, 5000, 2, False, "jpeg-noninter-35mp-over-budget", "TOO_BIG")]:
+    # the memory budget (CD_IMAGE_MEM_MAX, 96 MiB). A progressive JPEG's store (src/cdom_image_jpegp.c) keeps, per
+    # block, only the coefficients the IDCT reads: at 8/8 all 64, as libjpeg's 128 bytes, so 4:4:4 holds 6 bytes a pixel
+    # and 4096 x 4096 (100,663,296, the budget itself) does not fit; at 2/8 (a 900 box) 25 and a nonzero mask, 58 bytes
+    # a block, so the same file decodes in under half of it. A 4:2:0 non-interleaved baseline at 33 MP (3 bytes a pixel,
+    # libjpeg's own store) is the same budget from item 1's side.
+    for (w, h, sub, prog, name, box, want) in [(4000, 4000, 0, True, "jpeg-prog444-16mp", 900, "OK"),
+                                               (4096, 4096, 0, True, "jpeg-prog444-over-budget", 4096, "TOO_BIG"),
+                                               (7000, 5000, 2, False, "jpeg-noninter-35mp-over-budget", 900, "TOO_BIG")]:
         g = Image.fromarray(big_picture(w, h))
         path = f(name + ".jpg")
         if prog: g.save(path, "JPEG", quality=90, subsampling=sub, progressive=True)
@@ -401,8 +405,11 @@ def big_cases():
             g.save(f("tmp.jpg"), "JPEG", quality=90, subsampling=sub)
             subprocess.run([JPEGTRAN, "-scans", f("one-per-comp.txt"), "-outfile", path, f("tmp.jpg")], check=True)
         del g
-        if want == "OK": jpeg_case(name, path, 900, 900, maxkb=os.path.getsize(path) // 1024 + 100 * 1024)
-        else: status_case(name, path, 900, 900, want)
+        if want == "OK": jpeg_case(name, path, box, box, maxkb=os.path.getsize(path) // 1024 + 100 * 1024)
+        else: status_case(name, path, box, box, want)
+    # the over-budget file at 2/8: 45.6 MB of coefficients (3 x 262,144 blocks x 58 bytes), and the scaler
+    path = f("jpeg-prog444-over-budget.jpg")
+    jpeg_case("jpeg-prog444-4096-at-2of8", path, 900, 900, maxkb=os.path.getsize(path) // 1024 + 48 * 1024)
 
 def scaler_cases():
     for (sw, sh, dw, dh, o) in [(1000, 750, 900, 675, 1), (1203, 802, 300, 200, 1), (999, 1001, 7, 9, 1), (64, 64, 64, 64, 1),

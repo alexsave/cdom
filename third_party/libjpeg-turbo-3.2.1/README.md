@@ -11,8 +11,13 @@ cdom's image module (`src/cdom_image_jpeg.c`, `APP_MODULES += image`) decodes JP
 ## What is here
 
 The files the 8-bit lossy Huffman decoder (baseline and progressive) compiles and includes, from the archive's `src/`, and its `LICENSE.md` and `README.ijg`.
-Compiled (cdom.mk, `CDOM_IMAGE_VENDOR_SRC`): `jcomapi.c jdapimin.c jdhuff.c jdinput.c jdmarker.c jdmaster.c jdphuff.c jmemmgr.c jpeg_nbits.c` and the ten 8-bit wrappers in `src/wrapper/` (`jdapistd-8.c` and the rest), which include the precision-dependent files (`jdapistd.c` and the rest) as upstream builds them.
-Everything else here is included by those.
+Compiled (cdom.mk, `CDOM_IMAGE_VENDOR_SRC`): `jcomapi.c jdapimin.c jdhuff.c jdinput.c jdmarker.c jdmaster.c jmemmgr.c jpeg_nbits.c` and nine of the ten 8-bit wrappers in `src/wrapper/` (`jdapistd-8.c` and the rest), which include the precision-dependent files (`jdapistd.c` and the rest) as upstream builds them.
+Everything else here is included by those, with two exceptions, both build choices and not edits (docs/image-progressive-speed.md):
+
+- `jdphuff.c`, libjpeg's progressive Huffman decoder, is not compiled: cdom's `src/cdom_image_jpegp.c` defines `jinit_phuff_decoder` in its place (a decoder bit-exact with it, and a smaller coefficient store).
+- `jdcoefct.c`, the coefficient controller, is compiled through cdom's `src/cdom_image_ljt_coef.c` instead of `src/wrapper/jdcoefct-8.c`: the same file, with the same 8-bit setting, under the name `cdom_ljt_d_coef_controller`, which cdom's `jinit_d_coef_controller` (in `src/cdom_image_jpegp.c`) calls for every file that is not progressive.
+
+Both files stay here as the archive has them (`tools/third_party.py check` still compares them); `tests/image/prog.sh` compiles them as upstream does, as the reference that cdom's progressive path is compared with to the byte.
 
 Not here: libjpeg-turbo's own SIMD (`simd/`; the wasm dispatch answering its `jsimd` calls is `src/jsimd/`, cdom's), the encoder, arithmetic coding, lossless JPEG, 12 and 16-bit samples, the stdio and memory data sources (`src/cdom_image_jpeg.c` reads the caller's bytes itself), `jerror.c` (its messages are text cdom never shows; `src/cdom_image_jpeg.c` has its own error manager), `jmemnobs.c` (`src/cdom_image_jpeg.c` is the memory layer, over `cd_alloc_try`, with a budget), colour quantization, merged upsampling, and the float and fast IDCTs.
 
