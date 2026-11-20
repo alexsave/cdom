@@ -235,23 +235,31 @@ run: try {
       if (!el) return null;
       var f = el.firstChild, s = f && f.nextSibling, st = el.style;
       return { tag: el.tagName.toLowerCase(), path: el.path, coordsize: el.coordsize, coordorigin: el.coordorigin,
-        box: [st.position, st.left, st.top, st.width, st.height], display: st.display,
+        box: [st.position, st.left, st.top, st.width, st.height], display: st.display, overflow: st.overflow,
         filled: el.filled, fillcolor: el.fillcolor, stroked: el.stroked, strokecolor: el.strokecolor, strokeweight: el.strokeweight,
-        fill: f ? [f.tagName.toLowerCase(), f.opacity] : null, stroke: s ? [s.tagName.toLowerCase(), s.opacity] : null };
+        fill: f ? [f.tagName.toLowerCase(), f.opacity] : null, stroke: s ? [s.tagName.toLowerCase(), s.opacity] : null,
+        join: s ? [s.joinstyle, s.miterlimit, s.endcap] : null };
     })(document.getElementById(${JSON.stringify(id)}))`);
     ok(svgIn === 0, `no element in the SVG namespace: ${svgIn}`);
+    // As real IE 6 draws it (docs/vml-design.md, section 9): the namespace with two arguments, a behavior rule a tag, and
+    // nothing the stand-in knows IE 6 not to draw (tools/cdp.mjs: a v: node before the namespace, or with no rule, a v:group).
     const setup = await E('__vml.ns.concat(__vml.rules)');
-    ok(JSON.stringify(setup) === JSON.stringify([['v', 'urn:schemas-microsoft-com:vml', '#default#VML'], ['v\\:*', 'behavior:url(#default#VML);display:inline-block']]),
-      `the VML namespace added and the behavior rule made, once: ${JSON.stringify(setup)}`);
+    ok(JSON.stringify(setup) === JSON.stringify([['v', 'urn:schemas-microsoft-com:vml', null],
+      ...['shape', 'fill', 'stroke'].map((t) => ['v\\:' + t, 'behavior:url(#default#VML)'])]),
+      `the VML namespace added and the behavior rules made, once: ${JSON.stringify(setup)}`);
+    const bad = await E('__vml.bad.slice(0)');
+    ok(bad.length === 0, `no VML node made that IE 6 would not draw: ${JSON.stringify(bad)}`);
     const root = await vmlOf('svg');
-    ok(root && root.tag === 'v:group' && root.coordsize === '200,100' && root.coordorigin === '0,0' &&
-      JSON.stringify(root.box.slice(0, 1).concat(root.box.slice(3))) === '["relative","200px","100px"]',
-      `the svg is a v:group of its own size, coordsize 200,100: ${JSON.stringify(root)}`);
+    const rootRect = await E('(function (e) { return [e.offsetWidth, e.offsetHeight]; })(document.getElementById("svg"))');
+    ok(root && root.tag === 'span' && root.display === 'inline-block' && root.overflow === 'hidden' &&
+      JSON.stringify(root.box.slice(0, 1).concat(root.box.slice(3))) === '["relative","200px","100px"]' && JSON.stringify(rootRect) === '[200,100]',
+      `the svg is a span of its own size that clips, 200 by 100: ${JSON.stringify(root)} ${JSON.stringify(rootRect)}`);
     const g = await vmlOf('sg');
-    ok(g && g.tag === 'v:group' && g.coordsize === '1,1' && JSON.stringify(g.box) === '["absolute","0px","0px","1px","1px"]',
-      `the g is a v:group with an identity frame: ${JSON.stringify(g)}`);
+    ok(g && g.tag === 'span' && JSON.stringify(g.box) === '["absolute","0px","0px","",""]',
+      `the g is a span at the svg's top left: ${JSON.stringify(g)}`);
     // The viewBox 0 0 100 50 in 200 by 100 px is a scale of 2: every point times 2 pixels times K (100).
-    const SHAPE = { tag: 'v:shape', coordsize: '100,100', coordorigin: '0,0', box: ['absolute', '0px', '0px', '1px', '1px'], display: '' };
+    const SHAPE = { tag: 'v:shape', coordsize: '100,100', coordorigin: '0,0', box: ['absolute', '0px', '0px', '1px', '1px'], display: '',
+      join: ['miter', '4', 'flat'] };
     const op = (f, s) => ({ fill: ['v:fill', f], stroke: ['v:stroke', s] });
     const want = {
       sp: { path: 'm2000,2000 l6000,2000 l6000,4000 x e', filled: true, fillcolor: '#ff0000', stroked: true, strokecolor: 'blue', strokeweight: '4px', ...op('1', '1') },
