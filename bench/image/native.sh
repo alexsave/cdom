@@ -6,15 +6,14 @@ set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"; top="$(cd "$here/../.." && pwd)"
 . "$top/tools/cdomflags.sh"
 var() { cdom_mk_var "$1"; }
-read -r -a OWN <<< "$(var CDOM_IMAGE_OWN_SRC)"; read -r -a VENDOR <<< "$(var CDOM_IMAGE_VENDOR_SRC)"
-read -r -a MINIZ <<< "$(var CDOM_IMAGE_MINIZ_SRC)"; read -r -a OWNF <<< "$(var CDOM_IMAGE_OWN_CFLAGS)"
-read -r -a VENDORF <<< "$(var CDOM_IMAGE_VENDOR_CFLAGS)"; read -r -a MINIZF <<< "$(var CDOM_IMAGE_MINIZ_CFLAGS)"
+read -r -a OWN <<< "$(var CDOM_IMAGE_OWN_SRC) $(var CDOM_IMAGE_INFLATE_SRC)"; read -r -a VENDOR <<< "$(var CDOM_IMAGE_VENDOR_SRC)"
+read -r -a OWNF <<< "$(var CDOM_IMAGE_OWN_CFLAGS)"
+read -r -a VENDORF <<< "$(var CDOM_IMAGE_VENDOR_CFLAGS)"
 o="$here/build-native"; mkdir -p "$o"
 H=(-std=c2x -O2 -g -fno-omit-frame-pointer -I"$top/src" -I"$top/tests/image")
 cc() { clang "${H[@]}" "$@"; }
 for f in "${OWN[@]}" "$top/src/cdom_image_sjlj.c" "$top/tests/image/host_alloc.c" "$here/native.c"; do cc "${OWNF[@]}" -c -o "$o/$(basename "$f" .c).o" "$f" || exit 1; done
 for f in "${VENDOR[@]}"; do cc "${VENDORF[@]}" -c -o "$o/v_$(basename "$f" .c).o" "$f" || exit 1; done
-for f in "${MINIZ[@]}"; do cc "${MINIZF[@]}" -c -o "$o/m_$(basename "$f" .c).o" "$f" || exit 1; done
 cc -o "$o/native" "$o"/*.o || exit 1
 reps="${1:-20}"; shift || true
 for i in "${@:-p12.jpg p12p.jpg p48.jpg p12.png}"; do for n in $i; do

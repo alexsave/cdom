@@ -7,19 +7,22 @@
 // resizeHeight and resizeQuality "high") and B2 (createImageBitmap, then drawImage scaled, imageSmoothingQuality
 // "high"); the browser arms end with getImageData, the pixels in hand as C's are.
 // The optimization-level arms: C-js-o2, C-js-o3, C-js-mix (make -C bench/image levels).
+// BROWSER=safari runs the same rounds in Safari (tools/safari.mjs) in place of headless Chrome.
 // Usage: node bench/image/run.mjs [rounds=9] [box=900] [arms=C-js,C-eh,B1,B2] [inputs=p12.jpg,p12p.jpg,p48.jpg,p12.png]
 // Writes bench/image/results/raw/<stamp>.tsv (every run) and prints the medians. Kills the Chrome it starts.
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { launch, sleep } from '../../tools/cdp.mjs';
+import { launch as chrome, sleep } from '../../tools/cdp.mjs';
+import { launch as safari } from '../../tools/safari.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 const [rounds = 9, box = 900] = process.argv.slice(2, 4).map(Number);
 const arms = (process.argv[4] || 'C-js,C-eh,B1,B2').split(',');
 const inputs = (process.argv[5] || 'p12.jpg,p12p.jpg,p48.jpg,p12.png').split(',');
 const LOADMAX = +(process.env.LOADMAX || 4);
+const SAFARI = process.env.BROWSER === 'safari';
 for (const i of inputs) if (!fs.existsSync(path.join(here, 'inputs', i))) { console.error(`no inputs/${i}: make -C bench/image inputs`); process.exit(1); }
 
 const srv = http.createServer((q, r) => {
@@ -37,9 +40,10 @@ const med = (v) => { const s = [...v].sort((a, b) => a - b); return s.length % 2
 
 fs.mkdirSync(path.join(here, 'results/raw'), { recursive: true });
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');   // a file name, not a random draw or a seed
-const out = path.join(here, 'results/raw', `${stamp}.tsv`);
+const out = path.join(here, 'results/raw', `${stamp}${SAFARI ? '-safari' : ''}.tsv`);
 fs.writeFileSync(out, 'round\tinput\tarm\tms\tstatus\tw\th\twasm_bytes\tload_before\twaited_s\n');
-const b = await launch();
+const b = SAFARI ? await safari() : await chrome();
+console.log(b.version);
 const all = {};
 try {
   for (let r = 0; r < rounds; r++) {
@@ -49,7 +53,8 @@ try {
         const waited = await gate();
         const loadBefore = load1();
         const page = arm === 'C-simd' ? 'build-simd' : arm.startsWith('C-') ? 'build-' + arm.slice(2) : 'build-js';   // C-js, C-eh, C-js-o2: build-js, build-eh, build-js-o2; C-simd: the CDOM_IMAGE_SIMD=1 page
-        await b.send('Page.navigate', { url: `${base()}/${page}/index.html` });
+        const at = `${base()}/${page}/index.html`;
+        await (SAFARI ? b.navigate(at) : b.send('Page.navigate', { url: at }));
         for (let i = 0; i < 200 && !(await b.evaluate('!!window.READY')); i++) await sleep(25);
         const res = await b.evaluate(`arm(${JSON.stringify(arm.startsWith('C') ? 'C' : arm)}, ${JSON.stringify(`${base()}/inputs/${input}`)}, ${box})`);
         fs.appendFileSync(out, [r, input, arm, res.ms.toFixed(2), res.status ?? '', res.w, res.h, res.bytes ?? '', loadBefore.toFixed(2), waited].join('\t') + '\n');
