@@ -11,7 +11,9 @@ import { launch, sleep, LEGACY, LEVEL, TIER, BELOW, GAPS, FETCHED, TIER_FILES, r
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
-const srv = http.createServer((q, r) => { const f = path.join(root, q.url.split(/[?#]/)[0]);
+// slow.png is answered (404) after 1.5 s: the ?nomount page stays interactive that long.
+const srv = http.createServer((q, r) => { if (q.url.startsWith('/slow.png')) { setTimeout(() => { r.writeHead(404); r.end(); }, 1500); return; }
+  const f = path.join(root, q.url.split(/[?#]/)[0]);
   fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': types[path.extname(f)] }); r.end(b); }); }).listen(0);
 // Event types by name, read from cdom.h's enum (its numbers are cdom's to change).
 const header = fs.readFileSync(path.resolve(root, '../../src/cdom.h'), 'utf8');
@@ -314,6 +316,11 @@ run: try {
   for (let i = 0; i < 100 && !(await E('ERRORS.length')); i++) await sleep(50);
   const startErrs = await E('ERRORS');
   ok(!(await E('!!window.READY')) && startErrs.length === 1 && /no string table/.test(startErrs[0]), `a failed start is thrown again: ${JSON.stringify(startErrs)}`);
+  // A mount id no element has, found while the page is still interactive: an error once the page has loaded, not a wait.
+  await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/legacy.html?nomount` });
+  for (let i = 0; i < 100 && !(await E('ERRORS.length')); i++) await sleep(50);
+  const mountErrs = await E('ERRORS');
+  ok(mountErrs.length === 1 && /no element has the id no-such-mount/.test(mountErrs[0]), `a missing mount is an error once the page has loaded: ${JSON.stringify(mountErrs)}`);
 } finally { await b.close(); srv.close(); }
 console.log(fails ? `${fails} FAILED` : 'all ok');
 process.exit(fails ? 1 : 0);

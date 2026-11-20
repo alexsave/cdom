@@ -19,5 +19,12 @@ window.onerror = function (message, file, line, column, error) {
 var env = { ev: function (t, id, x, y, p, b) { LOG.push([t, id >>> 0, x, y, p, b]); } };
 // ?nolits: a page whose string table is gone, so cdom.start fails; the boot must throw that again for window.onerror.
 if (/nolits/.test(location.search)) window.cdomLits = undefined;
-cdomBoot(['legacy.wasm', 'legacy.simd.wasm'], document.getElementById('m'), env, function (x) { window.X = x; window.READY = true; });
+// ?nomount: a mount id no element has, on a page held interactive by an image the server answers slowly (tools/legacy.mjs),
+// so the start finds DOMContentLoaded long gone: it must fail once the page has loaded, never wait for good.
+var mount = document.getElementById('m');
+if (/nomount/.test(location.search)) {
+  mount = 'no-such-mount';
+  document.write('<img src="slow.png" width="1" height="1">');
+}
+cdomBoot(['legacy.wasm', 'legacy.simd.wasm'], mount, env, function (x) { window.X = x; window.READY = true; });
 </script></body></html>
