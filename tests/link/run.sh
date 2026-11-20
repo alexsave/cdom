@@ -4,6 +4,9 @@
 # contract (contract.c), and cdom.mk's rules (app.mk). Builds into tests/out/link and runs tests/link/run.mjs, then the name gate
 # (tools/edges.mjs), the seed gate (tools/seeds.mjs) and the string-names gate (tools/strings.mjs).
 set -uo pipefail
+# The pages here are checked byte for byte against shim/page.html without the no-script fallback, whose own suite is
+# tests/noscript/run.sh: off for every make below (cdom.mk, CDOM_NOSCRIPT).
+export CDOM_NOSCRIPT=0
 here="$(cd "$(dirname "$0")" && pwd)"
 src="$here/../../src"
 out="$here/../out/link"
@@ -262,10 +265,10 @@ else echo "ok   APP_PAGE ($inc), bundling, refuses a page of the app's own that 
 # not depend on it. APP_TITLE is escaped for HTML.
 tpl="$src/../shim/page.html"
 want_page() { # title, then the start call's first argument: the page with an empty <style>
-  { sed -n '1,5p' "$tpl"; echo "<title>$1</title>"; sed -n '7p' "$tpl"; sed -n '9,13p' "$tpl"
+  { sed -n '1,5p' "$tpl"; echo "<title>$1</title>"; sed -n '7p' "$tpl"; sed -n '9,11p;13,14p' "$tpl"
     cat "$mo/mk_app.wasm.lits"; echo "</script>"; echo "<script>"
     cat "$src/../shim/cdom.min.js"
-    echo "cdom.start($2, \"app\");"; sed -n '16,$p' "$tpl"; } > "$mo/index.want"
+    echo "cdom.start($2, \"app\");"; sed -n '17,$p' "$tpl"; } > "$mo/index.want"
 }
 b64() { base64 < "$1" | tr -d '\n\r'; }
 if ! mk "$mo/index.html" PAGE= 2> "$mo/mk_default.log"; then echo "FAIL the default page ($inc) does not build:"; cat "$mo/mk_default.log"; fail=1
@@ -380,9 +383,9 @@ mo="$out/apps/css-default"; rm -rf "$mo"
 sheets "$apps/css/src" $order > "$out/apps.css.want"
 if ! ak "$apps/css" OUT="$mo" 2> "$out/apps-css.log"; then echo "FAIL the css app does not build:"; cat "$out/apps-css.log"; fail=1
 else
-  { sed -n '1,5p' "$tpl"; echo "<title>css</title>"; sed -n '7p' "$tpl"; cat "$out/apps.css.want"; sed -n '9,13p' "$tpl"
+  { sed -n '1,5p' "$tpl"; echo "<title>css</title>"; sed -n '7p' "$tpl"; cat "$out/apps.css.want"; sed -n '9,11p;13,14p' "$tpl"
     cat "$mo/app.wasm.lits"; echo "</script>"; echo "<script>"; cat "$src/../shim/cdom.min.js"
-    echo "cdom.start(\"data:application/wasm;base64,$(base64 < "$mo/app.wasm" | tr -d '\n\r')\", \"app\");"; sed -n '16,$p' "$tpl"; } > "$mo/index.want"
+    echo "cdom.start(\"data:application/wasm;base64,$(base64 < "$mo/app.wasm" | tr -d '\n\r')\", \"app\");"; sed -n '17,$p' "$tpl"; } > "$mo/index.want"
   if ! cmp -s "$mo/index.want" "$mo/index.html"; then echo "FAIL discovery: the css app's default page is not shim/page.html with its seven stylesheets in byte order:"; diff "$mo/index.want" "$mo/index.html" | cut -c1-160 | head; fail=1
   else echo "ok   discovery: the default page holds src/'s seven stylesheets in byte order of their paths ($order), and none of its dot-names, .css.bak, .CSS or linked folder"; fi
 fi
