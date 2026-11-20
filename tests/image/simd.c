@@ -21,6 +21,8 @@
  *                  above the first, handed over a random number of rows at a time
  *   rgba           cd_image_rgb_to_rgba_simd against the scalar: widths 0 to 64 and some larger
  *   div            the scaler's divide, in doubles: sums up to 255 t, t up to 65500 squared, and the sums at the edges of the quotient
+ *   across grey    cd_image_scaler_across_grey (the PNG path's grey read) against across on the pixels as RGBA: sw 1 to
+ *                  70 and wide rows, every dw from 1 to sw's edges; each grey sum equals the three RGBA ones
  *   across, down   the scaler's two row loops: random sizes from 1 to 64 pixels and more, edge weights and sums, and an
  *                  output that starts as garbage (across writes every sum, down adds to what is there)
  *   adler32        cd_image_adler32 (src/cdom_image_inflate.c, whose 16-byte blocks are SIMD here) against a byte at a time
@@ -458,6 +460,32 @@ static void across_all(void) {
   }
 }
 
+/* The grey read (cd_image_scaler_across_grey, scalar in both builds) against across on the same pixels as RGBA (R = G =
+ * B): each of its dw sums equals the three across makes for that output pixel, and it writes no word past them. The
+ * grey row's last byte is the end of memory, so a read past the row traps. */
+static void across_grey_all(void) {
+  uint32_t k = 0;
+  for (uint32_t i = 0; i < 2500; i++) {
+    cases = k++;
+    uint32_t sw = i < 2100 ? 1 + i / 30 : 1 + below(4032), dw = 1 + below(sw);   /* sw 1 to 70, then wide rows */
+    if (i % 30 == 0) dw = sw;
+    if (i % 30 == 1) dw = 1;
+    uint8_t *g = place(sw, 1, 86), *px = place(sw * 4, 0, 87);
+    for (uint32_t j = 0; j < sw; j++) {
+      g[j] = i % 4 == 0 || i >= 2100 ? byte_edge() : (uint8_t)rnd();
+      px[4 * j] = px[4 * j + 1] = px[4 * j + 2] = g[j]; px[4 * j + 3] = (uint8_t)rnd();
+    }
+    uint32_t *ha = (uint32_t *)place(dw * 3 * 4, 0, 88), *hb = (uint32_t *)place((dw + 1) * 4, 0, 89);
+    for (uint32_t j = 0; j <= dw; j++) hb[j] = rnd();
+    hb[dw] = 0xC0FFEE11u;
+    cd_image_scaler_across_scalar(ha, px, sw, dw);
+    cd_image_scaler_across_grey(hb, g, sw, dw);
+    for (uint32_t j = 0; j < dw; j++)
+      if (hb[j] != ha[3 * j] || ha[3 * j] != ha[3 * j + 1] || ha[3 * j] != ha[3 * j + 2]) { note(1); break; }
+    if (hb[dw] != 0xC0FFEE11u) note(2);
+  }
+}
+
 static void down_all(void) {
   uint32_t k = 0;
   static const uint64_t wgts[] = {0, 1, 2, 255, 256, 65535, 65536, 0xffffffffull, 0x100000000ull, 0x100000005ull, 0xffffffffffffffffull};
@@ -554,6 +582,7 @@ EXPORT("run") uint32_t run(uint32_t loop) {
     case 9: adler_all(); break;
     case 10: unread_cases(); break;
     case 11: runs_all(); break;
+    case 12: across_grey_all(); break;
     default: return 0xffffffffu;
   }
   (void)fails;

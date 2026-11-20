@@ -76,6 +76,21 @@ static inline __attribute__((always_inline)) void across(uint32_t *h, const uint
 }
 void cd_image_scaler_across_scalar(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw) { across(h, px, sw, dw, 4); }
 void cd_image_scaler_across_rgb(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw) { across(h, px, sw, dw, 3); }
+/* across on sw grey pixels, one sum an output pixel (docs/image-png-speed.md, "Grey PNG"): output pixel ox covers sw units
+ * from source pixel c, r units into it (a source pixel is dw units, and dw <= sw): the rest of pixel c, the whole pixels
+ * after it (summed, then weighted by dw once), and left units of the pixel where it ends. The same pieces as across's,
+ * so the same integer sums; the last output pixel ends at the row's end with left 0, so nothing past it is read. */
+void cd_image_scaler_across_grey(uint32_t *h, const uint8_t *px, uint32_t sw, uint32_t dw) {
+  uint32_t c = 0, r = 0;
+  for (uint32_t ox = 0; ox < dw; ox++) {
+    uint32_t sum = (dw - r) * px[c++], left = sw - (dw - r), m = 0;
+    for (; left >= dw; left -= dw) m += px[c++];
+    sum += m * dw;
+    if (left) sum += left * px[c];
+    r = left;
+    h[ox] = sum;
+  }
+}
 
 void cd_image_scaler_down_scalar(uint64_t *a, const uint32_t *h, uint64_t wgt, uint32_t n) {
   for (uint32_t i = 0; i < n; i++) a[i] += wgt * h[i];
