@@ -11,6 +11,28 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import * as acorn from 'acorn';
 import { lacks10 } from './js10.mjs';
 
+// node tools/js1.mjs bench <file> <wasm|ie9|js1> <export> <arg> <reps> [budget]: the mean ms of one call, measured in a
+// process of its own with the file run in the main realm (as a browser runs a script: its globals are the global
+// object's, which a vm context's interceptors would slow); the measurements below call it.
+if (process.argv[2] === 'bench') {
+  const [, , , file, kind, name, arg, reps, budget] = process.argv;
+  let f;
+  if (kind === 'wasm') {
+    const { instance } = await WebAssembly.instantiate(fs.readFileSync(file), { env: { out() {} } });
+    f = () => instance.exports[name](+arg);
+  } else {
+    globalThis.window = globalThis;
+    (0, eval)(fs.readFileSync(file, 'utf8'));
+    const o = globalThis.cdomFactory({ env: { out() {} } });
+    if (budget) f = () => { globalThis.JB = +budget; o[name](+arg); while (o.js1_paused) o.js1_more(); };
+    else f = () => o[name](+arg);
+  }
+  for (let i = 0; i < 20; i++) f();
+  const t0 = process.hrtime.bigint();
+  for (let i = 0; i < +reps; i++) f();
+  console.log(Number(process.hrtime.bigint() - t0) / +reps / 1e6);
+  process.exit(0);
+}
 const top = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const out = path.join(top, 'tests/out');
 let fails = 0;
@@ -141,18 +163,12 @@ async function measure() {
     const ms = Number(process.hrtime.bigint() - t0) / 20e6;
     console.log(`measure data ${f}: ${data.length} bytes, ${stmts(data)} statements; the whole file loads and its factory runs in ${ms.toFixed(2)} ms`);
   }
-  const time = (fn, n) => { fn(); const t0 = process.hrtime.bigint(); for (let i = 0; i < n; i++) fn(); return Number(process.hrtime.bigint() - t0) / n / 1e6; };
-  const I = loadIe9(path.join(out, 'js1diff.wasm.ie9.js')), Jn = loadJs1(js1File, { count: false });
-  const runs = { loop: [() => W.x.loop(100000), () => I.x.loop(100000), () => Jn.o.loop(100000)], rec: [() => W.x.rec(1000), () => I.x.rec(1000), () => Jn.o.rec(1000)] };
-  for (const [k, [w, i, j]] of Object.entries(runs)) {
-    const tw = time(w, 50), ti = time(i, 50), tj = time(j, 50);
-    console.log(`measure ${k}: wasm ${tw.toFixed(3)} ms, ie9 ${ti.toFixed(3)} ms, js1 ${tj.toFixed(3)} ms: js1 is ${(tj / ti).toFixed(2)} times ie9 and ${(tj / tw).toFixed(1)} times wasm`);
+  const bench = (file, kind, name, arg, reps, budget) => { const t = []; for (let i = 0; i < 5; i++) t.push(+execFileSync(process.execPath, [new URL(import.meta.url).pathname, 'bench', file, kind, name, String(arg), String(reps), ...(budget ? [String(budget)] : [])], { encoding: 'utf8' })); return t.sort((x, y) => x - y)[2]; };
+  const ie9File = path.join(out, 'js1diff.wasm.ie9.js');
+  for (const [k, arg, reps] of [['loop', 100000, 50], ['rec', 1000, 200]]) {
+    const tw = bench(wasmFile, 'wasm', k, arg, reps), ti = bench(ie9File, 'ie9', k, arg, reps), tj = bench(js1File, 'js1', k, arg, reps);
+    console.log(`measure ${k}(${arg}), the median of 5 processes: wasm ${tw.toFixed(3)} ms, ie9 ${ti.toFixed(3)} ms, js1 ${tj.toFixed(3)} ms: js1 is ${(tj / ti).toFixed(2)} times ie9 and ${(tj / tw).toFixed(1)} times wasm`);
+    const ts = bench(js1File, 'js1', k, arg, reps, 1000);
+    console.log(`measure ${k}(${arg}) sliced at 1000 steps: ${ts.toFixed(3)} ms, ${((ts / tj - 1) * 100).toFixed(1)}% against unsliced`);
   }
-  const Sl = loadJs1(js1File, { count: false });
-  const sliced = () => { Sl.ctx.JB = 1000; Sl.o.loop(100000); while (Sl.o.js1_paused) Sl.o.js1_more(); };
-  const Un = loadJs1(js1File, { count: false });
-  const ts = time(sliced, 50), tu = time(() => Un.o.loop(100000), 50);
-  const Sr = loadJs1(js1File, { count: false });
-  const tsr = time(() => { Sr.ctx.JB = 1000; Sr.o.rec(1000); while (Sr.o.js1_paused) Sr.o.js1_more(); }, 50), tur = time(() => Un.o.rec(1000), 50);
-  console.log(`measure slicing at 1000 steps: loop ${ts.toFixed(3)} ms against ${tu.toFixed(3)} unsliced (${((ts / tu - 1) * 100).toFixed(1)}%), rec ${tsr.toFixed(3)} against ${tur.toFixed(3)} (${((tsr / tur - 1) * 100).toFixed(1)}%)`);
 }
