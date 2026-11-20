@@ -821,7 +821,7 @@ M = [
   ('sub3-store', 'src/cdom_image_loops.c', 'wasm_v128_store32_lane(cur + i + 8, v, 2);', 'wasm_v128_store32_lane(cur + i + 8, v, 3);', SIMD, 'FAIL unfilter'),  # Sub (3 bytes) stores its last pixel's bytes from the wrong lane
   ('avg-rounds-up', 'src/cdom_image_loops.c', '  const V one = wasm_i8x16_const_splat(1);\n  V a = wasm_i8x16_const_splat(0);\n  uint32_t i = 0;\n  for (; i + 4 <= n; i += bpp) {\n    V b = ld_px(prev + i);', '  const V one = wasm_i8x16_const_splat(0);\n  V a = wasm_i8x16_const_splat(0);\n  uint32_t i = 0;\n  for (; i + 4 <= n; i += bpp) {\n    V b = ld_px(prev + i);', SIMD, 'FAIL unfilter'),  # Avg rounds the half up (the floor is the filter)
   ('paeth-tie', 'src/cdom_image_loops.c', 'mb = wasm_i16x8_le(pb, pc);', 'mb = wasm_i16x8_lt(pb, pc);', SIMD, 'FAIL unfilter'),  # Paeth takes the up-left byte on a tie of b and c (the order of the tie is the filter)
-  ('paeth-upleft', 'src/cdom_image_loops.c', '    c = b;\n', '', SIMD, 'FAIL unfilter'),  # Paeth never moves the up-left pixel along
+  ('paeth-upleft', 'src/cdom_image_loops.c', '    st_px(cur + i, wasm_u8x16_narrow_i16x8(a, a), bpp);\n    c = b;\n', '    st_px(cur + i, wasm_u8x16_narrow_i16x8(a, a), bpp);\n', SIMD, 'FAIL unfilter'),  # Paeth never moves the up-left pixel along
   ('paeth-min', 'src/cdom_image_loops.c', 'wasm_i16x8_min(pb, pc)', 'wasm_i16x8_max(pb, pc)', SIMD, 'FAIL unfilter'),  # Paeth takes a when pa is at most the larger of pb and pc
   ('paeth-mask', 'src/cdom_image_loops.c', '  int m = 0xff;\n  __asm__', '  int m = 0x1ff;\n  __asm__', SIMD, 'FAIL unfilter'),  # Paeth's left value is not taken modulo 256
   # the SIMD pick (cdom.mk's APP_SIMD, shim/cdom.js start(), tools/cdpage.c, shim/boot.js; tests/pick/run.sh, tests/link/run.sh)
