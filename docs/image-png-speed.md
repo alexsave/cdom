@@ -439,3 +439,41 @@ Medians of 9 rounds in ms, the wasm memory after the run in MiB; the per-run tab
 - M5 confirmed: the wasm memory after p12.png is 0.2 MiB above C-old's in both browsers.
 
 So PNG now matches or beats the browser in Safari, and is still 20% behind Chrome's B1; that gap is open work, not this branch's.
+
+## Paeth as a wavefront
+
+Issue #73's step 1.
+On Alex's Mac (Chrome 157) p12.png (4032 x 3024 RGB, 3,016 of its 3,024 rows Paeth) resizes to box 900 in 163.7 ms with the SIMD build, against 131.0 for createImageBitmap (B1).
+Paeth is 70.8 ms of it, about 20 cycles a pixel: `unfilter_paeth` (src/cdom_image_loops.c) is latency-bound on the chain from one pixel to the next, one pixel in flight at a time.
+
+The change: pixel (r+1, x) needs row r up to x (its b and c) and its own left pixel (a), so row r+1 can run behind row r with a chain of its own.
+The SIMD build puts rows r and r+1 in one v128 of 16-bit lanes (row r in lanes 0 to 3, row r+1 in lanes 4 to 7) and rows r+2 and r+3 in a second, each row 2 pixels behind the one above it: four chains in flight.
+The PNG sink hands over a run of up to 4 whole Paeth rows when they are all past the window, in the buffer it already has.
+
+### The lag
+
+A lagging row's b and c are its upper row's pixels, made a few steps earlier and read back from the row's bytes (where the upper row's step stored them).
+With a lag of 1 pixel, row r+1's b at step t is the pixel row r stored at step t-1: the store, the load back (or, in place of memory, a shuffle from lanes 0 to 3 to 4 to 7) and the distance arithmetic on b sit between one step and the next, so the cross-row path is longer than the a chain and is the critical one.
+With a lag of 2, b was stored two steps before it is read and c three (c is the previous step's b, kept in a register), so a whole step's latency (about 20 cycles) covers the store and the load, and the critical chain is a's alone, as in the one-row loop.
+So the lag is 2.
+
+### Predictions (written before the new loop)
+
+The Mac re-measures; the numbers of this VM (x86-64) are indicative, so these are ratios.
+
+- P1. Paeth's self time on p12.png in the SIMD build (bench/image/profile.mjs, a page linked without wasm-opt so it keeps its name section, as docs/image-simd-hand.md says) drops to 0.28 to 0.42 of today's.
+  Falsifier: above 0.64 of today's (on the Mac that is Paeth above 45 ms), which means the wavefront failed.
+- P2. The whole p12.png resize at box 900 (bench/image/run.mjs, 9 interleaved rounds, C-simd against main's C-simd built from origin/main, plus B1) drops by 0.25 to 0.33 of main's time.
+  Falsifier: a drop under 0.15.
+- P3. p12.jpg and p12p.jpg are unchanged within 3% (the JPEG path is not touched).
+  Falsifier: a C-simd median more than 3% from main's on either.
+- P4. The wasm memory after p12.png is unchanged within 0.1 MiB (the sink keeps the same buffer; a run is rows already in it).
+  Falsifier: a change over 0.1 MiB.
+- P5. (scalar) The same 4-row interleave in plain C (the compiler gets four independent chains) drops scalar Paeth to at most 0.6 of today's.
+  Falsifier: above 0.85 of today's; then it is dropped from the scalar build.
+- P6. (mine) P5 is refuted: the scalar Paeth already has bpp independent chains (byte i needs byte i - bpp only), so it is bound by its throughput (about 15 integer operations a byte), not by a chain; the interleave lands at 0.85 to 1.05 of today's in the unfilter microbench.
+  Falsifier: under 0.85.
+- P7. (mine) The lag: in the unfilter microbench (node, the same V8 as Chrome, 3,024 Paeth rows of 4,032 RGB pixels), the wavefront with a lag of 1 is at least 1.10 times the time of the lag of 2.
+  Falsifier: lag 1 within 1.10 of lag 2, or faster (then the cross-row path was not the critical one, and the lag is not what keeps the wavefront fast).
+- P8. (mine) The microbench of the wavefront on runs of 4 is 0.25 to 0.40 of the one-row loop's time (4 chains where there was 1, short of 0.25 by the extra loads and the two vectors' throughput); runs of 2 with a 2-row variant (one vector) are 0.50 to 0.65.
+  Falsifier: runs of 4 above 0.50, or runs of 2 above 0.75.
