@@ -274,6 +274,16 @@ def png_cases():
         assert np.array_equal(np.asarray(Image.open(path).convert("RGBA" if ctype == 6 else "RGB")), px), path
         case(f"png-paeth-runs-{name}", path, 300, 300, area_avg(rgb, *fit_box(403, 300, 300, 300)),
              maxkb=-(-os.path.getsize(path) // 1024) + held)
+    # and rows that repeat every 26 (pixels and filters; 26 rows of 1,210 bytes are 31,460, near the 32 KB window's far
+    # end and under zlib's farthest match, 32,506), so the stream copies each row from the one 26 above: a run that took
+    # rows the sink must still leave filtered (inside the window) would hand those copies unfiltered bytes
+    far = [4, 0, 4, 4, 1, 4, 4, 4, 2, 4, 4, 4, 4, 3, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 1, 2]
+    assert len(far) == 26
+    farp = runs[np.arange(300) % 26]
+    path = write_png("paethruns-far.png", 403, 300, 2, 8, [r.reshape(-1) for r in farp], plan=[far[i % 26] for i in range(300)])
+    assert np.array_equal(np.asarray(Image.open(path).convert("RGB")), farp), path
+    case("png-paeth-runs-far-rgb", path, 300, 300, area_avg(farp, *fit_box(403, 300, 300, 300)),
+         maxkb=-(-os.path.getsize(path) // 1024) + 577)
 
 # ---------- JPEG ----------
 
