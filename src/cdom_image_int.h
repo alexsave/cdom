@@ -96,6 +96,11 @@ struct cd_image_dec {
   void *fmt;               /* the format's state (cdom_image_jpeg.c, cdom_image_png.c), made when it is needed */
   uint32_t warnings;       /* libjpeg's warnings so far (the tests compare them) */
 };
+/* cd_image_resize, and libjpeg's warnings through *warnings (when not 0): what the tests compare a fed decode with. */
+uint32_t cd_image_decode(const uint8_t *p, uint32_t len, uint32_t max_w, uint32_t max_h, uint8_t **rgba, uint32_t *w,
+                         uint32_t *h, uint32_t *warnings);
+/* libjpeg's warnings so far, of a fed decoder (the tests compare them). */
+uint32_t cd_image_dec_warnings(const cd_image_dec *d);
 uint32_t cd_image_jpeg_put(cd_image_dec *d, const uint8_t *p, uint32_t n);
 void cd_image_jpeg_end(cd_image_dec *d);
 uint32_t cd_image_png_put(cd_image_dec *d, const uint8_t *p, uint32_t n);
