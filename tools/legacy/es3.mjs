@@ -113,6 +113,9 @@ export function es3(name, src, minified = false) {
     prev = t;
   }
   if (es5.size) throw new Error(`${name} uses ES5 names polyfills-es3.js does not supply: ${[...es5].join(' ')}`);
+  // Firefox 1.0 crashes calling a function whose __proto__ was set (Babel's generator runtime did it), and IE 6 to 8
+  // have no __proto__ at all: the tier's files name none.
+  if (/\b__proto__\b/.test(src)) throw new Error(`${name} names __proto__, which crashes Firefox 1.0 on a function`);
   return src;
 }
 

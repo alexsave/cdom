@@ -24,14 +24,13 @@
     }
     return out;
   };
-  /* The one-argument form: what Babel's helpers ask of it. */
+  /* The one-argument form. ES3 has no object without a prototype, so Object.create(null) is refused rather than
+   * answered with one that inherits Object.prototype. */
   if (!O.create) O.create = function (proto, props) {
-    if (props !== undefined) throw new TypeError("Object.create: no property descriptors on this browser");
+    if (props !== undefined || proto === null) throw new TypeError("Object.create: no property descriptors or null prototype on this browser");
     function T() {}
     T.prototype = proto;
-    var o = new T();
-    if (proto === null) o.__proto__ = null;
-    return o;
+    return new T();
   };
   if (!Array.isArray) Array.isArray = function (v) { return O.prototype.toString.call(v) === "[object Array]"; };
   if (!Date.now) Date.now = function () { return new Date().getTime(); };
