@@ -2,7 +2,8 @@
 # of github.com/alexsave/foolish; nothing of it is copied here) into out/:
 #   out/uttt.html          the page: every tier, from WebAssembly down to the frames tier (Netscape 2 to 4, IE 3 and 4)
 #   out/uttt.wasm          the module the WebAssembly tier starts
-#   out/uttt.wasm.ie9.js   the same module as words-build JavaScript, which the frames tier (and IE 6 to 9) runs
+#   out/uttt.wasm.ie9.js   the same module as words-build JavaScript, which IE 6 to 9 run
+#   out/uttt.wasm.js1.js   and as JavaScript 1.0 from tools/js1c, which the frames tier runs
 #   out/cdom.frames.js     the frames tier's shim
 # make -C demo/uttt [FOOLISH=path/to/foolish]; serve out/ and open uttt.html, or uttt.html?<code>.
 CDOM := $(abspath ../..)
@@ -22,7 +23,7 @@ APP_PAGE_SRC := uttt.html
 APP_PAGE := out/uttt.shim.html
 CDOM_NOSCRIPT := 0
 
-all: out/uttt.html out/uttt.wasm.ie9.js out/cdom.frames.js
+all: out/uttt.html out/uttt.wasm.ie9.js out/uttt.wasm.js1.js out/cdom.frames.js
 .PHONY: all clean
 include $(CDOM)/cdom.mk
 
@@ -34,6 +35,8 @@ out/uttt.html: out/uttt.shim.html $(LEGACY_BUILD) $(CDOM)/shim/boot.js
 	$(NODE) $(LEGACY_BUILD) page $< $@
 out/uttt.wasm.ie9.js: out/uttt.wasm $(LEGACY_BUILD)
 	$(NODE) $(LEGACY_BUILD) app-ie9 $< $@
+out/uttt.wasm.js1.js: out/uttt.wasm $(CDOM)/tools/js1.sh $(CDOM)/tools/js1c.c
+	$(CDOM)/tools/js1.sh $< $@
 out/cdom.frames.js: $(LEGACY_BUILD) $(CDOM)/tools/legacy/frames.js
 	@mkdir -p out
 	$(NODE) $(LEGACY_BUILD) shim-frames $@

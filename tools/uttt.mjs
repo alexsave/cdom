@@ -31,12 +31,12 @@ if (!process.env.UTTT_PROFILE) {
   fs.writeFileSync(path.join(out, 'expect.txt'), execFileSync(path.join(out, 'uttt_expect'), [CODE], { encoding: 'utf8' }));
   if (process.env.UTTT_MEASURE) {
     const sz = (f) => { const b = fs.readFileSync(path.join(out, f)); return [b.length, zlib.gzipSync(b, { level: 9 }).length]; };
-    const files = ['uttt.html', 'cdom.frames.js', 'uttt.wasm.ie9.js'], s = files.map(sz);
+    const files = ['uttt.html', 'cdom.frames.js', 'uttt.wasm.js1.js'], s = files.map(sz);
     for (let i = 0; i < files.length; i++) console.log(`measure ${files[i]} ${s[i][0]} bytes, ${s[i][1]} gzipped`);
     console.log(`measure the frames tier's three files ${s.reduce((a, x) => a + x[0], 0)} bytes, ${s.reduce((a, x) => a + x[1], 0)} gzipped`);
     console.log(`measure uttt.wasm ${sz('uttt.wasm')[0]} bytes, ${sz('uttt.wasm')[1]} gzipped`);
-    const ref = path.join(top, 'tests/out/frames.wasm.ie9.js');
-    if (fs.existsSync(ref)) console.log(`measure uttt.wasm.ie9.js is ${s[2][0] - fs.statSync(ref).size} bytes larger than tests/out/frames.wasm.ie9.js`);
+    const ref = path.join(top, 'tests/out/frames.wasm.js1.js');
+    if (fs.existsSync(ref)) console.log(`measure uttt.wasm.js1.js is ${s[2][0] - fs.statSync(ref).size} bytes larger than tests/out/frames.wasm.js1.js`);
   }
   let failed = 0;
   for (const [profile, legacy] of [['webassembly', ''], ['frames', 'frames'], ['frames-ns4', 'frames']]) {
@@ -64,8 +64,13 @@ const b = await launch();
 let fails = 0;
 setTimeout(() => { console.log('FAIL no result within 170 s'); process.exit(1); }, 170000).unref();
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', `${PROFILE}:`, m); } else console.log('ok  ', `${PROFILE}:`, m); };
-const E = b.evaluate;
-const D = FRAMES ? 'frames[0].document' : 'document';
+// On the frames tier the page is a frameset: ET runs in the top window, E in the app frame (cdomApp: the shim and the app), where
+// the board is the parent's frame 0 (docs/frames-design.md, section 3).
+const ET = b.evaluate;
+const E = FRAMES ? (x) => ET(`frames[1].eval(${JSON.stringify(x)})`) : ET;
+const D = FRAMES ? 'parent.frames[0].document' : 'document';
+// Navigates; on the frames tier waits for the early script's frameset (an evaluate sent while it replaces the page goes unanswered).
+const go = async (url) => { await b.send('Page.navigate', { url }); if (FRAMES) await sleep(600); };
 const q = (sel) => `${D}.querySelector(${JSON.stringify(sel)})`;
 const mouse = (type, x, y, buttons = 0, button = 'none') =>
   b.send('Input.dispatchMouseEvent', { type, x, y, buttons, button, clickCount: type === 'mouseMoved' ? 0 : 1 });
@@ -77,8 +82,9 @@ async function click(sel) {
   await mouse('mouseReleased', x, y, 0, 'left'); await sleep(40);
 }
 async function until(expr, tries = 100) {
-  for (let i = 0; i < tries && !(await E(expr)); i++) await sleep(20);
-  return E(expr);
+  const now = async () => { try { return await E(expr); } catch { return false; } };
+  for (let i = 0; i < tries && !(await now()); i++) await sleep(20);
+  return now();
 }
 const draws = () => (FRAMES ? E('cdomF.draws') : 0);
 const status = () => E(`(function () { var e = ${q('#status')}; return e ? e.innerText.replace(/^\s+|\s+$/g, "") : null; })()`);
@@ -135,11 +141,11 @@ const port = srv.address().port;
 const page = (query) => `http://127.0.0.1:${port}/uttt.html${query}`;
 
 run: try {
-  await b.send('Page.navigate', { url: page(flavour ? `?${flavour.slice(1)}` : '') });
+  await go(page(flavour ? `?${flavour.slice(1)}` : ''));
   ok(await booted(), 'booted');
   if (!(await E('!!window.READY'))) break run;
   ok(...tierFetched(await E(FETCHED), 'uttt'));
-  if (FRAMES) ok(await E('frames.length === 1 && typeof document.getElementById === "undefined"'), 'the page is the frames tier: a frameset of one frame, no getElementById');
+  if (FRAMES) ok(await ET('frames.length === 2 && typeof document.getElementById === "undefined"') && await E('typeof document.getElementById === "undefined"'), 'the page is the frames tier: a frameset of the view and the app frame, no getElementById');
   else ok(await E('frames.length === 0'), 'the page is the WebAssembly tier: no frameset');
   ok((await status()) === 'No game open.' && !(await E(`!!${q('#c0')}`)), `no code: no board, and the status says so: ${JSON.stringify(await status())}`);
 
@@ -209,7 +215,7 @@ run: try {
   }
 
   // The address's query opens the game at once.
-  await b.send('Page.navigate', { url: page(`?${CODE}${flavour}`) });
+  await go(page(`?${CODE}${flavour}`));
   ok(await booted(), 'booted with the code in the query');
   await until(`(function () { var e = ${q('#status')}; return !!e && e.innerText.indexOf("Move 0 of") === 0; })()`);
   ok((await boardIs(0, 'the query')) && (await E(`${q('#code')}.value`)) === CODE, `uttt.html?<code> opens the game: ${JSON.stringify(await status())}`);
