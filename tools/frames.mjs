@@ -98,6 +98,10 @@ const port = srv.address().port;
   const shimSrc = fs.readFileSync(path.join(root, '../../tools/legacy/frames.js'), 'utf8');
   ok((shimSrc.match(/\.indexOf\(/g) || []).length === 2 && /function cf_idx\(s, t\) \{\n  if \(s\.length == 0\)/.test(shimSrc),
     'frames.js calls indexOf only in cf_idx and cf_idxFrom, which answer an empty string first');
+  // Netscape 2 reads -2147483648 and 2147483648 as equal to null: a timer's token (cdom's own range starts at 2^31, Play's) is kept
+  // as a string, so a pending timer is not taken for a fired one (docs/frames-design.md 17; the real browser is the only test of ==).
+  ok(shimSrc.includes('cf_tok["t" + cf_timers] = "k" + token;') && shimSrc.includes('token = parseInt(key.substring(1, key.length));'),
+    'frames.js keeps a timer token as the string "k" and the token, never as a bare number compared with null');
   const max = +/\nconst BLOCK_MAX = (\d+);/.exec(fs.readFileSync(path.join(root, '../../tools/legacy/build.mjs'), 'utf8'))[1];
   const tags = [...app.matchAll(/<script[^>]*>/gi)].map((m) => m[0]), blockBytes = [...app.matchAll(/<script>\n([\s\S]*?)\n<\/script>/g)].map((m) => Buffer.byteLength(m[1]));
   ok(tags.length > 1 && tags.every((t) => t === '<script>') && !/<script[^>]*\ssrc\s*=/i.test(app) && blockBytes.length === tags.length,

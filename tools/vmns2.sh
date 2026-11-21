@@ -12,10 +12,12 @@ case "$b" in
   ns2) exe='C:\NS202\Program\netscape.exe' ;; ns3) exe='C:\NS304\Program\netscape.exe' ;; ns4) exe='C:\NS408\Program\netscape.exe' ;;
   ie4) exe='C:\Program Files\Utilu IE Collection\IE401\iexplore.exe' ;;
 esac
+# drawn: the view's pixel at 550,250 is white, the view is the same as 5 s before, and (the uttt board's grid line) the pixel at
+# 87,300 is not white: a hung start is grey, and a page not yet drawn is blank white
 white() { python3 -c "
-from PIL import Image
-p=Image.open('/Users/alex/VMs/ie6-xp/shots/.w.png').convert('RGB').getpixel((550,250))
-print(1 if p==(255,255,255) else 0)"; }
+from PIL import Image, ImageChops
+a=Image.open('/Users/alex/VMs/ie6-xp/shots/.w.png').convert('RGB'); b=Image.open('/Users/alex/VMs/ie6-xp/shots/.w0.png').convert('RGB')
+print(1 if a.getpixel((550,250))==(255,255,255) and a.getpixel((87,300))!=(255,255,255) and not ImageChops.difference(a.crop((0,60,620,420)),b.crop((0,60,620,420))).getbbox() else 0)"; }
 for try in 1 2 3 4; do
   for p in netscape.exe iexplore.exe notepad.exe mshta.exe; do python3 "$here/vmagent.py" send "kill $p" >/dev/null; done
   sleep 4
@@ -26,8 +28,9 @@ for try in 1 2 3 4; do
   t=0; drawn=0
   while [ $t -lt "$wait" ]; do
     sleep 5; t=$((t+5))
+    cp /Users/alex/VMs/ie6-xp/shots/.w.png /Users/alex/VMs/ie6-xp/shots/.w0.png 2>/dev/null
     python3 /Users/alex/VMs/ie6-xp/vm.py shot /Users/alex/VMs/ie6-xp/shots/.w.png >/dev/null
-    if [ "$(white)" = 1 ]; then drawn=1; break; fi
+    if [ $t -ge 15 ] && [ "$(white)" = 1 ]; then drawn=1; break; fi
     # no request for the app document 40 s after the start: hung before the frames
     if [ $t -ge 40 ] && ! grep -q "\.app\.html" <(tail -5 "$log"); then break; fi
   done
