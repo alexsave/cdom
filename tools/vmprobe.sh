@@ -1,6 +1,6 @@
 #!/bin/bash
 # vmprobe.sh <ns2|ns3|ns4|ie4> <mark tag> <page and query> <wait s> [shot name]: ends every browser in the guest, opens
-# http://10.0.2.2:8110/<page and query> in the browser, waits up to <wait> s for a mark of <mark tag> in the server's log
+# http://10.0.2.2:8110/<page and query> in the browser, waits <wait> s, then prints the marks of <mark tag> in the server's log
 # (/Users/alex/VMs/ie6-xp/serve-frames-real.log), then prints the marks (unescaped) and, with a shot name, saves the
 # screen as shots/<name>.png.  It does not close the browser: the caller looks, then runs the next probe (which ends it).
 b="$1"; tag="$2"; page="$3"; wait="$4"; shot="$5"
