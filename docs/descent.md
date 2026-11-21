@@ -863,7 +863,7 @@ Q2, scale (a 608 x 400 area: 38x25, 76x50, 152x100, 304x200, 608x400 cells at 16
 Q3, run-length (one IMG of WIDTH=run * cell for a run of one colour).
 
 - (a) a photo-like dithered picture: runs are short, about 1.2 cells on average, so the tags drop by only 15 to 25 percent, and the time by the same.
-- (b) a flat pixel-art picture (the uttt board, the Game Boy art scaled to the grid): runs average 8 to 20 cells, so the tags drop by 85 to 95 percent and the time with them; a 4 px frame, impossible in the plain form, then draws.
+- (b) a flat pixel-art picture (the uttt board, flat 4-grey pixel art scaled to the grid): runs average 8 to 20 cells, so the tags drop by 85 to 95 percent and the time with them; a 4 px frame, impossible in the plain form, then draws.
 - (c) the checkerboard: no run is longer than 1, no saving at all (0 percent), and the worst case is the plain case.
 
 Q4, rewrite cost.
@@ -958,13 +958,13 @@ Q3, run lengths (one IMG of WIDTH = run * cell; in the TABLE each run is a TD wi
 | photo, 4 | 11,520 | 10,085 (-12 %) | 11.3 | 11.0 | 380,684 | 333,593 | 38.5 |
 | photo, 2 | 46,080 | 40,359 (-12 %) | 31.6 | 29.9 | 1,521,564 | 1,333,031 | - |
 | photo, 1 | 184,320 | 161,826 (-12 %) | 141.4 | 150.8 | 6,084,284 | 5,342,053 | - |
-| Durak art, 8 | 2,880 | 1,163 (-60 %) | 5.3 | 6.2 | 95,362 | 39,080 | 4.9 |
-| Durak art, 4 | 11,520 | 3,392 (-71 %) | 8.7 | 11.9 | 380,682 | 113,187 | 8.2 |
-| Durak art, 2 | 46,080 | 6,851 (-85 %) | 26.7 | 8.0 | 1,521,562 | 228,694 | 20.9 |
-| Durak art, 1 | 184,320 | 9,837 (-95 %) | 153.8 | 8.1 | 6,084,282 | 329,617 | 36.2 |
+| Flat art, 8 | 2,880 | 1,163 (-60 %) | 5.3 | 6.2 | 95,362 | 39,080 | 4.9 |
+| Flat art, 4 | 11,520 | 3,392 (-71 %) | 8.7 | 11.9 | 380,682 | 113,187 | 8.2 |
+| Flat art, 2 | 46,080 | 6,851 (-85 %) | 26.7 | 8.0 | 1,521,562 | 228,694 | 20.9 |
+| Flat art, 1 | 184,320 | 9,837 (-95 %) | 153.8 | 8.1 | 6,084,282 | 329,617 | 36.2 |
 | checkerboard, 8 / 4 | 2,880 / 11,520 | the same (0 %) | 1.9 / 6.5 | 1.7 / 5.4 | 95,364 / 380,684 | +8 bytes | - |
 
-(The Durak win screen is /Users/alex/Dev/foolish-gameboy-art/gameboy/art/mockups/w_seoul.png, its top 640 x 391 pixels scaled with a box filter; the checkerboard has 2 colours, so its time is the cost of tags without a palette: 1.9 s at 8 px.)
+(The flat art is a 4-grey pixel-art night skyline, 640 pixels wide, given by FB_ART; its top 640 x 391 pixels are scaled with a box filter; the checkerboard has 2 colours, so its time is the cost of tags without a palette: 1.9 s at 8 px.)
 Runs cut the tags of flat art by 60 to 95 percent and its HTML by 60 to 95 percent, and its time at 2 and 1 pixels by 70 and 95 percent (153.8 s to 8.1 s); at 8 and 4 pixels the page time is the palette's fetch and does not follow the tag count (art at 4 pixels took 8.7 s plain and 11.9 s in runs).
 On the dithered photo runs save 12 percent of tags and nothing in time; on the checkerboard nothing.
 The time is not a function of the tag count alone: the art at 1 pixel in runs has 9,837 tags and 8 s, 1,000 times the pixels of its tags.
@@ -979,8 +979,8 @@ Q4, rewriting (the picture's HTML held in the control frame as string literals o
 | photo 8 px in 16 tiles, one tile (1/16) rewritten | 1.3 (tile 0) and 2.0 (a middle tile) | |
 | photo 4 px in 16 tiles, all 16 rewritten | 10.8 | |
 | photo 4 px in 16 tiles, one tile rewritten | 1.6 (tile 0) and 3.0 (a middle tile) | |
-| Durak art 4 px in runs (3,392 tags) | 16.0 | 11.9 |
-| Durak art 2 px in runs (6,851 tags) | 22.5 to 23.9 | 8.0 |
+| Flat art 4 px in runs (3,392 tags) | 16.0 | 11.9 |
+| Flat art 2 px in runs (6,851 tags) | 22.5 to 23.9 | 8.0 |
 | an empty page (the blank) over a picture | 0.7 to 1.0 | |
 
 A rewrite costs what a load costs for the photo (the tags are what costs), and more than a load for flat art in runs (three times at 2 px).
