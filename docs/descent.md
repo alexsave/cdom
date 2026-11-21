@@ -829,3 +829,200 @@ The plan works in Netscape 2.02: nothing in it needs more than a small part of t
 Keep the block constant at 30000: a block of 1.5 MB runs, so the constant is not near anything, and 30000 keeps each block quick to read.
 What can break the plan is not the size of a block or the total but the names: the app frame's script must hold fewer than 65,536 distinct global names and string literals in all (js1c's output for demo/uttt has a few hundred), and a literal of a few hundred KB costs seconds in the lexer, so the string table is better as many literals of a few KB joined by `+` (it already is, `\001"+"4`).
 A 150 KB app frame loads in about 2.3 s on this guest, a rewrite of a 5 KB view takes about 1.5 s, and that is the number to design the frames tier's per-click cost around.
+
+## A framebuffer of 1x1 GIFs
+
+Alex's question: how far can a picture made of stretched 1x1 GIFs go in the real Netscape 2.02, and can it fill a 640 x 480 window?
+The technique: a palette of 256 one-pixel GIFs (the 216 web-safe colours and 40 more greys, about 40 bytes each), and a picture written as IMG tags stretched with WIDTH and HEIGHT, either one TABLE cell per block (BORDER=0 CELLPADDING=0 CELLSPACING=0) or plain rows of IMGs ended by BR with no white space between tags.
+Every page is made by tools/gen_probe_ns2_fb.py (pages and GIFs go to tests/out/fb/, which git ignores), served by tools/vmserve.py, opened by tools/vmns2.sh through the guest agent.
+A page's time is read from the server's log (the page's GET to the mark an onLoad handler requests) and from the screen (the first screendump that stays the same), both in the Mac's wall clock; the guest's clock runs about 3 times slow, which does not matter for either.
+
+### What I expect, written before the first run
+
+Q1, correctness.
+
+- A stretched 1x1 GIF is a solid block, and neighbours in one row touch when no white space lies between the tags: no horizontal gap in the IMG+BR form.
+- Vertical: in the IMG+BR form each row is a line, and Netscape 2 keeps the line's text descent under images that sit on the baseline.
+  Prediction: a stray strip of 3 to 5 pixels under every row (the descent of the default font), so rows are not solid; ALIGN=TOP or ALIGN=ABSMIDDLE (or a BR-free line that holds only the image) does not remove it for sure, I expect it to shrink it to 0 to 2 pixels.
+  Falsifier: no strip at all.
+- In a TABLE with CELLPADDING=0 and CELLSPACING=0 each cell is as tall as its image plus the same baseline strip, so the table has the same strips; its cells touch horizontally.
+  Prediction: both forms show the strip; the TABLE is the one that needs the least care for columns (every cell has its own width), the IMG+BR the least for rows.
+- A WIDTH=1 HEIGHT=1 cell works (a 1 pixel block is drawn), but in the TABLE form the row is a whole text line tall (about 16 pixels), so it is only a 1 pixel picture where nothing else is in the row.
+  A 1x1 IMG is in the IMG+BR form also a whole line tall.
+  So the smallest cell that behaves is about the height of a line, until the strip is removed.
+
+Q2, scale (a 608 x 400 area: 38x25, 76x50, 152x100, 304x200, 608x400 cells at 16, 8, 4, 2, 1 pixels).
+
+- Time grows linearly with the tag count in the IMG+BR form and a little faster in the TABLE form (Netscape 2 lays out a table only when it has the whole of it).
+  Prediction, IMG+BR: 950 tags (16 px) 3 s, 3,800 tags (8 px) 10 s, 15,200 tags (4 px) 40 s, 60,800 tags (2 px) 3 minutes or a crash, 243,200 tags (1 px) a crash or a hang (memory, or the window does not draw).
+- Prediction, TABLE: the same sizes cost 2 to 3 times as much: 16 px 6 s, 8 px 25 s, 4 px several minutes (over 100 s) or an out of memory alert; 2 and 1 px do not finish.
+- HTML size is about 40 bytes a cell in the IMG+BR form (`<IMG SRC=XX.gif WIDTH=16 HEIGHT=16>`), 70 bytes in the TABLE form; so 4 px is 600 KB and 2 px 2.4 MB.
+- Where it breaks: an alert, a crash box, or a view that stays grey with "Waiting for reply"; my guess for the first break is the 2 px and 1 px sizes, by memory (about 100 bytes of the engine per image and per cell) and by time, not by a count limit.
+- Falsifier: 2 px in IMG+BR draws in under 60 s.
+
+Q3, run-length (one IMG of WIDTH=run * cell for a run of one colour).
+
+- (a) a photo-like dithered picture: runs are short, about 1.2 cells on average, so the tags drop by only 15 to 25 percent, and the time by the same.
+- (b) a flat pixel-art picture (the uttt board, flat 4-grey pixel art scaled to the grid): runs average 8 to 20 cells, so the tags drop by 85 to 95 percent and the time with them; a 4 px frame, impossible in the plain form, then draws.
+- (c) the checkerboard: no run is longer than 1, no saving at all (0 percent), and the worst case is the plain case.
+
+Q4, rewrite cost.
+
+- A rewrite by document.open, write and close into a frame costs what the same page costs to load, plus about 1.5 s of fixed cost (the earlier 5 KB rewrite took 1.5 s on the wall).
+  So a rewrite is within 20 percent of a load of the same HTML, and the plain 8 px picture (about 4 KB of IMG tags in 3,800 tags, 150 KB of HTML) is a rewrite of 12 s.
+- Splitting the screen into tiles (frames) so only one tile is rewritten: a small update (one tile of 1/16 of the picture) costs about the fixed cost plus 1/16 of the picture's time, so a 76x50 picture updates a tile in about 2.5 s, the whole picture's 12 s not paid.
+  Each extra frame costs about 0.3 s of load time; 16 tiles are the sensible limit.
+  Falsifier: a tile rewrite costs the same as the whole picture (the engine relays out the whole frameset).
+- A redraw is never faster than 1 per second on this guest: "a few redraws a second" is not reachable; a still picture is the use.
+
+Q5, palette.
+
+- 256 distinct GIFs are each fetched once and kept (the server's log shows 256 GETs for the first page and none for a second page); the first load of all 256 costs 256 requests of about 40 bytes each, about 15 to 40 s on the guest (the log's gap between the first and the last).
+  Falsifier: a GIF fetched again for each IMG that names it (Netscape 2 has no cache of that kind), which the log would show as hundreds of GETs of one name.
+- The guest's display depth decides the colours: if 256 colours (8 bit), the web-safe colours map exactly and the 40 greys are dithered or snapped; if 24 bit, all 256 are exact.
+  The VM's QEMU is Cirrus VGA at the guest's chosen depth; I expect 16 or 24 bit, so exact colours (a 16 bit display shows the 40 greys within 8 levels).
+
+Q6, other limits.
+
+- Netscape 2 has a hard limit on the number of images in a page: the earlier probes put few images in a page, so nothing is known; I expect no hard limit below 10,000 (a 16 bit count would give 65,536), and broken-image icons only when the connection count runs out (it fetches each distinct GIF once, so the 256 are fine).
+- Layout time grows faster than the tag count past about 20,000 tags (the line is re-measured on each addition), so time per tag is not constant: the 4 px picture costs more than 4 times the 8 px picture per tag.
+- Memory: the 1 GB guest does not run out first; the limit is Netscape 2's own heap (16-bit-era allocator, a 32-bit build) at a few tens of MB.
+
+### Clickable cells, expected before its runs
+
+Alex's addition: wrap the cells in links, `<A HREF="javascript:..."><IMG ... BORDER=0></A>`, at three granularities on a flat pixel-art picture (a few coloured shapes): one link per cell, one per horizontal run, one per shape (every run of a shape shares one handler id).
+The page is tools/gen_probe_ns2_fb.py's `lk_*` family; a click is made with the QEMU tablet, the handler reports by navigating a frame to /mark/<id>, and the status text is read from the screen.
+
+- C1, a click on a cell calls the handler with the id of its link: right in all three granularities.
+  The handler is `javascript:h(7)` in the page's own frame (the earlier probes called a function of the same document that way), reported in a second frame as /mark/c<id>.
+  Falsifier: a click reaches the wrong id, or none (a link with a stretched image as its only content is not hit-tested on its pixels).
+- C2, BORDER=0 removes the link border: yes (Netscape 2 draws a 2 pixel border round a linked image without it, and honours BORDER=0 on IMG since 1.1).
+  Links keep the tiling gap-free: yes, a link adds no white space between tags; the picture is pixel-identical to the unlinked one.
+  Falsifier: any magenta or link-coloured pixel inside the picture.
+- C3, page size: a link adds about 30 bytes per tag (`<A HREF="javascript:h(123)">` and `</A>`) to the 40 of an IMG, so the page is 1.7 times the unlinked one per cell, and fewer tags (runs, shapes) mean a proportionally smaller page.
+  Load time: Netscape 2 keeps every link as an anchor object in the page's tables, so I expect 1.3 to 2 times the unlinked picture's time for the same tag count; per cell at 8 px (2,880 links) about 15 s against 5.9 s.
+- C4, onMouseOver on those links fires and sets the status text: yes (`onMouseOver="window.status='x'; return true"`); I expect the status bar to change within 1 s of the pointer arriving, and the cost not to depend on the granularity (one handler call).
+  Falsifier: the status does not change (onMouseOver is in the binary's event list, but not on an anchor around an image).
+
+### What the runs found
+
+The runs are of 2026-11-21 in the XP VM, Netscape 2.02 maximised with no toolbar and no location bar: the view is 636 x 376 pixels (x 2 to 637, y 54 to 429 of the 640 x 480 screen), and a page's first pixel is at 12,69 (body margins of about 10 and 15).
+Every picture is 576 x 320 pixels unless the line says otherwise, on a magenta page (a gap would show as magenta); a screendump is compared with the picture the page was made from at the centre of every cell (tools/fbcheck.py), so "exact" means 0 cells different.
+Times are the Mac's wall seconds from the page's GET to the request of its last image, and the screen was still for 8 s after it.
+The raw lines are in results/ns2fb_runs.txt, the screendumps in /Users/alex/VMs/ie6-xp/shots/ns2fb-*.png and ns2fb_*.png (ns2fb-best-photo-576x320.png is the best full picture, ns2fb-best-art-592x320.png the best flat one, ns2fb-final.png the empty desktop).
+
+A bug of tools/vmserve.py came first, found by the first run (700 images took 160 s): Netscape 2 sends keep-alive but does not end an answer at its Content-Length, it waits for the connection to close, so under HTTP/1.1 every batch of its 4 connections sat out the server's 20 s timeout.
+The server now answers `Connection: close` to a Mozilla/2 user agent.
+The hangs of the first Q1 runs ("Waiting for reply" with a blank magenta view) were the same cause, and the "start hang" of the frames tier probably is too.
+Earlier probes of this document that wrote many images or ran past 20 s may carry the 20 s steps.
+
+Q1, correctness (an 8 x 8 checker of black and white 16 pixel cells, and one of 1 pixel cells):
+
+| layout | result |
+| --- | --- |
+| rows of IMG ended by BR, no white space; also with ALIGN=TOP, ABSMIDDLE, ABSBOTTOM, BOTTOM, and in FONT SIZE=1 | exact 128 x 128, 0 magenta, every cell 16 x 16 |
+| TABLE BORDER=0 CELLPADDING=0 CELLSPACING=0, one IMG per TD; also with ALIGN=TOP, ABSMIDDLE, ABSBOTTOM, and in FONT SIZE=1 | exact 128 x 128, 0 magenta |
+| the same with 1 x 1 pixel cells (rows and table, default and ALIGN=TOP) | exact 8 x 8, a pixel each, 0 magenta |
+
+No stray strip under a row, in any variant: a line that holds only images is exactly as tall as the tallest of them, a 1 pixel image included.
+Neighbours touch with no white space between tags, and a 1x1 cell works.
+The whole palette is drawn exactly: 256 of 256 cells have the colour of their GIF, so the guest's display is 24 bit (or 32), not 256 colours, and nothing dithers (shots/ns2fb_pal.png).
+
+Q2, the scale.
+HTML bytes are the file's size; row is IMG+BR, tab is the TABLE; a "-" is not run.
+
+| cells | cell px | tags | row s | row bytes | tab s | tab bytes |
+| --- | --- | --- | --- | --- | --- | --- |
+| 36 x 20 | 16 | 720 | 4.1 | 25,425 | 3.5 | 32,059 |
+| 72 x 40 | 8 | 2,880 | 5.9 | 95,364 | 9.3 | 121,538 |
+| 144 x 80 | 4 | 11,520 | 11.3 | 380,684 | 45.4 | 484,818 |
+| 288 x 160 | 2 | 46,080 | 31.6 | 1,521,564 | never drew (see below) | 1,937,138 |
+| 576 x 320 | 1 | 184,320 | 141.4 | 6,084,284 | - | 7,744,818 |
+
+(The dithered photo, 35 to 76 distinct palette colours; every one of these rows is exact: 0 cells different, 0 magenta.)
+The largest grid that renders correctly is the whole 576 x 320 area at 1 pixel, 184,320 IMG tags and 6 MB of HTML, in rows: 141 s.
+A row costs about 0.6 to 0.8 ms a tag after a fixed 3 s (the first requests of the palette), linear from 720 tags to 184,320.
+A TABLE costs the same at 720 and 2,880 tags and grows faster than the tag count after that: 4 px takes 45 s for 11,520 cells, and at 2 px (46,080 cells) the page had not drawn after 10 minutes in two tries; Netscape 2 then shows the alert "A network error occurred while Netscape was receiving data (Connection reset by peer)" and a blank view (the cut comes at the same ten minutes with the server's timeout at 600 s and at 3600 s, and the server logs no error).
+The 1 pixel TABLE was not tried.
+Nothing crashed, no broken image appeared, and the memory of the 1 GB guest was never the limit.
+
+How much fits in the window: a page wider than about 596 pixels (592 worked, 600 wrapped) or taller than about 330 (320 worked, 336 grew a scrollbar) shows a vertical scrollbar, which takes 16 pixels, and the rows then wrap and the picture is garbled (shots/ns2fb-wrap-too-wide-616.png).
+So the biggest picture that is exact is 592 x 320 pixels, 79 percent of the view's area (62 percent of the 640 x 480 screen); the margins and the scrollbar allowance are Netscape 2's, and its body has no way to a zero margin.
+592 x 320 of flat art at 1 pixel, as runs, took 10.2 s and was exact (ns2fb-best-art-592x320.png).
+
+Q3, run lengths (one IMG of WIDTH = run * cell; in the TABLE each run is a TD with COLSPAN=run, and a last row of 1 pixel high cells fixes the column widths: without COLSPAN the cells of a ragged row take the widths of the cells above them and the picture is shifted, 2,222 of 2,704 cells wrong in the first try).
+
+| picture, cell px | tags plain | tags runs | row s plain | row s runs | row bytes plain | row bytes runs | tab s runs |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| photo, 8 | 2,880 | 2,522 (-12 %) | 5.9 | 5.8 | 95,364 | 83,789 | 7.9 |
+| photo, 4 | 11,520 | 10,085 (-12 %) | 11.3 | 11.0 | 380,684 | 333,593 | 38.5 |
+| photo, 2 | 46,080 | 40,359 (-12 %) | 31.6 | 29.9 | 1,521,564 | 1,333,031 | - |
+| photo, 1 | 184,320 | 161,826 (-12 %) | 141.4 | 150.8 | 6,084,284 | 5,342,053 | - |
+| Flat art, 8 | 2,880 | 1,163 (-60 %) | 5.3 | 6.2 | 95,362 | 39,080 | 4.9 |
+| Flat art, 4 | 11,520 | 3,392 (-71 %) | 8.7 | 11.9 | 380,682 | 113,187 | 8.2 |
+| Flat art, 2 | 46,080 | 6,851 (-85 %) | 26.7 | 8.0 | 1,521,562 | 228,694 | 20.9 |
+| Flat art, 1 | 184,320 | 9,837 (-95 %) | 153.8 | 8.1 | 6,084,282 | 329,617 | 36.2 |
+| checkerboard, 8 / 4 | 2,880 / 11,520 | the same (0 %) | 1.9 / 6.5 | 1.7 / 5.4 | 95,364 / 380,684 | +8 bytes | - |
+
+(The flat art is a 4-grey pixel-art night skyline, 640 pixels wide, given by FB_ART; its top 640 x 391 pixels are scaled with a box filter; the checkerboard has 2 colours, so its time is the cost of tags without a palette: 1.9 s at 8 px.)
+Runs cut the tags of flat art by 60 to 95 percent and its HTML by 60 to 95 percent, and its time at 2 and 1 pixels by 70 and 95 percent (153.8 s to 8.1 s); at 8 and 4 pixels the page time is the palette's fetch and does not follow the tag count (art at 4 pixels took 8.7 s plain and 11.9 s in runs).
+On the dithered photo runs save 12 percent of tags and nothing in time; on the checkerboard nothing.
+The time is not a function of the tag count alone: the art at 1 pixel in runs has 9,837 tags and 8 s, 1,000 times the pixels of its tags.
+
+Q4, rewriting (the picture's HTML held in the control frame as string literals of 20,000 bytes, written by `document.open`, `write`, `close` into another frame from a link, an absolute BASE first: without it the written images were never requested, so a picture written by the frames tier needs the page's URL as a BASE; a click is made with the tablet and the wall time is from the tap to the last change of the screen, 0.7 s of it the tap itself):
+
+| picture | rewrite s | the same as a page load s |
+| --- | --- | --- |
+| photo 8 px, 2,880 tags, 95 KB | 5.5 (5.6 the first time, with the palette's requests) | 5.9 |
+| photo 4 px, 11,520 tags, 380 KB | 11.6 | 11.3 |
+| photo 8 px in 16 frames (4 x 4 tiles), all 16 rewritten | 5.5 | |
+| photo 8 px in 16 tiles, one tile (1/16) rewritten | 1.3 (tile 0) and 2.0 (a middle tile) | |
+| photo 4 px in 16 tiles, all 16 rewritten | 10.8 | |
+| photo 4 px in 16 tiles, one tile rewritten | 1.6 (tile 0) and 3.0 (a middle tile) | |
+| Flat art 4 px in runs (3,392 tags) | 16.0 | 11.9 |
+| Flat art 2 px in runs (6,851 tags) | 22.5 to 23.9 | 8.0 |
+| an empty page (the blank) over a picture | 0.7 to 1.0 | |
+
+A rewrite costs what a load costs for the photo (the tags are what costs), and more than a load for flat art in runs (three times at 2 px).
+A tile rewrite of 1/16 of a picture costs 1.3 to 3 s, against 5.5 and 11 s for the whole, so tiles make a small change fast and cost nothing to the whole (16 frames draw the same 5.5 s as one).
+The frames have 6 pixel borders between them, so a tiled picture is not gap-free (ns2fb-tiles-4x4.png).
+
+Q5, the palette: the 256 one-pixel GIFs (35 bytes each) are each requested once: pal.html (256 IMG, 256 files) 256 requests in 20.4 s, 80 ms a GIF, 4 connections at a time; pal4.html (the same 256 cells four times, 1,024 tags) 256 requests, none twice.
+Netscape 2 does keep an image per URL for a page; a picture's GIF requests are as many as its colours (35 to 76 for the dithered photo), a few of them twice when two connections ask for the same new colour at once (up to 6 of 82).
+So the palette costs about 80 ms a colour on the first page, and a small palette is the real saving: the checkerboard (2 colours) draws 2,880 tags in 1.9 s against 5.9 s for the photo.
+
+Q6, other limits: there is no count of images or cells in Netscape 2 that this reached (184,320 images, 6 MB of HTML in one page, 76 distinct GIFs drawn at once); what limits a TABLE is the time, which grows past 10,000 cells, and what limits a picture's size is the view and its scrollbar.
+Layout was never run out of memory; the guest stays quick to answer the clicks afterwards.
+
+Clickable cells (a flat picture of five shapes at 8 px, 72 x 40 cells; the links in lk_*.html, the clicks and the pointer by the tablet):
+
+| link per | links | page bytes | load s | clicks right |
+| --- | --- | --- | --- | --- |
+| nothing (the plain picture) | 0 | 121,429 | 2.1 | |
+| cell | 2,880 | 215,359 | 4.4 | 4 of 4 (ids 73, 512, 1476, 1692) |
+| horizontal run | 134 | 10,494 | 1.4 | 4 of 4 (ids 1, 12, 67, 76) |
+| shape (each run of a shape names the shape's id, 5 ids) | 134 | 10,336 | 1.8 | 6 of 6 (ids 0 to 4, and two different runs of the disc both gave 2) |
+| shape, with onMouseOver | 134 | 15,294 | 1.8 | status "id 2" shown 0.2 s after the pointer arrived (the poll's step), for 3 of 3 |
+
+- C1: a click calls the handler with the id of its link, in all three; the handler's navigation reaches the server 0.9 s after the tap (1.4 s for the first cell link).
+- C2: BORDER=0 removes the link border, and the linked pictures are pixel-identical to the unlinked one (0 pixels different in the view, all four pages).
+- C3: a link adds about 33 bytes to the 40 of a cell, and 0.8 ms to its time (2,880 links 2.3 s); per run and per shape the picture is a tenth of the plain page, and loads in the same time as the plain one.
+- C4: onMouseOver fires on a link round an image and sets the status text; it costs nothing visible.
+
+### The predictions, marked
+
+- Q1: a stray strip of 3 to 5 pixels under each row: wrong, there is none in any variant (rows or table, any ALIGN); neighbours touch: right; a 1x1 cell works: right, but the prediction that its row is a text line tall was wrong, it is 1 pixel; the table "needs the least care for columns": wrong, both are exact.
+- Q2: row times 3, 10, 40 s then 3 min or a crash: wrong, 4.1, 5.9, 11.3, 31.6 s and 141 s at 1 pixel, with no crash (the 1 pixel picture of 184,320 tags is the whole area, drawn); table 2 to 3 times as long: right at 8 px (1.6), wrong at 4 px (4 times) and right that 2 px does not finish (more than 10 minutes, then a network alert, not an out of memory); HTML 40 bytes a cell: right (33 in the row, 42 in the table); the break by memory: wrong, by the table's time.
+- Q3: (a) a 15 to 25 percent cut: the tags 12 percent, the time none; (b) 85 to 95 percent: right for the tags at 2 and 1 pixels (85 and 95 percent) and for their time (70 and 95 percent), wrong at 8 and 4 pixels (60 and 71 percent of the tags, no time); (c) 0 percent: right.
+- Q4: a rewrite is within 20 percent of a load: right for the photo (5.5 against 5.9 s), wrong for flat art in runs (up to 3 times); the 8 px picture in 12 s: wrong, 5.5 s; a tile costs the fixed cost plus a 1/16: right (1.3 to 3 s); 0.3 s a frame: wrong, 16 frames cost nothing extra; "no redraw faster than 1 a second": right for pictures (5 s and more), a blank in 0.7 s and a tile in 1.3 s are the fast ones.
+- Q5: each GIF once: right; 15 to 40 s for the first 256: right (20.4 s); a 24 bit display: right (all 256 exact).
+- Q6: no hard image limit below 10,000: right (184,320 ran); layout time past 20,000 tags faster than the count: right for the TABLE, wrong for rows (linear); memory a few tens of MB: unmeasured.
+- Clickable cells: C1 right; C2 right (0 pixels different); C3 about 30 bytes a link: right (33), 1.3 to 2 times the time: right per cell (2.1 times), and runs and shapes are smaller and no slower; C4 right (0.2 s, the poll's step).
+
+### What this means
+
+A picture of 1x1 GIFs is a real framebuffer in Netscape 2.02, at any resolution that fits the view: 592 x 320 pixels at 1 pixel per cell, exact, in 24 bit colour from 256 palette entries.
+For a still picture use rows of IMG with BR (a table is slower and fails past about 10,000 cells), and runs of one colour wherever the picture is flat (95 percent fewer tags, 8 s for the whole area).
+A dithered photo at 1 pixel is 184,320 tags and 141 s; at 4 pixels (144 x 80 cells) it is 11 s, at 8 pixels 6 s.
+For something that updates, a whole-picture rewrite costs what a load costs (5.5 s at 72 x 40 cells, 11.6 s at 144 x 80), so a few redraws a second are out of reach; one redraw every 5 to 10 seconds is what a full small picture allows, and a change confined to a tile of a 4 x 4 split costs 1.3 to 3 s.
+Cells that react to a click cost a link each: at 72 x 40 one link per run or per shape makes a clickable picture of about 10 KB that draws in 2 s, and a link per cell 215 KB and 4.4 s.

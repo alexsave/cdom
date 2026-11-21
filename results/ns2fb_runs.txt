@@ -1,0 +1,320 @@
+== fb_photo_16_row 12:30:55
+fb_photo_16_row.html: got=True end=4.1s lastimg=4.0s screen-last-change=4.5s gif-requests=35 distinct=35 refetched=0 settled=True waited=15s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 35
+down x=14: #3366FF16 #3399CC16 #6666FF16 #6666CC16 #6699FF16 #6666CC16 #6699CC16 #6699FF16 #9999CC32 #6699CC16 #9999CC16 #33663316 #40404016 #33663316 #00330032 #28282827
+along y=71: #3366FF48 #3366CC16 #3366FF16 #3399FF16 #3366FF16 #3366CC16 #3366FF16 #3399FF16 #3366CC16 #3366FF16 #3366CC32 #3366FF48 #3399CC16 #3366FF128 #3366CC16 #3366FF16 #3399FF16 #6666FF16 #3366FF16 #6666CC16 #3366FF16 #3366CC16 #3399FF16 #3366FF16
+expected 36x20 cells: centres compared 676, different 0
+== fb_photo_16_tab 12:31:56
+fb_photo_16_tab.html: got=True end=3.5s lastimg=3.5s screen-last-change=3.6s gif-requests=35 distinct=35 refetched=0 settled=True waited=14s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 35
+down x=14: #3366FF16 #3399CC16 #6666FF16 #6666CC16 #6699FF16 #6666CC16 #6699CC16 #6699FF16 #9999CC32 #6699CC16 #9999CC16 #33663316 #40404016 #33663316 #00330032 #28282827
+along y=71: #3366FF48 #3366CC16 #3366FF16 #3399FF16 #3366FF16 #3366CC16 #3366FF16 #3399FF16 #3366CC16 #3366FF16 #3366CC32 #3366FF48 #3399CC16 #3366FF128 #3366CC16 #3366FF16 #3399FF16 #6666FF16 #3366FF16 #6666CC16 #3366FF16 #3366CC16 #3399FF16 #3366FF16
+expected 36x20 cells: centres compared 676, different 0
+== fb_photo_8_row 12:32:37
+fb_photo_8_row.html: got=True end=5.9s lastimg=5.9s screen-last-change=6.4s gif-requests=45 distinct=45 refetched=0 settled=True waited=17s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 45
+down x=14: #3366FF8 #6666CC8 #3366FF8 #6666FF8 #6699CC8 #3366FF8 #6699FF8 #6699CC8 #3366CC8 #6699FF16 #6699CC24 #6699FF8 #6699CC8 #6699FF16 #6699CC8 #9999CC8 #6699CC8 #9999CC8 #6699CC8 #9999CC8 #33663348 #0033008 #3333008 #0066008 #0033008 #3366338 #0066008 #2E2E2E8 #3366003
+along y=71: #3366FF24 #3366CC8 #3366FF8 #3399FF8 #3366FF8 #3366CC8 #3366FF8 #3399FF8 #3366CC8 #3366FF8 #3366CC16 #3366FF24 #3399CC8 #3366FF64 #3366CC8 #3366FF8 #3399FF8 #6666FF8 #3366FF8 #6666CC8 #3366FF8 #3366CC8 #3399FF8 #3366FF8 #3399FF8 #3366CC8 #3366FF16 #3366CC8 #3366FF16 #6666FF8 #3366CC8 #3366FF24 #3366CC8 #3366FF8 #3399FF8 #3366FF24 #3399CC8 #3366FF8 #6666FF8 #3366FF8 #6666FF8 #3366FF8 #6666FF8 #3366CC8 #3399FF8 #3366CC8 #3366FF16 #3399CC8 #6666FF8 #3366FF16 #3366CC8 #3366FF8
+expected 72x40 cells: centres compared 2704, different 0
+== fb_photo_8_tab 12:33:36
+fb_photo_8_tab.html: got=True end=9.3s lastimg=9.2s screen-last-change=9.5s gif-requests=45 distinct=45 refetched=0 settled=True waited=20s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 45
+down x=14: #3366FF8 #6666CC8 #3366FF8 #6666FF8 #6699CC8 #3366FF8 #6699FF8 #6699CC8 #3366CC8 #6699FF16 #6699CC24 #6699FF8 #6699CC8 #6699FF16 #6699CC8 #9999CC8 #6699CC8 #9999CC8 #6699CC8 #9999CC8 #33663348 #0033008 #3333008 #0066008 #0033008 #3366338 #0066008 #2E2E2E8 #3366003
+along y=71: #3366FF24 #3366CC8 #3366FF8 #3399FF8 #3366FF8 #3366CC8 #3366FF8 #3399FF8 #3366CC8 #3366FF8 #3366CC16 #3366FF24 #3399CC8 #3366FF64 #3366CC8 #3366FF8 #3399FF8 #6666FF8 #3366FF8 #6666CC8 #3366FF8 #3366CC8 #3399FF8 #3366FF8 #3399FF8 #3366CC8 #3366FF16 #3366CC8 #3366FF16 #6666FF8 #3366CC8 #3366FF24 #3366CC8 #3366FF8 #3399FF8 #3366FF24 #3399CC8 #3366FF8 #6666FF8 #3366FF8 #6666FF8 #3366FF8 #6666FF8 #3366CC8 #3399FF8 #3366CC8 #3366FF16 #3399CC8 #6666FF8 #3366FF16 #3366CC8 #3366FF8
+expected 72x40 cells: centres compared 2704, different 0
+== fb_photo_4_row 12:34:40
+fb_photo_4_row.html: got=True end=11.3s lastimg=11.3s screen-last-change=11.4s gif-requests=57 distinct=57 refetched=0 settled=True waited=24s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 57
+down x=14: #3366FF8 #6699FF4 #3366FF4 #3366CC4 #3366FF8 #6699FF4 #3366FF4 #3366CC4 #6666FF4 #3399CC4 #6666FF4 #6699FF4 #3366CC4 #6699FF4 #3399CC4 #6699FF8 #6699CC4 #6699FF4 #6666CC4 #3399CC4 #6699CC16 #9999CC4 #6699FF4 #6699CC12 #9999CC4 #6699CC8 #9999CC4 #6699CC4 #6699FF4 #9999CC4 #6699CC4 #9999CC4 #6699FF4 #6699CC8 #9999CC4 #99CCCC4 #6699CC4 #9999CC4 #33663316 #3434344 #3366004 #33663320 #2222224 #3333004 #2E2E2E4 #1C1C1C4 #2E2E2E4 #2828288 #0066004 #2E2E2E4 #0033008 #2E2E2E4 #3366004 #0033004 #0066334 #3366003
+along y=71: #3366FF12 #3366CC4 #3366FF4 #3399FF4 #3366FF4 #3366CC4 #3366FF4 #3399FF4 #3366CC4 #3366FF4 #3366CC8 #3366FF12 #3399CC4 #3366FF32 #3366CC4 #3366FF4 #3399FF4 #6666FF4 #3366FF4 #6666CC4 #3366FF4 #3366CC4 #3399FF4 #3366FF4 #3399FF4 #3366CC4 #3366FF8 #3366CC4 #3366FF8 #6666FF4 #3366CC4 #3366FF12 #3366CC4 #3366FF4 #3399FF4 #3366FF12 #3399CC4 #3366FF4 #6666FF4 #3366FF4 #6666FF4 #3366FF4 #6666FF4 #3366CC4 #3399FF4 #3366CC4 #3366FF8 #3399CC4 #6666FF4 #3366FF8 #3366CC4 #3366FF4 #3366CC4 #3399FF4 #3366FF4 #6666FF4 #3366CC4 #3366FF8 #3366CC8 #3366FF4 #3399FF4 #3366CC4 #3366FF4 #6699FF4 #3366FF8 #6666CC4 #
+expected 144x80 cells: centres compared 10904, different 0
+== fb_photo_4_tab 12:36:01
+fb_photo_4_tab.html: got=True end=45.4s lastimg=45.3s screen-last-change=45.5s gif-requests=57 distinct=57 refetched=0 settled=True waited=56s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 57
+down x=14: #3366FF8 #6699FF4 #3366FF4 #3366CC4 #3366FF8 #6699FF4 #3366FF4 #3366CC4 #6666FF4 #3399CC4 #6666FF4 #6699FF4 #3366CC4 #6699FF4 #3399CC4 #6699FF8 #6699CC4 #6699FF4 #6666CC4 #3399CC4 #6699CC16 #9999CC4 #6699FF4 #6699CC12 #9999CC4 #6699CC8 #9999CC4 #6699CC4 #6699FF4 #9999CC4 #6699CC4 #9999CC4 #6699FF4 #6699CC8 #9999CC4 #99CCCC4 #6699CC4 #9999CC4 #33663316 #3434344 #3366004 #33663320 #2222224 #3333004 #2E2E2E4 #1C1C1C4 #2E2E2E4 #2828288 #0066004 #2E2E2E4 #0033008 #2E2E2E4 #3366004 #0033004 #0066334 #3366003
+along y=71: #3366FF12 #3366CC4 #3366FF4 #3399FF4 #3366FF4 #3366CC4 #3366FF4 #3399FF4 #3366CC4 #3366FF4 #3366CC8 #3366FF12 #3399CC4 #3366FF32 #3366CC4 #3366FF4 #3399FF4 #6666FF4 #3366FF4 #6666CC4 #3366FF4 #3366CC4 #3399FF4 #3366FF4 #3399FF4 #3366CC4 #3366FF8 #3366CC4 #3366FF8 #6666FF4 #3366CC4 #3366FF12 #3366CC4 #3366FF4 #3399FF4 #3366FF12 #3399CC4 #3366FF4 #6666FF4 #3366FF4 #6666FF4 #3366FF4 #6666FF4 #3366CC4 #3399FF4 #3366CC4 #3366FF8 #3399CC4 #6666FF4 #3366FF8 #3366CC4 #3366FF4 #3366CC4 #3399FF4 #3366FF4 #6666FF4 #3366CC4 #3366FF8 #3366CC8 #3366FF4 #3399FF4 #3366CC4 #3366FF4 #6699FF4 #3366FF8 #6666CC4 #
+expected 144x80 cells: centres compared 10904, different 0
+== fb_photo_2_row 12:37:20
+fb_photo_2_row.html: got=True end=31.6s lastimg=31.6s screen-last-change=31.8s gif-requests=64 distinct=64 refetched=0 settled=True waited=43s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 64
+down x=14: #3366FF4 #3366CC2 #6666FF2 #3399FF2 #3366FF2 #3399CC2 #6666FF2 #3399FF4 #6699CC4 #3366FF2 #3399CC2 #3366CC2 #6699FF2 #3366FF2 #6699FF2 #6666FF2 #3366CC2 #6666CC2 #6699FF2 #3366FF2 #6699FF2 #3366CC2 #6666FF2 #6699FF2 #3399CC2 #6666CC2 #3366FF2 #6666FF2 #6699CC2 #6666FF2 #3399CC2 #6666FF2 #6699CC2 #6699FF2 #3399CC2 #6666FF2 #3399FF2 #6699CC2 #6699FF2 #3399CC2 #6699CC2 #6666CC2 #6666FF2 #6699CC2 #6699FF4 #6699CC8 #6699FF2 #6699CC4 #6699FF2 #6699CC4 #9999FF2 #6699CC4 #9999CC2 #6699CC2 #6699FF2 #9999CC2 #6699FF2 #9999CC4 #6699CC6 #9999CC2 #6699CC2 #6699FF2 #9999CC2 #66CCCC2 #99CCFF2 #9999CC4 #99CCC
+along y=71: #6699CC2 #3366FF4 #6699FF2 #3366CC2 #6666FF2 #3366FF2 #6699FF2 #3366FF6 #6699CC2 #3366FF4 #3399CC2 #3366FF2 #6666FF2 #3366FF2 #3399FF2 #3366FF2 #3399FF2 #3366CC2 #6699FF2 #3366CC2 #3399FF2 #6666FF2 #3366FF6 #6666CC2 #3399FF2 #3366FF6 #6666CC2 #3366CC2 #6666FF2 #3399FF2 #6666FF2 #3366FF2 #3399FF2 #6666CC2 #3366FF2 #3399CC2 #6666FF2 #3399FF2 #6666FF2 #3399CC2 #3399FF2 #3366FF2 #6666FF2 #3366FF2 #6699CC2 #3366FF2 #6666FF2 #3366FF2 #3366CC2 #6699FF2 #3366FF2 #3399FF2 #3366FF4 #6666FF2 #3366CC2 #3366FF2 #6666FF2 #3366FF2 #3366CC2 #3399FF2 #6699CC2 #3366FF4 #6666FF2 #3366CC2 #3366FF2 #3399FF2 #3366F
+expected 288x160 cells: centres compared 43455, different 0
+== fb_photo_2_tab (first try, server timeout 600 s)
+Netscape 2 was still laying out the table (1.9 MB, 46,080 cells, 64 distinct GIFs requested) when the server's send timeout of 600 s cut the page's connection: alert "A network error occurred while Netscape was receiving data (Connection reset by peer)", view magenta, nothing drawn.  The page needs more than 10 minutes.
+== fb_photo_1_row 12:58:33
+fb_photo_1_row.html: got=True end=141.4s lastimg=130.3s screen-last-change=142.0s gif-requests=76 distinct=76 refetched=0 settled=True waited=155s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 76
+down x=14: #3366FF1 #6699CC1 #3366FF5 #3366CC1 #6666CC1 #6699FF1 #3366FF1 #6699FF1 #3366FF1 #6699FF1 #6666FF1 #3366FF1 #6699FF1 #3366FF2 #6666FF1 #3366FF1 #6699CC1 #3366FF2 #6699FF1 #3366FF1 #6666CC1 #3366FF1 #6699FF2 #6666FF1 #3399FF2 #6666CC1 #3366CC1 #6699FF1 #3366FF1 #6666CC1 #6666FF1 #6699CC1 #6699FF1 #6699CC1 #3399FF1 #6699CC1 #3399FF1 #6699FF1 #3366CC1 #6699FF1 #3366CC1 #6666FF1 #6699FF3 #6666CC1 #6699CC1 #6699FF1 #6666CC1 #6699FF3 #6699CC2 #3399FF1 #6699FF1 #3399CC1 #6699FF1 #6666FF1 #6699FF1 #6666FF1 #3399FF1 #6666FF1 #6699FF2 #6666FF1 #6699CC1 #6699FF1 #6666CC1 #6699CC1 #6666FF1 #3399CC1 #6699C
+along y=71: #3366FF3 #3366CC1 #3399FF1 #6666FF1 #3366FF1 #6666CC1 #3399FF1 #3366FF1 #6666CC1 #3366FF1 #6666FF1 #3366FF2 #6699FF1 #3366CC1 #3399FF1 #6666FF1 #3366FF2 #3366CC1 #3399FF1 #3366FF2 #3366CC1 #3366FF1 #3399FF1 #3366FF1 #6666CC1 #3366FF1 #3399FF1 #3366FF1 #3366CC1 #6666FF1 #3399FF1 #3366FF2 #3399CC1 #3366FF1 #6666FF1 #3366CC1 #6699FF1 #3366FF3 #6699FF1 #3366FF2 #3399CC1 #3399FF1 #6666FF1 #3366FF1 #3366CC1 #6666FF1 #3366FF1 #6666FF1 #3366FF1 #6699FF1 #3366FF1 #6699FF1 #6666CC1 #3366FF1 #3366CC1 #3366FF1 #6699FF1 #3366CC2 #6666FF1 #6666CC1 #6699FF1 #3366FF2 #6699FF1 #3366FF1 #6666CC1 #3366FF1 #6666C
+expected 576x320 cells: centres compared 174170, different 0
+== fb_art_16_row 12:59:23
+fb_art_16_row.html: got=True end=3.1s lastimg=3.0s screen-last-change=3.3s gif-requests=32 distinct=32 refetched=0 settled=True waited=14s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 32
+down x=14: K32 #0A0A0A16 K160 #22222216 #2E2E2E16 #46464616 #64646416 #70707016 #64646411
+along y=71: K64 #04040416 K224 #0A0A0A16 K208 #16161616 #22222216 K16
+expected 36x20 cells: centres compared 676, different 0
+== fb_art_16_row_rle 13:00:18
+fb_art_16_row_rle.html: got=True end=3.5s lastimg=3.3s screen-last-change=4.0s gif-requests=33 distinct=32 refetched=1 settled=True waited=15s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 32
+down x=14: K32 #0A0A0A16 K160 #22222216 #2E2E2E16 #46464616 #64646416 #70707016 #64646411
+along y=71: K64 #04040416 K224 #0A0A0A16 K208 #16161616 #22222216 K16
+expected 36x20 cells: centres compared 676, different 0
+== fb_art_8_row 13:01:14
+fb_art_8_row.html: got=True end=5.3s lastimg=5.3s screen-last-change=5.7s gif-requests=43 distinct=43 refetched=0 settled=True waited=16s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 43
+down x=14: K216 #3434348 #3A3A3A8 #2828288 #3A3A3A8 #4646468 #5858588 #6464648 #66666616 #5252528 #6666663
+along y=71: K312 #0A0A0A8 K224 #1616168 K24
+expected 72x40 cells: centres compared 2704, different 0
+== fb_art_8_row_rle 13:01:54
+fb_art_8_row_rle.html: got=True end=6.2s lastimg=5.6s screen-last-change=6.5s gif-requests=44 distinct=43 refetched=1 settled=True waited=18s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 43
+down x=14: K216 #3434348 #3A3A3A8 #2828288 #3A3A3A8 #4646468 #5858588 #6464648 #66666616 #5252528 #6666663
+along y=71: K312 #0A0A0A8 K224 #1616168 K24
+expected 72x40 cells: centres compared 2704, different 0
+== fb_art_8_tab 13:02:45
+fb_art_8_tab.html: got=True end=6.1s lastimg=6.1s screen-last-change=6.3s gif-requests=43 distinct=43 refetched=0 settled=True waited=18s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 43
+down x=14: K216 #3434348 #3A3A3A8 #2828288 #3A3A3A8 #4646468 #5858588 #6464648 #66666616 #5252528 #6666663
+along y=71: K312 #0A0A0A8 K224 #1616168 K24
+expected 72x40 cells: centres compared 2704, different 0
+== fb_art_8_tab_rle 13:03:33
+fb_art_8_tab_rle.html: got=True end=3.6s lastimg=5.7s screen-last-change=6.2s gif-requests=44 distinct=43 refetched=1 settled=True waited=17s
+box x 2..637 y 69..429 = 636 x 361, magenta inside 154196, distinct colours 259
+down x=4: M299
+along y=71: M10 K312 #0A0A0A8 M16 K224 M16 #1616168 M42
+expected 72x40 cells: centres compared 2708, different 2222
+== fb_art_4_row 13:04:40
+fb_art_4_row.html: got=True end=9.6s lastimg=9.6s screen-last-change=9.9s gif-requests=44 distinct=44 refetched=0 settled=True waited=21s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 44
+down x=14: K220 #2222224 #8282824 #1616164 #2E2E2E4 #2828284 #2222224 #4040404 #1010104 #52525247
+along y=71: K576
+expected 144x80 cells: centres compared 10904, different 0
+== fb_art_4_row_rle 13:05:32
+fb_art_4_row_rle.html: got=True end=11.9s lastimg=11.0s screen-last-change=12.1s gif-requests=46 distinct=44 refetched=1 settled=True waited=23s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 44
+down x=14: K220 #2222224 #8282824 #1616164 #2E2E2E4 #2828284 #2222224 #4040404 #1010104 #52525247
+along y=71: K576
+expected 144x80 cells: centres compared 10904, different 0
+== fb_art_4_tab_rle 13:06:30
+fb_art_4_tab_rle.html: got=True end=8.2s lastimg=7.8s screen-last-change=8.4s gif-requests=47 distinct=44 refetched=3 settled=True waited=21s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 44
+down x=14: K220 #2222224 #8282824 #1616164 #2E2E2E4 #2828284 #2222224 #4040404 #1010104 #52525247
+along y=71: K576
+expected 144x80 cells: centres compared 10904, different 0
+== fb_art_2_row_rle 13:07:07
+fb_art_2_row_rle.html: got=True end=8.0s lastimg=7.3s screen-last-change=8.5s gif-requests=26 distinct=23 refetched=3 settled=True waited=19s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 23
+down x=14: K222 #3A3A3A2 #A6A6A62 #5252522 K2 #2828282 #5252522 K4 #5252524 K2 #2828282 #5252522 #2828282 K2 #52525247
+along y=71: K576
+expected 288x160 cells: centres compared 43455, different 0
+== fb_art_2_tab_rle 13:08:15
+fb_art_2_tab_rle.html: got=True end=20.9s lastimg=20.1s screen-last-change=21.3s gif-requests=26 distinct=23 refetched=3 settled=True waited=32s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 23
+down x=14: K222 #3A3A3A2 #A6A6A62 #5252522 K2 #2828282 #5252522 K4 #5252524 K2 #2828282 #5252522 #2828282 K2 #52525247
+along y=71: K576
+expected 288x160 cells: centres compared 43455, different 0
+== fb_art_1_row_rle 13:09:12
+fb_art_1_row_rle.html: got=True end=8.1s lastimg=4.9s screen-last-change=8.7s gif-requests=8 distinct=6 refetched=2 settled=True waited=19s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 6
+down x=14: K223 #5252521 #A6A6A63 K4 #5252523 K4 #5252524 K3 #5252524 K3 #52525247
+along y=71: K576
+expected 576x320 cells: centres compared 174170, different 0
+== fb_art_1_tab_rle 13:10:37
+fb_art_1_tab_rle.html: got=True end=36.2s lastimg=34.3s screen-last-change=36.4s gif-requests=9 distinct=6 refetched=3 settled=True waited=47s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 6
+down x=14: K223 #5252521 #A6A6A63 K4 #5252523 K4 #5252524 K3 #5252524 K3 #52525247
+along y=71: K576
+expected 576x320 cells: centres compared 174170, different 0
+== fb_check_8_row 13:11:23
+fb_check_8_row.html: got=True end=1.9s lastimg=1.4s screen-last-change=2.1s gif-requests=2 distinct=2 refetched=0 settled=True waited=12s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 2
+down x=14: K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W3
+along y=71: K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8
+expected 72x40 cells: centres compared 2704, different 0
+== fb_check_8_row_rle 13:12:09
+fb_check_8_row_rle.html: got=True end=1.7s lastimg=1.5s screen-last-change=2.4s gif-requests=2 distinct=2 refetched=0 settled=True waited=13s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 2
+down x=14: K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W3
+along y=71: K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8 K8 W8
+expected 72x40 cells: centres compared 2704, different 0
+== fb_check_4_row 13:12:52
+fb_check_4_row.html: got=True end=6.5s lastimg=0.9s screen-last-change=6.8s gif-requests=2 distinct=2 refetched=0 settled=True waited=17s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 2
+down x=14: K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K3
+along y=71: K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4
+expected 144x80 cells: centres compared 10904, different 0
+== fb_check_4_row_rle 13:13:42
+fb_check_4_row_rle.html: got=True end=5.4s lastimg=0.7s screen-last-change=5.5s gif-requests=2 distinct=2 refetched=0 settled=True waited=16s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 2
+down x=14: K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K3
+along y=71: K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4 K4 W4
+expected 144x80 cells: centres compared 10904, different 0
+== fb_photo_8_row_rle 13:14:37
+fb_photo_8_row_rle.html: got=True end=5.8s lastimg=5.8s screen-last-change=6.3s gif-requests=48 distinct=45 refetched=3 settled=True waited=17s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 45
+down x=14: #3366FF8 #6666CC8 #3366FF8 #6666FF8 #6699CC8 #3366FF8 #6699FF8 #6699CC8 #3366CC8 #6699FF16 #6699CC24 #6699FF8 #6699CC8 #6699FF16 #6699CC8 #9999CC8 #6699CC8 #9999CC8 #6699CC8 #9999CC8 #33663348 #0033008 #3333008 #0066008 #0033008 #3366338 #0066008 #2E2E2E8 #3366003
+along y=71: #3366FF24 #3366CC8 #3366FF8 #3399FF8 #3366FF8 #3366CC8 #3366FF8 #3399FF8 #3366CC8 #3366FF8 #3366CC16 #3366FF24 #3399CC8 #3366FF64 #3366CC8 #3366FF8 #3399FF8 #6666FF8 #3366FF8 #6666CC8 #3366FF8 #3366CC8 #3399FF8 #3366FF8 #3399FF8 #3366CC8 #3366FF16 #3366CC8 #3366FF16 #6666FF8 #3366CC8 #3366FF24 #3366CC8 #3366FF8 #3399FF8 #3366FF24 #3399CC8 #3366FF8 #6666FF8 #3366FF8 #6666FF8 #3366FF8 #6666FF8 #3366CC8 #3399FF8 #3366CC8 #3366FF16 #3399CC8 #6666FF8 #3366FF16 #3366CC8 #3366FF8
+expected 72x40 cells: centres compared 2704, different 0
+== fb_photo_4_row_rle 13:15:26
+fb_photo_4_row_rle.html: got=True end=11.0s lastimg=10.9s screen-last-change=11.4s gif-requests=62 distinct=57 refetched=5 settled=True waited=22s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 57
+down x=14: #3366FF8 #6699FF4 #3366FF4 #3366CC4 #3366FF8 #6699FF4 #3366FF4 #3366CC4 #6666FF4 #3399CC4 #6666FF4 #6699FF4 #3366CC4 #6699FF4 #3399CC4 #6699FF8 #6699CC4 #6699FF4 #6666CC4 #3399CC4 #6699CC16 #9999CC4 #6699FF4 #6699CC12 #9999CC4 #6699CC8 #9999CC4 #6699CC4 #6699FF4 #9999CC4 #6699CC4 #9999CC4 #6699FF4 #6699CC8 #9999CC4 #99CCCC4 #6699CC4 #9999CC4 #33663316 #3434344 #3366004 #33663320 #2222224 #3333004 #2E2E2E4 #1C1C1C4 #2E2E2E4 #2828288 #0066004 #2E2E2E4 #0033008 #2E2E2E4 #3366004 #0033004 #0066334 #3366003
+along y=71: #3366FF12 #3366CC4 #3366FF4 #3399FF4 #3366FF4 #3366CC4 #3366FF4 #3399FF4 #3366CC4 #3366FF4 #3366CC8 #3366FF12 #3399CC4 #3366FF32 #3366CC4 #3366FF4 #3399FF4 #6666FF4 #3366FF4 #6666CC4 #3366FF4 #3366CC4 #3399FF4 #3366FF4 #3399FF4 #3366CC4 #3366FF8 #3366CC4 #3366FF8 #6666FF4 #3366CC4 #3366FF12 #3366CC4 #3366FF4 #3399FF4 #3366FF12 #3399CC4 #3366FF4 #6666FF4 #3366FF4 #6666FF4 #3366FF4 #6666FF4 #3366CC4 #3399FF4 #3366CC4 #3366FF8 #3399CC4 #6666FF4 #3366FF8 #3366CC4 #3366FF4 #3366CC4 #3399FF4 #3366FF4 #6666FF4 #3366CC4 #3366FF8 #3366CC8 #3366FF4 #3399FF4 #3366CC4 #3366FF4 #6699FF4 #3366FF8 #6666CC4 #
+expected 144x80 cells: centres compared 10904, different 0
+== fb_photo_2_row_rle 13:16:29
+fb_photo_2_row_rle.html: got=True end=29.9s lastimg=29.8s screen-last-change=30.1s gif-requests=68 distinct=64 refetched=4 settled=True waited=41s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 64
+down x=14: #3366FF4 #3366CC2 #6666FF2 #3399FF2 #3366FF2 #3399CC2 #6666FF2 #3399FF4 #6699CC4 #3366FF2 #3399CC2 #3366CC2 #6699FF2 #3366FF2 #6699FF2 #6666FF2 #3366CC2 #6666CC2 #6699FF2 #3366FF2 #6699FF2 #3366CC2 #6666FF2 #6699FF2 #3399CC2 #6666CC2 #3366FF2 #6666FF2 #6699CC2 #6666FF2 #3399CC2 #6666FF2 #6699CC2 #6699FF2 #3399CC2 #6666FF2 #3399FF2 #6699CC2 #6699FF2 #3399CC2 #6699CC2 #6666CC2 #6666FF2 #6699CC2 #6699FF4 #6699CC8 #6699FF2 #6699CC4 #6699FF2 #6699CC4 #9999FF2 #6699CC4 #9999CC2 #6699CC2 #6699FF2 #9999CC2 #6699FF2 #9999CC4 #6699CC6 #9999CC2 #6699CC2 #6699FF2 #9999CC2 #66CCCC2 #99CCFF2 #9999CC4 #99CCC
+along y=71: #6699CC2 #3366FF4 #6699FF2 #3366CC2 #6666FF2 #3366FF2 #6699FF2 #3366FF6 #6699CC2 #3366FF4 #3399CC2 #3366FF2 #6666FF2 #3366FF2 #3399FF2 #3366FF2 #3399FF2 #3366CC2 #6699FF2 #3366CC2 #3399FF2 #6666FF2 #3366FF6 #6666CC2 #3399FF2 #3366FF6 #6666CC2 #3366CC2 #6666FF2 #3399FF2 #6666FF2 #3366FF2 #3399FF2 #6666CC2 #3366FF2 #3399CC2 #6666FF2 #3399FF2 #6666FF2 #3399CC2 #3399FF2 #3366FF2 #6666FF2 #3366FF2 #6699CC2 #3366FF2 #6666FF2 #3366FF2 #3366CC2 #6699FF2 #3366FF2 #3399FF2 #3366FF4 #6666FF2 #3366CC2 #3366FF2 #6666FF2 #3366FF2 #3366CC2 #3399FF2 #6699CC2 #3366FF4 #6666FF2 #3366CC2 #3366FF2 #3399FF2 #3366F
+expected 288x160 cells: centres compared 43455, different 0
+== fb_art_4_row 13:17:09
+fb_art_4_row.html: got=True end=8.7s lastimg=8.6s screen-last-change=9.1s gif-requests=44 distinct=44 refetched=0 settled=True waited=20s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 44
+down x=14: K220 #2222224 #8282824 #1616164 #2E2E2E4 #2828284 #2222224 #4040404 #1010104 #52525247
+along y=71: K576
+expected 144x80 cells: centres compared 10904, different 0
+== fb_art_2_row 13:18:31
+fb_art_2_row.html: got=True end=26.7s lastimg=20.1s screen-last-change=26.8s gif-requests=23 distinct=23 refetched=0 settled=True waited=40s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 23
+down x=14: K222 #3A3A3A2 #A6A6A62 #5252522 K2 #2828282 #5252522 K4 #5252524 K2 #2828282 #5252522 #2828282 K2 #52525247
+along y=71: K576
+expected 288x160 cells: centres compared 43455, different 0
+== fb_art_1_row 13:21:45
+fb_art_1_row.html: got=True end=153.8s lastimg=21.0s screen-last-change=154.2s gif-requests=6 distinct=6 refetched=0 settled=True waited=165s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 6
+down x=14: K223 #5252521 #A6A6A63 K4 #5252523 K4 #5252524 K3 #5252524 K3 #52525247
+along y=71: K576
+expected 576x320 cells: centres compared 174170, different 0
+== fb_art_4_tab 13:23:16
+fb_art_4_tab.html: got=True end=39.7s lastimg=39.6s screen-last-change=40.1s gif-requests=44 distinct=44 refetched=0 settled=True waited=51s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 44
+down x=14: K220 #2222224 #8282824 #1616164 #2E2E2E4 #2828284 #2222224 #4040404 #1010104 #52525247
+along y=71: K576
+expected 144x80 cells: centres compared 10904, different 0
+== fb_photo_1_row_rle 13:26:42
+fb_photo_1_row_rle.html: got=True end=150.8s lastimg=150.5s screen-last-change=151.4s gif-requests=82 distinct=76 refetched=6 settled=True waited=162s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 76
+down x=14: #3366FF1 #6699CC1 #3366FF5 #3366CC1 #6666CC1 #6699FF1 #3366FF1 #6699FF1 #3366FF1 #6699FF1 #6666FF1 #3366FF1 #6699FF1 #3366FF2 #6666FF1 #3366FF1 #6699CC1 #3366FF2 #6699FF1 #3366FF1 #6666CC1 #3366FF1 #6699FF2 #6666FF1 #3399FF2 #6666CC1 #3366CC1 #6699FF1 #3366FF1 #6666CC1 #6666FF1 #6699CC1 #6699FF1 #6699CC1 #3399FF1 #6699CC1 #3399FF1 #6699FF1 #3366CC1 #6699FF1 #3366CC1 #6666FF1 #6699FF3 #6666CC1 #6699CC1 #6699FF1 #6666CC1 #6699FF3 #6699CC2 #3399FF1 #6699FF1 #3399CC1 #6699FF1 #6666FF1 #6699FF1 #6666FF1 #3399FF1 #6666FF1 #6699FF2 #6666FF1 #6699CC1 #6699FF1 #6666CC1 #6699CC1 #6666FF1 #3399CC1 #6699C
+along y=71: #3366FF3 #3366CC1 #3399FF1 #6666FF1 #3366FF1 #6666CC1 #3399FF1 #3366FF1 #6666CC1 #3366FF1 #6666FF1 #3366FF2 #6699FF1 #3366CC1 #3399FF1 #6666FF1 #3366FF2 #3366CC1 #3399FF1 #3366FF2 #3366CC1 #3366FF1 #3399FF1 #3366FF1 #6666CC1 #3366FF1 #3399FF1 #3366FF1 #3366CC1 #6666FF1 #3399FF1 #3366FF2 #3399CC1 #3366FF1 #6666FF1 #3366CC1 #6699FF1 #3366FF3 #6699FF1 #3366FF2 #3399CC1 #3399FF1 #6666FF1 #3366FF1 #3366CC1 #6666FF1 #3366FF1 #6666FF1 #3366FF1 #6699FF1 #3366FF1 #6699FF1 #6666CC1 #3366FF1 #3366CC1 #3366FF1 #6699FF1 #3366CC2 #6666FF1 #6666CC1 #6699FF1 #3366FF2 #6699FF1 #3366FF1 #6666CC1 #3366FF1 #6666C
+expected 576x320 cells: centres compared 174170, different 0
+== pal 13:26:44
+pal.html: got=True end=20.4s lastimg=20.4s screen-last-change=20.7s gif-requests=256 distinct=256 refetched=0 settled=True waited=32s
+box x 12..139 y 69..196 = 128 x 128, magenta inside 64, distinct colours 256
+down x=14: K8 #0066CC8 #00FF668 #3366008 #33CCCC8 #6633668 #66CC008 #9900CC8 #9999668 #CC00008 #CC66CC8 #CCFF668 #FF66008 #FFCCCC8 #3434348 #9494948
+along y=71: K8 #0000338 #0000668 #0000998 #0000CC8 #0000FF8 #0033008 #0033338 #0033668 #0033998 #0033CC8 #0033FF8 #0066008 #0066338 #0066668 #0066998
+palette cells different from the GIF's colour: 0 of 256
+== pal4 13:27:51
+pal4.html: got=True end=14.8s lastimg=14.8s screen-last-change=14.9s gif-requests=256 distinct=256 refetched=0 settled=True waited=28s
+box x 12..637 y 54..429 = 626 x 376, magenta inside 156158, distinct colours 450
+down x=14: M15 K8 #0066CC8 #00FF668 #3366008 #33CCCC8 #6633668 #66CC008 #9900CC8 #9999668 #CC00008 #CC66CC8 #CCFF668 #FF66008 #FFCCCC8 #3434348 #9494948 K8 #0066CC8 #00FF668 #3366008 #33CCCC8 #6633668 #66CC008 #9900CC8 #9999668 #CC00008 #CC66CC8 #CCFF668 #FF66008 #FFCCCC8 #3434348 #9494948 K8 #0066CC8 #00FF668 #3366008 #33CCCC8 #6633663
+along y=56: M609 #EEEDE51 W1 #D0DFFC1 #E1EAFE1 #DAE6FE1 #D4E1FC1 #D1E0FD1 #D0DDFC1 #CEDBFD1 #CAD9FD1 #C8D8FB1 #C5D6FC1 #C2D3FC1 #BCCEFA1 #B9C9F31 W1 #CFD7DD1
+palette cells different from the GIF's colour: 256 of 256
+  00 want (0, 0, 0) got (255, 0, 255)
+  01 want (0, 0, 51) got (255, 0, 255)
+  02 want (0, 0, 102) got (255, 0, 255)
+  03 want (0, 0, 153) got (255, 0, 255)
+  04 want (0, 0, 204) got (255, 0, 255)
+  05 want (0, 0, 255) got (255, 0, 255)
+  06 want (0, 51, 0) got (255, 0, 255)
+  07 want (0, 51, 51) got (255, 0, 255)
+  08 want (0, 51, 102) got (255, 0, 255)
+  09 want (0, 51, 153) got (255, 0, 255)
+  0A want (0, 51, 204) got (255, 0, 255)
+  0B want (0, 51, 255) got (255, 0, 255)
+== fb_art_8_tab_rle 13:29:46
+fb_art_8_tab_rle.html: got=True end=4.9s lastimg=4.6s screen-last-change=5.2s gif-requests=44 distinct=43 refetched=1 settled=True waited=17s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 43
+down x=14: K216 #3434348 #3A3A3A8 #2828288 #3A3A3A8 #4646468 #5858588 #6464648 #66666616 #5252528 #6666663
+along y=71: K312 #0A0A0A8 K224 #1616168 K24
+expected 72x40 cells: centres compared 2704, different 0
+== fb_photo_8_tab_rle 13:30:42
+fb_photo_8_tab_rle.html: got=True end=7.9s lastimg=7.8s screen-last-change=8.4s gif-requests=47 distinct=45 refetched=2 settled=True waited=19s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 45
+down x=14: #3366FF8 #6666CC8 #3366FF8 #6666FF8 #6699CC8 #3366FF8 #6699FF8 #6699CC8 #3366CC8 #6699FF16 #6699CC24 #6699FF8 #6699CC8 #6699FF16 #6699CC8 #9999CC8 #6699CC8 #9999CC8 #6699CC8 #9999CC8 #33663348 #0033008 #3333008 #0066008 #0033008 #3366338 #0066008 #2E2E2E8 #3366003
+along y=71: #3366FF24 #3366CC8 #3366FF8 #3399FF8 #3366FF8 #3366CC8 #3366FF8 #3399FF8 #3366CC8 #3366FF8 #3366CC16 #3366FF24 #3399CC8 #3366FF64 #3366CC8 #3366FF8 #3399FF8 #6666FF8 #3366FF8 #6666CC8 #3366FF8 #3366CC8 #3399FF8 #3366FF8 #3399FF8 #3366CC8 #3366FF16 #3366CC8 #3366FF16 #6666FF8 #3366CC8 #3366FF24 #3366CC8 #3366FF8 #3399FF8 #3366FF24 #3399CC8 #3366FF8 #6666FF8 #3366FF8 #6666FF8 #3366FF8 #6666FF8 #3366CC8 #3399FF8 #3366CC8 #3366FF16 #3399CC8 #6666FF8 #3366FF16 #3366CC8 #3366FF8
+expected 72x40 cells: centres compared 2704, different 0
+== fb_photo_4_tab_rle 13:32:15
+fb_photo_4_tab_rle.html: got=True end=38.5s lastimg=38.3s screen-last-change=38.9s gif-requests=61 distinct=57 refetched=4 settled=True waited=50s
+box x 12..587 y 69..388 = 576 x 320, magenta inside 0, distinct colours 57
+down x=14: #3366FF8 #6699FF4 #3366FF4 #3366CC4 #3366FF8 #6699FF4 #3366FF4 #3366CC4 #6666FF4 #3399CC4 #6666FF4 #6699FF4 #3366CC4 #6699FF4 #3399CC4 #6699FF8 #6699CC4 #6699FF4 #6666CC4 #3399CC4 #6699CC16 #9999CC4 #6699FF4 #6699CC12 #9999CC4 #6699CC8 #9999CC4 #6699CC4 #6699FF4 #9999CC4 #6699CC4 #9999CC4 #6699FF4 #6699CC8 #9999CC4 #99CCCC4 #6699CC4 #9999CC4 #33663316 #3434344 #3366004 #33663320 #2222224 #3333004 #2E2E2E4 #1C1C1C4 #2E2E2E4 #2828288 #0066004 #2E2E2E4 #0033008 #2E2E2E4 #3366004 #0033004 #0066334 #3366003
+along y=71: #3366FF12 #3366CC4 #3366FF4 #3399FF4 #3366FF4 #3366CC4 #3366FF4 #3399FF4 #3366CC4 #3366FF4 #3366CC8 #3366FF12 #3399CC4 #3366FF32 #3366CC4 #3366FF4 #3399FF4 #6666FF4 #3366FF4 #6666CC4 #3366FF4 #3366CC4 #3399FF4 #3366FF4 #3399FF4 #3366CC4 #3366FF8 #3366CC4 #3366FF8 #6666FF4 #3366CC4 #3366FF12 #3366CC4 #3366FF4 #3399FF4 #3366FF12 #3399CC4 #3366FF4 #6666FF4 #3366FF4 #6666FF4 #3366FF4 #6666FF4 #3366CC4 #3399FF4 #3366CC4 #3366FF8 #3399CC4 #6666FF4 #3366FF8 #3366CC4 #3366FF4 #3366CC4 #3399FF4 #3366FF4 #6666FF4 #3366CC4 #3366FF8 #3366CC8 #3366FF4 #3399FF4 #3366CC4 #3366FF4 #6699FF4 #3366FF8 #6666CC4 #
+expected 144x80 cells: centres compared 10904, different 0
+== lk_none 13:32:15
+lk_none.html: got=True end=2.1s lastimg=2.0s screen-last-change=2.5s gif-requests=5 distinct=5 refetched=0 settled=True waited=14s
+== lk_cell 13:33:12
+lk_cell.html: got=True end=4.4s lastimg=4.3s screen-last-change=4.8s gif-requests=5 distinct=5 refetched=0 settled=True waited=16s
+== lk_run 13:34:03
+lk_run.html: got=True end=1.4s lastimg=1.3s screen-last-change=1.5s gif-requests=7 distinct=5 refetched=1 settled=True waited=12s
+== lk_shape 13:34:41
+lk_shape.html: got=True end=1.8s lastimg=1.6s screen-last-change=2.0s gif-requests=7 distinct=5 refetched=1 settled=True waited=13s
+== lk_shape_mo 13:35:21
+lk_shape_mo.html: got=True end=1.8s lastimg=1.7s screen-last-change=2.3s gif-requests=7 distinct=5 refetched=1 settled=True waited=13s
+== fb_photo_2_tab (second try, server timeout 3600 s) 14:08
+After 10 minutes (the first request 14:08:18, the last new GIF 14:18:34) Netscape 2 showed the same alert "Connection reset by peer" and a magenta view: the 46,080-cell TABLE (1.9 MB) never drew.  No error on the server's side; the same ten minutes as the first try, so the cut is not the server's timeout.
+== fb_art_1_row_rle 14:25:17
+fb_art_1_row_rle.html: got=True end=11.9s lastimg=10.0s screen-last-change=12.4s gif-requests=7 distinct=6 refetched=1 settled=True waited=24s
+box x 12..637 y 54..429 = 626 x 376, magenta inside 96283, distinct colours 166
+down x=14: M15 K299
+along y=56: M609 #EEEDE51 W1 #D0DFFC1 #E1EAFE1 #DAE6FE1 #D4E1FC1 #D1E0FD1 #D0DDFC1 #CEDBFD1 #CAD9FD1 #C8D8FB1 #C5D6FC1 #C2D3FC1 #BCCEFA1 #B9C9F31 W1 #CFD7DD1
+expected 616x352 cells: centres compared 198892, different 132603
+== fb_art_1_row_rle 14:26:34
+fb_art_1_row_rle.html: got=True end=10.6s lastimg=8.8s screen-last-change=11.1s gif-requests=8 distinct=7 refetched=1 settled=True waited=22s
+box x 2..637 y 54..429 = 636 x 376, magenta inside 98825, distinct colours 170
+down x=4: M314
+along y=56: M619 #EEEDE51 W1 #D0DFFC1 #E1EAFE1 #DAE6FE1 #D4E1FC1 #D1E0FD1 #D0DDFC1 #CEDBFD1 #CAD9FD1 #C8D8FB1 #C5D6FC1 #C2D3FC1 #BCCEFA1 #B9C9F31 W1 #CFD7DD1
+expected 620x340 cells: centres compared 197744, different 132326
+== fb_art_1_row_rle 14:27:47
+fb_art_1_row_rle.html: got=True end=10.9s lastimg=10.0s screen-last-change=11.1s gif-requests=8 distinct=7 refetched=1 settled=True waited=22s
+box x 12..637 y 54..429 = 626 x 376, magenta inside 97946, distinct colours 166
+down x=14: M15 K299
+along y=56: M609 #EEEDE51 W1 #D0DFFC1 #E1EAFE1 #DAE6FE1 #D4E1FC1 #D1E0FD1 #D0DDFC1 #CEDBFD1 #CAD9FD1 #C8D8FB1 #C5D6FC1 #C2D3FC1 #BCCEFA1 #B9C9F31 W1 #CFD7DD1
+expected 608x350 cells: centres compared 195992, different 131359
+== fb_art_1_row_rle 14:28:57
+fb_art_1_row_rle.html: got=True end=11.2s lastimg=10.5s screen-last-change=11.5s gif-requests=10 distinct=7 refetched=3 settled=True waited=22s
+box x 12..637 y 54..429 = 626 x 376, magenta inside 96283, distinct colours 166
+down x=14: M15 K299
+along y=56: M609 #EEEDE51 W1 #D0DFFC1 #E1EAFE1 #DAE6FE1 #D4E1FC1 #D1E0FD1 #D0DDFC1 #CEDBFD1 #CAD9FD1 #C8D8FB1 #C5D6FC1 #C2D3FC1 #BCCEFA1 #B9C9F31 W1 #CFD7DD1
+expected 616x332 cells: centres compared 194372, different 128787
+== fb_art_1_row_rle 14:30:13
+fb_art_1_row_rle.html: got=True end=13.0s lastimg=10.8s screen-last-change=13.2s gif-requests=8 distinct=6 refetched=1 settled=True waited=24s
+box x 12..637 y 54..429 = 626 x 376, magenta inside 96283, distinct colours 166
+down x=14: M15 K299
+along y=56: M609 #EEEDE51 W1 #D0DFFC1 #E1EAFE1 #DAE6FE1 #D4E1FC1 #D1E0FD1 #D0DDFC1 #CEDBFD1 #CAD9FD1 #C8D8FB1 #C5D6FC1 #C2D3FC1 #BCCEFA1 #B9C9F31 W1 #CFD7DD1
+expected 616x324 cells: centres compared 192564, different 127368
+== fb_art_1_row_rle 14:31:22
+fb_art_1_row_rle.html: got=True end=9.1s lastimg=8.5s screen-last-change=9.2s gif-requests=10 distinct=6 refetched=3 settled=True waited=23s
+box x 12..637 y 54..429 = 626 x 376, magenta inside 97946, distinct colours 165
+down x=14: M15 K299
+along y=56: M609 #EEEDE51 W1 #D0DFFC1 #E1EAFE1 #DAE6FE1 #D4E1FC1 #D1E0FD1 #D0DDFC1 #CEDBFD1 #CAD9FD1 #C8D8FB1 #C5D6FC1 #C2D3FC1 #BCCEFA1 #B9C9F31 W1 #CFD7DD1
+expected 608x320 cells: centres compared 189212, different 125385
+== fb_art_1_row_rle 14:32:38
+fb_art_1_row_rle.html: got=True end=11.2s lastimg=10.9s screen-last-change=11.5s gif-requests=11 distinct=9 refetched=2 settled=True waited=22s
+box x 12..637 y 54..429 = 626 x 376, magenta inside 99343, distinct colours 166
+down x=14: M15 K299
+along y=56: M609 #EEEDE51 W1 #D0DFFC1 #E1EAFE1 #DAE6FE1 #D4E1FC1 #D1E0FD1 #D0DDFC1 #CEDBFD1 #CAD9FD1 #C8D8FB1 #C5D6FC1 #C2D3FC1 #BCCEFA1 #B9C9F31 W1 #CFD7DD1
+expected 600x320 cells: centres compared 186764, different 125335
+== fb_art_1_row_rle 14:33:44
+fb_art_1_row_rle.html: got=True end=9.2s lastimg=9.0s screen-last-change=9.4s gif-requests=12 distinct=11 refetched=1 settled=True waited=20s
+box x 12..603 y 65..388 = 592 x 324, magenta inside 2339, distinct colours 25
+down x=14: M4 K230 #A6A6A64 K3 #5252524 K4 #5252524 K3 #5252524 K4 #52525239
+along y=67: M10 K2 #F000F01 #E600E61 #E800E81 #F000F01 #FA00FA1 #FE00FE1 M574
+expected 592x320 cells: centres compared 180290, different 31394
+== fb_art_1_row_rle 14:35:07
+fb_art_1_row_rle.html: got=True end=11.5s lastimg=10.6s screen-last-change=12.1s gif-requests=10 distinct=8 refetched=2 settled=True waited=23s
+box x 12..637 y 54..404 = 626 x 351, magenta inside 14082, distinct colours 138
+down x=14: M15 K230 #A6A6A63 K4 #5252524 K3 #5252524 K4 #5252523 #2828281 K3 #52525240
+along y=56: M609 #EEEDE51 W1 #D0DFFC1 #E1EAFE1 #DAE6FE1 #D4E1FC1 #D1E0FD1 #D0DDFC1 #CEDBFD1 #CAD9FD1 #C8D8FB1 #C5D6FC1 #C2D3FC1 #BCCEFA1 #B9C9F31 W1 #CFD7DD1
+expected 592x336 cells: centres compared 187932, different 44085
+== fb_art_1_row_rle 14:36:16
+fb_art_1_row_rle.html: got=True end=12.1s lastimg=10.4s screen-last-change=12.5s gif-requests=12 distinct=9 refetched=2 settled=True waited=23s
+box x 12..637 y 54..420 = 626 x 367, magenta inside 14082, distinct colours 4279
+down x=14: M15 K230 #A6A6A63 K4 #5252524 K4 #5252523 K4 #5252524 K3 #52525240
+along y=56: M609 #EEEDE51 W1 #D0DFFC1 #E1EAFE1 #DAE6FE1 #D4E1FC1 #D1E0FD1 #D0DDFC1 #CEDBFD1 #CAD9FD1 #C8D8FB1 #C5D6FC1 #C2D3FC1 #BCCEFA1 #B9C9F31 W1 #CFD7DD1
+expected 592x352 cells: centres compared 191548, different 45308
+== fb_art_1_row_rle 14:37:14
+fb_art_1_row_rle.html: got=True end=10.2s lastimg=9.9s screen-last-change=10.6s gif-requests=14 distinct=11 refetched=3 settled=True waited=22s
+box x 12..603 y 69..388 = 592 x 320, magenta inside 0, distinct colours 1488
+down x=14: K230 #A6A6A64 K3 #5252524 K4 #5252524 K3 #5252524 K4 #52525239
+along y=71: K592
+expected 592x320 cells: centres compared 178826, different 0
