@@ -41,9 +41,9 @@ static uint32_t fmt_id(char *out, char c, unsigned n) {
 
 static const char *const MARK[] = {".", "X", "O"};
 static const char *const MARK_STYLE[] = {"color:#999999", "color:#cc0000", "color:#0000cc"};
-static const char *const BIG_STYLE[] = {"", "color:#cc0000;font-size:48px;font-weight:bold", "color:#0000cc;font-size:48px;font-weight:bold"};
+static const char *const BIG_STYLE[] = {"", "color:#cc0000;font-size:36px;font-weight:bold", "color:#0000cc;font-size:36px;font-weight:bold"};
 
-/* One block: a won block is its one big mark; an open or drawn one is its 3 x 3 cells. Either is 96 x 96 pixels, so
+/* One block: a won block is its one big mark; an open or drawn one is its 3 x 3 cells. Either is 72 x 72 pixels, so
  * the board never changes size. The block's background, when it has one, comes from the DIV around it: the
  * forced block (yellow), a block of the winning line (green), a drawn block (grey). */
 static void draw_block(const UtttGame *g, int b, int last) {
@@ -57,7 +57,7 @@ static void draw_block(const UtttGame *g, int b, int last) {
   else if (won == UTTT_DRAW) bg = "background-color:#cccccc";
   cd_open("td"); cd_attr("id", cd_tmp(id, fmt_id(id, 'b', (unsigned)b))); cd_attr("align", "center"); cd_attr("valign", "middle");
   if (bg) { cd_open("div"); cd_attr("style", bg); }
-  cd_open("table"); cd_attr("width", "96"); cd_attr("height", "96"); cd_attr("border", "0");
+  cd_open("table"); cd_attr("width", "72"); cd_attr("height", "72"); cd_attr("border", "0");
   cd_attr("cellspacing", "0"); cd_attr("cellpadding", "0");
   if (won == UTTT_X || won == UTTT_O) {
     cd_open("tr"); cd_open("td"); cd_attr("align", "center"); cd_attr("valign", "middle");
@@ -71,7 +71,7 @@ static void draw_block(const UtttGame *g, int b, int last) {
         int i = b * 9 + r * 3 + c;
         uint8_t m = uttt_cell(g, i);
         cd_open("td"); cd_attr("id", cd_tmp(id, fmt_id(id, 'c', (unsigned)i)));
-        cd_attr("width", "32"); cd_attr("height", "32"); cd_attr("align", "center");
+        cd_attr("width", "24"); cd_attr("height", "24"); cd_attr("align", "center");
         cd_open("span"); cd_attr("style", won == UTTT_DRAW && m ? "color:#666666" : MARK_STYLE[m]);
         if (i == last) cd_open("b");
         cd_text(MARK[m]);
@@ -189,16 +189,13 @@ static cd_id button(const char *idattr, const char *label) {
 }
 
 void cd_main(void) {
-  cd_open("h2"); cd_text("Ultimate Tic-Tac-Toe replay"); cd_close();
+  /* No heading (the window's title says it) and the buttons above the board: the whole page then fits the 640 x 480 screen
+   * of a Netscape 2 on this tier's smallest machine, board and move count in view together. */
   cd_open("p");
   cd_text("Code or uttt.live link: ");
   field = cd_open_id("input"); cd_attr("id", "code"); cd_attr("size", "44"); cd_close();
   b_open = button("open", "Open");
   cd_close();
-  cd_open("p"); cd_attr("id", "err"); cd_open("span"); cd_attr("style", "color:#cc0000");
-  cd_text(""); cd_name_text(err_txt = cd_id_new());
-  cd_close(); cd_close();
-  board = cd_open_id("div"); cd_attr("id", "board"); cd_close();
   cd_open("p"); cd_attr("id", "buttons");
   b_start = button("start", "|<");
   b_back = button("back", "<");
@@ -206,8 +203,14 @@ void cd_main(void) {
   b_play = cd_open_id("button"); cd_attr("id", "play"); cd_text("Play"); cd_name_text(play_txt = cd_id_new()); cd_close();
   b_fwd = button("fwd", ">");
   b_end = button("end", ">|");
+  cd_text(" ");
+  cd_open("span"); cd_attr("id", "status"); cd_text("No game open."); cd_name_text(status_txt = cd_id_new()); cd_close();
+  cd_text(" ");
+  cd_open("span"); cd_attr("id", "err"); cd_open("span"); cd_attr("style", "color:#cc0000");
+  cd_text(""); cd_name_text(err_txt = cd_id_new());
+  cd_close(); cd_close();
   cd_close();
-  cd_open("p"); cd_attr("id", "status"); cd_text("No game open."); cd_name_text(status_txt = cd_id_new()); cd_close();
+  board = cd_open_id("div"); cd_attr("id", "board"); cd_close();
   cd_on(b_open, CD_EV_CLICK, on_open, nullptr);
   cd_on(field, CD_EV_CHANGE, on_open, nullptr);
   cd_on(b_start, CD_EV_CLICK, on_step, nullptr);

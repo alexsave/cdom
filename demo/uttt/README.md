@@ -19,7 +19,7 @@ out/uttt.wasm.ie9.js, the words build, is for IE 6 to 9.
 
 ## What the page is made of
 
-Only what Netscape 2 has: a TABLE of the 3 x 3 blocks, each a 96 x 96 table of 3 x 3 cells in TT, the marks coloured, the last move in B.
+Only what Netscape 2 has: a TABLE of the 3 x 3 blocks, each a 72 x 72 table of 3 x 3 cells in TT, the marks coloured, the last move in B.
 A won block is one big mark; a drawn block is grey; the block (or blocks) the next move must go in is yellow; the blocks of the winning line are green.
 The colours and sizes are CSS, which the frames tier writes as FONT COLOR, FONT SIZE and a one-cell TABLE's BGCOLOR (on a DIV around each block's table, since a TD's own background would be written as a table inside the row).
 The events are click (the six buttons) and change (the code field), the two Netscape 2 fires.
