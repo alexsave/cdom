@@ -36,8 +36,8 @@ None of this is measured yet; Alex's probe on the XP VM measures it, and each li
 | A10 | innerHTML | no | no | no | no | yes |
 | A11 | iframe | no | no | no | yes | yes |
 | A12 | SCRIPT SRC | no | yes | yes | yes | yes |
-| A13 | A FRAMESET written by a script in the BODY, before any content, replaces the body | ? | ? | ? | ? | ? |
-| A14 | The top window keeps its script's globals when its own document is replaced by open, write and close | ? | ? | ? | ? | ? |
+| A13 | A FRAMESET written by a script in the BODY, before any content, replaces the body | ? | no after any content, yes in the head (section 15) | no after any content, yes in the head (section 15) | ? | yes in the head (section 15) |
+| A14 | The top window keeps its script's globals when its own document is replaced by open, write and close | ? | ? | no (section 15) | ? | ? |
 | A15 | window.scrollTo | no | yes | yes | yes | yes |
 | A16 | String.fromCharCode and charCodeAt | no | no | yes | no | yes |
 | A17 | Form controls render only inside a FORM | yes | yes | yes | no | no |
@@ -53,23 +53,22 @@ The language, as Alex gave it:
 ## 3. Page structure
 
 A cdom page is a BODY with the mount, the string table, the shim's script, the boot's script, and the page's own script that calls cdomBoot.
-On this tier the page becomes a frameset whose one frame shows the app:
+On this tier the page becomes a frameset of two frames (changed on 2026-11-21 by the real runs, section 15: the first design, a frameset of one frame written by the boot into the loading page, did not run in Netscape 4):
 
-1. The boot finds no getElementById or no createElement.
-2. It keeps its arguments in globals, and document.writes, while the page is still parsing, two SCRIPT SRCs (cdom.frames.js, the tier's shim, and the app's words build, url + ".ie9.js") and an inline script that calls cdomFramesStart.
-3. cdomFramesStart document.writes `<frameset rows="*"><frame name="cdomView" src="about:blank"></frameset>`.
-   The parser is still in the body, and nothing in it has content yet (the mount is an empty DIV, and SCRIPT does not count), so the FRAMESET replaces the body (HTML5's frameset-ok rule; A13 for the old browsers).
-4. The shim keeps cdom's node tree in the top window, and writes the frame's whole document from it.
+1. The early script (shim/boot-early.js, JavaScript 1.0, which tools/legacy/build.mjs page writes before the head's end of every page) runs before any content.
+   If there is no getElementById or no createElement, and the window is not named cdomApp, it document.writes `<frameset rows="*,1">` with two frames: cdomView, which shows the app, and cdomApp, 1 pixel high, whose source is the same page under another URL (the query gains `cdomApp`, since Netscape 4 drops a frame whose URL is the frameset's own).
+2. The page, loaded again in cdomApp, runs as it always does: the boot finds no getElementById, keeps its arguments in globals, and document.writes, while the page is still parsing, two SCRIPT SRCs (cdom.frames.js, the tier's shim, and the app's JavaScript 1.0 build, url + ".js1.js") and an inline script that calls cdomBootWait, which calls cdomFramesStart once both files have run (IE 4 runs the inline script first, so it tries again every 50 ms).
+3. The shim keeps cdom's node tree in cdomApp, whose document nothing replaces, and writes the whole document of cdomView, the parent's frame 0, from it.
+   The view's handlers call `parent.cdomApp.cdomF`.
+   The app's URL ops read the top window's location, not the frame's.
 
-The top window keeps everything: the node tree, C's memory and the app.
-The frame only shows HTML, and its handlers call `parent.cdomF`.
-If the FRAMESET is not made (A13 false), the fallback is A14: once the page has loaded, the shim replaces the top document itself by open, write and close with the same FRAMESET.
-The prototype has both, and takes the fallback by itself when no frame is there once the page has loaded (readyState complete, or 50 waits of 20 ms where there is no readyState).
+Why not the first design: Netscape 4 ignores a FRAMESET written after any content (a DIV is enough: A13 is false there), and a window whose document is replaced by open, write and close loses every global (A14 is false there: "cf_FRAMESET is not defined" was the shim's own variable, gone).
+A frameset written in the head, before any content, is made in Netscape 3 and 4 and IE 4, and then the script blocks after it are dropped, so the state cannot live in the top window.
+The page is fetched twice (the second from the cache).
+Netscape 2 makes the frameset as well, and has no SCRIPT SRC (section 15).
 
-Found while building it: a BODY tag sets HTML5's frameset-ok flag to "not ok", so Chrome ignores a FRAMESET written after `<body>`, even an empty one, and Netscape's documented rule is the same.
-An implied BODY (the page opens with `</head><div id="m">`) keeps the flag, and the written FRAMESET takes the body's place.
-So a frames-tier page should not open its BODY with a tag; one that does (shim/page.html, cdom.mk's default page, does) still runs, through the fallback.
-tests/frames.html has no BODY tag, and tests/build.sh makes tests/out/frames-body.html, the same page with one; tools/frames.mjs runs both.
+Found while building it: a BODY tag sets HTML5's frameset-ok flag to "not ok", so Chrome ignores a FRAMESET written after `<body>`; the early script is in the head, so a page that opens its BODY with a tag (shim/page.html, cdom.mk's default page) takes the same path.
+tests/build.sh makes tests/out/frames-body.html, the same page with a BODY tag; tools/frames.mjs runs both.
 
 ### The boot itself
 
@@ -82,7 +81,8 @@ shim/boot.js is now two parts, which the build writes as two SCRIPT elements:
 - Part 2, ES3 as before: cdomBootDom, the old cdomBoot's body, for the four other tiers.
   Netscape 2 to 4 and IE 3 and 4 fail it with a syntax error (try, throw, function expressions), and never call it.
 
-The test that picks the tier is `document.getElementById && document.createElement`: either missing is this tier.
+The test that picks the tier is `document.getElementById && document.createElement`: either missing is this tier (the early script makes it first, in the head).
+The inlined modern shim and the boot's second part are written as `<script language="JavaScript1.5">`: Netscape 2 to 4 (JavaScript 1.0 to 1.3) skip them without a syntax error alert, which Netscape 3 and IE 4 would show for each, and every browser that runs them takes the attribute as JavaScript.
 The floor of the fourth tier is then attachEvent or addEventListener alone, as tools/cdp.mjs's FLOOR already says; a browser with getElementById and no listeners is still refused.
 
 ## 4. The shim: tools/legacy/frames.js
@@ -91,7 +91,7 @@ A shim of its own, written in JavaScript 1.1, not shim/cdom.js through Babel: th
 It keeps shim/cdom.js's design where it can:
 
 - The same imports by the same names, with the same meaning for the tree ops (at, open, close, text, attr, name_el, listen, walk, set_text, set_attr, style, remove, move, clear, detach, attach, tpl_save, clone and the rest).
-  Each op changes a node tree of plain objects in the top window instead of the DOM: element and text nodes with parent, first, last, next and previous links, so insert and remove need no splice (JavaScript 1.2).
+  Each op changes a node tree of plain objects in the app frame (cdomApp) instead of the DOM: element and text nodes with parent, first, last, next and previous links, so insert and remove need no splice (JavaScript 1.2).
   An insert keeps the DOM's rules: a node before itself stays where it is, and before a node that is not a child of the parent is an error (shim/cdom.js's trap), noted here, and nothing moves.
 - The same strings: a literal's slot in cdomLits, a read-only pointer read once and kept, a runtime record in C's tmp block; ahead is a no-op, since every string is read from C's memory directly.
 - The same event record and cd_layout read, and the same delivery to the nearest listening ancestor with the path down (8 bits of element index a level), walked on the node tree instead of the DOM.
@@ -184,7 +184,7 @@ Attributes kept: id, href, src, alt, title, width, height, align, valign, border
 - Canvas, SVG, images from bytes, WebSocket, fetch, IndexedDB, audio, files, jobs, share and the clipboard: each import answers as the API's unsupported case (0, or nothing), and the shim notes it in cdomF.errors.
 - cd_url_go (no History API): 0.
 - A C trap is not thrown out of the call (JavaScript 1.1 has no throw); it ends the call, and the next entry recovers (section 4).
-  A trap in cd_start (in cd_main) is noted too ("cd_start did not return"), and the frame is still drawn with what cd_main flushed, or the frameset written over a page with a BODY tag: the start sets its first poll before calling C.
+  A trap in cd_start (in cd_main) is noted too ("cd_start did not return"), and the frame is still drawn with what cd_main flushed; the start sets its first poll before calling C.
 - Errors from the shim go to cdomF.errors and window.status, not window.onerror.
 - Flicker on each rewrite, and on Netscape 2 a history entry a rewrite.
 - Text outside Latin-1 on browsers without String.fromCharCode (NS 2 and 3, IE 3): shown as "?".
@@ -237,11 +237,11 @@ Alex's XP VM serves pages from the host at http://10.0.2.2:<port>/.
 1. Build: `tests/build.sh` writes tests/out/frames.html, cdom.frames.js and frames.wasm.ie9.js.
 2. Serve tests/out: `python3 -m http.server 8000 --directory tests/out` on the host.
 3. In each of Netscape 2.02, 3.04 and 4.08 and IE 3 and 4, open http://10.0.2.2:8000/frames.html.
-   Then frames-body.html, the same page with a BODY tag, which takes the fallback (A14).
-4. Check, in order: the frame shows the heading, the count, the button and the fields (A13, or the fallback for A14); "inc" adds one to the count; typing in the note field, then clicking "inc", keeps the typed text; typing in the name field and leaving it echoes the text; the history list (Go menu) does not grow with each click (A3).
+   Then frames-body.html, the same page with a BODY tag.
+   tools/vmserve.py serves tests/out for the guest (scripts as application/x-javascript, which Netscape 3 needs), tools/vmopen.sh opens a URL in a browser of it, tools/vmprobe.sh also restarts the server and takes the screenshot.
+4. Check, in order: the frame shows the heading, the count, the button and the fields; "inc" adds one to the count; typing in the note field, then clicking "inc", keeps the typed text; typing in the name field and leaving it echoes the text; the history list (Go menu) does not grow with each click (A3).
 5. Record each assumption of section 2 that turned out otherwise.
-   Expected on today's files, before the code path decision: every one of the five stops at the app file, which has throw (JavaScript 1.4, JScript 5), and Netscape 2 and 3 and IE 3 at the string table (an array literal) too, with the error dialog A18 is about.
-   What the five can check today is the boot: that it parses, takes this tier, writes the FRAMESET and loads cdom.frames.js (A12, A13), and that cdom.frames.js parses (the JavaScript 1.1 gate's claim).
+   The runs of 2026-11-21 are in section 15.
 
 ## 13. Results
 
@@ -268,11 +268,14 @@ What the misses say:
   So in Chrome the history check can only catch a rewrite that navigates by URL; tools/mutate.py's frames-history-entry plants a fragment navigation, which it catches.
   Netscape 3 and 4 and IE 4 are said to add one for open() without "replace", and Netscape 2 for every rewrite (A3); that is the probe's to measure.
 
+The frames tier in the real browsers (Netscape 4.08, IE 4.01, Netscape 3.04, one try of Netscape 2.02), with its own predictions and what they met, is section 15.
+It changed the design of section 3 (the early script and the app frame), the string table's format, and js1c's output (initial memory, trailing return, signed data words).
+
 ## 14. Tests
 
 tools/frames.mjs, under LEGACY=frames (CI runs it beside the other levels), checks:
 
-- the boot takes the fifth tier and fetches its two files and no other tier's; the page and its frame have no createElement, appendChild, innerHTML, getElementById or listeners; the page is a frameset of one frame;
+- the boot takes the fifth tier and fetches its two files and no other tier's; the page and its frame have no createElement, appendChild, innerHTML, getElementById or listeners; the page is a frameset of the view and cdomApp, and the shim lives in cdomApp (its URL is the page's with cdomApp in the query); the early script is in the head ahead of any content; the inlined shim and the boot's second part are language="JavaScript1.5"; the string table is `new Array(...)` with entries separated by 0x01 and no \x escape and no digit after an escape; the app reads the top window's query;
 - the frame's HTML is the tree's (the frame's document, serialized, against the shim's serialization of the tree parsed afresh), after cd_main, after a click and at the end; every element of the tree with an id is in the frame with its text; display: none and the SVG are not written; the styles are FONT COLOR, B, I and U, with no style attribute; the button is an INPUT TYPE=button in the one FORM;
 - a click on the button, on two links and on a span's text under one listener reach C, the latter three with the right paths;
 - focus, input, change and blur reach C; the input's value is read in C (non-ASCII, through both UTF-8 directions); the click that left a field still reaches C;
@@ -281,7 +284,7 @@ tools/frames.mjs, under LEGACY=frames (CI runs it beside the other levels), chec
 - the redraw counts of P4, and one draw for an export of 15 ops;
 - no redraw adds a history entry; no error noted, no page exception;
 - a trap in C is thrown out of the call with nothing drawn, and the next click recovers;
-- frames-body.html (a BODY tag) runs through the fallback, and a click there reaches C.
+- frames-body.html (a BODY tag) runs the same way, and a click there reaches C; the boot waits for cdom.frames.js (cdomBootWait); a timer's draw waits while a button is down in the view.
 - markup characters in a text, an attribute, a textarea's value and an option's text read back from the frame as themselves;
 - a click held 600 ms that leaves an edited field still reaches C; two radios of one name are one group; a form from C is a DIV, and the fields in and after it stay the one FORM's; tags in capitals are the same tags, and one that is not letters and digits is a SPAN;
 - a throw during a draw (cd_call(checkbox, "select"), a focus that throws) does not lock the page; cd_move before itself or before another parent's node moves nothing;
@@ -309,3 +312,92 @@ Predictions, written before the first run:
   Falsifier: the table parses.
 - R4, frames-body.html in each: the fallback (A14) replaces the top document, as in Chrome; same results as frames.html.
 - R5, Netscape 2.02: stops at the modern shim's syntax error, then at SCRIPT SRC (A12), and shows nothing but alerts.
+
+### 15.1 What the runs found
+
+The runs are in the XP VM (QEMU on this Mac: every time below is slow in absolute terms), tests/out served by tools/vmserve.py on port 8110, each run under its own /r<n>/ path.
+The screenshots are in /Users/alex/VMs/ie6-xp/shots (fr-*.png, and uttt-ie4.png, uttt-ns3.png, uttt-ns4.png).
+Each failure is listed with its cause and where it was fixed.
+
+1. Netscape 4.08, frames.html (the predictions R1: blank, not refuted by the checklist but by the first part): blank page, and in the JavaScript console "syntax error." at `var cdom = (() => {` (the inlined shim, as predicted), "throw is a reserved identifier." at the boot's second part (as predicted), and "cf_FRAMESET is not defined." in cdom.frames.js (fr-ns4-1.png, fr-ns4-2.png).
+   Cause, from tests/probe-fs.html and probe-fsd.html (A13 and A14): the FRAMESET written after the DIV of the mount is ignored (modes B and C of the probe: frames=0), and a window whose document is replaced by open, write and close loses every global ("IMGS is not defined": the fallback's `cf_FRAMESET` was gone).
+   A frameset written in the head, before any content, is made (mode A), and the script blocks after it are dropped.
+   Fix: the two-frame design of section 3 (shim/boot-early.js, tools/legacy/frames.js, tests in tools/frames.mjs, mutants frames-early-after-content, frames-early-always, frames-early-query, frames-handler-parent, frames-url-own).
+   tests/probe-fs3.html is the design in miniature, and ran in all three (marks: the app frame ran, the view was written from it, the view's script and link and button called `parent.cdomApp.hit`): Netscape 4.08, IE 4.01 and Netscape 3.04 (fr-ns4-probeF.png, fr-ie4-probeF.png, fr-ns3-probeF.png).
+   One finding on the way: Netscape 4 drops a frame whose URL is the frameset's own (the frameset then had one frame), so the app frame's query gains `cdomApp`; and a frame of height 0 is not made either (rows="*,1").
+2. IE 4.01 (R2): a Script Error dialog, "Syntax error", line 17 char 14, as predicted (the inlined shim; fr-ie4-1.png).
+   Fix: `<script language="JavaScript1.5">` on the shim and the boot's second part (tools/legacy/build.mjs page; mutants frames-shim-tag-plain and frames-boot2-tag-plain): Netscape 2 to 4 skip them, and IE 4 raised no dialog after it.
+   Then "Object expected", line 2115, char 1 (fr-ie4-2.png): IE 4 runs the written inline script that starts the shim before the two SCRIPT SRC files it wrote have run.
+   Fix: shim/boot.js's cdomBootWait, which calls cdomFramesStart once both are there and tries again every 50 ms (test and mutant frames-boot-no-wait).
+3. Netscape 3.04 (R3: the array literal): in order, each one the next after the one before was fixed, with an alert or a stall:
+   - "Unknown File Type", text/javascript: it takes only application/x-javascript for a SCRIPT SRC (fr-ns3-1.png).
+     tools/vmserve.py sends that; a server of the app's has to (cbase's rules for .js files are the app's to set).
+   - "syntax error." at `function failed(e) {` (the boot's second part): hidden by the language attribute of item 2.
+   - "syntax error." at `var cdomLits=[...` (the prediction): the table is now `new Array(...)` (tools/cdlits.c; tests/lits/run.sh and mutant lits-array-literal).
+   - the table's text empty or shifted (fr-ns3-4.png, fr-ns3-lits.png): Netscape 3 ends a string at a NUL, so the separator \x00 is now 0x01, written \001 (a literal that holds the byte 0x01 is refused at build time, and tests/lits's own literals use 0x03); it reads a `\x` escape as every hex digit after it and an octal escape as every octal digit, so controls and "<" are three-digit octal escapes and a digit after an escape starts a new literal (`\001"+"4`).
+     Tests: tests/lits/run.sh, tools/frames.mjs's static check, mutants lits-separator-nul, lits-escape-hex, lits-digit-after-escape, lits-separator-in-literal.
+   - frames.html then ran (fr-ns3-5.png, fr-ns3-9.png).
+   - uttt.html: "function does not always return a value." (fr-ns3-uttt-1.png at that run): Netscape 3 refuses, as Netscape 2 does, a function that returns a value and ends in a `while(1)` with no return after it; js1c now ends every direct function in `return 0;` and tools/js10.mjs refuses the shape (mutant js1c-no-trailing-return).
+   - uttt.html: the string table's stamp (3396446046) read as 2147483647 in the app ("the page's string table is not this module's"): Netscape 3's parseInt keeps a value only up to 2^31 - 1, so js1c writes a data word as a signed int32 in base 36 (tests/js1diff.c's bigword, tools/js1.mjs's check, mutant js1c-data-unsigned).
+   Not a fix: a stall of Netscape 3 that I took for a cache poisoned by a browser killed mid-load, and for a hang of a script, was a server that the guest's keep-alive requests wedged (the frame's page never answered, "Connect: Host contacted. Waiting for reply..."): tools/vmserve.py is HTTP/1.1 now, and tools/vmprobe.sh starts a fresh one each run.
+   Two other things I wrote down as causes were wrong and were taken out again: `window.cdomFactory=` at the end of a file (it loads), and the table's size.
+4. Start-up memory (step 3): see 15.3.
+5. uttt (step 4): see 15.4.
+
+### 15.2 The checklist, per browser
+
+| | Predicted | frames.html | frames-body.html |
+| --- | --- | --- | --- |
+| Netscape 4.08 | R1: the shim's syntax error silently, the heading, count, button and fields shown; a slow start | passes (fr-ns4-2.png, -3, -4: heading, count 0, inc, links, fields; "inc" twice gives count 2; typed "hello" kept; "xyz" typed in the name field and the field left: "echo startxyz"; Back greyed throughout: the history does not grow) | passes (fr-ns4-body.png) |
+| IE 4.01 | R2: one Script Error dialog, then the same | passes after items 2 (fr-ie4-4.png, -5, -6: count 3, "hello" kept, "echo startxyz"; Back greyed) | passes (fr-ie4-body.png) |
+| Netscape 3.04 | R3: the array literal stops it, with an alert, and the shim's alert first | passes after item 3 (fr-ns3-5.png, -6, -9.png: count 3, "hello" kept, "echo startxyz"; Back greyed) | not run |
+| Netscape 2.02 | R5: the shim's syntax error, SCRIPT SRC, alerts | see 15.5 | not run |
+
+R4 (frames-body.html takes the fallback) is refuted: there is no fallback any more, and a BODY tag changes nothing since the early script is in the head.
+Where a prediction was wrong: R1 (blank, with the reason of item 1, which the prediction did not have), R3 (the array literal was the third stop of five), and R2's "the same after the dialog" (a second error came first).
+
+### 15.3 Start-up memory
+
+js1c wrote every word of the initial memory (32,768 words for frames.wasm) before the data: Netscape 2.02 dies on `undefined | 0` ("33041 is not a number").
+Netscape 3.04, Netscape 4.08 and IE 4.01 do not (tests/probe-undef.html, fr-ns4-undef.png, fr-ns3-undef.png, fr-ie4-undef.png): every bitwise operator reads a missing property as 0, as node does, and a load is `(JM[i]|0)`.
+So the factory tells Netscape 2 by an Array with no length (`JA=new Array(1);JZ=!JA.length`), which keeps writing every word and every page memory.grow adds, and the others write only the words below __heap_base (the C stack and the data: 16,440 of the 32,768; the heap is written by the program before it reads it, or reads as 0 as wasm's does).
+Prediction, written before the runs: at least 40% off the factory's time on Netscape 4 and 3, since half the words are not written.
+Measured with tests/probe-zero.html, the factory called three times (ms):
+
+| | before (every word) | after (below __heap_base) |
+| --- | --- | --- |
+| Netscape 4.08 | 1094, 969, 1156 | 468, 485, 390 (2.4 times faster) |
+| Netscape 3.04 | 1515, 1438, 1531 | 813, 781, 781 (1.9 times faster) |
+
+Confirmed.
+tools/js1.mjs runs every case again on a memory written only below __heap_base (297 of 297 agree with wasm, including tests/js1diff.c's peek, peekb and peekh of heap words nothing wrote, and the words of a grown page), and on the Netscape 2 emulation (an Array with no length: every word written, as before); four mutants (js1c-heap-written-eagerly, js1c-ns2-not-told, js1c-grow-always-written, js1c-grow-ns2-unwritten) and the two that were there (js1c-memory-unwritten, js1c-grow-unwritten) are caught.
+What is left: the stack's 16,384 words are written too, and need not be on these three engines; not done, since the speed of Netscape 4's object after a dense write (js-compile-design 12.7) was not re-measured.
+
+### 15.4 uttt
+
+demo/uttt builds uttt.wasm.js1.js now (it built only the words file, which the frames tier no longer loads: the Makefile's all and tools/uttt.mjs follow).
+tools/uttt.mjs passes on the WebAssembly, frames and frames-ns4 profiles (72 checks).
+uttt.html?AJG7NYNQG4RFXXGVPGD7QR2ETSOYTWMCREAQ in the VM:
+
+| | board | > | < | \|< and >\| | Play | Open, typed code | bad code | screenshot |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Netscape 4.08 | shows, the code from the query in the field (fr-ns4-uttt-1.png) | one move (fr-ns4-uttt-2.png) | back (fr-ns4-uttt-3.png) | to the end, "Move 50 of 50. O wins." (fr-ns4-uttt-4.png), and back | advances a move a tick (fr-ns4-uttt-5.png), but the Pause click is lost: each tick's draw replaces the button (the draw now waits while a button is down in the view, which Chrome tests, and did not help on Netscape 4: not understood); stops at the end: not run | not run | not run | uttt-ns4.png |
+| IE 4.01 | shows (fr-ie4-uttt-1.png) | yes (fr-ie4-uttt-2.png) | yes | yes (fr-ie4-uttt-3.png: "Move 50 of 50. O wins.") | advances, Pause stops it (fr-ie4-uttt-4.png, -5.png: move 3 and still 3); end: not run | opens (fr-ie4-uttt-7.png) | "That is not a game code" and no board (fr-ie4-uttt-6.png) | uttt-ie4.png |
+| Netscape 3.04 | shows (fr-ns3-uttt-1.png) | yes, in about 10 s | yes | yes: >\| in about 20 s (fr-ns3-uttt-3.png), \|< in about 45 s | not run | not run | not run | uttt-ns3.png (move 1) |
+
+On Netscape 3.04 every draw of the 230-node board takes tens of seconds (the page is replaced as a whole, and a click that came before it ended looked lost for a long while: it was not), and a run of the guest stalled for minutes now and then.
+A load of uttt.html that stalled with the frameset made and no request for the app frame happened, before the server was HTTP/1.1.
+
+### 15.5 Netscape 2.02
+
+One try each, nothing fixed (the next job's input).
+frames.html (fr-ns2-1.png, fr-ns2-2.png) and uttt.html (fr-ns2-uttt.png): the page is fetched, then the app frame's page (`frames.html?cdomApp`), so the early script makes the frameset in Netscape 2 as well; no script file is requested (it has no SCRIPT SRC: A12), no alert appears (the inlined shim and the boot's second part are language="JavaScript1.5", which it skips), the title is the page's and the view stays blank, "Document: Done".
+cdomBootWait gives up after 20 s without a message.
+The first run of Netscape 2 and 3 after a kill shows the license agreement; Accept.
+
+### 15.6 Still broken
+
+- Netscape 4.08: the click on Pause during Play is lost on this machine, and Netscape 3.04's draws take tens of seconds; neither is fixed.
+- Netscape 3.04 needs `application/x-javascript` for a script from the server.
+- Not run: frames-body.html and Open, a typed code and the bad code on Netscape 3 and 4 (the first two also), and Play to its end on all three; IE 3 has no script.
+- The inlined modern shim and the boot's second part are still sent to the frames tier (about 24 KB of a page).

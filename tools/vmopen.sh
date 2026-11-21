@@ -13,9 +13,9 @@ case "$1" in
 esac
 python3 vm.py tap 40 465; sleep 3; python3 vm.py tap 238 400; sleep 3
 if [ "$1" = kill ]; then
-  python3 vm.py keys 'taskkill /f /im netscape.exe'; python3 vm.py key ret; sleep 3
+  python3 vm.py keys "taskkill /f /im netscape.exe"; sleep 1; python3 vm.py key ret; sleep 5
   python3 vm.py tap 40 465; sleep 3; python3 vm.py tap 238 400; sleep 3
-  python3 vm.py keys 'taskkill /f /im iexplore.exe'; python3 vm.py key ret; sleep 3
+  python3 vm.py keys "taskkill /f /im iexplore.exe"; sleep 1; python3 vm.py key ret; sleep 5
 else
   python3 vm.py keys "$exe $2"; python3 vm.py key ret
 fi
