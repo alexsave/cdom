@@ -829,3 +829,61 @@ The plan works in Netscape 2.02: nothing in it needs more than a small part of t
 Keep the block constant at 30000: a block of 1.5 MB runs, so the constant is not near anything, and 30000 keeps each block quick to read.
 What can break the plan is not the size of a block or the total but the names: the app frame's script must hold fewer than 65,536 distinct global names and string literals in all (js1c's output for demo/uttt has a few hundred), and a literal of a few hundred KB costs seconds in the lexer, so the string table is better as many literals of a few KB joined by `+` (it already is, `\001"+"4`).
 A 150 KB app frame loads in about 2.3 s on this guest, a rewrite of a 5 KB view takes about 1.5 s, and that is the number to design the frames tier's per-click cost around.
+
+## A framebuffer of 1x1 GIFs
+
+Alex's question: how far can a picture made of stretched 1x1 GIFs go in the real Netscape 2.02, and can it fill a 640 x 480 window?
+The technique: a palette of 256 one-pixel GIFs (the 216 web-safe colours and 40 more greys, about 40 bytes each), and a picture written as IMG tags stretched with WIDTH and HEIGHT, either one TABLE cell per block (BORDER=0 CELLPADDING=0 CELLSPACING=0) or plain rows of IMGs ended by BR with no white space between tags.
+Every page is made by tools/gen_probe_ns2_fb.py (pages and GIFs go to tests/out/fb/, which git ignores), served by tools/vmserve.py, opened by tools/vmns2.sh through the guest agent.
+A page's time is read from the server's log (the page's GET to the mark an onLoad handler requests) and from the screen (the first screendump that stays the same), both in the Mac's wall clock; the guest's clock runs about 3 times slow, which does not matter for either.
+
+### What I expect, written before the first run
+
+Q1, correctness.
+
+- A stretched 1x1 GIF is a solid block, and neighbours in one row touch when no white space lies between the tags: no horizontal gap in the IMG+BR form.
+- Vertical: in the IMG+BR form each row is a line, and Netscape 2 keeps the line's text descent under images that sit on the baseline.
+  Prediction: a stray strip of 3 to 5 pixels under every row (the descent of the default font), so rows are not solid; ALIGN=TOP or ALIGN=ABSMIDDLE (or a BR-free line that holds only the image) does not remove it for sure, I expect it to shrink it to 0 to 2 pixels.
+  Falsifier: no strip at all.
+- In a TABLE with CELLPADDING=0 and CELLSPACING=0 each cell is as tall as its image plus the same baseline strip, so the table has the same strips; its cells touch horizontally.
+  Prediction: both forms show the strip; the TABLE is the one that needs the least care for columns (every cell has its own width), the IMG+BR the least for rows.
+- A WIDTH=1 HEIGHT=1 cell works (a 1 pixel block is drawn), but in the TABLE form the row is a whole text line tall (about 16 pixels), so it is only a 1 pixel picture where nothing else is in the row.
+  A 1x1 IMG is in the IMG+BR form also a whole line tall.
+  So the smallest cell that behaves is about the height of a line, until the strip is removed.
+
+Q2, scale (a 608 x 400 area: 38x25, 76x50, 152x100, 304x200, 608x400 cells at 16, 8, 4, 2, 1 pixels).
+
+- Time grows linearly with the tag count in the IMG+BR form and a little faster in the TABLE form (Netscape 2 lays out a table only when it has the whole of it).
+  Prediction, IMG+BR: 950 tags (16 px) 3 s, 3,800 tags (8 px) 10 s, 15,200 tags (4 px) 40 s, 60,800 tags (2 px) 3 minutes or a crash, 243,200 tags (1 px) a crash or a hang (memory, or the window does not draw).
+- Prediction, TABLE: the same sizes cost 2 to 3 times as much: 16 px 6 s, 8 px 25 s, 4 px several minutes (over 100 s) or an out of memory alert; 2 and 1 px do not finish.
+- HTML size is about 40 bytes a cell in the IMG+BR form (`<IMG SRC=XX.gif WIDTH=16 HEIGHT=16>`), 70 bytes in the TABLE form; so 4 px is 600 KB and 2 px 2.4 MB.
+- Where it breaks: an alert, a crash box, or a view that stays grey with "Waiting for reply"; my guess for the first break is the 2 px and 1 px sizes, by memory (about 100 bytes of the engine per image and per cell) and by time, not by a count limit.
+- Falsifier: 2 px in IMG+BR draws in under 60 s.
+
+Q3, run-length (one IMG of WIDTH=run * cell for a run of one colour).
+
+- (a) a photo-like dithered picture: runs are short, about 1.2 cells on average, so the tags drop by only 15 to 25 percent, and the time by the same.
+- (b) a flat pixel-art picture (the uttt board, the Game Boy art scaled to the grid): runs average 8 to 20 cells, so the tags drop by 85 to 95 percent and the time with them; a 4 px frame, impossible in the plain form, then draws.
+- (c) the checkerboard: no run is longer than 1, no saving at all (0 percent), and the worst case is the plain case.
+
+Q4, rewrite cost.
+
+- A rewrite by document.open, write and close into a frame costs what the same page costs to load, plus about 1.5 s of fixed cost (the earlier 5 KB rewrite took 1.5 s on the wall).
+  So a rewrite is within 20 percent of a load of the same HTML, and the plain 8 px picture (about 4 KB of IMG tags in 3,800 tags, 150 KB of HTML) is a rewrite of 12 s.
+- Splitting the screen into tiles (frames) so only one tile is rewritten: a small update (one tile of 1/16 of the picture) costs about the fixed cost plus 1/16 of the picture's time, so a 76x50 picture updates a tile in about 2.5 s, the whole picture's 12 s not paid.
+  Each extra frame costs about 0.3 s of load time; 16 tiles are the sensible limit.
+  Falsifier: a tile rewrite costs the same as the whole picture (the engine relays out the whole frameset).
+- A redraw is never faster than 1 per second on this guest: "a few redraws a second" is not reachable; a still picture is the use.
+
+Q5, palette.
+
+- 256 distinct GIFs are each fetched once and kept (the server's log shows 256 GETs for the first page and none for a second page); the first load of all 256 costs 256 requests of about 40 bytes each, about 15 to 40 s on the guest (the log's gap between the first and the last).
+  Falsifier: a GIF fetched again for each IMG that names it (Netscape 2 has no cache of that kind), which the log would show as hundreds of GETs of one name.
+- The guest's display depth decides the colours: if 256 colours (8 bit), the web-safe colours map exactly and the 40 greys are dithered or snapped; if 24 bit, all 256 are exact.
+  The VM's QEMU is Cirrus VGA at the guest's chosen depth; I expect 16 or 24 bit, so exact colours (a 16 bit display shows the 40 greys within 8 levels).
+
+Q6, other limits.
+
+- Netscape 2 has a hard limit on the number of images in a page: the earlier probes put few images in a page, so nothing is known; I expect no hard limit below 10,000 (a 16 bit count would give 65,536), and broken-image icons only when the connection count runs out (it fetches each distinct GIF once, so the 256 are fine).
+- Layout time grows faster than the tag count past about 20,000 tags (the line is re-measured on each addition), so time per tag is not constant: the 4 px picture costs more than 4 times the 8 px picture per tag.
+- Memory: the 1 GB guest does not run out first; the limit is Netscape 2's own heap (16-bit-era allocator, a 32-bit build) at a few tens of MB.
