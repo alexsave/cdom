@@ -9,6 +9,8 @@ enum { COUNT, INC, LINKS, NAME, ECHO, NOTE, CHECK, LIST, TICK, NIDS };
 static cd_id ids[NIDS];
 static uint32_t count, clicks_path = 0xffffffffu, inputs, changes, checks, focuses, blurs, items;
 static char io[256];
+/* Markup characters in every place the shim writes text: each must read back in the frame as these characters. */
+#define ESC "<b>\"&amp;x</b>'"
 
 static cd_id el(const char *tag, const char *idattr) {
   cd_open(tag);
@@ -43,6 +45,9 @@ void cd_main(void) {
   cd_open("svg"); cd_attr("id", "pic"); cd_open("circle"); cd_attr("r", "4"); cd_close(); cd_close();
   cd_open("p"); cd_attr("id", "tickp"); cd_text("ticks "); cd_text_num(0); ids[TICK] = cd_id_new(); cd_name_text(ids[TICK]); cd_close();
   ids[LIST] = el("ul", "list"); cd_close();
+  cd_open("p"); cd_attr("id", "esc"); cd_attr("title", ESC); cd_text(ESC); cd_close();
+  cd_open("textarea"); cd_attr("id", "escta"); cd_text(ESC); cd_close();
+  cd_open("select"); cd_attr("id", "escsel"); cd_open("option"); cd_text(ESC); cd_close(); cd_close();
   cd_sel(ids[INC]); cd_listen(ids[INC], CD_EV_CLICK);
   cd_sel(ids[LINKS]); cd_listen(ids[LINKS], CD_EV_CLICK);
   cd_sel(ids[NAME]); cd_listen(ids[NAME], CD_EV_INPUT);
