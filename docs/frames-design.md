@@ -107,6 +107,8 @@ Rendering is once per outermost call into C, never once per op:
 
 JavaScript 1.1 has no try/finally, so a C trap leaves the count up.
 The next entry from the browser (a handler or a timer, which run only with nothing on the stack) puts it back to 0, ends the dead call's runtime strings, and draws.
+The shim's own draw can throw too (a focus given back, a browser's error), which would leave cf_drawing, the flag that keeps the handlers quiet during a draw, up for good: each draw sets a 0 ms timer that puts it down if it is still up, and notes "a draw did not finish"; the recovery above puts it down as well.
+The restore sets a selection on text fields only, so cd_call(checkbox, "select") no longer throws there.
 
 ## 5. Events
 

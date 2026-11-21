@@ -101,6 +101,8 @@ EXPORT("tick_after") void tick_after(uint32_t ms) { cd_timer_cb(ms, tick, nullpt
 /* C sets the note field's value, and focuses the name field. */
 EXPORT("set_note") void set_note(void) { cd_set_str(ids[NOTE], "value", "from C"); cd_flush(); }
 EXPORT("focus_name") void focus_name(void) { cd_call(ids[NAME], "focus"); cd_flush(); }
+/* select on a checkbox, which has no selection to set. */
+EXPORT("select_check") void select_check(void) { cd_call(ids[CHECK], "select"); cd_flush(); }
 /* A trap after the count was set and flushed: the call into C never returns to the shim, which must recover. */
 EXPORT("trap") void trap(void) { cd_set_text_node_num(ids[COUNT], ++count); cd_flush(); __builtin_trap(); }
 EXPORT("stat") uint32_t stat(uint32_t k) {
