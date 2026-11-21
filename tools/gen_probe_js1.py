@@ -15,6 +15,7 @@ Run: python3 tools/gen_probe_js1.py > tests/probe-js1.html
      python3 tools/gen_probe_js1.py b > tests/probe-js1b.html   (the second probe: the questions netscape.exe raised, see
      docs/descent.md "The second probe"; the recursion depth grid comes last, so an engine that stops on a stack overflow
      has reported everything else first)
+     python3 tools/gen_probe_js1.py b part 0 15 > tests/probe-js1b-part0.html   (15 tests from the first: for IE 4)
      python3 tools/gen_probe_js1.py c > tests/probe-js1c.html   (its follow-up: are the methods that return undefined
      present at all, and the depth limits to a step of 2 to 5)
      python3 tools/gen_probe_js1.py nested > tests/probe-nested.html   (a function inside a function, alone: the alert's text)
@@ -342,6 +343,10 @@ def main():
     pages = {"b": ("b", TESTS_B), "c": ("c", TESTS_C), "nested": ("-nested", NESTED)}
     if sys.argv[1:2] and sys.argv[1] in pages:
         suffix, tests = pages[sys.argv[1]]
+        if sys.argv[2:3] == ["part"]:
+            # b part <k> <size>: for IE 4, whose page stalls loading after some tens of marks
+            k, size = int(sys.argv[3]), int(sys.argv[4])
+            tests = tests[k * size:(k + 1) * size]
         out[0] = out[0].replace("probe-js1</", "probe-js1%s</" % suffix)
         out.append("".join(block(*t) for t in tests))
         out.append('<SCRIPT LANGUAGE="JavaScript">\nmark("done", "end");\n</SCRIPT>\n</BODY>\n</HTML>\n')
