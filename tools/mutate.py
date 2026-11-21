@@ -975,7 +975,7 @@ M = [
   ('ie6-proto-gate-off', 'tools/legacy/es3.mjs', "  if (/\\b__proto__\\b/.test(src)) throw", "  if (false) throw", ES3T, 'FAIL __proto__ is refused'),
   # the fifth tier, the frames tier (shim/boot.js's first part, tools/legacy/frames.js, js11.mjs, tools/cdp.mjs's FRAMES_OLD:
   # docs/frames-design.md)
-  ('frames-early-after-content', 'tools/legacy/build.mjs', ".replace('</head>', () => '<script>\\n' + earlyCode + '</script></head>')", ".replace('</head>', () => '</head><div id=\"x\"></div><script>\\n' + earlyCode + '</script>')", FRAMES, 'FAIL the early script is in the head'),  # Netscape 4 ignores a frameset after content
+  ('frames-early-after-content', 'tools/legacy/build.mjs', ".replace('</head>', () => '<script>\\n' + earlyCode + '</script></head>')", ".replace('</head><div id=\"m\"></div>', () => '</head><div id=\"m\"></div><script>\\n' + earlyCode + '</script>')", FRAMES, 'FAIL the early script is in the head'),  # Netscape 4 ignores a frameset after content
   ('frames-shim-tag-plain', 'tools/legacy/build.mjs', ".replace(SHIM_TAG, '<script language=\"JavaScript1.5\">$1')", ".replace(SHIM_TAG, '<script>$1')", FRAMES, 'FAIL the inlined shim and the boot'),  # Netscape 3 raises a syntax error alert for it
   ('frames-boot2-tag-plain', 'tools/legacy/build.mjs', "'</script>\\n<script language=\"JavaScript1.5\">\\n' + parts[1]", "'</script>\\n<script>\\n' + parts[1]", FRAMES, 'FAIL the inlined shim and the boot'),
   ('frames-early-always', 'shim/boot-early.js', 'createElement) && window.name != "cdomApp") {', 'createElement)) {', FRAMES, 'FAIL booted'),  # the app frame would make a frameset of its own
