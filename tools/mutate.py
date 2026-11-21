@@ -8,7 +8,7 @@ A mutant whose text to mutate is not in its file exactly once stops the run befo
 A test killed at TEST_TIMEOUT is not a catch, unless the mutant's entry ends in HANGS: the hang is then its
 expected symptom (a C loop that never ends), and the timeout or its failure message both count.
 Usage: python3 tools/mutate.py [-j N] [name ...]   (N workers, default half the cores)"""
-import subprocess, sys, pathlib, os, shutil, tempfile, threading, queue, signal
+import subprocess, sys, pathlib, os, shutil, tempfile, threading, queue, signal, time
 
 top = pathlib.Path(__file__).resolve().parent.parent
 # s: the test command alone (not the build). unit.mjs takes about 10 on a passing tree and waits at most 60 for a
@@ -1138,8 +1138,8 @@ M = [
   ('js1c-writes-decrement', 'tools/js1c.c', 'while(x>0){n=n+1;x=x<<1;}', 'while(x>0){n++;x=x<<1;}', JS1, 'FAIL frames.wasm.js1.js has no ++ or --'),
   ('js1c-table-named', 'tools/js1c.c', 'JO=new Object();x=new Object();', 'JO=new Object();JF.n=0;x=new Object();', JS1, 'FAIL no table'),
   ('js10gate-mixed-returns-allowed', 'tools/js10.mjs', 'if (value && bare) add', 'if (value && bare && 0) add', JS10T, 'FAIL function f(a) { if (a) return 1; return; } is refused'),
-  ('js1c-bare-return', 'tools/js1c.c', '  } else bs(b, "return 0;"); /*', '  } else bs(b, "return;"); /*', JS1, 'not JavaScript 1.0: a function that returns a value and also none'),
-  ('js1c-div-fraction', 'tools/js1c.c', 'return (a-a%b)/b|0;}\\n"', 'return a/b|0;}\\n"', JS1, "FAIL every case agrees with every bitwise operand an integer in Netscape 3's range"),
+  ('js1c-bare-return', 'tools/js1c.c', '  } else bs(b, "return 0;"); /*', '  } else bs(b, "return;"); /*', JS1, 'a function that returns a value and also none'),  # tests/build.sh stops at the gate
+  ('js1c-div-fraction', 'tools/js1c.c', 'b==-1)){JT=1;return 0;}return (a-a%b)/b|0;}', 'b==-1)){JT=1;return 0;}return a/b|0;}', JS1, "FAIL every case agrees with every bitwise operand an integer in Netscape 3's range"),
   ('js1c-divc-fraction', 'tools/js1c.c', 'bf(b, "((%s-%s%%%s)/%s|0)", t.p, t.p, c.p, c.p);', 'bf(b, "(%s/%s|0)", t.p, c.p);', JS1, "FAIL every case agrees with every bitwise operand an integer in Netscape 3's range"),
   ('js1c-sat-fraction', 'tools/js1c.c', 'if(x>=2147483647)return 2147483647;return JTr(x)|0;}', 'if(x>=2147483647)return 2147483647;return x|0;}', JS1, "FAIL every case agrees with every bitwise operand an integer in Netscape 3's range"),
   ('js1c-infinity-by-zero', 'tools/js1c.c', 'if(m)return JNa;return s*JIn;}', 'if(m)return JNa;return s/0;}', JS1, 'FAIL frames.wasm.js1.js divides by no literal 0'),
@@ -1239,6 +1239,13 @@ missed_dir = pathlib.Path(tempfile.mkdtemp(prefix='cdom-missed-'))
 def worker(w):
   root = base / f'w{w}'
   copy_tree(root)
+  def write_fresh(p, text):
+    # A worker runs its mutants one after another in one copy: a host tool make built in the same second as the
+    # source was written (tools/out/js1c from tools/js1c.c) is otherwise not rebuilt, and the next mutant runs the last
+    # one's binary. The mtime two seconds ahead is newer than anything built before it.
+    p.write_text(text)
+    t = time.time() + 2
+    os.utime(p, (t, t))
   while True:
     try: k, (name, f, old, new, cmd, want, *opts) = work.get_nowait()
     except queue.Empty: return
@@ -1249,10 +1256,10 @@ def worker(w):
       line, ok = f'FAIL {name}: the text to mutate is not in {f} once', False
     else:
       try:
-        p.write_text(src.replace(old, new))
+        write_fresh(p, src.replace(old, new))
         code, out = build_and_run(root, cmd, minify=True)
       finally:
-        p.write_text(src)
+        write_fresh(p, src)
         touched = restore_tree(root)
       ok = hangs if code == HUNG else code != 0 and want in out
       why = '' if ok else f' (timed out after {TEST_TIMEOUT} s, and the entry is not marked HANGS)' if code == HUNG \
