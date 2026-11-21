@@ -1077,3 +1077,66 @@ The cube palette has fewer tags (17,423) because it has fewer colours, but it sh
 - P5, the links: a tap on the pill opens details.html (its GET in the server's log within 1.5 s of the tap), and the details page is exact; onMouseOver puts the box's text in the status bar within 0.5 s of the pointer arriving.
   The details page shares the palette: Netscape 2 ignores the server's no-store for images it already holds, so fewer than 30 GIF requests for it after the still page.
   Falsifier: the click does nothing, the status shows the URL, or the details page asks for 100 or more GIFs again.
+
+### What the runs found
+
+The runs are of 2026-11-21 in the XP VM (raw lines in results/ns2paint_runs.txt, shots in /Users/alex/VMs/ie6-xp/shots/ns2paint-*.png).
+The work was stopped before the click, hover and video steps: Alex chose the live renderer over precomputed pictures ("we have the <img> tag for that"), so those are listed below as not measured.
+
+The scroll-safe width (w<width>.html: bars of 8 pixels, 800 rows tall, so the page has a vertical scrollbar): 576 to 598 are exact (0 pixels different), 600 to 612 wrap their last bar.
+So the widest exact picture is 598 pixels, with the scrollbar or without it: Netscape 2 lays a page out as if the scrollbar were always there, and 600 wraps on a short page too (the probe's "600 wrapped").
+The tall page was rendered again at 598 (its feature cards are calc(50% - 26px) wide) and is exact at every scroll position.
+
+A bug found by the first loads: PIL's quantize(palette=) does not map to the nearest colour exactly, and it drew the paper 3 levels darker than the page's BGCOLOR, a visible edge round the picture.
+tools/gen_ns2_paint.py now maps each colour to its nearest palette entry itself; the pictures are more faithful and have more runs (the still page 23,303 tags before, 28,012 after).
+The numbers after that fix:
+
+| variant | page | colours | tags | links | bytes |
+| --- | --- | --- | --- | --- | --- |
+| aa | still | 172 | 28,012 | 106 | 954,106 |
+| aa | tall (598 x 1,570) | 233 | 103,187 | 172 | 3,463,958 |
+| aa | details | 141 | 25,159 | 63 | 849,861 |
+| snap3 | still | 162 | 23,176 | 106 | 790,751 |
+| snap3 | tall | 227 | 86,381 | 172 | 2,903,117 |
+| bw | still | 157 | 20,587 | 106 | 703,451 |
+| bw | tall | 224 | 76,862 | 172 | 2,585,430 |
+| bw | details | 130 | 18,719 | 63 | 633,673 |
+| no text at all | still / tall / details | 142 / 198 / 117 | 15,723 / 48,549 / 10,093 | | |
+| aa, fixed cube palette | still | 83 | 17,652 | | 607,682 |
+
+Text is 44 percent of the still page's tags and 53 percent of the tall page's; bw cuts the still page's tags by 27 percent, snap3 by 17 percent.
+
+Load times, the Mac's wall seconds from the page's GET to its end mark (every load drew the whole page):
+
+| variant | page | tags | quiet Mac, s | with another job on the Mac, s |
+| --- | --- | --- | --- | --- |
+| aa | still | 28,012 | 12.0, 12.0, 15.5 | 41.5, 45.3, 73.4 |
+| snap3 | still | 23,176 | 10.4, 11.1, 11.3 | 62.1 |
+| bw | still | 20,587 | 9.7, 14.7 | 26.2, 37.1 |
+| aa | details | 25,159 | 9.9, 10.5 | 56.3 |
+| snap3 | details | 21,022 | 9.4 | 21.0, 66.9 |
+| bw | details | 18,719 | | 31.6, 49.3, 54.6 |
+| aa | tall | 103,187 | | 144.1, 217.6 |
+| bw | tall | 76,862 | | 240.8 |
+| before the mapping fix: aa, snap3, bw still | | 23,303 / 19,884 / 16,703 | 10.3, 9.3, 8.5 | |
+
+"Another job" is the Game Boy work's SameBoy and make, which ran beside some of these, and an unexplained slow phase after 16:25 with no such process, in which the guest's QEMU sat at about 18 percent of a core: the guest was waiting, not computing, so the slow loads are stalls (the server's log shows no 20 s gap, the requests just come slowly), not layout.
+The quiet numbers are the engine's cost: about 0.35 to 0.45 ms a tag, half the probes' 0.7.
+
+Exactness: every load of the still and details pages in all three variants was pixel-exact (0 different, 178,826 pixels compared each, XP's activation balloon at the bottom right masked), and the tall page in aa (twice) and bw was exact at scroll 0, 345, 690, 1035 and 1242 (the bottom).
+The still and details pages carry 106 and 63 links round runs, so links add no visible pixel.
+
+### The predictions, marked
+
+- P1, time: wrong, faster for one screen and slower for the long page.
+  The still page in aa took 12.0 s against 20 predicted (and 10.3 s for the 23,303-tag version the prediction was made for); details 9.4 to 10.5 s against 14 to 17.
+  The tall page took 144 to 241 s against 60 (45 to 75): wrong, but none of those runs was on a quiet Mac, so the long page's own cost is not measured.
+- P2, the text: right for snap3 (13 percent faster, 10.4 against 12.0 s), a little under for bw (19 percent, 9.7 against 12.0, predicted 20 to 25); with two or three runs each and a spread of 3 s, these are rough.
+- P3, the scroll-safe width 580: wrong, it is 598, because the scrollbar takes no width from the layout; "the tall page is exact at every scroll position": right.
+- P4, exactness: right, 0 pixels different on every page and every scroll position.
+- P5, the links: "pixel-identical": right; the click to details.html, the onMouseOver status text and the GIF requests of the second page: not measured (tools/vmpaint.py links was written and not run).
+
+### What is left
+
+Not done, by the change of plan: tools/vmpaint.py links (hover status, a tap on the pill, the details page after the click, Back home), the video, the bw tall page on a quiet Mac, and the cause of the slow phases (the guest idle while requests come slowly).
+What the live renderer can reuse: the width 598 for any page, scrolling or not; the exact nearest-colour mapping (never PIL's quantize(palette=)); a palette that keeps the most frequent colours exact; text without anti-aliasing as the cheapest remedy for runs; tools/paintcheck.py (with the balloon mask) and tools/vmpaint.py as the oracle and driver.

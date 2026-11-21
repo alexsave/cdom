@@ -50,3 +50,120 @@ scroll 0: picture rows 0..360 at screen y 69..429, 193330 pixels compared (the b
 the picture is 612 wide, 2 columns of it are under the scrollbar or past the view
 
 [exited with code 1]
+
+== loads before the exact mapping (tools/gen_ns2_paint.py with PIL's quantize(palette=), 15:53, a quiet Mac)
+== load aa still 15:53:53
+aa still: got=True end=10.3 s lastimg=10.2 s screen-last-change=10.5 s gif-requests=152 distinct=151 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load snap3 still 15:54:32
+snap3 still: got=True end=9.3 s lastimg=9.2 s screen-last-change=9.6 s gif-requests=147 distinct=145 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load bw still 15:55:10
+bw still: got=True end=8.5 s lastimg=8.4 s screen-last-change=8.9 s gif-requests=140 distinct=139 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load bw details 15:55:47
+bw details: got=True end=6.4 s lastimg=6.2 s screen-last-change=6.5 s gif-requests=115 distinct=115 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load aa details 15:56:21
+aa details: got=True end=7.3 s lastimg=6.1 s screen-last-change=7.7 s gif-requests=129 distinct=129 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+
+== after the exact mapping, 15:58 to 16:11 (SameBoy of the Game Boy job ran from about 16:01)
+== load aa still 15:58:06
+aa still: got=True end=41.5 s lastimg=41.3 s screen-last-change=41.6 s gif-requests=198 distinct=172 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load snap3 still 15:59:16
+snap3 still: got=True end=10.4 s lastimg=10.3 s screen-last-change=10.5 s gif-requests=179 distinct=162 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load bw still 15:59:57
+bw still: got=True end=26.2 s lastimg=26.1 s screen-last-change=26.7 s gif-requests=179 distinct=157 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load aa details 16:00:59
+aa details: got=True end=10.5 s lastimg=7.9 s screen-last-change=10.9 s gif-requests=143 distinct=141 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load snap3 details 16:01:41
+snap3 details: got=True end=21.0 s lastimg=20.9 s screen-last-change=21.4 s gif-requests=132 distinct=132 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load bw details 16:02:36
+bw details: got=True end=31.6 s lastimg=30.4 s screen-last-change=31.8 s gif-requests=132 distinct=130 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== scroll aa tall 16:03:39
+tall loaded: got=True end=144.1 s lastimg=143.1 s screen-last-change=144.5 s gif-requests=255 settled=True
+  view 0: scroll 0: picture rows 0..360 at screen y 69..429, 189838 pixels compared (the balloon's 26040 not), 0 different
+  view 1: scroll 345: picture rows 330..705 at screen y 54..429, 198808 pixels compared (the balloon's 26040 not), 0 different
+  view 2: scroll 690: picture rows 675..1050 at screen y 54..429, 198808 pixels compared (the balloon's 26040 not), 0 different
+  view 3: scroll 1035: picture rows 1020..1395 at screen y 54..429, 198808 pixels compared (the balloon's 26040 not), 0 different
+  view 4: scroll 1242: picture rows 1227..1569 at screen y 54..396, 191350 pixels compared (the balloon's 13764 not), 0 different
+  view end: scroll 1242: picture rows 1227..1569 at screen y 54..396, 191350 pixels compared (the balloon's 13764 not), 0 different
+== scroll bw tall 16:07:13
+tall loaded: got=True end=240.8 s lastimg=237.0 s screen-last-change=241.2 s gif-requests=242 settled=True
+  view 0: scroll 0: picture rows 0..360 at screen y 69..429, 189838 pixels compared (the balloon's 26040 not), 0 different
+  view 1: scroll 345: picture rows 330..705 at screen y 54..429, 198808 pixels compared (the balloon's 26040 not), 0 different
+  view 2: scroll 690: picture rows 675..1050 at screen y 54..429, 198808 pixels compared (the balloon's 26040 not), 0 different
+  view 3: scroll 1035: picture rows 1020..1395 at screen y 54..429, 198808 pixels compared (the balloon's 26040 not), 0 different
+  view 4: scroll 1242: picture rows 1227..1569 at screen y 54..396, 191350 pixels compared (the balloon's 13764 not), 0 different
+  view end: scroll 1242: picture rows 1227..1569 at screen y 54..396, 191350 pixels compared (the balloon's 13764 not), 0 different
+
+== three tries of each still, the last field of each == line is 1 while SameBoy ran
+== load aa still try 1 16:12:44 1
+aa still: got=True end=73.4 s lastimg=72.3 s screen-last-change=73.8 s gif-requests=199 distinct=172 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load snap3 still try 1 16:14:39 1
+snap3 still: got=True end=62.1 s lastimg=61.6 s screen-last-change=62.7 s gif-requests=175 distinct=162 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load bw still try 1 16:16:20 1
+bw still: got=True end=37.1 s lastimg=36.9 s screen-last-change=37.4 s gif-requests=170 distinct=157 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load aa still try 2 16:17:34 1
+aa still: got=True end=45.3 s lastimg=44.4 s screen-last-change=45.9 s gif-requests=200 distinct=172 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load snap3 still try 2 16:18:53 0
+snap3 still: got=True end=11.3 s lastimg=11.2 s screen-last-change=11.5 s gif-requests=180 distinct=162 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load bw still try 2 16:19:40 0
+bw still: got=True end=9.7 s lastimg=9.6 s screen-last-change=10.1 s gif-requests=179 distinct=157 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load aa still try 3 16:20:18 0
+aa still: got=True end=15.5 s lastimg=15.4 s screen-last-change=15.9 s gif-requests=197 distinct=172 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load snap3 still try 3 16:21:04 0
+snap3 still: got=True end=11.1 s lastimg=11.0 s screen-last-change=11.3 s gif-requests=186 distinct=162 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== load bw still try 3 16:21:44 0
+bw still: got=True end=14.7 s lastimg=14.6 s screen-last-change=14.9 s gif-requests=179 distinct=157 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+
+== on a quiet Mac by the process list (no SameBoy or make); the guest's QEMU sat at about 18 percent CPU during the slow loads after 16:25; stopped during the bw tall scroll on the coordinator's call
+== 16:22:43 quiet-wait 0: python3 tools/vmpaint.py aa load still
+aa still: got=True end=12.0 s lastimg=11.9 s screen-last-change=12.1 s gif-requests=198 distinct=172 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== 16:23:22 quiet-wait 0: python3 tools/vmpaint.py aa load still
+aa still: got=True end=12.0 s lastimg=11.9 s screen-last-change=12.2 s gif-requests=198 distinct=172 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== 16:24:03 quiet-wait 0: python3 tools/vmpaint.py aa load details
+aa details: got=True end=9.9 s lastimg=7.9 s screen-last-change=12.3 s gif-requests=142 distinct=141 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== 16:24:44 quiet-wait 0: python3 tools/vmpaint.py snap3 load details
+snap3 details: got=True end=9.4 s lastimg=9.2 s screen-last-change=9.6 s gif-requests=133 distinct=132 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== 16:25:22 quiet-wait 0: python3 tools/vmpaint.py bw load details
+bw details: got=True end=54.6 s lastimg=53.3 s screen-last-change=54.9 s gif-requests=132 distinct=130 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== 16:26:56 quiet-wait 0: python3 tools/vmpaint.py aa load details
+aa details: got=True end=56.3 s lastimg=38.4 s screen-last-change=56.7 s gif-requests=145 distinct=141 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== 16:28:28 quiet-wait 0: python3 tools/vmpaint.py snap3 load details
+snap3 details: got=True end=66.9 s lastimg=66.1 s screen-last-change=67.3 s gif-requests=136 distinct=132 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== 16:30:35 quiet-wait 0: python3 tools/vmpaint.py bw load details
+bw details: got=True end=49.3 s lastimg=48.4 s screen-last-change=49.8 s gif-requests=134 distinct=130 settled=True
+  scroll 0: picture rows 0..319 at screen y 69..388, 178826 pixels compared (the balloon's 10614 not), 0 different
+== 16:32:17 quiet-wait 0: python3 tools/vmpaint.py aa scroll
+tall loaded: got=True end=217.6 s lastimg=216.8 s screen-last-change=218.0 s gif-requests=256 settled=True
+  view 0: scroll 0: picture rows 0..360 at screen y 69..429, 189838 pixels compared (the balloon's 26040 not), 0 different
+  view 1: scroll 345: picture rows 330..705 at screen y 54..429, 198808 pixels compared (the balloon's 26040 not), 0 different
+  view 2: scroll 690: picture rows 675..1050 at screen y 54..429, 198808 pixels compared (the balloon's 26040 not), 0 different
+  view 3: scroll 1035: picture rows 1020..1395 at screen y 54..429, 198808 pixels compared (the balloon's 26040 not), 0 different
+  view 4: scroll 1242: picture rows 1227..1569 at screen y 54..396, 191350 pixels compared (the balloon's 13764 not), 0 different
+  view end: scroll 1242: picture rows 1227..1569 at screen y 54..396, 191350 pixels compared (the balloon's 13764 not), 0 different
+== 16:37:09 quiet-wait 0: python3 tools/vmpaint.py bw scroll
