@@ -983,6 +983,7 @@ M = [
   ('frames-handler-parent', 'tools/legacy/frames.js', 'on + "=\\"parent.cdomApp.cdomF." + f', 'on + "=\\"parent.cdomF." + f', FRAMES, 'FAIL a click on the button reached C'),
   ('frames-url-own', 'tools/legacy/frames.js', 'var l = top.location,', 'var l = location,', FRAMES, "FAIL the app reads the top window's URL"),
   ('frames-boot-no-wait', 'shim/boot.js', 'if (cdomBootTries < 400) setTimeout("cdomBootWait()", 50);', 'if (0) setTimeout("cdomBootWait()", 50);', FRAMES, 'FAIL the boot starts once cdom.frames.js has run'),  # IE 4 runs the written script before the file
+  ('frames-tick-draws-under-press', 'tools/legacy/frames.js', '  if (cf_dirty && (later || cf_pressed)) {', '  if (cf_dirty && later) {', FRAMES, "FAIL a timer's draw waits while a button is down"),  # Play's tick replaced the Pause button under the pointer
   ('frames-boot-takes-dom', 'shim/boot.js', '  cdomBootFrames(url, mount, env, ready, options);\n}', '  cdomBootDom(url, mount, env, ready, options);\n}', FRAMES, 'FAIL booted'),
   ('frames-boot-not-js10', 'shim/boot.js', '  var base = url;\n  if (!url.substring)', '  var base = url, none = {};\n  if (!url.substring)', FRAMES, 'shim/boot.js part 1 is not JavaScript 1.0'),
   ('frames-shim-not-js11', 'tools/legacy/frames.js', '  cf_fields[cf_nfields] = x;', '  cf_fields.push(x);', FRAMES, 'frames.js is not JavaScript 1.1: .push'),
