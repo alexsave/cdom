@@ -1252,7 +1252,7 @@ static void ret_seq(Em *m, Buf *b, const Expr *v) {
     bs(b, "return ");
     exv(b, v);
     bs(b, ";");
-  } else bs(b, "return;");
+  } else bs(b, "return 0;"); /* never a bare return: Netscape 2.02 refuses a function that has both (tools/js10.mjs) */
 }
 static void add_cross(Label *w, Label *t) {
   for (int i = 0; i < w->ncross; i++)
@@ -2074,13 +2074,13 @@ int main(int argc, char **argv) {
       bf(&out, "Jd%u(", fi);
       for (int k = 0; k < t->np; k++) bf(&out, "%s%c%s", k ? "," : "", 'a' + k, t->p[k] == T_F64 ? "-0" : "|0");
       bs(&out, ");if(JT){JO.js1_trap=1;return 0;}");
-      bs(&out, t->res ? "return r;}\n" : "return;}\n");
+      bs(&out, t->res ? "return r;}\n" : "return 0;}\n");
     } else {
       bs(&out, "){var p=JP;JT=0;JO.js1_trap=0;");
       for (int k = 0; k < t->np; k++) bf(&out, "Ja%d=%c%s;", k, 'a' + k, t->p[k] == T_F64 ? "-0" : "|0");
       bf(&out, "JS[p]=0;JS[p+1]=0;JP=p+2;JQ=0;if(Jgo(%u)){JW=p;JO.js1_paused=1;return 0;}JP=p;JQ=0;", fi + 1);
       bs(&out, "if(JT){JO.js1_trap=1;return 0;}");
-      bs(&out, t->res ? "return JR;}\n" : "return;}\n");
+      bs(&out, t->res ? "return JR;}\n" : "return 0;}\n");
     }
   }
   /* Memory: the data's words. */

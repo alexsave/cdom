@@ -1137,6 +1137,8 @@ M = [
   ('js11-seam-dropped', 'tools/legacy/js11.mjs', '  for (const f of seam(src)) found.push(f);\n  walk(tree, (n, parent) => {', '  walk(tree, (n, parent) => {', JS11T, 'FAIL x-- with its -- at column 254 is refused'),
   ('js1c-writes-decrement', 'tools/js1c.c', 'while(x>0){n=n+1;x=x<<1;}', 'while(x>0){n++;x=x<<1;}', JS1, 'FAIL frames.wasm.js1.js has no ++ or --'),
   ('js1c-table-named', 'tools/js1c.c', 'JO=new Object();x=new Object();', 'JO=new Object();JF.n=0;x=new Object();', JS1, 'FAIL no table'),
+  ('js10gate-mixed-returns-allowed', 'tools/js10.mjs', 'if (value && bare) add', 'if (value && bare && 0) add', JS10T, 'FAIL function f(a) { if (a) return 1; return; } is refused'),
+  ('js1c-bare-return', 'tools/js1c.c', '  } else bs(b, "return 0;"); /*', '  } else bs(b, "return;"); /*', JS1, 'not JavaScript 1.0: a function that returns a value and also none'),
   ('js1c-mul-overflows', 'tools/js1c.c', '((a&65535)*(b>>>16)&65535);', '((a&65535)*(b>>>15)&65535);', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-mul-unreduced', 'tools/js1c.c', 'return (l+h*65536)%4294967296|0;', 'return (l+h*65536)|0;', JS1, "FAIL every case agrees with every bitwise operand in Netscape 3's range"),
   ('js1c-add-unreduced', 'tools/js1c.c', 'bs(b, "+4294967296)%4294967296|0)");', 'bs(b, ")|0)");', JS1, "FAIL every case agrees with every bitwise operand in Netscape 3's range"),
