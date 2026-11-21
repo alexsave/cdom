@@ -8,6 +8,7 @@ requests to /mark/<tag>/..., which the log then holds (they answer 404, which an
 import functools
 import http.server
 import sys
+import time
 
 
 class Server(http.server.ThreadingHTTPServer):
@@ -29,6 +30,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map,
                       ".js": "application/x-javascript", ".wasm": "application/wasm", ".html": "text/html; charset=utf-8"}
+
+    # The log's time has milliseconds: a probe's wall time is read from the gap between two requests (docs/descent.md, "Netscape 2's limits").
+    def log_date_time_string(self):
+        t = time.time()
+        return time.strftime("%d/%b/%Y %H:%M:%S", time.localtime(t)) + ".%03d" % (int(t * 1000) % 1000)
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
