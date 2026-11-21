@@ -1,7 +1,8 @@
 // Builds the files a browser without WebAssembly loads instead of cdom.js and app.wasm:
 //   node tools/legacy/build.mjs shim <out/cdom.legacy.js>       the polyfills, then shim/cdom.js in ES5
 //   node tools/legacy/build.mjs shim-ie9 <out/cdom.legacy-ie9.js>  the same on memory-words.js, for no typed arrays
-//   node tools/legacy/build.mjs shim-ie6 <out/cdom.legacy-ie6.js>  that again in ES3 on the old DOM (dom-old.js), for IE 6 to 8
+//   node tools/legacy/build.mjs shim-ie6 <out/cdom.legacy-ie6.js>  that again in ES3 on the old DOM (dom-old.js), SVG as VML
+//                                                                (vml.js), for IE 5 to 8
 //   node tools/legacy/build.mjs shim-frames <out/cdom.frames.js>  frames.js in JavaScript 1.1, for the frames tier (Netscape 2
 //                                                                to 4, IE 3 and 4: docs/frames-design.md)
 //   node tools/legacy/build.mjs shim-js1 <out/cdom.js1.js>       the WebAssembly interpreter in JavaScript 1.0 (interp.js),
@@ -147,7 +148,7 @@ async function shim(out, tier) {
     if (left.length) throw new Error(`shim-ie6: W3C DOM the old DOM lacks left in the shim: ${left.join(', ')}`);
   }
   const parts = [
-    ...(old ? [['polyfills-es3', read(path.join(here, 'polyfills-es3.js'))], ['dom-old', read(path.join(here, 'dom-old.js'))]] : []),
+    ...(old ? [['polyfills-es3', read(path.join(here, 'polyfills-es3.js'))], ['dom-old', read(path.join(here, 'dom-old.js'))], ['vml', read(path.join(here, 'vml.js'))]] : []),
     ['polyfills', read(path.join(here, 'polyfills.js'))],
     ['promise-polyfill', read(require.resolve('promise-polyfill/dist/polyfill.js'))],
     ...(old ? [] : [['pepjs', read(require.resolve('pepjs/dist/pep.js'))]]),
@@ -218,6 +219,10 @@ async function appWords(wasm, out) {
   memoryPass ??= await import('./memory.mjs');
   const [head, note] = wasm2js(wasm, out);
   const words = read(path.join(here, 'words.js'));
+  es3Pass ??= await import('./es3.mjs');
+  // It runs as the app file arrives, which can be before the shim and its polyfills (the boot fetches both at once).
+  const newer = es3Pass.boot50(words.replace(/\/\*[\s\S]*?\*\//g, ''));
+  if (newer.length) throw new Error(`tools/legacy/words.js names what JScript 5.0 (IE 5.0) lacks: ${newer.join(' ')}`);
   const src = `${note}(function () {\n${words}\n${memoryPass.memoryWords(head, declared(words))}\nwindow.cdomFactory = asmFunc;\n})();\n`;
   es5('wasm2js', src);
   es3Pass ??= await import('./es3.mjs');
@@ -321,7 +326,7 @@ function inputs(cmd, a) {
   if (cmd === 'shim-js1' || cmd === 'app-js1') files.push(path.join(here, 'interp.js'), path.join(here, 'js1ops.txt'),
     path.join(here, 'js1lower.mjs'), path.join(here, 'js10.mjs'));
   if (cmd === 'app-js1') files.push(path.resolve(a));
-  if (cmd === 'shim-ie6') files.push(path.join(here, 'polyfills-es3.js'), path.join(here, 'dom-old.js'), path.join(here, 'shim-old.js'),
+  if (cmd === 'shim-ie6') files.push(path.join(here, 'polyfills-es3.js'), path.join(here, 'dom-old.js'), path.join(here, 'vml.js'), path.join(here, 'shim-old.js'),
     path.join(here, 'es3.mjs'));
   else if (cmd === 'app') { files.push(path.resolve(a)); tools.push(wasm2jsVersion()); }
   // memory.mjs is imported, not read, so it is named here as build.mjs is.

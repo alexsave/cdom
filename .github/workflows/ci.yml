@@ -76,10 +76,10 @@ jobs:
         run: node tools/unit.mjs
       # The no-WebAssembly tiers: wasm2js on typed arrays (IE 10 and 11), on words (IE 9), and on words in ES3 on the
       # old DOM (IE 6 to 8: LEGACY=ie6, and the keyed fuzz there too); the floor below them (LEGACY=below); and the
-      # words memory, its pass and the shim-ie9 gate, and the fourth tier's checks, in node; and the frames tier (Netscape 2
-      # to 4, IE 3 and 4: LEGACY=frames, docs/frames-design.md) and its language gates, and its WebAssembly interpreter in
-      # JavaScript 1.0 against the engine's own WebAssembly (docs/js1-interp-design.md).
-      - name: tools/legacy.mjs (LEGACY=1, ie9, ie6, below), tools/fptoint.mjs (every tier), tools/fuzz.mjs (LEGACY=ie6), tools/frames.mjs (LEGACY=frames), tools/words.mjs, tools/es3.mjs, tools/js11.mjs, tools/js10.mjs and tools/js1interp.mjs
+      # words memory, its pass and the shim-ie9 gate, and the fourth tier's checks and its SVG path converter (VML), in node;
+      # and the frames tier (Netscape 2 to 4, IE 3 and 4: LEGACY=frames, docs/frames-design.md) and its language gates, and
+      # its WebAssembly interpreter in JavaScript 1.0 against the engine's own WebAssembly (docs/js1-interp-design.md).
+      - name: tools/legacy.mjs (LEGACY=1, ie9, ie6, below), tools/fptoint.mjs (every tier), tools/fuzz.mjs (LEGACY=ie6), tools/frames.mjs (LEGACY=frames), tools/words.mjs, tools/es3.mjs, tools/vml.mjs, tools/js11.mjs, tools/js10.mjs and tools/js1interp.mjs
         run: |
           LEGACY=1 node tools/legacy.mjs
           LEGACY=ie9 node tools/legacy.mjs
@@ -93,6 +93,7 @@ jobs:
           LEGACY=frames node tools/frames.mjs
           node tools/words.mjs
           node tools/es3.mjs
+          node tools/vml.mjs
           node tools/js11.mjs
           node tools/js10.mjs
           node tools/js1interp.mjs
