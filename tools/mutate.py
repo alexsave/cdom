@@ -979,9 +979,9 @@ M = [
   ('frames-shim-tag-plain', 'tools/legacy/build.mjs', ".replace(SHIM_TAG, '<script language=\"JavaScript1.5\">$1')", ".replace(SHIM_TAG, '<script>$1')", FRAMES, 'FAIL the inlined shim and the boot'),  # Netscape 3 raises a syntax error alert for it
   ('frames-boot2-tag-plain', 'tools/legacy/build.mjs', "'</script>\\n<script language=\"JavaScript1.5\">\\n' + parts[1]", "'</script>\\n<script>\\n' + parts[1]", FRAMES, 'FAIL the inlined shim and the boot'),
   ('frames-early-always', 'shim/boot-early.js', 'createElement) && window.name != "cdomApp") {', 'createElement)) {', FRAMES, 'FAIL booted'),  # the app frame would make a frameset of its own
-  ('frames-early-query', 'shim/boot-early.js', 'cdomQ + "cdomApp\\""', 'cdomQ + "x\\""', FRAMES, 'FAIL the shim lives in the app frame'),
+  ('frames-early-query', 'shim/boot-early.js', 'cdomQ + "cdomApp\\"', 'cdomQ + "x\\"', FRAMES, 'FAIL the shim lives in the app frame'),
   ('frames-handler-parent', 'tools/legacy/frames.js', 'on + "=\\"parent.cdomApp.cdomF." + f', 'on + "=\\"parent.cdomF." + f', FRAMES, 'FAIL a click on the button reached C'),
-  ('frames-url-own', 'tools/legacy/frames.js', 'var l = top.location,', 'var l = location,', FRAMES, "FAIL the app reads the top window's query"),
+  ('frames-url-own', 'tools/legacy/frames.js', 'var l = top.location,', 'var l = location,', FRAMES, "FAIL the app reads the top window's URL"),
   ('frames-boot-takes-dom', 'shim/boot.js', '  cdomBootFrames(url, mount, env, ready, options);\n}', '  cdomBootDom(url, mount, env, ready, options);\n}', FRAMES, 'FAIL booted'),
   ('frames-boot-not-js10', 'shim/boot.js', '  var base = url;\n  if (!url.substring)', '  var base = url, none = {};\n  if (!url.substring)', FRAMES, 'shim/boot.js part 1 is not JavaScript 1.0'),
   ('frames-shim-not-js11', 'tools/legacy/frames.js', '  cf_fields[cf_nfields] = x;', '  cf_fields.push(x);', FRAMES, 'frames.js is not JavaScript 1.1: .push'),
