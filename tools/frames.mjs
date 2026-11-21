@@ -130,6 +130,32 @@ const port = srv.address().port;
 }
 const measure = !!process.env.FRAMES_MEASURE;
 run: try {
+  // First, so that it runs whatever fails after it.
+  // Netscape 2 (tools/cdp.mjs's ?ns2: no mouse button or key event reaches the page, no charCodeAt or fromCharCode, no
+  // selectionStart, no field type): the page still counts clicks, drawn at once, and takes a field's change. The button
+  // hooks never fire, so cf_pressed stays 0 and the cf_LATER rule works alone (section 16).
+  await go(`http://127.0.0.1:${port}/frames.html?ns2`);
+  if (!(await until('!!window.READY && window.cdomF && cdomF.draws > 0'))) ok(false, 'ns2: booted');
+  else {
+    ok(await E('cf_hasAt === 0 && cf_hasFrom === 0 && !"a".charCodeAt && !window.String && !window.Number && cf_NaN === 0'),
+      `ns2: no charCodeAt, fromCharCode, String or Number: ${await E('cf_hasAt + "," + cf_hasFrom + "," + typeof window.String')}`);
+    const d0 = await draws();
+    await click('#inc');
+    ok((await until(`cdomF.draws > ${d0}`, 25)) && (await textOf('#countp')) === 'count 1' && (await E('cf_pressed')) === 0,
+      `ns2: a click on the button is drawn at once (within 500 ms): ${JSON.stringify(await textOf('#countp'))}, ${(await draws()) - d0} draws, cf_pressed ${await E('cf_pressed')}`);
+    await click('#name');
+    await E(`${field('name')}.select()`);
+    await b.send('Input.insertText', { text: 'héllo' }); await sleep(30);
+    const d1 = await draws();
+    await clickAt(600, 700);
+    await until(`cdomF.draws > ${d1}`);
+    ok((await textOf('#echop')) === 'echo héllo' && (await stat(STAT.inputs)) === 1, `ns2: a field's change reaches C, é through escape: ${JSON.stringify(await textOf('#echop'))}, ${await stat(STAT.inputs)} input`);
+    const d2 = await draws();
+    await click('#inc');
+    ok((await until(`cdomF.draws > ${d2}`, 25)) && (await textOf('#countp')) === 'count 2', `ns2: and the next click too: ${JSON.stringify(await textOf('#countp'))}`);
+    ok((await E('cdomF.errors')) === '', `ns2: no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
+  }
+
   await go(`http://127.0.0.1:${port}/frames.html`);
   ok(await until('!!window.READY && window.cdomF && cdomF.draws > 0'), 'booted, and the frame drawn');
   if (!(await E('!!window.READY'))) break run;
@@ -399,6 +425,25 @@ run: try {
     ok(bound > 0 && deepest > 2 && deepest <= bound, `js1c: a click, a link and growing the list by 5 reach JavaScript depth ${deepest} through the compiled code and the imports, at or under js1c's bound ${bound}`);
   }
 
+  // No recursion in the shim (Netscape 2's value stack is 512 slots: docs/frames-design.md, section 16): a detached tree
+  // 60 elements deep, written, copied and read for its text, with every cf_ function wrapped to count how deep the
+  // JavaScript calls nest. A recursive walk would nest at least 60 deep; the loops nest a few calls whatever the depth.
+  {
+    const deep = await E(`(function () { var names = [], k, real = {}, depth = 0, most = 0, r = new cf_Node(1, "div", null), x = r, i, html, copy, text;
+      for (i = 0; i < 60; i++) { var c = new cf_Node(1, "div", null); cf_place(x, c, null); x = c; }
+      cf_place(x, new cf_Node(3, null, "bottom"), null);
+      for (k in window) if (/^cf_/.test(k) && typeof window[k] === "function" && k !== "cf_Node" && k !== "cf_Pairs") names.push(k);
+      function wrap(n) { real[n] = window[n]; window[n] = function () { depth++; if (depth > most) most = depth; try { return real[n].apply(this, arguments); } finally { depth--; } }; }
+      for (i = 0; i < names.length; i++) wrap(names[i]);
+      try {
+        cf_out = new Object(); cf_on = 0; cf_buf = ""; cf_kids(r, 0, 0); html = cf_joined();
+        copy = cf_deep(r); text = cf_textOf(copy);
+      } finally { for (i = 0; i < names.length; i++) window[names[i]] = real[names[i]]; }
+      return [most, (html.match(/<div>/g) || []).length, html.indexOf("bottom") > 0, text]; })()`);
+    ok(deep[0] <= 6 && deep[1] === 60 && deep[2] && deep[3] === 'bottom',
+      `a tree 60 deep is written, copied and read with the shim's calls nested ${deep[0]} deep (at most 6): ${deep[1]} DIVs written, text ${JSON.stringify(deep[3])}`);
+  }
+
   if (measure) {
     // Redraw cost: a page grown to n nodes, X.touch() (one text changed) timed whole and cf_html() alone, 10 of each.
     const median = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
@@ -441,29 +486,6 @@ run: try {
       const drawn = await until('!!window.cdomF && cdomF.draws > 0');
       ok(drawn && (await E('cdomF.errors')).includes('cd_start did not return') && (await textOf('#title')) === 'frames',
         `${page}: a trap in cd_start is noted, and the frame still drawn: ${drawn ? 'drawn' : 'not drawn'}, ${JSON.stringify(await E('window.cdomF ? cdomF.errors : null'))}`);
-    }
-    // Netscape 2 (tools/cdp.mjs's ?ns2: no mouse button or key event reaches the page, no charCodeAt or fromCharCode, no
-    // selectionStart): the page still counts clicks, drawn at once, and takes a field's change. The button hooks never fire,
-    // so cf_pressed stays 0 and the cf_LATER rule works alone (section 16).
-    await go(`http://127.0.0.1:${port}/frames.html?ns2`);
-    if (!(await until('!!window.READY && window.cdomF && cdomF.draws > 0'))) ok(false, 'ns2: booted');
-    else {
-      ok(await E('cf_hasAt === 0 && cf_hasFrom === 0 && !"a".charCodeAt'), `ns2: no charCodeAt or fromCharCode: ${await E('cf_hasAt + "," + cf_hasFrom')}`);
-      const d0 = await draws();
-      await click('#inc');
-      ok((await until(`cdomF.draws > ${d0}`, 25)) && (await textOf('#countp')) === 'count 1' && (await E('cf_pressed')) === 0,
-        `ns2: a click on the button is drawn at once (within 500 ms): ${JSON.stringify(await textOf('#countp'))}, ${(await draws()) - d0} draws, cf_pressed ${await E('cf_pressed')}`);
-      await click('#name');
-      await E(`${field('name')}.select()`);
-      await b.send('Input.insertText', { text: 'héllo' }); await sleep(30);
-      const d1 = await draws();
-      await clickAt(600, 700);
-      await until(`cdomF.draws > ${d1}`);
-      ok((await textOf('#echop')) === 'echo héllo' && (await stat(STAT.inputs)) === 1, `ns2: a field's change reaches C, é through escape: ${JSON.stringify(await textOf('#echop'))}, ${await stat(STAT.inputs)} input`);
-      const d2 = await draws();
-      await click('#inc');
-      ok((await until(`cdomF.draws > ${d2}`, 25)) && (await textOf('#countp')) === 'count 2', `ns2: and the next click too: ${JSON.stringify(await textOf('#countp'))}`);
-      ok((await E('cdomF.errors')) === '', `ns2: no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
     }
     // The caret on IE 4 and Netscape 4, the browsers with onkeyup (tools/cdp.mjs's ?ie4 and ?ns4 flavours): typing in
     // the middle of the name field, whose input C answers by changing the echo. IE 4 reads the caret from
