@@ -13,6 +13,8 @@
 //   node tools/legacy/build.mjs app-doc <page.html> <app.js1.js> <page.app.html>  the frames tier's app document: every
 //                                                                script its cdomApp frame runs, inline (docs/frames-design.md,
 //                                                                section 16)
+//   node tools/legacy/build.mjs app-doc-raw <host.js[+more.js]> <app.js1.js> <page.app.html>  an app document with no boot
+//                                                                and no shim: the module and the page's own host scripts
 //   node tools/legacy/build.mjs inputs <shim|app|page> <args>    prints what that build reads, one per line
 // Both outputs must parse as ES5 and name no ES2015 global or method that the polyfills do not supply,
 // or nothing is written; both are then minified by the repo root's terser (the one bench/build.sh minifies
@@ -423,6 +425,27 @@ async function appDoc(src, module, out) {
     + blocks(list).map((b) => `<script>\n${b}\n</script>\n`).join('') + '</body></html>\n';
 }
 
+// A page's raw app document (docs/descent.md, "Netscape 2 paints itself"): no boot, no string table and no frames shim,
+// only the module (a tools/js1c module) and the page's own host scripts (each JavaScript 1.0, gated as the shim is), in the
+// same blocks as appDoc's, for a page that writes its view itself instead of through cdom's node tree. hosts is a list of
+// files joined by +, the last of them the one that starts it.
+async function appDocRaw(hosts, module, out) {
+  js11Pass ??= await import('./js11.mjs');
+  const js10 = await import('../js10.mjs');
+  opened.add(path.resolve(path.join(here, '../js10.mjs')));
+  const mod = read(module);
+  const bad = js10.lacks10(mod);
+  if (bad.length) throw new Error(`${path.basename(module)} is not JavaScript 1.0: ${[...new Set(bad)].slice(0, 6).join(', ')}`);
+  if (!/^window\.cdomFactory=/m.test(mod)) throw new Error(`${path.basename(module)} does not set window.cdomFactory (not a tools/js1c module)`);
+  const list = statements(mod).map((st) => [path.basename(module), st]);
+  for (const h of hosts.split('+')) {
+    const code = js11Pass.js11(path.basename(h), read(h), { js10: true });
+    list.push(...statements(code).map((st) => [path.basename(h), st]));
+  }
+  return `<html><head><title>${path.basename(out, '.app.html')}</title></head><body>\n`
+    + blocks(list).map((b) => `<script>\n${b}\n</script>\n`).join('') + '</body></html>\n';
+}
+
 let wasm2jsVer;
 const wasm2jsVersion = () => (wasm2jsVer ??= execFileSync('wasm2js', ['--version'], { encoding: 'utf8' }).trim());
 
@@ -442,6 +465,8 @@ function inputs(cmd, a, b) {
   if (cmd === 'shim-ie9' || cmd === 'shim-ie6') files.push(path.join(here, 'memory-words.js'), path.join(here, 'memory.mjs'));
   if (cmd === 'shim-frames') files.push(path.join(here, 'frames.js'), path.join(here, 'js11.mjs'));
   // js10.mjs is imported, not read: named here as build.mjs is.
+  if (cmd === 'app-doc-raw') files.push(path.join(here, 'js11.mjs'), path.join(here, 'es3.mjs'), path.join(top, 'tools/js10.mjs'), path.resolve(b),
+    ...a.split('+').map((f) => path.resolve(f)));
   if (cmd === 'app-doc') files.push(path.join(top, 'shim/boot.js'), path.join(here, 'frames.js'), path.join(here, 'js11.mjs'), path.join(here, 'es3.mjs'),
     path.join(top, 'tools/js10.mjs'), path.resolve(a), path.resolve(b));
   if (cmd === 'shim-ie6') files.push(path.join(here, 'polyfills-es3.js'), path.join(here, 'dom-old.js'), path.join(here, 'vml.js'), path.join(here, 'shim-old.js'),
@@ -493,7 +518,7 @@ function write(out, data, want, list) {
 
 const [cmd, a, b, c] = process.argv.slice(2);
 const builds = { 'shim-frames': [1, (out) => shimFrames(out)], shim: [1, (out) => shim(out, '')], 'shim-ie9': [1, (out) => shim(out, 'ie9')], 'shim-ie6': [1, (out) => shim(out, 'ie6')], app: [2, (out) => app(a, out)], 'app-ie9': [2, (out) => appWords(a, out)],
-  page: [2, (out) => page(a, out)], 'app-doc': [3, (out) => appDoc(a, b, out)] };
+  page: [2, (out) => page(a, out)], 'app-doc': [3, (out) => appDoc(a, b, out)], 'app-doc-raw': [3, (out) => appDocRaw(a, b, out)] };
 if (cmd === 'inputs' && builds[a]) {
   const list = inputs(a, process.argv[4], process.argv[5]);
   process.stdout.write(list.files.join('\n') + '\n');
@@ -511,6 +536,6 @@ if (cmd === 'inputs' && builds[a]) {
     }
   }
 } else {
-  console.error('usage: build.mjs shim <out.js> | shim-ie9 <out.js> | shim-ie6 <out.js> | shim-frames <out.js> | app <in.wasm> <out.js> | app-ie9 <in.wasm> <out.js> | page <in.html> <out.html> | app-doc <page.html> <app.js1.js> <page.app.html> | inputs <build> <args>');
+  console.error('usage: build.mjs shim <out.js> | shim-ie9 <out.js> | shim-ie6 <out.js> | shim-frames <out.js> | app <in.wasm> <out.js> | app-ie9 <in.wasm> <out.js> | page <in.html> <out.html> | app-doc <page.html> <app.js1.js> <page.app.html> | app-doc-raw <host.js[+more.js]> <app.js1.js> <page.app.html> | inputs <build> <args>');
   process.exit(2);
 }
