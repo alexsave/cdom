@@ -1636,12 +1636,13 @@ for (cf_k = 0; cf_k < cf_LACKS.length; cf_k++) cf_ops[cf_LACKS[cf_k]] = new Func
  * (cdom.h: never use it for secrets). options.seed overrides it, so a run stays one line from deterministic.
  * The generator may be missing or broken on the oldest engines (Netscape 2.0 had it on Unix only): then the clock alone. */
 function cf_seed(options) {
-  var r = 0, t, g;
+  var r = 0, t, g, d;
   if (options && typeof options.seed == "number") return options.seed >>> 0;
   g = Math.random; /* the one draw, tested before it is called */
   if (g) r = g() * 4294967296;
   if (!(r >= 0 && r < 4294967297)) r = 0; /* broken: NaN or out of range */
-  t = (new Date()).getTime();
+  d = new Date(); /* no member read off a new expression: the js11.mjs gate refuses it */
+  t = d.getTime();
   if (!(t >= 0)) t = 0;
   return (r ^ t) >>> 0;
 }

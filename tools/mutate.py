@@ -977,7 +977,7 @@ M = [
   ('frames-profile-keeps-getelementbyid', 'tools/cdp.mjs', "    'getElementById', 'importNode',", "    'importNode',", FRAMES, 'FAIL no DOM mutation in the page'),
   ('frames-seed-zero', 'tools/legacy/frames.js', '  return (r ^ t) >>> 0;', '  return 0;', FRAMES, 'FAIL two boots with a different clock give different seeds'),
   ('frames-seed-stray-random', 'tools/legacy/frames.js', 'var cf_hasFrom = 0;', 'var cf_hasFrom = 0, cf_stray = Math.random();', LINK, 'FAIL tools/legacy/frames.js:'),
-  ('frames-seed-second-draw', 'tools/legacy/frames.js', '  t = (new Date()).getTime();', '  t = (new Date()).getTime() + Math.random();', LINK, '2 Math.random in cf_seed(options), want exactly 1'),
+  ('frames-seed-second-draw', 'tools/legacy/frames.js', '  t = d.getTime();', '  t = d.getTime() + Math.random();', LINK, '2 Math.random in cf_seed(options), want exactly 1'),
   ('frames-no-sync', 'tools/legacy/frames.js', '  if (!w || !cdomF.draws) return;\n  form = w.document.forms[0];', '  return;\n  form = w.document.forms[0];', FRAMES, 'FAIL typed text C has not seen survives a redraw'),
   ('frames-draws-unchanged', 'tools/legacy/frames.js', '  if (cf_dirty || cf_pending) cf_draw();', '  if (true) cf_draw();', FRAMES, 'FAIL an event whose handler changes nothing draws nothing'),
   ('frames-draw-per-op', 'tools/legacy/frames.js', 'function cf_placeNew(x) {\n  cf_dirty = 1;\n', 'function cf_placeNew(x) {\n  cf_dirty = 1;\n  cf_draw();\n', FRAMES, 'FAIL an export of 15 ops (5 items) draws once'),
