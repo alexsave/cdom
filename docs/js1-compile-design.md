@@ -231,9 +231,9 @@ tests/out/js1diff.html, the final file:
 | | Netscape 2.02 | Netscape 3.04 | Netscape 4.08 | IE 4.01 |
 |---|---|---|---|---|
 | before this branch | does not reach a case (undefined \| 0) | does not parse (`--` at column 254) | 26 of 26 | 26 of 26 |
-| after | see below | 23 of 26 | 26 of 26 | 26 of 26 |
+| after | 23 of 26 | 23 of 26 | 26 of 26 | 26 of 26 |
 
-Netscape 3.04's three are dbl's: words 31 and 32 (a subnormal made at run time, `x * 1e-315`, is 0 there), 33 (a product of that subnormal) and 37 (`isnan(z - z)` with z infinite: infinity minus infinity is not NaN there, nor in Netscape 2.02, where `JIn - JIn` prints 0).
+The three in Netscape 2.02 and 3.04 are the same, dbl's: words 31 and 32 (a subnormal made at run time, `x * 1e-315`, is 0 there), 33 (a product of that subnormal) and 37 (`isnan(z - z)` with z infinite: infinity minus infinity is not NaN there, nor in Netscape 2.02, where `JIn - JIn` prints 0).
 Those are the engines' doubles, not js1c's: Netscape 2.02 and 3.04 have no subnormals (5e-320 is 0) and no NaN from infinity minus infinity, and Netscape 2.02 has no negative zero either (`1 / -0` and `Math.atan2(0, -0)` are 0, shots/js1cr-ns2-dbl.png); a C program that needs those cannot get them there.
 
 js1-real's bench page for this path, the plain page (no NS2FIX), the final file; every answer right in every browser (Netscape 3.04's last three runs from the run before the division fix, which the bench does not use, since the final run's page stalled after rec100):
@@ -260,7 +260,6 @@ The cost of the fixes:
 
 What is still open:
 
-- Netscape 2.02's own js1diff total on the final file is in 12.8 if the last run completes; its bench answers are all right.
 - The doubles Netscape 2 and 3 cannot represent (subnormals, NaN from infinity minus infinity, and Netscape 2's -0).
 - The seam rule is the one measured column (254); a `--` at a later seam of a long line (if any) is not measured, and js1c writes none anyway.
 - IE 4.01's lost image marks on long pages (item 5) are the page's, not js1c's; the page's wanted values chain through the program's state, so js1-real's bench page could compute each run's wanted value from a fresh instance to be robust to a lost run.
