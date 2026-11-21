@@ -3,6 +3,8 @@
 //   node tools/legacy/build.mjs shim-ie9 <out/cdom.legacy-ie9.js>  the same on memory-words.js, for no typed arrays
 //   node tools/legacy/build.mjs shim-ie6 <out/cdom.legacy-ie6.js>  that again in ES3 on the old DOM (dom-old.js), SVG as VML
 //                                                                (vml.js), for IE 5 to 8
+//   node tools/legacy/build.mjs shim-frames <out/cdom.frames.js>  frames.js in JavaScript 1.1, for the frames tier (Netscape 2
+//                                                                to 4, IE 3 and 4: docs/frames-design.md)
 //   node tools/legacy/build.mjs app <in.wasm> <out/in.wasm.js>   the same wasm compiled to JS by wasm2js
 //   node tools/legacy/build.mjs app-ie9 <in.wasm> <out/in.wasm.ie9.js>  the same, on a plain Array of words (memory.mjs),
 //                                                                in ES3: IE 9 and the fourth tier (IE 6 to 8) share it
@@ -30,6 +32,8 @@ import { createRequire } from 'node:module';
 let memoryPass;
 // The fourth tier's checks and passes (es3.mjs), loaded as memoryPass is.
 let es3Pass;
+// The frames tier's language gates (js11.mjs), loaded as memoryPass is.
+let js11Pass;
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 const top = path.resolve(here, '../..');
@@ -224,26 +228,53 @@ async function appWords(wasm, out) {
   return note + code;
 }
 
-// The boot is the one script every browser runs, so it must parse as ES3.
+// The boot is the one script every browser runs. Its two parts (shim/boot.js) go in as two <script>s: the first must
+// be JavaScript 1.0, which Netscape 2 parses (js11.mjs, js10), and both must parse as ES3 and name nothing JScript 5.0
+// (IE 5.0) lacks, since they run before any polyfill.
+const BOOT_SPLIT = '/*CDOM_BOOT_ES3*/';
 async function page(src, out) {
-  // Every page carries it, so its comments are cut.
-  const src0 = read(path.join(top, 'shim/boot.js')), cuts = [];
-  try { acorn.parse(src0, { ecmaVersion: 3, onComment: (b, t, s, e) => cuts.push([s, e]) }); } catch (e) {
-    throw new Error(`shim/boot.js is not ES3: ${e.message}`);
-  }
-  // It runs before any polyfill, in IE 5.0 too: none of what JScript 5.0 lacks.
+  const whole = read(path.join(top, 'shim/boot.js'));
+  if (whole.split(BOOT_SPLIT).length !== 2) throw new Error(`shim/boot.js needs exactly one ${BOOT_SPLIT}`);
   es3Pass ??= await import('./es3.mjs');
-  const newer = es3Pass.boot50(src0.replace(/\/\*[\s\S]*?\*\//g, ''));
-  if (newer.length) throw new Error(`shim/boot.js names what JScript 5.0 (IE 5.0) lacks: ${newer.join(' ')}`);
-  let boot = '', at = 0;
-  for (const [s, e] of cuts) { boot += src0.slice(at, s); at = e; }
-  boot = (boot + src0.slice(at)).replace(/[ \t]+$/gm, '').replace(/\n{2,}/g, '\n').trim() + '\n';
-  // The marker sits in a <script> of its own, after the shim's (see shim/boot.js).
+  js11Pass ??= await import('./js11.mjs');
+  const parts = whole.split(BOOT_SPLIT).map((src0, k) => {
+    const cuts = [];
+    try { acorn.parse(src0, { ecmaVersion: 3, onComment: (b, t, s, e) => cuts.push([s, e]) }); } catch (e) {
+      throw new Error(`shim/boot.js part ${k + 1} is not ES3: ${e.message}`);
+    }
+    const newer = es3Pass.boot50(src0.replace(/\/\*[\s\S]*?\*\//g, ''));
+    if (newer.length) throw new Error(`shim/boot.js names what JScript 5.0 (IE 5.0) lacks: ${newer.join(' ')}`);
+    // Every page carries it, so its comments are cut.
+    let boot = '', at = 0;
+    for (const [s, e] of cuts) { boot += src0.slice(at, s); at = e; }
+    boot = (boot + src0.slice(at)).replace(/[ \t]+$/gm, '').replace(/\n{2,}/g, '\n').trim() + '\n';
+    // It tests for getElementById and createElement, and calls neither.
+    if (k === 0) js11Pass.js11('shim/boot.js part 1', boot, { js10: true, allowed: ['getElementById', 'createElement'] });
+    return boot;
+  });
+  // The marker sits in a plain <script> of its own, after the shim's (see shim/boot.js): the first part ends that
+  // script, and the second opens another.
   const html = read(src), mark = '/*CDOM_BOOT*/';
   if (html.split(mark).length !== 2) throw new Error(`${src} needs exactly one ${mark}`);
+  if (!/<script>\s*$/.test(html.slice(0, html.indexOf(mark)))) throw new Error(`${src}: ${mark} must open a plain <script>`);
   // The table is a script of its own that tools/cdpage wrote before the shim; the fallback needs it too.
   if (!html.includes('var cdomLits=')) throw new Error(`${src} has no string table (tools/cdpage writes it before the shim)`);
-  return html.replace(mark, () => boot);
+  return html.replace(mark, () => parts[0] + '</script>\n<script>\n' + parts[1]);
+}
+
+// cdom.frames.js: tools/legacy/frames.js, which must be JavaScript 1.1 (js11.mjs) before and after it is minified. No
+// Babel and no polyfill: it is its own shim. terser only mangles and drops the layout (compress could make a construct
+// 1.1 has not, and the gate would refuse it); the top-level names are the markup's and the boot's, so they stay.
+// charCodeAt and fromCharCode are behind checks for them (cf_hasAt, cf_hasFrom).
+const FRAMES_ALLOWED = ['charCodeAt', 'fromCharCode'];
+async function shimFrames(out) {
+  js11Pass ??= await import('./js11.mjs');
+  const src = js11Pass.js11('frames.js', read(path.join(here, 'frames.js')), { allowed: FRAMES_ALLOWED });
+  const { minify } = createRequire(path.join(top, 'package.json'))('terser');
+  const { code } = await minify(src, { ecma: 5, compress: false, mangle: true, format: { ascii_only: true, beautify: !!process.env.LEGACY_PRETTY } });
+  const name = path.basename(out);
+  js11Pass.js11(`${name} once minified`, code, { allowed: FRAMES_ALLOWED });
+  return `/* ${name}: generated by tools/legacy/build.mjs, do not edit. */\n` + code + '\n';
 }
 
 let wasm2jsVer;
@@ -263,6 +294,7 @@ function inputs(cmd, a) {
     require.resolve('promise-polyfill/dist/polyfill.js'));
   if (cmd === 'shim' || cmd === 'shim-ie9') files.push(require.resolve('pepjs/dist/pep.js'));
   if (cmd === 'shim-ie9' || cmd === 'shim-ie6') files.push(path.join(here, 'memory-words.js'), path.join(here, 'memory.mjs'));
+  if (cmd === 'shim-frames') files.push(path.join(here, 'frames.js'), path.join(here, 'js11.mjs'));
   if (cmd === 'shim-ie6') files.push(path.join(here, 'polyfills-es3.js'), path.join(here, 'dom-old.js'), path.join(here, 'vml.js'), path.join(here, 'shim-old.js'),
     path.join(here, 'es3.mjs'));
   else if (cmd === 'app') { files.push(path.resolve(a)); tools.push(wasm2jsVersion()); }
@@ -271,7 +303,7 @@ function inputs(cmd, a) {
     files.push(path.resolve(a), path.join(here, 'words.js'), path.join(here, 'memory.mjs'), path.join(here, 'es3.mjs'));
     tools.push(wasm2jsVersion());
   }
-  else if (cmd === 'page') files.push(path.join(top, 'shim/boot.js'), path.resolve(a), path.join(here, 'es3.mjs'));
+  else if (cmd === 'page') files.push(path.join(top, 'shim/boot.js'), path.resolve(a), path.join(here, 'es3.mjs'), path.join(here, 'js11.mjs'));
   return { files: files.map((f) => path.resolve(f)), tools };
 }
 
@@ -311,7 +343,7 @@ function write(out, data, want, list) {
 }
 
 const [cmd, a, b] = process.argv.slice(2);
-const builds = { shim: [1, (out) => shim(out, '')], 'shim-ie9': [1, (out) => shim(out, 'ie9')], 'shim-ie6': [1, (out) => shim(out, 'ie6')], app: [2, (out) => app(a, out)], 'app-ie9': [2, (out) => appWords(a, out)],
+const builds = { 'shim-frames': [1, (out) => shimFrames(out)], shim: [1, (out) => shim(out, '')], 'shim-ie9': [1, (out) => shim(out, 'ie9')], 'shim-ie6': [1, (out) => shim(out, 'ie6')], app: [2, (out) => app(a, out)], 'app-ie9': [2, (out) => appWords(a, out)],
   page: [2, (out) => page(a, out)] };
 if (cmd === 'inputs' && builds[a]) {
   const list = inputs(a, process.argv[4]);
@@ -330,6 +362,6 @@ if (cmd === 'inputs' && builds[a]) {
     }
   }
 } else {
-  console.error('usage: build.mjs shim <out.js> | shim-ie9 <out.js> | shim-ie6 <out.js> | app <in.wasm> <out.js> | app-ie9 <in.wasm> <out.js> | page <in.html> <out.html> | inputs <build> <args>');
+  console.error('usage: build.mjs shim <out.js> | shim-ie9 <out.js> | shim-ie6 <out.js> | shim-frames <out.js> | app <in.wasm> <out.js> | app-ie9 <in.wasm> <out.js> | page <in.html> <out.html> | inputs <build> <args>');
   process.exit(2);
 }

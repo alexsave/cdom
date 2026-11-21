@@ -1,23 +1,53 @@
 /* cdom boot. The build inlines this at a page's /*CDOM_BOOT*\/, in a <script> of its own after the shim's:
- * a browser too old to parse the shim fails that script with a syntax error, and this one still runs,
- * because it is ES3.
- * Four tiers, and a browser fetches only its own:
+ * a browser too old to parse the shim fails that script with a syntax error, and this one still runs.
+ * It is two parts, which the build writes as two <script>s. The first is JavaScript 1.0, so Netscape 2 parses it
+ * (tools/legacy/js11.mjs, js10): cdomBoot, which takes the fifth tier itself or hands the others to the second part,
+ * cdomBootDom, which is ES3 (try, throw, closures) and which the frames tier's browsers fail to parse and never call.
+ * Five tiers, and a browser fetches only its own:
  * 1. WebAssembly: url on the inlined shim.
  * 2. No WebAssembly, typed arrays (IE 10 and 11): cdom.legacy.js (the ES5 shim and its polyfills, next to the
  *    page) and url + ".js" (the same wasm compiled to JS by wasm2js).
  * 3. No typed arrays either (IE 9): cdom.legacy-ie9.js and url + ".ie9.js", the same two with C's memory in a
  *    plain Array of words (tools/legacy/words.js) instead of typed arrays.
- * 4. No ES5 or no addEventListener (IE 6, 7 and 8): cdom.legacy-ie6.js (the shim in ES3 on the old DOM,
+ * 4. No ES5 or no addEventListener (IE 5 to 8): cdom.legacy-ie6.js (the shim in ES3 on the old DOM,
  *    tools/legacy/dom-old.js) and the same url + ".ie9.js", which is ES3 too (docs/ie6-design.md).
- * Either fallback's two files are fetched at once, and the app file sets window.cdomFactory.
- * url may be the pair [scalar, SIMD] cdom.start takes (cdom.mk's APP_SIMD): cdom.start picks one, and either fallback
+ * 5. No getElementById or no createElement (Netscape 2 to 4, IE 3 and 4): the frames tier (docs/frames-design.md).
+ *    cdom.frames.js (tools/legacy/frames.js, JavaScript 1.1) and url + ".ie9.js", written into the page while it
+ *    parses, then a frameset whose one frame the shim writes whole.
+ * Either of the middle fallbacks' two files are fetched at once, and the app file sets window.cdomFactory.
+ * url may be the pair [scalar, SIMD] cdom.start takes (cdom.mk's APP_SIMD): cdom.start picks one, and every fallback
  * is the scalar module's build, url[0] + ".js" or url[0] + ".ie9.js".
  * mount is an element or its id, as cdom.start takes it; ready, if given, receives the exports; options
  * is cdom.start's fourth argument.
- * The floor is the fourth tier's: document.getElementById, and attachEvent or addEventListener. Below it the boot
- * throws one error naming each missing thing, before fetching anything or drawing at all. Without crypto.getRandomValues
- * (IE 9 and 10) the app still starts: the shim's seed() says how, and why cd_seed is then no secret. */
+ * The floor of the DOM tiers is the fourth tier's: attachEvent or addEventListener. A browser with getElementById and
+ * neither, the boot throws one error naming each missing thing, before fetching anything or drawing at all. Without
+ * crypto.getRandomValues (IE 9 and 10) the app still starts: the shim's seed() says how, and why cd_seed is then no
+ * secret. */
 function cdomBoot(url, mount, env, ready, options) {
+  var d = document;
+  if (d.getElementById && d.createElement) {
+    cdomBootDom(url, mount, env, ready, options);
+    return;
+  }
+  cdomBootFrames(url, mount, env, ready, options);
+}
+/* The fifth tier: no DOM to build in, so the page becomes a frameset (docs/frames-design.md, section 3). The arguments
+ * wait in globals, since JavaScript 1.0 has no closures, for the script written after the two files, which runs once
+ * both have; a SCRIPT SRC the parser meets blocks it, so they run in order. cdomFramesStart then writes the frameset.
+ * url is a string or a pair: only a string has substring. */
+function cdomBootFrames(url, mount, env, ready, options) {
+  var base = url;
+  if (!url.substring) base = url[0];
+  cdomBootMount = mount;
+  cdomBootEnv = env;
+  cdomBootReady = ready;
+  cdomBootOptions = options;
+  document.write("<script src=\"cdom.frames.js\"></scr" + "ipt><script src=\"" + base + ".ie9.js\"></scr" + "ipt>"
+    + "<script>cdomFramesStart(window.cdomFactory, cdomBootMount, cdomBootEnv, cdomBootReady, cdomBootOptions)</scr" + "ipt>");
+}
+/*CDOM_BOOT_ES3*/
+/* The four DOM tiers. */
+function cdomBootDom(url, mount, env, ready, options) {
   /* A start that fails rejects its promise, which no browser reports by itself on the old tiers (the polyfilled
    * Promise has no unhandled-rejection event): it is thrown again from a timeout, so it reaches window.onerror. */
   function failed(e) {
@@ -53,8 +83,8 @@ function cdomBoot(url, mount, env, ready, options) {
   for (i = 0; i < es5.length; i++) {
     if (!es5[i]) old = true;
   }
-  /* The boot runs before any polyfill, so it names nothing JScript 5.0 (IE 5.0) lacks: no push, no undefined. */
-  if (!d.getElementById) lack[lack.length] = "document.getElementById";
+  /* The boot runs before any polyfill, so it names nothing JScript 5.0 (IE 5.0) lacks: no push, no undefined. Without
+   * getElementById it is the fifth tier (cdomBoot), never here. */
   if (!d.addEventListener && !d.attachEvent) lack[lack.length] = "addEventListener or attachEvent";
   if (lack.length) throw error("cdom: this browser cannot run cdom: it has no " + lack.join(", "));
   var head = d.getElementsByTagName("head")[0];
