@@ -49,7 +49,7 @@ function cdomBootFrames(url, mount, env, ready, options) {
  * browser of this tier whose frameset was not made) they never come, and it gives up after 400 tries 50 ms apart (20 s). */
 var cdomBootTries = 0;
 function cdomBootWait() {
-  if (window.cdomFramesStart && window.cdomFactory) {
+  if (window.cdomFramesStart != null && window.cdomFactory != null) {
     cdomFramesStart(window.cdomFactory, cdomBootMount, cdomBootEnv, cdomBootReady, cdomBootOptions);
     return;
   }

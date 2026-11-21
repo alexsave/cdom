@@ -27,17 +27,34 @@ var cf_OUT = 24;
 var cf_FOCUS = 28;
 var cf_BLUR = 29;
 var cf_DETACHED = 4294967295; /* "no insertion parent" for at() */
+/* The one indexOf of the shim: Netscape 2's indexOf on an empty string gives no number at all (it prints as nothing), and comparing it
+ * raises the alert "is not a numeric literal" (docs/frames-design.md 17, probe lex4), so an empty string is answered here.
+ * Every other use of indexOf is through these two, and tools/frames.mjs counts them. */
+function cf_idx(s, t) {
+  if (s.length == 0) {
+    if (t.length == 0) return 0;
+    return -1;
+  }
+  return s.indexOf(t);
+}
+function cf_idxFrom(s, t, at) {
+  if (s.length == 0) {
+    if (t.length == 0) return 0;
+    return -1;
+  }
+  return s.indexOf(t, at);
+}
 /* s cut at each sep: an object of the pieces numbered from 0, their count in cf_cut (no split: Netscape 2's returns
  * undefined). */
 var cf_cut = 0;
 function cf_split(s, sep) {
-  var out = new Object(), at = 0, k = s.indexOf(sep);
+  var out = new Object(), at = 0, k = cf_idx(s, sep);
   cf_cut = 0;
   while (k >= 0) {
     out[cf_cut] = s.substring(at, k);
     cf_cut++;
     at = k + sep.length;
-    k = s.indexOf(sep, at);
+    k = cf_idxFrom(s, sep, at);
   }
   out[cf_cut] = s.substring(at, s.length);
   cf_cut++;
@@ -82,11 +99,13 @@ function cf_store32(i, v) {
 
 /* Characters. String.fromCharCode and charCodeAt are JavaScript 1.2: without them a byte's character comes from
  * unescape, and a character above Latin-1 is shown as "?" (Netscape 2 and 3 are Latin-1 throughout). */
+/* Netscape 2 counts a function as false in a condition (`if (f)` and `f && g` fail for a declared function, probe lex5 in
+ * docs/frames-design.md 17), so a function is only ever compared with null here. */
 var cf_hasFrom = 0;
 var cf_hasAt = 0;
 /* window.String: Netscape 2 has no String global ("String is not defined"), and a missing property of window is no error. */
-if (window.String && String.fromCharCode) cf_hasFrom = 1;
-if ("a".charCodeAt) cf_hasAt = 1;
+if (window.String != null && String.fromCharCode != null) cf_hasFrom = 1;
+if ("a".charCodeAt != null) cf_hasAt = 1;
 var cf_HEX = "0123456789ABCDEF";
 var cf_PRINT = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
 var cf_T = new Object();
@@ -106,7 +125,7 @@ function cf_chr(u) {
 function cf_code(s, i) {
   if (cf_hasAt) return s.charCodeAt(i);
   var c = s.charAt(i), e = escape(c);
-  if (e.length == 1) return cf_PRINT.indexOf(c) + 32;
+  if (e.length == 1) return cf_idx(cf_PRINT, c) + 32;
   if (e.length == 3) return parseInt(e.substring(1, 3), 16);
   return 63;
 }
@@ -490,7 +509,7 @@ function cf_push(el) {
 var cf_ALNUM = "abcdefghijklmnopqrstuvwxyz0123456789";
 function cf_tag(name) {
   var t = name.toLowerCase(), k;
-  for (k = 0; k < t.length; k++) if (cf_ALNUM.indexOf(t.charAt(k)) < 0) break;
+  for (k = 0; k < t.length; k++) if (cf_idx(cf_ALNUM, t.charAt(k)) < 0) break;
   if (t.length && k == t.length) return t;
   cf_fail("cdom: the tag " + name + " is not letters and digits: drawn as a span");
   return "span";
@@ -528,7 +547,7 @@ function cf_setAttr(x, name, value) {
   parts = cf_split(value, ";");
   n = cf_cut;
   for (k = 0; k < n; k++) {
-    c = parts[k].indexOf(":");
+    c = cf_idx(parts[k], ":");
     if (c > 0) x.s = cf_setPair(x.s, cf_trim(parts[k].substring(0, c)).toLowerCase(), cf_trim(parts[k].substring(c + 1)));
   }
 }
@@ -867,7 +886,7 @@ function cf_op_call(id, method, count, argsPtr) {
 /* NaN for a cd_get_num of what is no number: Netscape 2 has no NaN global, and may have no Number either (window.Number is
  * no error where it is missing); 0 there. */
 var cf_NaN = 0;
-if (window.Number) cf_NaN = Number.NaN;
+if (window.Number != null) cf_NaN = Number.NaN;
 /* cd_get's kinds: 0 a number (a boolean as 0 or 1; NaN for a string, a node, an object or nothing), 1 and 3 a string's
  * UTF-8 (the bytes written, or the whole length), 2 a node's id. No typeof (Netscape 2): a string has substring, a node
  * is z, and what is left is taken by its comparisons with true and false. */
@@ -1332,10 +1351,10 @@ function cf_sync() {
  * No typeof (Netscape 2): a field with selectionStart has setSelectionRange, and the test is for that. */
 function cf_caret(w, el, x) {
   var r, n;
-  if (el.setSelectionRange) {
+  if (el.setSelectionRange != null) {
     x.ss = el.selectionStart;
     x.se = el.selectionEnd;
-  } else if (w.document.selection && el.createTextRange) {
+  } else if (w.document.selection != null && el.createTextRange != null) {
     r = w.document.selection.createRange().duplicate();
     n = r.text.length;
     r.moveStart("character", -el.value.length - 1);
@@ -1351,7 +1370,7 @@ function cf_blind(x) {
   form = w.document.forms[0];
   if (!form) return 0;
   el = form.elements[x.j];
-  if (!el || el.setSelectionRange || (w.document.selection && el.createTextRange)) return 0;
+  if (!el || el.setSelectionRange != null || (w.document.selection != null && el.createTextRange != null)) return 0;
   return 1;
 }
 /* Focus, the selection and the scroll back where they were, after a draw (section 6). The focus given back is no
@@ -1365,11 +1384,11 @@ function cf_restore(w) {
     form = w.document.forms[0];
     el = null;
     if (form) el = form.elements[f.j];
-    if (el && el.focus) {
+    if (el && el.focus != null) {
       el.focus();
       /* Only a text field has a selection: a checkbox's setSelectionRange throws (cd_call(checkbox, "select")). */
-      if (f.ss >= 0 && cf_kind(f) == "text" && el.setSelectionRange) el.setSelectionRange(f.ss, f.se);
-      else if (f.ss >= 0 && cf_kind(f) == "text" && el.createTextRange) {
+      if (f.ss >= 0 && cf_kind(f) == "text" && el.setSelectionRange != null) el.setSelectionRange(f.ss, f.se);
+      else if (f.ss >= 0 && cf_kind(f) == "text" && el.createTextRange != null) {
         r = el.createTextRange();
         r.collapse(true);
         r.moveEnd("character", f.se);
@@ -1421,7 +1440,7 @@ function cf_draw() {
    * there the two are plain properties nothing calls, so cf_pressed stays 0 and the cf_LATER rule works alone. */
   d.onmousedown = cf_onDown;
   d.onmouseup = cf_onUp;
-  if (d.captureEvents && w.Event) d.captureEvents(w.Event.MOUSEDOWN | w.Event.MOUSEUP);
+  if (d.captureEvents != null && w.Event != null) d.captureEvents(w.Event.MOUSEDOWN | w.Event.MOUSEUP);
   cf_drawing = 0;
   cf_pressed = 0; /* the new document has no press: its own release (or none) says so */
   cdomF.draws++;
@@ -1444,7 +1463,7 @@ var cf_SKIP = " svg canvas script style template ";
 var cf_DIV = " section article header footer nav main aside figure form ";
 var cf_VOID = " br hr img wbr ";
 function cf_in(list, name) {
-  return list.indexOf(" " + name + " ") >= 0;
+  return cf_idx(list, " " + name + " ") >= 0;
 }
 function cf_w(s) {
   cf_buf += s;
@@ -1477,7 +1496,7 @@ function cf_joined() {
 }
 function cf_esc(s) {
   var out = "", k, c;
-  if (s.indexOf("&") < 0 && s.indexOf("<") < 0 && s.indexOf(">") < 0 && s.indexOf("\"") < 0) return s;
+  if (cf_idx(s, "&") < 0 && cf_idx(s, "<") < 0 && cf_idx(s, ">") < 0 && cf_idx(s, "\"") < 0) return s;
   for (k = 0; k < s.length; k++) {
     c = s.charAt(k);
     if (c == "&") out += "&amp;";
@@ -1528,7 +1547,7 @@ function cf_attrs(x, skip) {
 function cf_color(v) {
   var parts, k, n, out = "#";
   if (v.substring(0, 3) != "rgb") return v;
-  parts = cf_split(v.substring(v.indexOf("(") + 1, v.indexOf(")")), ",");
+  parts = cf_split(v.substring(cf_idx(v, "(") + 1, cf_idx(v, ")")), ",");
   for (k = 0; k < 3; k++) {
     n = 0;
     if (k < cf_cut) n = parseInt(parts[k], 10);
@@ -1542,8 +1561,8 @@ function cf_color(v) {
 function cf_size(v) {
   var px = parseFloat(v);
   if (!(px > 0)) return 0;
-  if (v.indexOf("pt") > 0) px = px * 4 / 3;
-  else if (v.indexOf("em") > 0) px = px * 16;
+  if (cf_idx(v, "pt") > 0) px = px * 4 / 3;
+  else if (cf_idx(v, "em") > 0) px = px * 16;
   if (px <= 10) return 1;
   if (px <= 13) return 2;
   if (px <= 16) return 3;
@@ -1555,7 +1574,7 @@ function cf_size(v) {
 function cf_bg(x) {
   var v = cf_pair(x.s, "background-color");
   if (v == null) v = cf_pair(x.s, "background");
-  if (v == null || v.indexOf("url(") >= 0 || v.indexOf("gradient") >= 0 || v.indexOf(" ") >= 0) return null;
+  if (v == null || cf_idx(v, "url(") >= 0 || cf_idx(v, "gradient") >= 0 || cf_idx(v, " ") >= 0) return null;
   return cf_color(v);
 }
 /* The markup around x's content for its CSS: cf_outer before its tag and cf_inner inside it, each closed in the
@@ -1598,8 +1617,8 @@ function cf_styles(x) {
   v = cf_pair(x.s, "font-style");
   if (v == "italic" || v == "oblique") cf_wrapIn("<i>", "</i>");
   v = cf_pair(x.s, "text-decoration");
-  if (v != null && v.indexOf("underline") >= 0) cf_wrapIn("<u>", "</u>");
-  if (v != null && v.indexOf("line-through") >= 0) cf_wrapIn("<strike>", "</strike>");
+  if (v != null && cf_idx(v, "underline") >= 0) cf_wrapIn("<u>", "</u>");
+  if (v != null && cf_idx(v, "line-through") >= 0) cf_wrapIn("<strike>", "</strike>");
 }
 function cf_wrapIn(open, close) {
   cf_inner += open;
@@ -1867,7 +1886,7 @@ function cf_onOver(n, on) {
  * it, with no wait of its own. */
 function cf_route(e) {
   var w = cf_view();
-  if (e && w && w.document.routeEvent) return w.document.routeEvent(e);
+  if (e && w && w.document.routeEvent != null) return w.document.routeEvent(e);
   return true;
 }
 function cf_onDown(e) {
@@ -2142,7 +2161,7 @@ function cf_seed(options) {
 function cdomFramesStart(factory, mount, env, ready, options) {
   var text = window.cdomLitsText, x;
   window.cdomFactory = null;
-  if (!factory) {
+  if (factory == null) {
     cf_fail("cdom: the app's file did not load");
     return;
   }
@@ -2159,7 +2178,7 @@ function cdomFramesStart(factory, mount, env, ready, options) {
   cf_raw = factory(cf_imports);
   cf_mem = cf_raw.memory;
   cf_W = cf_mem.words;
-  if (!cf_raw.cd_lits || cf_raw.cd_lits() >>> 0 != cdomLitsStamp >>> 0) {
+  if (cf_raw.cd_lits == null || cf_raw.cd_lits() >>> 0 != cdomLitsStamp >>> 0) {
     cf_fail("cdom: the page's string table is not this module's");
     return;
   }

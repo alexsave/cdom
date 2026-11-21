@@ -89,6 +89,22 @@ export function lacks(src, { allowed = [], js10 = false } = {}) {
   // that returns a value but whose last statement is not a return ("function does not always return a value.":
   // docs/descent.md, "The three code paths", and docs/frames-design.md, 15.1); tools/js10.mjs has the same two rules for
   // js1c's output.
+  // Netscape 2.02 counts a function as false in a condition: `if (g)`, `!g`, `g && x` for a declared function g, a method
+  // (el.focus) or a builtin (String), all fail where the function is there (docs/frames-design.md 17, probe lex5: `if (g)`
+  // gave nothing, `g != null` true). So js10 refuses a bare function as a test or as an operand of !, && and ||: it is
+  // compared with null. A name stands for a function if the file declares it or it is one the tier tests for.
+  if (js10) {
+    const fns = new Set(['String', 'Number', 'setSelectionRange', 'createTextRange', 'focus', 'select', 'captureEvents', 'routeEvent',
+      'charCodeAt', 'fromCharCode', 'cd_lits', 'cdomFramesStart', 'cdomFactory']);
+    walk(tree, (n) => { if (n.type === 'FunctionDeclaration') fns.add(n.id.name); });
+    const isFn = (x) => x && ((x.type === 'Identifier' && fns.has(x.name)) || (x.type === 'MemberExpression' && !x.computed && fns.has(x.property.name)));
+    const test = (x, n) => { if (isFn(x)) add('a function in a condition (Netscape 2 counts it false: compare it with null)', n); };
+    walk(tree, (n) => {
+      if (n.type === 'IfStatement' || n.type === 'WhileStatement' || n.type === 'ConditionalExpression' || n.type === 'ForStatement') test(n.test, n);
+      if (n.type === 'UnaryExpression' && n.operator === '!') test(n.argument, n);
+      if (n.type === 'LogicalExpression') { test(n.left, n); test(n.right, n); }
+    });
+  }
   walk(tree, (n) => {
     if (n.type !== 'FunctionDeclaration' && n.type !== 'FunctionExpression') return;
     let value = 0, bare = 0;

@@ -102,11 +102,11 @@ for (const [src, what] of [['if (typeof x == "string") f();', 'typeof'], ['var a
   ['function f() { return arguments.length; }', 'arguments'], ['if (isNaN(x)) f();', 'isNaN'], ['t = setInterval("f()", 9);', 'setInterval'],
   ['var s = t.substr(1);', '.substr'], ['if (o.constructor == F) f();', '.constructor'], ['window.onerror = h;', '.onerror'],
   ['onerror = h;', 'onerror'], ['var n = document.images.length;', '.images'], ['var i = new Image();', 'Image'],
-  ['var w = screen.width;', 'screen'], ['var w = window.screen.width;', '.screen'], ['var n = navigator.plugins.length;', '.plugins']])
+  ['var w = screen.width;', 'screen'], ['function g() { return 1; } if (g) x = 1;', 'a function in a condition'], ['if (el.setSelectionRange) f();', 'a function in a condition'], ['if (window.cdomFramesStart && window.cdomFactory) f();', 'a function in a condition'], ['var n = !String;', 'a function in a condition'], ['var w = window.screen.width;', '.screen'], ['var n = navigator.plugins.length;', '.plugins']])
   ok(refused(src, what, { js10: true }), `js10: ${src} is refused (${what})`);
 ok(passes('if (x) f(); else g(a[0], "s".length);', { js10: true }), 'js10: if, calls, indexing and length pass');
 ok(passes('var o = new Object(); o.k = 1;', { js10: true }), 'js10: new Object() passes (Netscape 2 has it: js1c\'s output runs on it)');
-ok(passes('if (window.String && String.fromCharCode) c = String.fromCharCode(65); if (window.Number) n = Number.NaN; document.onmousedown = h;',
+ok(passes('if (window.String != null && String.fromCharCode != null) c = String.fromCharCode(65); if (window.Number != null) n = Number.NaN; document.onmousedown = h;',
   { js10: true, allowed: FRAMES_ALLOWED }), "js10: String, Number and the button hooks pass where the file says it checks for them (frames.js's allowed list)");
 ok(refused('var a = new Array();', 'Array', { js10: true, allowed: FRAMES_ALLOWED }), 'js10: and Array is still refused there');
 ok(passes('function f(a) { return f.arguments.length + a; } location.replace(location.href);', { js10: true }),
