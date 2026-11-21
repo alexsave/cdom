@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Ultimate Tic-Tac-Toe replay</title></head><div id="m"></div>
+<script>
+/*CDOM_SHIM*/
+</script>
+<script>
+/*CDOM_BOOT*/
+</script>
+<script>
+// The replay viewer's page (uttt_replay.c). Written as the frames tier's own code is, so Netscape 2 and 3 can parse
+// it: a function declared at the top level, no literals. No BODY tag, so that on the frames tier the FRAMESET the boot
+// writes takes the body's place (docs/frames-design.md, section 3). uttt.html?<code> opens that game.
+function utttReady(x) {
+  X = x;
+  READY = 1;
+}
+READY = 0;
+var utttOptions = new Object();
+utttOptions.seed = 1;
+cdomBoot(/*CDOM_WASM*/, "m", null, utttReady, utttOptions);
+</script></html>
