@@ -1,0 +1,124 @@
+<HTML>
+<HEAD>
+<TITLE>cdom probe-js1b</TITLE>
+<SCRIPT LANGUAGE="JavaScript">
+var n = 0;
+var TAG = "" + location.search;
+TAG = TAG.substring(1, TAG.length);
+if (TAG == "") { TAG = "x"; }
+function mark(name, v) {
+  n = n + 1;
+  document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
+}
+var late_n = 0;
+function late(name, v) {
+  late_n = late_n + 1;
+  var u = '/mark/' + TAG + '/p-L' + late_n + '-' + name + '-' + escape("" + v);
+  if (window.Image) {
+    var im = new Image();
+    im.src = u;
+  } else {
+    document.write('<IMG SRC="' + u + '" WIDTH=1 HEIGHT=1>');
+  }
+}
+</SCRIPT>
+</HEAD>
+<BODY>
+<H3>cdom probe-js1b</H3>
+<P>Reports to /mark/ as it loads.
+<FORM NAME="f0"><INPUT TYPE=text NAME="t0" VALUE="v0"></FORM>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_50", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_50", r1(50));
+mark("depth1_50", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_50", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_50", r3(50,1,2,3) == 0);
+mark("depth3_50", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_100", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_100", r0(100) == 0);
+mark("depth0_100", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_100", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_100", r1(100));
+mark("depth1_100", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_100", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_100", r3(100,1,2,3) == 0);
+mark("depth3_100", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_120", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_120", r0(120) == 0);
+mark("depth0_120", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_120", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_120", r1(120));
+mark("depth1_120", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_120", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_120", r3(120,1,2,3) == 0);
+mark("depth3_120", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_140", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_140", r0(140) == 0);
+mark("depth0_140", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_140", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_140", r1(140));
+mark("depth1_140", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_140", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_140", r3(140,1,2,3) == 0);
+mark("depth3_140", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_160", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_160", r0(160) == 0);
+mark("depth0_160", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_160", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_160", r1(160));
+mark("depth1_160", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_160", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_160", r3(160,1,2,3) == 0);
+mark("depth3_160", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_180", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_180", r0(180) == 0);
+mark("depth0_180", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("done", "end");
+</SCRIPT>
+</BODY>
+</HTML>

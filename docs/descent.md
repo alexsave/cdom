@@ -228,18 +228,18 @@ Speed values are `new Date().getTime()` differences in milliseconds, on this slo
 | screenWidth | DIED(start) | DIED(start) | 640 | 640 | 640 | 640 |
 | innerWidth | <undefined> | undefined | 620 | ok | undefined | undefined |
 | documentBgColor | #ffffff | #ffffff | #ffffff | #ffffff | #ffffff | #ffffff |
-| speedConcat1000 | 469ms len=1000 | 125ms len=1000 | 110ms len=1000 | 16ms len=1000 | 63ms len=1000 | 63ms len=1000 |
 | speedLoop | 2672ms x=11952 | 3484ms x=11952 | 547ms x=11952 | 203ms x=11952 | 359ms x=11952 | 203ms x=11952 |
-| speedCharCodeAt | absent | absent | 344ms x=970000 len=10240 | 157ms x=970000 len=10240 | 234ms x=970000 len=10240 | 187ms x=970000 len=10240 |
-| done | end | end | end | end | end | end |
-| speedConcat2000 | 1812ms len=2000 | 312ms len=2000 | 188ms len=2000 | 32ms len=2000 | 188ms len=2000 | 109ms len=2000 |
+| speedObjKeys | 3453ms m5=99333 | 4672ms m5=99333 | 500ms m5=99333 | 453ms m5=99333 | 312ms m5=99333 | 375ms m5=99333 |
 | speedArrKeys | 1531ms m5=99333 | 5094ms m5=99333 | 469ms m5=99333 | 172ms m5=99333 | 312ms m5=99333 | 438ms m5=99333 |
 | speedCall | 3140ms x=100000 | 4407ms x=100000 | 1859ms x=100000 | 1047ms x=100000 | 1422ms x=100000 | 3438ms x=100000 |
-| speedObjKeys | 3453ms m5=99333 | 4672ms m5=99333 | 500ms m5=99333 | 453ms m5=99333 | 312ms m5=99333 | 375ms m5=99333 |
+| speedCharCodeAt | absent | absent | 344ms x=970000 len=10240 | 157ms x=970000 len=10240 | 234ms x=970000 len=10240 | 187ms x=970000 len=10240 |
+| speedConcat1000 | 469ms len=1000 | 125ms len=1000 | 110ms len=1000 | 16ms len=1000 | 63ms len=1000 | 63ms len=1000 |
+| speedConcat2000 | 1812ms len=2000 | 312ms len=2000 | 188ms len=2000 | 32ms len=2000 | 188ms len=2000 | 109ms len=2000 |
+| done | end | end | end | end | end | end |
 | tstr | n/c | fired | fired | n/c | fired | fired |
 | speedConcat | n/c | n/c | 1547ms len=10000 | 656ms len=10000 | 1266ms len=10000 | 797ms len=10000 |
-| interval | n/c | no run | 3 | n/c | 3 | 3 |
 | tfn | n/c | no run | fired | n/c | fired | fired |
+| interval | n/c | no run | 3 | n/c | 3 | 3 |
 
 ### What each engine lacks, in plain language
 
@@ -325,6 +325,249 @@ It is the measurement's reading, not the decision.
   An interpreter adds a further factor of tens on top of that for its dispatch, so only small programs (the Mosaic demo, forms, a table of numbers) are practical on Netscape 2 either way, and the transform is only the faster by that factor.
 - Memory and data: numbered keys on a plain object work (`o[1]`), but a store costs 35 microseconds, so a wasm linear memory kept as an object per byte is slow and large; a memory of packed numbers per word is the shape to measure next.
 - Missing helpers the runtime needs are all small: `charAt` and `indexOf` and `substring` exist, so strings can be walked by `indexOf` into a lookup string (there is no `charCodeAt`), and `escape` gives the code of a character as `%XX`.
+
+## Inside Netscape 2.02's engine
+
+Read from the binary on 2026-11-20: NS202/Program/netscape.exe (2,201,088 bytes, dated 1996-04-29), copied off the XP VM's disk, with strings and llvm-objdump.
+The engine is linked into netscape.exe (there is no separate DLL); its own name in the strings is Mocha.
+
+- It compiles each script to bytecode and interprets it ("unimplemented Mocha bytecode %d", "internal error: stack underflow at pc %d").
+- The recursion limit is not a count of calls.
+  The function at 0x55190c allocates each context with its value stack inline (malloc of size + 0x118), and the page's context ("mozilla", created at 0x4419b6) passes 0x2000: an 8 KB stack of 16-byte values, 512 slots.
+  The checks at 0x54f7df and 0x54f956 raise "stack overflow in %s" when sp + n * 16 reaches the limit.
+  So the depth is 512 divided by the slots each frame holds: the probe's `return 1 + r(n-1)` holds about 3 (the 1, the function, the argument), which gives about 170, between the 100 that passed and the 300 that died.
+  A frame with more arguments or deeper expressions nests less; any code path for Netscape 2 must keep its live JavaScript values under 512 in all, not only its call depth.
+- Nested functions are refused by name: "function defined inside a function".
+- Reserved but not implemented: switch, case, default, throw, catch, delete, and the Java words; `typeof` is not even a keyword.
+- Built-ins named in the binary: String (substring, toLowerCase, toUpperCase, charAt, indexOf, lastIndexOf, chop, match, split, substr and the HTML wrappers), Boolean, Number, parseInt, parseFloat, Math (floor, round, sqrt, ceil and the trig functions), Date, Array, eval and setTimeout.
+  No charCodeAt or fromCharCode is there, which agrees with the probe.
+- Two of those disagree with the table above and need a second run: the probe called split on a string literal (`'a,b,c'.split(',')`) and found it missing, and found `new Array(3).length` undefined, but both names are in the binary.
+  The next probe should call split on a variable, and test what `new Array(3)` gives (number keys, no length).
+- Typing `mocha:` in the location field opens the engine's own console (two frames, MochaInput and MochaOutput).
+- An assignment written as a condition is silently turned into a comparison: the parser's messages "test for equality (==) mistyped as assignment (=)?" and "Assuming equality test".
+  Generated code for Netscape 2 must never assign inside an `if` or `while` condition (`while (x = next())` would compare instead).
+- The event handlers the binary knows are onload, onunload, onfocus, onblur, onchange, onselect, onsubmit, onclick, onmouseover and onscroll.
+  There is no onmouseout, no onmousedown or onmouseup, and no key event at all, so on Netscape 2 input is clicks, field changes and form submits.
+- `<SCRIPT LANGUAGE=...>` accepts JavaScript, LiveScript and Mocha, and `livescript:` and `mocha:` URLs work beside `javascript:`.
+- The Mocha console is a frameset (75% output, 25% input) with an ISINDEX field posting into the output frame: the engine's own authors built interactive UI in Netscape 2 with frames and a form, which is the frames tier's approach.
+- Proxy auto-config starts here: the binary calls `FindProxyForURL("%s","%s")` in Mocha, the same function every PAC file still defines.
+- Functions print their source by decompiling the bytecode (format strings like `while (%s) {` and `function %s(`), and String has a Perl-style `chop` that later versions dropped.
+
+## The second probe
+
+Reading netscape.exe (the section "Inside Netscape 2.02's engine", on the ns2-engine branch, PR #101) left questions that only a run can settle.
+tests/probe-js1b.html asks them, written by `tools/gen_probe_js1.py b` in the first probe's style: one test per script block, marks by `document.write` of an image, the same `tools/probe_marks.py` (with `--page tests/probe-js1b.html`).
+Its string tests use double quotes, where the first probe's used single ones.
+The recursion grid comes last, so that an engine which stops at a stack overflow has reported the rest first.
+tests/probe-nested.html is a function inside a function alone, for the text of its alert.
+tests/probe-events.html has a link, a button and a text field with every handler, each of which appends its name to a text field, and a "report" button that sends the field to /mark/; it is driven through vm.py.
+
+### What I expect, written before the run
+
+- split: methods on a literal work in Netscape 2 (`'abc'.charAt(1)` gave b), so a literal against a variable should make no difference, and I expect split to die on the variable too, as it did on the literal.
+  The name in the binary would then belong to something else.
+  Falsifier: `splitVar0` is `a`.
+- Methods on a double-quoted literal: `"abc".length` 3, `charAt(1)` b, `indexOf("c")` 2, as with single quotes.
+- `new Array(3)`: no `length` (undefined, as in the first probe), `a[0]` undefined, still no `length` after `a[5] = 1`; `new Array()` works and has no `length`; `new Array(1,2,3)` stores its arguments, so `a[1]` is 2 (a guess at even odds).
+- `s.chop()` gives `hell` and leaves `s` as `hello`; `s.match("ell")` gives true and `s.match("zz")` false (a string match, not a regular expression); `s.substr(1,2)` gives undefined, as on the literal.
+- The assignment in a condition is compared in Netscape 2: `ifAssign05` gives `compared-false x=0`, `ifAssign00` gives `compared-true x=0`, `whileAssign03` gives `c=0 x=0`, and `whileAssign00` runs to its guard, `c=6 x=0`.
+  Netscape 3 does the same (the same parser); Netscape 4.08 (with `LANGUAGE="JavaScript"`) and IE 4 assign (`assigned-true x=5`, `assigned-false x=0`, `c=6 x=3`, `c=0 x=0`).
+- The value stack: 512 slots of 16 bytes per page context, shared with the block's own `mark("name", ...)` (about 3 slots).
+  A frame of `r0` holds the function and its argument (2 slots), of `r1` the 1, the function and the argument (3), of `r3` the function and four arguments (5).
+  So the deepest call that works is about 254 for r0 (250 passes, 275 dies), 170 for r1 (160 passes, 180 dies) and 101 for r3 (100 passes, 120 dies).
+  Falsifiers: if the three die at the same depth, the limit counts calls, not slots; if the ratios hold but the levels are lower, each frame holds a fixed number of further slots, which the three depths together give.
+  Netscape 3 is the same as Netscape 2 (it also died at r1 300); Netscape 4.08 passes 600 for all three; IE 4 passes 400 and dies at 512 or 600 for r1, with its "Stack overflow" dialog.
+- Event handlers: Netscape 2 fires onmouseover, onclick and onchange, and never onmouseout, onmousedown, onmouseup or any key event.
+  Netscape 3 adds onmouseout; Netscape 4.08 and IE 4 fire all of them.
+- A function inside a function: Netscape 2's alert names "function defined inside a function".
+
+### The follow-up, expected before its run
+
+Netscape 2's run of probe-js1b (below) gave undefined from `chop`, `match` and `substr`, and an undefined result from `split` (then "has no properties" on its `[0]`), and the depths fell between grid points.
+tests/probe-js1c.html (`gen_probe_js1.py c`) asks whether those methods are there at all, and narrows the depths to a step of 2 for r0 and r1 and 5 for r3.
+
+- `"" + s.charAt` prints a native function, and so do `s.split`, `s.chop`, `s.match` and `s.substr` (the binary names them), while `s.zzz` is undefined and `s.zzz(1)` dies: the four are present and return undefined in 2.02.
+  `split` on a `new String` object is the same as on a primitive.
+- Depths, with a frame of 2, 3 and 6 slots (r3 died at 100, so it holds more than the 5 I counted: the sixth is a guess) and about 3 slots under the first call: the deepest r0 that works is 252 to 254, r1 167 or 168, r3 83 or 84 (so r3 dies at 85 or 90 on this grid).
+
+### What the second probe found
+
+The runs are of 2026-11-20, in the same XP VM, served from the worktree's tests/ on port 8104.
+The marks are in docs/descent-marks-2.txt, and `tools/descent_table2.sh` prints the tables from them.
+How each browser was run:
+
+- Netscape 2.02 ran probe-js1b.html, then probe-js1c.html, probe-nested.html and probe-events.html.
+  Each failed block raises its own alert window, and the "Assuming equality test" warning also raises one, though the block goes on.
+  The alerts sit behind the browser window after the first is dismissed; `taskkill /f /im netscape.exe` from Run clears them all.
+- Netscape 3.04 ran probe-js1b.html twice (the first run's marks arrived only after its "too many JavaScript errors" box was dismissed; the two runs agree) and probe-events.html.
+- Netscape 4.08 ran both pages in one go with no dialog.
+- IE 4.01 stalled loading the whole page after 42 marks, as it did in the first probe, so it ran `probe-js1b-part<k>.html` (`gen_probe_js1.py b part <k> 15`) and, for the tests after its stalls, pages of single tests that were not kept.
+  It stops running a page's later scripts after a "Stack overflow at line: 44" box, so its 512 and 600 depths were not collected (they cannot pass where 400 died).
+- The events row is the "report" button's mark after the same input in each browser: the pointer over the link and off it, a click on "press me", a click in the text field, typing "ab", and a click outside it.
+
+| test | ns2 | ns304 | ns408 | ie4 |
+|---|---|---|---|---|
+| ua | Mozilla/2.02 (WinNT; I) | Mozilla/3.04 (WinNT; I) | Mozilla/4.08 [en] (WinNT; I ;Nav) | Mozilla/4.0 (compatible; MSIE 4.01; Windows NT 5.0; SV1) |
+| splitVarLen | DIED(start) | 3 | 3 | 3 |
+| splitVar0 | DIED(start) | a | a | a |
+| splitVar1 | DIED(start) | b | b | b |
+| splitVar2 | DIED(start) | c | c | c |
+| splitVarStr | <undefined> | a,b,c | a,b,c | a,b,c |
+| splitLitVar0 | DIED(start) | a | a | a |
+| splitLitLen | DIED(start) | 3 | 3 | 3 |
+| litLength | 3 | 3 | 3 | 3 |
+| litCharAt | b | b | b | b |
+| litIndexOf | 2 | 2 | 2 | 2 |
+| newArray3Len | <undefined> | 3 | 3 | 3 |
+| newArray3El0 | null | null | undefined | undefined |
+| newArray3Grow | <undefined> | 6 | 6 | 6 |
+| newArray3Str | <object Array> | ,, | ,, | ,, |
+| newArrayEmptyLen | <undefined> | 0 | 0 | 0 |
+| newArrayEmptyGrow | <undefined> | 2 | 2 | 2 |
+| newArrayList1 | null | 2 | 2 | 2 |
+| newArrayListLen | <undefined> | 3 | 3 | 3 |
+| newArrayListStr | <object Array> | 1,2,3 | 1,2,3 | 1,2,3 |
+| chop | <undefined> | undefined | DIED(start) | DIED(start) |
+| chopAfter | hello | hello | DIED(start) | DIED(start) |
+| match | <undefined> | undefined | ell | ell |
+| matchMiss | <undefined> | undefined | null | null |
+| substrVar | <undefined> | undefined | el | el |
+| ifAssign05 | compared-false x=0 | compared-false x=0 | assigned-true x=5 | assigned-true x=5 |
+| ifAssign00 | compared-true x=0 | compared-true x=0 | assigned-false x=0 | assigned-false x=0 |
+| whileAssign03 | c=0 x=0 | c=0 x=0 | c=6 x=3 | c=6 x=3 |
+| whileAssign00 | c=6 x=0 | c=6 x=0 | c=0 x=0 | c=0 x=0 |
+| depth0_50 | true | true | true | true |
+| depth1_50 | 50 | 50 | 50 | 50 |
+| depth3_50 | true | true | true | true |
+| depth0_100 | true | true | true | true |
+| depth1_100 | 100 | 100 | 100 | 100 |
+| depth3_100 | DIED(start) | DIED(start) | true | true |
+| depth0_120 | true | true | true | true |
+| depth1_120 | 120 | 120 | 120 | 120 |
+| depth3_120 | DIED(start) | DIED(start) | true | true |
+| depth0_140 | true | true | true | true |
+| depth1_140 | 140 | 140 | 140 | 140 |
+| depth3_140 | DIED(start) | DIED(start) | true | true |
+| depth0_160 | true | true | true | true |
+| depth1_160 | 160 | 160 | 160 | 160 |
+| depth3_160 | DIED(start) | DIED(start) | true | true |
+| depth0_180 | true | true | true | true |
+| depth1_180 | DIED(start) | DIED(start) | 180 | 180 |
+| depth3_180 | DIED(start) | DIED(start) | true | true |
+| depth0_200 | true | true | true | true |
+| depth1_200 | DIED(start) | DIED(start) | 200 | 200 |
+| depth3_200 | DIED(start) | DIED(start) | true | true |
+| depth0_225 | true | true | true | true |
+| depth1_225 | DIED(start) | DIED(start) | 225 | 225 |
+| depth3_225 | DIED(start) | DIED(start) | true | true |
+| depth0_250 | true | true | true | true |
+| depth1_250 | DIED(start) | DIED(start) | 250 | 250 |
+| depth3_250 | DIED(start) | DIED(start) | true | true |
+| depth0_275 | DIED(start) | DIED(start) | true | true |
+| depth1_275 | DIED(start) | DIED(start) | 275 | 275 |
+| depth3_275 | DIED(start) | DIED(start) | true | true |
+| depth0_300 | DIED(start) | DIED(start) | true | true |
+| depth1_300 | DIED(start) | DIED(start) | 300 | 300 |
+| depth3_300 | DIED(start) | DIED(start) | true | true |
+| depth0_400 | DIED(start) | DIED(start) | true | DIED(start) |
+| depth1_400 | DIED(start) | DIED(start) | 400 | DIED(start) |
+| depth3_400 | DIED(start) | DIED(start) | true | DIED(start) |
+| depth0_512 | DIED(start) | DIED(start) | true | n/c |
+| depth1_512 | DIED(start) | DIED(start) | 512 | n/c |
+| depth3_512 | DIED(start) | DIED(start) | true | n/c |
+| depth0_600 | DIED(start) | DIED(start) | true | n/c |
+| depth1_600 | DIED(start) | DIED(start) | 600 | n/c |
+| depth3_600 | DIED(start) | DIED(start) | true | n/c |
+| done | end | end | end | end |
+| events | over click change | over out click change | over out mousedown mouseup click keydown keypress keyup keydown keypress keyup change | over out mousedown mouseup click keydown keypress keyup keydown keypress keyup change |
+
+Netscape 2.02's run of the follow-up page:
+
+| test | ns2c |
+|---|---|
+| ua | Mozilla/2.02 (WinNT; I) |
+| charAtProp | function charAt() { <native code> } |
+| splitProp | function split() { <native code> } |
+| chopProp | function chop() { <native code> } |
+| matchProp | function match() { <native code> } |
+| substrProp | function substr() { <native code> } |
+| missingProp | <undefined> |
+| missingCall | DIED(start) |
+| splitResult | <undefined> |
+| splitStrObj1 | DIED(start) |
+| strObjCharAt | DIED(start) |
+| depth0_252 | true |
+| depth0_254 | DIED(start) |
+| depth0_256 | DIED(start) |
+| depth0_258 | DIED(start) |
+| depth0_260 | DIED(start) |
+| depth0_262 | DIED(start) |
+| depth0_264 | DIED(start) |
+| depth0_266 | DIED(start) |
+| depth0_268 | DIED(start) |
+| depth0_270 | DIED(start) |
+| depth0_272 | DIED(start) |
+| depth0_274 | DIED(start) |
+| depth1_162 | 162 |
+| depth1_164 | 164 |
+| depth1_166 | 166 |
+| depth1_168 | DIED(start) |
+| depth1_170 | DIED(start) |
+| depth1_172 | DIED(start) |
+| depth1_174 | DIED(start) |
+| depth1_176 | DIED(start) |
+| depth1_178 | DIED(start) |
+| depth3_55 | true |
+| depth3_60 | true |
+| depth3_65 | true |
+| depth3_70 | true |
+| depth3_75 | true |
+| depth3_80 | true |
+| depth3_85 | true |
+| depth3_90 | true |
+| depth3_95 | true |
+| done | end |
+
+The dialogs, whose screenshots are in /Users/alex/VMs/ie6-xp/shots (p2-*.png):
+
+- A function inside a function, in Netscape 2.02: "JavaScript Error: ... line 42: syntax error.", with the source line and a caret under the inner `function`.
+  The binary's "function defined inside a function" is not what a page sees.
+- The assignment in a condition, in Netscape 2.02 and 3.04: "test for equality (==) mistyped as assignment (=)? Assuming equality test.", with the source line and a caret under the condition; the block then runs on, comparing.
+- `s.zzz(1)` in Netscape 2.02: "zzz is not a function."; `new String("a,b,c")`: "String is not defined."; `p[0]` after `split`: "has no properties."; the deep calls: "stack overflow in r0." (r1, r3).
+- `s.chop()` in IE 4.01: "Object doesn't support this property or method"; the deep calls: "Stack overflow at line: 44".
+
+### The predictions, marked
+
+- split: right for Netscape 2, and the reason is now known: `s.split` is a native function ("function split() { <native code> }"), as are `chop`, `match` and `substr`, but in 2.02 all four return undefined, on a variable or a literal alike.
+  So the names in the binary are stubs; an unknown method (`s.zzz(1)`) dies instead.
+  Netscape 3.04 splits on a variable and on a literal, with a `length`.
+- Methods on a double-quoted literal: right (3, b, 2), in all four.
+- `new Array` in Netscape 2: right that there is no `length` (also none after `a[5] = 1`, and none for `new Array()`), and `a[0]` is null; wrong on `new Array(1,2,3)`: `a[1]` is null, the arguments are not stored, and the array prints as `<object Array>`.
+  Netscape 3 and later have the real Array.
+- `chop`, `match`, `substr`: wrong for Netscape 2 (all undefined, where I expected `hell` and true); Netscape 3.04 is the same; Netscape 4.08 and IE 4 have `match` (`ell`, null) and `substr` (`el`), and no `chop` (it dies).
+- The assignment in a condition: right in all four.
+  Netscape 2.02 and 3.04 compare, with the warning box; Netscape 4.08 (with `LANGUAGE="JavaScript"`) and IE 4.01 assign.
+- The value stack: right in form and close in number.
+  The deepest call that works in Netscape 2.02 is r0(252) (r0(254) dies), r1(166) (r1(168) dies) and r3 between 95 and 99 (r3(100) dies), against my 252 to 254, 167 or 168, and (from the first page) 101.
+  The limit is in slots, not calls: a frame of r0, r1 and r3 holds 2, 3 and 5 values, and the depths stand at 253, 167 and 96 to 100 frames, 506, 501 and 480 to 500 slots of the 512.
+  About 6 slots go to the block itself and the room each call checks for ahead; that r3 stops a few frames short of 101 fits the check reserving room for its four arguments.
+  My follow-up guess that r3 holds 6 slots was wrong (it would stop at about 84; r3(95) works).
+  Netscape 3.04 stops at the same points on the coarse grid; Netscape 4.08 passes 600 for all three; IE 4.01 passes 300 and dies at 400 for all three, a limit on calls, not on values.
+- Event handlers: right in all four.
+  Netscape 2.02 fires onmouseover, onclick and onchange only; Netscape 3.04 adds onmouseout; Netscape 4.08 and IE 4.01 fire every one (mousedown, mouseup, keydown, keypress, keyup).
+- A function inside a function: wrong; the alert says only "syntax error."
+
+### What this changes
+
+- Netscape 2 has no working `split`, `substr`, `match` or `chop`: they exist and return undefined.
+  Code for it walks strings with `charAt`, `indexOf` and `substring`, and that is all.
+- Netscape 2 has no usable Array: `new Array(n)` gives an object with no `length` and `new Array(1,2,3)` drops its arguments.
+  Plain objects with number keys and a separate count are the only array.
+- Netscape 2 and 3 have a 512-slot value stack per page: the deepest recursion is about (512 - 6) / (values per frame), so 253 frames of two values and about 100 of five.
+  An interpreter for them must keep its own stack in an object and never recurse in JavaScript; a transform cannot promise any C call depth beyond a hundred or so.
+- Netscape 2 and 3 compare where an assignment is written as a condition, so generated code must never assign inside an `if` or `while` condition; Netscape 4 and IE 4 assign, so the code would behave differently by browser.
+- Netscape 2's input is clicks, form changes and the pointer entering a link; Netscape 3 adds leaving it; there is no key or button-press event before Netscape 4 and IE 4.
+- IE 4 nests calls to between 300 and 400, whatever the frame's size, and stops the page's remaining scripts at the first stack overflow.
 
 ## The three code paths in the real browsers
 

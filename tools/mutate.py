@@ -959,6 +959,8 @@ M = [
   # the fourth tier, IE 6 to 8 (shim/boot.js, tools/legacy/es3.mjs, dom-old.js, shim-old.js, polyfills-es3.js)
   ('ie6-boot-new-when-es5-missing', 'shim/boot.js', '    if (!es5[i]) old = true;', '    if (!es5[i]) old = false;', LEG6, 'FAIL booted'),
   ('ie6-floor-without-listeners', 'shim/boot.js', '  if (!d.addEventListener && !d.attachEvent) lack.push', '  if (false) lack.push', LEGBELOW, "FAIL one error, the boot's"),
+  ('boot-serial-fallback-load', 'shim/boot.js', '  load(old ? "cdom.legacy-ie6.js" : words ? "cdom.legacy-ie9.js" : "cdom.legacy.js", loaded);\n  load(base + (old || words ? ".ie9.js" : ".js"), loaded);',
+   '  load(old ? "cdom.legacy-ie6.js" : words ? "cdom.legacy-ie9.js" : "cdom.legacy.js", function () { loaded(); load(base + (old || words ? ".ie9.js" : ".js"), loaded); });', LEG9, 'FAIL legacy.wasm.ie9.js requested while'),  # a serial load: the app's request comes only after the shim file has arrived (loaded() counts the shim, then the app is requested), so the held shim times out
   ('ie6-boot-swallows-failed-start', 'shim/boot.js', '    setTimeout(function () { throw e; }, 0);', '', LEG, 'FAIL a failed start is thrown again'),
   ('ie6-catch-not-renamed', 'tools/legacy/es3.mjs', '      if (t.isIdentifier(p.node.param)) p.scope.rename(', '      if (false) p.scope.rename(', ES3T, "catch parameter's name used elsewhere in its function"),
   ('ie6-catch-gate-off', 'tools/legacy/es3.mjs', '      if (found) leaks.add(n);', '      if (false) leaks.add(n);', ES3T, "FAIL catch (e) over the function's own e is refused"),
