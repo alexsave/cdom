@@ -3,7 +3,8 @@
 // take the wasm2js path, on cdom.legacy.js's polyfills and PEP. Without it, the same checks run on wasm.
 // LEGACY=ie9 runs them on the third tier (cdom.legacy-ie9.js and the words build: no typed arrays, no crypto),
 // LEGACY=ie9-gaps on IE 9's other gaps on the second tier, LEGACY=ie6 on the fourth (cdom.legacy-ie6.js, ES3 on the old
-// DOM: no ES5, attachEvent, no textContent), and LEGACY=below checks that the boot refuses a browser under its floor.
+// DOM: no ES5, attachEvent, no textContent, SVG as VML), and LEGACY=below checks that the boot refuses a browser under its floor.
+// VML_TIME=1 also times C building 1,000 paths (T2 and T3 in docs/vml-design.md).
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -85,6 +86,10 @@ run: try {
   }
   for (let i = 0; i < 100 && !(await E('!!window.READY')); i++) await sleep(50);
   ok(await E('!!window.READY'), 'booted');
+  // Inputs typed inside a parent (IE 5 to 8 refuse that once the input has had one): each keeps its type, IE's being
+  // text for one it does not know, and the boot threw nothing.
+  const types = await E('[(document.getElementById("tcheck") || {}).type, (document.getElementById("tsearch") || {}).type, ERRORS.length]');
+  ok(JSON.stringify(types) === JSON.stringify(['checkbox', TIER === 4 ? 'text' : 'search', 0]), `nested inputs typed: ${JSON.stringify(types)} ${JSON.stringify(await E('ERRORS'))}`);
   ok(await E('X.sj() === 1'), "the image module's js way out of a libjpeg error: 500 throws from 20 frames down, the stack pointer back, then a body that returns");
   const id = {}; for (const [k, i] of Object.entries({ PAD: 0, TEXT: 1, BROKEN: 7 })) id[k] = await E(`X.id(${i})`);
   // An event that does not bubble, from inside the mount: the image that does not load, its error heard once (the
@@ -221,6 +226,133 @@ run: try {
   // the half-transparent pixel comes back premultiplied and unpremultiplied, so its white may round
   ok(JSON.stringify(px.slice(0, 12)) === JSON.stringify([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255]) && px[15] === 128 && px[12] >= 254,
     `cd_blit's pixels: ${px}`);
+
+  // SVG (docs/vml-design.md): real SVG on every tier but the fourth; there (IE 5 to 8, no SVG) VML, made by
+  // tools/legacy/vml.js as the shim builds the subtree, read here from Chrome's VML stand-in (tools/cdp.mjs).
+  await E('ERRORS.length = 0');
+  await E('X.svg()'); await sleep(100);
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const svgIn = await E(`(function () { var n = 0, all = document.getElementById('m').getElementsByTagName('*'), i;
+    for (i = 0; i < all.length; i++) if (all[i].namespaceURI === ${JSON.stringify(SVGNS)}) n++; return n; })()`);
+  if (TIER === 4) {
+    const vmlOf = (id) => E(`(function (el) {
+      if (!el) return null;
+      var f = el.firstChild, s = f && f.nextSibling, st = el.style;
+      return { tag: el.tagName.toLowerCase(), path: el.path, coordsize: el.coordsize, coordorigin: el.coordorigin,
+        box: [st.position, st.left, st.top, st.width, st.height], display: st.display, overflow: st.overflow,
+        filled: el.filled, fillcolor: el.fillcolor, stroked: el.stroked, strokecolor: el.strokecolor, strokeweight: el.strokeweight,
+        fill: f ? [f.tagName.toLowerCase(), f.opacity] : null, stroke: s ? [s.tagName.toLowerCase(), s.opacity] : null,
+        join: s ? [s.joinstyle, s.miterlimit, s.endcap] : null };
+    })(document.getElementById(${JSON.stringify(id)}))`);
+    ok(svgIn === 0, `no element in the SVG namespace: ${svgIn}`);
+    // As real IE 6 draws it (docs/vml-design.md, section 9): the namespace with two arguments, a behavior rule a tag, and
+    // nothing the stand-in knows IE 6 not to draw (tools/cdp.mjs: a v: node before the namespace, or with no rule, a v:group).
+    const setup = await E('__vml.ns.concat(__vml.rules)');
+    ok(JSON.stringify(setup) === JSON.stringify([['v', 'urn:schemas-microsoft-com:vml', null],
+      ...['shape', 'fill', 'stroke'].map((t) => ['v\\:' + t, 'behavior:url(#default#VML)'])]),
+      `the VML namespace added and the behavior rules made, once: ${JSON.stringify(setup)}`);
+    const bad = await E('__vml.bad.slice(0)');
+    ok(bad.length === 0, `no VML node made that IE 6 would not draw: ${JSON.stringify(bad)}`);
+    const root = await vmlOf('svg');
+    const rootRect = await E('(function (e) { return [e.offsetWidth, e.offsetHeight]; })(document.getElementById("svg"))');
+    ok(root && root.tag === 'span' && root.display === 'inline-block' && root.overflow === 'hidden' &&
+      JSON.stringify(root.box.slice(0, 1).concat(root.box.slice(3))) === '["relative","200px","100px"]' && JSON.stringify(rootRect) === '[200,100]',
+      `the svg is a span of its own size that clips, 200 by 100: ${JSON.stringify(root)} ${JSON.stringify(rootRect)}`);
+    const g = await vmlOf('sg');
+    ok(g && g.tag === 'span' && JSON.stringify(g.box) === '["absolute","0px","0px","",""]',
+      `the g is a span at the svg's top left: ${JSON.stringify(g)}`);
+    // The viewBox 0 0 100 50 in 200 by 100 px is a scale of 2: every point times 2 pixels times K (100).
+    const SHAPE = { tag: 'v:shape', coordsize: '100,100', coordorigin: '0,0', box: ['absolute', '0px', '0px', '1px', '1px'], display: '',
+      join: ['miter', '4', 'flat'] };
+    const op = (f, s) => ({ fill: ['v:fill', f], stroke: ['v:stroke', s] });
+    const want = {
+      sp: { path: 'm2000,2000 l6000,2000 l6000,4000 x e', filled: true, fillcolor: '#ff0000', stroked: true, strokecolor: 'blue', strokeweight: '4px', ...op('1', '1') },
+      // the rounded rect and the circles as arcs: the same strings tools/vml.mjs checks the arcs of
+      // x 40 to 60, y 5 to 15, rx and ry 2: 8000 to 12000 by 1000 to 3000, corners of 400 with controls 0.5523 of that out
+      sr: { path: 'm8400,1000 l11600,1000 c11821,1000,12000,1179,12000,1400 l12000,2600 c12000,2821,11821,3000,11600,3000 l8400,3000' +
+        ' c8179,3000,8000,2821,8000,2600 l8000,1400 c8000,1179,8179,1000,8400,1000 x e', filled: true, fillcolor: '#0080ff', stroked: false, ...op('0.5', '1') },
+      sc: { path: 'm15000,2000 c15000,2552,15448,3000,16000,3000 c16552,3000,17000,2552,17000,2000 c17000,1448,16552,1000,16000,1000' +
+        ' c15448,1000,15000,1448,15000,2000 x e', filled: false, stroked: true, strokecolor: '#00ff00', strokeweight: '2px', ...op('1', '1') },
+      se: { path: 'm400,8000 c400,8442,1116,8800,2000,8800 c2884,8800,3600,8442,3600,8000 c3600,7558,2884,7200,2000,7200' +
+        ' c1116,7200,400,7558,400,8000 x e', filled: true, fillcolor: 'black', stroked: false, ...op('1', '1') },
+      sl: { path: 'm4000,6000 l8000,9000 e', filled: false, stroked: true, strokecolor: 'black', strokeweight: '2px', ...op('1', '0.25') },
+      spl: { path: 'm10000,6000 l12000,9000 l14000,6000 e', filled: false, stroked: true, strokecolor: 'purple', ...op('1', '1') },
+      spg: { path: 'm16000,6000 l18000,9000 l15000,9000 x e', filled: true, fillcolor: '#aabbcc', stroked: false, ...op('0.25', '0.5') },
+      // inside the g: translate(5,6) scale(2) after the viewBox's 2, so (4 x + 10, 4 y + 12); the g's fill and stroke-width
+      sgp: { path: 'm1000,1200 l3000,1200 l3000,3200 e', filled: true, fillcolor: '#123456', stroked: true, strokecolor: 'red', strokeweight: '12px', ...op('1', '1') },
+    };
+    for (const [id, w] of Object.entries(want)) {
+      const got = await vmlOf(id), exp = { ...SHAPE, ...w };
+      const bad = got ? Object.keys(exp).filter((k) => JSON.stringify(got[k]) !== JSON.stringify(exp[k])) : ['the node'];
+      ok(!bad.length, `<${{ sp: 'path', sr: 'rect', sc: 'circle', se: 'ellipse', sl: 'line', spl: 'polyline', spg: 'polygon', sgp: 'path in a g' }[id]}> as a v:shape: ${
+        bad.map((k) => `${k} ${JSON.stringify(got && got[k])}, want ${JSON.stringify(exp[k])}`).join('; ') || got.path}`);
+    }
+    // What a LaTeX formula is made of. Text: a span at x times 2, in its font size times 2, its baseline (found here by an
+    // image on it, not the way vml.js finds it) at y times 2, its colour the CSS color it inherits (currentColor).
+    const text = await E(`(function (e, svg) {
+      var img = document.createElement('img'), s = e.style, r;
+      img.width = 1; img.height = 1; img.style.verticalAlign = 'baseline'; e.appendChild(img);
+      r = img.getBoundingClientRect().bottom - svg.getBoundingClientRect().top; e.removeChild(img);
+      return [e.tagName.toLowerCase(), s.position, s.left, s.fontSize, s.fontStyle, s.fontFamily, s.color, getComputedStyle(e).color, Math.round(r), e.innerText];
+    })(document.getElementById('st'), document.getElementById('svg'))`);
+    ok(JSON.stringify(text) === JSON.stringify(['span', 'absolute', '2px', '20px', 'italic', 'KaTeX_Math, serif', '', 'rgb(18, 49, 35)', 90, 'x']),
+      `<text> as a span in its font, its baseline at y: ${JSON.stringify(text)}`);
+    ok((await vmlOf('scc')).fillcolor === '#123123', `a currentColor fill is the CSS color: ${(await vmlOf('scc')).fillcolor}`);
+    // The svg in the svg: a span at x and y, its width and height, clipping; its viewBox sliced to fill it (scale 1 inside).
+    const sn = await vmlOf('sn'), snr = await vmlOf('snr');
+    ok(sn && sn.tag === 'span' && sn.overflow === 'hidden' && JSON.stringify(sn.box) === '["absolute","100px","40px","40px","20px"]',
+      `the svg in the svg is a span at its x and y that clips: ${JSON.stringify(sn)}`);
+    ok(snr.path === 'm0,0 l8000,0 l8000,2000 l0,2000 x e' && snr.fillcolor === '#ff00ff', `its rect drawn from its corner, sliced: ${snr.path}`);
+    // The svg sized in em: as CSS lays it out, 40 by 20, so a viewBox of 20 by 10 is a scale of 2.
+    const em = await E('(function (e) { return [e.offsetWidth, e.offsetHeight, e.style.width, e.style.height]; })(document.getElementById("svgem"))');
+    ok(JSON.stringify(em) === '[40,20,"2em","1em"]', `the svg in em is laid out by CSS: ${JSON.stringify(em)}`);
+    ok((await vmlOf('sem')).path === 'm200,200 l600,200 l600,800 l200,800 x e', `and drawn at its scale: ${(await vmlOf('sem')).path}`);
+    // What VML does not draw: hidden, and each kind reported once through window.reportError.
+    const hid = await E(`['lg', 'srot'].map(function (id) { var e = document.getElementById(id); return e ? e.tagName.toLowerCase() + ' ' + e.style.display : 'none'; })`);
+    ok(JSON.stringify(hid) === '["span none","v:shape none"]', `the gradient is a hidden span, the rotated rect is hidden: ${JSON.stringify(hid)}`);
+    ok((await vmlOf('sgrad')).filled === false, 'a gradient paint fills nothing');
+    const kinds = ['<defs>', '<linearGradient>', '<stop>', 'transform rotate', 'paint url'];
+    const lost = await E('cdomVml.lost.slice(0)'), errs = await E('ERRORS');
+    ok(JSON.stringify(lost) === JSON.stringify(kinds), `cdomVml.lost names each kind once: ${JSON.stringify(lost)}`);
+    ok(errs.length === kinds.length && kinds.every((k, i) => errs[i] === `Error: cdom: SVG ${k} is not drawn in VML (IE 5 to 8: docs/vml-design.md)`),
+      `each reported once through window.onerror: ${JSON.stringify(errs)}`);
+    // Later changes (cd_set_attr) reach the VML: a path's d, a rect's fill; and the g's transform, set while the path in it is
+    // detached, then the path attached again (the shim's place, which on this tier draws what it put back).
+    await E('X.svg_set()');
+    const [sp2, sr2, sgp2] = [await vmlOf('sp'), await vmlOf('sr'), await vmlOf('sgp')];
+    ok(sp2.path === 'm0,0 l2000,0 e', `cd_set_attr of d reached the v:shape: ${sp2.path}`);
+    ok(sr2.fillcolor === '#0000ff' && sr2.fill[1] === '0.5', `cd_set_attr of fill reached it, its fill-opacity kept: ${sr2.fillcolor} ${sr2.fill}`);
+    ok(sgp2.path === 'm0,0 l1000,0 l1000,1000 e' && sgp2.strokeweight === '6px', `the g's transform changed while its path was detached: put back, the path is drawn under it: ${sgp2.path} ${sgp2.strokeweight}`);
+    // Removed, then built again: nothing left, then the same VML, and nothing reported twice.
+    await E('X.svg_drop()');
+    const left = await E(`(function () { var all = document.getElementById('m').getElementsByTagName('*'), n = 0, i;
+      for (i = 0; i < all.length; i++) if (/^v:/i.test(all[i].tagName)) n++; return n; })()`);
+    ok(left === 0 && (await E('document.getElementById("svg") === null')), `cd_remove took every VML node: ${left} left`);
+    await E('X.svg()'); await sleep(100);
+    ok((await vmlOf('sp')).path === 'm2000,2000 l6000,2000 l6000,4000 x e' && (await E('ERRORS.length')) === kinds.length,
+      `built again, the path is drawn again and nothing is reported twice: ${(await vmlOf('sp')).path}, ${await E('ERRORS.length')} errors`);
+  } else {
+    ok(svgIn === 21, `the svg is real SVG, all 21 of its elements in the SVG namespace: ${svgIn}`);
+    ok(await E('document.getElementById("sp").getAttribute("d")') === 'M10 10 h20 v10 z', 'the path has its d');
+    await E('X.svg_set()');
+    ok(await E('document.getElementById("sp").getAttribute("d") + " " + document.getElementById("sr").getAttribute("fill")') === 'M0 0 L10 0 #00f',
+      'cd_set_attr reached the SVG');
+    ok(await E('typeof cdomVml === "undefined" && !window.__vml && ERRORS.length === 0'), 'no VML, nothing reported');
+    await E('X.svg_drop()');
+    ok(await E('document.getElementById("svg") === null'), 'cd_remove took the svg');
+    await E('X.svg()');
+  }
+  await E('X.svg_drop()');
+  // T2 and T3: C building 1,000 paths (each d, fill and stroke) in an svg of their own (the one before removed), 20 builds
+  // a run (the clock the fourth tier has is Date's, to the ms), the median of 5 runs after one warm-up.
+  if (process.env.VML_TIME) {
+    const runs = [];
+    for (let r = 0; r < 6; r++) runs.push(await E('(function () { var t = new Date().getTime(), i; for (i = 0; i < 20; i++) X.svg_many(1000); return (new Date().getTime() - t) / 20; })()'));
+    const ms = runs.slice(1).sort((a, b) => a - b)[2];
+    console.log(`T2/T3 (LEGACY=${LEVEL || 'none'}): 1,000 paths in ${ms} ms, ${(1000 / ms).toFixed(1)} paths per ms (median of 5 runs of 20 builds after one warm-up: ${runs.join(', ')})`);
+    if (TIER === 4) ok(await E('__vml.made.length') >= 3000, 'and each path made a v:shape, a v:fill and a v:stroke');
+    await E('X.svg_many(0)');
+  }
 
   // The polyfills against the built-ins: the app cannot tell some of them apart from a wrong one (a wrong
   // imul still gives a consistent intern hash, a short fill leaves bytes that were zero anyway), so each is
