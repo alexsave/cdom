@@ -292,3 +292,20 @@ tools/js11.mjs checks each rule of the gates on code planted for it, terser's ou
 The other levels are unaffected: tools/legacy.mjs passes on '', 1, ie9, ie6 and below, LEGACY=ie6 tools/fuzz.mjs, tools/es3.mjs, tools/words.mjs and tools/legacyfresh.mjs pass, and every built file of the other tiers (cdom.legacy.js, cdom.legacy-ie9.js, cdom.legacy-ie6.js, each app's .wasm.js and .wasm.ie9.js) is byte-identical to main's.
 The pages that inline the boot (legacy.html, listfuzz.html) differ by the boot alone: two scripts now, where there was one.
 tools/mutate.py has 59 mutants for this tier (frames-, js11- and js10-), each caught by its own assertion.
+
+## 15. The real browsers, branch frames-real (2026-11-21)
+
+The runs are in the XP VM (tools/vmopen.sh opens a URL in a browser of it), tests/out served on port 8110, the screenshots /Users/alex/VMs/ie6-xp/shots/fr-*.png.
+Predictions, written before the first run:
+
+- R1, Netscape 4.08, frames.html: the inline modern shim (`var cdom = (() => {`) is a syntax error that Netscape 4 shows no dialog for (its errors go to the JavaScript console, as in docs/descent.md); the boot's part 1 runs, takes this tier, writes the SCRIPT SRCs; cdom.frames.js, the app's .js1.js and the string table (an array literal) parse in 4.08.
+  The frame shows the heading, the count, the button and the fields.
+  What I expect to break is the redraw: Netscape 4 cannot put a caret back, and its string handling is slow, so a start-up of several seconds.
+  Falsifier: a blank page, or an error on any of the files.
+- R2, IE 4.01, frames.html: the same files parse (JScript 3.0), but the modern shim's syntax error raises a Script Error dialog, behind the window, that has to be answered; after it the frame shows the same.
+  IE 4 has innerHTML but the tier does not use it.
+  Falsifier: no dialog, or a stack overflow in the app.
+- R3, Netscape 3.04, frames.html: the string table's array literal is a syntax error ("missing ] after element list" or similar), with an alert, after which cdomFramesStart finds no table and nothing is shown; and the modern shim raises an alert of its own first.
+  Falsifier: the table parses.
+- R4, frames-body.html in each: the fallback (A14) replaces the top document, as in Chrome; same results as frames.html.
+- R5, Netscape 2.02: stops at the modern shim's syntax error, then at SCRIPT SRC (A12), and shows nothing but alerts.
