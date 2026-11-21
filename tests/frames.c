@@ -5,9 +5,9 @@
 
 #define EXPORT(n) __attribute__((export_name(n)))
 
-enum { COUNT, INC, LINKS, NAME, ECHO, NOTE, CHECK, LIST, TICK, NIDS };
+enum { COUNT, INC, LINKS, NAME, ECHO, NOTE, CHECK, LIST, TICK, R1, R2, NIDS };
 static cd_id ids[NIDS];
-static uint32_t count, clicks_path = 0xffffffffu, inputs, changes, checks, focuses, blurs, items;
+static uint32_t count, clicks_path = 0xffffffffu, inputs, changes, checks, focuses, blurs, items, radios;
 static char io[256];
 /* Markup characters in every place the shim writes text: each must read back in the frame as these characters. */
 #define ESC "<b>\"&amp;x</b>'"
@@ -48,6 +48,9 @@ void cd_main(void) {
   cd_open("p"); cd_attr("id", "esc"); cd_attr("title", ESC); cd_text(ESC); cd_close();
   cd_open("textarea"); cd_attr("id", "escta"); cd_text(ESC); cd_close();
   cd_open("select"); cd_attr("id", "escsel"); cd_open("option"); cd_text(ESC); cd_close(); cd_close();
+  /* Two radios of one group: checking one unchecks the other. */
+  ids[R1] = el("input", "r1"); cd_attr("type", "radio"); cd_attr("name", "grp"); cd_attr("value", "a"); cd_close();
+  ids[R2] = el("input", "r2"); cd_attr("type", "radio"); cd_attr("name", "grp"); cd_attr("value", "b"); cd_close();
   cd_sel(ids[INC]); cd_listen(ids[INC], CD_EV_CLICK);
   cd_sel(ids[LINKS]); cd_listen(ids[LINKS], CD_EV_CLICK);
   cd_sel(ids[NAME]); cd_listen(ids[NAME], CD_EV_INPUT);
@@ -55,6 +58,8 @@ void cd_main(void) {
   cd_sel(ids[NAME]); cd_listen(ids[NAME], CD_EV_FOCUS);
   cd_sel(ids[NAME]); cd_listen(ids[NAME], CD_EV_BLUR);
   cd_sel(ids[CHECK]); cd_listen(ids[CHECK], CD_EV_CHANGE);
+  cd_sel(ids[R1]); cd_listen(ids[R1], CD_EV_CHANGE);
+  cd_sel(ids[R2]); cd_listen(ids[R2], CD_EV_CHANGE);
 }
 
 void cd_on_event(const cd_event_rec *e) {
@@ -67,6 +72,8 @@ void cd_on_event(const cd_event_rec *e) {
     cd_set_text_node(ids[ECHO], cd_tmp(io, n));
   } else if (e->type == CD_EV_CHANGE && id == ids[NAME]) changes++;
   else if (e->type == CD_EV_CHANGE && id == ids[CHECK]) checks = checks * 10 + 1 + (uint32_t)cd_get_num(id, "checked");
+  else if (e->type == CD_EV_CHANGE && (id == ids[R1] || id == ids[R2]))
+    radios = radios * 10 + (uint32_t)cd_get_num(ids[R1], "checked") + 2 * (uint32_t)cd_get_num(ids[R2], "checked");
   else if (e->type == CD_EV_FOCUS && id == ids[NAME]) focuses++;
   else if (e->type == CD_EV_BLUR && id == ids[NAME]) blurs++;
 }
@@ -94,7 +101,7 @@ EXPORT("focus_name") void focus_name(void) { cd_call(ids[NAME], "focus"); cd_flu
 /* A trap after the count was set and flushed: the call into C never returns to the shim, which must recover. */
 EXPORT("trap") void trap(void) { cd_set_text_node_num(ids[COUNT], ++count); cd_flush(); __builtin_trap(); }
 EXPORT("stat") uint32_t stat(uint32_t k) {
-  uint32_t v[] = {count, clicks_path, inputs, changes, checks, focuses, blurs, ticks, items};
+  uint32_t v[] = {count, clicks_path, inputs, changes, checks, focuses, blurs, ticks, items, radios};
   return k < sizeof v / sizeof v[0] ? v[k] : 0;
 }
 EXPORT("note_len") uint32_t note_len(void) { return cd_get_str(ids[NOTE], "value", io, sizeof io); }
