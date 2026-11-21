@@ -1113,6 +1113,7 @@ The timings (the walls of runs b and c are without the Game Boy build; run d's w
 | click Features: details, first draw | d | 369 s | 41.5 s | 35.2 s | 4.5 s | 94.0 s | 1,022 |
 | back: the details page's Back pill, still from the cache | d | 146 s | 0 | 0 | 5.6 s | 5.9 s | 1,318 |
 
+The video: /Users/alex/VMs/ie6-xp/shots/ns2render-ns2.mp4 (run film2: the load, the hover and the click to details, 1,397 s at the real pace, 1280 x 960) and ns2render-ns2-8x.mp4 (the same 8 times faster, about 3 minutes); frames from its start, middle and end were looked at.
 The status bar shows a link's text within 1 s of the pointer reaching it (shots/ns2r-c-hover-status.png: "Get started: open the details page").
 Pixels: every view of run d is the native build's picture exactly, 0 of 184,085 pixels different (the whole 592 x 320 picture less XP's activation balloon): the load, the hover state, the normal state again, details and back (shots/ns2r-d-load.png, -hover, -unhover, -click, -back); run b's load too.
 Against Chrome (tools/ns2render_check.py, the Mac): the non-text pixels within 24 levels of Chrome's (or of one of their 8 neighbours, as Chrome anti-aliases every edge) for 100.00% of the still page's 173,890 and of the details page's 177,602, the rounded corners 100.00% and 99.98%, the overlaps 100.00% and 99.98%; exactly Chrome's colour for 44.8% and 56.4% (the palette's own error), the worst pixel 109 levels (the anti-aliased edge of a corner); the text, in our font, within 24 levels for 47% and 44% of its pixels.
