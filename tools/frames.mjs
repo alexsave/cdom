@@ -261,8 +261,9 @@ run: try {
   ok((await E(items)) === `${listWas},m1,m2` && (await E('cdomF.errors.join()')).includes('not a child of the parent'),
     `cd_move before another parent's node moves nothing, and is noted: ${await E(items)}; ${JSON.stringify(await E('cdomF.errors'))}`);
   d = await draws();
-  await E('X.move_self()');
-  ok((await E(items)) === `${listWas},m1,m2` && (await draws()) === d + 1, `cd_move before itself moves nothing, and the page draws: ${await E(items)}, ${(await draws()) - d} draws`);
+  const selfErr = await E('(function () { try { X.move_self(); return ""; } catch (e) { return String(e); } })()');
+  ok(!selfErr && (await E(items)) === `${listWas},m1,m2` && (await draws()) === d + 1,
+    `cd_move before itself moves nothing, and the page draws: ${await E(items)}, ${(await draws()) - d} draws${selfErr ? '; threw ' + selfErr : ''}`);
 
   if (measure) {
     // Redraw cost: a page grown to n nodes, X.touch() (one text changed) timed whole and cf_html() alone, 10 of each.
