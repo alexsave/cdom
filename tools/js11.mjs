@@ -1,9 +1,10 @@
 // Checks tools/legacy/js11.mjs, the frames tier's language gates (docs/frames-design.md, section 10), on code planted for
 // each rule: what JavaScript 1.1 (Netscape 3) lacks must be refused, and what it has must pass; js10 (the boot's first
-// part, Netscape 2) refuses typeof, void, Array and the rest besides. node tools/js11.mjs; exit 1 on any failure.
+// part, frames.js and a page's own scripts, Netscape 2) refuses typeof, void, Array and the rest besides. node tools/js11.mjs;
+// exit 1 on any failure.
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
-import { lacks } from './legacy/js11.mjs';
+import { lacks, FRAMES_ALLOWED } from './legacy/js11.mjs';
 
 let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console.log('ok  ', m); };
@@ -55,7 +56,13 @@ for (const [src, what] of [
   ['for (i = 0; a = f(); i++) g();', 'an assignment in a condition'],
   ['do g(); while (a = f());', 'an assignment in a condition'],
   ['x = (a = f()) ? 1 : 2;', 'an assignment in a condition'],
+  // "function does not always return a value." in Netscape 2.02 and 3.04, at parse time.
+  ['function f(a) { if (a) return 1; return; }', 'a function that returns a value and also none'],
+  ['function f(a) { while (1) { if (a) return 1; } }', 'a function that returns a value and does not end in a return'],
+  ['function f(a) { if (a) return 1; else return 2; }', 'a function that returns a value and does not end in a return'],
 ]) ok(refused(src, what), `${src} is refused (${what})`);
+ok(passes('function f(a) { if (a) return; g(); } function h(a) { if (a) return 1; return 2; } function k() { g(); }'),
+  'a function with bare returns alone, one that ends in a return of a value, and one with no return pass');
 ok(passes('for (i = 0; i < n; i += 1) { a = f(); if (a == b) x = a ? 1 : (b = 2); }'), 'an assignment in a for loop\'s init and update, in a body and in a branch of ?: passes');
 ok(passes('var d = new Date(); var t = d.getTime();'), 'a new expression kept in a variable, then its member, passes');
 // terser, as tools/legacy/build.mjs runs it on frames.js (no compress), keeps a new expression in its variable, and
@@ -66,11 +73,12 @@ const kept = await terse('function f() { var d = new Date(); return d.getTime();
 ok(passes(kept), `terser keeps var d = new Date(); d.getTime() apart: ${kept}`);
 const joined = await terse('function f() { return (new Date()).getTime(); }');
 ok(refused(joined, 'a member of a new expression'), `and the gate refuses terser's member of a new expression: ${joined}`);
-// The shim itself, before and after terser, against the gate (tools/legacy/build.mjs refuses it too, at build time).
+// The shim itself, before and after terser, against the gate (tools/legacy/build.mjs refuses it too, at build time):
+// JavaScript 1.0, Netscape 2's, with only the names it checks for first (FRAMES_ALLOWED).
 const shimSrc = fs.readFileSync(new URL('./legacy/frames.js', import.meta.url), 'utf8');
 for (const [what, src] of [['frames.js', shimSrc], ['frames.js once minified', await terse(shimSrc)]]) {
-  const found = lacks(src, { allowed: ['charCodeAt', 'fromCharCode'] });
-  ok(!found.length, `${what} is JavaScript 1.1: ${found.slice(0, 6).join(', ')}`);
+  const found = lacks(src, { js10: true, allowed: FRAMES_ALLOWED });
+  ok(!found.length, `${what} is JavaScript 1.0: ${found.slice(0, 6).join(', ')}`);
 }
 // The methods of 1.2 and later, and the DOM this tier has not.
 for (const m of ['push', 'pop', 'shift', 'unshift', 'splice', 'slice', 'concat', 'call', 'apply', 'charCodeAt',
@@ -87,13 +95,20 @@ location.replace(location.search);
 var s = "a,b".split(",").join(";");`), 'new Array, new Object, new Function, typeof, ==, for-in, charAt, substring, indexOf, split, join, void and location pass');
 // Netscape 2, for the boot's first part.
 for (const [src, what] of [['if (typeof x == "string") f();', 'typeof'], ['var a = new Array();', 'Array'],
-  ['F.prototype.g = h;', '.prototype'], ['var p = s.split(",");', '.split'], ['x = void 0;', 'void'], ['var o = new Object();', 'Object'],
+  ['F.prototype.g = h;', '.prototype'], ['var p = s.split(",");', '.split'], ['x = void 0;', 'void'], ['var o = Object;', 'Object'],
+  ['var s = a.join("");', '.join'], ['var f = new Function("return 1");', 'Function'], ['var c = String.fromCharCode(65);', 'String'],
+  ['var n = Number.NaN;', 'Number'], ['document.onmousedown = h;', '.onmousedown'], ['document.onmouseup = h;', '.onmouseup'],
+  ['document.captureEvents(Event.MOUSEDOWN);', '.captureEvents'], ['document.routeEvent(e);', '.routeEvent'],
   ['function f() { return arguments.length; }', 'arguments'], ['if (isNaN(x)) f();', 'isNaN'], ['t = setInterval("f()", 9);', 'setInterval'],
   ['var s = t.substr(1);', '.substr'], ['if (o.constructor == F) f();', '.constructor'], ['window.onerror = h;', '.onerror'],
   ['onerror = h;', 'onerror'], ['var n = document.images.length;', '.images'], ['var i = new Image();', 'Image'],
   ['var w = screen.width;', 'screen'], ['var w = window.screen.width;', '.screen'], ['var n = navigator.plugins.length;', '.plugins']])
   ok(refused(src, what, { js10: true }), `js10: ${src} is refused (${what})`);
 ok(passes('if (x) f(); else g(a[0], "s".length);', { js10: true }), 'js10: if, calls, indexing and length pass');
+ok(passes('var o = new Object(); o.k = 1;', { js10: true }), 'js10: new Object() passes (Netscape 2 has it: js1c\'s output runs on it)');
+ok(passes('if (window.String && String.fromCharCode) c = String.fromCharCode(65); if (window.Number) n = Number.NaN; document.onmousedown = h;',
+  { js10: true, allowed: FRAMES_ALLOWED }), "js10: String, Number and the button hooks pass where the file says it checks for them (frames.js's allowed list)");
+ok(refused('var a = new Array();', 'Array', { js10: true, allowed: FRAMES_ALLOWED }), 'js10: and Array is still refused there');
 ok(passes('function f(a) { return f.arguments.length + a; } location.replace(location.href);', { js10: true }),
   "js10: a function's own f.arguments and location.replace pass");
 ok(passes('function f() { return arguments.length; } var s = t.substring(1);'), 'js11: arguments and substring pass');
