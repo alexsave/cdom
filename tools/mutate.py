@@ -1016,6 +1016,10 @@ M = [
   ('frames-encode-two-bytes', 'tools/legacy/frames.js', '      cf_store8(p + cf_wrote, 192 | u >> 6);', '      cf_store8(p + cf_wrote, 224 | u >> 6);', FRAMES, 'FAIL the input reached C, which read the value'),
   ('frames-timer-handle', 'tools/legacy/frames.js', '  cf_tid["t" + cf_timers] = setTimeout("cdomF.t(" + cf_timers + ")", ms);', '  cf_tid["t" + cf_timers] = setTimeout("cdomF.t(" + (cf_timers + 1) + ")", ms);', FRAMES, 'FAIL a timer reached C'),
   ('frames-esc-off', 'tools/legacy/frames.js', 'function cf_esc(s) {\n  var out = "", k, c;', 'function cf_esc(s) {\n  return s;\n  var out = "", k, c;', FRAMES, 'FAIL a text with markup characters reads back as them'),
+  ('frames-click-draws-in-handler', 'tools/legacy/frames.js', '  cf_release(cf_deferClick);', '  cf_release(0);', FRAMES, "FAIL ns2: a click's draw leaves its handler"),
+  ('frames-idx-raw', 'tools/legacy/frames.js', '  return cf_idx(list, " " + name + " ") >= 0;', '  return list.indexOf(" " + name + " ") >= 0;', FRAMES, 'FAIL frames.js calls indexOf only in cf_idx'),
+  ('frames-function-in-condition', 'tools/legacy/frames.js', '    if (el && el.focus != null) {', '    if (el && el.focus) {', JS11T, 'a function in a condition'),
+  ('frames-idx-no-empty-guard', 'tools/legacy/frames.js', 'function cf_idx(s, t) {\n  if (s.length == 0) {', 'function cf_idx(s, t) {\n  if (false) {', FRAMES, 'ns2'),
   ('js11-new-member-allowed', 'tools/legacy/js11.mjs', "      add('a member of a new expression', n);", '', JS11T, 'FAIL var t = new Date().getTime(); is refused'),
   ('frames-new-member', 'tools/legacy/frames.js', 'function cf_op_epoch() {\n  var d = new Date();\n  return d.getTime();', 'function cf_op_epoch() {\n  return (new Date()).getTime();', JS11T, 'frames.js is not JavaScript 1.0: a member of a new expression'),  # the build's gate refuses it before js11.mjs runs
   ('js11-assign-in-test-allowed', 'tools/legacy/js11.mjs', "    if (test) walk(test, (m) => { if (m.type === 'AssignmentExpression') add('an assignment in a condition', m); });", '', JS11T, 'FAIL if (a = f()) g(); is refused'),

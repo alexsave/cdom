@@ -158,6 +158,11 @@ run: try {
     const d2 = await draws();
     await click('#inc');
     ok((await until(`cdomF.draws > ${d2}`, 25)) && (await textOf('#countp')) === 'count 2', `ns2: and the next click too: ${JSON.stringify(await textOf('#countp'))}`);
+    // Netscape 2.02 goes deaf to later clicks when the view is rewritten inside a click's own handler (the real browser,
+    // docs/frames-design.md 17): the draw of a click comes from a timer. A synchronous click() runs the handler to its end.
+    const d3 = await draws();
+    ok(await E(`(function () { var e = ${field('inc')}, d = cdomF.draws; e.click(); return cdomF.draws === d; })()`) && (await until(`cdomF.draws > ${d3}`, 40)),
+      "ns2: a click's draw leaves its handler (no draw before the handler returns), and comes from a timer");
     ok((await E('cdomF.errors')) === '', `ns2: no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
   }
 
