@@ -1,0 +1,132 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Quillmere, the whole page</title><link rel="stylesheet" href="paint.css">
+<style>
+/* The tall page: as wide as Netscape 2.02's view leaves beside its vertical scrollbar (docs/descent.md, "Painting a modern page"),
+   and as tall as it likes.  The width comes from the shot (tools/paintshot.mjs); every box is laid out from the left or the centre. */
+html, body { height: 1570px; }
+.hero { height: 318px; }
+.wrap { position: absolute; left: 18px; right: 18px; }
+.win { position: absolute; left: 34px; right: 34px; top: 248px; height: 196px; background: #fff; border-radius: 14px; overflow: hidden; z-index: 2;
+  box-shadow: 0 2px 4px rgba(20, 22, 50, .06), 0 18px 40px rgba(30, 20, 80, .25); }
+.win .bar { height: 26px; background: #f3f4fa; display: flex; align-items: center; gap: 6px; padding-left: 12px; }
+.win .bar span { width: 9px; height: 9px; border-radius: 50%; }
+.side { position: absolute; left: 0; top: 26px; bottom: 0; width: 110px; background: #fafbff; border-right: 1px solid var(--line); padding: 12px 10px; }
+.side div { height: 9px; border-radius: 5px; background: #e4e7f5; margin-bottom: 10px; }
+.side div.on { background: #c7d2fe; }
+.row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid #eef0f7; font-size: 10.5px; color: var(--ink-2); }
+.row .dot { width: 8px; height: 8px; border-radius: 50%; }
+.tag { margin-left: auto; font-size: 9.5px; font-weight: 700; border-radius: 999px; padding: 1px 7px; }
+.logos { display: flex; justify-content: space-between; align-items: center; color: #9aa0bd; font-weight: 800; font-size: 13px; letter-spacing: -0.3px; }
+.logos span { display: flex; align-items: center; gap: 5px; }
+.logos i { display: inline-block; width: 12px; height: 12px; background: #b9bfd8; }
+.stat { text-align: center; }
+.stat b { display: block; font-size: 24px; font-weight: 800; letter-spacing: -0.8px;
+  background: linear-gradient(90deg, var(--indigo), var(--violet)); -webkit-background-clip: text; color: transparent; }
+.stat span { font-size: 10.5px; color: var(--ink-3); font-weight: 600; }
+.cta { position: absolute; left: 18px; right: 18px; top: 1398px; height: 116px; border-radius: 20px; overflow: hidden;
+  background: linear-gradient(110deg, #312e81 0%, #6d28d9 55%, #db2777 100%); box-shadow: 0 14px 30px rgba(76, 29, 149, .30); }
+.cta::after { content: ""; position: absolute; right: -40px; bottom: -80px; width: 220px; height: 220px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, .22), rgba(255, 255, 255, 0) 70%); }
+</style></head>
+<body>
+<div class="hero">
+  <div style="position:absolute; left:0; right:0; top:58px; text-align:center">
+    <span class="chip"><b>NEW</b> Version 2 is here</span>
+    <div class="h1" style="font-size:31px; margin-top:12px">Ship calm software,<br>a little faster.</div>
+    <div class="sub" style="font-size:12.5px; margin:10px auto 0; width:360px">Plans, reviews and releases in one quiet place.</div>
+  </div>
+</div>
+<div class="nav">
+  <div class="logo"><div class="mark"></div>Quillmere</div>
+  <div class="links">
+    <a data-link="details" data-status="Features: what Quillmere does">Features</a>
+    <a data-link="details" data-status="Pricing: plans from $0">Pricing</a>
+    <a data-link="details" data-status="Docs: guides and the API">Docs</a>
+  </div>
+  <a class="signin">Sign in</a>
+</div>
+<div style="position:absolute; left:0; right:0; top:198px; text-align:center; z-index:4">
+  <a class="pill" data-link="details" data-status="Get started: open the details page" style="font-size:12.5px; padding:8px 8px 8px 16px">Get started <i>&rarr;</i></a>
+</div>
+
+<!-- the app window: an image over the hero's bottom edge -->
+<div class="win">
+  <div class="bar"><span style="background:#fb7185"></span><span style="background:#fbbf24"></span><span style="background:#34d399"></span></div>
+  <div class="side"><div class="on" style="width:70%"></div><div style="width:85%"></div><div style="width:60%"></div><div style="width:78%"></div><div style="width:50%"></div></div>
+  <div style="position:absolute; left:126px; right:16px; top:38px">
+    <div style="display:flex; align-items:baseline; gap:8px"><span style="font-size:13px; font-weight:800">Release 2.4</span><span style="font-size:10px; color:var(--ink-3)">due Friday</span>
+      <span class="up" style="margin-left:auto">On track</span></div>
+    <div style="height:7px; border-radius:4px; background:#eef0fb; margin:9px 0 4px"><div style="width:72%; height:7px; border-radius:4px; background:linear-gradient(90deg, var(--indigo), var(--violet))"></div></div>
+    <div class="row"><span class="dot" style="background:var(--teal)"></span>Search that forgives typos<span class="tag t-teal">Done</span></div>
+    <div class="row"><span class="dot" style="background:var(--violet)"></span>Faster sync on slow links<span class="tag t-violet">Review</span></div>
+    <div class="row"><span class="dot" style="background:var(--amber)"></span>Dark mode for reports<span class="tag t-amber">Building</span></div>
+    <div class="row" style="border:0"><span class="dot" style="background:var(--sky)"></span>Calendar export<span class="tag t-sky">Planned</span></div>
+  </div>
+</div>
+
+<div class="wrap" style="top:468px; text-align:center">
+  <div class="foot" style="font-weight:600; letter-spacing:.3px">TRUSTED BY QUIET TEAMS AT</div>
+  <div class="logos" style="margin:12px 14px 0">
+    <span><i style="border-radius:50%"></i>Northfield</span><span><i style="transform:rotate(45deg)"></i>Kestrel</span>
+    <span><i style="border-radius:3px"></i>Lindenby</span><span><i style="border-radius:50% 0"></i>Mossgate</span><span><i style="border-radius:50%; background:none; border:3px solid #b9bfd8"></i>Orrin</span>
+  </div>
+</div>
+
+<div class="wrap" style="top:552px">
+  <div class="eyebrow">Features</div>
+  <div class="h2" style="margin-top:5px">Everything a calm team needs</div>
+  <div class="lead" style="margin-top:6px; width:380px">Four small tools that fit together, so nothing falls between them.</div>
+</div>
+<div class="fcard" style="left:18px; top:642px; width:262px; height:116px">
+  <div class="sq t-indigo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div>
+  <h3>Fast by default</h3><p>Every screen opens in under a second, even on a train.</p></div>
+<div class="fcard" style="left:calc(50% + 8px); top:642px; width:262px; height:116px">
+  <div class="sq t-teal"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/></svg></div>
+  <h3>Private by design</h3><p>Your plans stay yours: encrypted, and never sold.</p></div>
+<div class="fcard" style="left:18px; top:772px; width:262px; height:116px">
+  <div class="sq t-amber"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 20h4V10H4zm6 0h4V4h-4zm6 0h4v-7h-4z"/></svg></div>
+  <h3>Reports that explain</h3><p>Charts with a sentence under each, written for people.</p></div>
+<div class="fcard" style="left:calc(50% + 8px); top:772px; width:262px; height:116px">
+  <div class="sq t-sky"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5v5l4 2-1 1.7-5-2.7V7z"/></svg></div>
+  <h3>Time well spent</h3><p>Fewer meetings: the status writes itself each morning.</p></div>
+
+<div class="wrap" style="top:918px; display:flex; justify-content:space-around">
+  <div class="stat"><b>12k</b><span>teams</span></div>
+  <div class="stat"><b>99.98%</b><span>uptime</span></div>
+  <div class="stat"><b>4.9/5</b><span>average rating</span></div>
+  <div class="stat"><b>38 min</b><span>saved a day</span></div>
+</div>
+
+<!-- a quote card with its avatar over the card's top edge -->
+<div class="fcard" style="left:58px; right:58px; top:1020px; height:112px; padding:30px 24px 16px; text-align:center">
+  <p style="font-size:13px; color:var(--ink); line-height:1.5; font-weight:500">"We stopped chasing status updates. Releases went from monthly to weekly, and nobody works late on Fridays any more."</p>
+  <p style="margin-top:8px; font-weight:700; font-size:11px">Mara Ellison <span style="color:var(--ink-3); font-weight:500">&middot; head of product, Kestrel</span></p>
+</div>
+<div class="avatar" style="position:absolute; left:calc(50% - 22px); top:998px; width:44px; height:44px; font-size:15px; border:3px solid #fff; box-shadow:0 4px 10px rgba(20,22,50,.18)">ME</div>
+
+<div class="wrap" style="top:1160px; text-align:center">
+  <div class="eyebrow">Pricing</div>
+  <div class="h2" style="margin-top:5px">Simple plans</div>
+</div>
+<div class="fcard" style="left:18px; top:1226px; width:170px; height:136px">
+  <h3>Starter</h3><div class="price">$0<small> /month</small></div><div class="tick"><b>&#10003;</b>3 projects<br><b>&#10003;</b>Basic reports</div></div>
+<div class="fcard" style="left:calc(50% - 88px); top:1218px; width:176px; height:152px; box-shadow:0 2px 4px rgba(79,70,229,.10), 0 16px 34px rgba(79,70,229,.28); border:2px solid #c7d2fe">
+  <h3>Team</h3><div class="price">$12<small> /seat</small></div><div class="tick"><b>&#10003;</b>Unlimited projects<br><b>&#10003;</b>Live reports</div>
+  <a class="btn2 dark" style="margin-top:8px" data-link="details" data-status="Team plan: see what it includes">Choose Team</a></div>
+<div class="badge" style="left:calc(50% - 40px); top:1206px; width:80px; height:26px; font-size:10.5px; letter-spacing:.5px">POPULAR</div>
+<div class="fcard" style="right:18px; top:1226px; width:170px; height:136px">
+  <h3>Company</h3><div class="price">$29<small> /seat</small></div><div class="tick"><b>&#10003;</b>Single sign-on<br><b>&#10003;</b>Audit log</div></div>
+
+<div class="cta">
+  <div style="position:absolute; left:26px; top:24px; z-index:1">
+    <div class="h1" style="font-size:21px">Try it with your team</div>
+    <div class="sub" style="font-size:11.5px; margin-top:6px">Free for 30 days. No card needed.</div>
+  </div>
+  <a class="pill" data-link="details" data-status="Start free: 30 days, no card"
+     style="position:absolute; right:26px; top:40px; font-size:12.5px; padding:8px 8px 8px 16px; z-index:1">Start free <i>&rarr;</i></a>
+</div>
+
+<div class="wrap foot" style="top:1540px; display:flex; justify-content:space-between">
+  <span><b style="color:var(--ink)">Quillmere</b> &middot; made for calm teams</span><span>Privacy &middot; Terms &middot; Contact</span>
+</div>
+</body></html>
