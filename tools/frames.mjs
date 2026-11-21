@@ -227,6 +227,23 @@ run: try {
   ok((await textOf('#countp')) === `count ${was + 2}` && (await E('cdomF.errors.join()')).includes('did not return'),
     `the next click recovers: drawn with both counts (${JSON.stringify(await textOf('#countp'))}, want count ${was + 2}), and noted: ${JSON.stringify(await E('cdomF.errors'))}`);
 
+  // A throw in the shim's own draw must not leave the handlers quiet (cf_drawing) for good. select on a checkbox gives
+  // the focus back with no selection set, so it does not throw at all; a focus that throws while the shim gives it back
+  // (planted once on the frame's inputs) leaves cf_drawing up, which the draw's settle timer puts down and notes.
+  let selectThrew = '';
+  try { await E('X.select_check()'); } catch (e) { selectThrew = String(e).slice(0, 120); }
+  let n0 = await stat(STAT.count);
+  await click('#inc');
+  ok(!selectThrew && (await stat(STAT.count)) === n0 + 1, `cd_call(checkbox, "select") does not throw, and the next click reaches C: ${selectThrew || 'no throw'}, count ${(await stat(STAT.count)) - n0}`);
+  await E('(function () { var P = frames[0].HTMLInputElement.prototype, f = P.focus; P.focus = function () { P.focus = f; throw new Error("planted"); }; })()');
+  let focusThrew = '';
+  try { await E('X.focus_name()'); } catch (e) { focusThrew = String(e).slice(0, 120); }
+  await until('cdomF.errors.join().indexOf("a draw did not finish") >= 0');
+  n0 = await stat(STAT.count);
+  await click('#inc');
+  ok(focusThrew && (await stat(STAT.count)) === n0 + 1 && (await E('cdomF.errors.join()')).includes('a draw did not finish'),
+    `a throw while the shim draws does not lock the page: ${focusThrew ? 'threw' : 'no throw'}, the next click reached C (${(await stat(STAT.count)) - n0}), noted: ${JSON.stringify(await E('cdomF.errors'))}`);
+
   if (measure) {
     // Redraw cost: a page grown to n nodes, X.touch() (one text changed) timed whole and cf_html() alone, 10 of each.
     const median = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
