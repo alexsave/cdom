@@ -58,6 +58,7 @@ On this tier the page becomes a frameset of two frames (changed on 2026-11-21 by
 1. The early script (shim/boot-early.js, JavaScript 1.0, which tools/legacy/build.mjs page writes before the head's end of every page) runs before any content.
    If there is no getElementById or no createElement, and the window is not named cdomApp, it document.writes `<frameset rows="*,1">` with two frames: cdomView, which shows the app, and cdomApp, 1 pixel high, whose source is the same page under another URL (the query gains `cdomApp`, since Netscape 4 drops a frame whose URL is the frameset's own).
 2. The page, loaded again in cdomApp, runs as it always does: the boot finds no getElementById, keeps its arguments in globals, and document.writes, while the page is still parsing, two SCRIPT SRCs (cdom.frames.js, the tier's shim, and the app's JavaScript 1.0 build, url + ".js1.js") and an inline script that calls cdomBootWait, which calls cdomFramesStart once both files have run (IE 4 runs the inline script first, so it tries again every 50 ms).
+   Since section 16 cdomApp is not the page again but its app document, which holds the boot's first part, the table, the shim and the module inline (Netscape 2 has no SCRIPT SRC), and nothing is written or fetched.
 3. The shim keeps cdom's node tree in cdomApp, whose document nothing replaces, and writes the whole document of cdomView, the parent's frame 0, from it.
    The view's handlers call `parent.cdomApp.cdomF`.
    The app's URL ops read the top window's location, not the frame's.
@@ -87,6 +88,7 @@ The floor of the fourth tier is then attachEvent or addEventListener alone, as t
 
 ## 4. The shim: tools/legacy/frames.js
 
+(JavaScript 1.0 since section 16.)
 A shim of its own, written in JavaScript 1.1, not shim/cdom.js through Babel: that brings Babel's helpers and the Promise polyfill, which this tier must not have, and shim/cdom.js's DOM calls (createElement, insertBefore, addEventListener) are exactly what is gone.
 It keeps shim/cdom.js's design where it can:
 
@@ -192,6 +194,7 @@ Attributes kept: id, href, src, alt, title, width, height, align, valign, border
 
 ## 10. The language surface, and what the app needs
 
+Since section 16 frames.js is gated as JavaScript 1.0 (js10), as the boot's first part is; what follows is the JavaScript 1.1 gate as it was, which still applies on top.
 tools/legacy/frames.js is JavaScript 1.1 as Netscape 3 has it, and tools/legacy/js11.mjs refuses, in it and in its minified output:
 
 - try, catch, throw, switch, do-while, labels, delete, in, instanceof, ===, !==, regex literals, object and array literals, function expressions and nested function declarations, getters, const and let, and \u escapes;
@@ -477,7 +480,7 @@ What is left on the stack is js1c's: its direct functions nest at most its print
 ### 16.5 Tests
 
 - tools/frames.mjs (LEGACY=frames): the early script names frames.app.html; the app document's scripts are plain `<script>` blocks, none with a src, none over BLOCK_MAX (read from build.mjs), holding, in order, the boot, the table, the shim, the module and the page's own script, and the page holds neither the shim nor the module; a string table of 71,340 bytes (the real one joined to itself and a long literal of escapes) goes through app-doc and, run in node, is the page's four values again, cut into 19 statements over 3 blocks; the app frame is frames.app.html with the page's query; a tree 60 deep is written, copied and read with the shim's calls nested 5 deep; and first of all, on ?ns2, the page boots with no charCodeAt, fromCharCode, String or Number, a click is drawn within 500 ms with cf_pressed still 0, a field's change (with an é, through escape) reaches C, and nothing is noted.
-  95 checks pass.
+  96 checks pass.
 - tools/uttt.mjs: the webassembly, frames, frames-ns4 and (new) frames-ns2 profiles pass, through uttt.app.html.
 - tools/js11.mjs: the new rules on planted code, and frames.js before and after terser as JavaScript 1.0.
 - tools/js1.mjs, tools/js10.mjs, tests/lits/run.sh, tools/seeds.mjs, LEGACY=1, ie9, ie6 and below tools/legacy.mjs (the tier files: no tier fetches cdom.frames.js or a .js1.js now) and tools/legacyfresh.mjs (which also gains app-doc, and copies shim/boot-early.js, which it lacked on main and so failed there) pass.
