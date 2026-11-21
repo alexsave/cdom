@@ -12,6 +12,8 @@ Files in tests/out/fb/ (no hyphen in a name: Netscape 2 reads '-r', '-i' in its 
               bars (vertical colour bars: the longest runs)
         mode  row (rows of IMG ended by BR, no white space) or tab (a TABLE, one cell per block or run)
         -rle  a horizontal run of one colour is one IMG of WIDTH = run * cell
+  lk_none/cell/run/shape/shape_mo.html  a flat picture of five shapes at 8 px without links, with one link per cell, per run, per shape
+              (BORDER=0), and with onMouseOver; lk_expect.txt lists click points and the id each must report
   pal.html                    all 256 palette GIFs in a 16x16 table, each cell 8x8 (the first load of the palette)
   rw_*.html                   frames for the rewrite probes (Q4), see rewrite_pages()
 Every picture page ends with the magenta 1x1 image end.gif (the server's log holds the time it was requested; a missing file would draw a broken-image icon).
@@ -126,7 +128,13 @@ def body(grid, cell, mode, rle, extra=""):
         out.append("<TABLE BORDER=0 CELLPADDING=0 CELLSPACING=0>\n")
         for row in grid:
             cs = runs(row) if rle else [(c, 1) for c in row]
-            out.append("<TR>" + "".join("<TD>" + img(c, n * cell, cell, extra) + "</TD>" for c, n in cs) + "</TR>\n")
+            # a run is one cell that spans its columns: without COLSPAN the cells of a ragged row take the widths of the cells
+            # above them (the first version of the -rle table did, and drew a shifted picture)
+            out.append("<TR>" + "".join(("<TD COLSPAN=%d>" % n if rle and n > 1 else "<TD>") + img(c, n * cell, cell, extra) + "</TD>"
+                                        for c, n in cs) + "</TR>\n")
+        if rle:
+            # a row of one-pixel-high cells below the picture fixes every column's width (a COLSPAN cell does not)
+            out.append("<TR>" + "".join("<TD><IMG SRC=end.gif WIDTH=%d HEIGHT=1></TD>" % cell for _ in grid[0]) + "</TR>\n")
         out.append("</TABLE>\n")
     else:
         for row in grid:
@@ -195,6 +203,75 @@ def pic_pages(stats):
     return table
 
 
+def shapes_grid(gw, gh):
+    """A flat picture of a few shapes: (palette index rows, shape id rows).  id 0 is the background."""
+    BGI, RED, YEL, GRN, WHT = 2, 180, 210, 24, 215
+    g = [[BGI] * gw for _ in range(gh)]
+    sid = [[0] * gw for _ in range(gh)]
+    def put(x, y, c, i):
+        if 0 <= x < gw and 0 <= y < gh:
+            g[y][x] = c
+            sid[y][x] = i
+    for y in range(gh // 8, gh // 8 + gh // 3):                       # 1: a red rectangle
+        for x in range(gw // 12, gw // 12 + gw // 5):
+            put(x, y, RED, 1)
+    cx, cy, r = gw // 2, gh // 2, gh // 4                             # 2: a yellow disc
+    for y in range(gh):
+        for x in range(gw):
+            if (x - cx) ** 2 + (y - cy) ** 2 <= r * r:
+                put(x, y, YEL, 2)
+    for k in range(gh // 3):                                          # 3: a green triangle
+        for x in range(gw * 3 // 4 - k, gw * 3 // 4 + k + 1):
+            put(x, gh * 5 // 8 + k, GRN, 3)
+    for y in range(gh - gh // 8 - 2, gh - gh // 8):                   # 4: a white bar
+        for x in range(2, gw - 2):
+            put(x, y, WHT, 4)
+    return g, sid
+
+
+def lk_pages():
+    """C1..C4: lk_none (no links), lk_cell, lk_run, lk_shape (links, BORDER=0), lk_shape_mo (the same with onMouseOver), cell 8.
+    h(id) navigates the window to /mark/c<id>; the expectations (click point, id) are written to lk_expect.txt."""
+    cell = 8
+    gw, gh = W // cell, H // cell
+    g, sid = shapes_grid(gw, gh)
+    head = ('<HTML><HEAD><TITLE>lk</TITLE>\n<SCRIPT LANGUAGE="JavaScript">\nfunction h(i) {\n location.href = "http://" + location.host + "/mark/c" + i;\n}\n'
+            'function s(t) {\n window.status = t;\n}\n</SCRIPT></HEAD>\n<BODY BGCOLOR="%s">\n' % BG)
+    tail = "<IMG SRC=end.gif WIDTH=1 HEIGHT=1>\n</BODY></HTML>\n"
+    expect = []
+    TARGETS = [(1, 1), (gw // 12 + 2, gh // 8 + 2), (gw // 2, gh // 2), (gw // 2, gh // 2 + 3), (gw * 3 // 4, gh * 5 // 8 + 5), (4, gh - gh // 8 - 1)]
+    for kind in ("none", "cell", "run", "shape", "shape_mo"):
+        out, rid = [], 0
+        for y in range(gh):
+            x = 0
+            if kind in ("none", "cell"):
+                pieces = [(g[y][x], 1, sid[y][x], x) for x in range(gw)]
+            else:
+                pieces, x = [], 0
+                while x < gw:
+                    j = x
+                    while j < gw and g[y][j] == g[y][x] and sid[y][j] == sid[y][x]:
+                        j += 1
+                    pieces.append((g[y][x], j - x, sid[y][x], x))
+                    x = j
+            line = []
+            for c, n, shp, px_ in pieces:
+                im = "<IMG SRC=%s WIDTH=%d HEIGHT=%d BORDER=0>" % (name(c), n * cell, cell)
+                if kind == "none":
+                    line.append(im)
+                    continue
+                hid = {"cell": y * gw + px_, "run": rid}.get(kind, shp)
+                rid += 1
+                mo = ' onMouseOver="s(\'id %d\'); return true"' % hid if kind == "shape_mo" else ""
+                line.append('<A HREF="javascript:h(%d)"%s>%s</A>' % (hid, mo, im))
+                for (tx, ty) in TARGETS:
+                    if ty == y and px_ <= tx < px_ + n:
+                        expect.append("lk_%s %d %d %d" % (kind, 12 + tx * cell + cell // 2, 69 + y * cell + cell // 2, hid))
+            out.append("".join(line) + "<BR>\n")
+        write("lk_%s.html" % kind, head + "".join(out) + tail)
+    write("lk_expect.txt", "\n".join(expect) + "\n")
+
+
 def js_string_var(var, text, piece=20000):
     """script blocks that build the string var from literals of at most `piece` bytes (a long literal lexes slowly in Netscape 2)."""
     out, first = [], True
@@ -206,7 +283,7 @@ def js_string_var(var, text, piece=20000):
 
 
 def rewrite_pages(pic, cell, rle, tiles):
-    """Q4.  rw_<pic>_<cell>[_rle].html: a frameset, a 26 pixel control frame (ctl) over the view; the control frame's script holds
+    """Q4.  rw_<pic>_<cell>[_rle].html: a frameset, a 40 pixel control frame (ctl) over the view; the control frame's script holds
     the picture's HTML in string variables P1 (written by go(1)) and writes the small page B (go(0)) over it.
     rwt_<pic>_<cell>_<n>.html: the view is n x n frames t0.., the picture is cut into the n x n parts, tile(j) rewrites part j only,
     and go(1) writes every part (the whole picture through n x n frames)."""
@@ -218,7 +295,7 @@ def rewrite_pages(pic, cell, rle, tiles):
         scripts += js_string_var("P1", body(grid, cell, "row", rle).replace("\n", ""))
         links = '<A HREF="javascript:go(1)">picture</A> <A HREF="javascript:go(0)">blank</A>'
         fn = ("function go(k) {\n var d = parent.view.document;\n d.open(\"text/html\");\n"
-              " if (k == 1) { d.write(\"<BODY BGCOLOR=\" + BGS + \">\" + P1); } else { d.write(BLANK); }\n d.close();\n}\n")
+              " if (k == 1) { d.write(\"<BASE HREF=\" + BASEU + \"><BODY BGCOLOR=\" + BGS + \">\" + P1); } else { d.write(BLANK); }\n d.close();\n}\n")
         frames = '<FRAME SRC="rwb.html" NAME=view>'
         name_ = "rw_%s_%d%s" % (pic, cell, "_rle" if rle else "")
     else:
@@ -240,20 +317,20 @@ def rewrite_pages(pic, cell, rle, tiles):
         fn += " d.open(\"text/html\");\n d.write(s);\n d.close();\n}\n"
         fn += "function tile(j) {\n"
         for j in range(n * n):
-            fn += " if (j == %d) { put(%d, \"<BODY BGCOLOR=\" + BGS + \">\" + P%d); }\n" % (j, j, j)
+            fn += " if (j == %d) { put(%d, \"<BASE HREF=\" + BASEU + \"><BODY BGCOLOR=\" + BGS + \">\" + P%d); }\n" % (j, j, j)
         fn += "}\nfunction go(k) {\n var j = 0;\n while (j < NT) {\n  if (k == 1) { tile(j); } else { put(j, BLANK); }\n  j = j + 1;\n }\n}\n"
         rows = ",".join(["*"] * n)
         inner = "".join('<FRAME SRC="rwb.html" NAME=t%d>' % j for j in range(n * n))
         frames = "<FRAMESET ROWS=\"%s\" COLS=\"%s\">%s</FRAMESET>" % (rows, rows, inner)
         name_ = "rwt_%s_%d_%d%s" % (pic, cell, n, "_rle" if rle else "")
     # the view is its own frame set: view.t<j> is a frame of the nested set when tiles > 1
-    ctl = ('<HTML><HEAD><TITLE>ctl</TITLE>\n<SCRIPT LANGUAGE="JavaScript">\nvar BGS = "#FF00FF";\nvar BLANK = "<BODY BGCOLOR=#FF00FF><P>blank";\n%s</SCRIPT>\n'
+    ctl = ('<HTML><HEAD><TITLE>ctl</TITLE>\n<SCRIPT LANGUAGE="JavaScript">\nvar BGS = "#FF00FF";\nvar LOC = "" + location.href;\nvar BASEU = LOC.substring(0, LOC.lastIndexOf("/") + 1);\nvar BLANK = "<BODY BGCOLOR=#FF00FF><P>blank";\n%s</SCRIPT>\n'
            '</HEAD><BODY>\n%s%s\n</BODY></HTML>\n') % (fn, scripts, links)
     # scripts of the picture are in the BODY of the control page: the functions are in the head and called later by a click
     write(name_ + "_ctl.html", ctl)
     write("rwb.html", '<HTML><HEAD><TITLE>b</TITLE></HEAD><BODY BGCOLOR="%s"><P>blank</BODY></HTML>\n' % BG)
     view = frames if tiles == 1 else '<FRAME SRC="%s_view.html" NAME=view>' % name_
-    top = ('<HTML><HEAD><TITLE>%s</TITLE></HEAD>\n<FRAMESET ROWS="26,*">\n<FRAME SRC="%s_ctl.html" NAME=ctl>\n%s\n</FRAMESET></HTML>\n'
+    top = ('<HTML><HEAD><TITLE>%s</TITLE></HEAD>\n<FRAMESET ROWS="40,*">\n<FRAME SRC="%s_ctl.html" NAME=ctl MARGINHEIGHT=2 SCROLLING=no>\n%s\n</FRAMESET></HTML>\n'
            % (name_, name_, view))
     write(name_ + ".html", top)
     if tiles > 1:
@@ -275,8 +352,9 @@ def main():
                 f.write(gif(c))
         q1_pages()
         pal_page()
+        lk_pages()
     if not stats:
-        for spec in ("photo 8 0 1", "photo 4 0 1", "photo 16 0 1", "art 8 0 1", "art 8 1 1", "photo 8 0 2", "photo 8 0 4"):
+        for spec in ("photo 8 0 1", "photo 4 0 1", "photo 16 0 1", "art 8 0 1", "art 8 1 1", "photo 8 0 2", "photo 8 0 4", "photo 4 0 4", "art 4 1 1", "art 2 1 1"):
             pic, cell, rle, tiles = spec.split()
             if not FILTER or any(f in "rw_" + spec.replace(" ", "_") for f in FILTER):
                 rewrite_pages(pic, int(cell), rle == "1", int(tiles))
