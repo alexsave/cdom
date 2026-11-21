@@ -5,6 +5,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { launch, sleep, TIER, FETCHED, tierFetched } from './cdp.mjs';
 
 if (TIER !== 5) { console.log('FAIL tools/frames.mjs runs under LEGACY=frames'); process.exit(1); }
@@ -290,6 +291,25 @@ run: try {
   const selfErr = await E('(function () { try { X.move_self(); return ""; } catch (e) { return String(e); } })()');
   ok(!selfErr && (await E(items)) === `${listWas},m1,m2` && (await draws()) === d + 1,
     `cd_move before itself moves nothing, and the page draws: ${await E(items)}, ${(await draws()) - d} draws${selfErr ? '; threw ' + selfErr : ''}`);
+
+  // js1c's bound (docs/js1-compile-design.md, Q5): every compiled function, the driver and the export wrappers wrapped
+  // to count, and the depth a click, a field's change and a timer reach is at or under the bound js1c printed.
+  {
+    const said = spawnSync(path.join(root, '../../tools/out/js1c'), [path.join(root, 'frames.wasm.js1.js.lowered.wasm'), path.join(root, 'frames.bound.tmp.js')], { encoding: 'utf8' });
+    fs.rmSync(path.join(root, 'frames.bound.tmp.js'), { force: true });
+    const bound = +(/JS depth bound (\d+)/.exec(said.stderr) || [0, 0])[1];
+    await E(`(function () { var k, f; window.JSD = 0; window.JSM = 0;
+      function wrap(f) { return function () { var r; JSD++; if (JSD > JSM) JSM = JSD; try { r = f.apply(this, arguments); } finally { JSD--; } return r; }; }
+      for (k in window) if (/^(J[fdx]\\d+|Jgo)$/.test(k) && typeof window[k] === 'function') window[k] = wrap(window[k]);
+      for (k in JF) JF[k] = window['Jf' + (k - 1)];
+      for (k in cf_raw) if (typeof cf_raw[k] === 'function' && k !== 'js1_more') cf_raw[k] = wrap(cf_raw[k]);
+      for (k in cf_ops) cf_ops[k] = wrap(cf_ops[k]); })()`);
+    await click('#inc');
+    await click('#one');
+    await E('X.grow(5)');
+    const deepest = await E('JSM');
+    ok(bound > 0 && deepest > 2 && deepest <= bound, `js1c: a click, a link and growing the list by 5 reach JavaScript depth ${deepest} through the compiled code and the imports, at or under js1c's bound ${bound}`);
+  }
 
   if (measure) {
     // Redraw cost: a page grown to n nodes, X.touch() (one text changed) timed whole and cf_html() alone, 10 of each.
