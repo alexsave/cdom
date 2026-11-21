@@ -916,14 +916,17 @@ function cf_op_get(id, path, kind, destPtr, capacity) {
 
 /* Timers: setTimeout with a string, the only form before JavaScript 1.2. The handle C keeps is the shim's own, so
  * the string can name it. */
-var cf_tok = new Object();   /* by "t" and the handle */
+/* A timer's token, by "t" and the handle: kept as the string "k" and the token, since Netscape 2 reads the number -2147483648
+ * (or 2147483648: the first token of cdom's own range, CD_TOKEN_CDOM) as equal to null, its sentinel for no value (docs/frames-design.md
+ * 17, probe lex7), and a timer set through cd_timer_set (Play's) was taken for one already fired. */
+var cf_tok = new Object();
 var cf_tid = new Object();
 var cf_timers = 0;
 var cf_d0 = new Date();
 var cf_t0 = cf_d0.getTime();
 function cf_op_timer(ms, token) {
   cf_timers++;
-  cf_tok["t" + cf_timers] = token;
+  cf_tok["t" + cf_timers] = "k" + token;
   cf_tid["t" + cf_timers] = setTimeout("cdomF.t(" + cf_timers + ")", ms);
   return cf_timers;
 }
@@ -1905,8 +1908,9 @@ function cf_onUp(e) {
   return cf_route(e);
 }
 function cf_onTimer(n) {
-  var token = cf_tok["t" + n];
-  if (token == null) return;
+  var key = cf_tok["t" + n], token;
+  if (key == null) return;
+  token = parseInt(key.substring(1, key.length));
   cf_tok["t" + n] = null;
   cf_hold(1);
   cf_cRun("cd_timer", token, n);

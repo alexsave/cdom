@@ -1020,6 +1020,7 @@ M = [
   ('frames-idx-raw', 'tools/legacy/frames.js', '  return cf_idx(list, " " + name + " ") >= 0;', '  return list.indexOf(" " + name + " ") >= 0;', FRAMES, 'FAIL frames.js calls indexOf only in cf_idx'),
   ('frames-function-in-condition', 'tools/legacy/frames.js', '    if (el && el.focus != null) {', '    if (el && el.focus) {', JS11T, 'a function in a condition'),
   ('frames-idx-no-empty-guard', 'tools/legacy/frames.js', 'function cf_idx(s, t) {\n  if (s.length == 0) {', 'function cf_idx(s, t) {\n  if (false) {', FRAMES, 'ns2'),
+  ('frames-timer-token-bare', 'tools/legacy/frames.js', '  cf_tok["t" + cf_timers] = "k" + token;', '  cf_tok["t" + cf_timers] = token;', FRAMES, 'FAIL frames.js keeps a timer token as the string'),
   ('js11-new-member-allowed', 'tools/legacy/js11.mjs', "      add('a member of a new expression', n);", '', JS11T, 'FAIL var t = new Date().getTime(); is refused'),
   ('frames-new-member', 'tools/legacy/frames.js', 'function cf_op_epoch() {\n  var d = new Date();\n  return d.getTime();', 'function cf_op_epoch() {\n  return (new Date()).getTime();', JS11T, 'frames.js is not JavaScript 1.0: a member of a new expression'),  # the build's gate refuses it before js11.mjs runs
   ('js11-assign-in-test-allowed', 'tools/legacy/js11.mjs', "    if (test) walk(test, (m) => { if (m.type === 'AssignmentExpression') add('an assignment in a condition', m); });", '', JS11T, 'FAIL if (a = f()) g(); is refused'),
