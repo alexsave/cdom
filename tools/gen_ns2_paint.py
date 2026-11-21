@@ -100,12 +100,12 @@ def cube():
 
 
 def mapped(pic, pal):
-    """pic (h, w, 3) -> indices into pal, the nearest colour, never dithered."""
-    p = Image.new("P", (1, 1))
-    flat = [c for rgb in pal for c in rgb]
-    p.putpalette(flat + [0] * (768 - len(flat)))
-    q = Image.fromarray(pic.astype(np.uint8), "RGB").quantize(palette=p, dither=Image.Dither.NONE)
-    return np.array(q)
+    """pic (h, w, 3) -> indices into pal, the nearest colour (squared RGB distance, the lower index on a tie), never dithered.
+    Not PIL's quantize(palette=): its lookup is not exact, and it moved the paper, an anchor, 3 levels darker."""
+    u, inv = np.unique(pic.reshape(-1, 3), axis=0, return_inverse=True)
+    pa = np.array(pal, dtype=np.int64)
+    d = ((u[:, None, :].astype(np.int64) - pa[None, :, :]) ** 2).sum(-1)
+    return d.argmin(1)[inv.ravel()].reshape(pic.shape[:2])
 
 
 def runs(row):
