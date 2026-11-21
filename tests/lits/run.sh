@@ -112,7 +112,7 @@ text:quote " back \u005c end
 text:line\u000abreak and \u2028 sep \u2029 
 text:
 text:0 digit after the separator
-text:tab\u0009\u0001 \u007f del
+text:tab\u0009\u0003 \u007f del
 text:☃ snowman, 😀 and hé
 text:tail\u005c
 EOT
@@ -120,6 +120,7 @@ if bw "$n.linked.wasm" -Oz "$here/table.c" "$here/stub.c" && strip_to "$n.linked
   nodelog "$n" k_table > "$n.node" 2> "$n.node.log" || cat "$n.node.log"
   same "table: every entry comes back byte for byte (three equal, </script>, quote, backslash, newline, U+2028, a digit after a separator)" "$n.expect" "$n.node"
   if [ "$(grep -c '' "$n.lits")" -eq 1 ] && ! grep -q '<' "$n.lits"; then ok "table: one line, no '<' in it"; else bad "table: the lits file is not one line without '<'"; fi
+  if grep -qF '\x01' "$n.lits" && ! grep -qF '\x00' "$n.lits" && grep -q '^var cdomLits=new Array(' "$n.lits"; then ok "table: entries are separated by \\x01, never \\x00 (Netscape 2 and 3 end a string at a NUL), in new Array(...), not an array literal"; else bad "table: the lits file separates by \\x00 or is an array literal"; fi
   if [ "$(grep -o 'same' "$n.lits" | wc -l | tr -d ' ')" -eq 3 ]; then ok "table: a literal at three sites is three entries"; else bad "table: 'same' is not written three times"; fi
 else bad "table: build or cdlits failed:"; cat "$n.linked.wasm.log" "$n.log" 2> /dev/null; fi
 
@@ -170,15 +171,20 @@ cat > "$e.utf8.c" <<'EOT'
 #include "stub.h"
 EX(k) void k(void) { cd_text("bad \xff byte"); }
 EOT
+cat > "$e.sep.c" <<'EOT'
+#include "stub.h"
+EX(k) void k(void) { cd_text("a\001b"); }
+EOT
 cat > "$e.ok.c" <<'EOT'
 #include "stub.h"
 EX(k) void k(void) { cd_text("fine"); }
 EOT
-for c in plus wide nul utf8; do bw "$e.$c.wasm" -Oz -Wno-string-plus-int "$e.$c.c" "$here/stub.c" || { bad "error case $c does not build:"; cat "$e.$c.wasm.log"; }; done
+for c in plus wide nul utf8 sep; do bw "$e.$c.wasm" -Oz -Wno-string-plus-int "$e.$c.c" "$here/stub.c" || { bad "error case $c does not build:"; cat "$e.$c.wasm.log"; }; done
 rm -f "$e.plus.o.wasm" "$e.plus.o.lits"
 expect_err '"abc" + 1' 'not a string literal: "abc" + 1, write the literal itself or pass cd_tmpz(...)' "$CDLITS" "$e.plus.wasm" "$e.plus.o.wasm" "$e.plus.o.lits"
 expect_err 'L"x"' 'not a string literal: L"x"' "$CDLITS" "$e.wide.wasm" "$e.wide.o.wasm" "$e.wide.o.lits"
 expect_err 'a NUL inside a literal' 'a NUL inside a literal' "$CDLITS" "$e.nul.wasm" "$e.nul.o.wasm" "$e.nul.o.lits"
+expect_err 'the table separator inside a literal' 'a string literal holds the byte 0x01' "$CDLITS" "$e.sep.wasm" "$e.sep.o.wasm" "$e.sep.o.lits"
 expect_err 'bytes that are not UTF-8' 'not UTF-8' "$CDLITS" "$e.utf8.wasm" "$e.utf8.o.wasm" "$e.utf8.o.lits"
 bw "$e.nostamp.wasm" -Oz -DNO_STAMP "$e.ok.c" "$here/stub.c" || { bad "error case nostamp does not build:"; cat "$e.nostamp.wasm.log"; }
 expect_err 'a module without cd_lits_stamp' 'not a cdom module (link src/cdom.c with CDOM_LDFLAGS)' "$CDLITS" "$e.nostamp.wasm" "$e.nostamp.o.wasm" "$e.nostamp.o.lits"

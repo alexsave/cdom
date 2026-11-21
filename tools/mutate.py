@@ -56,6 +56,7 @@ FRAMES = ['env', 'LEGACY=frames', 'node', 'tools/frames.mjs']       # the fifth 
 JS11T = ['node', 'tools/js11.mjs']                                   # the frames tier's language gates, in node
 UTTT = ['node', 'tools/uttt.mjs']                                    # demo/uttt on the WebAssembly and frames tiers: needs FOOLISH, an absolute path to a foolish checkout (else it skips, and every uttt- mutant is missed)
 JS1 = ['node', 'tools/js1.mjs']                                      # js1c against wasm: tests/js1diff.c, the depth, slicing, the page
+LITST = ['tests/lits/run.sh']                                        # tools/cdlits and its table, standing alone
 JS10T = ['node', 'tools/js10.mjs']                                   # the JavaScript 1.0 gate's rules, in node
 
 # name, file, old, new, test command, text the failure must contain
@@ -1259,6 +1260,9 @@ M = [
   ('js1c-byte-sign', 'tools/js1c.c', '"function JLbs(a){return JM[a>>2]<<(24-((a&3)<<3))>>24;}\\n"', '"function JLbs(a){return JM[a>>2]<<(24-((a&3)<<3))>>>24;}\\n"', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-subnormal-bits', 'tools/js1c.c', 'm=x*JP2(1022)*4503599627370496', 'm=x*JP2(1021)*4503599627370496', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-memmove-forwards', 'tools/js1c.c', 'if(d<=s){for(i=0;i<n;i=i+1)JWb', 'if(1){for(i=0;i<n;i=i+1)JWb', JS1, 'FAIL every export agrees with wasm'),
+  ('lits-separator-nul', 'tools/cdlits.c', '    if (k) bstr(&lits, "\\\\x01");', '    if (k) bstr(&lits, "\\\\x00");', LITST, 'FAIL table: the lits file separates by'),  # Netscape 2 and 3 end a string at a NUL
+  ('lits-array-literal', 'tools/cdlits.c', '"var cdomLits=new Array(%u,%u,', '"var cdomLits=[%u,%u,', LITST, 'FAIL table: the lits file separates by'),  # Netscape 2 and 3 cannot parse one
+  ('lits-separator-in-literal', 'tools/cdlits.c', 'if (memchr(slots[k].bytes.p, 1, slots[k].bytes.n)) die(', 'if (0) die(', LITST, 'FAIL error: the table separator inside a literal'),
   ('js1c-bound-too-low', 'tools/js1c.c', '  int bound = 4 + hmax;', '  int bound = 1 + hmax;', FRAMES, "FAIL js1c: a click, a link and growing the list by 5 reach JavaScript depth"),
   ('js1c-writes-strict-equality', 'tools/js1c.c', 'static const char *ops[] = { "==", "!="', 'static const char *ops[] = { "===", "!="', JS1, 'is not JavaScript 1.0: ==='),  # tests/build.sh stops at the gate
   ('js1c-page-compares-nothing', 'tools/js1.mjs', 'if(got==CE[I])', 'if(got!=CE[I])', JS1, 'FAIL tests/out/js1diff.html runs to its end and agrees'),

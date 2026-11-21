@@ -1669,7 +1669,7 @@ function cdomFramesStart(factory, mount, env, ready, options) {
     cf_fail("cdom: the page's string table is not this module's");
     return;
   }
-  cf_lits = table[3].split(cf_T[0]);
+  cf_lits = table[3].split(cf_T[1]);
   cf_litBase = table[0];
   cf_litEnd = 0;
   if (cf_litBase) cf_litEnd = cf_litBase + 4 * cf_lits.length;

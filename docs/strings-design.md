@@ -424,13 +424,14 @@ Steps of the build form:
 8. Write `out.wasm`, then `out.lits`, one line of JavaScript text:
 
    ```
-   var cdomLits=[BASE,STAMP,"☃","every slot's string, in slot order, joined by \x00"];
+   var cdomLits=new Array(BASE,STAMP,"☃","every slot's string, in slot order, joined by \x01");
    ```
 
    `BASE` is `__start_cd_lits` (0 with no literal).
    A string used at five call sites is written five times.
    Strings are written with `\\`, `\"`, `\x3c` for `<` (so `</script>` and `<!--` cannot end the script), `\xNN` for bytes below 32 and 127, ` ` and ` ` escaped, and every other byte as it is (UTF-8).
-   The separator is always written `\x00`, never `\0`, so a digit after it cannot make an octal escape.
+   The separator is always written `\x01`, never `\1`, so a digit after it cannot make an octal escape.
+   It is not `\x00` since Netscape 2 and 3 end a string at a NUL; a literal that holds the byte 0x01 is refused at build time.
    The third element is U+2603 as raw UTF-8: the shim compares it with `"☃"`, and a page read in another encoding fails at start with a message instead of showing wrong text.
    (Any character that is non-ASCII, in the Basic Multilingual Plane and not combining would do; this one is the usual choice for the job.)
 9. Both outputs are written to temporary names and renamed, `out.wasm` last.
@@ -478,7 +479,7 @@ It would be a change to `cdlits` and `start` only, in the same commit, because t
   Missing: "cdom: this page has no string table (build it with cdom.mk or tools/page.awk, which write it before the shim)".
   The canary must equal `"☃"`, else "cdom: this page was not read as UTF-8".
   `exports.cd_lits() >>> 0` must equal the stamp, else "cdom: the page's string table is not this module's (the page and the module are from different builds, or the module did not go through cdlits)".
-  Then `lits = table[3].split("\0"); litBase = table[0];`.
+  Then `lits = table[3].split("\x01"); litBase = table[0];`.
 - **`str(s)`**, the one way an import reads a string:
 
   ```js

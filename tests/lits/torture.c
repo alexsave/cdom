@@ -21,9 +21,9 @@ EX(k_torture) void k_torture(void) {
   cd_text("\x041");                           /* more than two digits are one escape */
   cd_text("\x0041");
   cd_text("\x4a" "b");                        /* a literal break ends the escape */
-  cd_text("\x1" "2");
+  cd_text("\x3" "2");
   cd_text("\102");                            /* octal */
-  cd_text("\1\12\123");
+  cd_text("\3\12\123");
   cd_text("\1012");                           /* three octal digits, then a 2 */
   cd_text("\0127");
   cd_text("\u00e9");                          /* universal character names, as UTF-8 */
@@ -44,7 +44,7 @@ EX(k_torture) void k_torture(void) {
   cd_text("long long long long long long long long long long long long long long long long long long long long "
           "long long long long long long long long long long long long long long long long long long long long "
           "long long long long long long long long long long long long long long long long long long long long");
-  cd_text("\x7f\x01\x1f");
+  cd_text("\x7f\x03\x1f");
   cd_text("%d %s");
   cd_text("0123456789");
 }
