@@ -173,3 +173,9 @@ EXPORT("deeptrap") int deeptrap(int n) {
 }
 /* memory.grow: js1c writes the new pages' words (Netscape 2 dies reading a word nothing wrote). */
 EXPORT("grow") int grow(int n) { return (int)__builtin_wasm_memory_grow(0, (unsigned)n); }
+/* A word, a byte and a half of the heap that nothing wrote (wasm reads 0): js1c writes only the words below __heap_base on
+ * the engines that read a missing word as 0, so these read one that does not exist (tools/js1.mjs). k counts from __heap_base. */
+extern unsigned char __heap_base;
+EXPORT("peek") int peek(int k) { return ((volatile int *)(&__heap_base + 64))[k]; }
+EXPORT("peekb") int peekb(int k) { return ((volatile unsigned char *)(&__heap_base + 64))[k]; }
+EXPORT("peekh") int peekh(int k) { return ((volatile short *)(&__heap_base + 64))[k]; }

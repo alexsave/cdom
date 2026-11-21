@@ -1,0 +1,26 @@
+<html><head><title>probe-undef</title>
+</head><body>
+<script>
+// What a read of a property nothing set (a memory word js1c did not zero) does in a bitwise expression, in each engine:
+// each line is the expression and its answer, written into the page (Netscape 2 has no Image).  docs/frames-design.md, 15.
+var o = new Object();
+var out = "";
+function line(name, v) {
+  out = out + name + " = " + v + "<br>";
+}
+o[7] = 5;
+line("o[9] | 0", o[9] | 0);
+line("o[9] >>> 3", o[9] >>> 3);
+line("o[9] << 2", o[9] << 2);
+line("o[9] & 255", o[9] & 255);
+line("~o[9]", ~o[9]);
+line("o[9] >> 24", o[9] >> 24);
+line("o[9] + 1", o[9] + 1);
+line("o[9] == 0", o[9] == 0);
+line("o[9] == null", o[9] == null);
+line("(o[9] | 0) == 0", (o[9] | 0) == 0);
+line("o[7] | o[9]", o[7] | o[9]);
+line("o[9] * 3", o[9] * 3);
+document.write(out);
+</script>
+</body></html>
