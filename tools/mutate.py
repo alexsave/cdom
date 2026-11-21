@@ -1243,6 +1243,7 @@ M = [
   ('js1c-div-fraction', 'tools/js1c.c', 'return (a-a%b)/b|0;}\\n"', 'return a/b|0;}\\n"', JS1, "FAIL every case agrees with every bitwise operand an integer in Netscape 3's range"),
   ('js1c-divc-fraction', 'tools/js1c.c', 'bf(b, "((%s-%s%%%s)/%s|0)", t.p, t.p, c.p, c.p);', 'bf(b, "(%s/%s|0)", t.p, c.p);', JS1, "FAIL every case agrees with every bitwise operand an integer in Netscape 3's range"),
   ('js1c-sat-fraction', 'tools/js1c.c', 'if(x>=2147483647)return 2147483647;return JTr(x)|0;}', 'if(x>=2147483647)return 2147483647;return x|0;}', JS1, "FAIL every case agrees with every bitwise operand an integer in Netscape 3's range"),
+  ('js1c-infinity-by-zero', 'tools/js1c.c', 'if(m)return JNa;return s*JIn;}', 'if(m)return JNa;return s/0;}', JS1, 'FAIL frames.wasm.js1.js divides by no literal 0'),
   ('js1c-mul-overflows', 'tools/js1c.c', '((a&65535)*(b>>>16)&65535);', '((a&65535)*(b>>>15)&65535);', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-mul-unreduced', 'tools/js1c.c', 'return (l+h*65536)%4294967296|0;', 'return (l+h*65536)|0;', JS1, "FAIL every case agrees with every bitwise operand an integer in Netscape 3's range"),
   ('js1c-add-unreduced', 'tools/js1c.c', 'bs(b, "+4294967296)%4294967296|0)");', 'bs(b, ")|0)");', JS1, "FAIL every case agrees with every bitwise operand an integer in Netscape 3's range"),

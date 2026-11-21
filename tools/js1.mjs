@@ -279,6 +279,10 @@ for (const f of fs.readdirSync(out).filter((f) => f.endsWith('.js1.js'))) {
   const found = lacks10(src);
   ok(found.length === 0, `${f} is JavaScript 1.0 (tools/js10.mjs)${found.length ? ': ' + found.slice(0, 5).join(', ') : ''}`);
   const incdec = [...acorn.tokenizer(src, { ecmaVersion: 5, locations: true })].filter((t) => t.type.label === '++/--');
+  // No division by a literal 0: Netscape 2.02's 1 / 0 is 0, and Netscape 3.04 lost the infinity of js1diff's dbl.
+  const byZero = [];
+  (function w(n) { if (!n || typeof n.type !== 'string') return; if (n.type === 'BinaryExpression' && n.operator === '/' && n.right.type === 'Literal' && n.right.value === 0) byZero.push(n.loc.start.line); for (const k of Object.keys(n)) { const v = n[k]; if (Array.isArray(v)) v.forEach(w); else if (v && typeof v.type === 'string') w(v); } })(acorn.parse(src, { ecmaVersion: 5, locations: true }));
+  ok(byZero.length === 0, `${f} divides by no literal 0${byZero.length ? `: ${byZero.length}, the first on line ${byZero[0]}` : ''}`);
   ok(incdec.length === 0, `${f} has no ++ or --${incdec.length ? `: ${incdec.length}, the first on line ${incdec[0].loc.start.line}` : ''}`);
 }
 // Time slicing: with a budget, the export pauses and Jmore() goes on, to the same result.
