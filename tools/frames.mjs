@@ -5,7 +5,8 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, execFileSync } from 'node:child_process';
+import vm from 'node:vm';
 import { launch, sleep, TIER, FETCHED, tierFetched } from './cdp.mjs';
 
 if (TIER !== 5) { console.log('FAIL tools/frames.mjs runs under LEGACY=frames'); process.exit(1); }
@@ -102,6 +103,30 @@ const port = srv.address().port;
     'the app document holds, in order, the boot, the string table, the shim, the module and the page\'s own script');
   ok(!html.includes('function cdomFramesStart(') && !html.includes('cdomFactoryJs1') && !html.includes('<script src'),
     'the page itself holds neither the shim nor the module, and fetches no script');
+  // A string table far over a block: frames.html with its table's text made about 70 KB (the real text, joined to itself,
+  // and one long literal of escapes), through build.mjs app-doc. The table is cut into statements of at most LITS_PIECE
+  // bytes, across blocks, never inside an escape: run in node, the four globals are the page's four values.
+  const piece = +/\nconst LITS_PIECE = (\d+);/.exec(fs.readFileSync(path.join(root, '../../tools/legacy/build.mjs'), 'utf8'))[1];
+  const m = /\nvar cdomLits=new Array\((\d+),(\d+),("[^"]*"),([^\n]*)\);\n/.exec(html);
+  let long = '"';
+  for (let i = 0; i < 20000; i++) long += ['ab', '\\001', '\\\\', '\\"', '\\074', 'é', 'xy z'][i % 7];
+  long += '"';
+  const text = Array(12).fill(m[4]).join('+') + '+' + long;
+  const big = html.replace(m[0], () => `\nvar cdomLits=new Array(${m[1]},${m[2]},${m[3]},${text});\n`);
+  fs.writeFileSync(path.join(root, 'frames-bigtable.html'), big);
+  execFileSync('node', [path.join(root, '../../tools/legacy/build.mjs'), 'app-doc', path.join(root, 'frames-bigtable.html'), path.join(root, 'frames.wasm.js1.js'),
+    path.join(root, 'frames-bigtable.app.html')], { stdio: 'inherit' });
+  const bigApp = fs.readFileSync(path.join(root, 'frames-bigtable.app.html'), 'utf8');
+  const bigBlocks = [...bigApp.matchAll(/<script>\n([\s\S]*?)\n<\/script>/g)].map((x) => x[1]);
+  const tableLines = bigBlocks.flatMap((x, k) => x.split('\n').filter((l) => /^(var cdomLitsBase=|cdomLitsText=cdomLitsText\+)/.test(l)).map((l) => [k, l]));
+  const ctx = {};
+  vm.runInNewContext(tableLines.map((x) => x[1]).join('\n'), ctx);
+  const want = vm.runInNewContext(`[${m[1]},${m[2]},${m[3]},${text}]`);
+  ok(ctx.cdomLitsText === want[3] && ctx.cdomLitsBase === want[0] && ctx.cdomLitsStamp === want[1] && ctx.cdomLitsUtf8 === want[2],
+    `a string table of ${Buffer.byteLength(text)} bytes is the page's table again in the app document (${ctx.cdomLitsText ? ctx.cdomLitsText.length : 'no'} characters of ${want[3].length})`);
+  ok(tableLines.length > 15 && new Set(tableLines.map((x) => x[0])).size > 1 && tableLines.every((x) => Buffer.byteLength(x[1]) <= piece + 40)
+    && bigBlocks.every((x) => Buffer.byteLength(x) <= max),
+    `it is cut into ${tableLines.length} statements of at most about LITS_PIECE (${piece}) bytes, over ${new Set(tableLines.map((x) => x[0])).size} blocks, none over BLOCK_MAX`);
 }
 const measure = !!process.env.FRAMES_MEASURE;
 run: try {
