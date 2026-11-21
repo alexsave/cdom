@@ -1,6 +1,8 @@
 // Checks tools/legacy/js11.mjs, the frames tier's language gates (docs/frames-design.md, section 10), on code planted for
 // each rule: what JavaScript 1.1 (Netscape 3) lacks must be refused, and what it has must pass; js10 (the boot's first
 // part, Netscape 2) refuses typeof, void, Array and the rest besides. node tools/js11.mjs; exit 1 on any failure.
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import { lacks } from './legacy/js11.mjs';
 
 let fails = 0;
@@ -29,7 +31,26 @@ for (const [src, what] of [
   ['var u = undefined;', 'undefined'],
   ['var n = NaN;', 'NaN'],
   ['var i = Infinity;', 'Infinity'],
+  ['var t = new Date().getTime();', 'a member of a new expression'],
+  ['var t = (new Date()).getTime();', 'a member of a new expression'],
+  ['var y = (new Date).getYear;', 'a member of a new expression'],
+  ['new F()();', 'a member of a new expression'],
 ]) ok(refused(src, what), `${src} is refused (${what})`);
+ok(passes('var d = new Date(); var t = d.getTime();'), 'a new expression kept in a variable, then its member, passes');
+// terser, as tools/legacy/build.mjs runs it on frames.js (no compress), keeps a new expression in its variable, and
+// what it writes of a member of one, (new Date).getTime(), the gate on the minified output refuses.
+const { minify } = createRequire(new URL('../package.json', import.meta.url))('terser');
+const terse = async (src) => (await minify(src, { ecma: 5, compress: false, mangle: true, format: { ascii_only: true } })).code;
+const kept = await terse('function f() { var d = new Date(); return d.getTime(); }');
+ok(passes(kept), `terser keeps var d = new Date(); d.getTime() apart: ${kept}`);
+const joined = await terse('function f() { return (new Date()).getTime(); }');
+ok(refused(joined, 'a member of a new expression'), `and the gate refuses terser's member of a new expression: ${joined}`);
+// The shim itself, before and after terser, against the gate (tools/legacy/build.mjs refuses it too, at build time).
+const shimSrc = fs.readFileSync(new URL('./legacy/frames.js', import.meta.url), 'utf8');
+for (const [what, src] of [['frames.js', shimSrc], ['frames.js once minified', await terse(shimSrc)]]) {
+  const found = lacks(src, { allowed: ['charCodeAt', 'fromCharCode'] });
+  ok(!found.length, `${what} is JavaScript 1.1: ${found.slice(0, 6).join(', ')}`);
+}
 // The methods of 1.2 and later, and the DOM this tier has not.
 for (const m of ['push', 'pop', 'shift', 'unshift', 'splice', 'slice', 'concat', 'call', 'apply', 'charCodeAt',
   'fromCharCode', 'createElement', 'appendChild', 'addEventListener', 'getElementById', 'innerHTML'])
