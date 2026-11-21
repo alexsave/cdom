@@ -1,0 +1,32 @@
+<html><head><title>probe-split</title>
+<script>
+// String.split on a control character, in the engines of the frames tier: the string table's entries are separated by
+// \x01 and the shim splits on it (docs/frames-design.md, section 15).  Query: <tag>.
+var Q = "" + location.search;
+Q = Q.substring(1, Q.length);
+var K = 0;
+var IMGS = new Array();
+function rep(name, v) {
+  K = K + 1;
+  IMGS[K] = new Image();
+  IMGS[K].src = "http://" + location.host + "/mark/" + Q + "/p-" + K + "-" + name + "-" + escape("" + v);
+}
+var s1 = "ab\x01cd\x01ef";
+var u = unescape("%01");
+rep("len-s1", s1.length);
+rep("len-u", u.length);
+rep("esc-u", escape(u));
+rep("split-literal", s1.split("\x01").length);
+rep("split-unescape", s1.split(u).length);
+rep("split-bar", "ab|cd|ef".split("|").length);
+rep("split-x02", "ab\x02cd\x02ef".split("\x02").length);
+rep("split-x7f", "ab\x7fcd\x7fef".split("\x7f").length);
+rep("split-x1f", "ab\x1fcd\x1fef".split("\x1f").length);
+rep("indexOf-x01", s1.indexOf("\x01"));
+rep("indexOf-u", s1.indexOf(u));
+var a = s1.split("\x01");
+rep("first", a[0] + "/" + a[1] + "/" + a[2]);
+rep("new-array", (new Array(7, 8, "x", "y")).length + "-" + (new Array(7, 8, "x", "y"))[2]);
+</script>
+</head>
+<body>done</body></html>
