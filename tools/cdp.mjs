@@ -254,17 +254,17 @@ const FRAMES_OLD = `
   if (ns2) {
     for (const t of ['mousedown', 'mouseup', 'keydown', 'keyup', 'keypress']) add.call(window, t, (e) => e.stopImmediatePropagation(), true);
     delete String.prototype.charCodeAt; delete String.fromCharCode;
-    // Netscape 2's form elements have no type (JavaScript 1.1 added it).
-    for (const C of [HTMLInputElement, HTMLTextAreaElement, HTMLSelectElement, HTMLButtonElement]) delete C.prototype.type;
-    // Nor a String global ("String is not defined"), and Number is taken to be missing too (frames.js checks window.String
-    // and window.Number first). Last, since the lines above name String.
-    delete window.String; delete window.Number;
     // Netscape 2's "".indexOf(t) gives no number, and a comparison of that raises "is not a numeric literal": here it throws.
     const realIndexOf = String.prototype.indexOf;
     String.prototype.indexOf = function (t, at) {
       if (this.length === 0) throw new Error('is not a numeric literal');
       return Reflect.apply(realIndexOf, this, [t, at]);
     };
+    // Netscape 2's form elements have no type (JavaScript 1.1 added it).
+    for (const C of [HTMLInputElement, HTMLTextAreaElement, HTMLSelectElement, HTMLButtonElement]) delete C.prototype.type;
+    // Nor a String global ("String is not defined"), and Number is taken to be missing too (frames.js checks window.String
+    // and window.Number first). Last, since the lines above name String.
+    delete window.String; delete window.Number;
   }
   if (caretFlavour) {
     const real = []; // [input's, textarea's]: no Map, and Reflect.apply, not call (IE 6's profile took both)
