@@ -26,12 +26,11 @@ typedef struct { uint8_t kind; uint16_t stop, nstop; uint32_t rgb; int32_t gx, g
 enum { RD_BOX = 0, RD_TEXT = 1, RD_RING = 2 };
 typedef struct { int16_t x0, y0, x1, y1; uint8_t rt, rb; uint8_t paint, alpha, state, kind, bw; uint16_t text; } RdItem;
 
-/* A glyph: w x h, its rows' runs from rd_glyph_rows[row0 + r] to rd_glyph_rows[row0 + r + 1]; a run is x, n pixels and a
- * level (1 to rd_levels - 1: the share of the text's colour). */
-typedef struct { uint8_t w, h; uint16_t row0; } RdGlyph;
-typedef struct { uint8_t x, n, level; } RdRun;
-/* A placed glyph (its top left), and a text: places [first, first + n), its colour and alpha. */
-typedef struct { int16_t x, y; uint16_t glyph; } RdPlace;
+/* A glyph is one word, w | h << 8 | row0 << 16: w x h, its rows' runs from rd_glyph_rows[row0 + r] to
+ * rd_glyph_rows[row0 + r + 1]; a run is one word, x | n << 8 | level << 16: n pixels from x at a level (1 to rd_levels - 1:
+ * the share of the text's colour).  A place is one word, x | y << 10 | glyph << 20: a glyph's top left.  One word each,
+ * since Netscape 2 pays for every word read, and a struct's fields are a read each. */
+/* A text: places [first, first + n), its colour and alpha. */
 typedef struct { uint16_t first, n; uint32_t rgb; uint8_t alpha; } RdText;
 /* A link region: the runs inside it are wrapped in a link to page target. */
 typedef struct { int16_t x0, y0, x1, y1; uint8_t target; } RdLink;
@@ -39,7 +38,7 @@ typedef struct { int16_t x0, y0, x1, y1; uint8_t target; } RdLink;
 typedef struct {
   const RdItem *items; int nitems;
   const RdPaint *paints; int npaints; const RdStop *stops;
-  const RdText *texts; const RdPlace *places;
+  const RdText *texts; const uint32_t *places;
   const RdLink *links; int nlinks;
 } RdPage;
 
@@ -47,9 +46,9 @@ extern const uint32_t rd_palette[];
 extern const int rd_npalette;
 extern const uint16_t rd_grid_start[];
 extern const uint8_t rd_grid_cand[];
-extern const RdGlyph rd_glyphs[];
+extern const uint32_t rd_glyphs[];
 extern const uint16_t rd_glyph_rows[];
-extern const RdRun rd_glyph_runs[];
+extern const uint32_t rd_glyph_runs[];
 extern const int rd_levels;
 extern const RdPage rd_pages[];
 extern const int rd_npages;
@@ -65,9 +64,14 @@ extern const int rd_npages;
 #define RD_OUT_MAX 4096
 
 /* rd_begin(page, state) starts a picture; rd_rows(n) renders up to n more rows into rd_out (rd_nout words, whole lines;
- * the last line may still grow, so it is held back until the next call or the end) and answers 1 while rows remain. */
+ * identical rows of the batch make one line) and answers 1 while rows remain. */
 void rd_begin(int page, int state);
 int rd_rows(int n);
+/* rd_at(y): the next batch starts at row y; rd_y(): the row the next batch starts at; rd_dirty(page): the rows whose items
+ * differ between the page's states, y0 * 1024 + y1 (0: none), which a host's cache of batches draws again on a change. */
+void rd_at(int y);
+int rd_y(void);
+int rd_dirty(int page);
 extern uint32_t rd_out[RD_OUT_MAX];
 extern int rd_nout;
 /* Statistics of the last picture: spans applied, segments and runs made. */
