@@ -244,6 +244,17 @@ run: try {
   ok(focusThrew && (await stat(STAT.count)) === n0 + 1 && (await E('cdomF.errors.join()')).includes('a draw did not finish'),
     `a throw while the shim draws does not lock the page: ${focusThrew ? 'threw' : 'no throw'}, the next click reached C (${(await stat(STAT.count)) - n0}), noted: ${JSON.stringify(await E('cdomF.errors'))}`);
 
+  // cd_move as the DOM's insertBefore: before a node of another parent is an error, noted, and nothing moves; before
+  // itself, nothing moves (a self-link would hang the next serialization).
+  const items = `(function () { var l = ${F}.querySelectorAll("#list li"), o = [], i; for (i = 0; i < l.length; i++) o[i] = l[i].innerText; return o.join(); })()`;
+  const listWas = await E(items);
+  await E('X.move_foreign()');
+  ok((await E(items)) === `${listWas},m1,m2` && (await E('cdomF.errors.join()')).includes('not a child of the parent'),
+    `cd_move before another parent's node moves nothing, and is noted: ${await E(items)}; ${JSON.stringify(await E('cdomF.errors'))}`);
+  d = await draws();
+  await E('X.move_self()');
+  ok((await E(items)) === `${listWas},m1,m2` && (await draws()) === d + 1, `cd_move before itself moves nothing, and the page draws: ${await E(items)}, ${(await draws()) - d} draws`);
+
   if (measure) {
     // Redraw cost: a page grown to n nodes, X.touch() (one text changed) timed whole and cf_html() alone, 10 of each.
     const median = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];

@@ -92,6 +92,7 @@ It keeps shim/cdom.js's design where it can:
 
 - The same imports by the same names, with the same meaning for the tree ops (at, open, close, text, attr, name_el, listen, walk, set_text, set_attr, style, remove, move, clear, detach, attach, tpl_save, clone and the rest).
   Each op changes a node tree of plain objects in the top window instead of the DOM: element and text nodes with parent, first, last, next and previous links, so insert and remove need no splice (JavaScript 1.2).
+  An insert keeps the DOM's rules: a node before itself stays where it is, and before a node that is not a child of the parent is an error (shim/cdom.js's trap), noted here, and nothing moves.
 - The same strings: a literal's slot in cdomLits, a read-only pointer read once and kept, a runtime record in C's tmp block; ahead is a no-op, since every string is read from C's memory directly.
 - The same event record and cd_layout read, and the same delivery to the nearest listening ancestor with the path down (8 bits of element index a level), walked on the node tree instead of the DOM.
 - The same words memory as the third and fourth tiers (memory.words of the app's .ie9.js file).
