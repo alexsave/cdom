@@ -15,8 +15,8 @@ LEGACY_BUILD := $(CDOM)/tools/legacy/build.mjs
 APP_WASM := out/uttt.wasm
 APP_SRC := uttt_replay.c $(UTTT)/uttt.c $(UTTT)/uttt_code.c $(FOOLISH)/shared/c/b32.c $(FOOLISH)/shared/c/mixrad.c
 APP_MODULES := url
-# compat.h declares strncmp (defined in uttt_replay.c) and libc/math.h log2 (never called) for foolish's uttt_code.c.
-APP_CFLAGS := -I$(UTTT) -isystem libc -include compat.h -Wall -Wextra -Werror
+# libc/math.h declares log2 (never called) for foolish's uttt_code.c; strncmp is cdom's (src/libc/string.h).
+APP_CFLAGS := -I$(UTTT) -isystem libc -Wall -Wextra -Werror
 APP_LDFLAGS := -Wl,--strip-all
 APP_WASM_SEPARATE := 1
 APP_PAGE_SRC := uttt.html

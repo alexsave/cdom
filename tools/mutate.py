@@ -408,6 +408,12 @@ M = [
   ('fresh-output-unchecked', 'tools/legacy/build.mjs', 'return got === want && made === sha(fs.readFileSync(out));', 'return got === want;', FRESH, 'FAIL shim: an edited output was not rebuilt'),
   ('fresh-by-path', 'tools/legacy/build.mjs', "try { c = sha(fs.readFileSync(f)); } catch { c = 'missing'; }", "c = 'x';", FRESH, 'FAIL changing tools/legacy/build.mjs rebuilt []'),
   ('mini-strong', 'src/mini.c', '__attribute__((weak, no_builtin)) int memcmp', '__attribute__((no_builtin)) int memcmp', LINK, "FAIL an app's own libc"),
+  # strncmp (src/mini.c; tests/link/libc_strncmp.c)
+  ('strncmp-signed', 'src/mini.c', 'const unsigned char *x = (const unsigned char *)a, *y = (const unsigned char *)b;\n  for (size_t i = 0; i < n; i++) {\n    if (x[i] != y[i])', 'const signed char *x = (const signed char *)a, *y = (const signed char *)b;\n  for (size_t i = 0; i < n; i++) {\n    if (x[i] != y[i])', LINK, 'FAIL string.h (cdom flags): strncmp'),
+  ('strncmp-no-nul-stop', 'src/mini.c', '    if (!x[i]) return 0;\n  }\n  return 0;\n}\n/* With bulk', '  }\n  return 0;\n}\n/* With bulk', LINK, 'FAIL string.h (cdom flags): strncmp'),
+  ('strncmp-n-off-by-one', 'src/mini.c', 'int strncmp(const char *a, const char *b, size_t n) {\n  const unsigned char *x = (const unsigned char *)a, *y = (const unsigned char *)b;\n  for (size_t i = 0; i < n;', 'int strncmp(const char *a, const char *b, size_t n) {\n  const unsigned char *x = (const unsigned char *)a, *y = (const unsigned char *)b;\n  for (size_t i = 0; i <= n;', LINK, 'FAIL string.h (cdom flags): strncmp'),
+  ('strncmp-n-short', 'src/mini.c', 'int strncmp(const char *a, const char *b, size_t n) {\n  const unsigned char *x = (const unsigned char *)a, *y = (const unsigned char *)b;\n  for (size_t i = 0; i < n;', 'int strncmp(const char *a, const char *b, size_t n) {\n  const unsigned char *x = (const unsigned char *)a, *y = (const unsigned char *)b;\n  for (size_t i = 0; i + 1 < n;', LINK, 'FAIL string.h (cdom flags): strncmp'),
+  ('strncmp-sign-flipped', 'src/mini.c', 'if (x[i] != y[i]) return x[i] - y[i];\n    if (!x[i])', 'if (x[i] != y[i]) return y[i] - x[i];\n    if (!x[i])', LINK, 'FAIL string.h (cdom flags): strncmp'),
   # a library's I/O: cd_ws_open_cb
   ('wscb-open-to-hooks', 'src/cdom_net.c', '  if (!t) cd_on_ws_open(id);\n', '  if (1) cd_on_ws_open(id);\n', UNIT, 'FAIL cd_ws_open_cb'),
   ('wscb-msg-to-hooks', 'src/cdom_net.c', '  if (!t) cd_on_ws_msg(id, p, len);\n', '  if (1) cd_on_ws_msg(id, p, len);\n', UNIT, 'FAIL cd_ws_open_cb'),

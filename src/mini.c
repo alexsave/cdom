@@ -1,7 +1,8 @@
 /* The program's libc: its string functions (src/libc/string.h declares them) and snprintf and
  * vsnprintf (src/libc/stdio.h). Weak: an app that links its own
  * libc keeps its own, and links cleanly with this file.
- * memcmp and strlen: clang emits calls to them, and string.h sends them here.
+ * memcmp and strlen: clang emits calls to them, and string.h sends them here. strncmp is here for the
+ * libraries that call it (foolish's uttt_code.c).
  * memcpy, memmove, memset: string.h makes a call one memory.copy or memory.fill in place, so these
  * are reached only where a macro cannot be: a library that takes their address (&memcpy, a table of
  * copy functions) or names them in a file built without cdom's string.h, under -ffreestanding. They
@@ -22,6 +23,15 @@ __attribute__((weak, no_builtin)) size_t strlen(const char *s) {
   size_t n = 0;
   while (s[n]) n++;
   return n;
+}
+/* strncmp as C says: unsigned chars, stops at n or at the first NUL both strings share, n == 0 is 0. */
+__attribute__((weak, no_builtin)) int strncmp(const char *a, const char *b, size_t n) {
+  const unsigned char *x = (const unsigned char *)a, *y = (const unsigned char *)b;
+  for (size_t i = 0; i < n; i++) {
+    if (x[i] != y[i]) return x[i] - y[i];
+    if (!x[i]) return 0;
+  }
+  return 0;
 }
 /* With bulk memory the builtins lower to the instructions, never to a call (no recursion). */
 __attribute__((weak)) void *memcpy(void *restrict d, const void *restrict s, size_t n) { return __builtin_memcpy(d, s, n); }

@@ -12,19 +12,9 @@
 #include "../../src/cdom.h"
 #include "../../src/cdom_url.h"
 #include "uttt_code.h"
+#include <string.h>
 
 #define TICK_MS 600
-
-/* foolish's uttt_code.c calls strncmp, which cdom's libc does not have (src/libc/string.h): it is declared for every
- * file by compat.h (the Makefile's -include) and defined here. */
-int strncmp(const char *a, const char *b, size_t n) {
-  for (size_t i = 0; i < n; i++) {
-    unsigned char x = (unsigned char)a[i], y = (unsigned char)b[i];
-    if (x != y) return x < y ? -1 : 1;
-    if (!x) return 0;
-  }
-  return 0;
-}
 
 static UtttGame game;    /* the decoded game: all its plies */
 static int have;         /* a game is open */
