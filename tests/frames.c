@@ -101,6 +101,18 @@ EXPORT("tick_after") void tick_after(uint32_t ms) { cd_timer_cb(ms, tick, nullpt
 /* C sets the note field's value, and focuses the name field. */
 EXPORT("set_note") void set_note(void) { cd_set_str(ids[NOTE], "value", "from C"); cd_flush(); }
 EXPORT("focus_name") void focus_name(void) { cd_call(ids[NAME], "focus"); cd_flush(); }
+/* Two items, m1 and m2, on the list; then cd_move of m2 before a node of another parent (an error: nothing moves), and
+ * of m1 before itself (nothing moves). The list must keep its order, and draw. */
+static cd_id m1, m2;
+EXPORT("move_foreign") void move_foreign(void) {
+  cd_at(ids[LIST], CD_APPEND);
+  cd_open("li"); cd_text("m1"); cd_close(); m1 = cd_id_new(); cd_name_el(m1);
+  cd_open("li"); cd_text("m2"); cd_close(); m2 = cd_id_new(); cd_name_el(m2);
+  cd_at(CD_MOUNT, CD_APPEND);
+  cd_move(m2, ids[INC]);
+  cd_flush();
+}
+EXPORT("move_self") void move_self(void) { cd_move(m1, m1); cd_set_text_node_num(ids[COUNT], ++count); cd_flush(); }
 /* select on a checkbox, which has no selection to set. */
 EXPORT("select_check") void select_check(void) { cd_call(ids[CHECK], "select"); cd_flush(); }
 /* A trap after the count was set and flushed: the call into C never returns to the shim, which must recover. */

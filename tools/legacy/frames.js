@@ -294,8 +294,15 @@ function cf_unlink(x) {
   x.n = null;
   x.v = null;
 }
-/* insertBefore: x into parent before next (null: at the end). */
+/* insertBefore: x into parent before next (null: at the end). As the DOM's: x before itself stays where it is, and a
+ * next that is not a child of parent is an error (the DOM throws, shim/cdom.js's trap; here it is noted, and nothing
+ * moves), so no node ever links to itself or to another parent's children. */
 function cf_place(parent, x, next) {
+  if (next == x) return;
+  if (next && next.p != parent) {
+    cf_fail("cdom: insert before a node that is not a child of the parent");
+    return;
+  }
   cf_unlink(x);
   x.p = parent;
   if (next) {

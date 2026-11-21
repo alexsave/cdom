@@ -1014,6 +1014,8 @@ M = [
   ('frames-form-nested', 'tools/legacy/frames.js', ' nav main aside figure form ";', ' nav main aside figure ";', FRAMES, 'FAIL a form from C is a DIV'),
   ('frames-drawing-not-settled', 'tools/legacy/frames.js', '  if (!cf_drawing) return;\n  cf_drawing = 0;\n', '  if (!cf_drawing) return;\n', FRAMES, 'FAIL a throw while the shim draws does not lock the page'),
   ('frames-select-checkbox-throws', 'tools/legacy/frames.js', '      if (f.ss >= 0 && cf_isText(el.type) && el.setSelectionRange)', '      if (f.ss >= 0 && el.setSelectionRange)', FRAMES, 'FAIL cd_call(checkbox, "select") does not throw'),
+  ('frames-move-foreign', 'tools/legacy/frames.js', '  if (next && next.p != parent) {', '  if (false) {', FRAMES, "FAIL cd_move before another parent's node moves nothing"),
+  ('frames-move-self', 'tools/legacy/frames.js', '  if (next == x) return;\n', '', FRAMES, 'FAIL no result within 120 s'),  # the self-link hangs the draw, so the run's own deadline is the catch
   ('js11-try-allowed', 'tools/legacy/js11.mjs', "SwitchStatement: 'switch', DoWhileStatement: 'do-while', LabeledStatement: 'a label', TryStatement: 'try',", "SwitchStatement: 'switch', DoWhileStatement: 'do-while', LabeledStatement: 'a label',", JS11T, 'FAIL try { f(); } catch (e) {} is refused'),
   ('js11-literal-allowed', 'tools/legacy/js11.mjs', "ThrowStatement: 'throw', ObjectExpression: 'an object literal', ", "ThrowStatement: 'throw', ", JS11T, 'FAIL var o = {}; is refused'),
   ('js11-strict-equality-allowed', 'tools/legacy/js11.mjs', "    if (n.type === 'BinaryExpression' && (n.operator === '===' || n.operator === '!==')) add(n.operator, n);", '', JS11T, 'FAIL if (a === b) f(); is refused'),
