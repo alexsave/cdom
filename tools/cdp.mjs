@@ -238,6 +238,40 @@ const FRAMES_OLD = `
     'toggleAttribute', 'attachShadow', 'setHTMLUnsafe']) delete Element.prototype[k];
   delete ShadowRoot.prototype.innerHTML;
   for (const k of ['before', 'after', 'replaceWith']) delete CharacterData.prototype[k];
+  // Two flavours, by the top page's query string, for the caret: ?ie4, IE 4's fields (no selectionStart, End or
+  // setSelectionRange, but createTextRange and document.selection.createRange, TextRanges of character moves), and
+  // ?ns4, Netscape 4's (neither). Both keep select() and focus(), which both browsers have.
+  const caretQ = (() => { try { return window.top.location.search; } catch { return ''; } })();
+  const caretFlavour = /[?&]ie4(&|$)/.test(caretQ) ? 'ie4' : /[?&]ns4(&|$)/.test(caretQ) ? 'ns4' : '';
+  if (caretFlavour) {
+    const real = []; // [input's, textarea's]: no Map, and Reflect.apply, not call (IE 6's profile took both)
+    for (const C of [HTMLInputElement, HTMLTextAreaElement]) {
+      const p = C.prototype, d = (k) => Reflect.getOwnPropertyDescriptor(p, k);
+      real.push({ start: d('selectionStart').get, end: d('selectionEnd').get, set: p.setSelectionRange });
+      for (const k of ['selectionStart', 'selectionEnd', 'selectionDirection', 'setSelectionRange', 'setRangeText']) delete p[k];
+    }
+    const kind = (el) => el instanceof HTMLInputElement ? real[0] : el instanceof HTMLTextAreaElement ? real[1] : null;
+    if (caretFlavour === 'ie4') {
+      // A TextRange over a field: characters s to e of its value.
+      class TextRange {
+        constructor(el, s, e) { this.el = el; this.s = s; this.e = e; }
+        get text() { return this.el.value.substring(this.s, this.e); }
+        duplicate() { return new TextRange(this.el, this.s, this.e); }
+        collapse(start) { if (start === false) this.s = this.e; else this.e = this.s; }
+        moveStart(unit, n) { this.s = Math.max(0, Math.min(this.el.value.length, this.s + n)); if (this.s > this.e) this.e = this.s; return n; }
+        moveEnd(unit, n) { this.e = Math.max(0, Math.min(this.el.value.length, this.e + n)); if (this.e < this.s) this.s = this.e; return n; }
+        select() { const k = kind(this.el); if (k) Reflect.apply(k.set, this.el, [this.s, this.e]); }
+      }
+      for (const C of [HTMLInputElement, HTMLTextAreaElement]) C.prototype.createTextRange = function () { return new TextRange(this, 0, this.value.length); };
+      Reflect.defineProperty(Document.prototype, 'selection', { configurable: true, get() {
+        const doc = this;
+        return { createRange() {
+          const a = doc.activeElement, k = a && kind(a);
+          return k ? new TextRange(a, Reflect.apply(k.start, a, []), Reflect.apply(k.end, a, [])) : new TextRange({ value: '' }, 0, 0);
+        } };
+      } });
+    }
+  }
   const inner = Reflect.getOwnPropertyDescriptor(HTMLElement.prototype, 'innerText');
   Reflect.defineProperty(HTMLElement.prototype, 'innerText', { configurable: true, get: inner.get });
   delete P.attachEvent; delete P.detachEvent;`;
