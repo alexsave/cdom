@@ -1258,7 +1258,7 @@ M = [
   ('js1c-slicing-ignored', 'tools/js1c.c', 'if(k==0){JN=n;return 1;}', 'if(k==0&&k==1){JN=n;return 1;}', JS1, 'FAIL sliced at 50 steps'),
   ('js1c-byte-sign', 'tools/js1c.c', '"function JLbs(a){return JM[a>>2]<<(24-((a&3)<<3))>>24;}\\n"', '"function JLbs(a){return JM[a>>2]<<(24-((a&3)<<3))>>>24;}\\n"', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-subnormal-bits', 'tools/js1c.c', 'm=x*JP2(1022)*4503599627370496', 'm=x*JP2(1021)*4503599627370496', JS1, 'FAIL every export agrees with wasm'),
-  ('js1c-memmove-forwards', 'tools/js1c.c', 'if(d<=s){for(i=0;i<n;i++)JWb', 'if(1){for(i=0;i<n;i++)JWb', JS1, 'FAIL every export agrees with wasm'),
+  ('js1c-memmove-forwards', 'tools/js1c.c', 'if(d<=s){for(i=0;i<n;i=i+1)JWb', 'if(1){for(i=0;i<n;i=i+1)JWb', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-bound-too-low', 'tools/js1c.c', '  int bound = 4 + hmax;', '  int bound = 1 + hmax;', FRAMES, "FAIL js1c: a click, a link and growing the list by 5 reach JavaScript depth"),
   ('js1c-writes-strict-equality', 'tools/js1c.c', 'static const char *ops[] = { "==", "!="', 'static const char *ops[] = { "===", "!="', JS1, 'is not JavaScript 1.0: ==='),  # tests/build.sh stops at the gate
   ('js1c-page-compares-nothing', 'tools/js1.mjs', 'if(got==CE[I])', 'if(got!=CE[I])', JS1, 'FAIL tests/out/js1diff.html runs to its end and agrees'),
