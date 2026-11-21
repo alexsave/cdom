@@ -59,7 +59,7 @@ if (process.argv[2] === 'page') {
 ${lines.join('\n')}
 var NC=${cases.length},I=0,OK=0,L="",O=0,T0=0,R0="";
 function out(v){L=L+","+v;}
-function show(s){document.forms[0].elements[0].value=document.forms[0].elements[0].value+s+"\\n";}
+function show(s){document.forms[0].elements[0].value=document.forms[0].elements[0].value+s+"\\r\\n";}
 function now(){var d=new Date();return d.getTime();}
 function finish(r){var got,ms;if(O.js1_trap)r="trap";got=r+L;ms=now()-T0;
 if(got==CE[I]){OK++;show("ok   "+CN[I]+"("+CA[I]+","+CB[I]+") "+ms+" ms");}
@@ -201,8 +201,9 @@ ok(J.o.js1_trap === 1 && sp === 0, `a trap 30 calls down puts the explicit stack
   ok(hole < 0 && got === pages, `every word of the initial memory (${pages} pages) and of memory.grow's 2 new pages is written${hole < 0 ? '' : `: word ${hole} is not`}`);
 }
 
-// Netscape 3.04 converts to 32 bits right only from -2^31 to 2^32 - 1, and gives NaN outside (x | 0, x >>> 0, x & 255,
-// x << 1 and the rest: tests/probe-js1e.html, docs/js1-compile-design.md section 12). Every case again on a copy of the
+// Netscape 3.04 converts to 32 bits right only from -2^31 to 2^32 - 1, and only an integer: it gives NaN outside that
+// range (x | 0, x >>> 0, x & 255, x << 1 and the rest: tests/probe-js1e.html) and for a fraction (7 / 3 | 0, js1diff.html
+// on Netscape 3.04; docs/js1-compile-design.md section 12). Every case again on a copy of the
 // file whose every bitwise operand goes through a check that throws outside that range, as Netscape 3 would answer NaN.
 {
   const src = fs.readFileSync(js1File, 'utf8'), ins = [];
@@ -220,7 +221,7 @@ ok(J.o.js1_trap === 1 && sp === 0, `a trap 30 calls down puts the explicit stack
   let t = src;
   for (const [at, text] of ins) t = t.slice(0, at) + text + t.slice(at);
   const ns3File = path.join(out, 'js1diff.ns3.js');
-  fs.writeFileSync(ns3File, 'function J3c(x){if(typeof x=="number"&&!(x>=-2147483648&&x<4294967296))throw new Error("Netscape 3 NaN: "+x);return x;}\n' + t);
+  fs.writeFileSync(ns3File, 'function J3c(x){if(typeof x=="number"&&!(x>=-2147483648&&x<4294967296&&x==Math.floor(x)))throw new Error("Netscape 3 NaN: "+x);return x;}\n' + t);
   const N = loadJs1(ns3File, { count: false });
   const W3 = await loadWasm(wasmFile);
   let nok = 0, nfirst = null;
@@ -234,7 +235,7 @@ ok(J.o.js1_trap === 1 && sp === 0, `a trap 30 calls down puts the explicit stack
     else if (!nfirst) nfirst = `${name}(${args}): ${err || 'differs'}`;
   }
   fs.unlinkSync(ns3File);
-  ok(nok === CASES.length && ins.length > 100, `every case agrees with every bitwise operand in Netscape 3's range, -2^31 to 2^32 - 1 (${ins.length / 2} operands checked): ${nok} of ${CASES.length}${nfirst ? `\n  first: ${nfirst}` : ''}`);
+  ok(nok === CASES.length && ins.length > 100, `every case agrees with every bitwise operand an integer in Netscape 3's range, -2^31 to 2^32 - 1 (${ins.length / 2} operands checked): ${nok} of ${CASES.length}${nfirst ? `\n  first: ${nfirst}` : ''}`);
 }
 
 // Netscape 2.02 makes o[0] the first property set by name on o (main's tests/probe-js1d.html: o.A = 1; o["0"] = 52
