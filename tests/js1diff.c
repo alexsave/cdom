@@ -175,6 +175,10 @@ EXPORT("deeptrap") int deeptrap(int n) {
 EXPORT("grow") int grow(int n) { return (int)__builtin_wasm_memory_grow(0, (unsigned)n); }
 /* A word, a byte and a half of the heap that nothing wrote (wasm reads 0): js1c writes only the words below __heap_base on
  * the engines that read a missing word as 0, so these read one that does not exist (tools/js1.mjs). k counts from __heap_base. */
+/* Data words at and above 2^31: Netscape 3.04's parseInt keeps a value only up to 2147483647, so js1c writes a data word as a signed one. */
+static const unsigned bigwords[] = {0xdeadbeefu, 0x80000000u, 0xffffffffu, 0x7fffffffu, 0xcafe1234u, 3396446046u};
+EXPORT("bigword") int bigword(int k) { return (int)bigwords[k]; }
+EXPORT("bigbyte") int bigbyte(int k) { return ((const unsigned char *)bigwords)[k]; }
 extern unsigned char __heap_base;
 EXPORT("peek") int peek(int k) { return ((volatile int *)(&__heap_base + 64))[k]; }
 EXPORT("peekb") int peekb(int k) { return ((volatile unsigned char *)(&__heap_base + 64))[k]; }

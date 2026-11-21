@@ -145,6 +145,8 @@ for (const n of [0, 1, 10, 300, 1000]) CASES.push(['rec', n]);
 for (const a of [0, 1, 3, -1, 200, 77777]) CASES.push(['mem', a]);
 for (const n of [0, 1, 5, 100]) CASES.push(['ind', n]);
 for (const n of [0, 1, 11, 50, 200]) CASES.push(['sw', n]);
+for (let k = 0; k < 6; k++) CASES.push(['bigword', k]);
+for (let k = 0; k < 24; k += 5) CASES.push(['bigbyte', k]);
 for (const k of [0, 1, 7, 1000, 6000, 9001]) CASES.push(['peek', k], ['peekb', k * 3 + 1], ['peekh', k * 2 + 1]);
 CASES.push(['ind_bad', 1], ['trap', 0], ['trap', 1], ['divz', 7, 2], ['divz', 7, 0], ['divz', -0x80000000, -1], ['deeptrap', 50], ['ints', 3, 4]);
 
@@ -312,6 +314,15 @@ for (const f of fs.readdirSync(out).filter((f) => f.endsWith('.js1.js'))) {
   (function w(n) { if (!n || typeof n.type !== 'string') return; if (n.type === 'BinaryExpression' && n.operator === '/' && n.right.type === 'Literal' && n.right.value === 0) byZero.push(n.loc.start.line); for (const k of Object.keys(n)) { const v = n[k]; if (Array.isArray(v)) v.forEach(w); else if (v && typeof v.type === 'string') w(v); } })(acorn.parse(src, { ecmaVersion: 5, locations: true }));
   ok(byZero.length === 0, `${f} divides by no literal 0${byZero.length ? `: ${byZero.length}, the first on line ${byZero[0]}` : ''}`);
   ok(incdec.length === 0, `${f} has no ++ or --${incdec.length ? `: ${incdec.length}, the first on line ${incdec[0].loc.start.line}` : ''}`);
+  // Netscape 3.04's parseInt keeps a value only up to 2^31 - 1 (it gave 2147483647 for 3396446046, the string table's stamp, in
+  // uttt's data: docs/frames-design.md section 15), so a data word is written as a signed int32: no token of a Jdz string is above it.
+  const big = [];
+  for (const m of src.matchAll(/Jdz\("([^"]*)"\)/g)) for (const t of m[1].split(',')) {
+    if (!t) continue;
+    const v = parseInt(t.includes('.') ? t.slice(t.indexOf('.') + 1) : t, 36);
+    if (!(v >= -2147483648 && v <= 2147483647)) big.push(t);
+  }
+  ok(big.length === 0, `${f}: every data word is an int32 in base 36, none above 2^31 - 1${big.length ? `: ${big.slice(0, 3).join(' ')}` : ''}`);
 }
 // Time slicing: with a budget, the export pauses and Jmore() goes on, to the same result.
 {
