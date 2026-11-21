@@ -183,6 +183,7 @@ Attributes kept: id, href, src, alt, title, width, height, align, valign, border
 - Canvas, SVG, images from bytes, WebSocket, fetch, IndexedDB, audio, files, jobs, share and the clipboard: each import answers as the API's unsupported case (0, or nothing), and the shim notes it in cdomF.errors.
 - cd_url_go (no History API): 0.
 - A C trap is not thrown out of the call (JavaScript 1.1 has no throw); it ends the call, and the next entry recovers (section 4).
+  A trap in cd_start (in cd_main) is noted too ("cd_start did not return"), and the frame is still drawn with what cd_main flushed, or the frameset written over a page with a BODY tag: the start sets its first poll before calling C.
 - Errors from the shim go to cdomF.errors and window.status, not window.onerror.
 - Flicker on each rewrite, and on Netscape 2 a history entry a rewrite.
 - Text outside Latin-1 on browsers without String.fromCharCode (NS 2 and 3, IE 3): shown as "?".

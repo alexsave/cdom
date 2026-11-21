@@ -1533,7 +1533,12 @@ function cf_onRaf(token) {
 /* Waits for the frame, and draws what waited: a draw before the frame was there, or one put off by cf_LATER. A
  * frameset the parser ignored leaves no frame once the page has loaded (or, with no readyState, after 50 waits): the
  * frameset then goes over the page. */
+var cf_startDone = 1;
 function cf_poll() {
+  if (!cf_startDone) {
+    cf_startDone = 1;
+    cf_fail("cdom: cd_start did not return (a trap in cd_main?)");
+  }
   if (cf_drawing) return;
   if (!cf_view()) {
     cf_waits++;
@@ -1674,7 +1679,11 @@ function cdomFramesStart(factory, mount, env, ready, options) {
   cf_started = 1;
   document.write(cf_FRAMESET);
   x = cf_wrap(cf_raw);
-  cf_exp("cd_start", cf_seed(options));
+  /* Set before the start, so a trap in it (which throws out of here) still has the frame drawn, or the frameset
+   * written over the page, by cf_poll, which notes the trap. */
   setTimeout("cdomF.p()", 0);
+  cf_startDone = 0;
+  cf_exp("cd_start", cf_seed(options));
+  cf_startDone = 1;
   if (ready) ready(x);
 }
