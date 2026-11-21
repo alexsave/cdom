@@ -83,6 +83,8 @@ async function click(sel) {
   if (x < 0) return;
   await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y, 1, 'left'); await sleep(20);
   await mouse('mouseReleased', x, y, 0, 'left'); await sleep(40);
+  // On ?ns2 a click's draw comes from a timer, cf_LATER (250 ms) after the handler (docs/frames-design.md 17).
+  if (flavour === '&ns2') await sleep(320);
 }
 async function until(expr, tries = 100) {
   const now = async () => { try { return await E(expr); } catch { return false; } };
