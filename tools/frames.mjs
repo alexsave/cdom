@@ -216,6 +216,30 @@ run: try {
   ok((await draws()) === d + 1 && (await E(`${F}.querySelectorAll("#list li").length`)) === 5, `an export of 15 ops (5 items) draws once: ${(await draws()) - d}`);
   ok((await E('history.length')) === h0, `no redraw added a history entry: ${h0} then ${await E('history.length')}`);
   await matches('at the end');
+  // cd_seed (the seed exception of 2026-11-20, tools/seeds.mjs): the page passed options.seed = 7, so it is cd_seed; without one
+  // cf_seed draws from the engine's generator and the clock, stubbed here so the answers are fixed.
+  ok((await E('X.seed()')) === 7, `cd_seed is options.seed where the page passes one: ${await E('X.seed()')}`);
+  const seeds = await E(`(function () {
+    var D = Date, R = Math.random, out = new Array(), clock = 1000, rnd = 0.25;
+    Date = function () { this.getTime = function () { return clock; }; };
+    Math.random = function () { return rnd; };
+    out[0] = cf_seed(new Object());
+    out[1] = cf_seed(null);
+    clock = 99999; out[2] = cf_seed(new Object());
+    clock = 1000; rnd = 0.75; out[3] = cf_seed(new Object());
+    rnd = 0; clock = 5; out[4] = cf_seed(new Object());
+    Math.random = null; clock = 1000; out[5] = cf_seed(new Object()); clock = 2000; out[6] = cf_seed(new Object());
+    clock = 1000; Math.random = function () { return NaN; }; out[7] = cf_seed(new Object());
+    var fixed = new Object(); fixed.seed = 7; out[8] = cf_seed(fixed);
+    Date = D; Math.random = R;
+    return out.join(",");
+  })()`);
+  const sd = seeds.split(',').map(Number);
+  ok(sd.slice(0, 8).every((n) => Number.isInteger(n) && n >= 0 && n <= 0xffffffff), `cd_seed without options.seed is a 32-bit unsigned number: ${seeds}`);
+  ok(sd[0] === sd[1] && sd[0] !== sd[2], `two boots with a different clock give different seeds: ${sd[0]} and ${sd[2]}`);
+  ok(sd[0] !== sd[3], `and a different draw from the generator: ${sd[0]} and ${sd[3]}`);
+  ok(sd[4] === 5 && sd[5] === 1000 && sd[6] === 2000, `with no generator the clock alone, no throw: ${sd[5]}, ${sd[6]}`);
+  ok(sd[7] === 1000 && sd[8] === 7, `a broken generator gives the clock alone, and options.seed still wins: ${sd[7]}, ${sd[8]}`);
   ok(!(await E('cdomF.errors.length')), `no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
   ok(!errs().length, `no page exceptions: ${JSON.stringify(errs())}`);
 
