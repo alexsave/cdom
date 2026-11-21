@@ -280,8 +280,13 @@ tools/frames.mjs, under LEGACY=frames (CI runs it beside the other levels), chec
 - no redraw adds a history entry; no error noted, no page exception;
 - a trap in C is thrown out of the call with nothing drawn, and the next click recovers;
 - frames-body.html (a BODY tag) runs through the fallback, and a click there reaches C.
+- markup characters in a text, an attribute, a textarea's value and an option's text read back from the frame as themselves;
+- a click held 600 ms that leaves an edited field still reaches C; two radios of one name are one group; a form from C is a DIV, and the fields in and after it stay the one FORM's; tags in capitals are the same tags, and one that is not letters and digits is a SPAN;
+- a throw during a draw (cd_call(checkbox, "select"), a focus that throws) does not lock the page; cd_move before itself or before another parent's node moves nothing;
+- a trap in cd_start is noted, and the frame still drawn, on frames.html and frames-body.html (?trapstart);
+- typing in the middle of a field C answers keeps the caret, on IE 4 (?ie4: a draw a key, the caret through document.selection) and Netscape 4 (?ns4: no draw until the field is left).
 
-tools/js11.mjs checks each rule of the gates on code planted for it.
+tools/js11.mjs checks each rule of the gates on code planted for it, terser's output of a new expression's member, and frames.js itself before and after terser.
 The other levels are unaffected: tools/legacy.mjs passes on '', 1, ie9, ie6 and below, LEGACY=ie6 tools/fuzz.mjs, tools/es3.mjs, tools/words.mjs and tools/legacyfresh.mjs pass, and every built file of the other tiers (cdom.legacy.js, cdom.legacy-ie9.js, cdom.legacy-ie6.js, each app's .wasm.js and .wasm.ie9.js) is byte-identical to main's.
 The pages that inline the boot (legacy.html, listfuzz.html) differ by the boot alone: two scripts now, where there was one.
-tools/mutate.py has 37 mutants for this tier (frames-, js11- and js10-), each caught by its own assertion.
+tools/mutate.py has 59 mutants for this tier (frames-, js11- and js10-), each caught by its own assertion.
