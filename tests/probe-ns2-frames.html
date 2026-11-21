@@ -25,10 +25,6 @@ function body5k(tag) {
   }
   return s;
 }
-function mk(name, v) {
-  K = K + 1;
-  return '<IMG SRC="' + BASE + '/mark/' + TAG + '/p-' + K + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>';
-}
 function draw(tag, extra) {
   var d = parent.cdomView.document;
   d.open("text/html", "replace");
@@ -39,24 +35,34 @@ function draw(tag, extra) {
   d.close();
   return b.length;
 }
-// the shape of the tier's rewrite loop: R rewrites one after another, every document carrying a mark
+// the shape of the tier's rewrite loop: R rewrites one after another.  Images in a rewritten view are not requested in
+// Netscape 2, so the loop reports by navigating the view to /mark/ twice: the server's log time between the two hits is
+// the wall time of the 12 rewrites, and the engine's own ms (a clock that runs slow in this guest) is in the second URL.
 var R = 0;
+var RT0 = 0;
 function loop() {
   R = R + 1;
-  var len = draw("loop" + R, mk("rewrite" + R, "len"));
+  var len = draw("loop" + R, "<P>loop " + R + " of 12");
   if (R < 12) setTimeout("loop()", 1);
+  else parent.cdomView.location.href = BASE + "/mark/" + TAG + "/p-" + (K + 2) + "-loopend-engine-ms-" + (nowms() - RT0);
+}
+function nowms() {
+  var d = new Date();
+  return d.getTime();
 }
 function f(who) {
   HITS = HITS + 1;
   // a rewrite from inside the call: the document that holds the link that called is replaced
-  var len = draw("hit" + HITS, mk("hit" + who, "hits" + HITS + "-len-" + body5k("x").length));
+  var len = draw("hit" + HITS, "<P>hit " + who + " count " + HITS + " body " + body5k("x").length + " bytes");
   if (who == 2) {
     R = 0;
+    RT0 = nowms();
+    parent.cdomView.location.href = BASE + "/mark/" + TAG + "/p-" + (K + 1) + "-loopstart";
     setTimeout("loop()", 1);
   }
 }
 function started() {
-  var len = draw("first", mk("appStarted", "name=" + window.name + "-frames=" + parent.frames.length));
+  var len = draw("first", "<P>app started, name " + window.name + ", frames " + parent.frames.length);
 }
 if (window.name != "cdomApp") {
   document.write('<FRAMESET ROWS="*,1" BORDER=0 FRAMEBORDER=0 FRAMESPACING=0><FRAME NAME="cdomView" SRC="about:blank" MARGINWIDTH=8 MARGINHEIGHT=8><FRAME NAME="cdomApp" SRC="' + location.pathname + '?' + TAG + '&cdomApp" SCROLLING=no NORESIZE></FRAMESET>');
