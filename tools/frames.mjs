@@ -169,6 +169,9 @@ run: try {
   ok(await E('typeof parent.cdomF === "undefined" && !!window.cdomF && /\\/frames\\.app\\.html$/.test(location.pathname) && location.search === ""'),
     'the shim lives in the app frame (cdomApp: the page\'s app document, with the page\'s query), not in the top window');
   ok((await E('X.url_search()')) === 0, `the app reads the top window's URL, which has no query here: ${await E('X.url_search()')} bytes`);
+  // The path too: the app frame's is frames.app.html, the top window's frames.html (what cf_op_url_read encodes, caught).
+  const urlPath = await E('(function () { var got = null, real = cf_encode; cf_encode = function (t) { got = t; cf_wrote = 0; }; cf_op_url_read(0, 0, 0); cf_encode = real; return got; })()');
+  ok(urlPath === '/frames.html', `the app reads the top window's URL path, not its frame's: ${JSON.stringify(urlPath)}`);
   ok((await draws()) === 1, `cd_main drew once: ${await draws()}`);
   const h0 = await ET('history.length');
   const errs = (x) => b.exceptions.filter((e) => !/ReferenceError: TextDecoder is not defined$/.test(e));
