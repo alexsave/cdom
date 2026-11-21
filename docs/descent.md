@@ -1026,3 +1026,54 @@ For a still picture use rows of IMG with BR (a table is slower and fails past ab
 A dithered photo at 1 pixel is 184,320 tags and 141 s; at 4 pixels (144 x 80 cells) it is 11 s, at 8 pixels 6 s.
 For something that updates, a whole-picture rewrite costs what a load costs (5.5 s at 72 x 40 cells, 11.6 s at 144 x 80), so a few redraws a second are out of reach; one redraw every 5 to 10 seconds is what a full small picture allows, and a change confined to a tile of a 4 x 4 split costs 1.3 to 3 s.
 Cells that react to a click cost a link each: at 72 x 40 one link per run or per shape makes a clickable picture of about 10 KB that draws in 2 s, and a link per cell 215 KB and 4.4 s.
+
+## Painting a modern page
+
+Alex's question: can that framebuffer paint a modern website?
+The page is designed as plain HTML and CSS in design/ns2paint/ (a design file, to be deleted once this is done): a gradient hero, rounded cards with soft shadows, a badge over a card's corner, an app window over the hero's bottom edge, anti-aliased sans-serif text at several sizes, pill buttons and a row of icons.
+None of it is anything Netscape 2 can draw: tools/paintshots.sh renders each page in headless Chrome at its exact size (tools/paintshot.mjs, which also writes the box of every element with a data-link attribute), and tools/gen_ns2_paint.py turns each picture into rows of stretched 1x1 GIFs.
+Three pages: still (592 x 320, one screen, the largest picture that needs no scrollbar), tall (the whole long page, 1,570 rows, at the width that stays exact beside the scrollbar) and details (592 x 320, where the links lead).
+The generator:
+
+- picks a palette for the picture, not the cube: the 64 most frequent colours of the three pages together exactly (paper, card white, ink, the tints), then a max-coverage cut of the other pixels to 256 in all; no dithering.
+  A median cut over everything moved the paper to a mint tint and left errors of 78 levels on the chart's bars; max coverage alone did the paper too; anchors plus max coverage keep the flat colours exact and the worst pixel within 24 levels.
+- writes one IMG per horizontal run, and one line of HEIGHT=k for k identical rows in a row (they are few here: the gradient makes most rows differ).
+- splits the runs at the edges of each link box and puts the pieces inside a box in one `<A HREF="details.html" onMouseOver="s(2); return true">`, BORDER=0 on the IMGs; s(i) sets the status bar to the box's text.
+- has three text treatments: aa (the text as Chrome draws it), snap3 (each text pixel snapped to background, half or ink) and bw (text with no anti-aliasing: each text pixel is its background or its ink).
+  A text pixel is one that differs between the normal render and a render with every glyph and icon transparent (the class notext of paint.css), its ink the pixel of its 5 x 5 neighbourhood farthest from its own background.
+
+What the generator gives, before any run (tags are IMG tags, links are A tags, bytes the page's size; the palette is per text treatment, shared by its three pages):
+
+| variant | page | colours | tags | links | bytes |
+| --- | --- | --- | --- | --- | --- |
+| aa | still | 154 | 23,540 | 106 | 804,959 |
+| aa | tall | 218 | 81,665 | 172 | 2,751,558 |
+| aa | details | 125 | 19,709 | 63 | 669,205 |
+| snap3 | still | 144 | 19,493 | 106 | 668,165 |
+| snap3 | tall | 212 | 67,312 | 172 | 2,271,894 |
+| bw | still | 138 | 17,484 | 106 | 600,163 |
+| bw | tall | 208 | 58,933 | 172 | 1,991,445 |
+| bw | details | 107 | 13,867 | 63 | 473,131 |
+| no text at all (the text-free render) | still | 122 | 10,658 | | 369,162 |
+| no text at all | tall | 181 | 29,703 | | 1,015,201 |
+| aa on the fixed cube palette of the probes | still | 86 | 17,423 | | 600,209 |
+
+So text is 55 percent of the still page's tags (12,882 of 23,540) and 64 percent of the tall page's; dropping its anti-aliasing (bw) cuts the still page's tags by 26 percent, snapping to 3 levels by 17 percent.
+Merging identical rows saves almost nothing (23,563 tags unmerged against 23,540).
+The cube palette has fewer tags (17,423) because it has fewer colours, but it shifts every tint and bands the gradient harder.
+
+### What I expect, written before the first run
+
+- P1, time.
+  From the probes: a row costs about 0.7 ms a tag after a fixed 3 s, and a first palette about 80 ms a colour, the fetches overlapping the layout.
+  So the tags decide: still aa 20 s (15 to 25), snap3 17 s, bw 15 s; tall aa 60 s (45 to 75), bw tall 45 s; details after a click 14 to 17 s.
+  Falsifier: still aa under 12 s or over 30 s, or the tall page not drawn in 3 minutes.
+- P2, what the text costs: its share of the time is its share of the tags less the fixed cost, so bw saves 20 to 25 percent of the still page's time (about 5 s) and snap3 about 13 percent.
+  Falsifier: bw no faster than aa (the time is the palette's fetch, as for flat art at 8 and 4 pixels).
+- P3, the scroll-safe width: a page grew a scrollbar past 592 to 600 pixels of picture and the scrollbar takes 16, so with the scrollbar there the widest exact picture is 580 (576 to 584); 576 stays exact, 584 and wider wrap.
+  The tall page (576 wide) is exact at every scroll position: 0 pixels different at the top, the middle and the bottom.
+  Falsifier: 576 wraps, or a scrolled view differs from the picture.
+- P4, exactness: every page is pixel-exact against its quantised picture (0 pixels different in the view), links included (the probes found links round runs add no pixel).
+- P5, the links: a tap on the pill opens details.html (its GET in the server's log within 1.5 s of the tap), and the details page is exact; onMouseOver puts the box's text in the status bar within 0.5 s of the pointer arriving.
+  The details page shares the palette: Netscape 2 ignores the server's no-store for images it already holds, so fewer than 30 GIF requests for it after the still page.
+  Falsifier: the click does nothing, the status shows the URL, or the details page asks for 100 or more GIFs again.
