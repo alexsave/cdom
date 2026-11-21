@@ -33,6 +33,60 @@ if (process.argv[2] === 'bench') {
   console.log(Number(process.hrtime.bigint() - t0) / +reps / 1e6);
   process.exit(0);
 }
+// node tools/js1.mjs page: tests/out/js1diff.html, the page for the real browsers (docs/js1-compile-design.md,
+// section 11). Netscape 2 has no SCRIPT SRC, so js1diff.wasm.js1.js is inlined; a subset of the cases, with wasm's
+// answers computed here, runs one a tick (setTimeout with a string), the long ones sliced, and the page writes each
+// result, its time and the tally into a TEXTAREA. All of it JavaScript 1.0, checked by the gate.
+if (process.argv[2] === 'page') {
+  const dir = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
+  const log = [];
+  const { instance } = await WebAssembly.instantiate(fs.readFileSync(path.join(dir, 'js1diff.wasm')), { env: { out: (v) => log.push(v | 0) } });
+  const x = instance.exports;
+  const cases = [['ints', 7, 3], ['ints', -0x80000000, -1], ['ints', 0x55aa55aa, 37], ['ints', -123456789, 0], ['i64s', 0x12345678, 0x9abcdef0 | 0, 0, 17],
+    ['i64s', -5, 12345, 7, -99], ['i64s', 0x7fffffff, -1, 0, 3], ['dbl', 7, 3], ['dbl', -2000000000, 1000], ['dbl', 123456, -4], ['mem', 3], ['mem', 77777],
+    ['ind', 100], ['sw', 200], ['loop', 1000], ['rec', 100], ['rec', 299], ['rec', 1000], ['loop', 100000], ['trap', 0], ['trap', 1], ['divz', 7, 0],
+    ['divz', -0x80000000, -1], ['ind_bad', 1], ['deeptrap', 300], ['rec', 5000]];
+  const lines = [];
+  cases.forEach(([n, ...a], i) => {
+    log.length = 0;
+    let r;
+    try { r = String(x[n](...a)); } catch (e) { r = 'trap'; }
+    const args = [0, 0, 0, 0].map((d, k) => (a[k] === undefined ? 0 : a[k]));
+    lines.push(`CN[${i}]="${n}";CA[${i}]=${args[0]};CB[${i}]=${args[1]};CC[${i}]=${args[2]};CD[${i}]=${args[3]};CE[${i}]="${r + log.map((v) => ',' + v).join('')}";`);
+  });
+  const js1 = fs.readFileSync(path.join(dir, 'js1diff.wasm.js1.js'), 'utf8');
+  const test = `var CN=new Object(),CA=new Object(),CB=new Object(),CC=new Object(),CD=new Object(),CE=new Object();
+${lines.join('\n')}
+var NC=${cases.length},I=0,OK=0,L="",O=0,T0=0,R0="";
+function out(v){L=L+","+v;}
+function show(s){document.forms[0].elements[0].value=document.forms[0].elements[0].value+s+"\\n";}
+function now(){var d=new Date();return d.getTime();}
+function finish(r){var got,ms;if(O.js1_trap)r="trap";got=r+L;ms=now()-T0;
+if(got==CE[I]){OK++;show("ok   "+CN[I]+"("+CA[I]+","+CB[I]+") "+ms+" ms");}
+else show("FAIL "+CN[I]+"("+CA[I]+","+CB[I]+") "+ms+" ms: got "+got.substring(0,120)+" want "+CE[I].substring(0,120));
+I++;setTimeout("step()",0);}
+function more(){if(O.js1_more()){setTimeout("more()",0);return;}finish(O.js1_result);}
+function step(){var r;if(I>=NC){show(OK+" of "+NC+" agree with wasm");document.forms[0].elements[1].value=OK+" of "+NC;return;}
+L="";T0=now();JB=1000;r=O[CN[I]](CA[I],CB[I],CC[I],CD[I]);if(O.js1_paused){setTimeout("more()",0);return;}finish(r);}
+function start(){var env=new Object(),imp=new Object();env.out=out;imp.env=env;O=cdomFactoryJs1(imp);
+show(navigator.userAgent);show("loaded; "+NC+" cases, each a tick, the driver sliced at 1000 steps");setTimeout("step()",0);}
+`;
+  const bad = lacks10(js1 + test);
+  if (bad.length) { console.error('js1.mjs page: not JavaScript 1.0: ' + bad.slice(0, 5).join(', ')); process.exit(1); }
+  const html = `<HTML><HEAD><TITLE>js1c differential test</TITLE></HEAD>
+<BODY>
+<H3>js1c: tests/js1diff.c compiled to JavaScript 1.0 against wasm's answers</H3>
+<FORM><TEXTAREA NAME="t" ROWS="32" COLS="100"></TEXTAREA><BR><INPUT TYPE="text" NAME="tally" SIZE="20" VALUE="running"></FORM>
+<SCRIPT LANGUAGE="JavaScript">
+${js1}</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+${test}start();
+</SCRIPT>
+</BODY></HTML>
+`;
+  fs.writeFileSync(path.join(dir, 'js1diff.html'), html);
+  process.exit(0);
+}
 const top = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const out = path.join(top, 'tests/out');
 let fails = 0;
@@ -140,6 +194,19 @@ for (const f of fs.readdirSync(out).filter((f) => f.endsWith('.js1.js'))) {
   ok(paused === 1 && steps > 10 && r === W.x.rec(1000), `sliced at 50 steps, rec(1000) pauses (${paused}), goes on ${steps} times and gives wasm's ${r}`);
 }
 
+// tests/out/js1diff.html, the real browsers' page, run here with a stand-in document: every case agrees.
+{
+  const html = fs.readFileSync(path.join(out, 'js1diff.html'), 'utf8');
+  const scripts = [...html.matchAll(/<SCRIPT LANGUAGE="JavaScript">\n([\s\S]*?)<\/SCRIPT>/g)].map((m) => m[1]);
+  const ta = { value: '' }, tally = { value: '' }, q = [];
+  const ctx = { window: {}, navigator: { userAgent: 'node' }, document: { forms: { 0: { elements: { 0: ta, 1: tally } } } }, setTimeout: (s) => q.push(s), Date };
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  for (const sc of scripts) vm.runInContext(sc, ctx);
+  for (let n = 0; q.length && n < 1e6; n++) vm.runInContext(q.shift(), ctx);
+  const m = /(\d+) of (\d+)/.exec(tally.value);
+  ok(scripts.length === 2 && m && m[1] === m[2], `tests/out/js1diff.html runs to its end and agrees: ${tally.value}${m && m[1] === m[2] ? '' : '\n' + ta.value.split('\n').filter((l) => l.startsWith('FAIL')).slice(0, 3).join('\n')}`);
+}
 if (process.env.JS1_MEASURE) await measure();
 console.log(fails ? `${fails} FAILED` : 'all ok');
 process.exit(fails ? 1 : 0);
