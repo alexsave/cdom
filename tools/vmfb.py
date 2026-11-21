@@ -6,7 +6,7 @@ and the screen (QEMU screendump, about 2 a second) until the page's end mark has
 STABLE seconds, or <wait> s have passed.  Prints, in the Mac's wall seconds from the page's GET: the end mark, the last image
 request, the last change of the screen, the request counts (all, distinct GIFs); saves shots/<name>.png (the screen at the
 end) and, unless --keep, ends the browser (every window and dialog closes).  A start that never asks for the page in 45 s is
-retried once.  The guest's own clock runs about 3 times slow; none of these times use it."""
+retried twice.  The guest's own clock runs about 3 times slow; none of these times use it."""
 import argparse, os, re, subprocess, sys, time
 sys.path.insert(0, "/Users/alex/VMs/ie6-xp")
 from PIL import Image
@@ -112,6 +112,11 @@ def run_once(page, d, wait, keep, shotname, hang):
             hung = True
             break
         if t_end is not None and last_change is not None and now - last_change > STABLE:
+            # a hung load can have asked for every image and still show a blank magenta view ("Waiting for reply"): not done
+            cur = im.crop((2, 54, 638, 430)) if im is not None else None
+            if cur is not None and page != "q1_view.html" and cur.getcolors(2) == [(636 * 376, (255, 0, 255))]:
+                hung = True
+                break
             done = True
             break
     t_stop = time.time()
@@ -139,7 +144,7 @@ def main():
     ap.add_argument("--dir", default=os.path.join(HERE, "..", "tests", "out"))
     a = ap.parse_args()
     shot = a.shot or ("ns2fb-" + a.page.replace(".html", ""))
-    for attempt in (1, 2):
+    for attempt in (1, 2, 3):
         r = run_once(a.page, a.dir, a.wait, a.keep, shot, a.hang)
         if r["got"]:
             break

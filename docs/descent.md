@@ -887,3 +887,19 @@ Q6, other limits.
 - Netscape 2 has a hard limit on the number of images in a page: the earlier probes put few images in a page, so nothing is known; I expect no hard limit below 10,000 (a 16 bit count would give 65,536), and broken-image icons only when the connection count runs out (it fetches each distinct GIF once, so the 256 are fine).
 - Layout time grows faster than the tag count past about 20,000 tags (the line is re-measured on each addition), so time per tag is not constant: the 4 px picture costs more than 4 times the 8 px picture per tag.
 - Memory: the 1 GB guest does not run out first; the limit is Netscape 2's own heap (16-bit-era allocator, a 32-bit build) at a few tens of MB.
+
+### Clickable cells, expected before its runs
+
+Alex's addition: wrap the cells in links, `<A HREF="javascript:..."><IMG ... BORDER=0></A>`, at three granularities on a flat pixel-art picture (a few coloured shapes): one link per cell, one per horizontal run, one per shape (every run of a shape shares one handler id).
+The page is tools/gen_probe_ns2_fb.py's `lk_*` family; a click is made with the QEMU tablet, the handler reports by navigating a frame to /mark/<id>, and the status text is read from the screen.
+
+- C1, a click on a cell calls the handler with the id of its link: right in all three granularities.
+  The handler is `javascript:h(7)` in the page's own frame (the earlier probes called a function of the same document that way), reported in a second frame as /mark/c<id>.
+  Falsifier: a click reaches the wrong id, or none (a link with a stretched image as its only content is not hit-tested on its pixels).
+- C2, BORDER=0 removes the link border: yes (Netscape 2 draws a 2 pixel border round a linked image without it, and honours BORDER=0 on IMG since 1.1).
+  Links keep the tiling gap-free: yes, a link adds no white space between tags; the picture is pixel-identical to the unlinked one.
+  Falsifier: any magenta or link-coloured pixel inside the picture.
+- C3, page size: a link adds about 30 bytes per tag (`<A HREF="javascript:h(123)">` and `</A>`) to the 40 of an IMG, so the page is 1.7 times the unlinked one per cell, and fewer tags (runs, shapes) mean a proportionally smaller page.
+  Load time: Netscape 2 keeps every link as an anchor object in the page's tables, so I expect 1.3 to 2 times the unlinked picture's time for the same tag count; per cell at 8 px (2,880 links) about 15 s against 5.9 s.
+- C4, onMouseOver on those links fires and sets the status text: yes (`onMouseOver="window.status='x'; return true"`); I expect the status bar to change within 1 s of the pointer arriving, and the cost not to depend on the granularity (one handler call).
+  Falsifier: the status does not change (onMouseOver is in the binary's event list, but not on an anchor around an image).
