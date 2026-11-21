@@ -1695,6 +1695,7 @@ function cdomFramesStart(factory, mount, env, ready, options) {
   setTimeout("cdomF.p()", 0);
   cf_startDone = 0;
   cf_exp("cd_start", cf_seed(options));
-  cf_startDone = 1;
+  /* The .js1.js build does not throw out of a trap: it returns with js1_trap set, and cf_poll notes it. */
+  if (!cf_raw.js1_trap) cf_startDone = 1;
   if (ready) ready(x);
 }
