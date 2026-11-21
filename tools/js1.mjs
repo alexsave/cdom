@@ -94,9 +94,11 @@ const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console
 
 // A js1c file in a fresh context: its factory's exports, the out() log, and the deepest JavaScript call depth seen
 // through the compiled functions, the driver, the export wrappers and the imports (each wrapped to count).
-export function loadJs1(file, { count = true } = {}) {
+// ns2: as Netscape 2.02 has it, an Array that is a plain object with no length, by which the file tells that engine (JZ).
+export function loadJs1(file, { count = true, ns2 = false } = {}) {
   const src = fs.readFileSync(file, 'utf8');
   const ctx = { window: {}, log: [] };
+  if (ns2) ctx.Array = function () { return new Object(); };
   vm.createContext(ctx);
   vm.runInContext(src, ctx, { filename: file });
   const st = { depth: 0, max: 0 };
@@ -143,6 +145,7 @@ for (const n of [0, 1, 10, 300, 1000]) CASES.push(['rec', n]);
 for (const a of [0, 1, 3, -1, 200, 77777]) CASES.push(['mem', a]);
 for (const n of [0, 1, 5, 100]) CASES.push(['ind', n]);
 for (const n of [0, 1, 11, 50, 200]) CASES.push(['sw', n]);
+for (const k of [0, 1, 7, 1000, 6000, 9001]) CASES.push(['peek', k], ['peekb', k * 3 + 1], ['peekh', k * 2 + 1]);
 CASES.push(['ind_bad', 1], ['trap', 0], ['trap', 1], ['divz', 7, 2], ['divz', 7, 0], ['divz', -0x80000000, -1], ['deeptrap', 50], ['ints', 3, 4]);
 
 const wasmFile = path.join(out, 'js1diff.wasm'), js1File = path.join(out, 'js1diff.wasm.js1.js');
@@ -177,7 +180,7 @@ ok(J.o.js1_trap === 1 && sp === 0, `a trap 30 calls down puts the explicit stack
 // on a fresh instance whose memory throws on a read of a word nothing wrote, as Netscape 2 does, and memory.grow's new
 // words too.
 {
-  const N = loadJs1(js1File, { count: false });
+  const N = loadJs1(js1File, { count: false, ns2: true });
   const strict = (o) => new Proxy(o, { get(t, k) { if (typeof k === 'string' && /^\d+$/.test(k) && !(k in t)) throw new Error(`${k} is not a number`); return t[k]; } });
   N.ctx.JM = strict(N.ctx.JM);
   let nok = 0, nfirst = null;
@@ -193,12 +196,37 @@ ok(J.o.js1_trap === 1 && sp === 0, `a trap 30 calls down puts the explicit stack
     else if (!nfirst) nfirst = `${name}(${args}): ${err || 'differs'}`;
   }
   ok(nok === CASES.length, `every case agrees on a memory that throws on a word never written (Netscape 2): ${nok} of ${CASES.length}${nfirst ? `\n  first: ${nfirst}` : ''}`);
-  const fresh = loadJs1(js1File, { count: false }), pages = fresh.ctx.JMp;
+  const fresh = loadJs1(js1File, { count: false, ns2: true }), pages = fresh.ctx.JMp;
   let hole = -1;
   for (let i = 0; i < pages * 16384 && hole < 0; i++) if (!(i in fresh.ctx.JM)) hole = i;
   const got = fresh.call('grow', 2);
   for (let i = pages * 16384; i < (pages + 2) * 16384 && hole < 0; i++) if (!(i in fresh.ctx.JM)) hole = i;
   ok(hole < 0 && got === pages, `every word of the initial memory (${pages} pages) and of memory.grow's 2 new pages is written${hole < 0 ? '' : `: word ${hole} is not`}`);
+}
+
+// Netscape 3, Netscape 4 and IE 4 read a word nothing wrote as 0 in every bitwise operator (tests/probe-undef.html), as node does, and
+// pay seconds to write the initial memory (docs/frames-design.md, section 15): they write only the words below __heap_base. Every case
+// again on that memory, in an engine that has an Array with a length: the same answers as wasm, only the words below the heap written,
+// none for memory.grow's new pages, and the words of the heap that tests/js1diff.c's peek reads, which nothing wrote, are 0.
+{
+  const L = loadJs1(js1File, { count: false }), W3 = await loadWasm(wasmFile);
+  const pages = L.ctx.JMp, total = pages * 16384, written = Object.keys(L.ctx.JM).length;
+  const base = +(/JA=new Array\(1\);JZ=!JA\.length;JA=(\d+);/.exec(fs.readFileSync(js1File, 'utf8')) || [0, 0])[1];
+  ok(base > 0 && base < total && written === base && !((total - 1) in L.ctx.JM) && L.ctx.JZ === false,
+    `the initial memory is written only below __heap_base: ${written} of ${total} words (the heap starts at word ${base})`);
+  let nok = 0, nfirst = null;
+  for (const [name, ...args] of CASES) {
+    W3.log.length = 0; L.ctx.log.length = 0;
+    let wr, wt = false, jr, err = null;
+    try { wr = W3.x[name](...args); } catch (e) { wt = true; }
+    try { jr = L.call(name, ...args); } catch (e) { err = String(e.message || e); L.ctx.JP = 0; L.ctx.JQ = 0; }
+    const jt = !!L.o.js1_trap;
+    if (!err && wt === jt && (wt || wr === jr) && W3.log.join(',') === L.ctx.log.join(',')) nok++;
+    else if (!nfirst) nfirst = `${name}(${args}): ${err || 'differs'}`;
+  }
+  ok(nok === CASES.length, `every case agrees on a memory written only below __heap_base: ${nok} of ${CASES.length}${nfirst ? `\n  first: ${nfirst}` : ''}`);
+  const g = L.call('grow', 2);
+  ok(g === pages && Object.keys(L.ctx.JM).length >= written && !((total + 5) in L.ctx.JM) && L.call('peek', 7) === 0, `memory.grow writes none of its new words, and a read of one is 0: grown from page ${g}`);
 }
 
 // Netscape 3.04 converts to 32 bits right only from -2^31 to 2^32 - 1, and only an integer: it gives NaN outside that

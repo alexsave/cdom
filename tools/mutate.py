@@ -1241,7 +1241,7 @@ M = [
   ('uttt-bad-code-silent', 'demo/uttt/uttt_replay.c', '    cd_set_text_node(err_txt, "That is not a game code.', '    cd_set_text_node(err_txt, "', UTTT, 'FAIL webassembly: a bad code shows the error line'),
   ('uttt-query-ignored', 'demo/uttt/uttt_replay.c', '  if (n > 1 && n < sizeof buf - 1) {', '  if (0) {', UTTT, 'FAIL webassembly: the query: the board is the game after 0 plies'),
   # js1c, the wasm to JavaScript 1.0 compiler (tools/js1c.c, tools/js10.mjs, docs/js1-compile-design.md)
-  ('js1c-memory-unwritten', 'tools/js1c.c', '"for(x=0;x<%u;x=x+1)JM[x]=0;"', '"for(x=0;x<%u;x=x+1)JM[x+1]=0;"', JS1, 'FAIL every word of the initial memory'),
+  ('js1c-memory-unwritten', 'tools/js1c.c', 'for(x=0;x<JA;x=x+1)JM[x]=0;', 'for(x=0;x<JA;x=x+1)JM[x+1]=0;', JS1, 'FAIL every word of the initial memory'),
   ('js1c-grow-unwritten', 'tools/js1c.c', 'for(i=JMp*16384;i<(JMp+n)*16384;i=i+1)JM[i]=0;', '', JS1, 'FAIL every word of the initial memory'),
   ('js11-seam-column', 'tools/legacy/js11.mjs', "t.loc.start.column === 254", "t.loc.start.column === 255", JS11T, 'FAIL x-- with its -- at column 254 is refused'),
   ('js11-seam-dropped', 'tools/legacy/js11.mjs', '  for (const f of seam(src)) found.push(f);\n  walk(tree, (n, parent) => {', '  walk(tree, (n, parent) => {', JS11T, 'FAIL x-- with its -- at column 254 is refused'),
@@ -1273,6 +1273,10 @@ M = [
   ('lits-digit-after-escape', 'tools/cdlits.c', "if (after_esc && c >= '0' && c <= '9')", "if (0 && after_esc && c >= '0' && c <= '9')", LITST, 'FAIL table: the lits file separates by'),  # Netscape 3 reads an octal escape greedily
   ('lits-array-literal', 'tools/cdlits.c', '"var cdomLits=new Array(%u,%u,', '"var cdomLits=[%u,%u,', LITST, 'FAIL table: the lits file separates by'),  # Netscape 2 and 3 cannot parse one
   ('lits-separator-in-literal', 'tools/cdlits.c', 'if (memchr(slots[k].bytes.p, 1, slots[k].bytes.n)) die(', 'if (0) die(', LITST, 'FAIL error: the table separator inside a literal'),
+  ('js1c-heap-written-eagerly', 'tools/js1c.c', 'JA=%u;if(JZ)JA=%u;for(x=0;x<JA', 'JA=%u;if(1)JA=%u;for(x=0;x<JA', JS1, 'FAIL the initial memory is written only below __heap_base'),  # Netscape 3 and 4 pay seconds for it
+  ('js1c-ns2-not-told', 'tools/js1c.c', 'JA=%u;if(JZ)JA=%u;for(x=0;x<JA', 'JA=%u;if(0)JA=%u;for(x=0;x<JA', JS1, 'FAIL every case agrees on a memory that throws on a word never written'),  # Netscape 2 dies on undefined | 0
+  ('js1c-grow-always-written', 'tools/js1c.c', 'if(JMp+n>JMmax)return -1;if(JZ)for(i=JMp*16384', 'if(JMp+n>JMmax)return -1;for(i=JMp*16384', JS1, 'FAIL memory.grow writes none of its new words'),
+  ('js1c-grow-ns2-unwritten', 'tools/js1c.c', 'if(JMp+n>JMmax)return -1;if(JZ)for(i=JMp*16384', 'if(JMp+n>JMmax)return -1;if(0)for(i=JMp*16384', JS1, "FAIL every word of the initial memory (2 pages) and of memory.grow's 2 new pages is written"),
   ('js1c-bound-too-low', 'tools/js1c.c', '  int bound = 4 + hmax;', '  int bound = 1 + hmax;', FRAMES, "FAIL js1c: a click, a link and growing the list by 5 reach JavaScript depth"),
   ('js1c-writes-strict-equality', 'tools/js1c.c', 'static const char *ops[] = { "==", "!="', 'static const char *ops[] = { "===", "!="', JS1, 'is not JavaScript 1.0: ==='),  # tests/build.sh stops at the gate
   ('js1c-page-compares-nothing', 'tools/js1.mjs', 'if(got==CE[I])', 'if(got!=CE[I])', JS1, 'FAIL tests/out/js1diff.html runs to its end and agrees'),

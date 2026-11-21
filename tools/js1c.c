@@ -1655,7 +1655,7 @@ static void analyse(void) {
  * tools/legacy/js11.mjs's seam rule), and i=i+1 costs the same, so js1c writes none rather than counting columns. */
 static const char *RUNTIME =
   "var JM=new Object(),JS=new Object(),JE=new Object(),JY=new Object(),JF=new Object();\n"
-  "var JP=0,JQ=0,JR=0,JT=0,JX=0,JN=0,JW=0,JB=-1,JMp=0,JMmax=65536,JO=0,JL2=Math.log(2),JPT=0,JK=0,JIn=1e308*10,JNa=JIn-JIn;\n"
+  "var JP=0,JQ=0,JR=0,JT=0,JX=0,JN=0,JW=0,JB=-1,JMp=0,JMmax=65536,JZ=0,JA=0,JO=0,JL2=Math.log(2),JPT=0,JK=0,JIn=1e308*10,JNa=JIn-JIn;\n"
   "function JMu(a,b){var l=(a&65535)*(b&65535),h=((a>>>16)*(b&65535)&65535)+((a&65535)*(b>>>16)&65535);"
   "return (l+h*65536)%4294967296|0;}\n"
   "function JDs(a,b){if(b==0||(a==-2147483648&&b==-1)){JT=1;return 0;}return (a-a%b)/b|0;}\n"
@@ -1699,7 +1699,7 @@ static const char *RUNTIME =
   "function JTu(x){if(x>-1&&x<4294967296)return JTr(x)|0;JT=1;return 0;}\n"
   "function JSs(x){if(x!=x)return 0;if(x<=-2147483648)return -2147483648;if(x>=2147483647)return 2147483647;return JTr(x)|0;}\n"
   "function JSu(x){if(x!=x||x<=-1)return 0;if(x>=4294967295)return -1;return JTr(x)|0;}\n"
-  "function JMg(n){var o=JMp,i;n=n>>>0;if(JMp+n>JMmax)return -1;for(i=JMp*16384;i<(JMp+n)*16384;i=i+1)JM[i]=0;JMp=JMp+n;return o;}\n"
+  "function JMg(n){var o=JMp,i;n=n>>>0;if(JMp+n>JMmax)return -1;if(JZ)for(i=JMp*16384;i<(JMp+n)*16384;i=i+1)JM[i]=0;JMp=JMp+n;return o;}\n"
   "function JMf(d,v,n){var e=(d>>>0)+(n>>>0);v=v&255;d=d>>>0;while(d<e&&(d&3)!=0){JWb(d,v);d=d+1;}"
   "v=v|v<<8|v<<16|v<<24;while(d+4<=e){JM[d>>2]=v;d=d+4;}while(d<e){JWb(d,v);d=d+1;}}\n"
   "function JMc(d,s,n){var i;d=d>>>0;s=s>>>0;n=n>>>0;if(((d|s|n)&3)==0){if(d<=s){for(i=0;i<n;i=i+4)JM[(d+i)>>2]=JM[(s+i)>>2]|0;}"
@@ -2154,11 +2154,20 @@ int main(int argc, char **argv) {
     if (js_name(mods[k])) bf(&out, "Ji%d=imp.%s;", k, mods[k]);
     else bf(&out, "Ji%d=imp[\"%s\"];", k, mods[k]);
   }
-  /* Every word of the initial memory is written before the data: Netscape 2.02 dies on undefined | 0 ("33041 is not a
-   * number.", docs/js1-compile-design.md section 12), so a word nothing wrote must not be read as undefined. Written in
-   * order from 0, which also keeps a modern engine's object an array (rec(1000) 9 times faster in node than a dictionary
-   * whose first number key is the data's, high above the stack). memory.grow writes its new words the same way (JMg). */
-  bf(&out, "for(x=0;x<%u;x=x+1)JM[x]=0;", (unsigned)((uint64_t)mem_min * 16384));
+  /* The words are written before the data, in order from 0 (which keeps a modern engine's object an array: rec(1000) 9
+   * times faster in node than a dictionary whose first number key is the data's, high above the stack). Netscape 2.02
+   * dies on undefined | 0 ("33041 is not a number.", docs/js1-compile-design.md section 12), so there every word of the
+   * initial memory is written, and memory.grow writes its new words the same way (JMg); that engine is told by an Array
+   * with no length (JZ). Netscape 3, Netscape 4 and IE 4 read a word nothing wrote as 0 in every bitwise operator, which
+   * is all a load is (js1c writes (JM[i]|0)), and writing a word costs them 25 to 50 microseconds (seconds, for the
+   * initial memory), so they write only the words below __heap_base, the C stack and the data: the heap is written by the
+   * program before it is read, or reads as 0 as wasm's does (docs/frames-design.md, section 15). __heap_base is where
+   * wasm-ld ends the data, which is the initial stack pointer or the end of the data segments, whichever is higher. */
+  uint64_t hb = dend;
+  if (nglobals && globals[0].ty == T_I32 && (uint32_t)globals[0].i > hb) hb = (uint32_t)globals[0].i;
+  hb = ((hb + 15) & ~(uint64_t)15) / 4;
+  if (hb > (uint64_t)mem_min * 16384) hb = (uint64_t)mem_min * 16384;
+  bf(&out, "JA=new Array(1);JZ=!JA.length;JA=%u;if(JZ)JA=%u;for(x=0;x<JA;x=x+1)JM[x]=0;", (unsigned)hb, (unsigned)((uint64_t)mem_min * 16384));
   for (int k = 0; k <= ninit; k++) bf(&out, "Jdata%d();", k);
   for (uint32_t g = 0; g < nglobals; g++) {
     bf(&out, "Jg%u=", g);
