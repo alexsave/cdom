@@ -106,6 +106,11 @@ var cf_hasAt = 0;
 /* window.String: Netscape 2 has no String global ("String is not defined"), and a missing property of window is no error. */
 if (window.String != null && String.fromCharCode != null) cf_hasFrom = 1;
 if ("a".charCodeAt != null) cf_hasAt = 1;
+/* Netscape 2 (no fromCharCode: JavaScript 1.0) goes deaf to later clicks when the view is rewritten from inside a click's own
+ * handler, and hears them when the same draw comes from a timer (docs/frames-design.md 17, on the real browser), so there a
+ * click's draw leaves the handler first (cf_release's later). */
+var cf_deferClick = 0;
+if (cf_hasFrom == 0) cf_deferClick = 1;
 var cf_HEX = "0123456789ABCDEF";
 var cf_PRINT = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
 var cf_T = new Object();
@@ -1833,7 +1838,7 @@ function cf_onClick(n) {
       cf_fire(x, cf_CHANGE, 0);
     }
   }
-  cf_release(0);
+  cf_release(cf_deferClick);
 }
 function cf_onChange(n) {
   var x = cf_hit[n];
