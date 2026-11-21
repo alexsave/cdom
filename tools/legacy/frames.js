@@ -1,7 +1,7 @@
 /* cdom's frames tier (docs/frames-design.md): the shim for browsers with script and no DOM to build in, Netscape 2 to 4
- * and IE 3 and 4. cdom's node tree is kept here, in the top window, made by the same ops shim/cdom.js takes, under the
- * same import names; once per outermost call into C it is written whole, as HTML, into the one frame of the frameset
- * the boot made, whose handlers call back into cdomF here.
+ * and IE 3 and 4. cdom's node tree is kept here, in the page's second frame (cdomApp), made by the same ops shim/cdom.js
+ * takes, under the same import names; once per outermost call into C it is written whole, as HTML, into the first (cdomView)
+ * of the frameset the boot's early script made, whose handlers call back into cdomF here.
  * JavaScript 1.1, as Netscape 3 has it (tools/legacy/js11.mjs refuses the rest): every function declared at the top
  * level, no literal but strings and numbers, no try, throw, switch, regex, ===, in or delete, and no method of 1.2 and
  * later but charCodeAt and fromCharCode behind a check. All of it is global, so every name starts cf_, and the
@@ -21,11 +21,10 @@ var cf_FOCUS = 28;
 var cf_BLUR = 29;
 var cf_DETACHED = 4294967295; /* "no insertion parent" for at() */
 var cf_UNITS = new Array("", "px", "%", "deg", "em", "rem", "vw", "vh", "ms", "s", "rad");
-/* What the frame shows, and is: one frameset of one frame, written into the page while it parses. A FRAMESET after a
- * BODY tag is ignored (HTML5's frameset-ok, and Netscape's rule), so a page that opens its BODY with a tag gets it
- * over the whole page once that has loaded (cf_poll), by open, write and close. No src: the frame's first document is
- * the empty one the browser makes, which the shim writes over. */
-var cf_FRAMESET = "<frameset rows=\"100%\" border=\"0\" frameborder=\"0\" framespacing=\"0\"><frame name=\"cdomView\" marginwidth=\"8\" marginheight=\"8\"></frameset>";
+/* Where the tree is shown: the page is a frameset of two frames, which the boot's early script (shim/boot-early.js) writes
+ * ahead of any content, and this shim runs in the second, cdomApp, a copy of the page 1 pixel high whose document is never
+ * replaced, so its state stays. The first, cdomView, is the parent's frame 0, which the shim writes whole (cf_draw). The view's
+ * handlers call parent.cdomApp.cdomF. */
 /* How long a change, a focus or a blur waits to be drawn (ms): leaving a field for a button fires all three between
  * the press and the release, and a rewrite there would replace the button under the pointer, and lose the click, so
  * they are drawn once, after the click. */
@@ -838,14 +837,15 @@ function cf_op_epoch() {
   return d.getTime();
 }
 function cf_op_origin(destPtr, capacity) {
-  cf_encode(location.protocol + "//" + location.host, destPtr, capacity);
+  cf_encode(top.location.protocol + "//" + top.location.host, destPtr, capacity);
   return cf_wrote;
 }
 function cf_op_url_read(part, destPtr, capacity) {
-  var s = location.pathname + location.search + location.hash;
-  if (part == 0) s = location.pathname;
-  else if (part == 1) s = location.search;
-  else if (part == 2) s = location.hash;
+  /* The top window's: the app frame's own URL is the page's with cdomApp added to its query (shim/boot-early.js). */
+  var l = top.location, s = l.pathname + l.search + l.hash;
+  if (part == 0) s = l.pathname;
+  else if (part == 1) s = l.search;
+  else if (part == 2) s = l.hash;
   cf_encode(s, destPtr, capacity);
   return cf_wrote;
 }
@@ -890,7 +890,7 @@ function cf_lacks(name) {
 }
 function cf_fail(message) {
   cdomF.errors[cdomF.errors.length] = message;
-  window.status = message;
+  top.status = message;
 }
 
 /* The math wasm2js output calls that JavaScript 1.1 has not (ES2015's). */
@@ -924,8 +924,8 @@ var cf_started = 0;
 var cf_drawing = 0;
 var cf_pending = 0;   /* a draw the frame was not there for yet */
 var cf_later = 0;     /* a draw put off by cf_LATER */
-var cf_over = 0;      /* the frameset was written over the page (cf_poll) */
 var cf_waits = 0;
+var cf_NOVIEW = 500;  /* waits of 20 ms for the view frame, then it is given up (10 s) */
 var cf_pressed = 0;   /* a mouse button is down in the frame */
 var cf_pressWaits = 0;
 function cf_cRun(name, a, b, c, d, e, f, g, h) {
@@ -986,9 +986,9 @@ function cf_wrap(raw) {
   return out;
 }
 function cf_view() {
-  if (window.frames.length < 1) return null;
-  if (!window.frames[0].document) return null;
-  return window.frames[0];
+  if (parent == window || parent.frames.length < 2) return null;
+  if (!parent.frames[0].document) return null;
+  return parent.frames[0];
 }
 
 /* Fields: read back from the frame before each draw, in the order they were written, which is form.elements'. */
@@ -1281,7 +1281,7 @@ function cf_kids(x, inh, ctx) {
 }
 /* A handler attribute: on, calling cdomF's f with the handle n and the rest. */
 function cf_on_(on, f, n, rest) {
-  return " " + on + "=\"parent.cdomF." + f + "(" + n + rest + ")\"";
+  return " " + on + "=\"parent.cdomApp.cdomF." + f + "(" + n + rest + ")\"";
 }
 /* A field's handlers: focus and blur always (the shim tracks focus), the rest as listened for. */
 function cf_fieldHandlers(x, inh, text) {
@@ -1306,7 +1306,7 @@ function cf_node(x, inh, ctx) {
   if (x.y == 3) {
     s = cf_esc(x.x);
     if (inh & 1 << cf_CLICK && !(ctx & 3) && x.p && x.p != cf_mount && !cf_blank(s)) {
-      cf_w("<a href=\"javascript:parent.cdomF.k(" + cf_handle(x.p) + ")\">" + s + "</a>");
+      cf_w("<a href=\"javascript:parent.cdomApp.cdomF.k(" + cf_handle(x.p) + ")\">" + s + "</a>");
     } else cf_w(s);
     return;
   }
@@ -1353,7 +1353,7 @@ function cf_node(x, inh, ctx) {
   } else if (t == "a") {
     href = cf_pair(x.a, "href");
     n = cf_handle(x);
-    if (inh & 1 << cf_CLICK) href = "javascript:parent.cdomF.k(" + n + ")";
+    if (inh & 1 << cf_CLICK) href = "javascript:parent.cdomApp.cdomF.k(" + n + ")";
     cf_w("<a");
     if (href != null) cf_w(" href=\"" + cf_esc(href) + "\"");
     if (inh & 1 << cf_OVER) cf_w(cf_on_("onmouseover", "o", n, ",1"));
@@ -1533,9 +1533,8 @@ function cf_onRaf(token) {
   cf_cRun("cd_raf", token, cf_op_now());
   cf_release(0);
 }
-/* Waits for the frame, and draws what waited: a draw before the frame was there, or one put off by cf_LATER. A
- * frameset the parser ignored leaves no frame once the page has loaded (or, with no readyState, after 50 waits): the
- * frameset then goes over the page. */
+/* Waits for the view frame, and draws what waited: a draw before the frame was there, or one put off by cf_LATER. The
+ * frame is made before this frame loads, so the wait is for its first document, and ends after cf_NOVIEW waits. */
 var cf_startDone = 1;
 function cf_poll() {
   if (!cf_startDone) {
@@ -1545,13 +1544,8 @@ function cf_poll() {
   if (cf_drawing) return;
   if (!cf_view()) {
     cf_waits++;
-    if (!cf_over && (document.readyState == "complete" || (!document.readyState && cf_waits > 50))) {
-      cf_over = 1;
-      document.open("text/html", "replace");
-      document.write(cf_FRAMESET);
-      document.close();
-    }
-    setTimeout("cdomF.p()", 20);
+    if (cf_waits == cf_NOVIEW) cf_fail("cdom: there is no view frame (the page's early script did not make the frameset)");
+    if (cf_waits < cf_NOVIEW) setTimeout("cdomF.p()", 20);
     return;
   }
   if (cf_later && cf_pressed && cf_pressWaits < cf_PRESSCAP) {
@@ -1688,7 +1682,6 @@ function cdomFramesStart(factory, mount, env, ready, options) {
   cf_nodes[2] = cf_doc;
   cf_nodes[3] = cf_mount;
   cf_started = 1;
-  document.write(cf_FRAMESET);
   x = cf_wrap(cf_raw);
   /* Set before the start, so a trap in it (which throws out of here) still has the frame drawn, or the frameset
    * written over the page, by cf_poll, which notes the trap. */

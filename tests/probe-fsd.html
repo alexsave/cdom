@@ -1,0 +1,31 @@
+<html><head><title>probe-fsd</title>
+<script>
+// probe-fs.html's mode C for browsers with function timers (Netscape 4, IE 4): after the document is replaced, does a
+// function timer still run, and what does it see?
+var Q = "" + location.search;
+Q = Q.substring(1, Q.length);
+var TAG = Q;
+var G1 = "alive";
+var BASE = "http://" + location.host;
+var K = 0;
+var IMGS = new Array();
+function rep(name, v) {
+  K = K + 1;
+  var i = new Image();
+  IMGS[K] = i;
+  i.src = BASE + "/mark/" + TAG + "-D/p-" + K + "-" + name + "-" + escape("" + v);
+}
+var FS = '<frameset rows="*"><frame name="v" src="about:blank"></frameset>';
+function go() {
+  var r = rep;
+  var f = FS;
+  var w = window;
+  r("pre", "G1=" + typeof G1);
+  document.open("text/html", "replace");
+  document.write(f);
+  document.close();
+  w.setTimeout(function () { r("tfn", "G1=" + typeof G1 + " frames=" + w.frames.length + " typeofrep=" + typeof rep); }, 1500);
+}
+</script></head>
+<div id="m"></div>
+<script>setTimeout("go()", 1500)</script></html>

@@ -1,0 +1,45 @@
+<html><head><title>probe-fs</title>
+<script>
+// What a FRAMESET written by script does in a page that has a document of its own (docs/frames-design.md, A13 and A14).
+// The query is <tag>-<mode>: A writes the frameset first thing in the document, B after an empty DIV, C replaces the loaded
+// document by open, write and close from a timer.  Each step marks by an image: its name is what was asked, its value what
+// was seen (G1 is a global of this page, so "G1=undefined" is a top window that lost its globals).
+var Q = "" + location.search;
+Q = Q.substring(1, Q.length);
+var TAG = Q.substring(0, Q.indexOf("-"));
+var MODE = Q.substring(Q.indexOf("-") + 1, Q.length);
+var G1 = "alive";
+var BASE = "http://" + location.host;
+var K = 0;
+var IMGS = new Array();
+function rep(name, v) {
+  K = K + 1;
+  var i = new Image();
+  IMGS[K] = i;
+  i.src = BASE + "/mark/" + TAG + "-" + MODE + "/p-" + K + "-" + name + "-" + escape("" + v);
+}
+var FS = '<frameset rows="*"><frame name="v" src="about:blank"></frameset>';
+function go() {
+  var r = rep;
+  var f = FS;
+  var w = window;
+  r("pre", "G1=" + typeof G1);
+  document.open("text/html", "replace");
+  document.write(f);
+  document.close();
+  r("post", "G1=" + typeof G1 + " rep=" + typeof rep + " frames=" + w.frames.length);
+  w.setTimeout("rep('tstr', 'G1=' + typeof G1 + ' frames=' + window.frames.length)", 1500);
+}
+</script></head>
+<script>
+if (MODE != "A") document.write('<div id="m"></div>');
+if (MODE != "C") {
+  document.write(FS);
+  rep("written", "G1=" + typeof G1 + " frames=" + window.frames.length);
+}
+</script>
+<script>rep("script2", "ran")</script>
+<script>
+if (MODE == "C") setTimeout("go()", 1500);
+else setTimeout("rep('timer', 'G1=' + typeof G1 + ' frames=' + window.frames.length)", 1500);
+</script></html>

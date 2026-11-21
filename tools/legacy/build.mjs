@@ -259,7 +259,18 @@ async function page(src, out) {
   if (!/<script>\s*$/.test(html.slice(0, html.indexOf(mark)))) throw new Error(`${src}: ${mark} must open a plain <script>`);
   // The table is a script of its own that tools/cdpage wrote before the shim; the fallback needs it too.
   if (!html.includes('var cdomLits=')) throw new Error(`${src} has no string table (tools/cdpage writes it before the shim)`);
-  return html.replace(mark, () => parts[0] + '</script>\n<script>\n' + parts[1]);
+  // The early script (shim/boot-early.js) goes before the head's end, ahead of any content.
+  const early = read(path.join(top, 'shim/boot-early.js'));
+  const ecuts = [];
+  try { acorn.parse(early, { ecmaVersion: 3, onComment: (b, t, s, e) => ecuts.push([s, e]) }); } catch (e) {
+    throw new Error(`shim/boot-early.js is not ES3: ${e.message}`);
+  }
+  let earlyCode = '', eat = 0;
+  for (const [s, e] of ecuts) { earlyCode += early.slice(eat, s); eat = e; }
+  earlyCode = (earlyCode + early.slice(eat)).replace(/[ \t]+$/gm, '').replace(/\n{2,}/g, '\n').trim() + '\n';
+  js11Pass.js11('shim/boot-early.js', earlyCode, { js10: true, allowed: ['getElementById', 'createElement'] });
+  if (!html.includes('</head>')) throw new Error(`${src} has no </head> (the early script goes before it)`);
+  return html.replace('</head>', () => '<script>\n' + earlyCode + '</script></head>').replace(mark, () => parts[0] + '</script>\n<script>\n' + parts[1]);
 }
 
 // cdom.frames.js: tools/legacy/frames.js, which must be JavaScript 1.1 (js11.mjs) before and after it is minified. No
@@ -303,7 +314,7 @@ function inputs(cmd, a) {
     files.push(path.resolve(a), path.join(here, 'words.js'), path.join(here, 'memory.mjs'), path.join(here, 'es3.mjs'));
     tools.push(wasm2jsVersion());
   }
-  else if (cmd === 'page') files.push(path.join(top, 'shim/boot.js'), path.resolve(a), path.join(here, 'es3.mjs'), path.join(here, 'js11.mjs'));
+  else if (cmd === 'page') files.push(path.join(top, 'shim/boot.js'), path.join(top, 'shim/boot-early.js'), path.resolve(a), path.join(here, 'es3.mjs'), path.join(here, 'js11.mjs'));
   return { files: files.map((f) => path.resolve(f)), tools };
 }
 

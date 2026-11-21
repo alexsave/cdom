@@ -19,8 +19,11 @@ const b = await launch();
 let fails = 0;
 setTimeout(() => { console.log('FAIL no result within 120 s'); process.exit(1); }, 120000).unref();
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console.log('ok  ', m); };
-const E = b.evaluate;
-const F = 'frames[0].document';
+// ET runs in the top window, the frameset; E in its frame cdomApp, where the shim and the app live (docs/frames-design.md,
+// section 3), and the view, which the shim writes, is frame 0 of the top.
+const ET = b.evaluate;
+const E = (x) => ET(`frames[1].eval(${JSON.stringify(x)})`);
+const F = 'parent.frames[0].document';
 const mouse = (type, x, y, buttons = 0, button = 'none') =>
   b.send('Input.dispatchMouseEvent', { type, x, y, buttons, button, clickCount: type === 'mouseMoved' ? 0 : 1 });
 // An element of the frame by selector, its centre in the top window's coordinates (the frame fills the window).
@@ -42,11 +45,15 @@ const textOf = (sel) => E(`(function () { var e = ${F}.querySelector(${JSON.stri
 // A stand-in with no value and methods that do nothing when there is no such field (a broken shim), so a check fails
 // on its own assertion and the run goes on.
 const field = (id) => `(${F}.forms[0].elements[(function () { var i; for (i = 0; i < cf_nfields; i++) if (cf_pair(cf_fields[i].a, "id") === ${JSON.stringify(id)}) return i; return -1; })()] || { select: function () {}, setSelectionRange: function () {} })`;
-// Waits until expr is true, or n tries of 20 ms.
+// Waits until expr is true in the app frame, or n tries of 20 ms; false while the frame is not there yet.
 async function until(expr, n = 100) {
-  for (let i = 0; i < n && !(await E(expr)); i++) await sleep(20);
-  return E(expr);
+  const now = async () => { try { return await E(expr); } catch { return false; } };
+  for (let i = 0; i < n && !(await now()); i++) await sleep(20);
+  return now();
 }
+// Navigates, and gives the early script's frameset time to be made: an evaluate sent while the page is still being replaced
+// by it leaves every later one unanswered (Chrome 157, headless).
+const go = async (url) => { await b.send('Page.navigate', { url }); await sleep(600); };
 // The frame's document as markup (innerHTML and outerHTML are gone under LEGACY=frames; XMLSerializer is not), and the
 // same for the shim's serialization of the tree as it is now, parsed afresh: equal when the frame shows the tree.
 const shown = `new XMLSerializer().serializeToString(${F}.body)`;
@@ -72,7 +79,7 @@ const TREE_IDS = `(function () { var out = [];
 const port = srv.address().port;
 const measure = !!process.env.FRAMES_MEASURE;
 run: try {
-  await b.send('Page.navigate', { url: `http://127.0.0.1:${port}/frames.html` });
+  await go(`http://127.0.0.1:${port}/frames.html`);
   ok(await until('!!window.READY && window.cdomF && cdomF.draws > 0'), 'booted, and the frame drawn');
   if (!(await E('!!window.READY'))) break run;
   ok(...tierFetched(await E(FETCHED), 'frames'));
@@ -80,10 +87,12 @@ run: try {
     + ` && typeof ${F}.createElement === "undefined" && typeof ${F}.body.appendChild === "undefined" && typeof ${F}.body.addEventListener === "undefined"`
     + ` && typeof ${F}.body.attachEvent === "undefined" && !("innerHTML" in ${F}.body)`),
     'no DOM mutation in the page or its frame: no createElement, appendChild, innerHTML, getElementById or listeners');
-  ok(await E('frames.length === 1 && document.querySelector("frameset") !== null && document.querySelector("div#m") === null'),
-    'the page is a frameset of one frame: the FRAMESET written while it parsed took the body\'s place');
+  ok(await ET('frames.length === 2 && document.querySelector("frameset") !== null && document.querySelector("div#m") === null && frames[1].name === "cdomApp" && frames[0].name === "cdomView"'),
+    'the page is a frameset of the view and the app frame: the early script\'s FRAMESET took the body\'s place');
+  ok(await E('typeof parent.cdomF === "undefined" && !!window.cdomF && location.search === "?cdomApp"'),
+    'the shim lives in the app frame (cdomApp: the page again, under another URL), not in the top window');
   ok((await draws()) === 1, `cd_main drew once: ${await draws()}`);
-  const h0 = await E('history.length');
+  const h0 = await ET('history.length');
   const errs = (x) => b.exceptions.filter((e) => !/ReferenceError: TextDecoder is not defined$/.test(e));
   await matches('after cd_main');
   const ids = await E(TREE_IDS);
@@ -122,7 +131,7 @@ run: try {
   const paths = [];
   for (const sel of ['#one', '#two', '#three a']) { await click(sel); paths.push(await stat(STAT.path)); }
   ok(paths.join() === [1 << 16 | 0, 1 << 16 | 1, 1 << 16 | 2].join(), `links and a span's text under the listener reach it with depth 1 and paths 0, 1, 2: ${paths.map((p) => `${p >> 16}/${p & 0xffff}`)}`);
-  ok(await E(`${F}.querySelector("#one").getAttribute("href").indexOf("javascript:parent.cdomF.k(") === 0`), 'a listened link is a javascript: URL into the top frame');
+  ok(await E(`${F}.querySelector("#one").getAttribute("href").indexOf("javascript:parent.cdomApp.cdomF.k(") === 0`), 'a listened link is a javascript: URL into the app frame');
 
   // Focus, typing, and leaving the field: focus and blur reach C, and the change is an input and a change, drawn once,
   // later (cf_LATER), so the click that left the field is not lost.
@@ -215,7 +224,7 @@ run: try {
   d = await draws();
   await E('X.grow(5)');
   ok((await draws()) === d + 1 && (await E(`${F}.querySelectorAll("#list li").length`)) === 5, `an export of 15 ops (5 items) draws once: ${(await draws()) - d}`);
-  ok((await E('history.length')) === h0, `no redraw added a history entry: ${h0} then ${await E('history.length')}`);
+  ok((await ET('history.length')) === h0, `no redraw added a history entry: ${h0} then ${await ET('history.length')}`);
   await matches('at the end');
   // cd_seed (the seed exception of 2026-11-20, tools/seeds.mjs): the page passed options.seed = 7, so it is cd_seed; without one
   // cf_seed draws from the engine's generator and the clock, stubbed here so the answers are fixed.
@@ -265,7 +274,7 @@ run: try {
   let n0 = await stat(STAT.count);
   await click('#inc');
   ok(!selectThrew && (await stat(STAT.count)) === n0 + 1, `cd_call(checkbox, "select") does not throw, and the next click reaches C: ${selectThrew || 'no throw'}, count ${(await stat(STAT.count)) - n0}`);
-  await E('(function () { var P = frames[0].HTMLInputElement.prototype, f = P.focus; P.focus = function () { P.focus = f; throw new Error("planted"); }; })()');
+  await E('(function () { var P = parent.frames[0].HTMLInputElement.prototype, f = P.focus; P.focus = function () { P.focus = f; throw new Error("planted"); }; })()');
   let focusThrew = '';
   try { await E('X.focus_name()'); } catch (e) { focusThrew = String(e).slice(0, 120); }
   await until('cdomF.errors.join().indexOf("a draw did not finish") >= 0');
@@ -337,19 +346,17 @@ run: try {
   }
 } finally {
   if (!fails || measure) {
-    // The fallback: a page that opens its BODY with a tag, where the FRAMESET written while it parses is ignored, gets
-    // it written over the page once the page has loaded.
-    await b.send('Page.navigate', { url: `http://127.0.0.1:${port}/frames-body.html` });
-    ok(await until('!!window.READY && window.cdomF && cdomF.draws > 0 && frames.length === 1'), 'frames-body.html (a BODY tag): booted, and drawn in the frameset written over the page');
-    if (await E('frames.length === 1')) {
+    // A page that opens its BODY with a tag: the early script is in the head, so the frameset is the same.
+    await go(`http://127.0.0.1:${port}/frames-body.html`);
+    ok(await until('!!window.READY && window.cdomF && cdomF.draws > 0') && await ET('frames.length === 2'), 'frames-body.html (a BODY tag): booted, and drawn in the same frameset');
+    if (await ET('frames.length === 2')) {
       await click('#inc');
       ok((await textOf('#countp')) === 'count 1', `and a click there reaches C: ${JSON.stringify(await textOf('#countp'))}`);
     }
-    // A trap in cd_start (cd_main, on seed 13): noted, and the frame still drawn with what cd_main had flushed; with
-    // a BODY tag, the frameset is still written over the page.
+    // A trap in cd_start (cd_main, on seed 13): noted, and the frame still drawn with what cd_main had flushed.
     for (const page of ['frames.html', 'frames-body.html']) {
-      await b.send('Page.navigate', { url: `http://127.0.0.1:${port}/${page}?trapstart` });
-      const drawn = await until('!!window.cdomF && cdomF.draws > 0 && frames.length === 1');
+      await go(`http://127.0.0.1:${port}/${page}?trapstart`);
+      const drawn = await until('!!window.cdomF && cdomF.draws > 0');
       ok(drawn && (await E('cdomF.errors.join()')).includes('cd_start did not return') && (await textOf('#title')) === 'frames',
         `${page}: a trap in cd_start is noted, and the frame still drawn: ${drawn ? 'drawn' : 'not drawn'}, ${JSON.stringify(await E('window.cdomF ? cdomF.errors : null'))}`);
     }
@@ -359,7 +366,7 @@ run: try {
     const key = (type, k, code, vk, text) => b.send('Input.dispatchKeyEvent', { type, key: k, code, windowsVirtualKeyCode: vk, text });
     const press = async (k, code, vk, text) => { await key(text ? 'keyDown' : 'rawKeyDown', k, code, vk, text); await key('keyUp', k, code, vk); await sleep(40); };
     for (const flavour of ['ie4', 'ns4']) {
-      await b.send('Page.navigate', { url: `http://127.0.0.1:${port}/frames.html?${flavour}` });
+      await go(`http://127.0.0.1:${port}/frames.html?${flavour}`);
       if (!(await until('!!window.READY && window.cdomF && cdomF.draws > 0'))) { ok(false, `${flavour}: booted`); continue; }
       const el = field('name');
       ok(await E(`typeof ${el}.selectionStart === "undefined" && !${el}.setSelectionRange && ${flavour === 'ie4' ? '' : '!'}(!!${el}.createTextRange && !!${F}.selection)`),
@@ -393,15 +400,15 @@ run: try {
       };
       const out = {};
       for (const [k, how] of Object.entries(ways)) {
-        await b.send('Page.navigate', { url: `http://127.0.0.1:${port}/frames.html` });
+        await go(`http://127.0.0.1:${port}/frames.html`);
         await until('!!window.READY && cdomF.draws > 0');
-        const before = await E('history.length');
+        const before = await ET('history.length');
         for (let i = 0; i < 20; i++) {
-          await E(`(function () { var w = frames[0], d = w.document, h = "<p>" + ${i} + "</p>"; window.__h = h; ${how} })()`);
+          await ET(`(function () { var w = frames[0], d = w.document, h = "<p>" + ${i} + "</p>"; window.__h = h; ${how} })()`);
           await sleep(40);
         }
         // What the frame shows after: the last rewrite's text, or the rewrite did not happen and the count says nothing.
-        out[k] = [(await E('history.length')) - before, await E('frames[0].document.body ? frames[0].document.body.innerText : ""')];
+        out[k] = [(await ET('history.length')) - before, await ET('frames[0].document.body ? frames[0].document.body.innerText : ""')];
       }
       console.log('measure history', JSON.stringify(out));
     }
