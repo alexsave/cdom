@@ -173,6 +173,7 @@ CSS is dropped (Netscape 4's is partial and known to crash), and what can be car
 | a style attribute | read into the same properties, then as above |
 | every other property | dropped |
 
+Tags are lowercased, and one that is not letters and digits alone (it would be written into the markup as it is) is noted and drawn as a SPAN.
 Tags: BUTTON becomes INPUT TYPE=button with its text as the value; SECTION, ARTICLE, HEADER, FOOTER, NAV, MAIN, ASIDE and FIGURE become DIV, and so does FORM (a FORM inside the shim's one is dropped by the parser, and its end tag would close the shim's); SVG and CANVAS and everything inside them, SCRIPT, STYLE and TEMPLATE are not written (they draw nothing here for now).
 Attributes kept: id, href, src, alt, title, width, height, align, valign, border, colspan, rowspan, cellpadding, cellspacing, size, maxlength, rows, cols, type, value and target; every other one is dropped (class, style, data-, aria- and the rest).
 
