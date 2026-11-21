@@ -1278,6 +1278,7 @@ M = [
   ('js1c-ns2-not-told', 'tools/js1c.c', 'JA=%u;if(JZ)JA=%u;for(x=0;x<JA', 'JA=%u;if(0)JA=%u;for(x=0;x<JA', JS1, 'FAIL every case agrees on a memory that throws on a word never written'),  # Netscape 2 dies on undefined | 0
   ('js1c-grow-always-written', 'tools/js1c.c', 'if(JMp+n>JMmax)return -1;if(JZ)for(i=JMp*16384', 'if(JMp+n>JMmax)return -1;for(i=JMp*16384', JS1, 'FAIL memory.grow writes none of its new words'),
   ('js1c-grow-ns2-unwritten', 'tools/js1c.c', 'if(JMp+n>JMmax)return -1;if(JZ)for(i=JMp*16384', 'if(JMp+n>JMmax)return -1;if(0)for(i=JMp*16384', JS1, "FAIL every word of the initial memory (2 pages) and of memory.grow's 2 new pages is written"),
+  ('js1c-no-trailing-return', 'tools/js1c.c', 'bs(&out, f->direct ? "return 0;}\\n" : "}\\n");', 'bs(&out, "}\\n");', JS1, 'a function that returns a value and does not end in a return'),  # tests/build.sh stops at the gate; Netscape 3.04 refuses it
   ('js1c-bound-too-low', 'tools/js1c.c', '  int bound = 4 + hmax;', '  int bound = 1 + hmax;', FRAMES, "FAIL js1c: a click, a link and growing the list by 5 reach JavaScript depth"),
   ('js1c-writes-strict-equality', 'tools/js1c.c', 'static const char *ops[] = { "==", "!="', 'static const char *ops[] = { "===", "!="', JS1, 'is not JavaScript 1.0: ==='),  # tests/build.sh stops at the gate
   ('js1c-page-compares-nothing', 'tools/js1.mjs', 'if(got==CE[I])', 'if(got!=CE[I])', JS1, 'FAIL tests/out/js1diff.html runs to its end and agrees'),

@@ -2054,7 +2054,10 @@ int main(int argc, char **argv) {
     } else if (init.p) bs(&head, init.p);
     bput(&out, head.p, head.n);
     if (body.p) bput(&out, body.p, body.n);
-    bs(&out, "}\n");
+    /* A last "return 0;" even where every path returns before it (a while(1) loop ends the body): Netscape 3.04 and 2.02
+     * cannot tell, and refuse a function that returns a value and does not end in a return ("function does not always
+     * return a value.", found on uttt's Jd23, docs/frames-design.md section 15; tools/js10.mjs checks it). */
+    bs(&out, f->direct ? "return 0;}\n" : "}\n");
     free(head.p);
     free(body.p);
     free(init.p);
