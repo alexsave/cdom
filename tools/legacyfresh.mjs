@@ -16,7 +16,7 @@ let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL ' + m); } };
 
 try {
-  for (const f of ['package.json', 'package-lock.json', 'shim/cdom.js', 'shim/boot.js',
+  for (const f of ['package.json', 'package-lock.json', 'shim/cdom.js', 'shim/boot.js', 'shim/boot-early.js', 'tools/js10.mjs',
     'tools/legacy/build.mjs', 'tools/legacy/package.json', 'tools/legacy/package-lock.json', 'tools/legacy/polyfills.js',
     'tools/legacy/memory-words.js', 'tools/legacy/words.js', 'tools/legacy/memory.mjs', 'tools/legacy/es3.mjs',
     'tools/legacy/polyfills-es3.js', 'tools/legacy/dom-old.js', 'tools/legacy/vml.js', 'tools/legacy/shim-old.js', 'tools/legacy/js11.mjs', 'tools/legacy/frames.js']) {
@@ -29,11 +29,13 @@ try {
     fs.cpSync(path.join(top, d), path.join(T, d), { recursive: true, dereference: true, filter: (s) => !s.endsWith('/.fresh') });
   fs.mkdirSync(path.join(T, 'in'));
   fs.mkdirSync(path.join(T, 'out'));
-  for (const w of ['listfuzz.wasm', 'legacy.wasm', 'listfuzz.shim.html']) fs.copyFileSync(path.join(top, 'tests/out', w), path.join(T, 'in', w));
+  // frames.html and frames.wasm.js1.js for the app document (built pages, copied: not another build's output here).
+  for (const w of ['listfuzz.wasm', 'legacy.wasm', 'listfuzz.shim.html', 'frames.html', 'frames.wasm.js1.js']) fs.copyFileSync(path.join(top, 'tests/out', w), path.join(T, 'in', w));
 
   const L = path.join(T, 'tools/legacy/build.mjs');
   const builds = [['shim-frames', 'out/cdom.frames.js'], ['shim', 'out/cdom.legacy.js'], ['shim-ie9', 'out/cdom.legacy-ie9.js'], ['shim-ie6', 'out/cdom.legacy-ie6.js'], ['app', 'in/listfuzz.wasm', 'out/listfuzz.wasm.js'],
-    ['app-ie9', 'in/listfuzz.wasm', 'out/listfuzz.wasm.ie9.js'], ['page', 'in/listfuzz.shim.html', 'out/listfuzz.html']].map(([cmd, ...a]) => ({ cmd, args: a.map((x) => path.join(T, x)) }));
+    ['app-ie9', 'in/listfuzz.wasm', 'out/listfuzz.wasm.ie9.js'], ['page', 'in/listfuzz.shim.html', 'out/listfuzz.html'],
+    ['app-doc', 'in/frames.html', 'in/frames.wasm.js1.js', 'out/frames.app.html']].map(([cmd, ...a]) => ({ cmd, args: a.map((x) => path.join(T, x)) }));
   for (const b of builds) {
     b.out = b.args[b.args.length - 1];
     b.inputs = execFileSync('node', [L, 'inputs', b.cmd, ...b.args.slice(0, -1)], { encoding: 'utf8' }).trim().split('\n');
@@ -43,9 +45,11 @@ try {
   const common = ['tools/legacy/build.mjs', 'tools/legacy/package-lock.json', 'tools/legacy/node_modules/.package-lock.json',
     'package-lock.json', 'node_modules/.package-lock.json'];
   const must = { shim: [...common, 'shim/cdom.js', 'tools/legacy/polyfills.js', 'tools/legacy/node_modules/promise-polyfill/dist/polyfill.js',
-    'tools/legacy/node_modules/pepjs/dist/pep.js'], app: [...common, 'in/listfuzz.wasm'], page: [...common, 'shim/boot.js', 'in/listfuzz.shim.html', 'tools/legacy/es3.mjs', 'tools/legacy/js11.mjs'] };
+    'tools/legacy/node_modules/pepjs/dist/pep.js'], app: [...common, 'in/listfuzz.wasm'], page: [...common, 'shim/boot.js', 'shim/boot-early.js', 'in/listfuzz.shim.html', 'tools/legacy/es3.mjs', 'tools/legacy/js11.mjs'] };
   // The frames tier's shim: its one source and its gate (docs/frames-design.md).
   must['shim-frames'] = [...common, 'tools/legacy/frames.js', 'tools/legacy/js11.mjs'];
+  // The app document (docs/frames-design.md, section 16): the boot, the shim, its gates, the page and the module.
+  must['app-doc'] = [...common, 'shim/boot.js', 'tools/legacy/frames.js', 'tools/legacy/js11.mjs', 'tools/legacy/es3.mjs', 'tools/js10.mjs', 'in/frames.html', 'in/frames.wasm.js1.js'];
   must['shim-ie9'] = [...must.shim, 'tools/legacy/memory-words.js', 'tools/legacy/memory.mjs'];
   must['app-ie9'] = [...must.app, 'tools/legacy/words.js', 'tools/legacy/memory.mjs', 'tools/legacy/es3.mjs'];
   // The fourth tier's shim: the third's without PEP, and its own files.
