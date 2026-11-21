@@ -45,11 +45,35 @@ const ok = (c, m, why = '') => { if (!c) { fails++; console.log('FAIL', m + (why
 const b = await launch();
 // The chunked read on the page loaded now (see the header).
 const picked = [...new Set(cases.map((c) => c[1]))].concat([path.join(dir, 'inputs/dqt-bad.jpg'), path.join(dir, 'inputs/dqt-bad-progressive.jpg')]);
+// The page's workers and its posted tasks, counted, and the hooks of the queued stop cases (stopCase below): a worker
+// made while W.hold is set has its first message (the job's answer) caught by a listener added before the shim's
+// onmessage, so it runs first, in the answer's own task: the job is stopped there, before the shim sees the answer.
+// W.posts counts MessagePort posts (the shim's postTask: every step of cd_image_file_cb is one), and at the post
+// numbered W.stopAt the decode is stopped in a microtask, so after that post and before any task can deliver it.
 const WRAP = `(() => {
-  window.W = { made: 0, live: 0, ended: 0 };
-  const Real = window.Worker, end = Real.prototype.terminate;
-  window.Worker = function (url) { const w = new Real(url); W.made++; W.live++; return w; };
-  Real.prototype.terminate = function () { W.ended++; W.live--; return end.call(this); };
+  window.W = { made: 0, live: 0, ended: 0, hold: false, held: null, posts: 0, stopAt: 0, stopped: null };
+  const Real = window.Worker, end = Real.prototype.terminate, dead = new WeakSet();
+  const pending = () => (X.file_rec(0) | 0) === -1;
+  window.Worker = function (url) {
+    const w = new Real(url), hold = W.hold;
+    W.made++; W.live++; W.hold = false;
+    if (hold) w.addEventListener('message', (e) => {
+      if (W.held) return;
+      W.held = { status: e.data[0], bytes: e.data[1] ? e.data[1].byteLength : 0, pending: pending() };
+      X.job_stop();
+    });
+    return w;
+  };
+  Real.prototype.terminate = function () { if (!dead.has(this)) { dead.add(this); W.ended++; W.live--; } return end.call(this); };
+  const post = MessagePort.prototype.postMessage;
+  MessagePort.prototype.postMessage = function (...a) {
+    const r = post.apply(this, a);
+    if (++W.posts === W.stopAt) {
+      W.stopAt = 0;
+      queueMicrotask(() => { W.stopped = { posts: W.posts, pending: pending() }; X.file_stop(); });
+    }
+    return r;
+  };
 })()`;
 async function chunked(name) {
   const { result: { result: { objectId } } } = await b.send('Runtime.evaluate', { expression: 'document.getElementById("pick")' });
@@ -98,16 +122,14 @@ async function chunked(name) {
   } else ok(false, `${name}: no p12.png case (IMAGE_BIG=0?)`);
   // cd_job_stop and cd_image_file_stop: no answer, the worker ended, the slot and the memory as before
   const big = p12png >= 0 ? p12png : 0;
-  // The test must not depend on how fast the machine decodes: a 900x900 decode that is done before the stop (a fast
-  // CI machine at 120 ms) is a legal race, and then its answer counts once and the slot is free; an answer that was
-  // not there at the stop must never come. "done" is read in the same synchronous turn as the stop, so nothing can
-  // arrive between the two. The last case of each loop blocks the page until the answer is surely queued (the
-  // worker's message waits for the page's next turn) and then stops: that answer must be dropped, whatever the speed.
+  // The timed cases: a 900x900 decode that is done before the stop (a fast machine) is a legal race, and then its
+  // answer counts once and the slot is free; an answer that was not there at the stop must never come. "done" is read
+  // in the same synchronous turn as the stop, so nothing can arrive between the two.
   const stopCase = async (what, start, stopFn, delay, settle) => {
     const slot = await b.evaluate('X.slot_probe()'), calls = await b.evaluate('X.file_rec(5)'), live = await b.evaluate('W.live');
     const done = await b.evaluate(`(async () => {
       ${start};
-      ${delay === 'queued' ? 'const t = performance.now(); await new Promise((r) => setTimeout(r, 30)); while (performance.now() - t < 1500);' : `await new Promise((r) => setTimeout(r, ${delay}));`}
+      await new Promise((r) => setTimeout(r, ${delay}));
       const done = (X.file_rec(0) | 0) !== -1;
       ${stopFn};
       return done;
@@ -115,12 +137,61 @@ async function chunked(name) {
     await sleep(settle);
     const after = { slot: await b.evaluate('X.slot_probe()'), calls: await b.evaluate('X.file_rec(5)'), live: await b.evaluate('W.live') };
     const want = calls + (done ? 1 : 0);
-    ok(after.slot === slot && after.calls === want && after.live === live && live === 0 && (delay !== 'queued' || !done),
-      `${name}: ${what} ${delay === 'queued' ? 'with the answer queued' : delay + ' ms after the start'}, ${done ? 'the answer was there before the stop (once, slot freed)' : 'no callback, the worker ended, the callback slot freed'}`, JSON.stringify({ slot, calls, live, done, after }));
+    ok(after.slot === slot && after.calls === want && after.live === live && live === 0,
+      `${name}: ${what} ${delay} ms after the start, ${done ? 'the answer was there before the stop (once, slot freed)' : 'no callback, the worker ended, the callback slot freed'}`, JSON.stringify({ slot, calls, live, done, after }));
   };
-  for (const delay of [0, 30, 120, 'queued']) await stopCase('cd_job_stop', `X.job_start(${big}, 900, 900, 1, 0)`, 'X.job_stop()', delay, 800);
+  // The queued cases, whatever the machine's speed: the answer posted to the page and not yet delivered when the stop
+  // runs, then never delivered. cd_job_stop: run in the answer's own message event, before the shim's handler (WRAP's
+  // W.hold), so the worker has answered (an OK answer with the pixels) and the app has not heard it. cd_image_file_stop:
+  // a decode of the same file run to its answer first counts the page's posted tasks up to it (P, the same every time:
+  // one per piece C asks for and per yield, never per stream chunk); then the stop runs right after post P, the one
+  // whose task delivers the answer, before any task. Each on the 12 MP file and on a small one, which decodes before
+  // the page could look (a machine many times faster).
+  const small = picked.indexOf(cases.find((c) => c[0] === 'jpeg-420')[1]);
+  const queuedJob = async (file, label) => {
+    const slot = await b.evaluate('X.slot_probe()'), calls = await b.evaluate('X.file_rec(5)'), live = await b.evaluate('W.live');
+    const held = await b.evaluate(`(async () => {
+      W.held = null; W.hold = true;
+      X.job_start(${file}, 900, 900, 1, 0);
+      for (let t = 0; t < 120000 && !W.held; t += 2) await new Promise((r) => setTimeout(r, 2));
+      return W.held;
+    })()`);
+    await sleep(300);
+    const after = { slot: await b.evaluate('X.slot_probe()'), calls: await b.evaluate('X.file_rec(5)'), live: await b.evaluate('W.live') };
+    ok(held && held.status === 0 && held.bytes > 0 && held.pending, `${name}: cd_job_stop with the answer queued (${label}): the worker had posted its OK answer, not yet delivered, when the stop ran`, JSON.stringify({ held }));
+    ok(after.calls === calls && after.slot === slot && after.live === live && live === 0, `${name}: cd_job_stop with the answer queued (${label}): that answer never comes, the worker ended, the callback slot freed`, JSON.stringify({ slot, calls, live, held, after }));
+  };
+  const queuedFile = async (file, label) => {
+    const slot = await b.evaluate('X.slot_probe()');
+    const ref = await b.evaluate(`(async () => {
+      W.posts = 0; W.stopAt = 0;
+      X.file_start(${file}, 900, 900);
+      for (let t = 0; t < 120000 && (X.file_rec(0) | 0) === -1; t += 2) await new Promise((r) => setTimeout(r, 2));
+      const status = X.file_rec(0) | 0, posts = W.posts;
+      await new Promise((r) => setTimeout(r, 50));
+      return { status, posts, later: W.posts };
+    })()`);
+    const calls = await b.evaluate('X.file_rec(5)');
+    const stopped = await b.evaluate(`(async () => {
+      W.posts = 0; W.stopped = null; W.stopAt = ${ref.posts};
+      X.file_start(${file}, 900, 900);
+      for (let t = 0; t < 120000 && !W.stopped; t += 2) await new Promise((r) => setTimeout(r, 2));
+      W.stopAt = 0;
+      return W.stopped;
+    })()`);
+    await sleep(300);
+    const after = { slot: await b.evaluate('X.slot_probe()'), calls: await b.evaluate('X.file_rec(5)'), posts: await b.evaluate('W.posts') };
+    ok(ref.status === 0 && ref.posts > 0 && ref.later === ref.posts && stopped && stopped.posts === ref.posts && stopped.pending,
+      `${name}: cd_image_file_stop with the answer queued (${label}): the task that delivers the answer (post ${ref.posts}, as a whole decode counts) was posted, not yet run, when the stop ran`, JSON.stringify({ ref, stopped }));
+    ok(after.calls === calls && after.slot === slot && after.posts === ref.posts, `${name}: cd_image_file_stop with the answer queued (${label}): that answer never comes, the callback slots freed`, JSON.stringify({ slot, calls, ref, stopped, after }));
+  };
+  for (const delay of [0, 30, 120]) await stopCase('cd_job_stop', `X.job_start(${big}, 900, 900, 1, 0)`, 'X.job_stop()', delay, 800);
+  await queuedJob(big, 'the 12 MP file');
+  await queuedJob(small, 'a small file');
   const pages0 = await b.evaluate('X.memory.buffer.byteLength >> 16');
-  for (const delay of [0, 10, 40, 'queued']) await stopCase('cd_image_file_stop', `X.file_start(${big}, 900, 900)`, 'X.file_stop()', delay, 300);
+  for (const delay of [0, 10, 40]) await stopCase('cd_image_file_stop', `X.file_start(${big}, 900, 900)`, 'X.file_stop()', delay, 300);
+  await queuedFile(big, 'the 12 MP file');
+  await queuedFile(small, 'a small file');
   const pages1 = await b.evaluate('X.memory.buffer.byteLength >> 16');
   ok(pages1 === pages0, `${name}: the stopped decodes leave the memory as it was`, `${pages0} -> ${pages1}`);
 }
