@@ -6,9 +6,14 @@ var n = 0;
 var TAG = "" + location.search;
 TAG = TAG.substring(1, TAG.length);
 if (TAG == "") { TAG = "x"; }
+var REP = "";
 function mark(name, v) {
   n = n + 1;
-  document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
+  REP = REP + name + "=" + v + ";";
+}
+// one image for all the values: with several, the server in front of Netscape 2 sometimes never saw the later ones
+function flush() {
+  document.write('<IMG SRC="/mark/' + TAG + '/p-1-all-' + escape(REP) + '" WIDTH=1 HEIGHT=1>');
 }
 function nowms() {
   var d = new Date();
@@ -1777,6 +1782,7 @@ ok32 = 1;
 <SCRIPT LANGUAGE="JavaScript">
 mark("ok32", ok32);
 mark("ms", nowms() - T0);
+flush();
 
 </SCRIPT>
 </BODY>

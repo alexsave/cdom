@@ -25,9 +25,14 @@ var n = 0;
 var TAG = "" + location.search;
 TAG = TAG.substring(1, TAG.length);
 if (TAG == "") { TAG = "x"; }
+var REP = "";
 function mark(name, v) {
   n = n + 1;
-  document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
+  REP = REP + name + "=" + v + ";";
+}
+// one image for all the values: with several, the server in front of Netscape 2 sometimes never saw the later ones
+function flush() {
+  document.write('<IMG SRC="/mark/' + TAG + '/p-1-all-' + escape(REP) + '" WIDTH=1 HEIGHT=1>');
 }
 function nowms() {
   var d = new Date();
@@ -64,7 +69,7 @@ def page(name, init, blocks, tail):
 def stmt(sizes=(2, 4, 8, 16, 32, 64, 128), name="stmt"):
     init = "".join("var ok%d = 0;\n" % k for k in sizes)
     blocks = [block(stmts(k * 1024, "s%d" % k) + "ok%d = 1;" % k) for k in sizes]
-    tail = "".join('mark("ok%d", ok%d);\n' % (k, k) for k in sizes) + 'mark("ms", nowms() - T0);\n'
+    tail = "".join('mark("ok%d", ok%d);\n' % (k, k) for k in sizes) + 'mark("ms", nowms() - T0);\nflush();\n'
     return page(name, init, blocks, tail)
 
 
@@ -75,14 +80,14 @@ def string(sizes=(1, 2, 4, 8, 16, 32, 64, 128), name="str"):
         lit = ("0123456789abcdef" * (k * 64))[: k * 1024]
         blocks.append(block('var s%d = "%s";\nlen%d = s%d.length;\nok%d = 1;' % (k, lit, k, k, k)))
     tail = "".join('mark("ok%d", ok%d);\nmark("len%d", len%d);\n' % (k, k, k, k) for k in sizes)
-    tail += 'mark("ms", nowms() - T0);\n'
+    tail += 'mark("ms", nowms() - T0);\nflush();\n'
     return page(name, init, blocks, tail)
 
 
 def many(count, size):
     init = "var cnt = 0;\nvar last = 0;\n"
     blocks = [block(stmts(size, "m%d" % k) + "cnt = cnt + 1;\nlast = %d;" % k) for k in range(1, count + 1)]
-    tail = 'mark("cnt", cnt);\nmark("last", last);\nmark("ms", nowms() - T0);\n'
+    tail = 'mark("cnt", cnt);\nmark("last", last);\nmark("ms", nowms() - T0);\nflush();\n'
     return page("many%d" % count, init, blocks, tail)
 
 
@@ -99,7 +104,7 @@ def atoms(count):
             size += len(ln)
             i += 1
         blocks.append(block("".join(out) + "cnt = cnt + 1;\nlast = %d;" % k))
-    tail = 'mark("cnt", cnt);\nmark("last", last);\nmark("blocks", %d);\nmark("ms", nowms() - T0);\n' % len(blocks)
+    tail = 'mark("cnt", cnt);\nmark("last", last);\nmark("blocks", %d);\nmark("ms", nowms() - T0);\nflush();\n' % len(blocks)
     return page("atoms%d" % count, init, blocks, tail)
 
 
@@ -108,7 +113,7 @@ def fns():
     b1 = block("function twice(x) { calls = calls + 1; return x * 2; }\ng1 = 5;\nvar defined_in_1 = 11;")
     b2 = block("seen = g1;\ncross = twice(21);\nvar via = defined_in_1;\ng1 = g1 + 1;")
     b3 = block("function again() { return twice(g1); }\nvar chain = again();")
-    tail = 'mark("seenGlobal", seen);\nmark("crossCall", cross);\nmark("varFromBlock1", via);\nmark("chain", chain);\nmark("calls", calls);\n'
+    tail = 'mark("seenGlobal", seen);\nmark("crossCall", cross);\nmark("varFromBlock1", via);\nmark("chain", chain);\nmark("calls", calls);\nflush();\n'
     return page("fns", init, [b1, b2, b3], tail)
 
 
@@ -217,7 +222,7 @@ def big():
         blocks.append(block("\n".join(chunk)))
         total += size
     init = ""
-    tail = 'mark("blocks", %d);\nmark("bytes", %d);\nmark("ms", nowms() - T0);\n' % (len(blocks), total)
+    tail = 'mark("blocks", %d);\nmark("bytes", %d);\nmark("ms", nowms() - T0);\nflush();\n' % (len(blocks), total)
     return page("big", init, blocks, tail)
 
 
