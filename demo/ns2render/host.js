@@ -48,13 +48,15 @@ function rsHead() {
   return "<HTML><HEAD><BASE HREF=\"" + rsBase + "\"></HEAD><BODY BGCOLOR=\"#f6f7fb\">";
 }
 
-// The markup of the batches already made, by page and state: rsC[page * 4 + state].s[y] the markup of rows y to .e[y].  A
-// batch whose rows hold nothing that differs between the states (outside rs_dirty's rows) is taken from the normal state's.
+// The markup of the batches already made, by page and state: rsC["k" + (page * 4 + state)].s["y" + y] the markup of rows y
+// to .e["y" + y].  A batch whose rows hold nothing that differs between the states (outside rs_dirty's rows) is taken from
+// the normal state's.  The keys are strings: Netscape 2 reads o[n], n a number, as the object's nth property, not as the
+// property named n (an object whose number keys were not written in order from 0 answers the wrong one).
 var rsC = new Object(), rsKey = 0, rsNorm = null, rsD0 = 0, rsD1 = 0, rsY = 0, rsBegun = 0;
 
 function rsCache(k) {
-  var o = rsC[k];
-  if (o == null) { o = new Object(); o.s = new Object(); o.e = new Object(); rsC[k] = o; }
+  var o = rsC["k" + k];
+  if (o == null) { o = new Object(); o.s = new Object(); o.e = new Object(); rsC["k" + k] = o; }
   return o;
 }
 
@@ -92,10 +94,11 @@ function rsPut(s) {
 
 // The batches from rsY on: every one already made is taken, and at most one is made, then the next timer goes on.
 function rsStep() {
-  var o = rsC[rsKey], t, u, s, y;
+  var o = rsC["k" + rsKey], t, u, s, y, at;
   while (rsY < 320) {
-    if (o.s[rsY] != null) { rsPut(o.s[rsY]); rsY = o.e[rsY]; continue; }
-    if (rsNorm != null && rsNorm.s[rsY] != null && (rsNorm.e[rsY] <= rsD0 || rsY >= rsD1)) { rsPut(rsNorm.s[rsY]); rsY = rsNorm.e[rsY]; continue; }
+    at = "y" + rsY;
+    if (o.s[at] != null) { rsPut(o.s[at]); rsY = o.e[at]; continue; }
+    if (rsNorm != null && rsNorm.s[at] != null && (rsNorm.e[at] <= rsD0 || rsY >= rsD1)) { rsPut(rsNorm.s[at]); rsY = rsNorm.e[at]; continue; }
     t = rsNow();
     if (rsBegun == 0) { rsX.rs_begin(rsPage, rsState); rsBegun = 1; }
     rsX.rs_at(rsY);
@@ -105,8 +108,8 @@ function rsStep() {
     rsTc = rsTc + u - t;
     s = rsHtml(rsX.rs_out() >> 2, rsX.rs_nout());
     rsTm = rsTm + rsNow() - u;
-    o.s[rsY] = s;
-    o.e[rsY] = y;
+    o.s[at] = s;
+    o.e[at] = y;
     rsPut(s);
     rsY = y;
     if (rsY < 320) { setTimeout("rsStep()", 0); return; }
@@ -140,14 +143,14 @@ function rsEnd() {
 
 // A click on link n: the page it leads to, drawn from a timer.
 function rsK(n) {
-  setTimeout("rsDraw(" + rsG[n] + ",1)", 50);
+  setTimeout("rsDraw(" + rsG["k" + n] + ",1)", 50);
 }
 
 // The pointer over link n: the pill's hover state drawn (or put back when the pointer reaches another link); its status.
 function rsO(n) {
-  var want = rsH[n] == 1 ? 2 : 1;
+  var want = rsH["k" + n] == 1 ? 2 : 1;
   if (want != rsState && rsPage == (n - (n % 16)) / 16) setTimeout("rsDraw(" + rsPage + "," + want + ")", 50);
-  return rsT[n];
+  return rsT["k" + n];
 }
 
 // Options from the frameset's query, for the measurements: m<mode>, b<rows a batch> and j<batches a write, 0 all>, as
