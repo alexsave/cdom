@@ -41,9 +41,9 @@ static uint32_t fmt_id(char *out, char c, unsigned n) {
 
 static const char *const MARK[] = {".", "X", "O"};
 static const char *const MARK_STYLE[] = {"color:#999999", "color:#cc0000", "color:#0000cc"};
-static const char *const BIG_STYLE[] = {"", "color:#cc0000;font-size:36px;font-weight:bold", "color:#0000cc;font-size:36px;font-weight:bold"};
+static const char *const BIG_STYLE[] = {"", "color:#cc0000;font-size:32px;font-weight:bold", "color:#0000cc;font-size:32px;font-weight:bold"};
 
-/* One block: a won block is its one big mark; an open or drawn one is its 3 x 3 cells. Either is 72 x 72 pixels, so
+/* One block: a won block is its one big mark; an open or drawn one is its 3 x 3 cells. Either is 66 x 66 pixels, so
  * the board never changes size. The block's background, when it has one, comes from the DIV around it: the
  * forced block (yellow), a block of the winning line (green), a drawn block (grey). */
 static void draw_block(const UtttGame *g, int b, int last) {
@@ -57,7 +57,7 @@ static void draw_block(const UtttGame *g, int b, int last) {
   else if (won == UTTT_DRAW) bg = "background-color:#cccccc";
   cd_open("td"); cd_attr("id", cd_tmp(id, fmt_id(id, 'b', (unsigned)b))); cd_attr("align", "center"); cd_attr("valign", "middle");
   if (bg) { cd_open("div"); cd_attr("style", bg); }
-  cd_open("table"); cd_attr("width", "72"); cd_attr("height", "72"); cd_attr("border", "0");
+  cd_open("table"); cd_attr("width", "66"); cd_attr("height", "66"); cd_attr("border", "0");
   cd_attr("cellspacing", "0"); cd_attr("cellpadding", "0");
   if (won == UTTT_X || won == UTTT_O) {
     cd_open("tr"); cd_open("td"); cd_attr("align", "center"); cd_attr("valign", "middle");
@@ -71,7 +71,7 @@ static void draw_block(const UtttGame *g, int b, int last) {
         int i = b * 9 + r * 3 + c;
         uint8_t m = uttt_cell(g, i);
         cd_open("td"); cd_attr("id", cd_tmp(id, fmt_id(id, 'c', (unsigned)i)));
-        cd_attr("width", "24"); cd_attr("height", "24"); cd_attr("align", "center");
+        cd_attr("width", "22"); cd_attr("height", "22"); cd_attr("align", "center");
         cd_open("span"); cd_attr("style", won == UTTT_DRAW && m ? "color:#666666" : MARK_STYLE[m]);
         if (i == last) cd_open("b");
         cd_text(MARK[m]);
@@ -189,8 +189,10 @@ static cd_id button(const char *idattr, const char *label) {
 }
 
 void cd_main(void) {
-  /* No heading (the window's title says it) and the buttons above the board: the whole page then fits the 640 x 480 screen
-   * of a Netscape 2 on this tier's smallest machine, board and move count in view together. */
+  cd_open("h4"); cd_text("Ultimate Tic-Tac-Toe replay"); cd_close();
+  /* A small heading (the first element of the page must not be a P: Netscape 2.02 hangs on one, docs/frames-design.md 17) and the
+   * buttons above the board: the page then fits the 640 x 480 screen with the toolbar, the location and the directory
+   * buttons off, board and move count in view together. */
   cd_open("p");
   cd_text("Code or uttt.live link: ");
   field = cd_open_id("input"); cd_attr("id", "code"); cd_attr("size", "44"); cd_close();
