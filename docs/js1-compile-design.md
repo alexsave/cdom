@@ -176,3 +176,41 @@ tests/probe-js1e.html (tools/gen_probe_js1e.py) isolates items 2 and 3 in Netsca
 The export wrapper puts JP and JQ back only when the call returns normally; IE 4.01 has no `try`, so when a call dies (its "Stack overflow" or another error), JP stays where the dead call left it and JQ may be 1.
 The next call then starts mid-stack, a resumed frame reads the wrong slots, and every later run answers wrong: that is rec(1000) and rec(5000) after rec(100)'s third run died.
 So the cause to find is why rec(100)'s third run died at all on IE 4: I expect an IE 4 dialog for the JScript call depth or for the driver's object stack, and I will look at the screen before it is dismissed.
+
+### 12.3 What the probe found
+
+tests/probe-js1e.html in Netscape 3.04 (and 2.02), 2026-11-20:
+
+- The for loop: every form parses on its own, spaced or not, `i--` or `--i`, with `>=` or `>`, with the `n-1` start and in an `else`, and js1c's own JMc, copied whole into a block, parses and runs (all wrong predictions: the construct is not the cause).
+  What differs is where it sits: in the bench file JMc's line is 278 characters and its `i--)` sits at columns 253 to 256.
+  A third run put one token at a chosen column after a padding comment: `x--;` parses with its `--` at columns 250, 253, 255 and 256 and is refused at 254 alone, while `>=` and `>>>` parse at 254.
+  So Netscape 3.04 refuses a `--` that starts at column 254 of a line (a seam in how it reads a line, presumably); whether `++` or a later seam (510, 766) does the same is not measured.
+- The ranges, exactly as predicted: in Netscape 3.04, `| 0`, `>>> 0`, `& 255`, `<< 1`, `>> 1` and `>>> 1` are right for every value from -2^31 to 2^32 - 1 (2147483648 | 0 is -2147483648, 4294967295 >>> 0 is 4294967295, -2147483648 >>> 0 is 2147483648) and NaN for 2^32, 2^32 + 5, 2^33, 2^52 + 5, 2^53 + 3, -2^31 - 1, -2^32, -2^32 - 5, -2^33 - 5 and -2^53 - 3.
+  Netscape 2.02 is right throughout -2^53 to 2^53 except at and above 2^53 (it gives 0 where the reduction gives 4).
+- The reductions: `x % 4294967296` keeps the sign (-4294967301 % 4294967296 is -5, whose `| 0` is right, -5), and `x - Math.floor(x / 4294967296) * 4294967296` gives 0 to 2^32 - 1; both are right in Netscape 3 for every value tried.
+- Their cost on Netscape 3.04, 20,000 iterations: the bare loop 265 ms, with `| 0` 313 ms, with `% 4294967296` and `| 0` 359 ms (2.3 us more an operation than `| 0`), with an `if` fold 516 ms.
+
+### 12.4 The fixes
+
+- Item 1: the factory writes 0 to every word of the initial memory, in every browser, and memory.grow (JMg) writes its new pages' words.
+  tools/js1.mjs runs every case again on a memory that throws, as Netscape 2 does, on a read of a word nothing wrote, and checks that every word of the initial memory and of two grown pages exists (tests/js1diff.c gains `grow`).
+- Item 2: js1c writes no `++` or `--` at all (`i=i+1`), so no line length can put one at column 254; tools/legacy/js11.mjs refuses a `++` or `--` at column 254 (the measured rule, one owner, used by tools/js10.mjs too), and tools/js1.mjs checks the output has none.
+  The rule is narrow on purpose: tools/legacy/frames.js has 40 of them and its minified file is one 30,014-character line, none of them at column 254.
+- Item 3: an i32 add, subtract or multiply never leaves -2^31 to 2^32 - 1 before its `| 0`.
+  With a constant operand the range is known and the form is picked so it needs nothing: `x + c` for c >= 0, `(x >>> 0) - c` for c > 0, which is every `n - 1` and address offset; otherwise `(x + y + 4294967296) % 4294967296 | 0`; a multiply by a constant c with |c| > 1 adds 2^32 times ceil(|c| / 2) and reduces; JMu multiplies 16-bit halves, each partial product under 2^32, and reduces the sum; JPc works unsigned.
+  tools/js1.mjs runs every case again with every bitwise operand of the file passed through a check that throws outside Netscape 3's range (1,429 operands).
+- Item 4: nothing to fix: no table js1c writes (JM, JS, JE, JY, JF, JPT) has a named property, and the exports object has no number key; tools/js1.mjs now checks that after every case and in the file.
+- Found on the way, from js1-interp's dialog on Netscape 2.02: "function does not always return a value." refuses, at parse time, a function with both `return x;` and `return;`.
+  js1c wrote that in every void function that can trap (25 in frames.wasm.js1.js, none in js1diff's); it now writes `return 0;`, and tools/js10.mjs refuses the mix.
+- Item 5: not js1c's.
+  A page that runs rec(100) three times, rec(1000) unsliced, then rec(1000) and rec(5000) with JB=1000, writing into a TEXTAREA instead of images, gives every answer right on IE 4.01 (shots/js1cr-ie4rec.png).
+  On js1-real's bench page the answers chain through the program's state (rec stores into `sink`), and the wanted values assume every earlier run ran; IE 4 lost the marks of rec(100)'s third run and of rec(500) (its page stalls on image requests, as the probe pages did), so those runs either never ran or never reported, and every later wanted value was off.
+  The prediction of 12.2 (a dead call leaving JP up) describes what would follow a real error, but no error was seen; the two reloads of that page on IE 4.01 stalled after their first mark.
+
+### 12.5 What I expect of the four browsers now, written before the runs
+
+- tests/out/js1diff.html: 26 of 26 in all four (it was 26 of 26 on Netscape 4.08 and IE 4.01; Netscape 3.04 now parses the file and its loop and rec no longer reach NaN; Netscape 2.02 no longer reads an unwritten word).
+- js1-real's bench page for this path, the plain page (no NS2FIX): every answer right in all four; IE 4's run may lose marks again, which the table will say.
+- Start-up on Netscape 2.02: the bench module's initial memory is 3 pages, 49,152 words, and writing them costs about what the transform's load and the NS2FIX page's zeroing did (2.1 s and 1.9 s): the load mark 2 to 3 s on Netscape 2 and 3, 0.3 to 0.6 s on Netscape 4, 0.1 to 0.2 s on IE 4.
+  If it is that, a lazier way is worth proposing (not building).
+- The cost of the reductions on loop(2000) (a multiply by 2654435761 through JMu and about three general adds an iteration): 10 to 25% slower than the old file on Netscape 4.08 (78 to 125 ms then) and on Netscape 3.04 (719 to 906 ms then, when it answered NaN).
