@@ -325,3 +325,27 @@ It is the measurement's reading, not the decision.
   An interpreter adds a further factor of tens on top of that for its dispatch, so only small programs (the Mosaic demo, forms, a table of numbers) are practical on Netscape 2 either way, and the transform is only the faster by that factor.
 - Memory and data: numbered keys on a plain object work (`o[1]`), but a store costs 35 microseconds, so a wasm linear memory kept as an object per byte is slow and large; a memory of packed numbers per word is the shape to measure next.
 - Missing helpers the runtime needs are all small: `charAt` and `indexOf` and `substring` exist, so strings can be walked by `indexOf` into a lookup string (there is no `charCodeAt`), and `escape` gives the code of a character as `%XX`.
+
+## The three code paths in the real browsers
+
+Three branches take the app down to Netscape 2, all on origin/frames-tier: js1-transform (PR #103, wasm2js's output rewritten to JavaScript 1.0), js1-interp (PR #105, a WebAssembly interpreter written in JavaScript 1.0) and js1-compile (PR #104, tools/js1c.c, a compiler from wasm to JavaScript 1.0 with an explicit stack).
+This section runs one program through all three in the real browsers of the XP VM.
+
+tests/js1bench.c is that program: js1-transform's tests/js1cpu.c `loop` and `rec` without cdom (no imports, so every path builds it), and `mem`, which fills a 64 KB buffer a word at a time and sums it.
+tools/js1bench.sh builds it with each branch's own tool, from that branch's worktree, and tools/js1bench.mjs writes a page per path (tests/out/js1bench-t.html, -i.html, -c.html) with everything inlined, since Netscape 2 has no SCRIPT SRC.
+Each run is its own SCRIPT block, timed with `new Date().getTime()` around the call, its answer checked against node's WebAssembly, and reported to /mark/ as the probe pages do.
+The runs, in page order: `loop(2000)` three times, `mem(7)`, `rec(100)` three times, then `rec(500)`, `rec(1000)` and `rec(5000)` (the deep ones last, since IE 4 stops a page at its first stack overflow).
+In node all three pages give every answer right.
+
+### What I expect, written before the runs
+
+The rates come from the first probe's speed rows: Netscape 2.02 runs a simple operation in about 9 us (the loop `x = (x + i) & 0xffff` at 27 us an iteration of about three), Netscape 3.04 about the same, Netscape 4.08 about five times faster and IE 4.01 about thirteen times faster than Netscape 2; a call costs about 31 us and an object store 35 us on Netscape 2.
+
+- `loop(2000)`: an iteration is about 25 operations in the transform and the compiler's output (a multiply in halves, shifts, two loads and a store into the memory object), so about 0.45 s on Netscape 2 and 3, 0.1 s on Netscape 4 and 40 ms on IE 4, for both.
+  The interpreter's own estimate is about 300 us an instruction on Netscape 2 and some 12 register instructions an iteration: about 7 s on Netscape 2 and 3, 1.5 s on Netscape 4, 0.5 s on IE 4, so 10 to 20 times the other two.
+- `mem(7)`: 32,768 iterations of about 12 operations: about 3.5 s on Netscape 2 and 3 for the transform and the compiler, 0.7 s on Netscape 4, 0.3 s on IE 4; the interpreter 15 to 20 times that, about 60 s on Netscape 2.
+- `rec`: the transform keeps each C call a JavaScript call, and a wasm2js frame of `rec_` holds the function, its argument and its locals, about 7 of the 512 slots, so on Netscape 2 and 3 it dies with "stack overflow" between depth 50 and 100: `rec(100)` dies (if the frame holds 5 or fewer it passes, and the limit is under 100 either way).
+  On Netscape 4.08 it passes 500 and dies at 1000 (the probe's `recurse1000` died there); on IE 4 it passes 100 and dies at 500 ("Stack overflow at line"), which also ends the page there.
+  The compiler and the interpreter keep their own stacks and pass every depth to 5000 in every browser: the interpreter at about 10 instructions a level (about 3 ms a level on Netscape 2, so `rec(5000)` about 15 s), the compiler at about 20 operations a level through its driver (about 0.2 ms, `rec(5000)` about 1 s on Netscape 2).
+- Netscape 2 parses all three pages (each path's file passed its own branch's JavaScript 1.0 gate, and the pages' scripts pass js1-compile's), unless the gates missed something measured in the second probe: a working `split`, `substr`, `match`, a `new Array` with arguments or a `length`, or an assignment inside a condition would load and then give wrong answers, not a syntax error.
+- None of the browsers shows a slow-script prompt (none of them has one); Netscape 2 and 3 freeze while a run lasts.
