@@ -22,9 +22,8 @@ A won block is one big mark; a drawn block is grey; the block (or blocks) the ne
 The colours and sizes are CSS, which the frames tier writes as FONT COLOR, FONT SIZE and a one-cell TABLE's BGCOLOR (on a DIV around each block's table, since a TD's own background would be written as a table inside the row).
 The events are click (the six buttons) and change (the code field), the two Netscape 2 fires.
 
-## Two shims for foolish's sources
+## A shim for foolish's sources
 
-- `uttt_code.c` calls `strncmp`, which cdom's libc (src/libc/string.h) does not have: compat.h declares it for every file (`-include`), and uttt_replay.c defines it.
 - `uttt_code.c` includes `<math.h>` for `log2`, in `uttt_ideal_bits`; libc/math.h declares it, and nothing defines it, since the replay never calls `uttt_ideal_bits` and the linker drops it (the module imports no `log2`).
 
 ## Tests

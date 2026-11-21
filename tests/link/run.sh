@@ -122,6 +122,9 @@ libc_case() { # name, then the flags
   if ! "$CC" "$@" "${CDOM_LDFLAGS[@]}" -o "$a" "$here/libc_addr.c" "$src/mini.c" 2> "$log"; then
     echo "FAIL string.h ($name flags): taking memcpy's address does not link with mini.c:"; cat "$log"; fail=1; return; fi
   echo "ok   string.h ($name flags): compiles, links with mini.c alone, copy and fill are memory.copy and memory.fill"
+  local sn="$out/libc_strncmp_$name.wasm"; rm -f "$sn"
+  if ! "$CC" "$@" "${CDOM_LDFLAGS[@]}" -o "$sn" "$here/libc_strncmp.c" "$src/mini.c" 2> "$log"; then
+    echo "FAIL string.h ($name flags): strncmp does not compile or link with mini.c alone:"; cat "$log"; fail=1; return; fi
   # stdio.h: snprintf and vsnprintf compile and link with mini.c alone (run.mjs runs their cases), and a
   # program that does not call them carries none of their code (the string.h one above links mini.c too).
   local p="$out/libc_printf_$name.wasm"; rm -f "$p"
