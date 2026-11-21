@@ -1,0 +1,29 @@
+<html><head><title>probe-zero</title>
+<script>
+// The start-up cost of js1c's initial memory (docs/frames-design.md, section 15): the app's factory, timed, in each browser.
+// Query: lazy (frames.wasm.js1.js: the words below __heap_base) or eager (frames.eager.js, the same file with every word
+// written, as js1c did before).  The factory is run three times; the times are written into the page, and marked.
+var Q = "" + location.search;
+Q = Q.substring(1, Q.length);
+var FILE = "frames.wasm.js1.js";
+if (Q == "eager") FILE = "frames.eager.js";
+document.write('<script src="' + FILE + '"></' + 'script>');
+</script>
+</head><body>
+<script>
+var out = "file " + FILE + "<br>";
+var imp = new Object();
+imp.cdom = new Object();
+var k, t0, t1, d0, d1, o;
+for (k = 0; k < 3; k++) {
+  d0 = new Date();
+  t0 = d0.getTime();
+  o = cdomFactoryJs1(imp);
+  d1 = new Date();
+  t1 = d1.getTime();
+  out = out + "factory " + (k + 1) + ": " + (t1 - t0) + " ms<br>";
+}
+out = out + "JZ " + JZ + " JA " + JA + "<br>";
+document.write(out);
+</script>
+</body></html>
