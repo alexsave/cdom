@@ -70,6 +70,12 @@ export function lacks(src, { allowed = [], js10 = false } = {}) {
     // A member or a call of a new expression, new X().y or new X()(), is a syntax error in Netscape 2 and 3
     // (docs/descent.md), with parentheses around the new or without: acorn reads both the same, and terser writes the
     // first as (new X).y, so the gate refuses every form, on the source and on the minified output alike.
+    // Netscape 2's parser turns an assignment in a condition into an equality test (netscape.exe's messages: "test for
+    // equality (==) mistyped as assignment (=)?", "Assuming equality test"), so if (a = f()) would compare: the gate
+    // refuses an assignment anywhere in the test of if, while, for, do-while and ?:.
+    const test = (n.type === 'IfStatement' || n.type === 'WhileStatement' || n.type === 'DoWhileStatement'
+      || n.type === 'ForStatement' || n.type === 'ConditionalExpression') ? n.test : null;
+    if (test) walk(test, (m) => { if (m.type === 'AssignmentExpression') add('an assignment in a condition', m); });
     if ((n.type === 'MemberExpression' && n.object.type === 'NewExpression') || (n.type === 'CallExpression' && n.callee.type === 'NewExpression'))
       add('a member of a new expression', n);
     if (n.type === 'MemberExpression' && !n.computed) {

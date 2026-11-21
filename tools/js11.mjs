@@ -35,7 +35,15 @@ for (const [src, what] of [
   ['var t = (new Date()).getTime();', 'a member of a new expression'],
   ['var y = (new Date).getYear;', 'a member of a new expression'],
   ['new F()();', 'a member of a new expression'],
+  ['if (a = f()) g();', 'an assignment in a condition'],
+  ['if (b && (a = f())) g();', 'an assignment in a condition'],
+  ['while (a = f()) g();', 'an assignment in a condition'],
+  ['while (x[a += 1]) g();', 'an assignment in a condition'],
+  ['for (i = 0; a = f(); i++) g();', 'an assignment in a condition'],
+  ['do g(); while (a = f());', 'an assignment in a condition'],
+  ['x = (a = f()) ? 1 : 2;', 'an assignment in a condition'],
 ]) ok(refused(src, what), `${src} is refused (${what})`);
+ok(passes('for (i = 0; i < n; i += 1) { a = f(); if (a == b) x = a ? 1 : (b = 2); }'), 'an assignment in a for loop\'s init and update, in a body and in a branch of ?: passes');
 ok(passes('var d = new Date(); var t = d.getTime();'), 'a new expression kept in a variable, then its member, passes');
 // terser, as tools/legacy/build.mjs runs it on frames.js (no compress), keeps a new expression in its variable, and
 // what it writes of a member of one, (new Date).getTime(), the gate on the minified output refuses.
