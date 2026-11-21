@@ -100,7 +100,7 @@ EXPORT("grow") void grow(uint32_t n) {
 EXPORT("touch") void touch(void) { cd_set_text_node_num(ids[COUNT], ++count); cd_flush(); }
 /* Nothing changed: no redraw. */
 EXPORT("noop") void noop(void) { cd_flush(); }
-/* The length of the page's query string as the shim reads it: the top window's, not the app frame's, which has cdomApp added. */
+/* The length of the page's query string as the shim reads it: the top window's (docs/frames-design.md, section 16). */
 EXPORT("url_search") uint32_t url_search(void) { char b[64]; return cd_url_read(1, b, sizeof b); }
 /* A timer whose callback changes the tree: a redraw from a timer. */
 static uint32_t ticks;

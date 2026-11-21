@@ -246,13 +246,19 @@ const FRAMES_OLD = `
   // ?ns4, Netscape 4's (neither). Both keep select() and focus(), which both browsers have.
   // A third, ?ns2, is what of Netscape 2 this Chrome can take away (docs/frames-design.md, section 16): Netscape 4's
   // fields, no mouse button or key event reaching the page (stopped at the window, so document.onmousedown and a field's
-  // onkeyup never run; the click and the typing still happen), and no charCodeAt or fromCharCode.
+  // onkeyup never run; the click and the typing still happen), no charCodeAt or fromCharCode, no type on a field, and no
+  // String or Number global.
   const caretQ = (() => { try { return window.top.location.search; } catch { return ''; } })();
   const ns2 = /[?&]ns2(&|$)/.test(caretQ);
   const caretFlavour = /[?&]ie4(&|$)/.test(caretQ) ? 'ie4' : /[?&]ns4(&|$)/.test(caretQ) || ns2 ? 'ns4' : '';
   if (ns2) {
     for (const t of ['mousedown', 'mouseup', 'keydown', 'keyup', 'keypress']) add.call(window, t, (e) => e.stopImmediatePropagation(), true);
     delete String.prototype.charCodeAt; delete String.fromCharCode;
+    // Netscape 2's form elements have no type (JavaScript 1.1 added it).
+    for (const C of [HTMLInputElement, HTMLTextAreaElement, HTMLSelectElement, HTMLButtonElement]) delete C.prototype.type;
+    // Nor a String global ("String is not defined"), and Number is taken to be missing too (frames.js checks window.String
+    // and window.Number first). Last, since the lines above name String.
+    delete window.String; delete window.Number;
   }
   if (caretFlavour) {
     const real = []; // [input's, textarea's]: no Map, and Reflect.apply, not call (IE 6's profile took both)
