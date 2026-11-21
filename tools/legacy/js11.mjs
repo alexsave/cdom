@@ -1,7 +1,8 @@
 // The frames tier's language gates (docs/frames-design.md, section 10): js11 refuses what Netscape 3's JavaScript 1.1
 // cannot parse or does not have, in tools/legacy/frames.js and in its minified output; js10 refuses, on top of that,
-// what Netscape 2's JavaScript 1.0 is taken to lack, in the boot's first part (shim/boot.js). tools/legacy/build.mjs
-// calls them; tools/js11.mjs checks each rule on code planted for it.
+// what Netscape 2's JavaScript 1.0 is taken to lack or was measured to lack, in the boot's first part (shim/boot.js), in
+// frames.js itself (since branch frames-js10: one shim for the whole tier, Netscape 2 included) and in a page's own scripts
+// in its app document. tools/legacy/build.mjs calls them; tools/js11.mjs checks each rule on code planted for it.
 import * as acorn from 'acorn';
 
 // Syntax, by AST node type: what JavaScript 1.2 to 1.4 added (switch, do-while, labels, delete, regex and object and
@@ -24,9 +25,17 @@ const METHODS = new Set(['push', 'pop', 'shift', 'unshift', 'splice', 'slice', '
   'innerHTML', 'match', 'test', 'exec', 'toFixed', 'hasOwnProperty', 'substr', 'isNaN', 'setInterval']);
 // What Netscape 2 is taken to lack beyond that (Alex: "probably no Array, no typeof, no prototype"), and what
 // docs/descent.md measured it lacks: constructor, window.onerror (an error always raises the alert), document.images,
-// new Image, screen and navigator.plugins, as a name or a member; location.replace it has. For the boot.
+// new Image, screen and navigator.plugins, as a name or a member; location.replace it has. Measured too: its Array has no
+// length and drops new Array(a, b)'s arguments, its split returns undefined, new Function and String are not defined
+// (new String died), and it fires no mouse button event and has no captureEvents. Object it has, as new Object() alone
+// (js1c's output runs on it): the name is refused anywhere else. Number is not measured, and is taken to be missing.
+// Each may still be named where the file checks for it first (allowed), as frames.js does for the Netscape 3 and 4 hooks.
 const JS10_NAMES = new Set(['Array', 'prototype', 'split', 'join', 'Function', 'Object', 'constructor', 'onerror', 'images',
-  'Image', 'screen', 'plugins']);
+  'Image', 'screen', 'plugins', 'String', 'Number', 'captureEvents', 'routeEvent', 'Event', 'onmousedown', 'onmouseup']);
+// What tools/legacy/frames.js names behind a check for it (or, for the two button hooks, only assigns, which is inert where
+// the browser fires no such event): build.mjs and tools/js11.mjs pass it as allowed.
+export const FRAMES_ALLOWED = ['charCodeAt', 'fromCharCode', 'String', 'Number', 'captureEvents', 'routeEvent', 'Event',
+  'onmousedown', 'onmouseup'];
 // As a name only: arguments does not exist in Netscape 2, but a function's own f.arguments does.
 const JS10_IDENTS = new Set(['arguments']);
 
@@ -76,6 +85,24 @@ export function lacks(src, { allowed = [], js10 = false } = {}) {
     }
   };
   nested(tree, 0);
+  // Netscape 2.02 and 3.04 refuse, at parse time, a function that returns a value on one path and none on another, and one
+  // that returns a value but whose last statement is not a return ("function does not always return a value.":
+  // docs/descent.md, "The three code paths", and docs/frames-design.md, 15.1); tools/js10.mjs has the same two rules for
+  // js1c's output.
+  walk(tree, (n) => {
+    if (n.type !== 'FunctionDeclaration' && n.type !== 'FunctionExpression') return;
+    let value = 0, bare = 0;
+    const r = (x) => {
+      if (!x || typeof x.type !== 'string') return;
+      if (x !== n.body && (x.type === 'FunctionDeclaration' || x.type === 'FunctionExpression')) return;
+      if (x.type === 'ReturnStatement') { if (x.argument) value++; else bare++; }
+      for (const k of Object.keys(x)) { if (k === 'loc') continue; const v = x[k]; if (Array.isArray(v)) v.forEach(r); else if (v && typeof v.type === 'string') r(v); }
+    };
+    r(n.body);
+    if (value && bare) add('a function that returns a value and also none', n);
+    const last = n.body.body[n.body.body.length - 1];
+    if (value && (!last || last.type !== 'ReturnStatement')) add('a function that returns a value and does not end in a return', n);
+  });
   for (const f of seam(src)) found.push(f);
   walk(tree, (n, parent) => {
     if (SYNTAX[n.type]) add(SYNTAX[n.type], n);
@@ -101,12 +128,12 @@ export function lacks(src, { allowed = [], js10 = false } = {}) {
     if (n.type === 'MemberExpression' && !n.computed) {
       const name = n.property.name;
       if (METHODS.has(name) && !ok.has(name)) add(`.${name}`, n);
-      if (js10 && JS10_NAMES.has(name)) add(`.${name}`, n);
+      if (js10 && JS10_NAMES.has(name) && !ok.has(name)) add(`.${name}`, n);
     }
     if (n.type === 'Identifier' && !(parent && parent.type === 'MemberExpression' && parent.property === n && !parent.computed)
       && !(parent && parent.type === 'Property' && parent.key === n)) {
       if (GLOBALS.has(n.name)) add(n.name, n);
-      if (js10 && JS10_NAMES.has(n.name)) add(n.name, n);
+      if (js10 && JS10_NAMES.has(n.name) && !ok.has(n.name) && !(n.name === 'Object' && parent && parent.type === 'NewExpression' && parent.callee === n)) add(n.name, n);
       if (js10 && JS10_IDENTS.has(n.name)) add(n.name, n);
     }
   });

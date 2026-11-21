@@ -31,15 +31,17 @@ if (!process.env.UTTT_PROFILE) {
   fs.writeFileSync(path.join(out, 'expect.txt'), execFileSync(path.join(out, 'uttt_expect'), [CODE], { encoding: 'utf8' }));
   if (process.env.UTTT_MEASURE) {
     const sz = (f) => { const b = fs.readFileSync(path.join(out, f)); return [b.length, zlib.gzipSync(b, { level: 9 }).length]; };
-    const files = ['uttt.html', 'cdom.frames.js', 'uttt.wasm.js1.js'], s = files.map(sz);
+    // The frames tier's two documents: the page and its app document (docs/frames-design.md, section 16), which inlines the
+    // shim and uttt.wasm.js1.js.
+    const files = ['uttt.html', 'uttt.app.html', 'uttt.wasm.js1.js'], s = files.map(sz);
     for (let i = 0; i < files.length; i++) console.log(`measure ${files[i]} ${s[i][0]} bytes, ${s[i][1]} gzipped`);
-    console.log(`measure the frames tier's three files ${s.reduce((a, x) => a + x[0], 0)} bytes, ${s.reduce((a, x) => a + x[1], 0)} gzipped`);
+    console.log(`measure the frames tier's two documents ${s[0][0] + s[1][0]} bytes, ${s[0][1] + s[1][1]} gzipped`);
     console.log(`measure uttt.wasm ${sz('uttt.wasm')[0]} bytes, ${sz('uttt.wasm')[1]} gzipped`);
     const ref = path.join(top, 'tests/out/frames.wasm.js1.js');
     if (fs.existsSync(ref)) console.log(`measure uttt.wasm.js1.js is ${s[2][0] - fs.statSync(ref).size} bytes larger than tests/out/frames.wasm.js1.js`);
   }
   let failed = 0;
-  for (const [profile, legacy] of [['webassembly', ''], ['frames', 'frames'], ['frames-ns4', 'frames']]) {
+  for (const [profile, legacy] of [['webassembly', ''], ['frames', 'frames'], ['frames-ns4', 'frames'], ['frames-ns2', 'frames']]) {
     console.log(`-- ${profile}`);
     const r = spawnSync(process.execPath, [new URL(import.meta.url).pathname], { stdio: 'inherit', env: { ...process.env, LEGACY: legacy, UTTT_PROFILE: profile } });
     if (r.status !== 0) failed++;
@@ -50,7 +52,8 @@ if (!process.env.UTTT_PROFILE) {
 
 // A child: one profile.
 const { launch, sleep, TIER, FETCHED, tierFetched } = await import('./cdp.mjs');
-const PROFILE = process.env.UTTT_PROFILE, FRAMES = TIER === 5, flavour = PROFILE === 'frames-ns4' ? '&ns4' : '';
+// frames-ns2 is tools/cdp.mjs's ?ns2: no mouse button or key event, no charCodeAt or fromCharCode (Netscape 2's).
+const PROFILE = process.env.UTTT_PROFILE, FRAMES = TIER === 5, flavour = PROFILE === 'frames-ns4' ? '&ns4' : PROFILE === 'frames-ns2' ? '&ns2' : '';
 const lines = fs.readFileSync(path.join(out, 'expect.txt'), 'utf8').trim().split('\n');
 const n = +lines[0].split(' ')[1];
 // The position after k plies, as tools/uttt_expect.c printed it.
@@ -224,7 +227,7 @@ run: try {
 
   const errs = b.exceptions.filter((e) => !/ReferenceError: TextDecoder is not defined$/.test(e));
   ok(!errs.length, `no page exception: ${errs.join('; ')}`);
-  if (FRAMES) ok((await E('cdomF.errors.join("; ")')) === '', `the frames shim noted no error: ${await E('cdomF.errors.join("; ")')}`);
+  if (FRAMES) ok((await E('cdomF.errors')) === '', `the frames shim noted no error: ${await E('cdomF.errors')}`);
 } catch (e) {
   fails++;
   console.log('FAIL', `${PROFILE}:`, e.stack || e);

@@ -8,7 +8,11 @@
 //   node tools/legacy/build.mjs app <in.wasm> <out/in.wasm.js>   the same wasm compiled to JS by wasm2js
 //   node tools/legacy/build.mjs app-ie9 <in.wasm> <out/in.wasm.ie9.js>  the same, on a plain Array of words (memory.mjs),
 //                                                                in ES3: IE 9 and the fourth tier (IE 6 to 8) share it
-//   node tools/legacy/build.mjs page <in.html> <out.html>        inlines shim/boot.js at /*CDOM_BOOT*/
+//   node tools/legacy/build.mjs page <in.html> <out.html>        inlines shim/boot.js at /*CDOM_BOOT*/, and the early script
+//                                                                naming out's app document (out.app.html for out.html)
+//   node tools/legacy/build.mjs app-doc <page.html> <app.js1.js> <page.app.html>  the frames tier's app document: every
+//                                                                script its cdomApp frame runs, inline (docs/frames-design.md,
+//                                                                section 16)
 //   node tools/legacy/build.mjs inputs <shim|app|page> <args>    prints what that build reads, one per line
 // Both outputs must parse as ES5 and name no ES2015 global or method that the polyfills do not supply,
 // or nothing is written; both are then minified by the repo root's terser (the one bench/build.sh minifies
@@ -232,7 +236,7 @@ async function appWords(wasm, out) {
 // be JavaScript 1.0, which Netscape 2 parses (js11.mjs, js10), and both must parse as ES3 and name nothing JScript 5.0
 // (IE 5.0) lacks, since they run before any polyfill.
 const BOOT_SPLIT = '/*CDOM_BOOT_ES3*/';
-async function page(src, out) {
+async function bootParts() {
   const whole = read(path.join(top, 'shim/boot.js'));
   if (whole.split(BOOT_SPLIT).length !== 2) throw new Error(`shim/boot.js needs exactly one ${BOOT_SPLIT}`);
   es3Pass ??= await import('./es3.mjs');
@@ -252,6 +256,16 @@ async function page(src, out) {
     if (k === 0) js11Pass.js11('shim/boot.js part 1', boot, { js10: true, allowed: ['getElementById', 'createElement'] });
     return boot;
   });
+  return parts;
+}
+// The app document of a page out.html: out.app.html, beside it (the early script names it relative to the page).
+function appDocName(out) {
+  const name = path.basename(out);
+  if (!/^[A-Za-z0-9_.-]+\.html$/.test(name)) throw new Error(`${name}: a page with a frames tier is named letters, digits, _, . and - and ends in .html (the early script names its app document after it)`);
+  return name.replace(/\.html$/, '.app.html');
+}
+async function page(src, out) {
+  const parts = await bootParts();
   // The marker sits in a plain <script> of its own, after the shim's (see shim/boot.js): the first part ends that
   // script, and the second opens another.
   const html = read(src), mark = '/*CDOM_BOOT*/';
@@ -269,6 +283,9 @@ async function page(src, out) {
   for (const [s, e] of ecuts) { earlyCode += early.slice(eat, s); eat = e; }
   earlyCode = (earlyCode + early.slice(eat)).replace(/[ \t]+$/gm, '').replace(/\n{2,}/g, '\n').trim() + '\n';
   js11Pass.js11('shim/boot-early.js', earlyCode, { js10: true, allowed: ['getElementById', 'createElement'] });
+  const APP_DOC = '"/*CDOM_APP_DOC*/"';
+  if (earlyCode.split(APP_DOC).length !== 2) throw new Error(`shim/boot-early.js needs exactly one ${APP_DOC}`);
+  earlyCode = earlyCode.replace(APP_DOC, () => JSON.stringify(appDocName(out)));
   if (!html.includes('</head>')) throw new Error(`${src} has no </head> (the early script goes before it)`);
   // The shim and the boot's second part are ES5 and ES3: Netscape 2 to 4 would raise a syntax error alert for each in the
   // app frame, so their <script>s say language="JavaScript1.5", which those browsers (JavaScript 1.0 to 1.3) skip without a
@@ -280,19 +297,130 @@ async function page(src, out) {
     .replace(mark, () => parts[0] + '</script>\n<script language="JavaScript1.5">\n' + parts[1]);
 }
 
-// cdom.frames.js: tools/legacy/frames.js, which must be JavaScript 1.1 (js11.mjs) before and after it is minified. No
-// Babel and no polyfill: it is its own shim. terser only mangles and drops the layout (compress could make a construct
-// 1.1 has not, and the gate would refuse it); the top-level names are the markup's and the boot's, so they stay.
-// charCodeAt and fromCharCode are behind checks for them (cf_hasAt, cf_hasFrom).
-const FRAMES_ALLOWED = ['charCodeAt', 'fromCharCode'];
-async function shimFrames(out) {
+// The frames tier's shim: tools/legacy/frames.js, which must be JavaScript 1.0 (js11.mjs with js10: Netscape 2 runs it)
+// before and after it is minified. No Babel and no polyfill: it is its own shim. terser only mangles and drops the layout
+// (compress could make a construct 1.0 has not, and the gate would refuse it); the top-level names are the markup's and
+// the boot's, so they stay. What it names of Netscape 3 and later it checks for first (js11.mjs's FRAMES_ALLOWED).
+async function framesCode(name) {
   js11Pass ??= await import('./js11.mjs');
-  const src = js11Pass.js11('frames.js', read(path.join(here, 'frames.js')), { allowed: FRAMES_ALLOWED });
+  const allowed = js11Pass.FRAMES_ALLOWED, js10 = true;
+  const src = js11Pass.js11('frames.js', read(path.join(here, 'frames.js')), { js10, allowed });
   const { minify } = createRequire(path.join(top, 'package.json'))('terser');
   const { code } = await minify(src, { ecma: 5, compress: false, mangle: true, format: { ascii_only: true, beautify: !!process.env.LEGACY_PRETTY } });
+  js11Pass.js11(`${name} once minified`, code, { js10, allowed });
+  return code;
+}
+// cdom.frames.js: the shim alone, which no page loads any more (the app document inlines it); kept for its size and the
+// probes.
+async function shimFrames(out) {
   const name = path.basename(out);
-  js11Pass.js11(`${name} once minified`, code, { allowed: FRAMES_ALLOWED });
-  return `/* ${name}: generated by tools/legacy/build.mjs, do not edit. */\n` + code + '\n';
+  return `/* ${name}: generated by tools/legacy/build.mjs, do not edit. */\n` + await framesCode(name) + '\n';
+}
+
+// The largest <script> block the app document writes, in bytes: Netscape 2's limit on one inline script is not known yet
+// (a probe on the XP VM measures it), so this is a guess, and the one place to change (docs/frames-design.md, section 16).
+const BLOCK_MAX = 30000;
+// The largest piece of the string table's text one statement assigns.
+const LITS_PIECE = 4096;
+const bytes = (s) => Buffer.byteLength(s, 'utf8');
+// A string literal's source, "..." as tools/cdlits writes it, cut into literals of at most max bytes each, never inside
+// an escape (a backslash and three octal digits, or a backslash and one character).
+function cutLiteral(raw, max) {
+  const q = raw[0], body = raw.slice(1, -1), out = [];
+  let cur = '';
+  for (let i = 0; i < body.length;) {
+    let j = i + 1;
+    if (body[i] === '\\') j = /[0-7]/.test(body[i + 1]) ? i + 1 + (/^[0-7]{1,3}/.exec(body.slice(i + 1))[0].length) : i + 2;
+    const tok = body.slice(i, j);
+    if (cur && bytes(cur) + bytes(tok) + 2 > max) { out.push(q + cur + q); cur = ''; }
+    cur += tok;
+    i = j;
+  }
+  out.push(q + cur + q);
+  return out;
+}
+// The page's string table (tools/cdpage's var cdomLits=new Array(base, stamp, "U+2603", text)) as the four globals the
+// shim reads: Netscape 2's new Array drops its arguments. The text, a literal or literals joined by +, is assigned in
+// pieces of at most LITS_PIECE bytes, one statement each, so a block can end between any two.
+function litsStatements(html, src) {
+  // The table holds no "<" (tools/cdlits writes it as an escape), so its script ends at the first </script>.
+  const m = /<script>\n?(var cdomLits=new Array\([\s\S]*?)\n?<\/script>/.exec(html);
+  if (!m) throw new Error(`${src} has no string table script (var cdomLits=new Array(...); in a <script> of its own)`);
+  const decl = acorn.parse(m[1], { ecmaVersion: 5 }).body[0].declarations[0].init;
+  const args = decl && decl.type === 'NewExpression' && decl.arguments;
+  if (!args || args.length !== 4) throw new Error(`${src}: the string table is not new Array(base, stamp, check, text)`);
+  const lits = [];
+  const flat = (n) => {
+    if (n.type === 'BinaryExpression' && n.operator === '+') { flat(n.left); flat(n.right); return; }
+    if (n.type !== 'Literal' || typeof n.value !== 'string') throw new Error(`${src}: the string table's text is not string literals joined by +`);
+    lits.push(...cutLiteral(m[1].slice(n.start, n.end), LITS_PIECE));
+  };
+  flat(args[3]);
+  const raw = (n) => m[1].slice(n.start, n.end);
+  const out = [`var cdomLitsBase=${raw(args[0])},cdomLitsStamp=${raw(args[1])},cdomLitsUtf8=${raw(args[2])},cdomLitsText="";`];
+  let piece = [];
+  const flush = () => { if (piece.length) out.push(`cdomLitsText=cdomLitsText+${piece.join('+')};`); piece = []; };
+  for (const l of lits) {
+    if (piece.length && bytes(piece.join('+')) + bytes(l) + 1 > LITS_PIECE) flush();
+    piece.push(l);
+  }
+  flush();
+  return out;
+}
+// A script's top-level statements, each its own source, for the blocks.
+const statements = (code) => acorn.parse(code, { ecmaVersion: 5, sourceType: 'script' }).body.map((n) => code.slice(n.start, n.end));
+// Statements packed, in order, into blocks of at most BLOCK_MAX bytes; a statement larger than that is refused, naming
+// where it came from.
+function blocks(list) {
+  const out = [];
+  let cur = '';
+  for (const [what, st] of list) {
+    if (bytes(st) > BLOCK_MAX) throw new Error(`${what} has a statement of ${bytes(st)} bytes, over the app document's block of ${BLOCK_MAX}: ${st.slice(0, 80)}`);
+    if (/<\/script|<!--/i.test(st)) throw new Error(`${what} has </script or <!-- in a statement, which would end its block: ${st.slice(0, 80)}`);
+    if (cur && bytes(cur) + 1 + bytes(st) > BLOCK_MAX) { out.push(cur); cur = ''; }
+    cur += (cur ? '\n' : '') + st;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+// The frames tier's app document (docs/frames-design.md, section 16): the page's cdomApp frame, which shim/boot-early.js
+// names, with every script that frame runs inline, since Netscape 2 has no SCRIPT SRC: the boot's first part, the string
+// table, the shim, the app's JavaScript 1.0 module (url + ".js1.js", from tools/js1c), then the page's own scripts (those
+// after the boot), whose cdomBoot starts it all. Every block is plain <script>, at most BLOCK_MAX bytes, and cut only
+// between top-level statements. The modern page carries none of it.
+async function appDoc(src, module, out) {
+  const html = read(src);
+  if (path.basename(out) !== appDocName(src)) throw new Error(`${path.basename(out)}: the app document of ${path.basename(src)} is ${appDocName(src)}, the name its early script gives`);
+  const boot1 = (await bootParts())[0];
+  const title = (/<title>([\s\S]*?)<\/title>/.exec(html) || [, ''])[1];
+  // The page's own scripts: every <script> after the boot's second part.
+  const at = html.indexOf('<script language="JavaScript1.5">\nfunction cdomBootDom');
+  if (at < 0) throw new Error(`${src} has no boot (build it with build.mjs page first)`);
+  const own = [];
+  const rest = html.slice(html.indexOf('</script>', at) + 9);
+  for (const m of rest.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    if (/\bsrc\s*=/i.test(m[1])) throw new Error(`${src}: a script after the boot has a src, which Netscape 2 cannot load: <script${m[1]}>`);
+    own.push(m[2]);
+  }
+  if (!own.length) throw new Error(`${src} has no script of its own after the boot (the one that calls cdomBoot)`);
+  const ownCode = own.join('\n');
+  js11Pass.js11(`${path.basename(src)}'s own script`, ownCode, { js10: true });
+  const js10 = await import('../js10.mjs');
+  opened.add(path.resolve(path.join(here, '../js10.mjs')));
+  const mod = read(module);
+  const bad = js10.lacks10(mod);
+  if (bad.length) throw new Error(`${path.basename(module)} is not JavaScript 1.0: ${[...new Set(bad)].slice(0, 6).join(', ')}`);
+  if (!/^window\.cdomFactory=/m.test(mod)) throw new Error(`${path.basename(module)} does not set window.cdomFactory (not a tools/js1c module)`);
+  const shim = await framesCode(path.basename(out));
+  const list = [
+    ...statements(boot1).map((st) => ['the boot', st]),
+    ...litsStatements(html, src).map((st) => ['the string table', st]),
+    ...statements(shim).map((st) => ['the shim', st]),
+    ...statements(mod).map((st) => [path.basename(module), st]),
+    ...statements(ownCode).map((st) => [`${path.basename(src)}'s own script`, st]),
+  ];
+  return `<html><head><meta charset="utf-8"><title>${title}</title></head><body>\n`
+    + blocks(list).map((b) => `<script>\n${b}\n</script>\n`).join('') + '</body></html>\n';
 }
 
 let wasm2jsVer;
@@ -303,7 +431,7 @@ const wasm2jsVersion = () => (wasm2jsVer ??= execFileSync('wasm2js', ['--version
 // lockfile beside it does not match), so it stands for Babel, preset-env, acorn and terser, whose own
 // files are loaded by import, not read; the two vendored files the shim inlines are read, so they are
 // named too. A build that reads a file not named here throws before it writes (see write()).
-function inputs(cmd, a) {
+function inputs(cmd, a, b) {
   const files = [path.join(here, 'build.mjs'), path.join(here, 'package.json'), path.join(here, 'package-lock.json'),
     path.join(here, 'node_modules/.package-lock.json'), path.join(top, 'package.json'), path.join(top, 'package-lock.json'),
     path.join(top, 'node_modules/.package-lock.json')];
@@ -313,6 +441,9 @@ function inputs(cmd, a) {
   if (cmd === 'shim' || cmd === 'shim-ie9') files.push(require.resolve('pepjs/dist/pep.js'));
   if (cmd === 'shim-ie9' || cmd === 'shim-ie6') files.push(path.join(here, 'memory-words.js'), path.join(here, 'memory.mjs'));
   if (cmd === 'shim-frames') files.push(path.join(here, 'frames.js'), path.join(here, 'js11.mjs'));
+  // js10.mjs is imported, not read: named here as build.mjs is.
+  if (cmd === 'app-doc') files.push(path.join(top, 'shim/boot.js'), path.join(here, 'frames.js'), path.join(here, 'js11.mjs'), path.join(here, 'es3.mjs'),
+    path.join(top, 'tools/js10.mjs'), path.resolve(a), path.resolve(b));
   if (cmd === 'shim-ie6') files.push(path.join(here, 'polyfills-es3.js'), path.join(here, 'dom-old.js'), path.join(here, 'vml.js'), path.join(here, 'shim-old.js'),
     path.join(here, 'es3.mjs'));
   else if (cmd === 'app') { files.push(path.resolve(a)); tools.push(wasm2jsVersion()); }
@@ -360,14 +491,14 @@ function write(out, data, want, list) {
   fs.writeFileSync(stampOf(out), `${want} ${sha(data)}\n`);
 }
 
-const [cmd, a, b] = process.argv.slice(2);
+const [cmd, a, b, c] = process.argv.slice(2);
 const builds = { 'shim-frames': [1, (out) => shimFrames(out)], shim: [1, (out) => shim(out, '')], 'shim-ie9': [1, (out) => shim(out, 'ie9')], 'shim-ie6': [1, (out) => shim(out, 'ie6')], app: [2, (out) => app(a, out)], 'app-ie9': [2, (out) => appWords(a, out)],
-  page: [2, (out) => page(a, out)] };
+  page: [2, (out) => page(a, out)], 'app-doc': [3, (out) => appDoc(a, b, out)] };
 if (cmd === 'inputs' && builds[a]) {
-  const list = inputs(a, process.argv[4]);
+  const list = inputs(a, process.argv[4], process.argv[5]);
   process.stdout.write(list.files.join('\n') + '\n');
 } else if (builds[cmd] && process.argv.length === 4 + builds[cmd][0] - 1) {
-  const out = builds[cmd][0] === 1 ? a : b, list = inputs(cmd, a), want = inputsHash(cmd, a, out, list);
+  const out = [a, b, c][builds[cmd][0] - 1], list = inputs(cmd, a, b), want = inputsHash(cmd, a, out, list);
   if (!fresh(out, want)) {
     acorn = await import('acorn');
     // A refused build ends with what refused it, after the stack: the line a log's tail shows (tests/build.sh, mutate.py).
@@ -380,6 +511,6 @@ if (cmd === 'inputs' && builds[a]) {
     }
   }
 } else {
-  console.error('usage: build.mjs shim <out.js> | shim-ie9 <out.js> | shim-ie6 <out.js> | shim-frames <out.js> | app <in.wasm> <out.js> | app-ie9 <in.wasm> <out.js> | page <in.html> <out.html> | inputs <build> <args>');
+  console.error('usage: build.mjs shim <out.js> | shim-ie9 <out.js> | shim-ie6 <out.js> | shim-frames <out.js> | app <in.wasm> <out.js> | app-ie9 <in.wasm> <out.js> | page <in.html> <out.html> | app-doc <page.html> <app.js1.js> <page.app.html> | inputs <build> <args>');
   process.exit(2);
 }

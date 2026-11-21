@@ -81,14 +81,27 @@ const port = srv.address().port;
   // The built page, as Netscape 2 to 4 are handed it: the early script in the head ahead of any content, and the two
   // scripts they cannot parse hidden from them by language="JavaScript1.5".
   const html = fs.readFileSync(path.join(root, 'frames.html'), 'utf8');
-  const early = html.indexOf('window.name != "cdomApp"');
+  const early = html.indexOf('"frames.app.html" + location.search');
   ok(early > 0 && html.lastIndexOf('<script>', early) > 0 && early < html.indexOf('<div') && early < html.indexOf('</head>'),
-    'the early script is in the head, ahead of any content');
+    'the early script is in the head, ahead of any content, and names the page\'s app document');
   const hidden = [...html.matchAll(/<script language="JavaScript1\.5">\s*\n([^\n]{0,60})/g)].map((m) => m[1]);
   ok(hidden.length === 2 && /cdom shim:|GENERATED from/.test(hidden[0]) && hidden[1].startsWith('function cdomBootDom'),
     `the inlined shim and the boot's second part are language="JavaScript1.5" scripts, which Netscape 2 to 4 skip: ${JSON.stringify(hidden)}`);
   const table = /\nvar cdomLits=new Array\(\d+,\d+,"[^"]*","([^\n]*)"\);\n/.exec(html);
   ok(!!table && !table[1].includes('\\x') && !/\\[0-7]{3}[0-9]/.test(table[1]) && !table[1].includes('\\000') && table[1].includes('\\001'), 'the string table is new Array(...) with entries separated by \\001, no \\x escape and no digit right after an escape: Netscape 2 and 3 cannot parse a literal and end a string at a NUL, and Netscape 3 reads \\x greedily');
+  // The app document (docs/frames-design.md, section 16): every script the cdomApp frame runs, inline, since Netscape 2
+  // has no SCRIPT SRC, in blocks of at most build.mjs's BLOCK_MAX bytes; the modern page carries none of it.
+  const app = fs.readFileSync(path.join(root, 'frames.app.html'), 'utf8');
+  const max = +/\nconst BLOCK_MAX = (\d+);/.exec(fs.readFileSync(path.join(root, '../../tools/legacy/build.mjs'), 'utf8'))[1];
+  const tags = [...app.matchAll(/<script[^>]*>/gi)].map((m) => m[0]), blockBytes = [...app.matchAll(/<script>\n([\s\S]*?)\n<\/script>/g)].map((m) => Buffer.byteLength(m[1]));
+  ok(tags.length > 1 && tags.every((t) => t === '<script>') && !/<script[^>]*\ssrc\s*=/i.test(app) && blockBytes.length === tags.length,
+    `the app document's scripts are ${tags.length} plain <script> blocks, none with a src: ${[...new Set(tags)].join(' ')}`);
+  ok(max === 30000 && blockBytes.every((n) => n <= max), `no block of the app document is over BLOCK_MAX (${max}): ${blockBytes.join(', ')} bytes`);
+  ok(['function cdomBoot(', 'var cdomLitsBase=', 'function cdomFramesStart(', 'function cdomFactoryJs1(', 'cdomBoot("frames.wasm"'].every((k) => app.includes(k))
+    && app.indexOf('function cdomBoot(') < app.indexOf('var cdomLitsBase=') && app.indexOf('function cdomFactoryJs1(') < app.indexOf('cdomBoot("frames.wasm"'),
+    'the app document holds, in order, the boot, the string table, the shim, the module and the page\'s own script');
+  ok(!html.includes('function cdomFramesStart(') && !html.includes('cdomFactoryJs1') && !html.includes('<script src'),
+    'the page itself holds neither the shim nor the module, and fetches no script');
 }
 const measure = !!process.env.FRAMES_MEASURE;
 run: try {
@@ -102,8 +115,8 @@ run: try {
     'no DOM mutation in the page or its frame: no createElement, appendChild, innerHTML, getElementById or listeners');
   ok(await ET('frames.length === 2 && document.querySelector("frameset") !== null && document.querySelector("div#m") === null && frames[1].name === "cdomApp" && frames[0].name === "cdomView"'),
     'the page is a frameset of the view and the app frame: the early script\'s FRAMESET took the body\'s place');
-  ok(await E('typeof parent.cdomF === "undefined" && !!window.cdomF && location.search === "?cdomApp"'),
-    'the shim lives in the app frame (cdomApp: the page again, under another URL), not in the top window');
+  ok(await E('typeof parent.cdomF === "undefined" && !!window.cdomF && /\\/frames\\.app\\.html$/.test(location.pathname) && location.search === ""'),
+    'the shim lives in the app frame (cdomApp: the page\'s app document, with the page\'s query), not in the top window');
   ok((await E('X.url_search()')) === 0, `the app reads the top window's URL, which has no query here: ${await E('X.url_search()')} bytes`);
   ok((await draws()) === 1, `cd_main drew once: ${await draws()}`);
   const h0 = await ET('history.length');
@@ -280,17 +293,18 @@ run: try {
   ok(sd[0] !== sd[3], `and a different draw from the generator: ${sd[0]} and ${sd[3]}`);
   ok(sd[4] === 5 && sd[5] === 1000 && sd[6] === 2000, `with no generator the clock alone, no throw: ${sd[5]}, ${sd[6]}`);
   ok(sd[7] === 1000 && sd[8] === 7, `a broken generator gives the clock alone, and options.seed still wins: ${sd[7]}, ${sd[8]}`);
-  ok(!(await E('cdomF.errors.length')), `no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
+  ok((await E('cdomF.errors')) === '', `no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
   ok(!errs().length, `no page exceptions: ${JSON.stringify(errs())}`);
 
-  // The boot waits for cdom.frames.js: IE 4 runs the written script that starts it before the SCRIPT SRC has run (Object
-  // expected at cdomFramesStart). Here the start is hidden, cdomBootWait called, and the start given back later.
+  // The boot waits for the shim and the module (in the app document they are there at once; IE 4 once ran a written script
+  // before the SCRIPT SRC it followed, and the wait is kept). Here the start is hidden, cdomBootWait called, and the start
+  // given back later.
   await E(`(function () { window.__real = window.cdomFramesStart; window.__fac = window.cdomFactory; window.cdomFramesStart = null;
     window.cdomFactory = function () {}; window.__w = 0; window.__t = cdomBootTries; cdomBootWait(); })()`);
   await sleep(120);
-  ok((await E('window.__w === 0 && cdomBootTries > window.__t')), `the boot does not start without cdom.frames.js, and tries again: ${await E('cdomBootTries - window.__t')} tries`);
+  ok((await E('window.__w === 0 && cdomBootTries > window.__t')), `the boot does not start without the shim, and tries again: ${await E('cdomBootTries - window.__t')} tries`);
   await E('window.cdomFramesStart = function (f) { window.__w = f === window.cdomFactory ? 1 : 2; }');
-  ok(await until('window.__w !== 0') && (await E('window.__w === 1')), 'the boot starts once cdom.frames.js has run, with the app\'s factory');
+  ok(await until('window.__w !== 0') && (await E('window.__w === 1')), 'the boot starts once the shim has run, with the app\'s factory');
   await E('(function () { window.cdomFramesStart = window.__real; window.cdomFactory = window.__fac; cdomBootTries = 0; })()');
 
   // A trap in C: thrown out of the call, which never comes back to the shim (no finally in JavaScript 1.1), so nothing
@@ -303,7 +317,7 @@ run: try {
   const trapped = await E('!!(cf_raw && cf_raw.js1_trap) && cf_busy > 0');
   ok((threw || trapped) && (await draws()) === d, `a trap ends the call, and nothing is drawn: ${threw ? 'threw' : trapped ? 'js1_trap set, the call left' : 'no throw'}, ${(await draws()) - d} draws`);
   await click('#inc');
-  ok((await textOf('#countp')) === `count ${was + 2}` && (await E('cdomF.errors.join()')).includes('did not return'),
+  ok((await textOf('#countp')) === `count ${was + 2}` && (await E('cdomF.errors')).includes('did not return'),
     `the next click recovers: drawn with both counts (${JSON.stringify(await textOf('#countp'))}, want count ${was + 2}), and noted: ${JSON.stringify(await E('cdomF.errors'))}`);
 
   // A throw in the shim's own draw must not leave the handlers quiet (cf_drawing) for good. select on a checkbox gives
@@ -317,16 +331,16 @@ run: try {
   await E('(function () { var P = parent.frames[0].HTMLInputElement.prototype, f = P.focus; P.focus = function () { P.focus = f; throw new Error("planted"); }; })()');
   let focusThrew = '';
   try { await E('X.focus_name()'); } catch (e) { focusThrew = String(e).slice(0, 120); }
-  await until('cdomF.errors.join().indexOf("a draw did not finish") >= 0');
+  await until('cdomF.errors.indexOf("a draw did not finish") >= 0');
   n0 = await stat(STAT.count);
   await click('#inc');
-  ok(focusThrew && (await stat(STAT.count)) === n0 + 1 && (await E('cdomF.errors.join()')).includes('a draw did not finish'),
+  ok(focusThrew && (await stat(STAT.count)) === n0 + 1 && (await E('cdomF.errors')).includes('a draw did not finish'),
     `a throw while the shim draws does not lock the page: ${focusThrew ? 'threw' : 'no throw'}, the next click reached C (${(await stat(STAT.count)) - n0}), noted: ${JSON.stringify(await E('cdomF.errors'))}`);
 
   // A tag that is not letters and digits is drawn as a SPAN, and noted: nothing of it reaches the markup.
   await E('X.bad_tag()');
   ok(await E(`(function () { var e = ${F}.querySelector("#badtag"); return !!e && e.tagName === "SPAN" && !e.getAttribute("onclick") && e.innerText === "bad"; })()`)
-    && (await E('cdomF.errors.join()')).includes('is not letters and digits'),
+    && (await E('cdomF.errors')).includes('is not letters and digits'),
     `a tag that is not letters and digits is a SPAN, with nothing of it in the markup, and noted: ${await E(`(function () { var e = ${F}.querySelector("#badtag"); return e ? e.tagName + " " + e.getAttribute("onclick") : "none"; })()`)}`);
 
   // cd_move as the DOM's insertBefore: before a node of another parent is an error, noted, and nothing moves; before
@@ -334,7 +348,7 @@ run: try {
   const items = `(function () { var l = ${F}.querySelectorAll("#list li"), o = [], i; for (i = 0; i < l.length; i++) o[i] = l[i].innerText; return o.join(); })()`;
   const listWas = await E(items);
   await E('X.move_foreign()');
-  ok((await E(items)) === `${listWas},m1,m2` && (await E('cdomF.errors.join()')).includes('not a child of the parent'),
+  ok((await E(items)) === `${listWas},m1,m2` && (await E('cdomF.errors')).includes('not a child of the parent'),
     `cd_move before another parent's node moves nothing, and is noted: ${await E(items)}; ${JSON.stringify(await E('cdomF.errors'))}`);
   d = await draws();
   const selfErr = await E('(function () { try { X.move_self(); return ""; } catch (e) { return String(e); } })()');
@@ -393,15 +407,38 @@ run: try {
       await click('#inc');
       ok((await textOf('#countp')) === 'count 1', `and a click there reaches C: ${JSON.stringify(await textOf('#countp'))}`);
     }
-    // The page's own query, not the app frame's (which gains cdomApp): frames.html?q reads as "?q", 2 bytes.
+    // The page's own query, read from the top window: frames.html?q reads as "?q", 2 bytes.
     await go(`http://127.0.0.1:${port}/frames.html?q`);
     ok((await until('!!window.READY')) && (await E('X.url_search()')) === 2, `the app reads the top window's query ("?q"), not its frame's: ${await E('X.url_search()')} bytes`);
     // A trap in cd_start (cd_main, on seed 13): noted, and the frame still drawn with what cd_main had flushed.
     for (const page of ['frames.html', 'frames-body.html']) {
       await go(`http://127.0.0.1:${port}/${page}?trapstart`);
       const drawn = await until('!!window.cdomF && cdomF.draws > 0');
-      ok(drawn && (await E('cdomF.errors.join()')).includes('cd_start did not return') && (await textOf('#title')) === 'frames',
+      ok(drawn && (await E('cdomF.errors')).includes('cd_start did not return') && (await textOf('#title')) === 'frames',
         `${page}: a trap in cd_start is noted, and the frame still drawn: ${drawn ? 'drawn' : 'not drawn'}, ${JSON.stringify(await E('window.cdomF ? cdomF.errors : null'))}`);
+    }
+    // Netscape 2 (tools/cdp.mjs's ?ns2: no mouse button or key event reaches the page, no charCodeAt or fromCharCode, no
+    // selectionStart): the page still counts clicks, drawn at once, and takes a field's change. The button hooks never fire,
+    // so cf_pressed stays 0 and the cf_LATER rule works alone (section 16).
+    await go(`http://127.0.0.1:${port}/frames.html?ns2`);
+    if (!(await until('!!window.READY && window.cdomF && cdomF.draws > 0'))) ok(false, 'ns2: booted');
+    else {
+      ok(await E('cf_hasAt === 0 && cf_hasFrom === 0 && !"a".charCodeAt'), `ns2: no charCodeAt or fromCharCode: ${await E('cf_hasAt + "," + cf_hasFrom')}`);
+      const d0 = await draws();
+      await click('#inc');
+      ok((await until(`cdomF.draws > ${d0}`, 25)) && (await textOf('#countp')) === 'count 1' && (await E('cf_pressed')) === 0,
+        `ns2: a click on the button is drawn at once (within 500 ms): ${JSON.stringify(await textOf('#countp'))}, ${(await draws()) - d0} draws, cf_pressed ${await E('cf_pressed')}`);
+      await click('#name');
+      await E(`${field('name')}.select()`);
+      await b.send('Input.insertText', { text: 'héllo' }); await sleep(30);
+      const d1 = await draws();
+      await clickAt(600, 700);
+      await until(`cdomF.draws > ${d1}`);
+      ok((await textOf('#echop')) === 'echo héllo' && (await stat(STAT.inputs)) === 1, `ns2: a field's change reaches C, é through escape: ${JSON.stringify(await textOf('#echop'))}, ${await stat(STAT.inputs)} input`);
+      const d2 = await draws();
+      await click('#inc');
+      ok((await until(`cdomF.draws > ${d2}`, 25)) && (await textOf('#countp')) === 'count 2', `ns2: and the next click too: ${JSON.stringify(await textOf('#countp'))}`);
+      ok((await E('cdomF.errors')) === '', `ns2: no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
     }
     // The caret on IE 4 and Netscape 4, the browsers with onkeyup (tools/cdp.mjs's ?ie4 and ?ns4 flavours): typing in
     // the middle of the name field, whose input C answers by changing the echo. IE 4 reads the caret from

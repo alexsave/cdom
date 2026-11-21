@@ -74,7 +74,8 @@ node "$legacy" app "$here/out/fptoint.wasm" "$here/out/fptoint.wasm.js"
 node "$legacy" app-ie9 "$here/out/fptoint.wasm" "$here/out/fptoint.wasm.ie9.js"
 page "$here/fptoint.html" "$here/out/fptoint.shim.html" "$here/out/fptoint.wasm"
 node "$legacy" page "$here/out/fptoint.shim.html" "$here/out/fptoint.html"
-# The frames tier (docs/frames-design.md, tools/frames.mjs): its shim, and a page whose app runs from the words build.
+# The frames tier (docs/frames-design.md, tools/frames.mjs): its shim alone (no page loads it: the app document inlines it;
+# kept for its size), and a page whose app runs from tools/js1c's build.
 node "$legacy" shim-frames "$here/out/cdom.frames.js"
 wasm -O2 "$here/out/frames.wasm" "$here/frames.c" "$here/../src/cdom.c" "$here/../src/cdom_url.c" "$here/../src/mini.c"
 # The app as the tier loads it: compiled to JavaScript 1.0 by tools/js1c (docs/js1-compile-design.md); the IE 9 build
@@ -86,6 +87,10 @@ sed 's/JA=\([0-9]*\);if(JZ)JA=\([0-9]*\);/JA=\2;/' "$here/out/frames.wasm.js1.js
 node "$legacy" app-ie9 "$here/out/frames.wasm" "$here/out/frames.wasm.ie9.js"
 page "$here/frames.html" "$here/out/frames.shim.html" "$here/out/frames.wasm"
 node "$legacy" page "$here/out/frames.shim.html" "$here/out/frames.html"
+# The page's app document, which the frames tier's cdomApp frame opens: the boot's first part, the string table, the shim
+# and frames.wasm.js1.js, all inline (Netscape 2 has no SCRIPT SRC: docs/frames-design.md, section 16). frames-body.html
+# below names the same one.
+node "$legacy" app-doc "$here/out/frames.html" "$here/out/frames.wasm.js1.js" "$here/out/frames.app.html"
 sed 's|</head><div id="m">|</head><body><div id="m">|' "$here/out/frames.html" > "$here/out/frames-body.html"
 grep -q '<body><div id="m">' "$here/out/frames-body.html"
 # The script engine probe (docs/ie5-design.md), served beside the pages for the XP VM's browsers.
@@ -93,7 +98,7 @@ cp "$here/probe.html" "$here/probe-fs.html" "$here/probe-fsd.html" "$here/probe-
 # The hold that keeps the Utilu IE 5.01 and 5.5 builds from crashing at a page's Done (tools/ie5hold.py) is the test
 # rig's alone: no shipped file and no built page may name its port.
 if grep -l "10.0.2.2:8096" "$here/../shim/"*.js "$here/../tools/legacy/"*.js "$here/"*.html "$here/out/cdom.legacy"*.js \
-  "$here/out/"*.wasm.js "$here/out/"*.ie9.js "$here/out/"*.js1.js "$here/out/legacy.html" "$here/out/cdom.frames.js" "$here/out/frames.html"; then
+  "$here/out/"*.wasm.js "$here/out/"*.ie9.js "$here/out/"*.js1.js "$here/out/legacy.html" "$here/out/cdom.frames.js" "$here/out/frames.html" "$here/out/frames.app.html"; then
   echo "build.sh: the IE 5 test hold (port 8096) is in a shipped or built file" >&2; exit 1
 fi
 # js1c's differential test (tools/js1.mjs): tests/js1diff.c as wasm, through js1c and through the IE 9 build; no cdom.

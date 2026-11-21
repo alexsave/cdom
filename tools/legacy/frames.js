@@ -2,10 +2,17 @@
  * and IE 3 and 4. cdom's node tree is kept here, in the page's second frame (cdomApp), made by the same ops shim/cdom.js
  * takes, under the same import names; once per outermost call into C it is written whole, as HTML, into the first (cdomView)
  * of the frameset the boot's early script made, whose handlers call back into cdomF here.
- * JavaScript 1.1, as Netscape 3 has it (tools/legacy/js11.mjs refuses the rest): every function declared at the top
- * level, no literal but strings and numbers, no try, throw, switch, regex, ===, in or delete, and no method of 1.2 and
- * later but charCodeAt and fromCharCode behind a check. All of it is global, so every name starts cf_, and the
- * markup's handlers reach the few that are cdomF's. tools/legacy/build.mjs shim-frames writes it as cdom.frames.js. */
+ * JavaScript 1.0, as Netscape 2 has it (tools/legacy/js11.mjs with js10 refuses the rest): every function declared at
+ * the top level, no literal but strings and numbers, no try, throw, switch, regex, ===, in, delete, typeof or void, no
+ * Array (Netscape 2's has no length and drops its arguments), no split or join (Netscape 2's return undefined), no new
+ * Function, and nothing of 1.1 and later but behind a check for it (charCodeAt, fromCharCode, captureEvents and the
+ * mouse button hooks, which Netscape 2 has not: there they are never called or never fire). A list is a new Object() of
+ * number keys filled from 0 in order, with its count kept apart: Netscape 2 reads a number key below the object's count of
+ * properties as its nth property (docs/descent.md), so a table keyed by an id that may arrive out of order (a node's, a
+ * timer's, a template's) is keyed by a string with a letter in front. Every bitwise operand is a number (Netscape 2 dies
+ * on undefined | 0), nothing recurses (its value stack is 512 slots: section 16), and no function returns a value on one
+ * path and none on another. All of it is global, so every name starts cf_, and the markup's handlers reach the few that
+ * are cdomF's. tools/legacy/build.mjs app-doc inlines it, minified, in each page's app document (section 16). */
 
 /* The event types, as indexes into shim/cdom.js's EVENTS (cdom.h's enum). */
 var cf_CLICK = 0;
@@ -20,7 +27,23 @@ var cf_OUT = 24;
 var cf_FOCUS = 28;
 var cf_BLUR = 29;
 var cf_DETACHED = 4294967295; /* "no insertion parent" for at() */
-var cf_UNITS = new Array("", "px", "%", "deg", "em", "rem", "vw", "vh", "ms", "s", "rad");
+/* s cut at each sep: an object of the pieces numbered from 0, their count in cf_cut (no split: Netscape 2's returns
+ * undefined). */
+var cf_cut = 0;
+function cf_split(s, sep) {
+  var out = new Object(), at = 0, k = s.indexOf(sep);
+  cf_cut = 0;
+  while (k >= 0) {
+    out[cf_cut] = s.substring(at, k);
+    cf_cut++;
+    at = k + sep.length;
+    k = s.indexOf(sep, at);
+  }
+  out[cf_cut] = s.substring(at, s.length);
+  cf_cut++;
+  return out;
+}
+var cf_UNITS = cf_split("|px|%|deg|em|rem|vw|vh|ms|s|rad", "|");
 /* Where the tree is shown: the page is a frameset of two frames, which the boot's early script (shim/boot-early.js) writes
  * ahead of any content, and this shim runs in the second, cdomApp, a copy of the page 1 pixel high whose document is never
  * replaced, so its state stays. The first, cdomView, is the parent's frame 0, which the shim writes whole (cf_draw). The view's
@@ -36,7 +59,7 @@ var cf_PRESSCAP = 20;
 
 /* The handlers' entry points and what a page or a test reads. */
 var cdomF = new Object();
-cdomF.errors = new Array();
+cdomF.errors = "";   /* each message noted, and a newline after it */
 cdomF.draws = 0;
 
 /* C's memory: the app's words (memory.words of the .js1.js build, tools/js1c), as tools/legacy/memory-words.js reads them. */
@@ -61,11 +84,12 @@ function cf_store32(i, v) {
  * unescape, and a character above Latin-1 is shown as "?" (Netscape 2 and 3 are Latin-1 throughout). */
 var cf_hasFrom = 0;
 var cf_hasAt = 0;
-if (String.fromCharCode) cf_hasFrom = 1;
+/* window.String: Netscape 2 has no String global ("String is not defined"), and a missing property of window is no error. */
+if (window.String && String.fromCharCode) cf_hasFrom = 1;
 if ("a".charCodeAt) cf_hasAt = 1;
 var cf_HEX = "0123456789ABCDEF";
 var cf_PRINT = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
-var cf_T = new Array(256);
+var cf_T = new Object();
 var cf_k;
 for (cf_k = 0; cf_k < 256; cf_k++) {
   if (cf_hasFrom) cf_T[cf_k] = String.fromCharCode(cf_k);
@@ -172,7 +196,7 @@ function cf_str(s) {
   var v, e, k, at;
   if (s > 0) {
     v = cf_ro["r" + s];
-    if (typeof v == "string") return v;
+    if (v) return v; /* an empty string is read again, at the cost of one byte */
     e = s;
     while (cf_load8(e)) e++;
     v = cf_utf8(s, e - s);
@@ -281,6 +305,9 @@ function cf_Node(type, tag, text) {
   this.jd = -1;
   this.dp = null;
   this.ds = null;
+  this.wi = 0;
+  this.wx = 0;
+  this.wc = "";
 }
 function cf_unlink(x) {
   var p = x.p;
@@ -317,64 +344,114 @@ function cf_place(parent, x, next) {
     parent.l = x;
   }
 }
+/* A pair list: n entries in e, name and value in turn (e has number keys only, filled from 0, and the count is n). */
+function cf_Pairs() {
+  this.n = 0;
+  this.e = new Object();
+}
 /* A pair list's value for name, or null. */
 function cf_pair(list, name) {
   var k;
   if (!list) return null;
-  for (k = 0; k < list.length; k += 2) if (list[k] == name) return list[k + 1];
+  for (k = 0; k < list.n; k += 2) if (list.e[k] == name) return list.e[k + 1];
   return null;
 }
-/* The list with name set to value (null: taken out). */
+/* The list with name set to value (null: taken out, the entries after it moved down). */
 function cf_setPair(list, name, value) {
-  var k, out;
-  if (!list) list = new Array();
-  for (k = 0; k < list.length; k += 2) if (list[k] == name) {
+  var k, e;
+  if (!list) list = new cf_Pairs();
+  e = list.e;
+  for (k = 0; k < list.n; k += 2) if (e[k] == name) {
     if (value != null) {
-      list[k + 1] = value;
+      e[k + 1] = value;
       return list;
     }
-    out = new Array();
-    for (k = 0; k < list.length; k += 2) if (list[k] != name) {
-      out[out.length] = list[k];
-      out[out.length] = list[k + 1];
-    }
-    return out;
+    for (k += 2; k < list.n; k++) e[k - 2] = e[k];
+    list.n -= 2;
+    return list;
   }
   if (value != null) {
-    list[list.length] = name;
-    list[list.length] = value;
+    e[list.n] = name;
+    e[list.n + 1] = value;
+    list.n += 2;
   }
   return list;
 }
 function cf_copy(list) {
   var out, k;
   if (!list) return null;
-  out = new Array();
-  for (k = 0; k < list.length; k++) out[k] = list[k];
+  out = new cf_Pairs();
+  for (k = 0; k < list.n; k++) out.e[k] = list.e[k];
+  out.n = list.n;
   return out;
 }
-function cf_deep(x) {
-  var c = new cf_Node(x.y, x.t, x.x), ch;
+function cf_one(x) {
+  var c = new cf_Node(x.y, x.t, x.x);
   c.a = cf_copy(x.a);
   c.s = cf_copy(x.s);
-  for (ch = x.f; ch; ch = ch.n) cf_place(c, cf_deep(ch), null);
   return c;
 }
-/* The text under x, all of it. */
+/* A copy of x and everything under it. Walked by the parent links, with no recursion: Netscape 2's value stack is 512
+ * slots, and a tree is as deep as the app makes it (section 16). pc is the copy of s's parent. */
+function cf_deep(x) {
+  var top = cf_one(x), pc = top, s = x.f, c;
+  while (s) {
+    c = cf_one(s);
+    cf_place(pc, c, null);
+    if (s.f) {
+      pc = c;
+      s = s.f;
+      continue;
+    }
+    while (s != x && !s.n) {
+      s = s.p;
+      pc = pc.p;
+    }
+    if (s == x) break;
+    s = s.n;
+  }
+  return top;
+}
+/* The text under x, all of it, walked as cf_deep walks. */
 function cf_textOf(x) {
-  var out = "", ch;
+  var out = "", c;
   if (x.y == 3) return x.x;
-  for (ch = x.f; ch; ch = ch.n) out += cf_textOf(ch);
+  c = x.f;
+  while (c) {
+    if (c.y == 3) out += c.x;
+    if (c.f) {
+      c = c.f;
+      continue;
+    }
+    while (c != x && !c.n) c = c.p;
+    if (c == x) break;
+    c = c.n;
+  }
   return out;
 }
 
 /* The ops, as shim/cdom.js's of the same names (and the same comments there), on the node tree. */
-var cf_nodes = new Array();     /* node by id */
-var cf_mask = new Array();      /* listened types per id: two words, a bit per type */
-var cf_templates = new Array();
-var cf_tplSlots = new Array();
-var cf_slots = new Array();
-var cf_stack = new Array();
+/* Tables keyed by an id from C, which may come in any order: string keys, "i" and the id (see the top). */
+var cf_nodes = new Object();    /* node by id: cf_byId, cf_setId */
+var cf_maxId = 0;               /* the largest id set */
+var cf_mask = new Object();     /* listened types per id: two words, a bit per type (cf_maskOf) */
+var cf_templates = new Object();
+var cf_tplSlots = new Object();
+var cf_slots = new Object();
+var cf_stack = new Object();    /* filled from 0 in order */
+function cf_byId(id) {
+  return cf_nodes["i" + id];
+}
+function cf_setId(id, x) {
+  cf_nodes["i" + id] = x;
+  if (id > cf_maxId) cf_maxId = id;
+}
+/* A mask word, 0 where none was set (undefined | 0 is an error in Netscape 2). */
+function cf_maskOf(k) {
+  var m = cf_mask["m" + k];
+  if (m) return m;
+  return 0;
+}
 var cf_depth = 0;
 var cf_last = null;
 var cf_lastEl = null;
@@ -389,8 +466,8 @@ function cf_placeNew(x) {
   cf_dirty = 1;
   if (cf_depth) cf_place(cf_stack[cf_depth - 1], x, null);
   else if (cf_base != cf_DETACHED) {
-    if (cf_before) cf_place(cf_nodes[cf_base], x, cf_nodes[cf_before]);
-    else cf_place(cf_nodes[cf_base], x, null);
+    if (cf_before) cf_place(cf_byId(cf_base), x, cf_byId(cf_before));
+    else cf_place(cf_byId(cf_base), x, null);
   }
 }
 function cf_op_ahead(p, len) {
@@ -441,15 +518,16 @@ function cf_op_text_num(number) {
 }
 /* An attribute; style is read into the style pairs, which section 8 writes as markup. */
 function cf_setAttr(x, name, value) {
-  var parts, k, c;
+  var parts, k, c, n;
   cf_dirty = 1;
   if (name != "style") {
     x.a = cf_setPair(x.a, name, value);
     return;
   }
   x.s = null;
-  parts = value.split(";");
-  for (k = 0; k < parts.length; k++) {
+  parts = cf_split(value, ";");
+  n = cf_cut;
+  for (k = 0; k < n; k++) {
     c = parts[k].indexOf(":");
     if (c > 0) x.s = cf_setPair(x.s, cf_trim(parts[k].substring(0, c)).toLowerCase(), cf_trim(parts[k].substring(c + 1)));
   }
@@ -467,13 +545,13 @@ function cf_op_class(value) {
   cf_last.a = cf_setPair(cf_last.a, "class", cf_str(value));
 }
 function cf_op_name_el(id) {
-  cf_nodes[id] = cf_lastEl;
+  cf_setId(id, cf_lastEl);
 }
 function cf_op_name_text(id) {
-  cf_nodes[id] = cf_lastText;
+  cf_setId(id, cf_lastText);
 }
 function cf_op_name_open(id) {
-  cf_nodes[id] = cf_stack[cf_depth - 1];
+  cf_setId(id, cf_stack[cf_depth - 1]);
 }
 /* A host object (the window, the document, the body) has no events here. */
 function cf_op_listen(id, type) {
@@ -481,13 +559,13 @@ function cf_op_listen(id, type) {
     cf_lacks("events on the window, the document and the body");
     return;
   }
-  cf_nodes[id] = cf_last;
+  cf_setId(id, cf_last);
   cf_last.i = id;
-  cf_mask[id * 2 + (type >> 5)] = cf_mask[id * 2 + (type >> 5)] | 1 << (type & 31);
+  cf_mask["m" + (id * 2 + (type >> 5))] = cf_maskOf(id * 2 + (type >> 5)) | 1 << (type & 31);
   cf_dirty = 1;
 }
 function cf_op_unlisten(id, type) {
-  if (id >= 4) cf_mask[id * 2 + (type >> 5)] = cf_mask[id * 2 + (type >> 5)] & ~(1 << (type & 31));
+  if (id >= 4) cf_mask["m" + (id * 2 + (type >> 5))] = cf_maskOf(id * 2 + (type >> 5)) & ~(1 << (type & 31));
   cf_dirty = 1;
 }
 function cf_op_value(id) {
@@ -499,28 +577,28 @@ function cf_op_value_num(number) {
   cf_dirty = 1;
 }
 function cf_op_tpl_save(templateId) {
-  cf_templates[templateId] = cf_root;
-  cf_tplSlots[templateId] = cf_slots;
-  cf_slots = new Array();
+  cf_templates["t" + templateId] = cf_root;
+  cf_tplSlots["t" + templateId] = cf_slots;
+  cf_slots = new Object();
   cf_unlink(cf_root);
 }
 function cf_op_clone(templateId) {
-  cf_push(cf_deep(cf_templates[templateId]));
+  cf_push(cf_deep(cf_templates["t" + templateId]));
 }
 function cf_op_slot(index) {
-  cf_slots[index] = cf_last;
+  cf_slots["s" + index] = cf_last;
 }
 /* A template's slot is in the template itself, so a clone made after it has its text. */
 function cf_op_tpl_text(templateId, index, id) {
-  cf_tplSlots[templateId][index].x = cf_str(id);
+  cf_tplSlots["t" + templateId]["s" + index].x = cf_str(id);
 }
 function cf_op_tpl_text_num(templateId, index, number) {
-  cf_tplSlots[templateId][index].x = "" + (number >>> 0);
+  cf_tplSlots["t" + templateId]["s" + index].x = "" + (number >>> 0);
 }
 /* count steps of 2 bits (1 firstChild, 2 nextSibling, 3 parentNode) from a named node, or from the last when -1. */
 function cf_op_walk(from, steps, count) {
   var x = cf_last, step;
-  if (from != -1) x = cf_nodes[from];
+  if (from != -1) x = cf_byId(from);
   for (; count; count--) {
     step = steps & 3;
     if (step == 1) x = x.f;
@@ -541,7 +619,7 @@ function cf_op_walk_value_num(from, steps, count, number) {
 /* A text node's value: an element's id (the trap shim/cdom.js throws for) is reported here, since nothing can be
  * thrown in JavaScript 1.1, and the call goes on. */
 function cf_textNode(id, call) {
-  var x = cf_nodes[id];
+  var x = cf_byId(id);
   if (x && x.y == 3) return x;
   cf_fail("cdom: " + call + "(" + id + ", ...): not a text node");
   return null;
@@ -557,32 +635,32 @@ function cf_op_set_text_num(id, number) {
   cf_dirty = 1;
 }
 function cf_op_set_attr(id, name, value) {
-  cf_setAttr(cf_nodes[id], cf_str(name), cf_str(value));
+  cf_setAttr(cf_byId(id), cf_str(name), cf_str(value));
 }
 function cf_op_set_class(id, value) {
-  var x = cf_nodes[id];
+  var x = cf_byId(id);
   x.a = cf_setPair(x.a, "class", cf_str(value));
   cf_dirty = 1;
 }
 function cf_op_style(id, property, value) {
-  var x = cf_nodes[id];
+  var x = cf_byId(id);
   x.s = cf_setPair(x.s, cf_str(property), cf_str(value));
   cf_dirty = 1;
 }
 function cf_op_style_num(id, property, number, unit) {
-  var x = cf_nodes[id];
+  var x = cf_byId(id);
   x.s = cf_setPair(x.s, cf_str(property), number + cf_UNITS[unit]);
   cf_dirty = 1;
 }
 function cf_forget(id) {
-  var x = cf_nodes[id];
+  var x = cf_byId(id);
   if (x && x.i == id) x.i = -1;
-  cf_nodes[id] = null;
-  cf_mask[id * 2] = 0;
-  cf_mask[id * 2 + 1] = 0;
+  cf_setId(id, null);
+  cf_mask["m" + id * 2] = 0;
+  cf_mask["m" + (id * 2 + 1)] = 0;
 }
 function cf_op_remove(id) {
-  cf_unlink(cf_nodes[id]);
+  cf_unlink(cf_byId(id));
   cf_forget(id);
   cf_dirty = 1;
 }
@@ -590,26 +668,26 @@ function cf_op_free(id) {
   cf_forget(id);
 }
 function cf_op_move(id, beforeId) {
-  var x = cf_nodes[id];
+  var x = cf_byId(id);
   if (!x.p) return;
-  if (beforeId) cf_place(x.p, x, cf_nodes[beforeId]);
+  if (beforeId) cf_place(x.p, x, cf_byId(beforeId));
   else cf_place(x.p, x, null);
   cf_dirty = 1;
 }
 function cf_op_clear(id) {
-  var x = cf_nodes[id];
+  var x = cf_byId(id);
   while (x.f) cf_unlink(x.f);
   cf_dirty = 1;
 }
 function cf_op_detach(id) {
-  var x = cf_nodes[id];
+  var x = cf_byId(id);
   x.dp = x.p;
   x.ds = x.n;
   cf_unlink(x);
   cf_dirty = 1;
 }
 function cf_op_attach(id) {
-  var x = cf_nodes[id];
+  var x = cf_byId(id);
   if (x.dp) cf_place(x.dp, x, x.ds);
   x.dp = null;
   x.ds = null;
@@ -623,10 +701,10 @@ function cf_valueAt(ptr, index) {
   var at = (ptr >> 2) + index * cf_valWords, tag = cf_load32(at + cf_valTag), u = cf_load32(at + cf_valU), o, pair, next, key;
   cf_vn = index + 1;
   cf_vv = null;
-  if (tag == 0) cf_vv = cf_mem.load_f64((at + cf_valNum) >> 1);
+  if (tag == 0) cf_vv = cf_f64(at + cf_valNum);
   else if (tag == 1) cf_vv = cf_str(u | 0);
   else if (tag == 2) cf_vv = u == 1;
-  else if (tag == 3) cf_vv = cf_nodes[u];
+  else if (tag == 3) cf_vv = cf_byId(u);
   else if (tag == 5) {
     o = new Object();
     next = index + 1;
@@ -741,9 +819,9 @@ function cf_walkPath(o, keys, count) {
   return o;
 }
 function cf_op_set(id, path, valuePtr) {
-  var keys = cf_str(path).split("."), o, key = keys[keys.length - 1];
+  var keys = cf_split(cf_str(path), "."), n = cf_cut, o, key = keys[n - 1];
   cf_valueAt(valuePtr, 0);
-  o = cf_walkPath(cf_nodes[id], keys, keys.length - 1);
+  o = cf_walkPath(cf_byId(id), keys, n - 1);
   if (o == null) cf_fail("cdom: cd_set(" + id + ", " + cf_str(path) + "): nothing there");
   else if (o.z == 1) cf_setProp(o, key, cf_vv);
   else o[key] = cf_vv;
@@ -753,14 +831,14 @@ var cf_result = null;
 var cf_focus = null;     /* the field that has focus, as the frame last said */
 var cf_wantFocus = 0;    /* C asked for a focus or a blur, which the next draw (or the end of the call) gives */
 function cf_op_call(id, method, count, argsPtr) {
-  var args = new Array(), k, next = 0, keys = cf_str(method).split("."), o, m = keys[keys.length - 1];
+  var args = new Object(), k, next = 0, keys = cf_split(cf_str(method), "."), n = cf_cut, o, m = keys[n - 1];
   for (k = 0; k < count; k++) {
     cf_valueAt(argsPtr, next);
     args[k] = cf_vv;
     next = cf_vn;
   }
   cf_result = null;
-  o = cf_walkPath(cf_nodes[id], keys, keys.length - 1);
+  o = cf_walkPath(cf_byId(id), keys, n - 1);
   if (o != null && o.z == 1) {
     if (m == "focus" || m == "select") {
       cf_focus = o;
@@ -784,17 +862,22 @@ function cf_op_call(id, method, count, argsPtr) {
     return;
   }
   cf_result = o[m](args[0], args[1], args[2], args[3]);
-  cf_nodes[5] = cf_result;
+  cf_setId(5, cf_result);
 }
+/* NaN for a cd_get_num of what is no number: Netscape 2 has no NaN global, and may have no Number either (window.Number is
+ * no error where it is missing); 0 there. */
+var cf_NaN = 0;
+if (window.Number) cf_NaN = Number.NaN;
+/* cd_get's kinds: 0 a number (a boolean as 0 or 1; NaN for a string, a node, an object or nothing), 1 and 3 a string's
+ * UTF-8 (the bytes written, or the whole length), 2 a node's id. No typeof (Netscape 2): a string has substring, a node
+ * is z, and what is left is taken by its comparisons with true and false. */
 function cf_op_get(id, path, kind, destPtr, capacity) {
-  var keys = cf_str(path).split("."), v = cf_walkPath(cf_nodes[id], keys, keys.length), s = "", k;
+  var keys = cf_split(cf_str(path), "."), v = cf_walkPath(cf_byId(id), keys, cf_cut), s = "", k;
   if (kind == 0) {
-    if (typeof v == "boolean") {
-      if (v) return 1;
-      return 0;
-    }
-    if (typeof v == "number") return v;
-    return Number.NaN;
+    if (v == null || v.z == 1 || v.substring) return cf_NaN;
+    if (v == true) return 1;
+    if (v == false) return 0;
+    return v;
   }
   if (kind == 1 || kind == 3) {
     if (v != null) s = "" + v;
@@ -803,27 +886,27 @@ function cf_op_get(id, path, kind, destPtr, capacity) {
     return cf_whole;
   }
   if (v == null) return -1;
-  for (k = 0; k < cf_nodes.length; k++) if (k != 5 && cf_nodes[k] == v) return k;
+  for (k = 0; k <= cf_maxId; k++) if (k != 5 && cf_byId(k) == v) return k;
   return -1;
 }
 
 /* Timers: setTimeout with a string, the only form before JavaScript 1.2. The handle C keeps is the shim's own, so
  * the string can name it. */
-var cf_tok = new Array();
-var cf_tid = new Array();
+var cf_tok = new Object();   /* by "t" and the handle */
+var cf_tid = new Object();
 var cf_timers = 0;
 var cf_d0 = new Date();
 var cf_t0 = cf_d0.getTime();
 function cf_op_timer(ms, token) {
   cf_timers++;
-  cf_tok[cf_timers] = token;
-  cf_tid[cf_timers] = setTimeout("cdomF.t(" + cf_timers + ")", ms);
+  cf_tok["t" + cf_timers] = token;
+  cf_tid["t" + cf_timers] = setTimeout("cdomF.t(" + cf_timers + ")", ms);
   return cf_timers;
 }
 function cf_op_timer_stop(handle) {
-  if (cf_tok[handle] == null) return;
-  cf_tok[handle] = null;
-  clearTimeout(cf_tid[handle]);
+  if (cf_tok["t" + handle] == null) return;
+  cf_tok["t" + handle] = null;
+  clearTimeout(cf_tid["t" + handle]);
 }
 function cf_op_raf(token) {
   setTimeout("cdomF.r(" + token + ")", 16);
@@ -889,32 +972,22 @@ function cf_lacks(name) {
   return 0;
 }
 function cf_fail(message) {
-  cdomF.errors[cdomF.errors.length] = message;
+  cdomF.errors += message + "\n";
   top.status = message;
 }
 
-/* The math wasm2js output calls that JavaScript 1.1 has not (ES2015's). */
-function cf_imul(a, b) {
-  var al = a & 65535, bl = b & 65535;
-  return al * bl + (((a >>> 16) * bl + al * (b >>> 16) & 65535) << 16) | 0;
-}
-function cf_clz32(x) {
-  var n = 0;
-  x = x >>> 0;
-  if (x == 0) return 32;
-  while (x < 2147483648) {
-    x = x * 2;
-    n++;
+/* A double of C's memory, from its two words at word index i (low first), by arithmetic: the .js1.js memory is words
+ * alone (tools/js1c). Netscape 2's 1 / 0 is 0, so infinity is 1e308 * 10, as js1c makes it. */
+function cf_f64(i) {
+  var lo = cf_W[i] >>> 0, hi = cf_W[i + 1] >>> 0, e = hi >>> 20 & 2047, m = (hi & 1048575) * 4294967296 + lo, sign = 1;
+  if (hi >>> 31) sign = -1;
+  if (e == 2047) {
+    if (m) return cf_NaN;
+    return sign * 1e308 * 10;
   }
-  return n;
+  if (e == 0) return sign * m * Math.pow(2, -1074);
+  return sign * (m + 4503599627370496) * Math.pow(2, e - 1075);
 }
-function cf_trunc(x) {
-  if (x < 0) return Math.ceil(x);
-  return Math.floor(x);
-}
-if (!Math.imul) Math.imul = cf_imul;
-if (!Math.clz32) Math.clz32 = cf_clz32;
-if (!Math.trunc) Math.trunc = cf_trunc;
 
 /* Entries and drawing. holds counts the entries from the browser and the page under way, busy the calls into C;
  * when both are 0 again, a tree that changed is drawn (section 4). */
@@ -979,11 +1052,221 @@ function cf_exp(name, a, b, c, d, e, f, g, h) {
   cf_release(0);
   return r;
 }
+/* The exports as the page gets them: each function wrapped in cf_exp, so a call from the page draws once. No new Function
+ * and no closure (Netscape 2 has neither), so each wrapper is one of a pool of declared functions, cf_x0 to cf_x47, which
+ * calls the export named in cf_xn at its own number; an app with more exported functions than that has the rest noted
+ * and left out. A function is told by its text (no typeof): it starts "function". */
+var cf_xn = new Object();
+var cf_nx = 0;
+var cf_X = new Object();
+var cf_POOL = 48;
+function cf_x0(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[0], a, b, c, d, e, f, g, h);
+}
+function cf_x1(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[1], a, b, c, d, e, f, g, h);
+}
+function cf_x2(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[2], a, b, c, d, e, f, g, h);
+}
+function cf_x3(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[3], a, b, c, d, e, f, g, h);
+}
+function cf_x4(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[4], a, b, c, d, e, f, g, h);
+}
+function cf_x5(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[5], a, b, c, d, e, f, g, h);
+}
+function cf_x6(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[6], a, b, c, d, e, f, g, h);
+}
+function cf_x7(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[7], a, b, c, d, e, f, g, h);
+}
+function cf_x8(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[8], a, b, c, d, e, f, g, h);
+}
+function cf_x9(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[9], a, b, c, d, e, f, g, h);
+}
+function cf_x10(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[10], a, b, c, d, e, f, g, h);
+}
+function cf_x11(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[11], a, b, c, d, e, f, g, h);
+}
+function cf_x12(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[12], a, b, c, d, e, f, g, h);
+}
+function cf_x13(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[13], a, b, c, d, e, f, g, h);
+}
+function cf_x14(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[14], a, b, c, d, e, f, g, h);
+}
+function cf_x15(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[15], a, b, c, d, e, f, g, h);
+}
+function cf_x16(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[16], a, b, c, d, e, f, g, h);
+}
+function cf_x17(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[17], a, b, c, d, e, f, g, h);
+}
+function cf_x18(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[18], a, b, c, d, e, f, g, h);
+}
+function cf_x19(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[19], a, b, c, d, e, f, g, h);
+}
+function cf_x20(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[20], a, b, c, d, e, f, g, h);
+}
+function cf_x21(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[21], a, b, c, d, e, f, g, h);
+}
+function cf_x22(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[22], a, b, c, d, e, f, g, h);
+}
+function cf_x23(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[23], a, b, c, d, e, f, g, h);
+}
+function cf_x24(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[24], a, b, c, d, e, f, g, h);
+}
+function cf_x25(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[25], a, b, c, d, e, f, g, h);
+}
+function cf_x26(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[26], a, b, c, d, e, f, g, h);
+}
+function cf_x27(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[27], a, b, c, d, e, f, g, h);
+}
+function cf_x28(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[28], a, b, c, d, e, f, g, h);
+}
+function cf_x29(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[29], a, b, c, d, e, f, g, h);
+}
+function cf_x30(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[30], a, b, c, d, e, f, g, h);
+}
+function cf_x31(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[31], a, b, c, d, e, f, g, h);
+}
+function cf_x32(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[32], a, b, c, d, e, f, g, h);
+}
+function cf_x33(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[33], a, b, c, d, e, f, g, h);
+}
+function cf_x34(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[34], a, b, c, d, e, f, g, h);
+}
+function cf_x35(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[35], a, b, c, d, e, f, g, h);
+}
+function cf_x36(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[36], a, b, c, d, e, f, g, h);
+}
+function cf_x37(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[37], a, b, c, d, e, f, g, h);
+}
+function cf_x38(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[38], a, b, c, d, e, f, g, h);
+}
+function cf_x39(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[39], a, b, c, d, e, f, g, h);
+}
+function cf_x40(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[40], a, b, c, d, e, f, g, h);
+}
+function cf_x41(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[41], a, b, c, d, e, f, g, h);
+}
+function cf_x42(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[42], a, b, c, d, e, f, g, h);
+}
+function cf_x43(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[43], a, b, c, d, e, f, g, h);
+}
+function cf_x44(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[44], a, b, c, d, e, f, g, h);
+}
+function cf_x45(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[45], a, b, c, d, e, f, g, h);
+}
+function cf_x46(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[46], a, b, c, d, e, f, g, h);
+}
+function cf_x47(a, b, c, d, e, f, g, h) {
+  return cf_exp(cf_xn[47], a, b, c, d, e, f, g, h);
+}
+cf_X[0] = cf_x0;
+cf_X[1] = cf_x1;
+cf_X[2] = cf_x2;
+cf_X[3] = cf_x3;
+cf_X[4] = cf_x4;
+cf_X[5] = cf_x5;
+cf_X[6] = cf_x6;
+cf_X[7] = cf_x7;
+cf_X[8] = cf_x8;
+cf_X[9] = cf_x9;
+cf_X[10] = cf_x10;
+cf_X[11] = cf_x11;
+cf_X[12] = cf_x12;
+cf_X[13] = cf_x13;
+cf_X[14] = cf_x14;
+cf_X[15] = cf_x15;
+cf_X[16] = cf_x16;
+cf_X[17] = cf_x17;
+cf_X[18] = cf_x18;
+cf_X[19] = cf_x19;
+cf_X[20] = cf_x20;
+cf_X[21] = cf_x21;
+cf_X[22] = cf_x22;
+cf_X[23] = cf_x23;
+cf_X[24] = cf_x24;
+cf_X[25] = cf_x25;
+cf_X[26] = cf_x26;
+cf_X[27] = cf_x27;
+cf_X[28] = cf_x28;
+cf_X[29] = cf_x29;
+cf_X[30] = cf_x30;
+cf_X[31] = cf_x31;
+cf_X[32] = cf_x32;
+cf_X[33] = cf_x33;
+cf_X[34] = cf_x34;
+cf_X[35] = cf_x35;
+cf_X[36] = cf_x36;
+cf_X[37] = cf_x37;
+cf_X[38] = cf_x38;
+cf_X[39] = cf_x39;
+cf_X[40] = cf_x40;
+cf_X[41] = cf_x41;
+cf_X[42] = cf_x42;
+cf_X[43] = cf_x43;
+cf_X[44] = cf_x44;
+cf_X[45] = cf_x45;
+cf_X[46] = cf_x46;
+cf_X[47] = cf_x47;
+function cf_isFn(v) {
+  var t;
+  if (!v) return 0;
+  t = "" + v;
+  return t.substring(0, 8) == "function";
+}
 function cf_wrap(raw) {
   var out = new Object(), k;
   for (k in raw) {
-    if (typeof raw[k] == "function") out[k] = new Function("a", "b", "c", "d", "e", "f", "g", "h", "return cf_exp(\"" + k + "\", a, b, c, d, e, f, g, h)");
-    else out[k] = raw[k];
+    if (!cf_isFn(raw[k])) out[k] = raw[k];
+    else if (cf_nx < cf_POOL) {
+      cf_xn[cf_nx] = k;
+      out[k] = cf_X[cf_nx];
+      cf_nx++;
+    } else cf_fail("cdom: the export " + k + " is past the frames tier's " + cf_POOL + " wrappers: left out");
   }
   return out;
 }
@@ -994,16 +1277,24 @@ function cf_view() {
 }
 
 /* Fields: read back from the frame before each draw, in the order they were written, which is form.elements'. */
-var cf_fields = new Array();
+var cf_fields = new Object();
 var cf_nfields = 0;
-var cf_hit = new Array();
+var cf_hit = new Object();
 var cf_nhit = 0;
 var cf_serial = 0;
 var cf_sx = 0;
 var cf_sy = 0;
-function cf_isText(type) {
-  return type != "checkbox" && type != "radio" && type != "button" && type != "submit" && type != "reset"
-    && type != "file" && type != "image" && type != "select-one" && type != "select-multiple";
+/* The kind of field x was written as, from the tree, not from the field (Netscape 2's fields have no type): "check" for a
+ * checkbox or a radio, "select", "text" for a text, a password and a textarea, and "" for a button, a file or a hidden. */
+function cf_kind(x) {
+  var t;
+  if (x.t == "select") return "select";
+  if (x.t == "textarea") return "text";
+  if (x.t != "input") return "";
+  t = cf_type(x);
+  if (t == "checkbox" || t == "radio") return "check";
+  if (t == "text" || t == "password") return "text";
+  return "";
 }
 function cf_sync() {
   var w = cf_view(), form, k, el, x, t, b;
@@ -1013,31 +1304,35 @@ function cf_sync() {
     el = form.elements[k];
     x = cf_fields[k];
     if (!el || !x) continue;
-    t = el.type;
-    if (t == "checkbox" || t == "radio") {
+    t = cf_kind(x);
+    if (t == "check") {
       x.fc = 0;
       if (el.checked) x.fc = 1;
-    } else if (t == "select-one" || t == "select-multiple") x.fs = el.selectedIndex;
-    else if (cf_isText(t)) {
+    } else if (t == "select") x.fs = el.selectedIndex;
+    else if (t == "text") {
       x.fv = el.value;
       if (x == cf_focus) cf_caret(w, el, x);
     }
   }
+  /* The scroll: pageXOffset and pageYOffset (Netscape 4), else the body's (IE 4), else none (0, 0). No typeof: a missing
+   * one is falsy, as a 0 is, and either way 0 is kept. */
   b = w.document.body;
-  if (typeof w.pageYOffset == "number") {
-    cf_sx = w.pageXOffset;
-    cf_sy = w.pageYOffset;
-  } else if (b && typeof b.scrollTop == "number") {
-    cf_sx = b.scrollLeft;
-    cf_sy = b.scrollTop;
+  cf_sx = 0;
+  cf_sy = 0;
+  if (w.pageXOffset) cf_sx = w.pageXOffset;
+  if (w.pageYOffset) cf_sy = w.pageYOffset;
+  if (!cf_sx && !cf_sy && b) {
+    if (b.scrollLeft) cf_sx = b.scrollLeft;
+    if (b.scrollTop) cf_sy = b.scrollTop;
   }
 }
 /* The focused field's selection, into x.ss and x.se: selectionStart where the browser has it; on IE 4, which has not,
  * from the document's selection, a TextRange: its text is the selection, and moved back to the field's start (moveStart
- * stops there) its text is everything before the selection's end. Netscape 4 has neither, and leaves them as they were. */
+ * stops there) its text is everything before the selection's end. Netscape 4 has neither, and leaves them as they were.
+ * No typeof (Netscape 2): a field with selectionStart has setSelectionRange, and the test is for that. */
 function cf_caret(w, el, x) {
   var r, n;
-  if (typeof el.selectionStart == "number") {
+  if (el.setSelectionRange) {
     x.ss = el.selectionStart;
     x.se = el.selectionEnd;
   } else if (w.document.selection && el.createTextRange) {
@@ -1056,7 +1351,7 @@ function cf_blind(x) {
   form = w.document.forms[0];
   if (!form) return 0;
   el = form.elements[x.j];
-  if (!el || typeof el.selectionStart == "number" || (w.document.selection && el.createTextRange)) return 0;
+  if (!el || el.setSelectionRange || (w.document.selection && el.createTextRange)) return 0;
   return 1;
 }
 /* Focus, the selection and the scroll back where they were, after a draw (section 6). The focus given back is no
@@ -1073,8 +1368,8 @@ function cf_restore(w) {
     if (el && el.focus) {
       el.focus();
       /* Only a text field has a selection: a checkbox's setSelectionRange throws (cd_call(checkbox, "select")). */
-      if (f.ss >= 0 && cf_isText(el.type) && el.setSelectionRange) el.setSelectionRange(f.ss, f.se);
-      else if (f.ss >= 0 && cf_isText(el.type) && el.createTextRange) {
+      if (f.ss >= 0 && cf_kind(f) == "text" && el.setSelectionRange) el.setSelectionRange(f.ss, f.se);
+      else if (f.ss >= 0 && cf_kind(f) == "text" && el.createTextRange) {
         r = el.createTextRange();
         r.collapse(true);
         r.moveEnd("character", f.se);
@@ -1122,6 +1417,8 @@ function cf_draw() {
   d.open("text/html", "replace");
   d.write(html);
   d.close();
+  /* The button's press and release (section 6), where the browser has them: Netscape 2 and 3 and IE 3 fire neither, and
+   * there the two are plain properties nothing calls, so cf_pressed stays 0 and the cf_LATER rule works alone. */
   d.onmousedown = cf_onDown;
   d.onmouseup = cf_onUp;
   if (d.captureEvents && w.Event) d.captureEvents(w.Event.MOUSEDOWN | w.Event.MOUSEUP);
@@ -1133,8 +1430,13 @@ function cf_draw() {
 }
 
 /* Serializing (section 8): the tree as period markup, CSS as FONT, B, I, U, STRIKE, CENTER and a TABLE's BGCOLOR. */
+/* The markup, as pieces of about cf_PIECE characters (cf_buf, then cf_out[0] to cf_out[cf_on - 1]), joined in pairs at the
+ * end: no join (Netscape 2), and appending each small string to one long one copies it whole each time (Netscape 2's
+ * concatenation is quadratic: docs/descent.md, speedConcat). */
 var cf_out = null;
 var cf_on = 0;
+var cf_buf = "";
+var cf_PIECE = 1024;
 var cf_KEEP = " id href src alt title width height align valign border colspan rowspan cellpadding cellspacing size maxlength rows cols target ";
 var cf_SKIP = " svg canvas script style template ";
 /* form too: every control is in the shim's one FORM, and a FORM inside it is dropped by the parser, whose </form> then
@@ -1145,8 +1447,33 @@ function cf_in(list, name) {
   return list.indexOf(" " + name + " ") >= 0;
 }
 function cf_w(s) {
-  cf_out[cf_on] = s;
+  cf_buf += s;
+  if (cf_buf.length < cf_PIECE) return;
+  cf_out[cf_on] = cf_buf;
   cf_on++;
+  cf_buf = "";
+}
+function cf_joined() {
+  var k, n;
+  if (cf_buf != "") {
+    cf_out[cf_on] = cf_buf;
+    cf_on++;
+    cf_buf = "";
+  }
+  while (cf_on > 1) {
+    n = 0;
+    for (k = 0; k + 1 < cf_on; k += 2) {
+      cf_out[n] = cf_out[k] + cf_out[k + 1];
+      n++;
+    }
+    if (k < cf_on) {
+      cf_out[n] = cf_out[k];
+      n++;
+    }
+    cf_on = n;
+  }
+  if (cf_on) return cf_out[0];
+  return "";
 }
 function cf_esc(s) {
   var out = "", k, c;
@@ -1194,16 +1521,17 @@ function cf_fieldOf(x) {
 function cf_attrs(x, skip) {
   var out = "", k, a = x.a;
   if (!a) return out;
-  for (k = 0; k < a.length; k += 2) if (a[k] != skip && cf_in(cf_KEEP, a[k])) out += " " + a[k] + "=\"" + cf_esc(a[k + 1]) + "\"";
+  for (k = 0; k < a.n; k += 2) if (a.e[k] != skip && cf_in(cf_KEEP, a.e[k])) out += " " + a.e[k] + "=\"" + cf_esc(a.e[k + 1]) + "\"";
   return out;
 }
 /* A CSS color FONT COLOR and BGCOLOR take: a name or #rrggbb as it is, rgb() and rgba() as #rrggbb. */
 function cf_color(v) {
   var parts, k, n, out = "#";
   if (v.substring(0, 3) != "rgb") return v;
-  parts = v.substring(v.indexOf("(") + 1, v.indexOf(")")).split(",");
+  parts = cf_split(v.substring(v.indexOf("(") + 1, v.indexOf(")")), ",");
   for (k = 0; k < 3; k++) {
-    n = parseInt(parts[k], 10);
+    n = 0;
+    if (k < cf_cut) n = parseInt(parts[k], 10);
     if (!(n > 0)) n = 0;
     if (n > 255) n = 255;
     out += cf_HEX.charAt(n >> 4) + cf_HEX.charAt(n & 15);
@@ -1277,10 +1605,26 @@ function cf_wrapIn(open, close) {
   cf_inner += open;
   cf_innerEnd = close + cf_innerEnd;
 }
-/* The bits of the types listened for on x and its ancestors, the ones that can be heard here (all below 32). */
-function cf_kids(x, inh, ctx) {
-  var c;
-  for (c = x.f; c; c = c.n) cf_node(c, inh, ctx);
+/* root's children and everything under them, in document order, as markup. inh: the bits of the types listened for on a
+ * node and its ancestors, the ones that can be heard here (all below 32); ctx: 1 inside a link. A loop over the parent
+ * links, not a recursion (Netscape 2's value stack is 512 slots: section 16): cf_node writes a node and, when it has
+ * children to write, keeps on it what they inherit (wi, wx) and what closes it (wc), which is written on the way back up. */
+function cf_kids(root, inh, ctx) {
+  var x = root.f;
+  root.wi = inh;
+  root.wx = ctx;
+  while (x) {
+    if (cf_node(x, x.p.wi, x.p.wx)) {
+      x = x.f;
+      continue;
+    }
+    while (x != root && !x.n) {
+      x = x.p;
+      if (x != root) cf_w(x.wc);
+    }
+    if (x == root) return;
+    x = x.n;
+  }
 }
 /* A handler attribute: on, calling cdomF's f with the handle n and the rest. */
 function cf_on_(on, f, n, rest) {
@@ -1304,6 +1648,8 @@ function cf_type(x) {
   if (t == "password" || t == "checkbox" || t == "radio" || t == "hidden" || t == "button" || t == "file") return t;
   return "text";
 }
+/* x as markup, given what its parent passes down; 1 when x is left open for its children (cf_kids), 0 when it is written
+ * whole. */
 function cf_node(x, inh, ctx) {
   var t, s, n, href, k, o;
   if (x.y == 3) {
@@ -1311,11 +1657,11 @@ function cf_node(x, inh, ctx) {
     if (inh & 1 << cf_CLICK && !(ctx & 3) && x.p && x.p != cf_mount && !cf_blank(s)) {
       cf_w("<a href=\"javascript:parent.cdomApp.cdomF.k(" + cf_handle(x.p) + ")\">" + s + "</a>");
     } else cf_w(s);
-    return;
+    return 0;
   }
   t = x.t;
-  if (cf_in(cf_SKIP, t) || cf_pair(x.s, "display") == "none") return;
-  if (x.i >= 0) inh = inh | cf_mask[x.i * 2];
+  if (cf_in(cf_SKIP, t) || cf_pair(x.s, "display") == "none") return 0;
+  if (x.i >= 0) inh = inh | cf_maskOf(x.i * 2);
   cf_styles(x);
   cf_w(cf_outer);
   s = cf_outerEnd;
@@ -1334,7 +1680,7 @@ function cf_node(x, inh, ctx) {
       if (x.seen == null) x.seen = o;
       cf_w(" value=\"" + cf_esc(o) + "\"");
     }
-    cf_w(cf_fieldHandlers(x, inh, cf_isText(k)) + ">");
+    cf_w(cf_fieldHandlers(x, inh, cf_kind(x) == "text") + ">");
   } else if (t == "textarea") {
     o = cf_fieldValue(x);
     if (x.seen == null) x.seen = o;
@@ -1362,35 +1708,46 @@ function cf_node(x, inh, ctx) {
     if (inh & 1 << cf_OVER) cf_w(cf_on_("onmouseover", "o", n, ",1"));
     if (inh & 1 << cf_OUT) cf_w(cf_on_("onmouseout", "o", n, ",0"));
     cf_w(cf_attrs(x, "href") + ">" + cf_inner);
-    cf_kids(x, inh, ctx | 1);
-    cf_w(cf_innerEnd + "</a>");
+    return cf_open(x, inh, ctx | 1, cf_innerEnd + "</a>" + s);
   } else {
     if (cf_in(cf_DIV, t)) t = "div";
     cf_w("<" + t + cf_attrs(x, "") + ">");
     if (!cf_in(cf_VOID, t)) {
       cf_w(cf_inner);
-      cf_kids(x, inh, ctx);
-      cf_w(cf_innerEnd + "</" + t + ">");
+      return cf_open(x, inh, ctx, cf_innerEnd + "</" + t + ">" + s);
     }
   }
   cf_w(s);
+  return 0;
+}
+/* x's children are next (1), with inh, ctx and close kept on x for cf_kids; or it has none, and close is written now (0). */
+function cf_open(x, inh, ctx, close) {
+  if (!x.f) {
+    cf_w(close);
+    return 0;
+  }
+  x.wi = inh;
+  x.wx = ctx;
+  x.wc = close;
+  return 1;
 }
 /* The frame's whole document. Every control is inside the one FORM, which Netscape needs to show one at all. */
 function cf_html() {
   var bg = cf_bg(cf_mount);
   cf_serial++;
-  cf_out = new Array();
+  cf_out = new Object();
   cf_on = 0;
-  cf_hit = new Array();
+  cf_buf = "";
+  cf_hit = new Object();
   cf_nhit = 0;
-  cf_fields = new Array();
+  cf_fields = new Object();
   cf_nfields = 0;
   cf_w("<html><head><title>" + cf_esc(cf_title) + "</title></head><body");
   if (bg != null) cf_w(" bgcolor=\"" + cf_esc(bg) + "\"");
   cf_w("><form name=\"cdom\" onsubmit=\"return false\">");
   cf_kids(cf_mount, 0, 0);
   cf_w("</form></body></html>");
-  return cf_out.join("");
+  return cf_joined();
 }
 
 /* The handlers (cdomF.k and the rest): each is an entry from the browser, which delivers its events to the nearest
@@ -1418,7 +1775,7 @@ function cf_fire(target, type, key) {
   var path = 0, depth = 0, x = target, s, index, mods = 0;
   if (target.t == "input" || target.t == "textarea" || target.t == "select") mods = 16;
   while (x && x != cf_mount) {
-    if (x.i >= 0 && cf_mask[x.i * 2 + (type >> 5)] & 1 << (type & 31)) {
+    if (x.i >= 0 && cf_maskOf(x.i * 2 + (type >> 5)) & 1 << (type & 31)) {
       cf_post(type, x.i, path, depth, key, mods);
       return;
     }
@@ -1524,9 +1881,9 @@ function cf_onUp(e) {
   return cf_route(e);
 }
 function cf_onTimer(n) {
-  var token = cf_tok[n];
+  var token = cf_tok["t" + n];
   if (token == null) return;
-  cf_tok[n] = null;
+  cf_tok["t" + n] = null;
   cf_hold(1);
   cf_cRun("cd_timer", token, n);
   cf_release(0);
@@ -1626,8 +1983,139 @@ cf_ops.origin = cf_op_origin;
 cf_ops.url_read = cf_op_url_read;
 cf_ops.url_step = cf_op_url_step;
 cf_ops.title = cf_op_title;
-var cf_LACKS = "encode image_bytes blit ws_open ws_send ws_close ws_buffered http file_read file_open file_next file_close job_run job_stop image_call image_throw store_put store_get store_del audio_load audio_free audio_play audio_stop audio_gain audio_master audio_state random url_go language prefs clipboard_write share fonts_wait".split(" ");
-for (cf_k = 0; cf_k < cf_LACKS.length; cf_k++) cf_ops[cf_LACKS[cf_k]] = new Function("return cf_lacks(\"" + cf_LACKS[cf_k] + "\")");
+/* What the tier has none of, one declared function each (no new Function), so the note names it. */
+function cf_no_encode() {
+  return cf_lacks("encode");
+}
+function cf_no_image_bytes() {
+  return cf_lacks("image_bytes");
+}
+function cf_no_blit() {
+  return cf_lacks("blit");
+}
+function cf_no_ws_open() {
+  return cf_lacks("ws_open");
+}
+function cf_no_ws_send() {
+  return cf_lacks("ws_send");
+}
+function cf_no_ws_close() {
+  return cf_lacks("ws_close");
+}
+function cf_no_ws_buffered() {
+  return cf_lacks("ws_buffered");
+}
+function cf_no_http() {
+  return cf_lacks("http");
+}
+function cf_no_file_read() {
+  return cf_lacks("file_read");
+}
+function cf_no_file_open() {
+  return cf_lacks("file_open");
+}
+function cf_no_file_next() {
+  return cf_lacks("file_next");
+}
+function cf_no_file_close() {
+  return cf_lacks("file_close");
+}
+function cf_no_job_run() {
+  return cf_lacks("job_run");
+}
+function cf_no_job_stop() {
+  return cf_lacks("job_stop");
+}
+function cf_no_image_call() {
+  return cf_lacks("image_call");
+}
+function cf_no_image_throw() {
+  return cf_lacks("image_throw");
+}
+function cf_no_store_put() {
+  return cf_lacks("store_put");
+}
+function cf_no_store_get() {
+  return cf_lacks("store_get");
+}
+function cf_no_store_del() {
+  return cf_lacks("store_del");
+}
+function cf_no_audio_load() {
+  return cf_lacks("audio_load");
+}
+function cf_no_audio_free() {
+  return cf_lacks("audio_free");
+}
+function cf_no_audio_play() {
+  return cf_lacks("audio_play");
+}
+function cf_no_audio_stop() {
+  return cf_lacks("audio_stop");
+}
+function cf_no_audio_gain() {
+  return cf_lacks("audio_gain");
+}
+function cf_no_audio_master() {
+  return cf_lacks("audio_master");
+}
+function cf_no_audio_state() {
+  return cf_lacks("audio_state");
+}
+function cf_no_random() {
+  return cf_lacks("random");
+}
+function cf_no_url_go() {
+  return cf_lacks("url_go");
+}
+function cf_no_language() {
+  return cf_lacks("language");
+}
+function cf_no_prefs() {
+  return cf_lacks("prefs");
+}
+function cf_no_clipboard_write() {
+  return cf_lacks("clipboard_write");
+}
+function cf_no_share() {
+  return cf_lacks("share");
+}
+function cf_no_fonts_wait() {
+  return cf_lacks("fonts_wait");
+}
+cf_ops.encode = cf_no_encode;
+cf_ops.image_bytes = cf_no_image_bytes;
+cf_ops.blit = cf_no_blit;
+cf_ops.ws_open = cf_no_ws_open;
+cf_ops.ws_send = cf_no_ws_send;
+cf_ops.ws_close = cf_no_ws_close;
+cf_ops.ws_buffered = cf_no_ws_buffered;
+cf_ops.http = cf_no_http;
+cf_ops.file_read = cf_no_file_read;
+cf_ops.file_open = cf_no_file_open;
+cf_ops.file_next = cf_no_file_next;
+cf_ops.file_close = cf_no_file_close;
+cf_ops.job_run = cf_no_job_run;
+cf_ops.job_stop = cf_no_job_stop;
+cf_ops.image_call = cf_no_image_call;
+cf_ops.image_throw = cf_no_image_throw;
+cf_ops.store_put = cf_no_store_put;
+cf_ops.store_get = cf_no_store_get;
+cf_ops.store_del = cf_no_store_del;
+cf_ops.audio_load = cf_no_audio_load;
+cf_ops.audio_free = cf_no_audio_free;
+cf_ops.audio_play = cf_no_audio_play;
+cf_ops.audio_stop = cf_no_audio_stop;
+cf_ops.audio_gain = cf_no_audio_gain;
+cf_ops.audio_master = cf_no_audio_master;
+cf_ops.audio_state = cf_no_audio_state;
+cf_ops.random = cf_no_random;
+cf_ops.url_go = cf_no_url_go;
+cf_ops.language = cf_no_language;
+cf_ops.prefs = cf_no_prefs;
+cf_ops.clipboard_write = cf_no_clipboard_write;
+cf_ops.share = cf_no_share;
+cf_ops.fonts_wait = cf_no_fonts_wait;
 
 /* cd_seed: options.seed when the page fixes one, else weak entropy from the engine's generator mixed with the clock.
  * Alex approved this exception to cdom's seed rule for this tier on 2026-11-20, the one shim/cdom.js's seed() has for
@@ -1637,7 +2125,7 @@ for (cf_k = 0; cf_k < cf_LACKS.length; cf_k++) cf_ops[cf_LACKS[cf_k]] = new Func
  * The generator may be missing or broken on the oldest engines (Netscape 2.0 had it on Unix only): then the clock alone. */
 function cf_seed(options) {
   var r = 0, t, g, d;
-  if (options && typeof options.seed == "number") return options.seed >>> 0;
+  if (options && options.seed != null) return options.seed >>> 0; /* no typeof (Netscape 2): a seed is a number */
   g = Math.random; /* the one draw, tested before it is called */
   if (g) r = g() * 4294967296;
   if (!(r >= 0 && r < 4294967297)) r = 0; /* broken: NaN or out of range */
@@ -1646,20 +2134,23 @@ function cf_seed(options) {
   if (!(t >= 0)) t = 0;
   return (r ^ t) >>> 0;
 }
-/* The start, which the boot's written script calls once both files have run: factory is the app's (window.cdomFactory),
- * the rest is what cdomBoot was given. The mount is the frame's body, whatever was named. */
+/* The start, which the boot calls (cdomBootWait) once this and the app's module have run, in the page's app document
+ * (section 16): factory is the app's (window.cdomFactory), the rest is what cdomBoot was given. The mount is the frame's
+ * body, whatever was named. The string table is the app document's four globals, cdomLitsBase, cdomLitsStamp, cdomLitsUtf8
+ * and cdomLitsText (tools/legacy/build.mjs app-doc writes them from the page's cdomLits: Netscape 2's new Array drops its
+ * arguments, and its split returns undefined). */
 function cdomFramesStart(factory, mount, env, ready, options) {
-  var table = window.cdomLits, x;
+  var text = window.cdomLitsText, x;
   window.cdomFactory = null;
   if (!factory) {
     cf_fail("cdom: the app's file did not load");
     return;
   }
-  if (!table) {
+  if (text == null) {
     cf_fail("cdom: this page has no string table (build it with cdom.mk or tools/cdpage, which write it before the shim)");
     return;
   }
-  if (cf_hasFrom && table[2] != String.fromCharCode(9731)) {
+  if (cf_hasFrom && cdomLitsUtf8 != String.fromCharCode(9731)) {
     cf_fail("cdom: this page was not read as UTF-8");
     return;
   }
@@ -1668,22 +2159,22 @@ function cdomFramesStart(factory, mount, env, ready, options) {
   cf_raw = factory(cf_imports);
   cf_mem = cf_raw.memory;
   cf_W = cf_mem.words;
-  if (!cf_raw.cd_lits || cf_raw.cd_lits() >>> 0 != table[1] >>> 0) {
+  if (!cf_raw.cd_lits || cf_raw.cd_lits() >>> 0 != cdomLitsStamp >>> 0) {
     cf_fail("cdom: the page's string table is not this module's");
     return;
   }
-  cf_lits = table[3].split(cf_T[1]);
-  cf_litBase = table[0];
+  cf_lits = cf_split(text, cf_T[1]);
+  cf_litBase = cdomLitsBase;
   cf_litEnd = 0;
-  if (cf_litBase) cf_litEnd = cf_litBase + 4 * cf_lits.length;
+  if (cf_litBase) cf_litEnd = cf_litBase + 4 * cf_cut;
   if (!cf_readLayout(cf_raw.cd_layout() >> 2)) {
     cf_fail("cdom: this shim and the module's cdom.c lay out C memory differently");
     return;
   }
-  cf_nodes[0] = cf_mount;
-  cf_nodes[1] = window;
-  cf_nodes[2] = cf_doc;
-  cf_nodes[3] = cf_mount;
+  cf_setId(0, cf_mount);
+  cf_setId(1, window);
+  cf_setId(2, cf_doc);
+  cf_setId(3, cf_mount);
   cf_started = 1;
   x = cf_wrap(cf_raw);
   /* Set before the start, so a trap in it (which throws out of here) still has the frame drawn, or the frameset

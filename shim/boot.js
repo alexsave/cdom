@@ -12,9 +12,11 @@
  * 4. No ES5 or no addEventListener (IE 5 to 8): cdom.legacy-ie6.js (the shim in ES3 on the old DOM,
  *    tools/legacy/dom-old.js) and the same url + ".ie9.js", which is ES3 too (docs/ie6-design.md).
  * 5. No getElementById or no createElement (Netscape 2 to 4, IE 3 and 4): the frames tier (docs/frames-design.md).
- *    cdom.frames.js (tools/legacy/frames.js, JavaScript 1.1) and url + ".js1.js" (the wasm compiled to JavaScript 1.0
- *    by tools/js1c, docs/js1-compile-design.md), written into the page while it parses (into cdomApp, the second frame of the frameset the
- *    early script, shim/boot-early.js, wrote ahead of any content), where the shim keeps the app and writes the first frame whole.
+ *    Nothing is fetched by script: the early script (shim/boot-early.js) made the page a frameset whose second frame,
+ *    cdomApp, is the page's app document, which holds inline this part of the boot, tools/legacy/frames.js (JavaScript
+ *    1.0) and url + ".js1.js" (the wasm compiled to JavaScript 1.0 by tools/js1c, docs/js1-compile-design.md), and then
+ *    the page's own script, whose cdomBoot starts the shim there (section 16). The shim keeps the app in that frame and
+ *    writes the first frame whole.
  * Either of the middle fallbacks' two files are fetched at once, and the app file sets window.cdomFactory.
  * url may be the pair [scalar, SIMD] cdom.start takes (cdom.mk's APP_SIMD): cdom.start picks one, and every fallback
  * is the scalar module's build, url[0] + ".js" or url[0] + ".ie9.js".
@@ -33,23 +35,18 @@ function cdomBoot(url, mount, env, ready, options) {
   cdomBootFrames(url, mount, env, ready, options);
 }
 /* The fifth tier: no DOM to build in, so the page is a frameset (docs/frames-design.md, section 3), made by the early script,
- * and this runs in its cdomApp frame. The arguments wait in globals, since JavaScript 1.0 has no closures, for the script
- * written after the two files, which runs once both have; a SCRIPT SRC the parser meets blocks it, so they run in order.
- * url is a string or a pair: only a string has substring. */
+ * and this runs in its cdomApp frame, the page's app document, where the shim and the app's module were inlined ahead of
+ * the page's own script (section 16): url names nothing to fetch. The arguments wait in globals, since JavaScript 1.0 has
+ * no closures. */
 function cdomBootFrames(url, mount, env, ready, options) {
-  var base = url;
-  if (!url.substring) base = url[0];
   cdomBootMount = mount;
   cdomBootEnv = env;
   cdomBootReady = ready;
   cdomBootOptions = options;
-  document.write("<script src=\"cdom.frames.js\"></scr" + "ipt><script src=\"" + base + ".js1.js\"></scr" + "ipt>"
-    + "<script>cdomBootWait()</scr" + "ipt>");
+  cdomBootWait();
 }
-/* Calls the start once both files have run. The written script calls this at once, which is after both files in
- * Netscape 3 and 4 (they block on a SCRIPT SRC), and before them in IE 4 (it fetches a SCRIPT SRC written by script
- * without waiting, and "Object expected" at cdomFramesStart is what it said: docs/frames-design.md, section 15), so it
- * tries again every 50 ms, for 20 s. */
+/* Calls the start once the shim and the module have run: at once in the app document. Anywhere else (the page itself, in a
+ * browser of this tier whose frameset was not made) they never come, and it gives up after 400 tries 50 ms apart (20 s). */
 var cdomBootTries = 0;
 function cdomBootWait() {
   if (window.cdomFramesStart && window.cdomFactory) {
