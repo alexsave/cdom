@@ -14,3 +14,4 @@ results/pairs_*.log
 micro/direct/*.wasm
 tools/out/
 tests/probe-ns2-*.html
+__pycache__/
