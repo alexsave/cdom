@@ -501,3 +501,22 @@ tools/mutate.py ran every mutant whose file this branch touched or whose test is
 The seven misses were expectations that moved, and one hole: frames-url-own (the app reading its own frame's location) was no longer caught, since the app document now has the page's query too; tools/frames.mjs now checks the path the app reads (/frames.html, not /frames.app.html), which catches it.
 Of the other six, four now fail on a message this branch renamed or on the build refusing first (frames-boot-no-wait, js10-allowed-members-ignored, frames-lits-one-statement, lits-array-literal: the app document cannot read a table that is an array literal), one on the static check of the early script (frames-early-query-dropped), and app-doc now finds the boot's second part by its text, not its tag, so frames-boot2-tag-plain reaches the test that is meant to catch it.
 All 115 are caught.
+
+## 17. Netscape 2.02 plays a uttt.live replay (branch ns2-uttt, 2026-11-21)
+
+The runs are in the real Netscape 2.02 of the XP VM (QEMU on this Mac), through tools/vmprobe.sh and tools/vmopen.sh, with Netscape 3.04, 4.08 and IE 4.01 as controls where it fails.
+The milestone is demo/uttt's `uttt.html?AJG7NYNQG4RFXXGVPGD7QR2ETSOYTWMCREAQ` in it, as a screenshot and a video.
+
+### 17.1 Predictions, written before the first run
+
+Known before writing them: docs/descent.md measured, in this guest, a rewrite of a 5 KB view at 1.5 s wall, 150 KB of inline script loading in 2.4 s, a limit of about 65,536 names ("too many atoms"), and the engine's clock at a third of the wall clock.
+
+- N1, what breaks first: not the load (the blocks are 30,000 bytes and the limits probe passed them) but the first run of the shim, on something section 16.6 item 5 lists as assumed.
+  My order of likelihood: the string table (the app document's four globals, assigned in 4,096-byte statements), then a number key read as the nth property, then `"" + f` for a function, then the first click reaching `parent.cdomApp.cdomF.k`.
+  I expect at least two failures before the board is drawn, and one of them an alert naming a line of a block of the app document.
+- N2, atoms: uttt.app.html's names (the shim's, the module's memory and function names, the strings of the table are values, not names) are under 65,536; falsifier: "too many atoms" in the app document.
+- N3, load time, from the GET of uttt.html to the board drawn (the mark of the first draw): 6 to 15 s wall (the frameset, the app document of 84 KB in 3 blocks, the start of the module, the first redraw of about 230 nodes, in pieces of 1 KB).
+- N4, the first draw is the costly one: the board is about 6 KB of markup (333 nodes), 1.5 s a 5 KB view in the earlier probe, so 2 to 5 s, more than the 5 KB probe since the tables nest.
+- N5, per move: one redraw of the board, 2 to 6 s wall of which most is Netscape's layout; a move every 600 ms in Play is then far faster than the guest can draw, so Play runs at the pace of the draw, not of the timer, and 20 moves take 1 to 2 minutes.
+  Falsifier: a move under 1.5 s (the probe's own floor for 5 KB), or over 10 s.
+- N6, the typing trap: the `u` of the URL is dropped or doubled by vm.py's sendkey path, not by the guest's Run dialog; the cause is in tools/vmopen.sh's or vm.py's timing or key names, and a fix there is under 30 minutes.
