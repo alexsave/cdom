@@ -978,15 +978,15 @@ M = [
   ('frames-early-after-content', 'tools/legacy/build.mjs', ".replace('</head>', () => '<script>\\n' + earlyCode + '</script></head>')", ".replace('</head><div id=\"m\"></div>', () => '</head><div id=\"m\"></div><script>\\n' + earlyCode + '</script>')", FRAMES, 'FAIL the early script is in the head'),  # Netscape 4 ignores a frameset after content
   ('frames-shim-tag-plain', 'tools/legacy/build.mjs', ".replace(SHIM_TAG, '<script language=\"JavaScript1.5\">$1')", ".replace(SHIM_TAG, '<script>$1')", FRAMES, 'FAIL the inlined shim and the boot'),  # Netscape 3 raises a syntax error alert for it
   ('frames-boot2-tag-plain', 'tools/legacy/build.mjs', "'</script>\\n<script language=\"JavaScript1.5\">\\n' + parts[1]", "'</script>\\n<script>\\n' + parts[1]", FRAMES, 'FAIL the inlined shim and the boot'),
-  ('frames-early-always', 'shim/boot-early.js', 'createElement) && window.name != "cdomApp") {', 'createElement)) {', FRAMES, 'FAIL booted'),  # the app frame would make a frameset of its own
-  ('frames-early-query', 'shim/boot-early.js', 'cdomQ + "cdomApp\\"', 'cdomQ + "x\\"', FRAMES, 'FAIL the shim lives in the app frame'),
+  ('frames-early-always', 'shim/boot-early.js', 'if (!(document.getElementById && document.createElement)) {', 'if (1) {', LEG1, 'FAIL'),  # a browser with the DOM would get the frameset too
+  ('frames-early-query-dropped', 'shim/boot-early.js', '"/*CDOM_APP_DOC*/" + location.search', '"/*CDOM_APP_DOC*/"', FRAMES, 'FAIL frames.html: a trap in cd_start is noted'),  # the app document runs the page's own script, which reads its query
   ('frames-handler-parent', 'tools/legacy/frames.js', 'on + "=\\"parent.cdomApp.cdomF." + f', 'on + "=\\"parent.cdomF." + f', FRAMES, 'FAIL a click on the button reached C'),
   ('frames-url-own', 'tools/legacy/frames.js', 'var l = top.location,', 'var l = location,', FRAMES, "FAIL the app reads the top window's URL"),
   ('frames-boot-no-wait', 'shim/boot.js', 'if (cdomBootTries < 400) setTimeout("cdomBootWait()", 50);', 'if (0) setTimeout("cdomBootWait()", 50);', FRAMES, 'FAIL the boot starts once cdom.frames.js has run'),  # IE 4 runs the written script before the file
   ('frames-tick-draws-under-press', 'tools/legacy/frames.js', '  if (cf_dirty && (later || cf_pressed)) {', '  if (cf_dirty && later) {', FRAMES, "FAIL a timer's draw waits while a button is down"),  # Play's tick replaced the Pause button under the pointer
   ('frames-boot-takes-dom', 'shim/boot.js', '  cdomBootFrames(url, mount, env, ready, options);\n}', '  cdomBootDom(url, mount, env, ready, options);\n}', FRAMES, 'FAIL booted'),
-  ('frames-boot-not-js10', 'shim/boot.js', '  var base = url;\n  if (!url.substring)', '  var base = url, none = {};\n  if (!url.substring)', FRAMES, 'shim/boot.js part 1 is not JavaScript 1.0'),
-  ('frames-shim-not-js11', 'tools/legacy/frames.js', '  cf_fields[cf_nfields] = x;', '  cf_fields.push(x);', FRAMES, 'frames.js is not JavaScript 1.1: .push'),
+  ('frames-boot-not-js10', 'shim/boot.js', '  cdomBootMount = mount;\n', '  cdomBootMount = mount;\n  var none = {};\n', FRAMES, 'shim/boot.js part 1 is not JavaScript 1.0'),
+  ('frames-shim-not-js11', 'tools/legacy/frames.js', '  cf_fields[cf_nfields] = x;', '  cf_fields.push(x);', FRAMES, 'frames.js is not JavaScript 1.0: .push'),
   ('frames-profile-keeps-getelementbyid', 'tools/cdp.mjs', "    'getElementById', 'importNode',", "    'importNode',", FRAMES, 'FAIL no DOM mutation in the page'),
   ('frames-seed-zero', 'tools/legacy/frames.js', '  return (r ^ t) >>> 0;', '  return 0;', FRAMES, 'FAIL two boots with a different clock give different seeds'),
   ('frames-seed-stray-random', 'tools/legacy/frames.js', 'var cf_hasFrom = 0;', 'var cf_hasFrom = 0, cf_stray = Math.random();', LINK, 'FAIL tools/legacy/frames.js:'),
@@ -997,23 +997,23 @@ M = [
   ('frames-path-counts-text', 'tools/legacy/frames.js', '    for (s = x.v; s; s = s.v) if (s.y == 1) index++;', '    for (s = x.v; s; s = s.v) index++;', FRAMES, 'FAIL links and a span'),
   ('frames-text-not-wrapped', 'tools/legacy/frames.js', '    if (inh & 1 << cf_CLICK && !(ctx & 3) && x.p && x.p != cf_mount && !cf_blank(s)) {', '    if (false) {', FRAMES, 'FAIL links and a span'),
   ('frames-focus-not-restored', 'tools/legacy/frames.js', '      el.focus();\n', '', FRAMES, 'FAIL the focus and the caret survive it'),
-  ('frames-caret-not-restored', 'tools/legacy/frames.js', '      if (f.ss >= 0 && cf_isText(el.type) && el.setSelectionRange) el.setSelectionRange(f.ss, f.se);', '      if (false) el.setSelectionRange(f.ss, f.se);', FRAMES, 'FAIL the focus and the caret survive it'),
+  ('frames-caret-not-restored', 'tools/legacy/frames.js', '      if (f.ss >= 0 && cf_kind(f) == "text" && el.setSelectionRange) el.setSelectionRange(f.ss, f.se);', '      if (false) el.setSelectionRange(f.ss, f.se);', FRAMES, 'FAIL the focus and the caret survive it'),
   ('frames-bold-dropped', 'tools/legacy/frames.js', '  if (v == "bold" || v == "bolder" || parseInt(v, 10) >= 600) cf_wrapIn("<b>", "</b>");', '', FRAMES, 'FAIL color, font-weight'),
-  ('frames-hidden-drawn', 'tools/legacy/frames.js', '  if (cf_in(cf_SKIP, t) || cf_pair(x.s, "display") == "none") return;', '  if (cf_in(cf_SKIP, t)) return;', FRAMES, 'FAIL display: none'),
+  ('frames-hidden-drawn', 'tools/legacy/frames.js', '  if (cf_in(cf_SKIP, t) || cf_pair(x.s, "display") == "none") return 0;', '  if (cf_in(cf_SKIP, t)) return 0;', FRAMES, 'FAIL display: none'),
   ('frames-style-attr-unread', 'tools/legacy/frames.js', '  if (name != "style") {', '  if (true) {', FRAMES, "FAIL the heading's color as FONT COLOR"),
   ('frames-change-drawn-at-once', 'tools/legacy/frames.js', '  if (cf_dirty && (later || cf_pressed)) {', '  if (cf_dirty && cf_pressed && !later) {', FRAMES, 'FAIL the click that left the field still reached C'),
   ('frames-no-input-on-change', 'tools/legacy/frames.js', '  if (now != x.seen) {', '  if (false) {', FRAMES, 'FAIL leaving the field: one input'),
   ('frames-checkbox-no-change', 'tools/legacy/frames.js', '      cf_fire(x, cf_INPUT, 0);\n      cf_fire(x, cf_CHANGE, 0);\n', '      cf_fire(x, cf_INPUT, 0);\n', FRAMES, "FAIL the checkbox's change reached C"),
   ('frames-recover-off', 'tools/legacy/frames.js', '  if (cf_busy || cf_holds) {', '  if (false) {', FRAMES, 'FAIL the next click recovers'),
-  ('frames-history-entry', 'tools/legacy/frames.js', '  d.close();\n  d.onmousedown = cf_onDown;', '  d.close();\n  w.location.hash = "cdomfocus";\n  d.onmousedown = cf_onDown;', FRAMES, 'FAIL no redraw added a history entry'),
+  ('frames-history-entry', 'tools/legacy/frames.js', '  d.close();\n  /* The button', '  d.close();\n  w.location.hash = "cdomfocus";\n  /* The button', FRAMES, 'FAIL no redraw added a history entry'),
   ('frames-utf8-two-bytes', 'tools/legacy/frames.js', '      u = (c & 31) << 6 | cf_load8(p) & 63;\n      p++;', '      u = (c & 31) << 6 | cf_load8(p) & 63;', FRAMES, 'FAIL the input reached C, which read the value'),
   ('frames-encode-two-bytes', 'tools/legacy/frames.js', '      cf_store8(p + cf_wrote, 192 | u >> 6);', '      cf_store8(p + cf_wrote, 224 | u >> 6);', FRAMES, 'FAIL the input reached C, which read the value'),
-  ('frames-timer-handle', 'tools/legacy/frames.js', '  cf_tid[cf_timers] = setTimeout("cdomF.t(" + cf_timers + ")", ms);', '  cf_tid[cf_timers] = setTimeout("cdomF.t(" + (cf_timers + 1) + ")", ms);', FRAMES, 'FAIL a timer reached C'),
+  ('frames-timer-handle', 'tools/legacy/frames.js', '  cf_tid["t" + cf_timers] = setTimeout("cdomF.t(" + cf_timers + ")", ms);', '  cf_tid["t" + cf_timers] = setTimeout("cdomF.t(" + (cf_timers + 1) + ")", ms);', FRAMES, 'FAIL a timer reached C'),
   ('frames-esc-off', 'tools/legacy/frames.js', 'function cf_esc(s) {\n  var out = "", k, c;', 'function cf_esc(s) {\n  return s;\n  var out = "", k, c;', FRAMES, 'FAIL a text with markup characters reads back as them'),
   ('js11-new-member-allowed', 'tools/legacy/js11.mjs', "      add('a member of a new expression', n);", '', JS11T, 'FAIL var t = new Date().getTime(); is refused'),
-  ('frames-new-member', 'tools/legacy/frames.js', 'function cf_op_epoch() {\n  var d = new Date();\n  return d.getTime();', 'function cf_op_epoch() {\n  return (new Date()).getTime();', JS11T, 'frames.js is not JavaScript 1.1: a member of a new expression'),  # the build's gate refuses it before js11.mjs runs
+  ('frames-new-member', 'tools/legacy/frames.js', 'function cf_op_epoch() {\n  var d = new Date();\n  return d.getTime();', 'function cf_op_epoch() {\n  return (new Date()).getTime();', JS11T, 'frames.js is not JavaScript 1.0: a member of a new expression'),  # the build's gate refuses it before js11.mjs runs
   ('js11-assign-in-test-allowed', 'tools/legacy/js11.mjs', "    if (test) walk(test, (m) => { if (m.type === 'AssignmentExpression') add('an assignment in a condition', m); });", '', JS11T, 'FAIL if (a = f()) g(); is refused'),
-  ('frames-assign-in-test', 'tools/legacy/frames.js', '  while (a < b && s.charAt(a) == " ") a++;', '  while (a < b && (c = s.charAt(a)) == " ") a++;', JS11T, 'frames.js is not JavaScript 1.1: an assignment in a condition'),  # the build's gate refuses it before js11.mjs runs
+  ('frames-assign-in-test', 'tools/legacy/frames.js', '  while (a < b && s.charAt(a) == " ") a++;', '  while (a < b && (c = s.charAt(a)) == " ") a++;', JS11T, 'frames.js is not JavaScript 1.0: an assignment in a condition'),  # the build's gate refuses it before js11.mjs runs
   ('js11-isnan-allowed', 'tools/legacy/js11.mjs', "'globalThis', 'isNaN', 'setInterval']);", "'globalThis']);", JS11T, 'FAIL if (isNaN(x)) f(); is refused'),
   ('js11-substr-allowed', 'tools/legacy/js11.mjs', "'hasOwnProperty', 'substr', 'isNaN', 'setInterval']);", "'hasOwnProperty', 'isNaN', 'setInterval']);", JS11T, 'FAIL var s = t.substr(1, 2); is refused'),
   ('js10-arguments-allowed', 'tools/legacy/js11.mjs', "      if (js10 && JS10_IDENTS.has(n.name)) add(n.name, n);\n", '', JS11T, 'FAIL js10: function f() { return arguments.length; } is refused'),
@@ -1028,12 +1028,40 @@ M = [
   ('frames-radio-renamed', 'tools/legacy/frames.js', '  if (x.t == "input" && name != null && cf_type(x) == "radio") return', '  if (false) return', FRAMES, 'FAIL two radios of one name are one group'),
   ('frames-form-nested', 'tools/legacy/frames.js', ' nav main aside figure form ";', ' nav main aside figure ";', FRAMES, 'FAIL a form from C is a DIV'),
   ('frames-drawing-not-settled', 'tools/legacy/frames.js', '  if (!cf_drawing) return;\n  cf_drawing = 0;\n', '  if (!cf_drawing) return;\n', FRAMES, 'FAIL a throw while the shim draws does not lock the page'),
-  ('frames-select-checkbox-throws', 'tools/legacy/frames.js', '      if (f.ss >= 0 && cf_isText(el.type) && el.setSelectionRange)', '      if (f.ss >= 0 && el.setSelectionRange)', FRAMES, 'FAIL cd_call(checkbox, "select") does not throw'),
+  ('frames-select-checkbox-throws', 'tools/legacy/frames.js', '      if (f.ss >= 0 && cf_kind(f) == "text" && el.setSelectionRange)', '      if (f.ss >= 0 && el.setSelectionRange)', FRAMES, 'FAIL cd_call(checkbox, "select") does not throw'),
   ('frames-move-foreign', 'tools/legacy/frames.js', '  if (next && next.p != parent) {', '  if (false) {', FRAMES, "FAIL cd_move before another parent's node moves nothing"),
-  ('frames-move-self', 'tools/legacy/frames.js', '  if (next == x) return;\n', '', FRAMES, 'FAIL cd_move before itself moves nothing'),  # the self-link breaks the next draw: Chrome throws a RangeError in cf_w
+  ('frames-move-self', 'tools/legacy/frames.js', '  if (next == x) return;\n', '', FRAMES, 'FAIL no result within 120 s'),  # the self-link makes the next draw's walk (a loop, not a recursion since section 16) go round for good
   ('frames-tag-case', 'tools/legacy/frames.js', '  var t = name.toLowerCase(), k;', '  var t = name, k;', FRAMES, 'FAIL a tag in capitals is the same tag'),
   ('frames-tag-unchecked', 'tools/legacy/frames.js', '  if (t.length && k == t.length) return t;', '  return t;', FRAMES, 'FAIL a tag that is not letters and digits is a SPAN'),
   ('frames-start-trap-unnoted', 'tools/legacy/frames.js', '    cf_fail("cdom: cd_start did not return (a trap in cd_main?)");\n', '', FRAMES, 'FAIL frames.html: a trap in cd_start is noted'),
+  # one JavaScript 1.0 shim and one inline path (docs/frames-design.md, section 16): what Netscape 2 refuses, planted in
+  # frames.js, stops the build (tests/build.sh, through the app document), and the gate's own rules (tools/js11.mjs)
+  ('frames-js10-typeof', 'tools/legacy/frames.js', '  var m = cf_mask["m" + k];\n  if (m) return m;', '  var m = cf_mask["m" + k];\n  if (typeof m == "number") return m;', FRAMES, 'frames.js is not JavaScript 1.0: typeof'),
+  ('frames-js10-void', 'tools/legacy/frames.js', 'function cf_op_ahead(p, len) {\n}', 'function cf_op_ahead(p, len) {\n  void p;\n}', FRAMES, 'frames.js is not JavaScript 1.0: void'),
+  ('frames-js10-mixed-return', 'tools/legacy/frames.js', '(" + id + ", ...): not a text node");\n  return null;', '(" + id + ", ...): not a text node");\n  return;', FRAMES, 'frames.js is not JavaScript 1.0: a function that returns a value and also none'),
+  ('frames-js10-no-trailing-return', 'tools/legacy/frames.js', '  t = "" + v;\n  return t.substring(0, 8) == "function";', '  t = "" + v;\n  if (t.substring(0, 8) == "function") return 1;', FRAMES, 'frames.js is not JavaScript 1.0: a function that returns a value and does not end in a return'),
+  ('frames-js10-nested', 'tools/legacy/frames.js', 'function cf_one(x) {\n', 'function cf_one(x) {\n  function g() {}\n', FRAMES, 'frames.js is not JavaScript 1.0: a nested function declaration'),
+  ('frames-js10-array', 'tools/legacy/frames.js', 'var cf_cut = 0;', 'var cf_cut = 0, cf_arr = new Array();', FRAMES, 'frames.js is not JavaScript 1.0: Array'),
+  ('frames-js10-split', 'tools/legacy/frames.js', '  parts = cf_split(value, ";");', '  parts = value.split(";");', FRAMES, 'frames.js is not JavaScript 1.0: .split'),
+  ('frames-js10-new-function', 'tools/legacy/frames.js', '      out[k] = cf_X[cf_nx];', '      out[k] = new Function("return 1");', FRAMES, 'frames.js is not JavaScript 1.0: Function'),
+  # names the gate allows behind a check (FRAMES_ALLOWED), with the check taken out: the gate cannot see a check, ?ns2 can
+  ('frames-js10-string-unchecked', 'tools/legacy/frames.js', 'if (window.String && String.fromCharCode) cf_hasFrom = 1;', 'if (String.fromCharCode) cf_hasFrom = 1;', FRAMES, 'FAIL ns2: booted'),
+  ('frames-js10-number-unchecked', 'tools/legacy/frames.js', 'if (window.Number) cf_NaN = Number.NaN;', 'cf_NaN = Number.NaN;', FRAMES, 'FAIL ns2: booted'),
+  ('js10-mixed-return-allowed', 'tools/legacy/js11.mjs', "    if (value && bare) add('a function that returns a value and also none', n);\n", '', JS11T, 'FAIL function f(a) { if (a) return 1; return; } is refused'),
+  ('js10-trailing-return-allowed', 'tools/legacy/js11.mjs', "    if (value && (!last || last.type !== 'ReturnStatement')) add('a function that returns a value and does not end in a return', n);\n", '', JS11T, 'FAIL function f(a) { while (1) { if (a) return 1; } } is refused'),
+  ('js10-object-anywhere', 'tools/legacy/js11.mjs', " && !(n.name === 'Object' && parent && parent.type === 'NewExpression' && parent.callee === n)", " && n.name !== 'Object'", JS11T, 'FAIL js10: var o = Object; is refused'),
+  ('js10-allowed-members-ignored', 'tools/legacy/js11.mjs', "      if (js10 && JS10_NAMES.has(name) && !ok.has(name)) add(", "      if (js10 && JS10_NAMES.has(name)) add(", JS11T, 'FAIL frames.js is JavaScript 1.0'),
+  # the app document: no script src, no block over BLOCK_MAX, the table cut only between escapes, and the page with no
+  # mouse button hooks (?ns2)
+  ('frames-app-doc-script-src', 'tools/legacy/build.mjs', "  return `<html><head><meta charset=\"utf-8\"><title>${title}</title></head><body>\\n`", "  return `<html><head><meta charset=\"utf-8\"><title>${title}</title></head><body>\\n<script src=\"${path.basename(module)}\"></script>\\n`", FRAMES, "FAIL the app document's scripts are"),
+  ('frames-block-over-max', 'tools/legacy/build.mjs', '    if (cur && bytes(cur) + 1 + bytes(st) > BLOCK_MAX) {', '    if (cur && bytes(cur) + 1 + bytes(st) > 2 * BLOCK_MAX) {', FRAMES, 'FAIL no block of the app document is over BLOCK_MAX'),
+  ('frames-lits-cut-in-escape', 'tools/legacy/build.mjs', "    if (body[i] === '\\\\') j = /[0-7]/.test(body[i + 1]) ? i + 1 + (/^[0-7]{1,3}/.exec(body.slice(i + 1))[0].length) : i + 2;\n", '', FRAMES, 'FAIL a string table of'),
+  ('frames-lits-one-statement', 'tools/legacy/build.mjs', '    if (piece.length && bytes(piece.join(\'+\')) + bytes(l) + 1 > LITS_PIECE) flush();\n', '', FRAMES, 'FAIL it is cut into'),
+  ('frames-draw-assumes-press', 'tools/legacy/frames.js', '  cf_pressed = 0; /* the new document', '  cf_pressed = 1; /* the new document', FRAMES, 'FAIL ns2: a click on the button is drawn at once'),
+  ('frames-fields-by-type', 'tools/legacy/frames.js', '    t = cf_kind(x);\n', '    t = el.type == "checkbox" || el.type == "radio" ? "check" : el.type == "text" || el.type == "textarea" ? "text" : el.type == "select-one" ? "select" : "";\n', FRAMES, "FAIL ns2: a field's change reaches C"),
+  ('frames-table-split', 'tools/legacy/frames.js', '  cf_lits = cf_split(text, cf_T[1]);', '  cf_lits = text.split(cf_T[1]);', FRAMES, 'frames.js is not JavaScript 1.0: .split'),
+  ('frames-serialize-recursive', 'tools/legacy/frames.js', '    if (cf_node(x, x.p.wi, x.p.wx)) {\n      x = x.f;\n      continue;\n    }', '    if (cf_node(x, x.p.wi, x.p.wx)) {\n      cf_kids(x, x.wi, x.wx);\n      cf_w(x.wc);\n    }', FRAMES, 'FAIL a tree 60 deep'),
+  ('frames-text-recursive', 'tools/legacy/frames.js', '  c = x.f;\n  while (c) {\n    if (c.y == 3) out += c.x;', '  for (c = x.f; c; c = c.n) out += cf_textOf(c);\n  return out;\n  c = x.f;\n  while (c) {\n    if (c.y == 3) out += c.x;', FRAMES, 'FAIL a tree 60 deep'),
   ('js11-try-allowed', 'tools/legacy/js11.mjs', "SwitchStatement: 'switch', DoWhileStatement: 'do-while', LabeledStatement: 'a label', TryStatement: 'try',", "SwitchStatement: 'switch', DoWhileStatement: 'do-while', LabeledStatement: 'a label',", JS11T, 'FAIL try { f(); } catch (e) {} is refused'),
   ('js11-literal-allowed', 'tools/legacy/js11.mjs', "ThrowStatement: 'throw', ObjectExpression: 'an object literal', ", "ThrowStatement: 'throw', ", JS11T, 'FAIL var o = {}; is refused'),
   ('js11-strict-equality-allowed', 'tools/legacy/js11.mjs', "    if (n.type === 'BinaryExpression' && (n.operator === '===' || n.operator === '!==')) add(n.operator, n);", '', JS11T, 'FAIL if (a === b) f(); is refused'),
@@ -1043,7 +1071,7 @@ M = [
   ('js11-allowed-ignored', 'tools/legacy/js11.mjs', "      if (METHODS.has(name) && !ok.has(name)) add(", "      if (METHODS.has(name)) add(", JS11T, 'shim/boot.js part 1 is not JavaScript 1.0: .getElementById'),  # the build refuses the boot's own feature tests first
   ('js11-undefined-allowed', 'tools/legacy/js11.mjs', "const GLOBALS = new Set(['undefined', ", "const GLOBALS = new Set([", JS11T, 'FAIL var u = undefined; is refused'),
   ('js10-typeof-allowed', 'tools/legacy/js11.mjs', "    if (js10 && n.type === 'UnaryExpression' && (n.operator === 'typeof' || n.operator === 'void')) add(n.operator, n);", '', JS11T, 'FAIL js10: if (typeof x == "string") f(); is refused'),
-  ('js10-names-allowed', 'tools/legacy/js11.mjs', "      if (js10 && JS10_NAMES.has(n.name)) add(n.name, n);", '', JS11T, 'FAIL js10: var a = new Array(); is refused'),
+  ('js10-names-allowed', 'tools/legacy/js11.mjs', "      if (js10 && JS10_NAMES.has(n.name) && !ok.has(n.name) && !(n.name === 'Object'", "      if (false && !(n.name === 'Object'", JS11T, 'FAIL js10: var a = new Array(); is refused'),
   ('mount-waits-on-gone-domcontentloaded', 'shim/cdom.js', '      return new Promise((resolve) => addEventListener("load", resolve, { once: true })).then(found);', '      return new Promise((resolve) => doc.addEventListener("DOMContentLoaded", resolve, { once: true })).then(found);', LEG, 'FAIL a missing mount is an error once the page has loaded'),
   # no LEGACY=ie6 twin of the one above: dom-old.js listens for DOMContentLoaded as the window's load there, so it is the same wait
   ('mount-missing-no-error', 'shim/cdom.js', '      if (!element) {\n        throw new Error(`cdom: no element has the id ${mount}`);', '      if (false) {\n        throw new Error(`cdom: no element has the id ${mount}`);', LEG, 'FAIL a missing mount is an error once the page has loaded'),
@@ -1282,7 +1310,7 @@ M = [
   ('js1c-writes-strict-equality', 'tools/js1c.c', 'static const char *ops[] = { "==", "!="', 'static const char *ops[] = { "===", "!="', JS1, 'is not JavaScript 1.0: ==='),  # tests/build.sh stops at the gate
   ('js1c-page-compares-nothing', 'tools/js1.mjs', 'if(got==CE[I])', 'if(got!=CE[I])', JS1, 'FAIL tests/out/js1diff.html runs to its end and agrees'),
   ('js1-shim-ignores-trap', 'tools/legacy/frames.js', '  if (cf_raw.js1_trap) return 0;\n', '', FRAMES, 'FAIL a trap ends the call, and nothing is drawn'),
-  ('js1-boot-loads-ie9', 'shim/boot.js', 'base + ".js1.js', 'base + ".ie9.js', FRAMES, 'FAIL tier 5 files only'),
+  ('js1-app-doc-takes-ie9', 'tests/build.sh', 'app-doc "$here/out/frames.html" "$here/out/frames.wasm.js1.js"', 'app-doc "$here/out/frames.html" "$here/out/frames.wasm.ie9.js"', FRAMES, 'frames.wasm.ie9.js is not JavaScript 1.0'),
   ('js10gate-typeof-allowed', 'tools/js10.mjs', "['typeof', 'void', 'delete'].includes(n.operator)", "['void', 'delete'].includes(n.operator)", JS10T, 'FAIL if (typeof x == "number") f(); is refused'),
   ('js10gate-new-member-allowed', 'tools/js10.mjs', "    if ((n.type === 'MemberExpression' && n.object.type === 'NewExpression') ||", "    if ((false) ||", JS10T, 'FAIL var t = new Date().getTime(); is refused'),
   ('js10gate-nan-allowed', 'tools/js10.mjs', "const GLOBALS = new Set(['undefined', 'NaN', ", "const GLOBALS = new Set(['undefined', ", JS10T, 'FAIL var n = NaN; is refused'),
