@@ -6,3 +6,10 @@ run b hover: pointer onto the pill at about 17:13:40; status bar "Get started: o
 run c (2026-11-21 17:21, VMSERVE_GIF_CACHE=1, b8 j0): index 17:21:05.9, app doc 17:21:06.5, first GIF 17:22:22.2 (+76 s), end.gif?p0s1c33157m4391w1719t53031f3109b595899 at 17:23:11.8 (+125 s from the app doc); 1,318 GIF requests (an Expires does not stop them); the same draw as run b's took 74,261 engine ms of compute there (a build process at 100% of a core ran on the Mac during run b; the guest's own speed varies by about 2 times between runs)
 run c hover: end.gif?p0s2c33188m9016w10062t55828f390b595899 at 17:26:32.7: computed every batch again (the host's cache missed: Netscape 2 reads o[n], n a number, as the object's nth property; fixed after with string keys); the pill drawn in its hover colour (shots/ns2r-c-hover.png)
 run c: the pointer onto Features drew no normal state, and the details page appeared (end.gif?p1s1c25251m12326w1640t50797f875b422464 at 17:28:26.2) without a click; stopped while waiting
+run d (2026-11-21 17:38, string keys, b8 j0, no GIF cache; a Game Boy build, build/gbrun, at 100% of a Mac core throughout):
+  load: end.gif 380.4 s after the run's start (first GIF 266.7 s), 1,318 GIF requests, engine ms c 65,283 m 10,061 w 4,032 t 91,594; 0 of 184,085 pixels different from the native picture
+  hover: end.gif 197.5 s after the pointer reached the pill (first GIF 88.8 s), engine c 20,641 (10 batches of 40 computed, the rest from the cache) m 5,439 w 5,422 t 34,953; two Lengthy JavaScript dialogs (63 s, 65 s), answered; 0 pixels different
+  unhover (pointer onto Features, the normal state from the cache): end.gif 136.9 s, first GIF 17.8 s, c 0 m 0 w 5,859 t 5,938; 0 pixels different
+  click Features: details, end.gif 369.2 s (first GIF 274.2 s), 1,022 GIF requests, c 41,534 m 35,170 w 4,468 t 94,015; three Lengthy JavaScript dialogs; 0 pixels different
+  back (the details page's Back pill, still from the cache): end.gif 146.4 s (first GIF 18.6 s), c 0 w 5,562 t 5,922; 0 pixels different
+  every redraw asks for about 14 GIFs a colour again (1,318 for 95 colours), with or without an Expires
