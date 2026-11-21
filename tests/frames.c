@@ -66,6 +66,8 @@ void cd_main(void) {
   cd_sel(ids[CHECK]); cd_listen(ids[CHECK], CD_EV_CHANGE);
   cd_sel(ids[R1]); cd_listen(ids[R1], CD_EV_CHANGE);
   cd_sel(ids[R2]); cd_listen(ids[R2], CD_EV_CHANGE);
+  /* frames.html?trapstart passes seed 13: a trap in cd_main, after what it drew was flushed. */
+  if (cd_seed == 13) { cd_flush(); __builtin_trap(); }
 }
 
 void cd_on_event(const cd_event_rec *e) {

@@ -298,6 +298,14 @@ run: try {
       await click('#inc');
       ok((await textOf('#countp')) === 'count 1', `and a click there reaches C: ${JSON.stringify(await textOf('#countp'))}`);
     }
+    // A trap in cd_start (cd_main, on seed 13): noted, and the frame still drawn with what cd_main had flushed; with
+    // a BODY tag, the frameset is still written over the page.
+    for (const page of ['frames.html', 'frames-body.html']) {
+      await b.send('Page.navigate', { url: `http://127.0.0.1:${port}/${page}?trapstart` });
+      const drawn = await until('!!window.cdomF && cdomF.draws > 0 && frames.length === 1');
+      ok(drawn && (await E('cdomF.errors.join()')).includes('cd_start did not return') && (await textOf('#title')) === 'frames',
+        `${page}: a trap in cd_start is noted, and the frame still drawn: ${drawn ? 'drawn' : 'not drawn'}, ${JSON.stringify(await E('window.cdomF ? cdomF.errors : null'))}`);
+    }
     // The caret on IE 4 and Netscape 4, the browsers with onkeyup (tools/cdp.mjs's ?ie4 and ?ns4 flavours): typing in
     // the middle of the name field, whose input C answers by changing the echo. IE 4 reads the caret from
     // document.selection and redraws on each key; Netscape 4 cannot read it, and draws once the field is left.

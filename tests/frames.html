@@ -16,5 +16,7 @@ function framesReady(x) {
 READY = 0;
 var framesOptions = new Object();
 framesOptions.seed = 7;
+// frames.html?trapstart: seed 13, on which tests/frames.c's cd_main traps (tools/frames.mjs).
+if (location.search.indexOf("trapstart") >= 0) framesOptions.seed = 13;
 cdomBoot("frames.wasm", "m", null, framesReady, framesOptions);
 </script></html>
