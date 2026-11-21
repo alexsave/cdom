@@ -1001,7 +1001,7 @@ M = [
   ('frames-bold-dropped', 'tools/legacy/frames.js', '  if (v == "bold" || v == "bolder" || parseInt(v, 10) >= 600) cf_wrapIn("<b>", "</b>");', '', FRAMES, 'FAIL color, font-weight'),
   ('frames-hidden-drawn', 'tools/legacy/frames.js', '  if (cf_in(cf_SKIP, t) || cf_pair(x.s, "display") == "none") return;', '  if (cf_in(cf_SKIP, t)) return;', FRAMES, 'FAIL display: none'),
   ('frames-style-attr-unread', 'tools/legacy/frames.js', '  if (name != "style") {', '  if (true) {', FRAMES, "FAIL the heading's color as FONT COLOR"),
-  ('frames-change-drawn-at-once', 'tools/legacy/frames.js', '  if (cf_dirty && (later || cf_pressed)) {', '  if (cf_dirty && cf_pressed) {', FRAMES, 'FAIL the click that left the field still reached C'),
+  ('frames-change-drawn-at-once', 'tools/legacy/frames.js', '  if (cf_dirty && (later || cf_pressed)) {', '  if (cf_dirty && cf_pressed && !later) {', FRAMES, 'FAIL the click that left the field still reached C'),
   ('frames-no-input-on-change', 'tools/legacy/frames.js', '  if (now != x.seen) {', '  if (false) {', FRAMES, 'FAIL leaving the field: one input'),
   ('frames-checkbox-no-change', 'tools/legacy/frames.js', '      cf_fire(x, cf_INPUT, 0);\n      cf_fire(x, cf_CHANGE, 0);\n', '      cf_fire(x, cf_INPUT, 0);\n', FRAMES, "FAIL the checkbox's change reached C"),
   ('frames-recover-off', 'tools/legacy/frames.js', '  if (cf_busy || cf_holds) {', '  if (false) {', FRAMES, 'FAIL the next click recovers'),
