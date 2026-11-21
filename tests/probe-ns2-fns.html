@@ -1,0 +1,47 @@
+<HTML>
+<HEAD>
+<TITLE>cdom probe-ns2 fns</TITLE>
+<SCRIPT LANGUAGE="JavaScript">
+var n = 0;
+var TAG = "" + location.search;
+TAG = TAG.substring(1, TAG.length);
+if (TAG == "") { TAG = "x"; }
+function mark(name, v) {
+  n = n + 1;
+  document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
+}
+var T0 = new Date().getTime();
+var cross = 0;
+var g1 = 0;
+var seen = 0;
+var calls = 0;
+
+</SCRIPT>
+</HEAD>
+<BODY>
+<P>cdom probe-ns2 fns
+<SCRIPT LANGUAGE="JavaScript">
+function twice(x) { calls = calls + 1; return x * 2; }
+g1 = 5;
+var defined_in_1 = 11;
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+seen = g1;
+cross = twice(21);
+var via = defined_in_1;
+g1 = g1 + 1;
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+function again() { return twice(g1); }
+var chain = again();
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("seenGlobal", seen);
+mark("crossCall", cross);
+mark("varFromBlock1", via);
+mark("chain", chain);
+mark("calls", calls);
+
+</SCRIPT>
+</BODY>
+</HTML>
