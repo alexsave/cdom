@@ -95,9 +95,68 @@ const IE9_GAPS = `
 // elementsFromPoint, a rect's width and height, innerWidth and innerHeight; and a DOM method's apply and call; and
 // JScript's splice, which removes nothing given a start alone. setAttribute sets an expando for class,
 // style and for, as IE 6 and 7's sets a same-named property. Kept: JSON (IE 8's), getElementById, querySelector and
-// innerText, which the harness reads the page with. Under LEGACY=below there is no attachEvent either.
+// innerText, which the harness reads the page with. Under LEGACY=below there is no attachEvent either. And a stand-in
+// for VML (below).
 const IE6_OLD = `
   const define = Object.defineProperty;
+  // IE 6 to 8 refuse an input's type once the input has had a parent, even after it is taken out again: setAttribute
+  // throws "This command is not supported." unless the type is the one it has (measured in IE 6, docs/ie6-design.md).
+  // A lone input takes any type, one IE does not know (search, email, ...) being text, as IE's parser makes it; and
+  // IE's mergeAttributes copies another element's attributes, the type among them, onto an input with a parent.
+  // Before the loop below, which takes apply and call from the DOM's methods.
+  // A mark on the node, not a WeakSet: IE9_GAPS took WeakSet.
+  const HAD = '__ieHadParent';
+  for (const k of ['appendChild', 'insertBefore', 'replaceChild']) {
+    const f = Node.prototype[k];
+    Node.prototype[k] = function (child) { if (child && !child[HAD]) define(child, HAD, { value: true }); return Reflect.apply(f, this, arguments); };
+  }
+  const nativeSetAttr = Element.prototype.setAttribute;
+  const IE_TYPES = { __proto__: null, text: 1, password: 1, checkbox: 1, radio: 1, submit: 1, reset: 1, file: 1, hidden: 1, image: 1, button: 1 };
+  Element.prototype.setAttribute = function (name, value) {
+    if (this.nodeName !== 'INPUT' || String(name).toLowerCase() !== 'type') return Reflect.apply(nativeSetAttr, this, arguments);
+    const v = String(value).toLowerCase();
+    if (this[HAD] && v !== this.type) throw new Error('This command is not supported.');
+    return Reflect.apply(nativeSetAttr, this, [name, IE_TYPES[v] ? v : 'text']);
+  };
+  Element.prototype.mergeAttributes = function (from) {
+    for (const a of Array.prototype.slice.call(from.attributes)) Reflect.apply(nativeSetAttr, this, [a.name, a.value]);
+  };
+  // A VML stand-in (tools/legacy/vml.js, docs/vml-design.md): Chrome draws no VML, but IE's setup calls are here and
+  // recorded in window.__vml (namespaces.add's arguments, createStyleSheet's rules), and every element made with a v: tag
+  // is recorded too, so a test reads the VML the shim built. Chrome makes an unknown element of v:shape, which keeps the
+  // properties set on it. Before the loop below, which takes apply and call from createElement as from the DOM's methods.
+  // What real IE 6 did with VML made by script (docs/vml-design.md, section 9), each a way the stand-in fails:
+  // - a v: node made before namespaces.add("v", URN) is an unknown element, not VML: listed in __vml.bad;
+  // - namespaces.add with a third argument (an implementation) binds the behavior as the node is made, and every VML
+  //   property set by script after that is lost (IE kept its defaults, coordsize 1000,1000 among them): the stand-in's
+  //   nodes then keep those defaults whatever is set;
+  // - a v: tag with no behavior rule for it (v\:* or v\:tag) draws nothing: listed in __vml.bad when it is made;
+  // - a v:group is measured by what it holds, not by its width and height, and does not clip: listed in __vml.bad.
+  const vml = window.__vml = { ns: [], rules: [], made: [], bad: [] };
+  const URN = 'urn:schemas-microsoft-com:vml';
+  const BS = String.fromCharCode(92);   // a backslash, written so in this template
+  let bound = null;   // null, 'script' (the two-argument add) or 'implementation'
+  Document.prototype.namespaces = { add(prefix, urn, behavior) {
+    vml.ns.push([prefix, urn, behavior === undefined ? null : behavior]);
+    if (prefix === 'v' && urn === URN) bound = behavior === undefined ? 'script' : 'implementation';
+  } };
+  Document.prototype.createStyleSheet = function () { return { addRule(selector, rule) { vml.rules.push([selector, rule]); } }; };
+  const DEFAULTS = { path: '', coordsize: '1000,1000', coordorigin: '0,0', filled: true, fillcolor: 'white', stroked: true,
+    strokecolor: 'black', strokeweight: '0.75pt', opacity: '1', joinstyle: 'round', miterlimit: '8', endcap: 'round' };
+  const createElement = Document.prototype.createElement;
+  Document.prototype.createElement = function (tag) {
+    const el = Reflect.apply(createElement, this, [tag]);
+    if (!/^v:/i.test(tag)) return el;
+    const name = tag.slice(2).toLowerCase();
+    vml.made.push(el);
+    if (!bound) vml.bad.push('<' + tag + '> made before the v namespace was added: IE 6 makes an unknown element of it, not VML');
+    if (!vml.rules.some(([s, r]) => (s === 'v' + BS + ':*' || s === 'v' + BS + ':' + name) && r.indexOf('behavior:url(#default#VML)') >= 0))
+      vml.bad.push('<' + tag + '> has no behavior rule for it: IE 6 draws nothing of it');
+    if (name === 'group') vml.bad.push('<v:group>: IE 6 measures it by what it holds, not by its width and height, and does not clip to it');
+    if (bound === 'implementation')
+      for (const [k, v] of Object.entries(DEFAULTS)) define(el, k, { get: () => v, set: () => {}, configurable: true });
+    return el;
+  };
   // IE 6 to 8's DOM methods are host objects, not functions: no apply or call (EventTarget's are kept: attachEvent
   // below calls them). Through Reflect: IE9_GAPS took Object.setPrototypeOf.
   for (const proto of [Node.prototype, Element.prototype, HTMLElement.prototype, Document.prototype, HTMLInputElement.prototype])

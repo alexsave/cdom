@@ -170,3 +170,17 @@ What the table changed in the build:
 - A Chrome profile, LEGACY=ie5 in tools/cdp.mjs: LEGACY=ie6's plus Array's push, pop, shift, unshift and splice, Function's call and apply (the profile's own code through Reflect), Object.prototype.hasOwnProperty and propertyIsEnumerable deleted, TypeError deleted, Error given a number's meaning for its argument, replace given a function returning the function's text, and slice counting a negative start from 0.
   Then tools/legacy.mjs passing on it, the polyfills (holds, cdomError, TypeError) checked against the built-ins there, and CI lines in .github/workflows/ci.yml.
 - Array slice with a negative start or end, supplied in polyfills-es3.js when [1, 2, 3].slice(-1) is wrong, once the profile can test it.
+
+## The LaTeX app in IE 5.01 (2026-11-20)
+
+The foolish-utils LaTeX page, built for the fourth tier and opened through the hold, found two more gaps.
+
+1. The app file ran before the polyfills.
+   The boot fetches the shim and the app file at once, and each runs as it arrives, so the app file can run first.
+   words.js built its table of powers of two with push at load, and JScript 5.0 has none: "Object doesn't support this property or method", window.cdomFactory never set, then "'WebAssembly' is undefined" from the shim.
+   Fixed: words.js names nothing JScript 5.0 lacks, the app-ie9 build refuses it (boot50), and tools/words.mjs checks it (mutant ie5-words-push-at-load).
+2. Not fixed yet: IE 5.01 refuses a child of an element it does not know.
+   cd_start throws "Unexpected call to method or property access." at the open of a div inside `<aside>`, where IE 6 takes it.
+   The start still resolves and nothing reaches window.onerror, so the page is blank with no error; the fix belongs in dom-old.js's element creation, with a stand-in model first.
+
+Found with marks sent by synchronous XMLHTTP from a copy of the page that wraps cdom.start's imports and exports (latex/build/ie5/hold-probe2.html in foolish-utils, not committed).

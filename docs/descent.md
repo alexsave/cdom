@@ -326,6 +326,33 @@ It is the measurement's reading, not the decision.
 - Memory and data: numbered keys on a plain object work (`o[1]`), but a store costs 35 microseconds, so a wasm linear memory kept as an object per byte is slow and large; a memory of packed numbers per word is the shape to measure next.
 - Missing helpers the runtime needs are all small: `charAt` and `indexOf` and `substring` exist, so strings can be walked by `indexOf` into a lookup string (there is no `charCodeAt`), and `escape` gives the code of a character as `%XX`.
 
+## Inside Netscape 2.02's engine
+
+Read from the binary on 2026-11-20: NS202/Program/netscape.exe (2,201,088 bytes, dated 1996-04-29), copied off the XP VM's disk, with strings and llvm-objdump.
+The engine is linked into netscape.exe (there is no separate DLL); its own name in the strings is Mocha.
+
+- It compiles each script to bytecode and interprets it ("unimplemented Mocha bytecode %d", "internal error: stack underflow at pc %d").
+- The recursion limit is not a count of calls.
+  The function at 0x55190c allocates each context with its value stack inline (malloc of size + 0x118), and the page's context ("mozilla", created at 0x4419b6) passes 0x2000: an 8 KB stack of 16-byte values, 512 slots.
+  The checks at 0x54f7df and 0x54f956 raise "stack overflow in %s" when sp + n * 16 reaches the limit.
+  So the depth is 512 divided by the slots each frame holds: the probe's `return 1 + r(n-1)` holds about 3 (the 1, the function, the argument), which gives about 170, between the 100 that passed and the 300 that died.
+  A frame with more arguments or deeper expressions nests less; any code path for Netscape 2 must keep its live JavaScript values under 512 in all, not only its call depth.
+- Nested functions are refused by name: "function defined inside a function".
+- Reserved but not implemented: switch, case, default, throw, catch, delete, and the Java words; `typeof` is not even a keyword.
+- Built-ins named in the binary: String (substring, toLowerCase, toUpperCase, charAt, indexOf, lastIndexOf, chop, match, split, substr and the HTML wrappers), Boolean, Number, parseInt, parseFloat, Math (floor, round, sqrt, ceil and the trig functions), Date, Array, eval and setTimeout.
+  No charCodeAt or fromCharCode is there, which agrees with the probe.
+- Two of those disagree with the table above and need a second run: the probe called split on a string literal (`'a,b,c'.split(',')`) and found it missing, and found `new Array(3).length` undefined, but both names are in the binary.
+  The next probe should call split on a variable, and test what `new Array(3)` gives (number keys, no length).
+- Typing `mocha:` in the location field opens the engine's own console (two frames, MochaInput and MochaOutput).
+- An assignment written as a condition is silently turned into a comparison: the parser's messages "test for equality (==) mistyped as assignment (=)?" and "Assuming equality test".
+  Generated code for Netscape 2 must never assign inside an `if` or `while` condition (`while (x = next())` would compare instead).
+- The event handlers the binary knows are onload, onunload, onfocus, onblur, onchange, onselect, onsubmit, onclick, onmouseover and onscroll.
+  There is no onmouseout, no onmousedown or onmouseup, and no key event at all, so on Netscape 2 input is clicks, field changes and form submits.
+- `<SCRIPT LANGUAGE=...>` accepts JavaScript, LiveScript and Mocha, and `livescript:` and `mocha:` URLs work beside `javascript:`.
+- The Mocha console is a frameset (75% output, 25% input) with an ISINDEX field posting into the output frame: the engine's own authors built interactive UI in Netscape 2 with frames and a form, which is the frames tier's approach.
+- Proxy auto-config starts here: the binary calls `FindProxyForURL("%s","%s")` in Mocha, the same function every PAC file still defines.
+- Functions print their source by decompiling the bytecode (format strings like `while (%s) {` and `function %s(`), and String has a Perl-style `chop` that later versions dropped.
+
 ## The second probe
 
 Reading netscape.exe (the section "Inside Netscape 2.02's engine", on the ns2-engine branch, PR #101) left questions that only a run can settle.
