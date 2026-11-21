@@ -214,3 +214,53 @@ tests/probe-js1e.html in Netscape 3.04 (and 2.02), 2026-11-20:
 - Start-up on Netscape 2.02: the bench module's initial memory is 3 pages, 49,152 words, and writing them costs about what the transform's load and the NS2FIX page's zeroing did (2.1 s and 1.9 s): the load mark 2 to 3 s on Netscape 2 and 3, 0.3 to 0.6 s on Netscape 4, 0.1 to 0.2 s on IE 4.
   If it is that, a lazier way is worth proposing (not building).
 - The cost of the reductions on loop(2000) (a multiply by 2654435761 through JMu and about three general adds an iteration): 10 to 25% slower than the old file on Netscape 4.08 (78 to 125 ms then) and on Netscape 3.04 (719 to 906 ms then, when it answered NaN).
+
+### 12.6 Found during the four-browser run, and fixed
+
+- Netscape 3.04 also gives NaN for the `| 0` of a fraction (7 / 3 | 0): js1diff.html answered 18 of 26 there, every signed and unsigned division and every float-to-integer conversion wrong.
+  Every quotient is now `(a - a % b) / b` (exact, truncated toward zero) and every float-to-integer conversion goes through `Math.floor` or `Math.ceil` before its `| 0`; tools/js1.mjs's Netscape 3 check refuses a fraction as well as a value out of range.
+- Netscape 2.02's `1 / 0` is 0 and Netscape 3.04 lost the infinity too: infinity and NaN now come from overflow (`JIn = 1e308 * 10`, `JNa = JIn - JIn`), and tools/js1.mjs checks the output divides by no literal 0.
+- js1diff.html's TEXTAREA lines end in CR LF: Netscape 2's shows a bare LF as a box, all on one line.
+
+### 12.7 Results
+
+The runs of 2026-11-20 and 21 in the XP VM, tests/out served on port 8109, the screenshots /Users/alex/VMs/ie6-xp/shots/js1cr-*.png.
+
+tests/out/js1diff.html, the final file:
+
+| | Netscape 2.02 | Netscape 3.04 | Netscape 4.08 | IE 4.01 |
+|---|---|---|---|---|
+| before this branch | does not reach a case (undefined \| 0) | does not parse (`--` at column 254) | 26 of 26 | 26 of 26 |
+| after | see below | 23 of 26 | 26 of 26 | 26 of 26 |
+
+Netscape 3.04's three are dbl's: words 31 and 32 (a subnormal made at run time, `x * 1e-315`, is 0 there), 33 (a product of that subnormal) and 37 (`isnan(z - z)` with z infinite: infinity minus infinity is not NaN there, nor in Netscape 2.02, where `JIn - JIn` prints 0).
+Those are the engines' doubles, not js1c's: Netscape 2.02 and 3.04 have no subnormals (5e-320 is 0) and no NaN from infinity minus infinity, and Netscape 2.02 has no negative zero either (`1 / -0` and `Math.atan2(0, -0)` are 0, shots/js1cr-ns2-dbl.png); a C program that needs those cannot get them there.
+
+js1-real's bench page for this path, the plain page (no NS2FIX), the final file; every answer right in every browser (Netscape 3.04's last three runs from the run before the division fix, which the bench does not use, since the final run's page stalled after rec100):
+
+| run | Netscape 2.02 | Netscape 3.04 | Netscape 4.08 | IE 4.01 |
+|---|---|---|---|---|
+| load (the memory's 49,152 words) | 1656 ms | 2375 ms | 1156 ms | 188 ms |
+| loop(2000), three runs | 313, 390, 360 ms | 625, 500, 594 ms | 250, 219, 172 ms | 78, 63, 125 ms |
+| mem, 64 KB | 2656 ms | 3625 ms | 1297 ms | 469 ms |
+| rec(100), three runs | 47, 16, 31 ms | 47, 32, 47 ms | 110, 15, 94 ms | 0, 0, 0 ms |
+| rec(500) | 156 ms | 219 ms | 453 ms | 31 ms |
+| rec(1000) | 250 ms | 390 ms | 328 ms | 109 ms |
+| rec(5000) | 1719 ms | 2203 ms | 1828 ms | 688 ms |
+
+Before this branch the same page died at load on Netscape 2.02 and did not parse on Netscape 3.04 (js1-real's run).
+
+The cost of the fixes:
+
+- Start-up: writing the 49,152 words of the bench's 3 pages takes 1.7 s on Netscape 2.02, 2.4 s on Netscape 3.04, 1.2 s on Netscape 4.08 and 0.2 s on IE 4.01 (the old file's load was 0 ms on Netscape 4.08), as predicted.
+  That is seconds, so a lazier way is worth building next (not built here): zero eagerly only the words below the module's `__heap_base` (the data and the C stack, which the module reads before it writes), and zero each page past it when memory.grow or the C allocator first hands it out, which in cdom's own allocator is one place; for the bench that is about a third of the words.
+- The reductions: on Netscape 4.08, the old file (js1-real's) against the new in one session: loop(2000) 406 to 468 ms against 328 to 391 ms, mem 3,938 ms against 2,547 ms, rec(5000) 3,235 ms against 2,969 ms: the new file is faster, not 10 to 25% slower as predicted; the memory written in full from 0 seems to keep Netscape 4's object a dense one, which outweighs the reductions.
+  On Netscape 3.04 the old file does not parse, so the cost there is the probe's: a `% 4294967296` adds 2.3 us an operation over `| 0` (0.75 us on Netscape 2.02).
+- The predictions of 12.5: right that js1diff and the bench now run in all four, and about the start-up; wrong that js1diff would be 26 of 26 in Netscape 3 (the doubles above), and wrong about the reductions' cost on Netscape 4.
+
+What is still open:
+
+- Netscape 2.02's own js1diff total on the final file is in 12.8 if the last run completes; its bench answers are all right.
+- The doubles Netscape 2 and 3 cannot represent (subnormals, NaN from infinity minus infinity, and Netscape 2's -0).
+- The seam rule is the one measured column (254); a `--` at a later seam of a long line (if any) is not measured, and js1c writes none anyway.
+- IE 4.01's lost image marks on long pages (item 5) are the page's, not js1c's; the page's wanted values chain through the program's state, so js1-real's bench page could compute each run's wanted value from a fresh instance to be robust to a lost run.
