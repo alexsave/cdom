@@ -3,7 +3,8 @@
  * call reported (reportError), focus events dispatched during a batch (queueMicrotask) and listener phases;
  * and, for the third tier (C's memory in plain words, no typed arrays), every other way the shim reads or writes
  * that memory: a wheel event's floats, a rect's doubles, the viewport, a number set on the page, pixels, and
- * the seed. tests/legacy.html boots it and tools/legacy.mjs drives it, with LEGACY=1, ie9 or none. */
+ * the seed. And an SVG of every element the fourth tier draws through VML (svg(), docs/vml-design.md). tests/legacy.html
+ * boots it and tools/legacy.mjs drives it, with LEGACY=1, ie9, ie6 or none. */
 #include "../src/cdom.h"
 #include "../src/cdom_file.h"
 #include "../src/cdom_job.h"
@@ -219,3 +220,89 @@ EXPORT("net_ask") void net_ask(uint32_t k) {
              (uint32_t)__builtin_strlen(net_req[k].url), h, hl, b, bl, net_req[k].deadline);
 }
 EXPORT("net_seen") int32_t net_seen(uint32_t k, uint32_t f) { return net_rec[k][f]; }
+/* An SVG of every element the fourth tier draws through VML (tools/legacy/vml.js, docs/vml-design.md), with inherited
+ * paint, opacities, a g with translate and scale, text, currentColor, an svg in the svg and one sized in em, in a div of its
+ * own, and what VML does not draw: defs, a gradient (and its stop),
+ * a rotate and a gradient paint. Every other tier makes it real SVG. svg_set changes it after the build (a path detached
+ * while its g's transform changes, then put back), svg_drop removes it. */
+enum { SVG_BOX, SVG_ROOT, SVG_PATH, SVG_RECT, SVG_G, SVG_GPATH, SVG_N };
+static cd_id svg_ids[SVG_N];
+static void shape(const char *tag, const char *idattr) { cd_open(tag); cd_attr("id", idattr); }
+EXPORT("svg") void svg(void) {
+  cd_at(CD_MOUNT, CD_APPEND);
+  svg_ids[SVG_BOX] = el("div", "svgbox", "position:absolute;left:300px;top:120px;color:#123123;font-size:20px"); /* clear of the pad, to look at in IE */
+  cd_open("svg");
+  cd_attr("id", "svg"); cd_attr("width", "200"); cd_attr("height", "100"); cd_attr("viewBox", "0 0 100 50");
+  svg_ids[SVG_ROOT] = cd_id_new(); cd_name_el(svg_ids[SVG_ROOT]);
+  shape("path", "sp");
+  cd_attr("d", "M10 10 h20 v10 z"); cd_attr("fill", "#f00"); cd_attr("stroke", "blue"); cd_attr("stroke-width", "2");
+  svg_ids[SVG_PATH] = cd_id_new(); cd_name_el(svg_ids[SVG_PATH]);
+  cd_close();
+  shape("rect", "sr");
+  cd_attr("x", "40"); cd_attr("y", "5"); cd_attr("width", "20"); cd_attr("height", "10"); cd_attr("rx", "2");
+  cd_attr("fill", "rgb(0, 128, 255)"); cd_attr("fill-opacity", "0.5");
+  svg_ids[SVG_RECT] = cd_id_new(); cd_name_el(svg_ids[SVG_RECT]);
+  cd_close();
+  shape("circle", "sc"); cd_attr("cx", "80"); cd_attr("cy", "10"); cd_attr("r", "5"); cd_attr("fill", "none"); cd_attr("stroke", "#0f0"); cd_close();
+  shape("ellipse", "se"); cd_attr("cx", "10"); cd_attr("cy", "40"); cd_attr("rx", "8"); cd_attr("ry", "4"); cd_close();
+  shape("line", "sl");
+  cd_attr("x1", "20"); cd_attr("y1", "30"); cd_attr("x2", "40"); cd_attr("y2", "45"); cd_attr("stroke", "black"); cd_attr("stroke-opacity", "0.25");
+  cd_close();
+  shape("polyline", "spl"); cd_attr("points", "50,30 60,45 70,30"); cd_attr("fill", "none"); cd_attr("stroke", "purple"); cd_close();
+  shape("polygon", "spg"); cd_attr("points", "80,30 90,45 75,45"); cd_attr("opacity", "0.5"); cd_attr("fill", "#abc"); cd_attr("fill-opacity", "0.5"); cd_close();
+  shape("g", "sg"); cd_attr("transform", "translate(5,6) scale(2)"); cd_attr("fill", "#123456"); cd_attr("stroke-width", "3");
+  svg_ids[SVG_G] = cd_id_new(); cd_name_el(svg_ids[SVG_G]);
+  shape("path", "sgp"); cd_attr("d", "M0 0 L5 0 L5 5"); cd_attr("stroke", "red");
+  svg_ids[SVG_GPATH] = cd_id_new(); cd_name_el(svg_ids[SVG_GPATH]);
+  cd_close();
+  cd_close();
+  /* What a LaTeX formula is made of (foolish-utils latex/): text in a font, paint from the CSS color, and an svg in the
+   * svg (a radical's sign, sliced to its width). */
+  shape("text", "st"); cd_attr("x", "1"); cd_attr("y", "45"); cd_attr("font-size", "10"); cd_attr("font-style", "italic");
+  cd_attr("font-family", "KaTeX_Math");
+  cd_attr("fill", "currentColor"); cd_text("x"); cd_close();
+  shape("rect", "scc"); cd_attr("x", "30"); cd_attr("y", "40"); cd_attr("width", "4"); cd_attr("height", "4"); cd_attr("fill", "currentColor"); cd_close();
+  shape("svg", "sn"); cd_attr("x", "50"); cd_attr("y", "20"); cd_attr("width", "20"); cd_attr("height", "10");
+  cd_attr("viewBox", "0 0 40 10"); cd_attr("preserveAspectRatio", "xMinYMin slice");
+  shape("rect", "snr"); cd_attr("width", "40"); cd_attr("height", "10"); cd_attr("fill", "#f0f"); cd_close();
+  cd_close();
+  cd_open("defs"); shape("linearGradient", "lg"); cd_open("stop"); cd_attr("offset", "0"); cd_close(); cd_close(); cd_close();
+  shape("rect", "srot"); cd_attr("width", "5"); cd_attr("height", "5"); cd_attr("transform", "rotate(45)"); cd_close();
+  shape("rect", "sgrad"); cd_attr("width", "5"); cd_attr("height", "5"); cd_attr("fill", "url(#lg)"); cd_close();
+  cd_close();
+  /* Sized in em, as a LaTeX page sizes its formulas: 2em by 1em at the div's 20px is 40 by 20. */
+  shape("svg", "svgem"); cd_attr("width", "2em"); cd_attr("height", "1em"); cd_attr("viewBox", "0 0 20 10");
+  shape("rect", "sem"); cd_attr("x", "1"); cd_attr("y", "1"); cd_attr("width", "2"); cd_attr("height", "3"); cd_close();
+  cd_close();
+  cd_close();
+  cd_flush();
+}
+EXPORT("svg_set") void svg_set(void) {
+  cd_set_attr(svg_ids[SVG_PATH], "d", "M0 0 L10 0");
+  cd_set_attr(svg_ids[SVG_RECT], "fill", "#00f");
+  /* The g's transform changes while its path is out of the document: put back (cd_attach, the shim's place), the path
+   * is drawn under the g's new transform. */
+  cd_detach(svg_ids[SVG_GPATH]);
+  cd_set_attr(svg_ids[SVG_G], "transform", "scale(1)");
+  cd_attach(svg_ids[SVG_GPATH]);
+  cd_flush();
+}
+EXPORT("svg_drop") void svg_drop(void) { cd_remove(svg_ids[SVG_BOX]); cd_flush(); }
+/* n paths in an svg of their own, each with d, fill and stroke (docs/vml-design.md, T2 and T3); the one before removed. */
+static cd_id many_id;
+EXPORT("svg_many") void svg_many(uint32_t n) {
+  if (many_id) { cd_remove(many_id); many_id = 0; }
+  cd_at(CD_MOUNT, CD_APPEND);
+  many_id = el("div", "svgmany", "position:absolute;left:520px;top:120px");
+  cd_open("svg");
+  cd_attr("width", "400"); cd_attr("height", "400"); cd_attr("viewBox", "0 0 200 200");
+  for (uint32_t i = 0; i < n; i++) {
+    cd_open("path");
+    cd_attr("d", "M10 10 L50 10 l0 20 H80 v15 C90 50 100 60 110 50 s20 -10 30 0 Q160 70 170 50 Z");
+    cd_attr("fill", "#4a8"); cd_attr("stroke", "#123");
+    cd_close();
+  }
+  cd_close();
+  cd_close();
+  cd_flush();
+}
