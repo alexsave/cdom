@@ -13,7 +13,9 @@ open http://localhost:8000/uttt.html?AJG7NYNQG4RFXXGVPGD7QR2ETSOYTWMCREAQ
 ```
 
 The build needs what cdom's does (clang and wasm-ld from LLVM 23, wasm2js from binaryen 130, `npm ci` at the root and in tools/legacy).
-One page serves every tier: the boot (shim/boot.js) starts out/uttt.wasm where there is WebAssembly, and on the frames tier loads out/cdom.frames.js and out/uttt.wasm.js1.js, the same module compiled to JavaScript 1.0 by tools/js1c (out/uttt.wasm.ie9.js, the words build, is for IE 6 to 9).
+One page serves every tier: the boot (shim/boot.js) starts out/uttt.wasm where there is WebAssembly, and on the frames tier the page becomes a frameset whose app frame is out/uttt.app.html, the page's app document: the boot's first part, the string table, the frames shim and out/uttt.wasm.js1.js (the same module compiled to JavaScript 1.0 by tools/js1c) inline, since Netscape 2 has no SCRIPT SRC (docs/frames-design.md, section 16).
+out/uttt.wasm.ie9.js, the words build, is for IE 6 to 9.
+`make` no longer builds out/cdom.frames.js: no page loads it.
 
 ## What the page is made of
 
@@ -29,7 +31,7 @@ The events are click (the six buttons) and change (the code field), the two Nets
 
 ## Tests
 
-`node tools/uttt.mjs` (FOOLISH as for the build) builds the page, and runs it in Chrome on the WebAssembly tier and on the frames tier (LEGACY=frames, and its ?ns4 flavour).
+`node tools/uttt.mjs` (FOOLISH as for the build) builds the page, and runs it in Chrome on the WebAssembly tier and on the frames tier (LEGACY=frames, and its ?ns4 and ?ns2 flavours: ?ns2 has no mouse button or key event, no charCodeAt or fromCharCode, no field type and no String or Number global, as Netscape 2).
 The expected positions come from tools/uttt_expect.c, built natively against foolish's own code: the move count, and for every ply the 81 cells, the 9 blocks, the blocks the next move may go in and the result.
 It skips with a message when FOOLISH is not a checkout; CI has no foolish and does not run it.
 
@@ -65,7 +67,12 @@ Run in the XP VM on 2026-11-21 (docs/frames-design.md section 15 has the rest an
 | IE 4.01 | all work | advances a move a tick; Pause stops it | both work | /Users/alex/VMs/ie6-xp/shots/uttt-ie4.png |
 | Netscape 4.08 | all work | advances a move a tick; the click on Pause is lost (each tick's draw replaces the button) | not run | /Users/alex/VMs/ie6-xp/shots/uttt-ns4.png |
 | Netscape 3.04 | all work, but each draw takes tens of seconds | not run | not run | /Users/alex/VMs/ie6-xp/shots/uttt-ns3.png |
-| Netscape 2.02 | the frameset is made and the view stays blank: the shim cannot be loaded (no SCRIPT SRC) | | | /Users/alex/VMs/ie6-xp/shots/fr-ns2-uttt.png |
+| Netscape 2.02 | the frameset is made and the view stays blank: the shim cannot be loaded (no SCRIPT SRC); the app document of docs/frames-design.md section 16 is the fix, not yet run there | | | /Users/alex/VMs/ie6-xp/shots/fr-ns2-uttt.png |
 
 A server has to send scripts as application/x-javascript for Netscape 3 (it offers text/javascript as a download).
 `make -C demo/uttt` builds out/uttt.wasm.js1.js too, and tools/uttt.mjs drives the page in Chrome through the frameset (the app frame is `frames[1]`, the board `frames[0]`).
+
+## The app document (2026-11-21, docs/frames-design.md section 16)
+
+out/uttt.app.html is 83,879 bytes (23,304 gzipped), in 3 script blocks of at most 30,000 bytes; out/uttt.html is 28,975 bytes (11,514 gzipped), 311 smaller than before, since the boot no longer writes the frames tier's SCRIPT SRCs.
+The frames tier's two documents together are 112,854 bytes and 34,818 gzipped, where its three files were 80,425 and 30,270 (U1): the app document inlines the JavaScript 1.0 module (41,412 bytes) where the words build (19,819) was loaded before branch js1-compile, and the shim (now 40,148).
