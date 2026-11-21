@@ -961,7 +961,9 @@ function cf_release(later) {
   cf_holds--;
   if (cf_holds || cf_busy) return;
   if (cf_dirty && later == 2) return;
-  if (cf_dirty && later) {
+  /* A button down in the view: the draw waits for its release, whatever made it (a timer too: Play's tick against the click on
+   * Pause, found on Netscape 4.08), since the draw would replace the button under the pointer and lose the click. */
+  if (cf_dirty && (later || cf_pressed)) {
     if (!cf_later) setTimeout("cdomF.p()", cf_LATER);
     cf_later = 1;
     return;
@@ -1124,6 +1126,7 @@ function cf_draw() {
   d.onmouseup = cf_onUp;
   if (d.captureEvents && w.Event) d.captureEvents(w.Event.MOUSEDOWN | w.Event.MOUSEUP);
   cf_drawing = 0;
+  cf_pressed = 0; /* the new document has no press: its own release (or none) says so */
   cdomF.draws++;
   cdomF.bytes = html.length;
   cf_restore(w);

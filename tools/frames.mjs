@@ -234,6 +234,22 @@ run: try {
   ok(await until('X.stat(7) === 1') && (await textOf('#tickp')) === 'ticks 1', `a timer reached C and was drawn: ${JSON.stringify(await textOf('#tickp'))}`);
   ok((await draws()) === d + 1, `a timer draws once: ${(await draws()) - d}`);
 
+  // A timer's draw while a button is down waits for the release, so that the click on the button it would replace is not lost
+  // (Play's tick against the click on Pause, which Netscape 4.08 lost until the draw waited).
+  {
+    const [x, y] = await centre('#inc');
+    const n0 = await stat(STAT.count), t0 = await stat(STAT.ticks);
+    d = await draws();
+    await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y, 1, 'left');
+    await E('X.tick_after(10)');
+    await sleep(120);
+    ok((await stat(STAT.ticks)) === t0 + 1 && (await draws()) === d, `a timer's draw waits while a button is down: the tick ran (${(await stat(STAT.ticks)) - t0}), draws ${(await draws()) - d}`);
+    await mouse('mouseReleased', x, y, 0, 'left'); await sleep(60);
+    await until(`cdomF.draws > ${d}`);
+    ok((await stat(STAT.count)) === n0 + 1 && (await textOf('#tickp')) === `ticks ${t0 + 1}` && (await draws()) === d + 1,
+      `after the release the click reached C and the tick was drawn, once: count ${(await stat(STAT.count)) - n0}, ${JSON.stringify(await textOf('#tickp'))}, ${(await draws()) - d} draws`);
+  }
+
   // Many ops in one call: still one draw.
   d = await draws();
   await E('X.grow(5)');
