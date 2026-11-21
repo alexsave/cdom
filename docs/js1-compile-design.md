@@ -146,3 +146,33 @@ What the misses say:
 4. Then http://10.0.2.2:8000/frames.html, the frames tier.
    Expected: Netscape 4 and IE 4 run it (the app file is JavaScript 1.0, the shim 1.1, the string table an array literal they parse); Netscape 3 stops at the string table (`var cdomLits=[...]`, an array literal, tools/cdpage's); Netscape 2 stops before both, at SCRIPT SRC (A12 of frames-design.md: Netscape 2 has none), and would stop again at cdom.frames.js (typeof, new Function, Array methods).
    Those two are the frames shim's and the page tool's, not js1c's, and this branch leaves them.
+
+## 12. The real browsers: what broke and the fixes
+
+The run of 2026-11-20 on main's js1-real branch (docs/descent.md there, "The three code paths in the real browsers") put this branch's output through Netscape 2.02, 3.04, 4.08 and IE 4.01.
+Netscape 4.08 and IE 4.01 ran tests/out/js1diff.html to 26 of 26, but five things broke, and this section is their fixes, each with its prediction written before the run that tests it.
+
+1. Netscape 2.02 dies on `undefined | 0` ("33041 is not a number."): the factory zeroes the memory only where `window.Int32Array` exists, so a read of a word nothing wrote is fatal there.
+2. Netscape 3.04 refuses the file: "missing ) after for-loop control." at `for(i=n-1;i>=0;i--)` in JMc.
+3. Netscape 3.04 gives NaN for `x | 0`, `x >>> 0` and `x & 255` once x is 2^32 or more (main's tests/probe-js1d.html), so loop and rec answer NaN.
+4. Netscape 2.02 makes `o[0]` the first property set by name on o, so an object indexed by number must never have a named property.
+5. IE 4.01 answered rec(1000) and rec(5000) wrong on the unsliced js1bench page, after rec(100)'s third run died there.
+
+### 12.1 What I expect from the probe, written before it runs
+
+tests/probe-js1e.html (tools/gen_probe_js1e.py) isolates items 2 and 3 in Netscape 3.04 (and runs in Netscape 2.02 for comparison).
+
+- The for loop: the construct is a postfix `--` directly before the `)` that closes the for header.
+  `i++)` parses (JMc's forward loop, on the same line, did), so I expect `forDecGe`, `forDecGt`, `forDecBraces`, `forDecInit` and `forDecCall` to die as a syntax error (no mark at all), `forDecSpaced` (`i -- )`) to die too (a token rule, not a character one), and `forPreDec` (`--i`), `forMinusAssign` (`i = i - 1`) and `forDecNoTest` to parse.
+  A postfix `--` elsewhere (`stmtDec`, `exprDec`, `whileDec`, `parenDec`, `callDec`) I expect to parse: if `parenDec` or `callDec` dies too, the rule is "`--` then `)`", wherever it is.
+- The ranges: Netscape 3.04 converts to 32 bits by a C cast of the double, which is right in [-2^31, 2^32) and gives NaN (an exception value it then prints) outside it.
+  So `| 0`, `>>> 0`, `& 255`, `<< 1`, `>> 1` and `>>> 1` are right for every value from -2^31 to 2^32 - 1 and NaN for 2^32 and above and for -2^31 - 1 and below.
+  Netscape 2.02 gives the same right answers inside that range and its own (0 or a wrapped value) outside it.
+- `x % 4294967296` brings any of these into (-2^32, 2^32), which is not yet safe for a negative x below -2^31: the reduction must be followed by a fold of the negative half, or written as `x - Math.floor(x / 4294967296) * 4294967296` (always in [0, 2^32)), which I expect to be right in both browsers.
+- Cost on Netscape 3.04 for 20,000 iterations: the bare loop about 0.5 s, `| 0` adds under 10%, the `%` form 20 to 40% more, the `if` fold about the same as `%`.
+
+### 12.2 What I expect of IE 4's wrong answers, written before looking
+
+The export wrapper puts JP and JQ back only when the call returns normally; IE 4.01 has no `try`, so when a call dies (its "Stack overflow" or another error), JP stays where the dead call left it and JQ may be 1.
+The next call then starts mid-stack, a resumed frame reads the wrong slots, and every later run answers wrong: that is rec(1000) and rec(5000) after rec(100)'s third run died.
+So the cause to find is why rec(100)'s third run died at all on IE 4: I expect an IE 4 dialog for the JScript call depth or for the driver's object stack, and I will look at the screen before it is dismissed.

@@ -1,0 +1,582 @@
+<HTML>
+<HEAD>
+<TITLE>cdom probe-js1e</TITLE>
+<SCRIPT LANGUAGE="JavaScript">
+var n = 0;
+var TAG = "" + location.href;
+var Q = TAG.indexOf("?");
+if (Q < 0) { TAG = "x"; } else { TAG = TAG.substring(Q + 1, TAG.length); }
+function mark(name, v) {
+  n = n + 1;
+  document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
+}
+function T() { var d = new Date(); return d.getTime(); }
+</SCRIPT>
+</HEAD>
+<BODY>
+<H3>cdom probe-js1e</H3>
+<SCRIPT LANGUAGE="JavaScript">
+mark("forDecGe", "start");
+var x = 0; var i; for (i = 3; i >= 0; i--) x++;
+mark("forDecGe", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("forDecGt", "start");
+var x = 0; var i; for (i = 3; i > 0; i--) x++;
+mark("forDecGt", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("forDecBraces", "start");
+var x = 0; var i; for (i = 3; i >= 0; i--) { x++; }
+mark("forDecBraces", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("forDecSpaced", "start");
+var x = 0; var i; for (i = 3; i >= 0; i -- ) { x++; }
+mark("forDecSpaced", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("forPreDec", "start");
+var x = 0; var i; for (i = 3; i >= 0; --i) { x++; }
+mark("forPreDec", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("forIncLt", "start");
+var x = 0; var i; for (i = 0; i < 4; i++) x++;
+mark("forIncLt", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("forMinusAssign", "start");
+var x = 0; var i; for (i = 3; i >= 0; i = i - 1) x++;
+mark("forMinusAssign", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("forDecNoTest", "start");
+var x = 0; var i; for (i = 3; ; i--) { x++; if (i == 0) break; }
+mark("forDecNoTest", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("forDecInit", "start");
+var x = 0; var i = 3; for (; i >= 0; i--) x++;
+mark("forDecInit", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("forDecCall", "start");
+var x = 0; var i; function f(a) { x = x + a; } for (i = 3; i >= 0; i--) f(1);
+mark("forDecCall", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("stmtDec", "start");
+var i = 3; i--;
+mark("stmtDec", i);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("exprDec", "start");
+var i = 3; var j = i--;
+mark("exprDec", j + ',' + i);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("whileDec", "start");
+var x = 0; var i = 4; while (i-- > 0) x++;
+mark("whileDec", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("parenDec", "start");
+var i = 3; var j = (i--);
+mark("parenDec", j + ',' + i);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("callDec", "start");
+var x = 0; function g(a) { x = a; } var i = 3; g(i--);
+mark("callDec", x + ',' + i);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("forIncCall", "start");
+var x = 0; var i; function f(a) { x = x + a; } for (i = 0; i < 4; i++) f(1);
+mark("forIncCall", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("or0_p31m1", "start");
+var x = 2147483647;
+mark("or0_p31m1", x | 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr0_p31m1", "start");
+var x = 2147483647;
+mark("ushr0_p31m1", x >>> 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("and255_p31m1", "start");
+var x = 2147483647;
+mark("and255_p31m1", x & 255);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shl1_p31m1", "start");
+var x = 2147483647;
+mark("shl1_p31m1", x << 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shr1_p31m1", "start");
+var x = 2147483647;
+mark("shr1_p31m1", x >> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr1_p31m1", "start");
+var x = 2147483647;
+mark("ushr1_p31m1", x >>> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("or0_p31", "start");
+var x = 2147483648;
+mark("or0_p31", x | 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr0_p31", "start");
+var x = 2147483648;
+mark("ushr0_p31", x >>> 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("and255_p31", "start");
+var x = 2147483648;
+mark("and255_p31", x & 255);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shl1_p31", "start");
+var x = 2147483648;
+mark("shl1_p31", x << 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shr1_p31", "start");
+var x = 2147483648;
+mark("shr1_p31", x >> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr1_p31", "start");
+var x = 2147483648;
+mark("ushr1_p31", x >>> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("or0_p32m1", "start");
+var x = 4294967295;
+mark("or0_p32m1", x | 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr0_p32m1", "start");
+var x = 4294967295;
+mark("ushr0_p32m1", x >>> 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("and255_p32m1", "start");
+var x = 4294967295;
+mark("and255_p32m1", x & 255);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shl1_p32m1", "start");
+var x = 4294967295;
+mark("shl1_p32m1", x << 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shr1_p32m1", "start");
+var x = 4294967295;
+mark("shr1_p32m1", x >> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr1_p32m1", "start");
+var x = 4294967295;
+mark("ushr1_p32m1", x >>> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("or0_p32", "start");
+var x = 4294967296;
+mark("or0_p32", x | 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr0_p32", "start");
+var x = 4294967296;
+mark("ushr0_p32", x >>> 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("and255_p32", "start");
+var x = 4294967296;
+mark("and255_p32", x & 255);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shl1_p32", "start");
+var x = 4294967296;
+mark("shl1_p32", x << 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shr1_p32", "start");
+var x = 4294967296;
+mark("shr1_p32", x >> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr1_p32", "start");
+var x = 4294967296;
+mark("ushr1_p32", x >>> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("or0_p32p5", "start");
+var x = 4294967301;
+mark("or0_p32p5", x | 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr0_p32p5", "start");
+var x = 4294967301;
+mark("ushr0_p32p5", x >>> 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("and255_p32p5", "start");
+var x = 4294967301;
+mark("and255_p32p5", x & 255);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shl1_p32p5", "start");
+var x = 4294967301;
+mark("shl1_p32p5", x << 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shr1_p32p5", "start");
+var x = 4294967301;
+mark("shr1_p32p5", x >> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr1_p32p5", "start");
+var x = 4294967301;
+mark("ushr1_p32p5", x >>> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("or0_p33", "start");
+var x = 8589934597;
+mark("or0_p33", x | 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr0_p33", "start");
+var x = 8589934597;
+mark("ushr0_p33", x >>> 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("and255_p33", "start");
+var x = 8589934597;
+mark("and255_p33", x & 255);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shl1_p33", "start");
+var x = 8589934597;
+mark("shl1_p33", x << 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shr1_p33", "start");
+var x = 8589934597;
+mark("shr1_p33", x >> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr1_p33", "start");
+var x = 8589934597;
+mark("ushr1_p33", x >>> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("or0_p52", "start");
+var x = 4503599627370501;
+mark("or0_p52", x | 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr0_p52", "start");
+var x = 4503599627370501;
+mark("ushr0_p52", x >>> 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("and255_p52", "start");
+var x = 4503599627370501;
+mark("and255_p52", x & 255);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shl1_p52", "start");
+var x = 4503599627370501;
+mark("shl1_p52", x << 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shr1_p52", "start");
+var x = 4503599627370501;
+mark("shr1_p52", x >> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr1_p52", "start");
+var x = 4503599627370501;
+mark("ushr1_p52", x >>> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("or0_p53", "start");
+var x = 9007199254740995;
+mark("or0_p53", x | 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr0_p53", "start");
+var x = 9007199254740995;
+mark("ushr0_p53", x >>> 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("and255_p53", "start");
+var x = 9007199254740995;
+mark("and255_p53", x & 255);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shl1_p53", "start");
+var x = 9007199254740995;
+mark("shl1_p53", x << 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shr1_p53", "start");
+var x = 9007199254740995;
+mark("shr1_p53", x >> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr1_p53", "start");
+var x = 9007199254740995;
+mark("ushr1_p53", x >>> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("or0_m31", "start");
+var x = -2147483648;
+mark("or0_m31", x | 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr0_m31", "start");
+var x = -2147483648;
+mark("ushr0_m31", x >>> 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("and255_m31", "start");
+var x = -2147483648;
+mark("and255_m31", x & 255);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shl1_m31", "start");
+var x = -2147483648;
+mark("shl1_m31", x << 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shr1_m31", "start");
+var x = -2147483648;
+mark("shr1_m31", x >> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr1_m31", "start");
+var x = -2147483648;
+mark("ushr1_m31", x >>> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("or0_m31m1", "start");
+var x = -2147483649;
+mark("or0_m31m1", x | 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr0_m31m1", "start");
+var x = -2147483649;
+mark("ushr0_m31m1", x >>> 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("and255_m31m1", "start");
+var x = -2147483649;
+mark("and255_m31m1", x & 255);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shl1_m31m1", "start");
+var x = -2147483649;
+mark("shl1_m31m1", x << 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shr1_m31m1", "start");
+var x = -2147483649;
+mark("shr1_m31m1", x >> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr1_m31m1", "start");
+var x = -2147483649;
+mark("ushr1_m31m1", x >>> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("or0_m32", "start");
+var x = -4294967296;
+mark("or0_m32", x | 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr0_m32", "start");
+var x = -4294967296;
+mark("ushr0_m32", x >>> 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("and255_m32", "start");
+var x = -4294967296;
+mark("and255_m32", x & 255);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shl1_m32", "start");
+var x = -4294967296;
+mark("shl1_m32", x << 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shr1_m32", "start");
+var x = -4294967296;
+mark("shr1_m32", x >> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr1_m32", "start");
+var x = -4294967296;
+mark("ushr1_m32", x >>> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("or0_m32m5", "start");
+var x = -4294967301;
+mark("or0_m32m5", x | 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr0_m32m5", "start");
+var x = -4294967301;
+mark("ushr0_m32m5", x >>> 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("and255_m32m5", "start");
+var x = -4294967301;
+mark("and255_m32m5", x & 255);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shl1_m32m5", "start");
+var x = -4294967301;
+mark("shl1_m32m5", x << 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shr1_m32m5", "start");
+var x = -4294967301;
+mark("shr1_m32m5", x >> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr1_m32m5", "start");
+var x = -4294967301;
+mark("ushr1_m32m5", x >>> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("or0_m33", "start");
+var x = -8589934597;
+mark("or0_m33", x | 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr0_m33", "start");
+var x = -8589934597;
+mark("ushr0_m33", x >>> 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("and255_m33", "start");
+var x = -8589934597;
+mark("and255_m33", x & 255);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shl1_m33", "start");
+var x = -8589934597;
+mark("shl1_m33", x << 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shr1_m33", "start");
+var x = -8589934597;
+mark("shr1_m33", x >> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr1_m33", "start");
+var x = -8589934597;
+mark("ushr1_m33", x >>> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("or0_m53", "start");
+var x = -9007199254740995;
+mark("or0_m53", x | 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr0_m53", "start");
+var x = -9007199254740995;
+mark("ushr0_m53", x >>> 0);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("and255_m53", "start");
+var x = -9007199254740995;
+mark("and255_m53", x & 255);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shl1_m53", "start");
+var x = -9007199254740995;
+mark("shl1_m53", x << 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("shr1_m53", "start");
+var x = -9007199254740995;
+mark("shr1_m53", x >> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr1_m53", "start");
+var x = -9007199254740995;
+mark("ushr1_m53", x >>> 1);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("mod_p32p5", "start");
+var x = 4294967301; var y = x % 4294967296;
+mark("mod_p32p5", y + ',' + (y | 0));
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("sub_p32p5", "start");
+var x = 4294967301; var y = x - Math.floor(x / 4294967296) * 4294967296;
+mark("sub_p32p5", y + ',' + (y | 0));
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("mod_p33", "start");
+var x = 8589934597; var y = x % 4294967296;
+mark("mod_p33", y + ',' + (y | 0));
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("sub_p33", "start");
+var x = 8589934597; var y = x - Math.floor(x / 4294967296) * 4294967296;
+mark("sub_p33", y + ',' + (y | 0));
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("mod_m32m5", "start");
+var x = -4294967301; var y = x % 4294967296;
+mark("mod_m32m5", y + ',' + (y | 0));
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("sub_m32m5", "start");
+var x = -4294967301; var y = x - Math.floor(x / 4294967296) * 4294967296;
+mark("sub_m32m5", y + ',' + (y | 0));
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("mod_p52", "start");
+var x = 4503599627370501; var y = x % 4294967296;
+mark("mod_p52", y + ',' + (y | 0));
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("sub_p52", "start");
+var x = 4503599627370501; var y = x - Math.floor(x / 4294967296) * 4294967296;
+mark("sub_p52", y + ',' + (y | 0));
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("costLoop", "start");
+var a = 1234567; var b = 3000000001; var s = 0; var i; var t = T(); for (i = 0; i < 20000; i++) { s = a + i; }
+mark("costLoop", (T() - t) + 'ms');
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("costOr", "start");
+var a = 1234567; var b = 3000000001; var s = 0; var i; var t = T(); for (i = 0; i < 20000; i++) { s = (a + i) | 0; }
+mark("costOr", (T() - t) + 'ms');
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("costMod", "start");
+var a = 1234567; var b = 3000000001; var s = 0; var i; var t = T(); for (i = 0; i < 20000; i++) { s = ((b + i) % 4294967296) | 0; }
+mark("costMod", (T() - t) + 'ms');
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("costIf", "start");
+var a = 1234567; var b = 3000000001; var s = 0; var i; var t = T(); for (i = 0; i < 20000; i++) { s = b + i; if (s > 2147483647) s = s - 4294967296; s = s | 0; }
+mark("costIf", (T() - t) + 'ms');
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("done", "end");
+</SCRIPT>
+</BODY>
+</HTML>
