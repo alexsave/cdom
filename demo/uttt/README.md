@@ -41,3 +41,17 @@ Written before measuring; out/uttt.html (28,494 bytes) and out/uttt.wasm.ie9.js 
 - U2, the app's own share of the generated JavaScript: uttt.wasm.ie9.js is at most 12,000 bytes larger than the same build of tests/frames.wasm.
 - U3, redraws: on the frames tier each step (|<, <, >, >|) and each tick of Play draws exactly once.
 - U4, a step's redraw costs at most 20 ms in headless Chrome under LEGACY=frames (the board is about 230 nodes).
+
+## Results
+
+Measured after the predictions were committed; headless Chromium (Playwright's, build 1243) on a Linux x86-64 VM, `UTTT_MEASURE=1 node tools/uttt.mjs`, so indicative only.
+
+| | Predicted | Measured | Verdict |
+| --- | --- | --- | --- |
+| U1, size | at most 90,000 bytes, 30,000 gzipped | 80,425 bytes, 30,270 gzipped (uttt.html 28,494 and 11,311; cdom.frames.js 32,112 and 10,405; uttt.wasm.ie9.js 19,819 and 8,554) | refuted, by 270 bytes gzipped |
+| U2, the app's generated JavaScript | at most 12,000 bytes over tests/frames.wasm.ie9.js | 2,826 bytes over | confirmed |
+| U3, redraws | one a step and one a tick | one for each of 50 > steps, 20 draws for 20 steps, and Play, 2 ticks and Pause drew 4 | confirmed |
+| U4, a step's redraw | at most 20 ms | 2.75 ms (LEGACY=frames), 4.75 ms (its ?ns4 flavour), the mean of 20 | confirmed |
+
+What the miss says: the page itself (28,494 bytes) is mostly the inlined shim/cdom.min.js and the boot, which the frames tier never runs; cdom.frames.js is the largest file, as docs/frames-design.md's P1 found.
+The WebAssembly module is 10,213 bytes (5,562 gzipped).
