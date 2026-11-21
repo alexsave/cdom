@@ -186,9 +186,9 @@ tests/probe-js1e.html in Netscape 3.04 (and 2.02), 2026-11-20:
   A third run put one token at a chosen column after a padding comment: `x--;` parses with its `--` at columns 250, 253, 255 and 256 and is refused at 254 alone, while `>=` and `>>>` parse at 254.
   So Netscape 3.04 refuses a `--` that starts at column 254 of a line (a seam in how it reads a line, presumably); whether `++` or a later seam (510, 766) does the same is not measured.
 - The ranges, exactly as predicted: in Netscape 3.04, `| 0`, `>>> 0`, `& 255`, `<< 1`, `>> 1` and `>>> 1` are right for every value from -2^31 to 2^32 - 1 (2147483648 | 0 is -2147483648, 4294967295 >>> 0 is 4294967295, -2147483648 >>> 0 is 2147483648) and NaN for 2^32, 2^32 + 5, 2^33, 2^52 + 5, 2^53 + 3, -2^31 - 1, -2^32, -2^32 - 5, -2^33 - 5 and -2^53 - 3.
-  Netscape 2.02 is right throughout -2^53 to 2^53 except at and above 2^53 (it gives 0 where the reduction gives 4).
+  Netscape 2.02 is right for every value tried under 2^53 in magnitude, and differs only past it (2^53 + 3 gives 2 where a modern engine gives 4, the literal's rounding).
 - The reductions: `x % 4294967296` keeps the sign (-4294967301 % 4294967296 is -5, whose `| 0` is right, -5), and `x - Math.floor(x / 4294967296) * 4294967296` gives 0 to 2^32 - 1; both are right in Netscape 3 for every value tried.
-- Their cost on Netscape 3.04, 20,000 iterations: the bare loop 265 ms, with `| 0` 313 ms, with `% 4294967296` and `| 0` 359 ms (2.3 us more an operation than `| 0`), with an `if` fold 516 ms.
+- Their cost, 20,000 iterations: on Netscape 3.04 the bare loop 265 ms, with `| 0` 313 ms, with `% 4294967296` and `| 0` 359 ms (2.3 us more an operation than `| 0`), with an `if` fold 516 ms; on Netscape 2.02 203, 219, 234 and 344 ms.
 
 ### 12.4 The fixes
 
