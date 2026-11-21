@@ -1135,12 +1135,15 @@ function cf_handle(x) {
   }
   return x.h;
 }
-/* x is form.elements[its index], since every control is written in order and counted here. */
+/* x is form.elements[its index], since every control is written in order and counted here, and is read back by that
+ * index. Each is named cN, but a radio keeps the app's name, which is what groups it with the others of that name. */
 function cf_fieldOf(x) {
+  var name = cf_pair(x.a, "name");
   x.j = cf_nfields;
   x.jd = cf_serial;
   cf_fields[cf_nfields] = x;
   cf_nfields++;
+  if (x.t == "input" && name != null && cf_type(x) == "radio") return " name=\"" + cf_esc(name) + "\"";
   return " name=\"c" + x.j + "\"";
 }
 /* x's attributes that old browsers read (cf_KEEP), but skip (a link's href, written by itself). */
