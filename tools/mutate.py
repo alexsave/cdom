@@ -52,6 +52,8 @@ FPT1 = ['env', 'LEGACY=1', 'node', 'tools/fptoint.mjs']              # float to 
 FPT9 = ['env', 'LEGACY=ie9', 'node', 'tools/fptoint.mjs']            # and on the third (words)
 LEGW2J = ['env', 'LEGACY=1', 'node', 'tools/legacy.mjs']             # the legacy page as a browser without WebAssembly
 NOSCRIPT = ['tests/noscript/run.sh']                                 # the no-script fallback: Chrome off and on, lynx, the lens, cdpage's refusals
+FRAMES = ['env', 'LEGACY=frames', 'node', 'tools/frames.mjs']       # the fifth tier: no DOM mutation, frames written whole
+JS11T = ['node', 'tools/js11.mjs']                                   # the frames tier's language gates, in node
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -958,7 +960,7 @@ M = [
   ('ie9-seed-weak-with-crypto', 'shim/cdom.js', '    if (globalThis.crypto && crypto.getRandomValues) {\n      return crypto.getRandomValues', '    if (false) {\n      return crypto.getRandomValues', LEG1, 'FAIL cd_seed from crypto.getRandomValues, never Math.random, where crypto exists'),
   # the fourth tier, IE 6 to 8 (shim/boot.js, tools/legacy/es3.mjs, dom-old.js, shim-old.js, polyfills-es3.js)
   ('ie6-boot-new-when-es5-missing', 'shim/boot.js', '    if (!es5[i]) old = true;', '    if (!es5[i]) old = false;', LEG6, 'FAIL booted'),
-  ('ie6-floor-without-listeners', 'shim/boot.js', '  if (!d.addEventListener && !d.attachEvent) lack.push', '  if (false) lack.push', LEGBELOW, "FAIL one error, the boot's"),
+  ('ie6-floor-without-listeners', 'shim/boot.js', '  if (!d.addEventListener && !d.attachEvent) lack[lack.length]', '  if (false) lack[lack.length]', LEGBELOW, "FAIL one error, the boot's"),
   ('boot-serial-fallback-load', 'shim/boot.js', '  load(old ? "cdom.legacy-ie6.js" : words ? "cdom.legacy-ie9.js" : "cdom.legacy.js", loaded);\n  load(base + (old || words ? ".ie9.js" : ".js"), loaded);',
    '  load(old ? "cdom.legacy-ie6.js" : words ? "cdom.legacy-ie9.js" : "cdom.legacy.js", function () { loaded(); load(base + (old || words ? ".ie9.js" : ".js"), loaded); });', LEG9, 'FAIL legacy.wasm.ie9.js requested while'),  # a serial load: the app's request comes only after the shim file has arrived (loaded() counts the shim, then the app is requested), so the held shim times out
   ('ie6-boot-swallows-failed-start', 'shim/boot.js', '    setTimeout(function () { throw e; }, 0);', '', LEG, 'FAIL a failed start is thrown again'),
@@ -967,6 +969,41 @@ M = [
   ('ie6-reserved-gate-off', 'tools/legacy/es3.mjs', '  if (minified) walk(tree);', '  if (false) walk(tree);', ES3T, 'FAIL a.class is refused'),
   ('ie6-es5-gate-off', 'tools/legacy/es3.mjs', '      if (ES5_NAMES.has(key) && !ES5_SUPPLIED.has(key) && !ok.has(key)) es5.add(key);', '      if (false) es5.add(key);', ES3T, 'FAIL Object.getOwnPropertyNames is refused'),
   ('ie6-proto-gate-off', 'tools/legacy/es3.mjs', "  if (/\\b__proto__\\b/.test(src)) throw", "  if (false) throw", ES3T, 'FAIL __proto__ is refused'),
+  # the fifth tier, the frames tier (shim/boot.js's first part, tools/legacy/frames.js, js11.mjs, tools/cdp.mjs's FRAMES_OLD:
+  # docs/frames-design.md)
+  ('frames-boot-takes-dom', 'shim/boot.js', '  cdomBootFrames(url, mount, env, ready, options);\n}', '  cdomBootDom(url, mount, env, ready, options);\n}', FRAMES, 'FAIL booted'),
+  ('frames-boot-not-js10', 'shim/boot.js', '  var base = url;\n  if (!url.substring)', '  var base = url, none = {};\n  if (!url.substring)', FRAMES, 'shim/boot.js part 1 is not JavaScript 1.0'),
+  ('frames-shim-not-js11', 'tools/legacy/frames.js', '  cf_fields[cf_nfields] = x;', '  cf_fields.push(x);', FRAMES, 'frames.js is not JavaScript 1.1: .push'),
+  ('frames-profile-keeps-getelementbyid', 'tools/cdp.mjs', "    'getElementById', 'importNode',", "    'importNode',", FRAMES, 'FAIL no DOM mutation in the page'),
+  ('frames-no-sync', 'tools/legacy/frames.js', '  if (!w || !cdomF.draws) return;\n  form = w.document.forms[0];', '  return;\n  form = w.document.forms[0];', FRAMES, 'FAIL typed text C has not seen survives a redraw'),
+  ('frames-draws-unchanged', 'tools/legacy/frames.js', '  if (cf_dirty || cf_pending) cf_draw();', '  if (true) cf_draw();', FRAMES, 'FAIL an event whose handler changes nothing draws nothing'),
+  ('frames-draw-per-op', 'tools/legacy/frames.js', 'function cf_placeNew(x) {\n  cf_dirty = 1;\n', 'function cf_placeNew(x) {\n  cf_dirty = 1;\n  cf_draw();\n', FRAMES, 'FAIL an export of 15 ops (5 items) draws once'),
+  ('frames-path-counts-text', 'tools/legacy/frames.js', '    for (s = x.v; s; s = s.v) if (s.y == 1) index++;', '    for (s = x.v; s; s = s.v) index++;', FRAMES, 'FAIL links and a span'),
+  ('frames-text-not-wrapped', 'tools/legacy/frames.js', '    if (inh & 1 << cf_CLICK && !(ctx & 3) && x.p && x.p != cf_mount && !cf_blank(s)) {', '    if (false) {', FRAMES, 'FAIL links and a span'),
+  ('frames-focus-not-restored', 'tools/legacy/frames.js', '      el.focus();\n', '', FRAMES, 'FAIL the focus and the caret survive it'),
+  ('frames-caret-not-restored', 'tools/legacy/frames.js', '      if (f.ss >= 0 && el.setSelectionRange) el.setSelectionRange(f.ss, f.se);', '      if (false) el.setSelectionRange(f.ss, f.se);', FRAMES, 'FAIL the focus and the caret survive it'),
+  ('frames-bold-dropped', 'tools/legacy/frames.js', '  if (v == "bold" || v == "bolder" || parseInt(v, 10) >= 600) cf_wrapIn("<b>", "</b>");', '', FRAMES, 'FAIL color, font-weight'),
+  ('frames-hidden-drawn', 'tools/legacy/frames.js', '  if (cf_in(cf_SKIP, t) || cf_pair(x.s, "display") == "none") return;', '  if (cf_in(cf_SKIP, t)) return;', FRAMES, 'FAIL display: none'),
+  ('frames-style-attr-unread', 'tools/legacy/frames.js', '  if (name != "style") {', '  if (true) {', FRAMES, "FAIL the heading's color as FONT COLOR"),
+  ('frames-change-drawn-at-once', 'tools/legacy/frames.js', '  if (cf_dirty && later) {', '  if (false) {', FRAMES, 'FAIL the click that left the field still reached C'),
+  ('frames-no-input-on-change', 'tools/legacy/frames.js', '  if (now != x.seen) {', '  if (false) {', FRAMES, 'FAIL leaving the field: one input'),
+  ('frames-checkbox-no-change', 'tools/legacy/frames.js', '      cf_fire(x, cf_INPUT, 0);\n      cf_fire(x, cf_CHANGE, 0);\n', '      cf_fire(x, cf_INPUT, 0);\n', FRAMES, "FAIL the checkbox's change reached C"),
+  ('frames-recover-off', 'tools/legacy/frames.js', '  if (cf_busy || cf_holds) {', '  if (false) {', FRAMES, 'FAIL the next click recovers'),
+  ('frames-history-entry', 'tools/legacy/frames.js', '  d.close();\n  cf_drawing = 0;', '  d.close();\n  w.location.hash = "cdomfocus";\n  cf_drawing = 0;', FRAMES, 'FAIL no redraw added a history entry'),
+  ('frames-utf8-two-bytes', 'tools/legacy/frames.js', '      u = (c & 31) << 6 | cf_load8(p) & 63;\n      p++;', '      u = (c & 31) << 6 | cf_load8(p) & 63;', FRAMES, 'FAIL the input reached C, which read the value'),
+  ('frames-encode-two-bytes', 'tools/legacy/frames.js', '      cf_store8(p + cf_wrote, 192 | u >> 6);', '      cf_store8(p + cf_wrote, 224 | u >> 6);', FRAMES, 'FAIL the input reached C, which read the value'),
+  ('frames-no-fallback', 'tools/legacy/frames.js', '    if (!cf_over && (document.readyState == "complete"', '    if (false && (document.readyState == "complete"', FRAMES, 'FAIL frames-body.html (a BODY tag)'),
+  ('frames-timer-handle', 'tools/legacy/frames.js', '  cf_tid[cf_timers] = setTimeout("cdomF.t(" + cf_timers + ")", ms);', '  cf_tid[cf_timers] = setTimeout("cdomF.t(" + (cf_timers + 1) + ")", ms);', FRAMES, 'FAIL a timer reached C'),
+  ('js11-try-allowed', 'tools/legacy/js11.mjs', "SwitchStatement: 'switch', DoWhileStatement: 'do-while', LabeledStatement: 'a label', TryStatement: 'try',", "SwitchStatement: 'switch', DoWhileStatement: 'do-while', LabeledStatement: 'a label',", JS11T, 'FAIL try { f(); } catch (e) {} is refused'),
+  ('js11-literal-allowed', 'tools/legacy/js11.mjs', "ThrowStatement: 'throw', ObjectExpression: 'an object literal', ", "ThrowStatement: 'throw', ", JS11T, 'FAIL var o = {}; is refused'),
+  ('js11-strict-equality-allowed', 'tools/legacy/js11.mjs', "    if (n.type === 'BinaryExpression' && (n.operator === '===' || n.operator === '!==')) add(n.operator, n);", '', JS11T, 'FAIL if (a === b) f(); is refused'),
+  ('js11-nested-allowed', 'tools/legacy/js11.mjs', "    if (n.type === 'FunctionDeclaration' && depth > 0) add(", "    if (false) add(", JS11T, 'FAIL function f() { function g() {} return g; } is refused'),
+  ('js11-regex-allowed', 'tools/legacy/js11.mjs', "    if (n.type === 'Literal' && n.regex) add('a regex literal', n);", '', JS11T, 'FAIL var r = /a+/; is refused'),
+  ('js11-push-allowed', 'tools/legacy/js11.mjs', "const METHODS = new Set(['push', ", "const METHODS = new Set([", JS11T, 'FAIL .push is refused'),
+  ('js11-allowed-ignored', 'tools/legacy/js11.mjs', "      if (METHODS.has(name) && !ok.has(name)) add(", "      if (METHODS.has(name)) add(", JS11T, 'shim/boot.js part 1 is not JavaScript 1.0: .getElementById'),  # the build refuses the boot's own feature tests first
+  ('js11-undefined-allowed', 'tools/legacy/js11.mjs', "const GLOBALS = new Set(['undefined', ", "const GLOBALS = new Set([", JS11T, 'FAIL var u = undefined; is refused'),
+  ('js10-typeof-allowed', 'tools/legacy/js11.mjs', "    if (js10 && n.type === 'UnaryExpression' && (n.operator === 'typeof' || n.operator === 'void')) add(n.operator, n);", '', JS11T, 'FAIL js10: if (typeof x == "string") f(); is refused'),
+  ('js10-names-allowed', 'tools/legacy/js11.mjs', "      if (js10 && JS10_NAMES.has(n.name)) add(n.name, n);", '', JS11T, 'FAIL js10: var a = new Array(); is refused'),
   ('mount-waits-on-gone-domcontentloaded', 'shim/cdom.js', '      return new Promise((resolve) => addEventListener("load", resolve, { once: true })).then(found);', '      return new Promise((resolve) => doc.addEventListener("DOMContentLoaded", resolve, { once: true })).then(found);', LEG, 'FAIL a missing mount is an error once the page has loaded'),
   # no LEGACY=ie6 twin of the one above: dom-old.js listens for DOMContentLoaded as the window's load there, so it is the same wait
   ('mount-missing-no-error', 'shim/cdom.js', '      if (!element) {\n        throw new Error(`cdom: no element has the id ${mount}`);', '      if (false) {\n        throw new Error(`cdom: no element has the id ${mount}`);', LEG, 'FAIL a missing mount is an error once the page has loaded'),
