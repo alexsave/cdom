@@ -52,6 +52,18 @@ export function lacks10(src) {
   walk(tree, (n, parent, depth) => {
     if (SYNTAX[n.type]) add(SYNTAX[n.type], n);
     if (n.type === 'FunctionDeclaration' && depth > 0) add('a nested function declaration', n);
+    // Netscape 2.02 refuses, at parse time, a function that returns a value on one path and none on another: "function
+    // does not always return a value." (js1-interp's wi_call, main's docs/descent.md "The three code paths").
+    if (n.type === 'FunctionDeclaration' || n.type === 'FunctionExpression') {
+      let value = 0, bare = 0;
+      (function r(x) {
+        if (!x || typeof x.type !== 'string') return;
+        if (x !== n.body && (x.type === 'FunctionDeclaration' || x.type === 'FunctionExpression')) return;
+        if (x.type === 'ReturnStatement') { if (x.argument) value++; else bare++; }
+        for (const k of Object.keys(x)) { const v = x[k]; if (Array.isArray(v)) v.forEach(r); else if (v && typeof v.type === 'string') r(v); }
+      })(n.body);
+      if (value && bare) add('a function that returns a value and also none', n);
+    }
     if (n.type === 'VariableDeclaration' && n.kind !== 'var') add(n.kind, n);
     if (n.type === 'Literal' && n.regex) add('a regex literal', n);
     if (n.type === 'Literal' && typeof n.value === 'string' && /\\u/.test(n.raw)) add('a \\u escape', n);
@@ -93,7 +105,7 @@ function selfTest() {
     ['a.push(1);', '.push'], ['F.prototype.g = h;', '.prototype'], ['var m = Math.imul(a, b);', '.imul'],
     ['var r = s.replace("a", "b");', '.replace'], ['var h = n.toString(16);', 'toString(radix)'],
     ['var s = "\\u00e9";', 'a \\u escape'], ['var s = q.substr(1);', '.substr'], ['var f = Math.fround(x);', '.fround'],
-    ['let x = 1;', 'not even ES5'], ['/*' + 'p'.repeat(249) + '*/x--;', '-- at column 254'],
+    ['let x = 1;', 'not even ES5'], ['function f(a) { if (a) return 1; return; }', 'a function that returns a value and also none'], ['/*' + 'p'.repeat(249) + '*/x--;', '-- at column 254'],
   ]) ok(refused(src, what), `${src} is refused (${what})`);
   ok(lacks10(`var JM = new Object(), JA = new Array(4), d = new Date(), t;
 function f(a, b) { var i, s = ""; t = d.getTime(); for (i = 0; i < 3; i++) { if (a == b || a != 0) s = s + "x"; }
