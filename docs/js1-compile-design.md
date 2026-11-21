@@ -61,7 +61,7 @@ Expressions: js1c keeps wasm's value stack as JavaScript expressions and writes 
 
 C's memory is a plain object of 32-bit words (J.M[address >> 2]), the layout of tools/legacy/words.js: the shim reads it as memory.words, as it reads the IE 9 build's.
 An i32 load at an address known 4-aligned is one read; any other load or store of 8, 16 or 32 bits shifts and masks, across two words where it straddles one.
-A missing word reads as 0 (`undefined | 0`), so memory is never filled with zeros.
+A missing word reads as 0 (`undefined | 0`), so memory is never filled with zeros, except where window.Int32Array exists (section 10, Q4: a modern engine only).
 f64 loads and stores convert between a double and its two words by arithmetic (Math.log, Math.pow, Math.floor), as words.js does without typed arrays; f32 the same on one word, and f32 arithmetic is rounded to f32 by the same routine.
 memory.size and memory.grow move a page count only; memory.copy and memory.fill are loops over bytes, by words where both ends are aligned.
 
@@ -74,18 +74,18 @@ The data segments: two forms, chosen by a flag, measured in section 9:
 
 No throw: a trap (unreachable, an integer divide by zero or overflow, a float to integer conversion out of range, an indirect call of the wrong type or out of the table) sets J.T and returns.
 A direct call of a function that can trap is followed by `if (JT) return`, a driven function's return to the driver is checked there, and the driver stops.
-The export's wrapper puts the stack pointer back and sets the exports object's `trap` to 1; the frames shim (cf_cRun) then leaves its counts up, as a throw out of the call did, and the next entry recovers (frames-design.md section 4).
+The export's wrapper puts the stack pointer back and sets the exports object's `js1_trap` to 1 (prefixed, since an export may be named trap, as tests/js1diff.c's is); the frames shim (cf_cRun) then leaves its counts up, as a throw out of the call did, and the next entry recovers (frames-design.md section 4).
 Loads and stores out of bounds do not trap (the memory is an object of any size); that is the one difference from wasm, and a test notes it.
 
 ## 7. Imports and exports
 
 The output defines one global function, cdomFactoryJs1(imports), and sets window.cdomFactory to it, as the IE 9 build does; the frames shim calls it the same way.
 An import is called as a method of its module's object (`I.open(x)`, `I["class"](x)`), so the shim's cdom imports are used by the same names.
-The exports object has one property a function, each a wrapper that starts the driver on the export, plus memory (with its words) and trap.
+The exports object has one property a function, each a wrapper that starts the driver on the export, plus memory (with its words), js1_trap, and js1_paused, js1_result and js1_more for slicing.
 
 ## 8. Time slicing
 
-The driver counts the functions it runs; with a budget set (J1 slicing on), it stops after that many with the state kept, and the export returns as paused; the caller continues with Jrun(), from a `setTimeout("...", 0)`.
+The driver counts the functions it runs; with a budget set (J1 slicing on), it stops after that many with the state kept, and the export returns with js1_paused set; the caller continues with js1_more() from a `setTimeout("...", 0)` until it answers 0, and reads js1_result.
 The frames tier's exports run with no budget (the shim expects an answer); tests/out/js1diff.html, the page for the real browsers, runs its long tests sliced.
 
 ## 9. Predictions
@@ -112,8 +112,37 @@ Timings are node 22 on a Linux x86-64 VM, indicative only (the real browsers are
 
 ## 10. Results
 
-To be filled in after measuring.
+Measured after the predictions were committed (2ce4030), with node 22 and headless Chromium on a Linux x86-64 VM, so indicative only.
+`JS1_MEASURE=1 node tools/js1.mjs` prints them; the timings are the median of 5 processes, each build's file run in the main realm (as a browser runs a script), and three runs gave the same verdicts.
+
+| | Predicted | Measured | Verdict |
+| --- | --- | --- | --- |
+| Q1, size | at most 2.0 times the IE 9 build, 1.6 gzipped | frames: 32,227 bytes against 15,552 (2.07), 7,156 gzipped against 5,576 (1.28); js1diff: 1.72 and 1.27 | refuted (frames' bytes) |
+| Q2, statements | at most 1.5 a wasm instruction | frames 3,159 for 2,924 instructions (1.08); js1diff 0.78 | confirmed |
+| Q3, integer loop, 1e5 | at most 1.5 times the IE 9 build, 10 times wasm | 0.218 ms against 0.489 (0.45 times) and wasm's 0.217 (1.0 times) | confirmed |
+| Q4, 1000-deep recursion | at most 5 times the IE 9 build | as first built 0.285 ms against 0.021 (13.7 times); after the fix below 0.032 ms (1.55 times, 2.1 times wasm) | refuted, then fixed |
+| Q5, depth | at most js1c's bound, the bound at most 12 | bound 7 for both modules; js1diff's deepest 4 over all 279 cases (rec(1000) and rec(10) alike), frames.c's 5 in Chromium | confirmed |
+| Q6, data | digits 40% smaller, 90% fewer statements, each under 5 ms | 234 bytes and 4 statements against 701 and 47 (67% and 91%); 0.8 and 0.6 ms for the whole file | confirmed |
+| Q7, slicing at 1,000 steps | at most 5% slower on the loop | the loop -0.4%; rec(1000) +69% (0.055 ms against 0.032) | confirmed as worded, but see below |
+| Q8, correctness | every export bit for bit, the trap included | 279 of 279 cases and the whole memory word for word; tests/out/js1diff.html 26 of 26 in node and in Chromium | confirmed |
+
+What the misses say:
+
+- Q1: js1c's runtime (the helpers of section 5 and 6, written once) is about 5.5 KB of the 32 KB; the rest is about 1.7 times the IE 9 build, from the explicit stack's spills and resume guards and from the plain statements where wasm2js writes nested expressions. Gzipped, the output is only 1.28 times, as its repetition compresses.
+- Q4: the cost was not the driver but V8: the memory is an object whose first number key is high (the data, above the C stack), which V8 keeps as a slow dictionary; the stack and the driver alone cost 1.5 times the IE 9 build.
+  The factory now writes the initial memory with zeros first, in order, where window.Int32Array exists, which no frames-tier browser has (they keep every object as a hash table, and would pay 35 microseconds a word on Netscape 2 for nothing).
+  Timed in a node vm context instead, rec(1000) was 75 times the IE 9 build: a vm context's globals go through interceptors, and js1c's state is all globals (JavaScript 1.0 has no closures to keep it in), so tools/js1.mjs times each build in a process of its own.
+- Q7: the loop is a direct function, so the driver runs one step for it and slicing never applies; the prediction was about the wrong test.
+  On the recursion, which does go through the driver, slicing at 1,000 steps costs 69% in node: a pause every 1,000 driver steps, each a return through Jgo and a call of js1_more.
+- Not predicted: the 1000-deep recursion's JavaScript depth is 4, the same as at 10, and tests/out/js1diff.html runs rec(5000) in Chromium.
 
 ## 11. Verifying in the real browsers
 
-To be filled in with the files and the URL.
+1. Build: `tests/build.sh` writes, in tests/out, js1diff.html (self-contained: js1c's output of tests/js1diff.c is inlined, since Netscape 2 has no SCRIPT SRC, with wasm's answers computed at build time), and frames.html, frames-body.html, cdom.frames.js and frames.wasm.js1.js (the frames tier, as docs/frames-design.md section 12 has it, its app now from js1c).
+2. Serve tests/out: `python3 -m http.server 8000 --directory tests/out` on the host.
+3. In Netscape 2.02, 3.04 and 4.08 and IE 4.01, open http://10.0.2.2:8000/js1diff.html.
+   The TEXTAREA gets the user agent, then one line a case, `ok` or `FAIL` with the case, its milliseconds and, on a failure, what came and what wasm gave; the field below it ends as `26 of 26`.
+   The cases run one a tick (setTimeout with a string), with the driver sliced at 1,000 steps, so the browser keeps drawing; rec(1000), rec(5000), loop(100000) and deeptrap(300) are the long ones, and their times are the measurements of Q3 and Q4 on the real engines.
+4. Then http://10.0.2.2:8000/frames.html, the frames tier.
+   Expected: Netscape 4 and IE 4 run it (the app file is JavaScript 1.0, the shim 1.1, the string table an array literal they parse); Netscape 3 stops at the string table (`var cdomLits=[...]`, an array literal, tools/cdpage's); Netscape 2 stops before both, at SCRIPT SRC (A12 of frames-design.md: Netscape 2 has none), and would stop again at cdom.frames.js (typeof, new Function, Array methods).
+   Those two are the frames shim's and the page tool's, not js1c's, and this branch leaves them.
