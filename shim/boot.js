@@ -13,8 +13,8 @@
  *    tools/legacy/dom-old.js) and the same url + ".ie9.js", which is ES3 too (docs/ie6-design.md).
  * 5. No getElementById or no createElement (Netscape 2 to 4, IE 3 and 4): the frames tier (docs/frames-design.md).
  *    cdom.frames.js (tools/legacy/frames.js, JavaScript 1.1) and url + ".js1.js" (the wasm compiled to JavaScript 1.0
- *    by tools/js1c, docs/js1-compile-design.md), written into the page while it parses, then a frameset whose one
- *    frame the shim writes whole.
+ *    by tools/js1c, docs/js1-compile-design.md), written into the page while it parses (into cdomApp, the second frame of the frameset the
+ *    early script, shim/boot-early.js, wrote ahead of any content), where the shim keeps the app and writes the first frame whole.
  * Either of the middle fallbacks' two files are fetched at once, and the app file sets window.cdomFactory.
  * url may be the pair [scalar, SIMD] cdom.start takes (cdom.mk's APP_SIMD): cdom.start picks one, and every fallback
  * is the scalar module's build, url[0] + ".js" or url[0] + ".ie9.js".
@@ -32,9 +32,9 @@ function cdomBoot(url, mount, env, ready, options) {
   }
   cdomBootFrames(url, mount, env, ready, options);
 }
-/* The fifth tier: no DOM to build in, so the page becomes a frameset (docs/frames-design.md, section 3). The arguments
- * wait in globals, since JavaScript 1.0 has no closures, for the script written after the two files, which runs once
- * both have; a SCRIPT SRC the parser meets blocks it, so they run in order. cdomFramesStart then writes the frameset.
+/* The fifth tier: no DOM to build in, so the page is a frameset (docs/frames-design.md, section 3), made by the early script,
+ * and this runs in its cdomApp frame. The arguments wait in globals, since JavaScript 1.0 has no closures, for the script
+ * written after the two files, which runs once both have; a SCRIPT SRC the parser meets blocks it, so they run in order.
  * url is a string or a pair: only a string has substring. */
 function cdomBootFrames(url, mount, env, ready, options) {
   var base = url;

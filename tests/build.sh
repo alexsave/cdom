@@ -87,7 +87,7 @@ node "$legacy" page "$here/out/frames.shim.html" "$here/out/frames.html"
 sed 's|</head><div id="m">|</head><body><div id="m">|' "$here/out/frames.html" > "$here/out/frames-body.html"
 grep -q '<body><div id="m">' "$here/out/frames-body.html"
 # The script engine probe (docs/ie5-design.md), served beside the pages for the XP VM's browsers.
-cp "$here/probe.html" "$here/out/probe.html"
+cp "$here/probe.html" "$here/probe-fs.html" "$here/probe-fsd.html" "$here/probe-fs3.html" "$here/out/"
 # The hold that keeps the Utilu IE 5.01 and 5.5 builds from crashing at a page's Done (tools/ie5hold.py) is the test
 # rig's alone: no shipped file and no built page may name its port.
 if grep -l "10.0.2.2:8096" "$here/../shim/"*.js "$here/../tools/legacy/"*.js "$here/"*.html "$here/out/cdom.legacy"*.js \
