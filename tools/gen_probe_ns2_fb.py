@@ -8,7 +8,7 @@ Files in tests/out/fb/ (no hyphen in a name: Netscape 2 reads '-r', '-i' in its 
   q1_<variant>.html           an 8x8 black and white checker of 16 pixel cells on a magenta page, in one layout variant
                               (the magenta that shows is a gap), and q1_one_<variant>.html with 1x1 cells
   fb_<pic>_<cell>_<mode>[_rle].html   a picture of 576 x 320 pixels (FB_W, FB_H) as (576/cell) x (320/cell) cells
-        pic   photo (a dithered synthetic scene), art (the Game Boy Durak win screen, flat), check (a checkerboard),
+        pic   photo (a dithered synthetic scene), art (flat pixel art from FB_ART), check (a checkerboard),
               bars (vertical colour bars: the longest runs)
         mode  row (rows of IMG ended by BR, no white space) or tab (a TABLE, one cell per block or run)
         -rle  a horizontal run of one colour is one IMG of WIDTH = run * cell
@@ -25,7 +25,7 @@ from PIL import Image
 SEED = 20261121
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "..", "tests", "out", "fb")
-ART = "/Users/alex/Dev/foolish-gameboy-art/gameboy/art/mockups/w_seoul.png"
+ART = os.environ.get("FB_ART")   # a flat pixel-art PNG for the "art" pictures (the measured one was a 4-grey 640 x 640 night skyline); not in this repo
 W, H = int(os.environ.get("FB_W", 576)), int(os.environ.get("FB_H", 320))   # the picture area in pixels (the view of the guest's Netscape 2 is 640 x 380)
 CELLS = (16, 8, 4, 2, 1)
 BG = "#FF00FF"             # magenta: no palette colour is magenta, so any magenta inside a picture is a gap
@@ -98,6 +98,8 @@ def picture(pic, cell):
     if pic == "photo":
         return to_grid(scene(gw, gh), True)
     if pic == "art":
+        if not ART:
+            sys.exit("the art pictures need FB_ART=<a flat pixel-art PNG, at least 640 wide>")
         src = Image.open(ART).convert("RGB").crop((0, 0, 640, 640 * H // W))
         return to_grid(src.resize((gw, gh), Image.BOX), False)
     if pic == "check":
