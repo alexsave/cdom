@@ -7,6 +7,7 @@ of a block and reported by 1x1 images written by the last block, /mark/<query>/p
   probe-ns2-stmt<K>.html, probe-ns2-str<K>.html  the same with one block of K KB per page (the all-in-one pages are slow)
   probe-ns2-str.html    blocks of one string literal of 1K .. 128K, ascending; the length the block saw is reported
   probe-ns2-many<N>.html  N blocks of SIZE bytes of statements (a counter in every block says how many ran)
+  probe-ns2-atoms<N>.html  N distinct global names in blocks of 30000 bytes (the engine's too many atoms)
   probe-ns2-fns.html    a function and globals defined in one block, used in the next
   probe-ns2-frames.html the frames tier's two frames (shim/boot-early.js's shape), calls and rewrites; driven by a click
   probe-ns2-big.html    the demo/uttt build's code, inline, about 150 KB: its load time is the gap between the page's GET and its mark
@@ -83,6 +84,23 @@ def many(count, size):
     blocks = [block(stmts(size, "m%d" % k) + "cnt = cnt + 1;\nlast = %d;" % k) for k in range(1, count + 1)]
     tail = 'mark("cnt", cnt);\nmark("last", last);\nmark("ms", nowms() - T0);\n'
     return page("many%d" % count, init, blocks, tail)
+
+
+def atoms(count):
+    """count distinct global names `var q<i>=1;` in blocks of about 30000 bytes: the engine's atom table (too many atoms)."""
+    init = "var cnt = 0;\nvar last = 0;\n"
+    blocks, i, k = [], 0, 0
+    while i < count:
+        k += 1
+        out, size = [], 0
+        while size < 30000 and i < count:
+            ln = "var q%d=1;\n" % i
+            out.append(ln)
+            size += len(ln)
+            i += 1
+        blocks.append(block("".join(out) + "cnt = cnt + 1;\nlast = %d;" % k))
+    tail = 'mark("cnt", cnt);\nmark("last", last);\nmark("blocks", %d);\nmark("ms", nowms() - T0);\n' % len(blocks)
+    return page("atoms%d" % count, init, blocks, tail)
 
 
 def fns():
@@ -211,6 +229,8 @@ if __name__ == "__main__":
         write("probe-ns2-str%d.html" % k, string((k,), "str%d" % k))
     for c in (10, 20, 40):
         write("probe-ns2-many%d.html" % c, many(c, 30000))
+    for c in (30000, 50000, 60000, 65000, 70000):
+        write("probe-ns2-atoms%d.html" % c, atoms(c))
     write("probe-ns2-fns.html", fns())
     write("probe-ns2-frames.html", FRAMES)
     if os.path.exists(os.path.join(here, "..", "demo", "uttt", "out", "uttt.wasm.js1.js")):
