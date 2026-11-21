@@ -55,6 +55,8 @@ NOSCRIPT = ['tests/noscript/run.sh']                                 # the no-sc
 FRAMES = ['env', 'LEGACY=frames', 'node', 'tools/frames.mjs']       # the fifth tier: no DOM mutation, frames written whole
 JS11T = ['node', 'tools/js11.mjs']                                   # the frames tier's language gates, in node
 UTTT = ['node', 'tools/uttt.mjs']                                    # demo/uttt on the WebAssembly and frames tiers: needs FOOLISH, an absolute path to a foolish checkout (else it skips, and every uttt- mutant is missed)
+JS1 = ['node', 'tools/js1.mjs']                                      # js1c against wasm: tests/js1diff.c, the depth, slicing, the page
+JS10T = ['node', 'tools/js10.mjs']                                   # the JavaScript 1.0 gate's rules, in node
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -1229,6 +1231,26 @@ M = [
   ('uttt-last-not-bold', 'demo/uttt/uttt_replay.c', '        if (i == last) cd_open("b");\n        cd_text(MARK[m]);\n        if (i == last) cd_close();', '        if (i == last + 81) cd_open("b");\n        cd_text(MARK[m]);\n        if (i == last + 81) cd_close();', UTTT, '  bold: shown'),
   ('uttt-bad-code-silent', 'demo/uttt/uttt_replay.c', '    cd_set_text_node(err_txt, "That is not a game code.', '    cd_set_text_node(err_txt, "', UTTT, 'FAIL webassembly: a bad code shows the error line'),
   ('uttt-query-ignored', 'demo/uttt/uttt_replay.c', '  if (n > 1 && n < sizeof buf - 1) {', '  if (0) {', UTTT, 'FAIL webassembly: the query: the board is the game after 0 plies'),
+  # js1c, the wasm to JavaScript 1.0 compiler (tools/js1c.c, tools/js10.mjs, docs/js1-compile-design.md)
+  ('js1c-mul-overflows', 'tools/js1c.c', '"function JMu(a,b){return (a&65535)*b+((a>>>16)*b&65535)*65536|0;}\\n"', '"function JMu(a,b){return (a&65535)*b+((a>>>16)*b)*65536|0;}\\n"', JS1, 'FAIL every export agrees with wasm'),
+  ('js1c-spills-nothing', 'tools/js1c.c', '    bcopy(s->spill, r);', '    memset(s->spill, 0, sizeof(uint64_t) * (size_t)nwords);', JS1, 'FAIL every export agrees with wasm'),
+  ('js1c-resume-evaluates-if', 'tools/js1c.c', '      else if (guarded && tl) bs(b, "R||");', '      else if (guarded && tl) bs(b, "");', JS1, 'FAIL every export agrees with wasm'),
+  ('js1c-branch-not-carried', 'tools/js1c.c', '  if (here && !further) bf(b, "if(B){B=0;%s}", act);', '  if (here && !further) bs(b, "B=0;");', JS1, 'FAIL every export agrees with wasm'),
+  ('js1c-unreachable-no-flag', 'tools/js1c.c', '  case S_UNR: bs(b, "JT=1;return 0;"); break;', '  case S_UNR: bs(b, "return 0;"); break;', JS1, 'FAIL every export agrees with wasm'),
+  ('js1c-stack-not-put-back', 'tools/js1c.c', 'if(Jgo(%u)){JW=p;JO.js1_paused=1;return 0;}JP=p;', 'if(Jgo(%u)){JW=p;JO.js1_paused=1;return 0;}', JS1, 'FAIL a trap 30 calls down puts the explicit stack back'),
+  ('js1c-recursion-direct', 'tools/js1c.c', '    if (funcs[g].state == 1 || !funcs[g].direct) ok = 0;', '    if (0) ok = 0;', JS1, 'FAIL rec(1000) reaches JavaScript depth'),
+  ('js1c-slicing-ignored', 'tools/js1c.c', 'if(k==0){JN=n;return 1;}', 'if(k==0&&k==1){JN=n;return 1;}', JS1, 'FAIL sliced at 50 steps'),
+  ('js1c-byte-sign', 'tools/js1c.c', '"function JLbs(a){return JM[a>>2]<<(24-((a&3)<<3))>>24;}\\n"', '"function JLbs(a){return JM[a>>2]<<(24-((a&3)<<3))>>>24;}\\n"', JS1, 'FAIL every export agrees with wasm'),
+  ('js1c-subnormal-bits', 'tools/js1c.c', 'm=x*JP2(1022)*4503599627370496', 'm=x*JP2(1021)*4503599627370496', JS1, 'FAIL every export agrees with wasm'),
+  ('js1c-memmove-forwards', 'tools/js1c.c', 'if(d<=s){for(i=0;i<n;i++)JWb', 'if(1){for(i=0;i<n;i++)JWb', JS1, 'FAIL every export agrees with wasm'),
+  ('js1c-bound-too-low', 'tools/js1c.c', '  int bound = 4 + hmax;', '  int bound = 1 + hmax;', FRAMES, "FAIL js1c: a click, a link and growing the list by 5 reach JavaScript depth"),
+  ('js1c-writes-strict-equality', 'tools/js1c.c', 'static const char *ops[] = { "==", "!="', 'static const char *ops[] = { "===", "!="', JS1, 'is not JavaScript 1.0: ==='),  # tests/build.sh stops at the gate
+  ('js1c-page-compares-nothing', 'tools/js1.mjs', 'if(got==CE[I])', 'if(got!=CE[I])', JS1, 'FAIL tests/out/js1diff.html runs to its end and agrees'),
+  ('js1-shim-ignores-trap', 'tools/legacy/frames.js', '  if (cf_raw.js1_trap) return 0;\n', '', FRAMES, 'FAIL a trap ends the call, and nothing is drawn'),
+  ('js1-boot-loads-ie9', 'shim/boot.js', 'base + ".js1.js', 'base + ".ie9.js', FRAMES, 'FAIL tier 5 files only'),
+  ('js10gate-typeof-allowed', 'tools/js10.mjs', "['typeof', 'void', 'delete'].includes(n.operator)", "['void', 'delete'].includes(n.operator)", JS10T, 'FAIL if (typeof x == "number") f(); is refused'),
+  ('js10gate-new-member-allowed', 'tools/js10.mjs', "    if ((n.type === 'MemberExpression' && n.object.type === 'NewExpression') ||", "    if ((false) ||", JS10T, 'FAIL var t = new Date().getTime(); is refused'),
+  ('js10gate-nan-allowed', 'tools/js10.mjs', "const GLOBALS = new Set(['undefined', 'NaN', ", "const GLOBALS = new Set(['undefined', ", JS10T, 'FAIL var n = NaN; is refused'),
 ]
 
 def build_and_run(root, cmd, minify=False):
