@@ -16,6 +16,9 @@ if [ "$1" = kill ]; then
   python3 vm.py keys "taskkill /f /im netscape.exe"; sleep 1; python3 vm.py key ret; sleep 5
   python3 vm.py tap 40 465; sleep 3; python3 vm.py tap 238 400; sleep 3
   python3 vm.py keys "taskkill /f /im iexplore.exe"; sleep 1; python3 vm.py key ret; sleep 5
+  # a blind click on the desktop (vmalerts.sh with no alert up) can open an icon's file in Notepad
+  python3 vm.py tap 40 465; sleep 3; python3 vm.py tap 238 400; sleep 3
+  python3 vm.py keys "taskkill /f /im notepad.exe"; sleep 1; python3 vm.py key ret; sleep 4
 else
   python3 vm.py keys "$exe $2"; python3 vm.py key ret
 fi

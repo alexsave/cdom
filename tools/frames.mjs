@@ -93,6 +93,11 @@ const port = srv.address().port;
   // The app document (docs/frames-design.md, section 16): every script the cdomApp frame runs, inline, since Netscape 2
   // has no SCRIPT SRC, in blocks of at most build.mjs's BLOCK_MAX bytes; the modern page carries none of it.
   const app = fs.readFileSync(path.join(root, 'frames.app.html'), 'utf8');
+  // Netscape 2's "".indexOf(t) gives no number and its comparison raises "is not a numeric literal" (docs/frames-design.md 17):
+  // the shim's only indexOf calls are the two in cf_idx and cf_idxFrom, which answer an empty string themselves.
+  const shimSrc = fs.readFileSync(path.join(root, '../../tools/legacy/frames.js'), 'utf8');
+  ok((shimSrc.match(/\.indexOf\(/g) || []).length === 2 && /function cf_idx\(s, t\) \{\n  if \(s\.length == 0\)/.test(shimSrc),
+    'frames.js calls indexOf only in cf_idx and cf_idxFrom, which answer an empty string first');
   const max = +/\nconst BLOCK_MAX = (\d+);/.exec(fs.readFileSync(path.join(root, '../../tools/legacy/build.mjs'), 'utf8'))[1];
   const tags = [...app.matchAll(/<script[^>]*>/gi)].map((m) => m[0]), blockBytes = [...app.matchAll(/<script>\n([\s\S]*?)\n<\/script>/g)].map((m) => Buffer.byteLength(m[1]));
   ok(tags.length > 1 && tags.every((t) => t === '<script>') && !/<script[^>]*\ssrc\s*=/i.test(app) && blockBytes.length === tags.length,
