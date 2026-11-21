@@ -947,7 +947,7 @@ The 1 pixel TABLE was not tried.
 Nothing crashed, no broken image appeared, and the memory of the 1 GB guest was never the limit.
 
 How much fits in the window: a page wider than about 596 pixels (592 worked, 600 wrapped) or taller than about 330 (320 worked, 336 grew a scrollbar) shows a vertical scrollbar, which takes 16 pixels, and the rows then wrap and the picture is garbled (shots/ns2fb-wrap-too-wide-616.png).
-So the biggest picture that is exact is 592 x 320 pixels, about 59 percent of the view's area and 62 percent of the 640 x 480 screen's width; the margins and the scrollbar allowance are Netscape 2's, and its body has no way to a zero margin.
+So the biggest picture that is exact is 592 x 320 pixels, 79 percent of the view's area (62 percent of the 640 x 480 screen); the margins and the scrollbar allowance are Netscape 2's, and its body has no way to a zero margin.
 592 x 320 of flat art at 1 pixel, as runs, took 10.2 s and was exact (ns2fb-best-art-592x320.png).
 
 Q3, run lengths (one IMG of WIDTH = run * cell; in the TABLE each run is a TD with COLSPAN=run, and a last row of 1 pixel high cells fixes the column widths: without COLSPAN the cells of a ragged row take the widths of the cells above them and the picture is shifted, 2,222 of 2,704 cells wrong in the first try).
@@ -1008,3 +1008,21 @@ Clickable cells (a flat picture of five shapes at 8 px, 72 x 40 cells; the links
 - C2: BORDER=0 removes the link border, and the linked pictures are pixel-identical to the unlinked one (0 pixels different in the view, all four pages).
 - C3: a link adds about 33 bytes to the 40 of a cell, and 0.8 ms to its time (2,880 links 2.3 s); per run and per shape the picture is a tenth of the plain page, and loads in the same time as the plain one.
 - C4: onMouseOver fires on a link round an image and sets the status text; it costs nothing visible.
+
+### The predictions, marked
+
+- Q1: a stray strip of 3 to 5 pixels under each row: wrong, there is none in any variant (rows or table, any ALIGN); neighbours touch: right; a 1x1 cell works: right, but the prediction that its row is a text line tall was wrong, it is 1 pixel; the table "needs the least care for columns": wrong, both are exact.
+- Q2: row times 3, 10, 40 s then 3 min or a crash: wrong, 4.1, 5.9, 11.3, 31.6 s and 141 s at 1 pixel, with no crash (the 1 pixel picture of 184,320 tags is the whole area, drawn); table 2 to 3 times as long: right at 8 px (1.6), wrong at 4 px (4 times) and right that 2 px does not finish (more than 10 minutes, then a network alert, not an out of memory); HTML 40 bytes a cell: right (33 in the row, 42 in the table); the break by memory: wrong, by the table's time.
+- Q3: (a) a 15 to 25 percent cut: the tags 12 percent, the time none; (b) 85 to 95 percent: right for the tags at 2 and 1 pixels (85 and 95 percent) and for their time (70 and 95 percent), wrong at 8 and 4 pixels (60 and 71 percent of the tags, no time); (c) 0 percent: right.
+- Q4: a rewrite is within 20 percent of a load: right for the photo (5.5 against 5.9 s), wrong for flat art in runs (up to 3 times); the 8 px picture in 12 s: wrong, 5.5 s; a tile costs the fixed cost plus a 1/16: right (1.3 to 3 s); 0.3 s a frame: wrong, 16 frames cost nothing extra; "no redraw faster than 1 a second": right for pictures (5 s and more), a blank in 0.7 s and a tile in 1.3 s are the fast ones.
+- Q5: each GIF once: right; 15 to 40 s for the first 256: right (20.4 s); a 24 bit display: right (all 256 exact).
+- Q6: no hard image limit below 10,000: right (184,320 ran); layout time past 20,000 tags faster than the count: right for the TABLE, wrong for rows (linear); memory a few tens of MB: unmeasured.
+- Clickable cells: C1 right; C2 right (0 pixels different); C3 about 30 bytes a link: right (33), 1.3 to 2 times the time: right per cell (2.1 times), and runs and shapes are smaller and no slower; C4 right (0.2 s, the poll's step).
+
+### What this means
+
+A picture of 1x1 GIFs is a real framebuffer in Netscape 2.02, at any resolution that fits the view: 592 x 320 pixels at 1 pixel per cell, exact, in 24 bit colour from 256 palette entries.
+For a still picture use rows of IMG with BR (a table is slower and fails past about 10,000 cells), and runs of one colour wherever the picture is flat (95 percent fewer tags, 8 s for the whole area).
+A dithered photo at 1 pixel is 184,320 tags and 141 s; at 4 pixels (144 x 80 cells) it is 11 s, at 8 pixels 6 s.
+For something that updates, a whole-picture rewrite costs what a load costs (5.5 s at 72 x 40 cells, 11.6 s at 144 x 80), so a few redraws a second are out of reach; one redraw every 5 to 10 seconds is what a full small picture allows, and a change confined to a tile of a 4 x 4 split costs 1.3 to 3 s.
+Cells that react to a click cost a link each: at 72 x 40 one link per run or per shape makes a clickable picture of about 10 KB that draws in 2 s, and a link per cell 215 KB and 4.4 s.
