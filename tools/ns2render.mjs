@@ -2,7 +2,7 @@
 // paints itself"):
 //  1. the differential test: the same C, native (demo/ns2render/out/ns2render html) and as JavaScript 1.0 (tools/js1c's
 //     out/paint.wasm.js1.js driven by host.js in node, as the cdomApp frame runs it), gives byte-identical markup, for every
-//     page and state, and for batches of 1 and 8 rows;
+//     page and state, batches of 1, 8 and 20 rows, both write modes, and draws made partly from the host's cache of batches;
 //  2. the pixel test against headless Chrome (tools/ns2render_check.py): the picture's non-text pixels, its rounded corners and
 //     its overlaps within tolerance of the design's Chrome render.
 // NS2RENDER_TIME=1 also prints the renderer's time in node (the median of 9 draws a page) and natively.
@@ -32,9 +32,11 @@ globalThis.rsX = globalThis.cdomFactory({});
 globalThis.rsM = globalThis.rsX.memory.words;
 globalThis.rsBase = 'http://10.0.2.2:8130/ns2render/';
 const drain = () => { while (timers.length) vm.runInThisContext(timers.shift()); };
-function draw(page, state, batch, mode) {
+function draw(page, state, batch, mode, keep) {
+  if (!keep) globalThis.rsC = {};   // no batch kept from an earlier draw: every row computed
   globalThis.rsBatch = batch;
   globalThis.rsMode = mode;
+  globalThis.rsJoin = mode === 1 && batch === 1 ? 3 : 0;
   globalThis.rsDraw(page, state);
   drain();
   const head = globalThis.rsHead();
@@ -44,13 +46,21 @@ function draw(page, state, batch, mode) {
 
 let fails = 0;
 const check = (ok, what) => { console.log((ok ? 'ok   ' : 'FAIL ') + what); if (!ok) fails++; };
+const nativeHtml = (page, state, batch) => execFileSync(path.join(out, 'ns2render'), ['html', String(page), String(state), String(batch)], { maxBuffer: 1 << 26 }).toString('latin1');
 for (const [page, state] of [[0, 1], [0, 2], [1, 1]]) {
-  const native = execFileSync(path.join(out, 'ns2render'), ['html', String(page), String(state), '8'], { maxBuffer: 1 << 26 }).toString('latin1');
-  const native1 = execFileSync(path.join(out, 'ns2render'), ['html', String(page), String(state), '1'], { maxBuffer: 1 << 26 }).toString('latin1');
-  check(native === native1, `native page ${page} state ${state}: batches of 1 and 8 rows give the same markup (${native.length} bytes)`);
-  for (const [batch, mode] of [[8, 0], [1, 1], [20, 0]]) {
+  for (const [batch, mode] of [[8, 1], [1, 0], [20, 1]]) {
+    const native = nativeHtml(page, state, batch);
     const js = draw(page, state, batch, mode);
     check(js === native, `js1 page ${page} state ${state} batch ${batch} mode ${mode}: the same ${native.length} bytes as native` + (js === native ? '' : ` (got ${js.length}; first difference at ${[...js].findIndex((c, i) => c !== native[i])})`));
+  }
+}
+// the host's cache of batches: the hover state from the normal state's batches outside rs_dirty's rows, then details, then
+// still again from the cache alone
+{
+  draw(0, 1, 8, 1);
+  for (const [page, state] of [[0, 2], [1, 1], [0, 1], [0, 2]]) {
+    const js = draw(page, state, 8, 1, true);
+    check(js === nativeHtml(page, state, 8), `cached draw of page ${page} state ${state}: the same markup as native`);
   }
 }
 if (process.env.NS2RENDER_TIME) {

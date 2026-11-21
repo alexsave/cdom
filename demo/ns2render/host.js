@@ -5,10 +5,12 @@
 // status text).  Netscape 2: no function expressions, no fromCharCode, a function is false in a condition, a click's own
 // handler must not rewrite the view (it is left deaf), so every draw starts from a timer.
 var rsX = null, rsM = null, rsHex = null, rsBase = "", rsPage = 0, rsState = 1, rsBusy = 0, rsWant = -1;
-// rsBatch rows a timer; rsMode 0 writes each batch as it is made, 1 makes them all and then writes them in one go.
-var rsBatch = 8, rsMode = 0, rsDone = null, rsNB = 0;
-// times of the last draw, in the engine's milliseconds: start, compute (in the module), markup (strings), write
-var rsT0 = 0, rsTc = 0, rsTm = 0, rsTw = 0, rsTe = 0, rsN = 0;
+// rsBatch rows a timer; rsMode 1 makes every batch and then writes them all in one go, 0 writes each batch as it is made
+// (Netscape 2 then asks for the batch's GIFs again each time: docs/descent.md).
+var rsBatch = 8, rsMode = 1, rsJoin = 0, rsDone = null, rsNB = 0;
+// times of the last draw, in the engine's milliseconds: start, compute (in the module), markup (strings), write, end,
+// and the first batch written (from the start)
+var rsT0 = 0, rsTc = 0, rsTm = 0, rsTw = 0, rsTe = 0, rsTf = 0, rsN = 0;
 // the view: the cdomView frame's document, or a stand-in the test gives
 var rsView = null;
 
@@ -46,45 +48,90 @@ function rsHead() {
   return "<HTML><HEAD><BASE HREF=\"" + rsBase + "\"></HEAD><BODY BGCOLOR=\"#f6f7fb\">";
 }
 
+// The markup of the batches already made, by page and state: rsC[page * 4 + state].s[y] the markup of rows y to .e[y].  A
+// batch whose rows hold nothing that differs between the states (outside rs_dirty's rows) is taken from the normal state's.
+var rsC = new Object(), rsKey = 0, rsNorm = null, rsD0 = 0, rsD1 = 0, rsY = 0, rsBegun = 0;
+
+function rsCache(k) {
+  var o = rsC[k];
+  if (o == null) { o = new Object(); o.s = new Object(); o.e = new Object(); rsC[k] = o; }
+  return o;
+}
+
 // Starts a draw of page in state (1 normal, 2 the pill hovered); the rows come from rsStep's timers.
 function rsDraw(page, state) {
+  var d;
   if (rsBusy) { rsWant = page * 4 + state; return; }
   rsBusy = 1;
   rsPage = page;
   rsState = state;
   rsT0 = rsNow();
-  rsTc = 0; rsTm = 0; rsTw = 0; rsN = 0; rsNB = 0;
-  rsX.rs_begin(page, state);
+  rsTc = 0; rsTm = 0; rsTw = 0; rsTf = -1; rsN = 0; rsNB = 0;
+  rsKey = page * 4 + state;
+  rsCache(rsKey);
+  rsNorm = state != 1 ? rsCache(page * 4 + 1) : null;
+  d = rsX.rs_dirty(page);
+  rsD1 = d % 1024;
+  rsD0 = (d - rsD1) / 1024;
+  rsY = 0;
+  rsBegun = 0;
   rsDone = new Object();
   if (rsMode == 0) { rsView.open(); rsView.write(rsHead()); }
   setTimeout("rsStep()", 0);
 }
 
-function rsStep() {
-  var t = rsNow(), more = rsX.rs_rows(rsBatch), n = rsX.rs_nout(), s, u;
-  u = rsNow();
-  rsTc = rsTc + u - t;
-  s = rsHtml(rsX.rs_out() >> 2, n);
+// One piece of the view: written now (mode 0) or kept for rsEnd (mode 1).
+function rsPut(s) {
+  var t = rsNow();
   rsN = rsN + s.length;
-  t = rsNow();
-  rsTm = rsTm + t - u;
   if (rsMode == 0) rsView.write(s);
   else { rsDone[rsNB] = s; rsNB = rsNB + 1; }
+  if (rsTf < 0) rsTf = rsNow() - rsT0;
   rsTw = rsTw + rsNow() - t;
-  if (more) { setTimeout("rsStep()", 0); return; }
+}
+
+// The batches from rsY on: every one already made is taken, and at most one is made, then the next timer goes on.
+function rsStep() {
+  var o = rsC[rsKey], t, u, s, y;
+  while (rsY < 320) {
+    if (o.s[rsY] != null) { rsPut(o.s[rsY]); rsY = o.e[rsY]; continue; }
+    if (rsNorm != null && rsNorm.s[rsY] != null && (rsNorm.e[rsY] <= rsD0 || rsY >= rsD1)) { rsPut(rsNorm.s[rsY]); rsY = rsNorm.e[rsY]; continue; }
+    t = rsNow();
+    if (rsBegun == 0) { rsX.rs_begin(rsPage, rsState); rsBegun = 1; }
+    rsX.rs_at(rsY);
+    rsX.rs_rows(rsBatch);
+    y = rsX.rs_y();
+    u = rsNow();
+    rsTc = rsTc + u - t;
+    s = rsHtml(rsX.rs_out() >> 2, rsX.rs_nout());
+    rsTm = rsTm + rsNow() - u;
+    o.s[rsY] = s;
+    o.e[rsY] = y;
+    rsPut(s);
+    rsY = y;
+    if (rsY < 320) { setTimeout("rsStep()", 0); return; }
+  }
   rsEnd();
 }
 
 function rsEnd() {
-  var t = rsNow(), k;
+  var t = rsNow(), k, n, step;
   if (rsMode != 0) {
+    // the pieces joined in pairs (each character copied about log2 n times, not n times) into one write per rsJoin of them,
+    // or one write of all (rsJoin 0): Netscape 2 asks for a write's GIFs again on each write() call
+    rsDone[0] = rsHead() + rsDone[0];
+    n = rsNB;
+    step = 1;
+    while (step < n && (rsJoin == 0 || step < rsJoin)) {
+      for (k = 0; k + step < n; k = k + 2 * step) if (rsJoin == 0 || (k % rsJoin) + step < rsJoin) { rsDone[k] = rsDone[k] + rsDone[k + step]; rsDone[k + step] = null; }
+      step = step * 2;
+    }
     rsView.open();
-    rsView.write(rsHead());
-    for (k = 0; k < rsNB; k = k + 1) rsView.write(rsDone[k]);
+    for (k = 0; k < n; k = k + 1) if (rsDone[k] != null) rsView.write(rsDone[k]);
   }
   rsTe = rsNow();
   // the last image names the times, so the server's log has them: the page's draw ends when it is requested
-  rsView.write("<IMG SRC=\"end.gif?p" + rsPage + "s" + rsState + "c" + rsTc + "m" + rsTm + "w" + (rsTw + rsTe - t) + "t" + (rsTe - rsT0) + "b" + rsN + "\" WIDTH=1 HEIGHT=1></BODY></HTML>");
+  rsView.write("<IMG SRC=\"end.gif?p" + rsPage + "s" + rsState + "c" + rsTc + "m" + rsTm + "w" + (rsTw + rsTe - t) + "t" + (rsTe - rsT0) + "f" + rsTf + "b" + rsN + "\" WIDTH=1 HEIGHT=1></BODY></HTML>");
   rsView.close();
   rsDone = null;
   rsBusy = 0;
@@ -103,8 +150,25 @@ function rsO(n) {
   return rsT[n];
 }
 
+// Options from the frameset's query, for the measurements: m<mode>, b<rows a batch> and j<batches a write, 0 all>, as
+// index.html?m1b32j4.
+function rsOptions() {
+  var q = "x" + parent.location.search, i, c, k, v;
+  for (i = 1; i < q.length; i = i + 1) {
+    c = q.charAt(i);
+    if (c == "m" || c == "b" || c == "j") {
+      v = 0;
+      for (k = i + 1; k < q.length && "0123456789".indexOf(q.charAt(k)) >= 0; k = k + 1) v = v * 10 + "0123456789".indexOf(q.charAt(k));
+      if (c == "m") rsMode = v;
+      else if (c == "j") rsJoin = v;
+      else if (v > 0) rsBatch = v;
+    }
+  }
+}
+
 function rsStart() {
   var s = "" + location.href, i;
+  rsOptions();
   for (i = s.length - 1; i > 0; i = i - 1) if (s.charAt(i) == "/") break;
   rsBase = s.substring(0, i + 1);
   rsTables();

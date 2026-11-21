@@ -21,13 +21,21 @@ static int c_parent[CMAX];   /* 0: a base; else the composite under this one, pl
 static int c_paint[CMAX];    /* the base's paint (every composite keeps its base's) */
 static int c_alpha[CMAX];
 static uint32_t c_rgb[CMAX];
-static int c_idx[CMAX];      /* a solid composite's palette colour, -1 not yet known */
+static int c_info[CMAX];     /* a solid composite's palette colour + 1 (0: not yet known); over a gradient, -(slot + 1) */
+static uint32_t c_okey[CMAX];  /* the last colour put over the composite, rgb << 8 | alpha, and the composite it made + 1 */
+static int c_oval[CMAX];
+/* the palette colours of a gradient composite's steps: gtab[slot * GSTEPS + step] + 1, 0 not yet known */
+#define GSLOTS 64
+#define GSTEPS 64
+static int gtab[GSLOTS * GSTEPS];
+static int nslot;
 static int ncomp;
 static int c_hash[CHASH];    /* composite + 1, by (parent, rgb, alpha) */
 /* (composite, gradient step) -> palette colour + 1, for composites over a gradient */
 #define SHASH 2048
 static int s_key[SHASH];
 static int s_val[SHASH];
+static int s_count;
 
 /* A page's paints and items, unpacked into words by rd_begin. */
 typedef struct { int kind, stop, nstop; uint32_t rgb; int gx, gy, g0, ox, oy; } Paint;   /* ints: a double in memory costs JavaScript 1.0 a conversion each load */
@@ -40,12 +48,14 @@ static int by_y0[IMAX];      /* the items in order of their first row (paint ord
 static int act[IMAX], nact, next_y0;
 
 static const RdPage *pg;
+static int page_no;
 
 static void comp_reset(void) {
   int i;
   ncomp = 0;
   for (i = 0; i < CHASH; i++) c_hash[i] = 0;
   for (i = 0; i < SHASH; i++) s_key[i] = 0;
+  s_count = 0;
 }
 
 static int comp_new(int parent, int paint, uint32_t rgb, int alpha) {
@@ -54,15 +64,21 @@ static int comp_new(int parent, int paint, uint32_t rgb, int alpha) {
   c_paint[c] = paint;
   c_rgb[c] = rgb;
   c_alpha[c] = alpha;
-  c_idx[c] = -1;
+  c_info[c] = 0;
+  c_okey[c] = 0;
+  c_oval[c] = 0;
+  if (paints[paint].kind != RD_SOLID) {
+    if (nslot < GSLOTS) { int i; for (i = 0; i < GSTEPS; i++) gtab[nslot * GSTEPS + i] = 0; c_info[c] = -(++nslot); }
+    else c_info[c] = -(GSLOTS + 1);   /* no slot: the hash */
+  }
   return c;
 }
 
-/* The composite of rgb at alpha over composite under (the last answer kept: a text's runs ask the same over and over). */
-static int last_under = -1, last_alpha, last_c;
-static uint32_t last_rgb;
+/* The composite of rgb at alpha over composite under (each composite keeps the last answer: a text's runs and a shadow's
+ * rows ask the same over and over). */
 static int comp_over(int under, uint32_t rgb, int alpha) {
-  if (under == last_under && rgb == last_rgb && alpha == last_alpha) return last_c;
+  uint32_t key = rgb << 8 | (uint32_t)alpha;
+  if (c_okey[under] == key && c_oval[under]) return c_oval[under] - 1;
   uint32_t h = (uint32_t)under ^ ((uint32_t)under << 6) ^ rgb ^ (rgb >> 13) ^ ((uint32_t)alpha << 3);
   int k = (int)(h & (CHASH - 1)), c;
   for (;;) {
@@ -76,7 +92,8 @@ static int comp_over(int under, uint32_t rgb, int alpha) {
     if (c_parent[c] == under + 1 && c_rgb[c] == rgb && c_alpha[c] == alpha) break;
     k = (k + 1) & (CHASH - 1);
   }
-  last_under = under; last_rgb = rgb; last_alpha = alpha; last_c = c;
+  c_okey[under] = key;
+  c_oval[under] = c + 1;
   return c;
 }
 
@@ -133,9 +150,15 @@ static int nearest(uint32_t rgb) {
 }
 
 static int comp_index(int c, int s) {
-  if (paints[c_paint[c]].kind == RD_SOLID) {
-    if (c_idx[c] < 0) c_idx[c] = nearest(comp_rgb(c, 0));
-    return c_idx[c];
+  int info = c_info[c];
+  if (info > 0) return info - 1;
+  if (info == 0) { int v = nearest(comp_rgb(c, 0)); c_info[c] = v + 1; return v; }
+  if (info > -(GSLOTS + 1) && s < GSTEPS) {
+    int at = (-info - 1) * GSTEPS + s, v = gtab[at];
+    if (v) return v - 1;
+    v = nearest(comp_rgb(c, s));
+    gtab[at] = v + 1;
+    return v;
   }
   int key = (c << 12 | s) + 1;
   int k = (key ^ (key >> 7) ^ (key >> 13)) & (SHASH - 1);
@@ -144,72 +167,81 @@ static int comp_index(int c, int s) {
     k = (k + 1) & (SHASH - 1);
   }
   int v = nearest(comp_rgb(c, s));
-  s_key[k] = key;
-  s_val[k] = v;
+  if (s_count < SHASH * 3 / 4) {   /* a full table would never end a probe: past three quarters, answers are not kept */
+    s_key[k] = key;
+    s_val[k] = v;
+    s_count++;
+  }
   return v;
 }
 
-/* --- the row's segments: segment i is [sx[i], sx[i + 1]) of composite sc[i]; two buffers, swapped by apply ------------- */
+/* --- the row's segments: seg[i] = x << 16 | composite, segment i is [its x, the next one's x); seg[nseg] = RD_W << 16 ------- */
+/* One word a segment and one a span: Netscape 2 pays about 35 us for every word JavaScript 1.0 reads or writes. */
 #define SEGMAX 600
-static int seg_x[2][SEGMAX + 1], seg_c[2][SEGMAX];
-static int *sx = seg_x[0], *sc = seg_c[0], *nx = seg_x[1], *nc = seg_c[1];
+static int seg[SEGMAX + 1], mid[SEGMAX + 1];
 static int nseg;
-/* the spans of one item on this row: [a, b), and for a translucent span the colour's alpha (0: opaque, the composite) */
+/* the spans of one item on this row, sorted: sp[k] = a | b << 10 | alpha << 20 ([a, b); alpha 0: opaque, span_comp) */
 #define SPANMAX 512
-static int pa[SPANMAX], pb[SPANMAX], pal_[SPANMAX];
-static int npan;
+static int sp[SPANMAX];
+static int npan, span_end;
 static int span_comp;           /* an opaque item's composite */
 static uint32_t span_rgb;       /* a translucent item's colour */
 
 static void span(int a, int b, int alpha) {
   if (a < 0) a = 0;
   if (b > RD_W) b = RD_W;
-  if (npan && a < pb[npan - 1]) a = pb[npan - 1];   /* overlapping glyphs: the later one starts where the earlier ends */
+  if (a < span_end) a = span_end;   /* overlapping glyphs: the later one starts where the earlier ends */
   if (b <= a || npan >= SPANMAX) return;
-  pa[npan] = a;
-  pb[npan] = b;
-  pal_[npan] = alpha;
-  npan++;
+  sp[npan++] = a | b << 10 | alpha << 20;
+  span_end = b;
 }
 
-static int m_n;
-static void emit(int x, int c) {
-  if (m_n && nc[m_n - 1] == c) return;
-  if (m_n >= SEGMAX) return;
-  nx[m_n] = x;
-  nc[m_n] = c;
-  m_n++;
-}
-
-/* Merges the spans into the segments: the segments before the first span and after the last are copied as they are, the
- * ones between merged with the spans in one pass. */
+/* Merges the spans into the segments in place: the segments the spans' range [a, b) touches (found by binary search) are
+ * merged with the spans into mid, and replace them; the segments after move only when the count changes. */
 static void apply(void) {
-  int i = 0, k = 0, x, a = pa[0], b = pb[npan - 1], *t;
-  rd_stat_spans += npan;
-  while (sx[i + 1] <= a) { nx[i] = sx[i]; nc[i] = sc[i]; i++; }
-  m_n = i;
-  x = sx[i];
-  while (x < b) {
-    int e = sx[i + 1];
-    if (k < npan && pa[k] <= x) {
-      int end = pb[k] < e ? pb[k] : e;
-      emit(x, pal_[k] ? comp_over(sc[i], span_rgb, pal_[k]) : span_comp);
-      x = end;
-      if (x == pb[k]) k++;
+  int np = npan, n = nseg, k = 0, m = 0, i, lo, hi, md, x, e, end, c, oc, cur, nxt, lastc, i0, i1, drop, delta, endall;
+  int s0 = sp[0], sk = s0, a = s0 & 1023, b = (sp[np - 1] >> 10) & 1023, pk = a;
+  int lu = -1, la = -1, lc = 0;
+  uint32_t rgb = span_rgb;
+  int opaque = span_comp;
+  rd_stat_spans += np;
+  lo = 0; hi = n - 1;
+  while (lo < hi) { md = (lo + hi + 1) >> 1; if ((seg[md] >> 16) <= a) lo = md; else hi = md - 1; }
+  i0 = lo;
+  hi = n - 1;
+  while (lo < hi) { md = (lo + hi + 1) >> 1; if ((seg[md] >> 16) < b) lo = md; else hi = md - 1; }
+  i1 = lo;
+  lastc = i0 ? seg[i0 - 1] & 65535 : -1;
+  i = i0;
+  cur = seg[i];
+  nxt = seg[i + 1];
+  x = cur >> 16;
+  endall = seg[i1 + 1] >> 16;
+  while (x < endall) {
+    e = nxt >> 16;
+    oc = cur & 65535;
+    if (pk <= x) {
+      int bk = (sk >> 10) & 1023, al = sk >> 20;
+      end = bk < e ? bk : e;
+      if (!al) c = opaque;
+      else if (oc == lu && al == la) c = lc;
+      else { c = comp_over(oc, rgb, al); lu = oc; la = al; lc = c; }
+      if (end == bk) { k++; if (k < np) { sk = sp[k]; pk = sk & 1023; } else pk = RD_W; }
     } else {
-      int nxt = k < npan ? pa[k] : RD_W;
-      int end = nxt < e ? nxt : e;
-      emit(x, sc[i]);
-      x = end;
+      end = pk < e ? pk : e;
+      c = oc;
     }
-    if (x == e) i++;
+    if (c != lastc) { mid[m++] = x << 16 | c; lastc = c; }
+    x = end;
+    if (x == e) { i++; cur = nxt; if (i < n) nxt = seg[i + 1]; }
   }
-  if (i < nseg && sx[i] < b) { emit(b, sc[i]); i++; }   /* the rest of the segment the last span ends inside */
-  for (; i < nseg; i++) emit(sx[i], sc[i]);
-  nx[m_n] = RD_W;
-  nseg = m_n;
-  t = sx; sx = nx; nx = t;
-  t = sc; sc = nc; nc = t;
+  /* the segment after the range, when it has the colour the range ended in, merges into it */
+  drop = i1 + 1 < n && (seg[i1 + 1] & 65535) == lastc;
+  delta = m - (i1 - i0 + 1 + drop);
+  if (delta > 0) for (i = n; i > i1 + drop; i--) seg[i + delta] = seg[i];
+  else if (delta < 0) for (i = i1 + 1 + drop; i <= n; i++) seg[i + delta] = seg[i];
+  for (i = 0; i < m; i++) seg[i0 + i] = mid[i];
+  nseg = n + delta;
 }
 
 /* --- rounded corners: the inset of row dy of a corner of radius r -------------------------------------------------------- */
@@ -250,22 +282,25 @@ static int extent(const Item *it, int y, int *l, int *r) {
 
 /* The spans of a text item on row y, every glyph run that crosses it, at its level's share of the text's alpha. */
 static void text_spans(const RdText *t, int y) {
-  int i, lv[8];
-  for (i = 0; i < rd_levels && i < 8; i++) {
-    int a = t->alpha * i / (rd_levels - 1);
-    lv[i] = a >= 255 ? 255 : a < 1 ? 1 : a;
-  }
-  for (i = 0; i < t->n; i++) {
-    const RdPlace *p = &pg->places[t->first + i];
-    const RdGlyph *g = &rd_glyphs[p->glyph];
-    int gy = y - p->y, px = p->x;
-    if (gy < 0 || gy >= g->h) continue;
-    int j, row = g->row0 + gy;
-    for (j = rd_glyph_rows[row]; j < rd_glyph_rows[row + 1]; j++) {
-      const RdRun *u = &rd_glyph_runs[j];
-      span(px + u->x, px + u->x + u->n, lv[u->level]);
+  int i, j, n = npan, end = span_end, last = rd_levels - 1, al = t->alpha, first = t->first, nt = t->n;
+  const uint32_t *places = pg->places;
+  for (i = 0; i < nt; i++) {
+    uint32_t p = places[first + i], g = rd_glyphs[p >> 20];
+    int px = (int)(p & 1023), gy = y - (int)(p >> 10 & 1023);
+    if (gy < 0 || gy >= (int)(g >> 8 & 255)) continue;
+    int row = (int)(g >> 16) + gy, j1 = rd_glyph_rows[row + 1];
+    for (j = rd_glyph_rows[row]; j < j1; j++) {
+      uint32_t u = rd_glyph_runs[j];
+      int a = px + (int)(u & 255), b = a + (int)(u >> 8 & 255), lv = al * (int)(u >> 16) / last;
+      if (b > RD_W) b = RD_W;
+      if (a < end) a = end;   /* overlapping glyphs: the later one starts where the earlier ends */
+      if (b <= a || n >= SPANMAX) continue;
+      sp[n++] = a | b << 10 | (lv >= 255 ? 255 : lv < 1 ? 1 : lv) << 20;
+      end = b;
     }
   }
+  npan = n;
+  span_end = end;
 }
 
 /* The active items of row y, in paint order: the list of the row before, less the items that ended, plus the ones that
@@ -275,7 +310,9 @@ static void activate(int y) {
   for (i = 0; i < nact; i++) if (items[act[i]].y1 > y) act[n++] = act[i];
   nact = n;
   while (next_y0 < nitems && items[by_y0[next_y0]].y0 <= y) {
-    int k = by_y0[next_y0++], j = nact++;
+    int k = by_y0[next_y0++], j;
+    if (items[k].y1 <= y) continue;   /* ended above y: a batch that starts lower down (rd_at) passes it */
+    j = nact++;
     while (j > 0 && act[j - 1] > k) { act[j] = act[j - 1]; j--; }
     act[j] = k;
   }
@@ -283,15 +320,15 @@ static void activate(int y) {
 
 static void row_segments(int y) {
   int i;
-  sx[0] = 0;
-  sx[1] = RD_W;
-  sc[0] = 0;   /* composite 0: the page's paper, made by rd_begin */
+  seg[0] = 0;   /* composite 0: the page's paper, made by rd_begin */
+  seg[1] = RD_W << 16;
   nseg = 1;
   activate(y);
   for (i = 0; i < nact; i++) {
     const Item *it = &items[act[i]];
     int l, r;
     npan = 0;
+    span_end = 0;
     if (it->kind == RD_TEXT) {
       if (rd_skip_text) continue;
       const RdText *t = &pg->texts[it->text];
@@ -318,100 +355,105 @@ static void row_segments(int y) {
 }
 
 /* --- runs, links and lines -------------------------------------------------------------------------------------------- */
-static uint32_t line_a[1024], line_b[1024], *cur = line_a, *pend = line_b;
-static int ncur, npend, pend_h, row_y;
+static int row_y;
+static int prev_at = -1, prev_n, prev_h;   /* the batch's last line: where its LINE word is in rd_out, its op count, its hash */
 
-static int run_c = -1, run_w;
-static void run_flush(void) {
-  if (run_c >= 0 && run_w > 0 && ncur < 1020) { cur[ncur++] = RD_OP_RUN | (uint32_t)run_c << 12 | (uint32_t)run_w; rd_stat_runs++; }
-  run_c = -1;
-  run_w = 0;
-}
-static void run_add(int c, int w) {
-  if (c != run_c) { run_flush(); run_c = c; }
-  run_w += w;
-}
-
-/* The gradient step at x of a row whose t at the paint's ox is row0 (16.16): floor((gx (x - ox) + row0) / 65536), in
- * doubles, the same as the 32-bit shift. */
-static int step_of(const Paint *p, double row0, int x) {
-  int t = (int)__builtin_floor(((double)p->gx * (x - p->ox) + row0) / 65536.0);
-  return (t < 0 ? 0 : t > 4095 ? 4095 : t) >> rd_ramp_shift;
-}
-
-/* The runs of [a, b) of the row's segments; the calls of a row go left to right, so each starts at the segment where the
- * last one ended (seg_at). */
-static int seg_at;
-static void runs_of(int y, int a, int b) {
-  int i;
-  for (i = seg_at; i < nseg; i++) {
-    int s0 = sx[i], s1 = sx[i + 1], c = sc[i];
-    if (s1 <= a) continue;
-    if (s0 >= b) break;
-    seg_at = i;
-    if (s0 < a) s0 = a;
-    if (s1 > b) s1 = b;
-    const Paint *p = &paints[c_paint[c]];
-    if (p->kind == RD_SOLID) { run_add(comp_index(c, 0), s1 - s0); continue; }
-    double row0 = (double)p->gy * (y - p->oy) + p->g0;
-    if (p->gx == 0) { run_add(comp_index(c, step_of(p, row0, 0)), s1 - s0); continue; }
-    /* a gradient across the row: walk its steps, the x where each ends estimated from t, then made exact */
-    int x = s0;
+/* The row's ops into out: its segments' colours as runs, neighbours of one colour merged, cut at the link regions' edges
+ * (LINK and UNLINK round the runs inside one).  Answers the count; *hash gets a hash of the ops. */
+static int row_runs(int y, uint32_t *out, int *hash) {
+  int n = 0, i, rc = -1, rw = 0, nl = 0, li = 0, cut, x, s1, c, v, s, h = 0, cur, shift = rd_ramp_shift;
+  int lx[8], lop[8];   /* the row's link edges, in x order, and the op each one opens or closes */
+  uint32_t w;
+  for (i = 0; i < pg->nlinks && nl < 8; i++) {
+    const RdLink *k = &pg->links[i];
+    if (y < k->y0 || y >= k->y1) continue;
+    lx[nl] = k->x0; lop[nl] = (int)(RD_OP_LINK | (uint32_t)(page_no * 16 + i)); nl++;
+    lx[nl] = k->x1; lop[nl] = (int)RD_OP_UNLINK; nl++;
+  }
+  cut = nl ? lx[0] : RD_W;
+  cur = seg[0];
+  for (i = 0; i < nseg; i++) {
+    int nx = seg[i + 1];
+    x = cur >> 16;
+    s1 = nx >> 16;
+    c = cur & 65535;
+    cur = nx;
+    int info = c_info[c], kind = info >= 0 ? RD_SOLID : RD_LINEAR, across = 0, ox = 0, edge0 = 0;
+    double row0 = 0, gx = 0;
+    if (kind != RD_SOLID) {
+      const Paint *p = &paints[c_paint[c]];
+      row0 = (double)p->gy * (y - p->oy) + p->g0;
+      gx = p->gx;
+      ox = p->ox;
+      across = p->gx != 0;
+    }
     while (x < s1) {
-      int s = step_of(p, row0, x);
-      int edge = p->gx > 0 ? (s + 1) << rd_ramp_shift : s << rd_ramp_shift;
-      int xe = p->ox + (int)(((double)edge * 65536.0 - row0) / p->gx);
-      if (xe <= x) xe = x + 1;
-      if (xe > s1) xe = s1;
-      while (xe > x + 1 && step_of(p, row0, xe - 1) != s) xe--;
-      while (xe < s1 && step_of(p, row0, xe) == s) xe++;
-      run_add(comp_index(c, s), xe - x);
+      /* the piece from x: to the segment's end, the gradient step's end, or the next link edge */
+      int xe = s1;
+      if (kind == RD_SOLID) v = info > 0 ? info - 1 : (info = comp_index(c, 0) + 1) - 1;
+      else {
+        int t = (int)__builtin_floor((gx * (x - ox) + row0) / 65536.0);
+        s = (t < 0 ? 0 : t > 4095 ? 4095 : t) >> shift;
+        if (across) {
+          edge0 = gx > 0 ? (s + 1) << shift : s << shift;
+          xe = ox + (int)(((double)edge0 * 65536.0 - row0) / gx);
+          if (xe <= x) xe = x + 1;
+          if (xe > s1) xe = s1;
+          for (;;) {   /* made exact: the last x of step s is xe - 1 */
+            if (xe > x + 1) {
+              t = (int)__builtin_floor((gx * (xe - 1 - ox) + row0) / 65536.0);
+              if (((t < 0 ? 0 : t > 4095 ? 4095 : t) >> shift) != s) { xe--; continue; }
+            }
+            break;
+          }
+          while (xe < s1) {
+            t = (int)__builtin_floor((gx * (xe - ox) + row0) / 65536.0);
+            if (((t < 0 ? 0 : t > 4095 ? 4095 : t) >> shift) != s) break;
+            xe++;
+          }
+        }
+        v = comp_index(c, s);
+      }
+      if (xe > cut) xe = cut;
+      if (v != rc) {
+        if (rc >= 0 && rw > 0 && n < 1020) { w = RD_OP_RUN | (uint32_t)rc << 12 | (uint32_t)rw; out[n++] = w; h = (h << 5) ^ (int)((uint32_t)h >> 27) ^ (int)w; }
+        rc = v;
+        rw = 0;
+      }
+      rw += xe - x;
       x = xe;
+      while (x == cut && li < nl) {   /* a link edge: the run so far ends, the op goes out */
+        if (rc >= 0 && rw > 0 && n < 1020) { w = RD_OP_RUN | (uint32_t)rc << 12 | (uint32_t)rw; out[n++] = w; h = (h << 5) ^ (int)((uint32_t)h >> 27) ^ (int)w; }
+        rc = -1;
+        rw = 0;
+        if (n < 1020) { out[n++] = (uint32_t)lop[li]; h = (h << 5) ^ (int)((uint32_t)h >> 27) ^ lop[li]; }
+        li++;
+        cut = li < nl ? lx[li] : RD_W;
+      }
     }
   }
+  if (rc >= 0 && rw > 0 && n < 1020) { w = RD_OP_RUN | (uint32_t)rc << 12 | (uint32_t)rw; out[n++] = w; h = (h << 5) ^ (int)((uint32_t)h >> 27) ^ (int)w; }
+  *hash = h;
+  return n;
 }
 
-static void line_flush(void) {
-  int i;
-  if (!npend) return;
-  if (rd_nout + npend + 2 > RD_OUT_MAX) return;
-  rd_out[rd_nout++] = RD_OP_LINE | (uint32_t)pend_h;
-  for (i = 0; i < npend; i++) rd_out[rd_nout++] = pend[i];
-  rd_out[rd_nout++] = RD_OP_END;
-  npend = 0;
-}
-
-static int page_no;
+/* A row: its ops written in place as a line of rd_out, or, when they are the batch's last line's (the same count and hash,
+ * then word for word), that line one row taller. */
 static void row(int y) {
-  int i, x = 0;
+  int i, h, at = rd_nout, n;
   row_segments(y);
-  seg_at = 0;
-  ncur = 0;
-  run_c = -1;
-  run_w = 0;
-  for (i = 0; i < pg->nlinks; i++) {
-    const RdLink *k = &pg->links[i];
-    if (y < k->y0 || y >= k->y1 || k->x0 < x) continue;
-    runs_of(y, x, k->x0);
-    run_flush();
-    cur[ncur++] = RD_OP_LINK | (uint32_t)(page_no * 16 + i);
-    runs_of(y, k->x0, k->x1);
-    run_flush();
-    cur[ncur++] = RD_OP_UNLINK;
-    x = k->x1;
+  n = row_runs(y, rd_out + at + 1, &h);
+  if (prev_at >= 0 && n == prev_n && h == prev_h) {
+    for (i = 1; i <= n && rd_out[at + i] == rd_out[prev_at + i]; i++) {}
+    if (i > n) { rd_out[prev_at]++; return; }
   }
-  runs_of(y, x, RD_W);
-  run_flush();
-  if (npend && ncur == npend) {
-    for (i = 0; i < ncur && cur[i] == pend[i]; i++) {}
-    if (i == ncur) { pend_h++; rd_stat_runs -= ncur; return; }
-  }
-  line_flush();
-  uint32_t *t = pend;
-  pend = cur;
-  cur = t;
-  npend = ncur;
-  pend_h = 1;
+  rd_stat_runs += n;
+  rd_out[at] = RD_OP_LINE | 1u;
+  rd_out[at + 1 + n] = RD_OP_END;
+  rd_nout = at + n + 2;
+  prev_at = at;
+  prev_n = n;
+  prev_h = h;
 }
 
 void rd_begin(int page, int state) {
@@ -439,20 +481,34 @@ void rd_begin(int page, int state) {
   nact = 0;
   next_y0 = 0;
   comp_reset();
-  last_under = -1;
+  nslot = 0;
   for (i = 0; i < pg->npaints; i++) comp_new(0, i, 0, 255);
   row_y = 0;
-  npend = 0;
+  prev_at = -1;
   rd_nout = 0;
   rd_stat_spans = rd_stat_runs = rd_stat_text_runs = 0;
 }
 
 int rd_rows(int n) {
   rd_nout = 0;
-  /* a row adds at most one held-back line of 1,026 words: stop before rd_out could not take it */
-  while (n-- > 0 && row_y < RD_H && rd_nout + 1026 <= RD_OUT_MAX) row(row_y++);
-  if (row_y >= RD_H) { line_flush(); return 0; }
-  return 1;
+  prev_at = -1;   /* no line spans two batches, so a batch's markup stands alone */
+  /* a row adds at most a line of 1,022 words: stop before rd_out could not take it */
+  while (n-- > 0 && row_y < RD_H && rd_nout + 1022 <= RD_OUT_MAX) row(row_y++);
+  return row_y < RD_H;
+}
+
+void rd_at(int y) { row_y = y; }
+int rd_y(void) { return row_y; }
+
+int rd_dirty(int page) {
+  const RdPage *p = &rd_pages[page];
+  int i, y0 = RD_H, y1 = 0;
+  for (i = 0; i < p->nitems; i++)
+    if (p->items[i].state != 3) {
+      if (p->items[i].y0 < y0) y0 = p->items[i].y0;
+      if (p->items[i].y1 > y1) y1 = p->items[i].y1;
+    }
+  return y0 < y1 ? y0 * 1024 + y1 : 0;
 }
 
 /* --- HTML --------------------------------------------------------------------------------------------------------------- */

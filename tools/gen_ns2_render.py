@@ -381,9 +381,10 @@ def main():
             rowstart.append(len(runs))
             runs.extend(r)
     rowstart.append(len(runs))
-    w(f"const RdGlyph rd_glyphs[{len(gl)}] = {{" + ",".join("{%d,%d,%d}" % g for g in gl) + "};")
+    assert all(gw < 256 and gh < 256 and r0 < 65536 for gw, gh, r0 in gl) and all(x < 256 and n < 256 for x, n, _ in runs)
+    w(f"const uint32_t rd_glyphs[{len(gl)}] = {{" + ",".join(str(gw | gh << 8 | r0 << 16) for gw, gh, r0 in gl) + "};")
     w(f"const uint16_t rd_glyph_rows[{len(rowstart)}] = {{" + ",".join(map(str, rowstart)) + "};")
-    w(f"const RdRun rd_glyph_runs[{len(runs)}] = {{" + ",".join("{%d,%d,%d}" % r for r in runs) + "};")
+    w(f"const uint32_t rd_glyph_runs[{len(runs)}] = {{" + ",".join(str(x | n << 8 | lv << 16) for x, n, lv in runs) + "};")
     w(f"const int rd_levels = {LEVELS};")
     for name, d in zip(PAGES, docs):
         stops = []
@@ -398,7 +399,8 @@ def main():
         for rgb, al, pl in d.texts:
             tx.append("{%d,%d,0x%02x%02x%02x,%d}" % (len(places), len(pl), *rgb, al))
             places.extend(pl)
-        w(f"static const RdPlace {name}_places[{len(places)}] = {{" + ",".join("{%d,%d,%d}" % p for p in places) + "};")
+        assert all(0 <= x < 1024 and 0 <= y < 1024 and gi < 4096 for x, y, gi in places)
+        w(f"static const uint32_t {name}_places[{len(places)}] = {{" + ",".join(str(x | y << 10 | gi << 20) for x, y, gi in places) + "};")
         w(f"static const RdText {name}_texts[{len(tx)}] = {{" + ",".join(tx) + "};")
         w(f"static const RdItem {name}_items[{len(d.items)}] = {{")
         for it in d.items:
