@@ -1234,6 +1234,9 @@ M = [
   # js1c, the wasm to JavaScript 1.0 compiler (tools/js1c.c, tools/js10.mjs, docs/js1-compile-design.md)
   ('js1c-memory-unwritten', 'tools/js1c.c', '"for(x=0;x<%u;x=x+1)JM[x]=0;"', '"for(x=0;x<%u;x=x+1)JM[x+1]=0;"', JS1, 'FAIL every word of the initial memory'),
   ('js1c-grow-unwritten', 'tools/js1c.c', 'for(i=JMp*16384;i<(JMp+n)*16384;i=i+1)JM[i]=0;', '', JS1, 'FAIL every word of the initial memory'),
+  ('js11-seam-column', 'tools/legacy/js11.mjs', "t.loc.start.column === 254", "t.loc.start.column === 255", JS11T, 'FAIL x-- with its -- at column 254 is refused'),
+  ('js11-seam-dropped', 'tools/legacy/js11.mjs', '  for (const f of seam(src)) found.push(f);\n  walk(tree, (n, parent) => {', '  walk(tree, (n, parent) => {', JS11T, 'FAIL x-- with its -- at column 254 is refused'),
+  ('js1c-writes-decrement', 'tools/js1c.c', 'while(x>0){n=n+1;x=x<<1;}', 'while(x>0){n++;x=x<<1;}', JS1, 'FAIL frames.wasm.js1.js has no ++ or --'),
   ('js1c-mul-overflows', 'tools/js1c.c', '"function JMu(a,b){return (a&65535)*b+((a>>>16)*b&65535)*65536|0;}\\n"', '"function JMu(a,b){return (a&65535)*b+((a>>>16)*b)*65536|0;}\\n"', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-spills-nothing', 'tools/js1c.c', '    bsetcopy(s->spill, r);', '    memset(s->spill, 0, sizeof(uint64_t) * (size_t)nwords);', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-resume-evaluates-if', 'tools/js1c.c', '      else if (guarded && tl) bs(b, "R||");', '      else if (guarded && tl) bs(b, "");', JS1, 'FAIL every export agrees with wasm'),
