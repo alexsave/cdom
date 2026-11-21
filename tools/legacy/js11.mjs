@@ -67,6 +67,11 @@ export function lacks(src, { allowed = [], js10 = false } = {}) {
     if (n.type === 'UnaryExpression' && n.operator === 'delete') add('delete', n);
     if (js10 && n.type === 'UnaryExpression' && (n.operator === 'typeof' || n.operator === 'void')) add(n.operator, n);
     if (n.type === 'Property' && n.kind !== 'init') add('a getter or setter', n);
+    // A member or a call of a new expression, new X().y or new X()(), is a syntax error in Netscape 2 and 3
+    // (docs/descent.md), with parentheses around the new or without: acorn reads both the same, and terser writes the
+    // first as (new X).y, so the gate refuses every form, on the source and on the minified output alike.
+    if ((n.type === 'MemberExpression' && n.object.type === 'NewExpression') || (n.type === 'CallExpression' && n.callee.type === 'NewExpression'))
+      add('a member of a new expression', n);
     if (n.type === 'MemberExpression' && !n.computed) {
       const name = n.property.name;
       if (METHODS.has(name) && !ok.has(name)) add(`.${name}`, n);

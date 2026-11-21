@@ -791,7 +791,8 @@ function cf_op_get(id, path, kind, destPtr, capacity) {
 var cf_tok = new Array();
 var cf_tid = new Array();
 var cf_timers = 0;
-var cf_t0 = (new Date()).getTime();
+var cf_d0 = new Date();
+var cf_t0 = cf_d0.getTime();
 function cf_op_timer(ms, token) {
   cf_timers++;
   cf_tok[cf_timers] = token;
@@ -807,10 +808,12 @@ function cf_op_raf(token) {
   setTimeout("cdomF.r(" + token + ")", 16);
 }
 function cf_op_now() {
-  return (new Date()).getTime() - cf_t0;
+  var d = new Date();
+  return d.getTime() - cf_t0;
 }
 function cf_op_epoch() {
-  return (new Date()).getTime();
+  var d = new Date();
+  return d.getTime();
 }
 function cf_op_origin(destPtr, capacity) {
   cf_encode(location.protocol + "//" + location.host, destPtr, capacity);
