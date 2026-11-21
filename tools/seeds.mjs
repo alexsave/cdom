@@ -8,7 +8,7 @@
 // An app draws from cd_rand (src/cdom.c, the one generator, seeded from cd_seed), so no file under demo/
 // or tutorial/ carries a generator of its own: a xorshift step (a shift by 13) there fails too.
 // The shipped JS (every tracked .js under shim/ and tools/legacy/, the files a page runs) draws from no
-// generator nothing can seed: no Math.random, with one exception, JS_EXCEPTION below.
+// generator nothing can seed: no Math.random, with two exceptions, JS_EXCEPTION and FRAMES_EXCEPTION below, one draw each.
 // Fails naming each file and line. Run by tests/link/run.sh; standalone: node tools/seeds.mjs [dir].
 import fs from 'node:fs';
 import path from 'node:path';
@@ -38,6 +38,11 @@ const ALLOWED = {
 const JS_DIRS = ['shim/', 'tools/legacy/'];
 const JS_RANDOM = /Math\.random\b/g;
 const JS_EXCEPTION = { file: 'shim/cdom.js', min: 'shim/cdom.min.js', start: '\n  function seed(options) {', end: '\n  }\n',
+  comment: 'neither secret nor unpredictable' };
+// The same exception, extended to the frames tier (Alex, 2026-11-20): tools/legacy/frames.js's cf_seed(options), exactly one
+// Math.random, after the options.seed test, under a comment that says cd_seed there is "neither secret nor unpredictable".
+// No other file and no other place in frames.js may draw one.
+const FRAMES_EXCEPTION = { file: 'tools/legacy/frames.js', start: '\nfunction cf_seed(options) {', end: '\n}\n',
   comment: 'neither secret nor unpredictable' };
 const files = execFileSync('git', ['ls-files', '-z', '--', '*.c', '*.h'], { cwd: top, encoding: 'utf8' }).split('\0').filter(Boolean);
 let hits = 0;
@@ -91,26 +96,31 @@ for (const f of jsFiles) {
     }
     continue;
   }
-  const from = f === JS_EXCEPTION.file ? text.indexOf(JS_EXCEPTION.start) : -1;
-  const to = from < 0 ? -1 : text.indexOf(JS_EXCEPTION.end, from);
+  const ex = f === JS_EXCEPTION.file ? JS_EXCEPTION : f === FRAMES_EXCEPTION.file ? FRAMES_EXCEPTION : null;
+  const from = ex ? text.indexOf(ex.start) : -1;
+  const to = from < 0 ? -1 : text.indexOf(ex.end, from);
   const body = to < 0 ? '' : text.slice(from, to);
   text.split('\n').forEach((line, i) => {
     if (!count(line)) return;
     const at = text.split('\n').slice(0, i).join('\n').length + 1; // the line's offset
-    if (f === JS_EXCEPTION.file && from >= 0 && at > from && at < to) return; // seed()'s, checked below
+    if (ex && from >= 0 && at > from && at < to) return; // the exception function's, checked below
     console.log(`FAIL ${f}:${i + 1}: Math.random, a generator nothing can seed (seeds from cd_seed, or options.seed in the shim): ${line.trim().slice(0, 120)}`);
     hits++;
   });
-  if (f !== JS_EXCEPTION.file) continue;
-  // The exception itself: one draw, after options.seed and crypto.getRandomValues, under its comment.
-  const order = [body.indexOf('options.seed'), body.indexOf('crypto.getRandomValues'), body.search(JS_RANDOM)];
-  const why = from < 0 || to < 0 ? 'no seed(options) function'
-    : count(body) !== 1 ? `${count(body)} Math.random in seed(), want exactly 1`
-    : !(order[0] >= 0 && order[0] < order[1] && order[1] < order[2]) ? 'Math.random is not after options.seed and crypto.getRandomValues'
-    : !body.includes(JS_EXCEPTION.comment) ? `no comment that cd_seed is then "${JS_EXCEPTION.comment}"`
+  if (!ex) continue;
+  // The exception itself: one draw, after options.seed (and, in the shim, crypto.getRandomValues), under its comment
+  // (inside the function in the shim, above it in frames.js).
+  const frames = ex === FRAMES_EXCEPTION;
+  const order = [body.indexOf('options.seed'), frames ? body.indexOf('options.seed') : body.indexOf('crypto.getRandomValues'), body.search(JS_RANDOM)];
+  const around = from < 0 ? '' : text.slice(Math.max(0, from - 1500), to);
+  const fn = frames ? 'cf_seed(options)' : 'seed()';
+  const why = from < 0 || to < 0 ? `no ${fn} function`
+    : count(body) !== 1 ? `${count(body)} Math.random in ${fn}, want exactly 1`
+    : !(order[0] >= 0 && order[0] <= order[1] && order[1] < order[2]) ? `Math.random is not after options.seed${frames ? '' : ' and crypto.getRandomValues'}`
+    : !around.includes(ex.comment) ? `no comment that cd_seed is then "${ex.comment}"`
     : '';
   if (why) {
-    console.log(`FAIL ${f}: the one allowed seed exception (seed() without options.seed or crypto): ${why}`);
+    console.log(`FAIL ${f}: the allowed seed exception (${frames ? 'cf_seed() without options.seed' : 'seed() without options.seed or crypto'}): ${why}`);
     hits++;
   }
 }
