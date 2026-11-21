@@ -34,11 +34,13 @@ EXPORT("rec") u32 rec(u32 d) { return rec_(d); }
 
 /* 64 KB filled a word at a time from a seed, then summed with a rotate: memory traffic. */
 static u32 big[16384];
-/* A data segment: the transform's memory pass (wasm2js's words build) takes only a module with one. */
-static const u32 mix[8] = {3, 1, 4, 1, 5, 9, 2, 6};
+/* A data segment: the transform's memory pass (wasm2js's words build) takes only a module with one. Nine words, 36
+ * bytes, a multiple of 3: js1-transform's base64 decoder (words1.js) dies on Netscape 2 at a padding "=" (docs/descent.md,
+ * "The three code paths in the real browsers"), so the data here needs none. */
+static const u32 mix[9] = {3, 1, 4, 1, 5, 9, 2, 6, 5};
 EXPORT("mem") u32 mem(u32 seed) {
   u32 s = 0;
-  for (u32 i = 0; i < 16384; i++) big[i] = i * seed + (i >> 3) + mix[i & 7];
+  for (u32 i = 0; i < 16384; i++) big[i] = i * seed + (i >> 3) + mix[i % 9u];
   for (u32 i = 0; i < 16384; i++) s = ((s << 1) | (s >> 31)) ^ big[i];
   return s;
 }

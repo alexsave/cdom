@@ -1,0 +1,256 @@
+<HTML>
+<HEAD>
+<TITLE>cdom probe-js1d</TITLE>
+<SCRIPT LANGUAGE="JavaScript">
+var n = 0;
+var TAG = "" + location.search;
+TAG = TAG.substring(1, TAG.length);
+if (TAG == "") { TAG = "x"; }
+function mark(name, v) {
+  n = n + 1;
+  document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
+}
+var late_n = 0;
+function late(name, v) {
+  late_n = late_n + 1;
+  var u = '/mark/' + TAG + '/p-L' + late_n + '-' + name + '-' + escape("" + v);
+  if (window.Image) {
+    var im = new Image();
+    im.src = u;
+  } else {
+    document.write('<IMG SRC="' + u + '" WIDTH=1 HEIGHT=1>');
+  }
+}
+</SCRIPT>
+</HEAD>
+<BODY>
+<H3>cdom probe-js1d</H3>
+<P>Reports to /mark/ as it loads.
+<FORM NAME="f0"><INPUT TYPE=text NAME="t0" VALUE="v0"></FORM>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newArrayNoParens", "start");
+var a = new Array; a[0] = 1;
+mark("newArrayNoParens", a[0]);
+mark("newArrayNoParens", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arrStore1500", "start");
+var b = new Array(); b[1500] = 3;
+mark("arrStore1500", b[1500]);
+mark("arrStore1500", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("objStore1500", "start");
+var o = new Object(); o[1500] = 3;
+mark("objStore1500", o[1500]);
+mark("objStore1500", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("pow2_1023", "start");
+var p = 1; var i; for (i = 0; i < 1023; i++) { p = p * 2; }
+mark("pow2_1023", p);
+mark("pow2_1023", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("pow2_1024", "start");
+var p = 1; var i; for (i = 0; i < 1024; i++) { p = p * 2; }
+mark("pow2_1024", p);
+mark("pow2_1024", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("overflowMul", "start");
+var q = 1e308; q = q * 10;
+mark("overflowMul", q);
+mark("overflowMul", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("halve1074", "start");
+var h = 1; var i; for (i = 0; i < 1074; i++) { h = h / 2; }
+mark("halve1074", h > 0);
+mark("halve1074", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("halve1075", "start");
+var h = 1; var i; for (i = 0; i < 1075; i++) { h = h / 2; }
+mark("halve1075", h);
+mark("halve1075", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("divZero", "start");
+var z = 0; var w = 1 / z;
+mark("divZero", w);
+mark("divZero", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("table", "start");
+var t = new Array; var c; var d = 1; for (c = 1074; c < 2098; c++) { t[c] = d; d = d * 2; }
+mark("table", t[2097]);
+mark("table", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arr32767", "start");
+var a = new Array(); a[32767] = 7;
+mark("arr32767", a[32767]);
+mark("arr32767", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arr32768", "start");
+var a = new Array(); a[32768] = 7;
+mark("arr32768", a[32768]);
+mark("arr32768", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arr32768alias", "start");
+var a = new Array(); a[0] = 1; a[32768] = 7;
+mark("arr32768alias", a[0] + ',' + a[32768]);
+mark("arr32768alias", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arr65536alias", "start");
+var a = new Array(); a[0] = 1; a[65536] = 7;
+mark("arr65536alias", a[0] + ',' + a[65536]);
+mark("arr65536alias", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arrNeg", "start");
+var a = new Array(); a[33000] = 7;
+mark("arrNeg", a[33000 - 65536]);
+mark("arrNeg", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("obj32768", "start");
+var o = new Object(); o[0] = 1; o[32768] = 7;
+mark("obj32768", o[0] + ',' + o[32768]);
+mark("obj32768", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("obj65536alias", "start");
+var o = new Object(); o[0] = 1; o[65536] = 7;
+mark("obj65536alias", o[0] + ',' + o[65536]);
+mark("obj65536alias", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arrFill40000", "start");
+var a = new Array(); var i; for (i = 0; i < 40000; i++) { a[i] = i; }
+mark("arrFill40000", a[100] + ',' + a[32868] + ',' + a[39999]);
+mark("arrFill40000", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("undefOr0", "start");
+var u = new Object(); var v = u[5] | 0;
+mark("undefOr0", v);
+mark("undefOr0", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("nullOr0", "start");
+var a = new Array(3); var v = a[0] | 0;
+mark("nullOr0", v);
+mark("nullOr0", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("toInt32big", "start");
+var v = 4294967295 | 0;
+mark("toInt32big", v);
+mark("toInt32big", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("toInt32wrap", "start");
+var v = (4294967296 + 5) | 0;
+mark("toInt32wrap", v);
+mark("toInt32wrap", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("mulBig", "start");
+var v = (65535 * 65535 + 1) | 0;
+mark("mulBig", v);
+mark("mulBig", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("objNamedThenIndex", "start");
+var o = new Object(); o.A = 1; o.B = 2;
+mark("objNamedThenIndex", o[0] + ',' + o[1]);
+mark("objNamedThenIndex", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("objDigitKeyAlias", "start");
+var o = new Object(); o.A = 1; o['0'] = 52;
+mark("objDigitKeyAlias", o.A + ',' + o['0']);
+mark("objDigitKeyAlias", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("objDigitKeyLate", "start");
+var o = new Object(); var i; for (i = 0; i < 3; i++) { o['k' + i] = i; } o['1'] = 9;
+mark("objDigitKeyLate", o.k0 + ',' + o.k1 + ',' + o.k2);
+mark("objDigitKeyLate", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("or0big", "start");
+var v = 2973945277 | 0;
+mark("or0big", v);
+mark("or0big", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushrNegBig", "start");
+var v = -1321022019 >>> 0;
+mark("ushrNegBig", v);
+mark("ushrNegBig", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("mul3big", "start");
+var v = (4294967295 * 3) | 0;
+mark("mul3big", v);
+mark("mul3big", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("mulHuge", "start");
+var v = (2654435761 * 2654435761) | 0;
+mark("mulHuge", v);
+mark("mulHuge", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("mulHugeRaw", "start");
+var v = 2654435761 * 2654435761;
+mark("mulHugeRaw", v);
+mark("mulHugeRaw", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("orOver2p53", "start");
+var v = 18014398509481984 | 0;
+mark("orOver2p53", v);
+mark("orOver2p53", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("orOver2p63", "start");
+var v = 1e19 | 0;
+mark("orOver2p63", v);
+mark("orOver2p63", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("orOver2p64", "start");
+var v = 3e19 | 0;
+mark("orOver2p64", v);
+mark("orOver2p64", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushrOver2p64", "start");
+var v = 3e19 >>> 0;
+mark("ushrOver2p64", v);
+mark("ushrOver2p64", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("andBig", "start");
+var v = 1e20 & 255;
+mark("andBig", v);
+mark("andBig", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("orInf", "start");
+var v = (1e308 * 10) | 0;
+mark("orInf", v);
+mark("orInf", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("done", "end");
+</SCRIPT>
+</BODY>
+</HTML>

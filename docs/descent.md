@@ -349,3 +349,161 @@ The rates come from the first probe's speed rows: Netscape 2.02 runs a simple op
   The compiler and the interpreter keep their own stacks and pass every depth to 5000 in every browser: the interpreter at about 10 instructions a level (about 3 ms a level on Netscape 2, so `rec(5000)` about 15 s), the compiler at about 20 operations a level through its driver (about 0.2 ms, `rec(5000)` about 1 s on Netscape 2).
 - Netscape 2 parses all three pages (each path's file passed its own branch's JavaScript 1.0 gate, and the pages' scripts pass js1-compile's), unless the gates missed something measured in the second probe: a working `split`, `substr`, `match`, a `new Array` with arguments or a `length`, or an assignment inside a condition would load and then give wrong answers, not a syntax error.
 - None of the browsers shows a slow-script prompt (none of them has one); Netscape 2 and 3 freeze while a run lasts.
+
+### What the runs found
+
+The runs are of 2026-11-20 in the XP VM, each branch's tests/out served on its own port (8105 transform, 8106 interpreter, 8107 compiler) with the pages copied in, and the marks in docs/descent-marks-3.txt (`tools/js1bench_table.py docs/descent-marks-3.txt <tags>` prints each table).
+A cell is the run's time from `new Date().getTime()` when its answer was right, the time and `<got> WANT <wanted>` when it was wrong, `died` when the run started and never reported (a run-time error or a stack overflow), and `-` when no mark came (the page had stopped).
+The times are the guest's clock on this Mac's emulated Pentium, so they compare only against each other, and two runs of the same page on Netscape 2 differed by up to 2.4 times (`loop(2000)` took 188 ms in one transform run and 468 ms in the next); the tables are one run each.
+Netscape 2 and 3 do have a slow-script prompt, "Lengthy JavaScript still running. Continue?", and a run's time includes the wait on it: the interpreter's `mem` on Netscape 2 (309 s) is mostly that wait, and Netscape 3's 37 s is the better figure for it.
+
+Three of the runs needed the page to work around a blocker first, and those columns are the `NS2FIX=1` pages (tools/js1bench.mjs; the branches are not changed):
+
+- The interpreter does not load on Netscape 2: "function does not always return a value." (the screenshot shots/js1real-ns2i-parse.png: `wi_call` has both `return;` and `return 0;`, which Netscape 2 refuses at parse time, so cdom.js1.js is dead and the page then says "wi_load is not defined.").
+  With every such function made to return 0, it parses, then dies decoding the module: "f is not a number.", because of the object aliasing below.
+  The ns2if3 and ns3if columns are the page with both worked around (digit keys given a "k" in front); ns3i2, the plain page on Netscape 3.04, did not load either (its dialog was not captured).
+- The compiler dies on Netscape 2 at the first read of a memory word nothing wrote: "33041 is not a number." (`undefined | 0` is an error there, measured below), so ns2c's every run but `mem` died; ns2cf sets the words the program touches to 0 after the load (as the transform's own load does).
+  On Netscape 3.04 its file does not parse at all: "missing ) after for-loop control." at `for(i=n-1;i>=0;i--)` in the memmove helper (ns3c2); ns3cf writes `i=i-1` there.
+- The transform needed nothing more than tests/js1bench.c's data being a multiple of 3 bytes: its base64 decoder dies on Netscape 2 at a padding `=` ("= is not a number.", the load never finishing), and its decoded data is wrong there anyway (below).
+
+js1-transform (wasm2js rewritten):
+
+| run | ns2t3 | ns3t | ns4t | ie4t |
+|---|---|---|---|---|
+| load | 2125ms | 4797ms | 641ms | 157ms |
+| loop2000_1 | 468ms | 1016ms NaN WANT 2973945277 | 93ms | 31ms |
+| loop2000_2 | 422ms | 906ms NaN WANT 3269008660 | 93ms | 32ms |
+| loop2000_3 | 469ms | 844ms NaN WANT 2585209365 | 109ms | 32ms |
+| mem | 4031ms 2974073576 WANT 1000733454 | 5016ms | 610ms | 219ms |
+| rec25 | 0ms | 0ms NaN WANT 967463077 | 0ms | 0ms |
+| rec50 | 16ms | 16ms NaN WANT 3397157813 | 15ms | 0ms |
+| rec75 | 0ms | 32ms NaN WANT 2491738207 | 16ms | 0ms |
+| rec100_1 | died | died | 15ms | 0ms |
+| rec100_2 | died | died | 15ms | 15ms |
+| rec100_3 | died | died | 15ms | 0ms |
+| rec500 | died | died | 16ms | died |
+| rec1000 | died | died | died | - |
+| rec5000 | died | died | died | - |
+
+js1-compile (js1c, an explicit stack); ns2c is the plain page on Netscape 2, the others past it the NS2FIX page on Netscape 2 and 3 and the plain page on Netscape 4 and IE 4:
+
+| run | ns2c | ns2cf | ns3cf | ns4c | ie4c |
+|---|---|---|---|---|---|
+| load | 0ms | 1890ms | 2750ms | 0ms | 31ms |
+| loop2000_1 | died | 531ms | 719ms NaN WANT 2973945277 | 125ms | 125ms |
+| loop2000_2 | died | 625ms | 828ms NaN WANT 3269008660 | 78ms | 204ms |
+| loop2000_3 | died | 688ms | 906ms NaN WANT 2585209365 | 109ms | 141ms |
+| mem | 1531ms | 4890ms | 5921ms | 734ms | 781ms |
+| rec25 | died | 16ms | 16ms NaN WANT 967463077 | 0ms | 0ms |
+| rec50 | died | 31ms | 31ms NaN WANT 3397157813 | 0ms | 15ms |
+| rec75 | died | 47ms | 93ms NaN WANT 2491738207 | 16ms | 16ms |
+| rec100_1 | died | 47ms | 63ms NaN WANT 3690416189 | 16ms | 31ms |
+| rec100_2 | died | 62ms | 62ms NaN WANT 4120471005 | 31ms | 16ms |
+| rec100_3 | died | 109ms | 62ms NaN WANT 983828318 | 16ms | died |
+| rec500 | died | 344ms | 454ms NaN WANT 968582496 | 110ms | - |
+| rec1000 | died | 547ms | 765ms NaN WANT 4134822262 | 172ms | 110ms 3019458935 WANT 4134822262 |
+| rec5000 | died | 2843ms | 4094ms NaN WANT 1509260939 | 859ms | 1125ms 3302671763 WANT 1509260939 |
+
+js1-interp (the interpreter), the NS2FIX page on Netscape 2 and 3 and the plain page on Netscape 4 and IE 4:
+
+| run | ns2if3 | ns3if | ns4i | ie4i |
+|---|---|---|---|---|
+| load | 844ms | 1328ms | 281ms | 125ms |
+| loop2000_1 | 2234ms | 2875ms NaN WANT 2973945277 | 265ms | 312ms |
+| loop2000_2 | 2297ms | 2922ms NaN WANT 3269008660 | 266ms | 312ms |
+| loop2000_3 | 2250ms | 2875ms NaN WANT 2585209365 | 265ms | 313ms |
+| mem | 308875ms | 37078ms | 1984ms | 2516ms |
+| rec25 | 31ms | 31ms | 15ms | 0ms |
+| rec50 | 47ms | 78ms NaN WANT 3397157813 | 15ms | 15ms |
+| rec75 | 94ms | 110ms NaN WANT 2491738207 | 16ms | 0ms |
+| rec100_1 | 109ms | 140ms NaN WANT 3690416189 | 32ms | 16ms |
+| rec100_2 | 110ms | 141ms NaN WANT 4120471005 | 15ms | 16ms |
+| rec100_3 | 109ms | 140ms NaN WANT 983828318 | 16ms | 16ms |
+| rec500 | 625ms | 719ms NaN WANT 968582496 | 78ms | 78ms |
+| rec1000 | 1125ms | 1422ms NaN WANT 4134822262 | 187ms | 141ms |
+| rec5000 | 6531ms | 7188ms NaN WANT 1509260939 | 750ms | - |
+
+### What the engines do that the gates did not know
+
+tests/probe-js1d.html, written while diagnosing the runs above (one test a block, as the probe pages), in Netscape 2.02 and 3.04:
+
+| test | ns2d4 | ns3d |
+|---|---|---|
+| newArrayNoParens | 1 | 1 |
+| arrStore1500 | 3 | 3 |
+| objStore1500 | 3 | 3 |
+| pow2_1023 | 8.9884656743115795e+307 | 8.98846567431158e307 |
+| pow2_1024 | 1.#INF | Infinity |
+| overflowMul | 1.#INF | Infinity |
+| halve1074 | true | true |
+| halve1075 | 0 | 0 |
+| divZero | 0 | NaN |
+| table | 8.9884656743115795e+307 | 8.98846567431158e307 |
+| arr32767 | 7 | 7 |
+| arr32768 | 7 | 7 |
+| arr32768alias | 1,7 | 1,7 |
+| arr65536alias | 1,7 | 1,7 |
+| arrNeg | <undefined> | undefined |
+| obj32768 | 1,7 | 1,7 |
+| obj65536alias | 1,7 | 1,7 |
+| arrFill40000 | 100,32868,39999 | 100,32868,39999 |
+| undefOr0 | DIED(start) | 0 |
+| nullOr0 | DIED(start) | 0 |
+| toInt32big | -1 | -1 |
+| toInt32wrap | 5 | NaN |
+| mulBig | -131070 | -131070 |
+| objNamedThenIndex | 1,2 | null,null |
+| objDigitKeyAlias | 52,52 | 1,52 |
+| objDigitKeyLate | 0,9,2 | 0,1,2 |
+| or0big | -1321022019 | -1321022019 |
+| ushrNegBig | 2973945277 | 2973945277 |
+| mul3big | -3 | NaN |
+| mulHuge | -1651712 | NaN |
+| mulHugeRaw | 7046029209275649000 | 7046029209275649000 |
+| orOver2p53 | 0 | NaN |
+| orOver2p63 | 0 | NaN |
+| orOver2p64 | 0 | NaN |
+| ushrOver2p64 | 0 | NaN |
+| andBig | 0 | NaN |
+| orInf | 0 | NaN |
+| done | end | end |
+
+- Netscape 2 aliases a number key to a named property: `o[0]` is the first property set by name, so `o["0"] = 52` overwrites `o.A` (objNamedThenIndex, objDigitKeyAlias).
+  Any lookup table keyed by characters that include digits is corrupted: the transform's base64 table (its data comes out wrong: `mem` reads the wrong `mix` words, 2974073576 for 1000733454) and the interpreter's digit-string table ("f is not a number").
+  Netscape 3 does not alias.
+- Netscape 2 dies on `undefined | 0` and `null | 0` (undefOr0, nullOr0): a never-written word of an object memory must be set before it is read.
+- Netscape 3.04 gives NaN for `x | 0`, `x >>> 0` and `x & 255` when x is 2^32 or more (mul3big, orOver2p53 and the rest), where Netscape 2 and every later engine reduce modulo 2^32.
+  This is why all three paths give NaN for `loop` and `rec` on Netscape 3 (a product or a sum passes 2^32 before its `| 0`) and the right answer for `mem` (whose values stay small): every path needs its multiply and add to reduce before the conversion to run on Netscape 3.
+- Netscape 2's `1 / 0` is 0 (divZero), not infinity; overflow by multiplication does give infinity (printed `1.#INF`).
+- Indices past 1,023 and past 32,767 work in both an Array and an Object on Netscape 2 (the transform's open question).
+
+### The predictions, marked
+
+- `loop(2000)` on Netscape 2: transform and compiler about 0.45 s, measured 0.42 to 0.47 s and 0.53 to 0.69 s: right.
+  The interpreter 7 s, measured 2.25 s: three times better than its own estimate, 5 times the transform's and 3 to 4 times the compiler's.
+  Netscape 4, 0.1 s for both: right (93 to 125 ms); IE 4, 40 ms: right for the transform (31 ms), the compiler took 125 to 204 ms.
+- `mem`: transform and compiler 3.5 s on Netscape 2, measured 4.0 s and 4.9 s: about right; the interpreter 60 s, measured 37 s on Netscape 3 (Netscape 2's 309 s is the prompt's wait).
+- The transform's depth: right everywhere: it passes 75 and dies at 100 on Netscape 2 and 3 ("stack overflow in c_c."), passes 500 and dies at 1000 on Netscape 4, and passes 100 and dies at 500 on IE 4 ("Stack overflow at line: 6", which ends the page).
+- The compiler and the interpreter pass every depth to 5000 in every browser that runs them, as predicted; `rec(5000)` takes 2.8 s and 6.5 s on Netscape 2 against my 1 s and 15 s.
+- Wrong: that all three would parse on Netscape 2 (the interpreter does not) and on Netscape 3 (the compiler does not); that a page with right gates would give right answers (Netscape 2's object aliasing and `undefined | 0`, Netscape 3's NaN); and that no browser has a slow-script prompt.
+- Not predicted: IE 4 gave wrong answers for the compiler's `rec(1000)` and `rec(5000)` on this page (3019458935 for 4134822262), where js1-compile's own js1diff.html, which runs sliced, gave 26 of 26 on IE 4.01 and Netscape 4.08 (shots/js1real-ie4diff-end.png, js1real-ns4diff-end.png); the page runs it unsliced, and why that differs is not settled.
+
+### The correctness pages and the frames app
+
+- js1-compile's tests/out/js1diff.html: 26 of 26 on Netscape 4.08 and IE 4.01.
+- js1-interp's tests/out/js1.html: every run `ok` on Netscape 4.08 and IE 4.01 (loop2000 344 and 454 ms, rec5000 531 and 484 ms, about 100,000 instructions a second).
+- frames.html, on Netscape 4.08, for all three branches alike: a blank page, and in the JavaScript console "syntax error." at `var cdom = (() => {` (the page's inlined modern shim), "throw is a reserved identifier." at `setTimeout(function () { throw e; }, 0);` near line 2045, and in cdom.frames.js line 2 "cf_FRAMESET is not defined." (shots/js1real-ns4-frames-*.png).
+  So the frames tier itself does not boot on Netscape 4.08 from origin/frames-tier, whatever the code path; the app was not tried on Netscape 3.04 or IE 4.01, nor the transform's js1cpu page, within the time this run had.
+
+### Verdict
+
+The compiler is the path to take, once its two blockers are fixed.
+It runs the integer loop within 1.1 to 1.6 times the transform's time on Netscape 2 (0.53 to 0.69 s against 0.42 to 0.47 s) and within 1.2 times on Netscape 4 and `mem` within 1.2 times on Netscape 2, and it never runs out of stack: `rec(5000)` in 2.8 s on Netscape 2, where the transform dies before depth 100 on Netscape 2 and 3, 1000 on Netscape 4 and 500 on IE 4, an inherent limit no fix removes.
+The interpreter has the same unlimited depth but is 3 to 4 times slower than the compiler on Netscape 2 and 3 for the loop and about 6 times for memory (`mem` 37 s against 5.9 s on Netscape 3), and 2 to 3 times on Netscape 4 and IE 4.
+What blocks each path today, from these runs:
+
+- js1-compile: on Netscape 2, a read of a never-written word (`undefined | 0` dies: zero the memory at load, as the transform does); on Netscape 3, `i--)` in a for loop's update does not parse; IE 4's wrong `rec(1000)` unsliced.
+- js1-interp: on Netscape 2, a function returning a value on one path and none on another does not parse ("function does not always return a value"), and the digit-string table is corrupted by Netscape 2's number-key aliasing.
+- js1-transform: the call depth; and on Netscape 2 its base64 decoder (a padding `=` stops the load, and digit keys corrupt the data).
+- All three: Netscape 3's NaN from `| 0` on a value of 2^32 or more; and the frames tier's own boot on Netscape 4.
+
