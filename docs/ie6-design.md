@@ -72,6 +72,7 @@ The boot's load() takes either, once.
 
 No canvas and no SVG, for now: an SVG is made of plain elements and draws nothing, and the canvas calls (cd_blit, cd_image_bytes, encode) do nothing and report once why, so the rest of the app runs (Alex's call, 2026-11-20).
 The follow-up Alex asked for is to draw them after all, through VML or as an image baked into the page; it is not part of this change.
+SVG now draws through VML on this tier (IE 5 to 8): docs/vml-design.md.
 Also no WebSocket, IndexedDB, audio, file reads (UNSUPPORTED, as on IE 9) or jobs (UNSUPPORTED).
 cd_http works (section 6c).
 No History API: cd_url_go answers 0.
@@ -183,6 +184,15 @@ Each is fixed, and each that Chrome can imitate is now in the profile, so CI kee
 
 Firefox 1.0 then runs the fourth tier on its W3C branch of dom-old.js: addEventListener, with pointer events made from mouse events (Firefox 1.0 has none) and the held buttons tracked by the document's own listeners.
 On tests/out/legacy.html it passed the checks IE 6 did: pointer down, moves with the button held, up with none, click; typing echoed by C; a failed call reported once with the op after it applied; cd_call(focus) heard as a focus event.
+
+7. The LaTeX app (foolish-utils latex/) stopped at "This command is not supported." with a blank page.
+   IE 5 to 8 refuse an input's type once the input has had a parent, even after it is taken out again: setAttribute throws unless the value is the type the input already has.
+   The shim appends each element to its parent as it opens, so every typed input has one; legacy.c's file input was top level, which is why the tests never met it.
+   Probe pages in the VM showed that a lone input takes any type (one IE does not know, like search, becomes text), and that `el.mergeAttributes(lone, false)` carries the type onto an input with a parent.
+   A button's type is never refused (IE 6 ignores it, and its default is already button).
+   Fix: dom-old.js's setAttribute sets an input's type on a fresh lone input and merges it across when it differs.
+   The Chrome profile refuses the type as IE does, and tests/legacy.c types a checkbox and a search field inside a div (mutant ie6-input-type-refused).
+   The app then runs in IE 6: it boots, takes typing and renders again on each edit.
 
 Also learned: IE 6 caches the tier's two scripts across reloads even with Cache-Control: no-store, so a test in the VM sets IE to check every visit first (HKCU ... Internet Settings, SyncMode5 = 3).
 
