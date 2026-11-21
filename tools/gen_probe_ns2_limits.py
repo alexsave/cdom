@@ -262,7 +262,7 @@ if __name__ == "__main__":
         write("probe-ns2-atoms%d.html" % c, atoms(c))
     for c in (40, 100):
         write("probe-ns2-same%d.html" % c, manyreuse(c))
-    for kb in (2048, 4096):
+    for kb in (1024, 1536, 2048, 4096):
         write("probe-ns2-block%d.html" % kb, oneblock(kb))
     write("probe-ns2-fns.html", fns())
     write("probe-ns2-frames.html", FRAMES)
