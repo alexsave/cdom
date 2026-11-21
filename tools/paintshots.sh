@@ -5,7 +5,7 @@
 set -e
 here=$(cd "$(dirname "$0")" && pwd); d="$here/../design/ns2paint"; o="$here/../tests/out/paint/src"
 mkdir -p "$o"
-tw=${TALL_W:-576}
+tw=${TALL_W:-598}
 for spec in "still 592 320" "details 592 320" "tall $tw 1570"; do
   set -- $spec
   node "$here/paintshot.mjs" "$d/$1.html" "$o/$1.png" "$2" "$3" "$o/$1.links"

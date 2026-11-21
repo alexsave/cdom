@@ -1,0 +1,52 @@
+== the scroll-safe width: w<width>.html, bars of 8 px, 100 rows (800 tall, so a vertical scrollbar), tools/vmfb.py --sub paint/w then tools/paintcheck.py (w576 first: 0 different)
+
+w578.html: got=True end=5.2s lastimg=3.1s screen-last-change=5.7s gif-requests=4 distinct=4 refetched=0 settled=True waited=17s
+scroll 0: picture rows 0..360 at screen y 69..429, 184018 pixels compared (the balloon's 24640 not), 0 different
+w580.html: got=True end=3.9s lastimg=3.3s screen-last-change=4.0s gif-requests=5 distinct=4 refetched=1 settled=True waited=15s
+scroll 0: picture rows 0..360 at screen y 69..429, 184600 pixels compared (the balloon's 24780 not), 0 different
+w582.html: got=True end=3.3s lastimg=2.7s screen-last-change=3.6s gif-requests=4 distinct=4 refetched=0 settled=True waited=14s
+scroll 0: picture rows 0..360 at screen y 69..429, 185182 pixels compared (the balloon's 24920 not), 0 different
+w584.html: got=True end=3.3s lastimg=2.7s screen-last-change=3.5s gif-requests=4 distinct=4 refetched=0 settled=True waited=14s
+scroll 0: picture rows 0..360 at screen y 69..429, 185764 pixels compared (the balloon's 25060 not), 0 different
+w586.html: got=True end=3.3s lastimg=2.7s screen-last-change=3.6s gif-requests=4 distinct=4 refetched=0 settled=True waited=14s
+scroll 0: picture rows 0..360 at screen y 69..429, 186346 pixels compared (the balloon's 25200 not), 0 different
+w588.html: got=True end=3.5s lastimg=2.8s screen-last-change=3.8s gif-requests=5 distinct=4 refetched=1 settled=True waited=14s
+scroll 0: picture rows 0..360 at screen y 69..429, 186928 pixels compared (the balloon's 25340 not), 0 different
+
+[exited with code 0]
+w590.html: got=True end=3.4s lastimg=2.7s screen-last-change=3.9s gif-requests=4 distinct=4 refetched=0 settled=True waited=14s
+scroll 0: picture rows 0..360 at screen y 69..429, 187510 pixels compared (the balloon's 25480 not), 0 different
+w592.html: got=True end=3.6s lastimg=2.9s screen-last-change=3.9s gif-requests=4 distinct=4 refetched=0 settled=True waited=14s
+scroll 0: picture rows 0..360 at screen y 69..429, 188092 pixels compared (the balloon's 25620 not), 0 different
+w594.html: got=True end=3.5s lastimg=3.4s screen-last-change=3.7s gif-requests=5 distinct=4 refetched=1 settled=True waited=14s
+scroll 0: picture rows 0..360 at screen y 69..429, 188674 pixels compared (the balloon's 25760 not), 0 different
+w596.html: got=True end=5.9s lastimg=3.5s screen-last-change=6.0s gif-requests=5 distinct=4 refetched=1 settled=True waited=17s
+scroll 576: picture rows 561..799 at screen y 54..292, 142444 pixels compared (the balloon's 0 not), 8940 different, in x 12..607 y 54..68 of the screen
+w598.html: got=True end=6.8s lastimg=6.2s screen-last-change=7.2s gif-requests=5 distinct=4 refetched=1 settled=True waited=18s
+scroll 576: picture rows 561..799 at screen y 54..292, 142922 pixels compared (the balloon's 0 not), 8970 different, in x 12..609 y 54..68 of the screen
+w600.html: got=True end=6.2s lastimg=4.8s screen-last-change=6.6s gif-requests=4 distinct=4 refetched=0 settled=True waited=21s
+no row of the picture is on the screen exactly; compared as not scrolled
+scroll 0: picture rows 0..360 at screen y 69..429, 190420 pixels compared (the balloon's 26180 not), 166028 different, in x 12..611 y 69..429 of the screen
+
+[exited with code 1]
+w596.html: got=True end=1.0s lastimg=1.0s screen-last-change=1.3s gif-requests=5 distinct=4 refetched=1 settled=True waited=11s
+scroll 0: picture rows 0..360 at screen y 69..429, 189256 pixels compared (the balloon's 25900 not), 0 different
+w598.html: got=True end=6.9s lastimg=6.9s screen-last-change=7.5s gif-requests=5 distinct=4 refetched=1 settled=True waited=19s
+scroll 0: picture rows 0..360 at screen y 69..429, 189838 pixels compared (the balloon's 26040 not), 0 different
+w600.html: got=True end=6.7s lastimg=5.1s screen-last-change=7.2s gif-requests=4 distinct=4 refetched=0 settled=True waited=19s
+scroll 0: picture rows 0..360 at screen y 69..429, 190420 pixels compared (the balloon's 26180 not), 164548 different, in x 12..611 y 69..429 of the screen
+w602.html: got=True end=1.0s lastimg=0.8s screen-last-change=1.1s gif-requests=5 distinct=4 refetched=1 settled=True waited=10s
+scroll 0: picture rows 0..360 at screen y 69..429, 191002 pixels compared (the balloon's 26320 not), 165034 different, in x 12..613 y 69..429 of the screen
+w604.html: got=True end=1.0s lastimg=1.0s screen-last-change=1.2s gif-requests=5 distinct=4 refetched=1 settled=True waited=10s
+scroll 0: picture rows 0..360 at screen y 69..429, 191584 pixels compared (the balloon's 26460 not), 165520 different, in x 12..615 y 69..429 of the screen
+w606.html: got=True end=1.0s lastimg=0.8s screen-last-change=1.2s gif-requests=5 distinct=4 refetched=1 settled=True waited=10s
+scroll 0: picture rows 0..360 at screen y 69..429, 192166 pixels compared (the balloon's 26600 not), 166006 different, in x 12..617 y 69..429 of the screen
+w608.html: got=True end=1.0s lastimg=0.7s screen-last-change=1.2s gif-requests=4 distinct=4 refetched=0 settled=True waited=10s
+scroll 0: picture rows 0..360 at screen y 69..429, 192748 pixels compared (the balloon's 26740 not), 166492 different, in x 12..619 y 69..429 of the screen
+w610.html: got=True end=1.0s lastimg=0.8s screen-last-change=1.2s gif-requests=4 distinct=4 refetched=0 settled=True waited=10s
+scroll 0: picture rows 0..360 at screen y 69..429, 193330 pixels compared (the balloon's 26880 not), 166978 different, in x 12..621 y 69..429 of the screen
+w612.html: got=True end=1.0s lastimg=0.8s screen-last-change=1.2s gif-requests=5 distinct=4 refetched=1 settled=True waited=10s
+scroll 0: picture rows 0..360 at screen y 69..429, 193330 pixels compared (the balloon's 26880 not), 166882 different, in x 12..621 y 69..429 of the screen
+the picture is 612 wide, 2 columns of it are under the scrollbar or past the view
+
+[exited with code 1]

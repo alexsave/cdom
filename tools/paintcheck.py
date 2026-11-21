@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""paintcheck.py <shot.png> <ref.png> [--diff out.png]: compares a screendump of a painted page in the XP guest's Netscape 2.02
+"""paintcheck.py <shot.png> <ref.png> [--diff out.png] [--scroll N]: compares a screendump of a painted page in the XP guest's Netscape 2.02
 (tools/gen_ns2_paint.py; docs/descent.md, "Painting a modern page") with the picture the page was made from, pixel by pixel.
 The picture's left edge is at x 12 of the screen and its top at y 69 when the page is not scrolled; a scrolled page is found by
 matching screen rows with the picture's rows.  Every pixel of the view (x 2 to 637, y 54 to 429, less a vertical scrollbar's 16
 columns when the picture is taller than the view) that shows the picture is compared.  Prints the scroll offset, the rows of the
-picture shown, the pixels compared and different (with the box round the different ones); exit 1 if any differ."""
+picture shown, the pixels compared (less XP's activation balloon) and different (with the box round the different ones); exit 1 if any differ."""
 import argparse, sys
 import numpy as np
 from PIL import Image
 
 VIEW = (2, 54, 638, 430)
 X0, Y0 = 12, 69
+BALLOON = (238, 360)   # XP's "not activated" balloon (and its rounded edge) covers x >= 238, y >= 360 of the screen, over the view: never compared (fbcheck.py masks it too)
 
 
 def main():
@@ -18,8 +19,11 @@ def main():
     ap.add_argument("shot")
     ap.add_argument("ref")
     ap.add_argument("--diff")
+    ap.add_argument("--scroll", type=int, help="the scroll offset, known (a periodic picture matches at many offsets)")
     a = ap.parse_args()
     s = np.array(Image.open(a.shot).convert("RGB")).astype(int)
+    keep = np.ones(s.shape[:2], bool)
+    keep[BALLOON[1]:, BALLOON[0]:] = False
     r = np.array(Image.open(a.ref).convert("RGB")).astype(int)
     h, w, _ = r.shape
     vx0, vy0, vx1, vy1 = VIEW
@@ -30,9 +34,10 @@ def main():
     # a plain row (the paper) matches many picture rows, so every candidate is compared whole and the closest is taken
     def diff_at(scroll):
         top, bot = max(vy0, Y0 - scroll), min(vy1, Y0 - scroll + h)
-        return int((s[top:bot, X0:X0 + xr] != r[top - Y0 + scroll:bot - Y0 + scroll, :xr]).any(-1).sum())
-    best = None
-    for y in list(range((vy0 + vy1) // 2, vy1, 40)) + list(range(vy0, (vy0 + vy1) // 2, 40)):
+        bad = (s[top:bot, X0:X0 + xr] != r[top - Y0 + scroll:bot - Y0 + scroll, :xr]).any(-1) & keep[top:bot, X0:X0 + xr]
+        return bad.sum() / max(1, keep[top:bot, X0:X0 + xr].sum())
+    best = a.scroll
+    for y in [] if best is not None else list(range((vy0 + vy1) // 2, vy1, 40)) + list(range(vy0, (vy0 + vy1) // 2, 40)):
         strip = s[y, X0:X0 + xr]
         cands = [Y0 + int(row) - y for row in np.flatnonzero((r[:, :xr] == strip).all(-1).all(-1))]
         cands = [c for c in cands if c >= 0]
@@ -46,10 +51,11 @@ def main():
     bot = min(vy1, Y0 - best + h)
     sv = s[top:bot, X0:X0 + xr]
     rv = r[top - Y0 + best:bot - Y0 + best, :xr]
-    bad = (sv != rv).any(-1)
+    kv = keep[top:bot, X0:X0 + xr]
+    bad = (sv != rv).any(-1) & kv
     n = int(bad.sum())
-    print("scroll %d: picture rows %d..%d at screen y %d..%d, %d x %d pixels compared, %d different"
-          % (best, top - Y0 + best, bot - Y0 + best - 1, top, bot - 1, xr, bot - top, n), end="")
+    print("scroll %d: picture rows %d..%d at screen y %d..%d, %d pixels compared (the balloon's %d not), %d different"
+          % (best, top - Y0 + best, bot - Y0 + best - 1, top, bot - 1, int(kv.sum()), int((~kv).sum()), n), end="")
     if n:
         ys, xs = np.nonzero(bad)
         print(", in x %d..%d y %d..%d of the screen" % (X0 + xs.min(), X0 + xs.max(), top + ys.min(), top + ys.max()))
