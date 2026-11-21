@@ -196,7 +196,7 @@ for (const f of fs.readdirSync(out).filter((f) => f.endsWith('.js1.js'))) {
   S.ctx.JB = 50;
   let r = S.call('rec', 1000), steps = 0;
   const paused = S.o.js1_paused;
-  while (S.o.js1_paused && steps < 100000) { S.o.js1_more(); steps++; }
+  while (S.o.js1_paused && steps < 100000 && S.call('js1_more') !== 'hung') steps++;
   r = S.o.js1_result;
   W.log.length = 0;
   ok(paused === 1 && steps > 10 && r === W.x.rec(1000), `sliced at 50 steps, rec(1000) pauses (${paused}), goes on ${steps} times and gives wasm's ${r}`);
@@ -211,7 +211,7 @@ for (const f of fs.readdirSync(out).filter((f) => f.endsWith('.js1.js'))) {
   ctx.window = ctx;
   vm.createContext(ctx);
   for (const sc of scripts) vm.runInContext(sc, ctx);
-  for (let n = 0; q.length && n < 1e6; n++) vm.runInContext(q.shift(), ctx);
+  try { for (let n = 0; q.length && n < 20000; n++) vm.runInContext(q.shift(), ctx, { timeout: 5000 }); } catch (e) { ta.value += `FAIL the page stopped: ${e}\n`; }
   const m = /(\d+) of (\d+)/.exec(tally.value);
   ok(scripts.length === 2 && m && m[1] === m[2], `tests/out/js1diff.html runs to its end and agrees: ${tally.value}${m && m[1] === m[2] ? '' : '\n' + ta.value.split('\n').filter((l) => l.startsWith('FAIL')).slice(0, 3).join('\n')}`);
 }
