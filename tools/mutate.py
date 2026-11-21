@@ -486,7 +486,7 @@ M = [
   ('mk-bundle-off', 'cdom.mk', 'cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))', 'cdom_mk_bundled =', LINK, 'FAIL APP_PAGE (first) bundled into a page that loads its module by URL'),
   ('mk-separate-ignored', 'cdom.mk', 'cdom_mk_bundled = $(if $(APP_WASM_SEPARATE),,$(APP_WASM))', 'cdom_mk_bundled = $(APP_WASM)', LINK, 'FAIL cdom_page (first) refused a page whose marker is alone'),
   ('mk-b64-wrapped', 'tools/cdpage.c', '    bput(o, q, 4);\n  }\n  if (n - i == 1) {', "    bput(o, q, 4);\n    if ((i + 3) % 57 == 0) bbyte(o, '\\n');\n  }\n  if (n - i == 1) {", LINK, 'FAIL the default page (first), bundled, is not shim/page.html'),  # base64 in lines of 76, as GNU base64 writes it, not one line
-  ('mk-page-no-wasm-dep', 'cdom.mk', '$$(CDOM_PAGE_TOOL) $$(APP_WASM) $$(cdom_mk_simd_wasm) $$(cdom_mk_job_files))', '$$(CDOM_PAGE_TOOL) $$(cdom_mk_simd_wasm) $$(cdom_mk_job_files))', LINK, 'FAIL the default page (first), bundled, is up to date with a newer module'),
+  ('mk-page-no-wasm-dep', 'cdom.mk', '$$(CDOM_PAGE_TOOL) $$(APP_WASM) $$(cdom_mk_simd_wasm)', '$$(CDOM_PAGE_TOOL) $$(cdom_mk_simd_wasm)', LINK, 'FAIL the default page (first), bundled, is up to date with a newer module'),
   ('mk-no-default-page', 'cdom.mk', 'cdom_mk_page_src = $(or $(APP_PAGE_SRC),$(CDOM_PAGE))', 'cdom_mk_page_src = $(APP_PAGE_SRC)', LINK, 'FAIL the default page (first) does not build'),
   ('mk-title-full-name', 'cdom.mk', '$(or $(APP_TITLE),$(basename $(notdir $(APP_WASM))))', '$(or $(APP_TITLE),$(notdir $(APP_WASM)))', LINK, 'FAIL the default page (first), bundled, is not shim/page.html'),
   ('mk-wasm-intermediate', 'cdom.mk', '$$(if $$(APP_WASM),$$(APP_WASM) $$(cdom_mk_app_src)', '$$(if $$(APP_WASM),$$(cdom_mk_app_src)', LINK, "FAIL the starter's page does not start its bundled module"),  # make deletes the module after the page
@@ -543,7 +543,7 @@ M = [
   # discovery through make, rebuilding on a stylesheet change only, the first build, an own page, the cascade
   ('mk-css-dir-dropped', 'cdom.mk', ')--css-dir src $(9)\n', ') $(9)\n', LINK, 'FAIL discovery: the css app'),
   ('mk-css-walk-app-dir', 'cdom.mk', ')--css-dir src $(9)\n', ')--css-dir . $(9)\n', LINK, 'FAIL an own page that links static/app.css does not build'),
-  ('mk-csslist-not-prereq', 'cdom.mk', '$$(cdom_mk_simd_wasm) $$(cdom_mk_job_files)) $$(cdom_mk_csslist)', '$$(cdom_mk_simd_wasm) $$(cdom_mk_job_files))', LINK, 'FAIL rebuilding: a.css edited, and make -q says'),
+  ('mk-csslist-not-prereq', 'cdom.mk', '$$(cdom_mk_noscript_tools)) $$(cdom_mk_csslist)', '$$(cdom_mk_noscript_tools))', LINK, 'FAIL rebuilding: a.css edited, and make -q says'),
   ('mk-css-files-prereq', 'cdom.mk', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) ] && [ -d $(call cdom_mk_q,$(@D)) ] \\\n  && $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) --css-list src $(call cdom_mk_q,$@.csslist))$@.csslist)', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(wildcard src/*.css src/*/*.css src/*/*/*.css))', LINK, 'FAIL rebuilding: a/new.css'),
   ('mk-csslist-no-shell', 'cdom.mk', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) ] && [ -d $(call cdom_mk_q,$(@D)) ] \\\n  && $(call cdom_mk_q,$(CDOM_PAGE_TOOL)) --css-list src $(call cdom_mk_q,$@.csslist))$@.csslist)', 'cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$@.csslist)', LINK, 'FAIL rebuilding: a.css edited, and make -q says'),
   ('mk-csslist-not-in-recipe', 'cdom.mk', '\t$(CDOM_PAGE_TOOL) --css-list src $(call cdom_mk_q,$@.csslist)\n', '', LINK, 'a second make is not up to date'),
@@ -996,9 +996,9 @@ M = [
   ('frames-timer-handle', 'tools/legacy/frames.js', '  cf_tid[cf_timers] = setTimeout("cdomF.t(" + cf_timers + ")", ms);', '  cf_tid[cf_timers] = setTimeout("cdomF.t(" + (cf_timers + 1) + ")", ms);', FRAMES, 'FAIL a timer reached C'),
   ('frames-esc-off', 'tools/legacy/frames.js', 'function cf_esc(s) {\n  var out = "", k, c;', 'function cf_esc(s) {\n  return s;\n  var out = "", k, c;', FRAMES, 'FAIL a text with markup characters reads back as them'),
   ('js11-new-member-allowed', 'tools/legacy/js11.mjs', "      add('a member of a new expression', n);", '', JS11T, 'FAIL var t = new Date().getTime(); is refused'),
-  ('frames-new-member', 'tools/legacy/frames.js', 'function cf_op_epoch() {\n  var d = new Date();\n  return d.getTime();', 'function cf_op_epoch() {\n  return (new Date()).getTime();', JS11T, 'FAIL frames.js is JavaScript 1.1: a member of a new expression'),
+  ('frames-new-member', 'tools/legacy/frames.js', 'function cf_op_epoch() {\n  var d = new Date();\n  return d.getTime();', 'function cf_op_epoch() {\n  return (new Date()).getTime();', JS11T, 'frames.js is not JavaScript 1.1: a member of a new expression'),  # the build's gate refuses it before js11.mjs runs
   ('js11-assign-in-test-allowed', 'tools/legacy/js11.mjs', "    if (test) walk(test, (m) => { if (m.type === 'AssignmentExpression') add('an assignment in a condition', m); });", '', JS11T, 'FAIL if (a = f()) g(); is refused'),
-  ('frames-assign-in-test', 'tools/legacy/frames.js', '  while (a < b && s.charAt(a) == " ") a++;', '  while (a < b && (c = s.charAt(a)) == " ") a++;', JS11T, 'FAIL frames.js is JavaScript 1.1: an assignment in a condition'),
+  ('frames-assign-in-test', 'tools/legacy/frames.js', '  while (a < b && s.charAt(a) == " ") a++;', '  while (a < b && (c = s.charAt(a)) == " ") a++;', JS11T, 'frames.js is not JavaScript 1.1: an assignment in a condition'),  # the build's gate refuses it before js11.mjs runs
   ('js11-isnan-allowed', 'tools/legacy/js11.mjs', "'globalThis', 'isNaN', 'setInterval']);", "'globalThis']);", JS11T, 'FAIL if (isNaN(x)) f(); is refused'),
   ('js11-substr-allowed', 'tools/legacy/js11.mjs', "'hasOwnProperty', 'substr', 'isNaN', 'setInterval']);", "'hasOwnProperty', 'isNaN', 'setInterval']);", JS11T, 'FAIL var s = t.substr(1, 2); is refused'),
   ('js10-arguments-allowed', 'tools/legacy/js11.mjs', "      if (js10 && JS10_IDENTS.has(n.name)) add(n.name, n);\n", '', JS11T, 'FAIL js10: function f() { return arguments.length; } is refused'),
@@ -1015,7 +1015,7 @@ M = [
   ('frames-drawing-not-settled', 'tools/legacy/frames.js', '  if (!cf_drawing) return;\n  cf_drawing = 0;\n', '  if (!cf_drawing) return;\n', FRAMES, 'FAIL a throw while the shim draws does not lock the page'),
   ('frames-select-checkbox-throws', 'tools/legacy/frames.js', '      if (f.ss >= 0 && cf_isText(el.type) && el.setSelectionRange)', '      if (f.ss >= 0 && el.setSelectionRange)', FRAMES, 'FAIL cd_call(checkbox, "select") does not throw'),
   ('frames-move-foreign', 'tools/legacy/frames.js', '  if (next && next.p != parent) {', '  if (false) {', FRAMES, "FAIL cd_move before another parent's node moves nothing"),
-  ('frames-move-self', 'tools/legacy/frames.js', '  if (next == x) return;\n', '', FRAMES, 'FAIL no result within 120 s'),  # the self-link hangs the draw, so the run's own deadline is the catch
+  ('frames-move-self', 'tools/legacy/frames.js', '  if (next == x) return;\n', '', FRAMES, 'FAIL cd_move before itself moves nothing'),  # the self-link breaks the next draw: Chrome throws a RangeError in cf_w
   ('frames-tag-case', 'tools/legacy/frames.js', '  var t = name.toLowerCase(), k;', '  var t = name, k;', FRAMES, 'FAIL a tag in capitals is the same tag'),
   ('frames-tag-unchecked', 'tools/legacy/frames.js', '  if (t.length && k == t.length) return t;', '  return t;', FRAMES, 'FAIL a tag that is not letters and digits is a SPAN'),
   ('frames-start-trap-unnoted', 'tools/legacy/frames.js', '    cf_fail("cdom: cd_start did not return (a trap in cd_main?)");\n', '', FRAMES, 'FAIL frames.html: a trap in cd_start is noted'),
@@ -1077,7 +1077,7 @@ M = [
   ('vml-svg-plain-element', 'tools/legacy/dom-old.js', ' : w.cdomVml.create(tag);', ' : d.createElement(tag);', LEG6, 'FAIL the svg is a span of its own size'),
   ('vml-viewbox-ignored', 'tools/legacy/vml.js', '    if (vb.length !== 4 || vb[2] <= 0 || vb[3] <= 0) return [1, 1, 0, 0];', '    return [1, 1, 0, 0];', LEG6, 'FAIL <path> as a v:shape'),
   ('vml-stroke-weight-unscaled', 'tools/legacy/vml.js', '    var weight = num(paint["stroke-width"], 1) * Math.sqrt(m[0] * m[1]);', '    var weight = num(paint["stroke-width"], 1);', LEG6, 'FAIL <path> as a v:shape'),
-  ('vml-g-transform-ignored', 'tools/legacy/vml.js', '    own = st.kind === 0 ? rootMatrix(a) : a.transform ? st.tm : null;', '    own = st.kind === 0 ? rootMatrix(a) : null;', LEG6, 'FAIL <path in a g> as a v:shape'),
+  ('vml-g-transform-ignored', 'tools/legacy/vml.js', '    } else if (a.transform && typeof st.tm !== "string") {', '    } else if (false) {', LEG6, 'FAIL <path in a g> as a v:shape'),
   ('vml-paint-not-inherited', 'tools/legacy/vml.js', '    for (k in ctx.paint) {', '    for (k in {}) {', LEG6, 'FAIL <path in a g> as a v:shape'),
   ('vml-opacity-not-multiplied', 'tools/legacy/vml.js', '    return { m: m, paint: paint, opacity: ctx.opacity * num(a.opacity, 1) };', '    return { m: m, paint: paint, opacity: ctx.opacity };', LEG6, 'FAIL <polygon> as a v:shape'),
   ('vml-short-hex-kept', 'tools/legacy/vml.js', 'return "#" + v.charAt(1) + v.charAt(1) + v.charAt(2) + v.charAt(2) + v.charAt(3) + v.charAt(3);', 'return v;', LEG6, 'FAIL <circle> as a v:shape'),
@@ -1144,7 +1144,7 @@ M = [
   ('job-rule-no-heap-only', 'cdom.mk', '$(CDOM_CFLAGS) -DCDOM_HEAP_ONLY $(APP_JOB_CFLAGS)', '$(CDOM_CFLAGS) $(APP_JOB_CFLAGS)', LINK, 'FAIL cdom.mk\'s job rule does not build a job module'),
   ('job-rule-any-name', 'cdom.mk', '$$(call cdom_mk_for,$$(cdom_mk_job_files),$$@,$$(cdom_mk_job_src) $$(cdom_mk_job_objs) $$(CDOM_HEADERS))', '$$(cdom_mk_job_src) $$(cdom_mk_job_objs) $$(CDOM_HEADERS)', LINK, 'FAIL cdom.mk built a .job.wasm that APP_JOBS does not name'),
   ('job-page-always-bundled', 'cdom.mk', 'cdom_mk_job_args = $(if $(APP_WASM_SEPARATE),,$(foreach', 'cdom_mk_job_args = $(if x,$(foreach', LINK, 'FAIL a page with APP_WASM_SEPARATE carries the job module'),
-  ('job-page-no-jobs', 'cdom.mk', ',$(cdom_mk_simd_url),$(cdom_mk_job_args))', ',$(cdom_mk_simd_url))', LINK, 'FAIL a bundled page does not carry its job module'),
+  ('job-page-no-jobs', 'cdom.mk', ',$(cdom_mk_job_args) $(cdom_mk_noscript_args))', ',$(cdom_mk_noscript_args))', LINK, 'FAIL a bundled page does not carry its job module'),
   ('job-page-name', 'tools/cdpage.c', 'bstr(o, "var cdomJobs={");', 'bstr(o, "var cdomJob={");', PAGE, 'FAIL two job modules bundled'),
   ('job-page-no-comma', 'tools/cdpage.c', '          if (j) bbyte(o, \',\');\n', '', PAGE, 'FAIL two job modules bundled'),
   ('job-page-name-raw', 'tools/cdpage.c', '          js_string(o, name);\n', '          bbyte(o, \'"\');\n          bstr(o, name);\n          bbyte(o, \'"\');\n', PAGE, 'FAIL two job modules bundled'),
