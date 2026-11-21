@@ -7,8 +7,13 @@ no-store, so a rebuilt file is fetched again, and every request is logged to std
 requests to /mark/<tag>/..., which the log then holds (they answer 404, which an image request does not mind)."""
 import functools
 import http.server
+import os
 import sys
 import time
+
+# VMSERVE_GIF_CACHE=1: a .gif answer may be kept (an Expires a day ahead instead of no-store), to measure what Netscape 2's
+# image requests cost a page that writes its view (docs/descent.md, "Netscape 2 paints itself")
+GIF_CACHE = os.environ.get("VMSERVE_GIF_CACHE") == "1"
 
 
 class Server(http.server.ThreadingHTTPServer):
@@ -37,7 +42,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return time.strftime("%d/%b/%Y %H:%M:%S", time.localtime(t)) + ".%03d" % (int(t * 1000) % 1000)
 
     def end_headers(self):
-        self.send_header("Cache-Control", "no-store")
+        if GIF_CACHE and self.path.split("?")[0].endswith(".gif") and "/end.gif" not in self.path:
+            self.send_header("Expires", time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(time.time() + 86400)))
+        else:
+            self.send_header("Cache-Control", "no-store")
         # Netscape 2 asks for keep-alive but does not end an answer at its Content-Length: it waits for the close, so with
         # HTTP/1.1 every batch of its 4 connections sat out the 20 s timeout above (a page of 700 images took 160 s, found by
         # the framebuffer probes, docs/descent.md).  Its answers say close, and the connection is closed after each.

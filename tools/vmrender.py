@@ -11,7 +11,7 @@ build's (out/ns2render ppm), pixel for pixel (XP's activation balloon masked):
   click     a click on Features: the details page drawn
   back      a click on the details page's Back pill: the still page drawn
 Times are the Mac's wall seconds (the server's log and the screendumps), from the step's start; the guest's clock runs slow,
-so its milliseconds are scaled by the factor the draw itself shows (wall from its first GIF request to end.gif, over t - f).
+so its milliseconds are reported as they are; a "Lengthy JavaScript" dialog is answered OK and its times listed.
 Every browser window closes at the end."""
 import argparse, os, re, subprocess, sys, time
 import numpy as np
@@ -24,6 +24,11 @@ import vmfb, vm
 OUT = os.path.join(HERE, "..", "demo", "ns2render", "out")
 SHOTS = vmfb.SHOTS
 BALLOON = (238, 360)
+# Netscape 2's "Lengthy JavaScript still running. Continue?" dialog, where it opens over the view (a crop of a screendump of it);
+# wait_draw presses its OK and counts it
+LENGTHY = "/Users/alex/VMs/ie6-xp/shots/lengthy-template.png"
+LENGTHY_BOX = (183, 168, 458, 288)
+LENGTHY_OK = (278, 261)
 
 
 def native(page, state):
@@ -65,12 +70,19 @@ def compare(shot, page, state):
 def wait_draw(off, page, state, t0, limit):
     """Until end.gif?p<page>s<state> is requested and the screen has been still for vmfb.STABLE s. Returns a dict of times
     (Mac wall s from t0) and the end mark's numbers, and the new log offset."""
-    r = dict(first_gif=None, last_gif=None, end=None, gifs=0, q=None, change=None)
+    r = dict(first_gif=None, last_gif=None, end=None, gifs=0, q=None, change=None, lengthy=[])
     prev = None
+    tmpl = Image.open(LENGTHY).convert("RGB").tobytes() if os.path.exists(LENGTHY) else None
     while time.time() - t0 < limit:
         time.sleep(0.4)
         im = vmfb.screen(os.path.join(SHOTS, ".vr.ppm"))
         now = time.time()
+        if im is not None and tmpl is not None and im.crop(LENGTHY_BOX).tobytes() == tmpl:
+            r["lengthy"].append(round(now - t0, 1))
+            vm.tap(*LENGTHY_OK)
+            time.sleep(0.5)
+            vm.tap(632, 441, 0)
+            continue
         if im is not None:
             b = im.crop((0, 0, 640, 450)).tobytes()
             if b != prev:
@@ -101,13 +113,9 @@ def report(step, r, extra=""):
     if not q:
         print("%s: no end mark (first gif %s, gifs %d, last screen change %s)" % (step, r["first_gif"], r["gifs"], r["change"]))
         return
-    span = q["t"] - max(q["f"], 0)
-    k = (r["end"] - r["first_gif"]) / (span / 1000.0) if r["first_gif"] is not None and span > 0 else float("nan")
-    sc = lambda v: v / 1000.0 * k
     print("%s: end.gif %.1f s, last screen change %.1f s, first gif %.1f s, gif requests %d; engine ms c %d m %d w %d t %d f %d, "
-          "bytes %d; clock factor %.2f, so compute %.1f s, markup %.1f s, write %.1f s, whole draw %.1f s%s"
-          % (step, r["end"], r["change"], r["first_gif"] or -1, r["gifs"], q["c"], q["m"], q["w"], q["t"], q["f"], q["b"], k,
-             sc(q["c"]), sc(q["m"]), sc(q["w"]), sc(q["t"]), extra))
+          "bytes %d; Lengthy JavaScript dialogs answered at %s s%s"
+          % (step, r["end"], r["change"], r["first_gif"] or -1, r["gifs"], q["c"], q["m"], q["w"], q["t"], q["f"], q["b"], r["lengthy"], extra))
 
 
 def main():
@@ -115,6 +123,7 @@ def main():
     ap.add_argument("--wait", type=float, default=600)
     ap.add_argument("--steps", default="load,hover,unhover,click,back")
     ap.add_argument("--tag", default="a")
+    ap.add_argument("--gif-cache", action="store_true", help="tools/vmserve.py lets Netscape 2 keep the GIFs (VMSERVE_GIF_CACHE)")
     ap.add_argument("--query", default="", help="index.html's query: host.js's options, m<mode> b<rows a batch>")
     a = ap.parse_args()
     steps = a.steps.split(",")
@@ -122,8 +131,9 @@ def main():
     time.sleep(3)
     subprocess.run(["pkill", "-f", "vmserve.py"])
     time.sleep(1)
+    env = dict(os.environ, VMSERVE_GIF_CACHE="1" if a.gif_cache else "0")
     subprocess.Popen([sys.executable, os.path.join(HERE, "vmserve.py"), os.path.abspath(OUT), "8110"],
-                     stdout=open(vmfb.LOG, "a"), stderr=subprocess.STDOUT, start_new_session=True)
+                     stdout=open(vmfb.LOG, "a"), stderr=subprocess.STDOUT, start_new_session=True, env=env)
     time.sleep(1.5)
     vm.tap(632, 441, 0)
     off = os.path.getsize(vmfb.LOG)
