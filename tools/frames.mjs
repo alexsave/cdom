@@ -77,6 +77,19 @@ const TREE_IDS = `(function () { var out = [];
   walk(cf_mount, false); return out; })()`;
 
 const port = srv.address().port;
+{
+  // The built page, as Netscape 2 to 4 are handed it: the early script in the head ahead of any content, and the two
+  // scripts they cannot parse hidden from them by language="JavaScript1.5".
+  const html = fs.readFileSync(path.join(root, 'frames.html'), 'utf8');
+  const early = html.indexOf('window.name != "cdomApp"');
+  ok(early > 0 && html.lastIndexOf('<script>', early) > 0 && early < html.indexOf('<div') && early < html.indexOf('</head>'),
+    'the early script is in the head, ahead of any content');
+  const hidden = [...html.matchAll(/<script language="JavaScript1\.5">\s*\n([^\n]{0,60})/g)].map((m) => m[1]);
+  ok(hidden.length === 2 && /cdom shim:|GENERATED from/.test(hidden[0]) && hidden[1].startsWith('function cdomBootDom'),
+    `the inlined shim and the boot's second part are language="JavaScript1.5" scripts, which Netscape 2 to 4 skip: ${JSON.stringify(hidden)}`);
+  const table = /\nvar cdomLits=new Array\(\d+,\d+,"[^"]*","([^\n]*)"\);\n/.exec(html);
+  ok(!!table && !table[1].includes('\\x00') && table[1].includes('\\x01'), 'the string table is new Array(...) with entries separated by \\x01: Netscape 2 and 3 cannot parse a literal, and end a string at a NUL');
+}
 const measure = !!process.env.FRAMES_MEASURE;
 run: try {
   await go(`http://127.0.0.1:${port}/frames.html`);
@@ -91,6 +104,7 @@ run: try {
     'the page is a frameset of the view and the app frame: the early script\'s FRAMESET took the body\'s place');
   ok(await E('typeof parent.cdomF === "undefined" && !!window.cdomF && location.search === "?cdomApp"'),
     'the shim lives in the app frame (cdomApp: the page again, under another URL), not in the top window');
+  ok((await E('X.url_search()')) === 0, `the app reads the top window's URL, which has no query here: ${await E('X.url_search()')} bytes`);
   ok((await draws()) === 1, `cd_main drew once: ${await draws()}`);
   const h0 = await ET('history.length');
   const errs = (x) => b.exceptions.filter((e) => !/ReferenceError: TextDecoder is not defined$/.test(e));
@@ -353,6 +367,9 @@ run: try {
       await click('#inc');
       ok((await textOf('#countp')) === 'count 1', `and a click there reaches C: ${JSON.stringify(await textOf('#countp'))}`);
     }
+    // The page's own query, not the app frame's (which gains cdomApp): frames.html?q reads as "?q", 2 bytes.
+    await go(`http://127.0.0.1:${port}/frames.html?q`);
+    ok((await until('!!window.READY')) && (await E('X.url_search()')) === 2, `the app reads the top window's query ("?q"), not its frame's: ${await E('X.url_search()')} bytes`);
     // A trap in cd_start (cd_main, on seed 13): noted, and the frame still drawn with what cd_main had flushed.
     for (const page of ['frames.html', 'frames-body.html']) {
       await go(`http://127.0.0.1:${port}/${page}?trapstart`);

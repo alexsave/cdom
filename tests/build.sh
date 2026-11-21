@@ -76,7 +76,7 @@ page "$here/fptoint.html" "$here/out/fptoint.shim.html" "$here/out/fptoint.wasm"
 node "$legacy" page "$here/out/fptoint.shim.html" "$here/out/fptoint.html"
 # The frames tier (docs/frames-design.md, tools/frames.mjs): its shim, and a page whose app runs from the words build.
 node "$legacy" shim-frames "$here/out/cdom.frames.js"
-wasm -O2 "$here/out/frames.wasm" "$here/frames.c" "$here/../src/cdom.c" "$here/../src/mini.c"
+wasm -O2 "$here/out/frames.wasm" "$here/frames.c" "$here/../src/cdom.c" "$here/../src/cdom_url.c" "$here/../src/mini.c"
 # The app as the tier loads it: compiled to JavaScript 1.0 by tools/js1c (docs/js1-compile-design.md); the IE 9 build
 # and the data as statements (js1c -s) beside it, for tools/js1.mjs's measurements.
 "$here/../tools/js1.sh" "$here/out/frames.wasm" "$here/out/frames.wasm.js1.js"
