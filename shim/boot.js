@@ -12,8 +12,9 @@
  * 4. No ES5 or no addEventListener (IE 5 to 8): cdom.legacy-ie6.js (the shim in ES3 on the old DOM,
  *    tools/legacy/dom-old.js) and the same url + ".ie9.js", which is ES3 too (docs/ie6-design.md).
  * 5. No getElementById or no createElement (Netscape 2 to 4, IE 3 and 4): the frames tier (docs/frames-design.md).
- *    cdom.frames.js (tools/legacy/frames.js, JavaScript 1.1) and url + ".ie9.js", written into the page while it
- *    parses, then a frameset whose one frame the shim writes whole.
+ *    cdom.frames.js (tools/legacy/frames.js, JavaScript 1.1) and url + ".js1.js" (the wasm compiled to JavaScript 1.0
+ *    by tools/js1c, docs/js1-compile-design.md), written into the page while it parses, then a frameset whose one
+ *    frame the shim writes whole.
  * Either of the middle fallbacks' two files are fetched at once, and the app file sets window.cdomFactory.
  * url may be the pair [scalar, SIMD] cdom.start takes (cdom.mk's APP_SIMD): cdom.start picks one, and every fallback
  * is the scalar module's build, url[0] + ".js" or url[0] + ".ie9.js".
@@ -42,7 +43,7 @@ function cdomBootFrames(url, mount, env, ready, options) {
   cdomBootEnv = env;
   cdomBootReady = ready;
   cdomBootOptions = options;
-  document.write("<script src=\"cdom.frames.js\"></scr" + "ipt><script src=\"" + base + ".ie9.js\"></scr" + "ipt>"
+  document.write("<script src=\"cdom.frames.js\"></scr" + "ipt><script src=\"" + base + ".js1.js\"></scr" + "ipt>"
     + "<script>cdomFramesStart(window.cdomFactory, cdomBootMount, cdomBootEnv, cdomBootReady, cdomBootOptions)</scr" + "ipt>");
 }
 /*CDOM_BOOT_ES3*/

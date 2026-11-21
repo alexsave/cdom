@@ -77,6 +77,10 @@ node "$legacy" page "$here/out/fptoint.shim.html" "$here/out/fptoint.html"
 # The frames tier (docs/frames-design.md, tools/frames.mjs): its shim, and a page whose app runs from the words build.
 node "$legacy" shim-frames "$here/out/cdom.frames.js"
 wasm -O2 "$here/out/frames.wasm" "$here/frames.c" "$here/../src/cdom.c" "$here/../src/mini.c"
+# The app as the tier loads it: compiled to JavaScript 1.0 by tools/js1c (docs/js1-compile-design.md); the IE 9 build
+# and the data as statements (js1c -s) beside it, for tools/js1.mjs's measurements.
+"$here/../tools/js1.sh" "$here/out/frames.wasm" "$here/out/frames.wasm.js1.js"
+"$here/../tools/js1.sh" "$here/out/frames.wasm" "$here/out/frames.wasm.js1s.js" -s -q
 node "$legacy" app-ie9 "$here/out/frames.wasm" "$here/out/frames.wasm.ie9.js"
 page "$here/frames.html" "$here/out/frames.shim.html" "$here/out/frames.wasm"
 node "$legacy" page "$here/out/frames.shim.html" "$here/out/frames.html"
@@ -87,9 +91,13 @@ cp "$here/probe.html" "$here/out/probe.html"
 # The hold that keeps the Utilu IE 5.01 and 5.5 builds from crashing at a page's Done (tools/ie5hold.py) is the test
 # rig's alone: no shipped file and no built page may name its port.
 if grep -l "10.0.2.2:8096" "$here/../shim/"*.js "$here/../tools/legacy/"*.js "$here/"*.html "$here/out/cdom.legacy"*.js \
-  "$here/out/"*.wasm.js "$here/out/"*.ie9.js "$here/out/legacy.html" "$here/out/cdom.frames.js" "$here/out/frames.html"; then
+  "$here/out/"*.wasm.js "$here/out/"*.ie9.js "$here/out/"*.js1.js "$here/out/legacy.html" "$here/out/cdom.frames.js" "$here/out/frames.html"; then
   echo "build.sh: the IE 5 test hold (port 8096) is in a shipped or built file" >&2; exit 1
 fi
+# js1c's differential test (tools/js1.mjs): tests/js1diff.c as wasm, through js1c and through the IE 9 build; no cdom.
+"$CC" -O2 "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -o "$here/out/js1diff.wasm" "$here/js1diff.c"
+"$here/../tools/js1.sh" "$here/out/js1diff.wasm" "$here/out/js1diff.wasm.js1.js"
+node "$legacy" app-ie9 "$here/out/js1diff.wasm" "$here/out/js1diff.wasm.ie9.js"
 # Every memory access form as wasm, as wasm2js output and through the words pass, for tools/words.mjs to run side
 # by side: no cdom in it, so no string table either (no cdlits).
 "$CC" -O2 "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -o "$here/out/memforms.wasm" "$here/memforms.c"
