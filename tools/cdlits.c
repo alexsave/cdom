@@ -421,7 +421,7 @@ static uint32_t fnv(void) {
   return h ? h : 1;
 }
 
-/* One entry of the table text. The separator is \x00, never \0, so a digit after it cannot make an octal
+/* One entry of the table text. The separator is \x01, never \1, so a digit after it cannot make an octal
  * escape; "<" is \x3c so that "</script>" and "<!--" cannot end the script. */
 static void js_string(Buf *o, const uint8_t *s, size_t n) {
   char t[8];
@@ -470,13 +470,17 @@ static void do_build(const char *outw, const char *outl) {
   /* step 8, the table text */
   Buf lits = {0};
   char t[64];
-  snprintf(t, sizeof t, "var cdomLits=[%u,%u,\"\xe2\x98\x83\",\"", have_lits ? lits_start : 0, stamp);
+  /* new Array(...), not an array literal: Netscape 2 and 3 cannot parse a literal (docs/frames-design.md, section 15); with four
+   * arguments it is the four-element array in every engine. */
+  snprintf(t, sizeof t, "var cdomLits=new Array(%u,%u,\"\xe2\x98\x83\",\"", have_lits ? lits_start : 0, stamp);
   bstr(&lits, t);
   for (size_t k = 0; k < nslots; k++) {
-    if (k) bstr(&lits, "\\x00");
+    if (k) bstr(&lits, "\\x01");
+    /* The separator is \x01, not \x00: Netscape 2 and 3 end a string at a NUL (docs/frames-design.md, section 15). */
+    if (memchr(slots[k].bytes.p, 1, slots[k].bytes.n)) die("a string literal holds the byte 0x01, which separates the table's entries");
     js_string(&lits, slots[k].bytes.p, slots[k].bytes.n);
   }
-  bstr(&lits, "\"];\n");
+  bstr(&lits, "\");\n");
 
   /* step 6: the data section without the two ranges. A segment inside a range is dropped, one that
    * overlaps is cut, its head and tail kept as two segments. */

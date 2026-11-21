@@ -8,7 +8,7 @@ log=/Users/alex/VMs/ie6-xp/serve-frames-real.log
 here=$(cd "$(dirname "$0")" && pwd)
 "$here/vmopen.sh" kill
 before=$(grep -c "/mark/$tag" "$log")
-"$here/vmopen.sh" "$b" "http://10.0.2.2:8110/$page"
+"$here/vmopen.sh" "$b" "http://10.0.2.2:8110/r$(date +%s)/$page"
 n=0
 until [ $n -ge $(( wait / 2 )) ]; do sleep 2; n=$((n+1)); done
 sleep 4

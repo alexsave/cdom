@@ -19,7 +19,7 @@ const esc = (s) => Array.from(s, (c) => {
 async function run(wasmPath, litsPath, fns) {
   const table = vm.runInNewContext(fs.readFileSync(litsPath, "utf8") + ";cdomLits");
   if (table[2] !== "☃") throw new Error("the table's canary is wrong");
-  const lits = table[3].split("\0");
+  const lits = table[3].split("\x01");
   const base = table[0];
   let mem, exp;
   const dec = new TextDecoder();

@@ -1942,7 +1942,7 @@ var cdom = (() => {
       throw new Error("cdom: the page's string table is not this module's (the page and the module are from different builds, or the module did not go through cdlits)");
     }
     checkAhead = !!(options && options.checkAhead);
-    lits = table[3].split("\0");
+    lits = table[3].split("\x01");
     litBase = table[0];
     litEnd = litBase ? litBase + 4 * lits.length : 0;
     onRoRead = (options && options.onRoRead) || null;

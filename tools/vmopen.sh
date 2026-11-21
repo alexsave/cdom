@@ -11,10 +11,10 @@ case "$1" in
   kill) exe='' ;;
   *) echo "usage: vmopen.sh ns2|ns3|ns4|ie4|kill [url]"; exit 1 ;;
 esac
-python3 vm.py tap 40 465; sleep 2; python3 vm.py tap 238 400; sleep 2
+python3 vm.py tap 40 465; sleep 3; python3 vm.py tap 238 400; sleep 3
 if [ "$1" = kill ]; then
   python3 vm.py keys 'taskkill /f /im netscape.exe'; python3 vm.py key ret; sleep 3
-  python3 vm.py tap 40 465; sleep 2; python3 vm.py tap 238 400; sleep 2
+  python3 vm.py tap 40 465; sleep 3; python3 vm.py tap 238 400; sleep 3
   python3 vm.py keys 'taskkill /f /im iexplore.exe'; python3 vm.py key ret; sleep 3
 else
   python3 vm.py keys "$exe $2"; python3 vm.py key ret

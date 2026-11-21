@@ -270,7 +270,14 @@ async function page(src, out) {
   earlyCode = (earlyCode + early.slice(eat)).replace(/[ \t]+$/gm, '').replace(/\n{2,}/g, '\n').trim() + '\n';
   js11Pass.js11('shim/boot-early.js', earlyCode, { js10: true, allowed: ['getElementById', 'createElement'] });
   if (!html.includes('</head>')) throw new Error(`${src} has no </head> (the early script goes before it)`);
-  return html.replace('</head>', () => '<script>\n' + earlyCode + '</script></head>').replace(mark, () => parts[0] + '</script>\n<script>\n' + parts[1]);
+  // The shim and the boot's second part are ES5 and ES3: Netscape 2 to 4 would raise a syntax error alert for each in the
+  // app frame, so their <script>s say language="JavaScript1.5", which those browsers (JavaScript 1.0 to 1.3) skip without a
+  // word; every browser that runs them takes it as JavaScript (the HTML standard lists text/javascript1.5), and IE 4 runs
+  // it and fails (its window.onerror, in the early script, hides that).
+  const SHIM_TAG = /<script>(\s*\n\/\/ (?:GENERATED from shim\/cdom\.js|cdom shim:))/;
+  if (!SHIM_TAG.test(html)) throw new Error(`${src} has no inlined shim (a <script> that starts with the shim's own first comment)`);
+  return html.replace('</head>', () => '<script>\n' + earlyCode + '</script></head>').replace(SHIM_TAG, '<script language="JavaScript1.5">$1')
+    .replace(mark, () => parts[0] + '</script>\n<script language="JavaScript1.5">\n' + parts[1]);
 }
 
 // cdom.frames.js: tools/legacy/frames.js, which must be JavaScript 1.1 (js11.mjs) before and after it is minified. No
