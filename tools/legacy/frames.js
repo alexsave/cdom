@@ -1520,12 +1520,14 @@ cf_ops.title = cf_op_title;
 var cf_LACKS = "encode image_bytes blit ws_open ws_send ws_close ws_buffered http file_read file_open file_next file_close job_run job_stop image_call image_throw store_put store_get store_del audio_load audio_free audio_play audio_stop audio_gain audio_master audio_state random url_go language prefs clipboard_write share fonts_wait".split(" ");
 for (cf_k = 0; cf_k < cf_LACKS.length; cf_k++) cf_ops[cf_LACKS[cf_k]] = new Function("return cf_lacks(\"" + cf_LACKS[cf_k] + "\")");
 
-/* cd_seed: options.seed when the page fixes one, else the one exception to cdom's seed rule that IE 9 and 10 have
- * (shim/cdom.js, seed()): none of these browsers has a cryptographic generator, so cd_seed is neither secret nor
- * unpredictable here. */
+/* cd_seed: options.seed when the page fixes one, else 0, noted in cdomF.errors. None of these browsers has a
+ * cryptographic generator, and cdom's one exception to its seed rule (the engine's generator and the clock, shim/cdom.js's seed())
+ * is approved for IE 9 and 10 alone (tools/seeds.mjs holds it there), so this tier does not draw one itself: a page
+ * that wants a seed per visit passes one, as a server can. */
 function cf_seed(options) {
   if (options && typeof options.seed == "number") return options.seed >>> 0;
-  return (Math.random() * 4294967296 ^ (new Date()).getTime()) >>> 0;
+  cf_fail("cdom: no options.seed, and no cryptographic generator here: cd_seed is 0");
+  return 0;
 }
 /* The start, which the boot's written script calls once both files have run: factory is the app's (window.cdomFactory),
  * the rest is what cdomBoot was given. The mount is the frame's body, whatever was named. */

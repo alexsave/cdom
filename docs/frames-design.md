@@ -95,7 +95,8 @@ It keeps shim/cdom.js's design where it can:
 - The same strings: a literal's slot in cdomLits, a read-only pointer read once and kept, a runtime record in C's tmp block; ahead is a no-op, since every string is read from C's memory directly.
 - The same event record and cd_layout read, and the same delivery to the nearest listening ancestor with the path down (8 bits of element index a level), walked on the node tree instead of the DOM.
 - The same words memory as the third and fourth tiers (memory.words of the app's .ie9.js file).
-- The same seed exception as IE 9 and 10: options.seed, else Math.random and the clock.
+- The seed: options.seed, else 0, noted in cdomF.errors.
+  The seed rule's one exception (Math.random and the clock) is IE 9 and 10's alone (tools/seeds.mjs), and extending it to this tier is Alex's call, not taken here.
 
 Rendering is once per outermost call into C, never once per op:
 
@@ -234,7 +235,7 @@ Measured after the predictions were committed (e22b529); headless Chrome 153 on 
 
 | | Predicted | Measured | Verdict |
 | --- | --- | --- | --- |
-| P1, size | at most 16,384 bytes minified, 6,144 gzipped | 30,024 bytes minified, 9,757 gzipped | refuted |
+| P1, size | at most 16,384 bytes minified, 6,144 gzipped | 30,024 bytes minified, 9,757 gzipped (30,059 after the seed change below) | refuted |
 | P2, redraw cost at 2,000 nodes | at most 6 us a node, serializing at most half | 6.2, 5.15, 5.85 and 4.7 us a node; serializing 0.15 | refuted (one run of four over 6) |
 | P3, linear | 4,000 nodes within 1.5 times 1,000's cost a node | 0.71 to 0.80 times (4.8 to 5.6 against 6.6 to 7.4 us) | confirmed |
 | P4, redraws per event | 1 click, 1 change, 0 unchanged, 1 cd_main | 1, 1, 0, 1, and 1 for a timer, a change with the click after it, and an export of 15 ops | confirmed |
