@@ -48,7 +48,14 @@ def log_lines_since(off):
 
 
 def screen(path):
-    vm.hmp("screendump " + path)
+    # QEMU's monitor socket takes one client at a time: a screendump of another tool at the same moment (tools/vmfilm.py
+    # filming a run) refuses this one for a moment
+    for _ in range(50):
+        try:
+            vm.hmp("screendump " + path)
+            break
+        except OSError:
+            time.sleep(0.05)
     for _ in range(40):
         try:
             im = Image.open(path)
