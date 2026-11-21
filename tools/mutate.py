@@ -985,10 +985,10 @@ M = [
   ('frames-shim-tag-plain', 'tools/legacy/build.mjs', ".replace(SHIM_TAG, '<script language=\"JavaScript1.5\">$1')", ".replace(SHIM_TAG, '<script>$1')", FRAMES, 'FAIL the inlined shim and the boot'),  # Netscape 3 raises a syntax error alert for it
   ('frames-boot2-tag-plain', 'tools/legacy/build.mjs', "'</script>\\n<script language=\"JavaScript1.5\">\\n' + parts[1]", "'</script>\\n<script>\\n' + parts[1]", FRAMES, 'FAIL the inlined shim and the boot'),
   ('frames-early-always', 'shim/boot-early.js', 'if (!(document.getElementById && document.createElement)) {', 'if (1) {', LEG1, 'FAIL'),  # a browser with the DOM would get the frameset too
-  ('frames-early-query-dropped', 'shim/boot-early.js', '"/*CDOM_APP_DOC*/" + location.search', '"/*CDOM_APP_DOC*/"', FRAMES, 'FAIL frames.html: a trap in cd_start is noted'),  # the app document runs the page's own script, which reads its query
+  ('frames-early-query-dropped', 'shim/boot-early.js', '"/*CDOM_APP_DOC*/" + location.search', '"/*CDOM_APP_DOC*/"', FRAMES, 'FAIL the early script is in the head'),  # the app document runs the page's own script, which reads its query
   ('frames-handler-parent', 'tools/legacy/frames.js', 'on + "=\\"parent.cdomApp.cdomF." + f', 'on + "=\\"parent.cdomF." + f', FRAMES, 'FAIL a click on the button reached C'),
-  ('frames-url-own', 'tools/legacy/frames.js', 'var l = top.location,', 'var l = location,', FRAMES, "FAIL the app reads the top window's URL"),
-  ('frames-boot-no-wait', 'shim/boot.js', 'if (cdomBootTries < 400) setTimeout("cdomBootWait()", 50);', 'if (0) setTimeout("cdomBootWait()", 50);', FRAMES, 'FAIL the boot starts once cdom.frames.js has run'),  # IE 4 runs the written script before the file
+  ('frames-url-own', 'tools/legacy/frames.js', 'var l = top.location,', 'var l = location,', FRAMES, "FAIL the app reads the top window's URL path"),
+  ('frames-boot-no-wait', 'shim/boot.js', 'if (cdomBootTries < 400) setTimeout("cdomBootWait()", 50);', 'if (0) setTimeout("cdomBootWait()", 50);', FRAMES, 'FAIL the boot starts once the shim has run'),  # IE 4 runs the written script before the file
   ('frames-tick-draws-under-press', 'tools/legacy/frames.js', '  if (cf_dirty && (later || cf_pressed)) {', '  if (cf_dirty && later) {', FRAMES, "FAIL a timer's draw waits while a button is down"),  # Play's tick replaced the Pause button under the pointer
   ('frames-boot-takes-dom', 'shim/boot.js', '  cdomBootFrames(url, mount, env, ready, options);\n}', '  cdomBootDom(url, mount, env, ready, options);\n}', FRAMES, 'FAIL booted'),
   ('frames-boot-not-js10', 'shim/boot.js', '  cdomBootMount = mount;\n', '  cdomBootMount = mount;\n  var none = {};\n', FRAMES, 'shim/boot.js part 1 is not JavaScript 1.0'),
@@ -1056,13 +1056,13 @@ M = [
   ('js10-mixed-return-allowed', 'tools/legacy/js11.mjs', "    if (value && bare) add('a function that returns a value and also none', n);\n", '', JS11T, 'FAIL function f(a) { if (a) return 1; return; } is refused'),
   ('js10-trailing-return-allowed', 'tools/legacy/js11.mjs', "    if (value && (!last || last.type !== 'ReturnStatement')) add('a function that returns a value and does not end in a return', n);\n", '', JS11T, 'FAIL function f(a) { while (1) { if (a) return 1; } } is refused'),
   ('js10-object-anywhere', 'tools/legacy/js11.mjs', " && !(n.name === 'Object' && parent && parent.type === 'NewExpression' && parent.callee === n)", " && n.name !== 'Object'", JS11T, 'FAIL js10: var o = Object; is refused'),
-  ('js10-allowed-members-ignored', 'tools/legacy/js11.mjs', "      if (js10 && JS10_NAMES.has(name) && !ok.has(name)) add(", "      if (js10 && JS10_NAMES.has(name)) add(", JS11T, 'FAIL frames.js is JavaScript 1.0'),
+  ('js10-allowed-members-ignored', 'tools/legacy/js11.mjs', "      if (js10 && JS10_NAMES.has(name) && !ok.has(name)) add(", "      if (js10 && JS10_NAMES.has(name)) add(", JS11T, 'frames.js is not JavaScript 1.0: .String'),
   # the app document: no script src, no block over BLOCK_MAX, the table cut only between escapes, and the page with no
   # mouse button hooks (?ns2)
   ('frames-app-doc-script-src', 'tools/legacy/build.mjs', "  return `<html><head><meta charset=\"utf-8\"><title>${title}</title></head><body>\\n`", "  return `<html><head><meta charset=\"utf-8\"><title>${title}</title></head><body>\\n<script src=\"${path.basename(module)}\"></script>\\n`", FRAMES, "FAIL the app document's scripts are"),
   ('frames-block-over-max', 'tools/legacy/build.mjs', '    if (cur && bytes(cur) + 1 + bytes(st) > BLOCK_MAX) {', '    if (cur && bytes(cur) + 1 + bytes(st) > 2 * BLOCK_MAX) {', FRAMES, 'FAIL no block of the app document is over BLOCK_MAX'),
   ('frames-lits-cut-in-escape', 'tools/legacy/build.mjs', "    if (body[i] === '\\\\') j = /[0-7]/.test(body[i + 1]) ? i + 1 + (/^[0-7]{1,3}/.exec(body.slice(i + 1))[0].length) : i + 2;\n", '', FRAMES, 'FAIL a string table of'),
-  ('frames-lits-one-statement', 'tools/legacy/build.mjs', '    if (piece.length && bytes(piece.join(\'+\')) + bytes(l) + 1 > LITS_PIECE) flush();\n', '', FRAMES, 'FAIL it is cut into'),
+  ('frames-lits-one-statement', 'tools/legacy/build.mjs', '    if (piece.length && bytes(piece.join(\'+\')) + bytes(l) + 1 > LITS_PIECE) flush();\n', '', FRAMES, "over the app document's block of"),
   ('frames-draw-assumes-press', 'tools/legacy/frames.js', '  cf_pressed = 0; /* the new document', '  cf_pressed = 1; /* the new document', FRAMES, 'FAIL ns2: a click on the button is drawn at once'),
   ('frames-fields-by-type', 'tools/legacy/frames.js', '    t = cf_kind(x);\n', '    t = el.type == "checkbox" || el.type == "radio" ? "check" : el.type == "text" || el.type == "textarea" ? "text" : el.type == "select-one" ? "select" : "";\n', FRAMES, "FAIL ns2: a field's change reaches C"),
   ('frames-table-split', 'tools/legacy/frames.js', '  cf_lits = cf_split(text, cf_T[1]);', '  cf_lits = text.split(cf_T[1]);', FRAMES, 'frames.js is not JavaScript 1.0: .split'),
@@ -1304,7 +1304,7 @@ M = [
   ('lits-separator-nul', 'tools/cdlits.c', '    if (k) js_escape(&lits, 1);', '    if (k) js_escape(&lits, 0);', LITST, 'FAIL table: the lits file separates by'),  # Netscape 2 and 3 end a string at a NUL
   ('lits-escape-hex', 'tools/cdlits.c', 'snprintf(t, sizeof t, "\\\\%03o", c);', 'snprintf(t, sizeof t, "\\\\x%02x", c);', LITST, 'FAIL table: the lits file separates by'),  # Netscape 3 reads a \\x escape greedily
   ('lits-digit-after-escape', 'tools/cdlits.c', "if (after_esc && c >= '0' && c <= '9')", "if (0 && after_esc && c >= '0' && c <= '9')", LITST, 'FAIL table: the lits file separates by'),  # Netscape 3 reads an octal escape greedily
-  ('lits-array-literal', 'tools/cdlits.c', '"var cdomLits=new Array(%u,%u,', '"var cdomLits=[%u,%u,', LITST, 'FAIL table: the lits file separates by'),  # Netscape 2 and 3 cannot parse one
+  ('lits-array-literal', 'tools/cdlits.c', '"var cdomLits=new Array(%u,%u,', '"var cdomLits=[%u,%u,', LITST, 'has no string table script'),  # Netscape 2 and 3 cannot parse one
   ('lits-separator-in-literal', 'tools/cdlits.c', 'if (memchr(slots[k].bytes.p, 1, slots[k].bytes.n)) die(', 'if (0) die(', LITST, 'FAIL error: the table separator inside a literal'),
   ('js1c-heap-written-eagerly', 'tools/js1c.c', 'JA=%u;if(JZ)JA=%u;for(x=0;x<JA', 'JA=%u;if(1)JA=%u;for(x=0;x<JA', JS1, 'FAIL the initial memory is written only below __heap_base'),  # Netscape 3 and 4 pay seconds for it
   ('js1c-ns2-not-told', 'tools/js1c.c', 'JA=%u;if(JZ)JA=%u;for(x=0;x<JA', 'JA=%u;if(0)JA=%u;for(x=0;x<JA', JS1, 'FAIL every case agrees on a memory that throws on a word never written'),  # Netscape 2 dies on undefined | 0

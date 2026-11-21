@@ -394,7 +394,7 @@ async function appDoc(src, module, out) {
   const boot1 = (await bootParts())[0];
   const title = (/<title>([\s\S]*?)<\/title>/.exec(html) || [, ''])[1];
   // The page's own scripts: every <script> after the boot's second part.
-  const at = html.indexOf('<script language="JavaScript1.5">\nfunction cdomBootDom');
+  const at = html.search(/<script[^>]*>\nfunction cdomBootDom/);
   if (at < 0) throw new Error(`${src} has no boot (build it with build.mjs page first)`);
   const own = [];
   const rest = html.slice(html.indexOf('</script>', at) + 9);
