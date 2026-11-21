@@ -61,7 +61,8 @@ const TREE_IDS = `(function () { var out = [];
     if (x.y !== 1) return;
     hidden = hidden || cf_in(cf_SKIP, x.t) || cf_pair(x.s, "display") === "none";
     id = cf_pair(x.a, "id");
-    if (id) out.push([id, hidden, x.t === "input" || x.t === "button" ? null : cf_textOf(x)]);
+    // A field's text is its value, not text the frame shows: checked on its own.
+    if (id) out.push([id, hidden, x.t === "input" || x.t === "button" || x.t === "textarea" || x.t === "select" ? null : cf_textOf(x)]);
     for (c = x.f; c; c = c.n) walk(c, hidden);
   }
   walk(cf_mount, false); return out; })()`;
@@ -97,6 +98,16 @@ run: try {
   ok(await E(`(function () { var f = ${F}.querySelector("#title font"); return !!f && f.getAttribute("color") === "#800000"; })()`), "the heading's color as FONT COLOR");
   ok(await E(`(function () { var i = ${F}.querySelector("#inc"); return i.tagName === "INPUT" && i.type === "button" && i.value === "inc" && i.form === ${F}.forms[0]; })()`),
     'the button is an INPUT TYPE=button with its text as the value, in the one FORM');
+  // Markup characters in a text, an attribute, a textarea's value and an option's text: each is read back from the
+  // frame's own DOM, so markup the shim did not escape would show as elements or cut values, not as these characters.
+  const ESC = `<b>"&amp;x</b>'`;
+  const esc = await E(`(function () { var p = ${F}.querySelector("#esc"), t = ${F}.querySelector("#escta"), s = ${F}.querySelector("#escsel");
+    return [p ? p.innerText : null, p ? p.getAttribute("title") : null, p ? p.getElementsByTagName("b").length : -1, t ? t.value : null,
+      s && s.options[0] ? s.options[0].text : null]; })()`);
+  ok(esc[0] === ESC && esc[2] === 0, `a text with markup characters reads back as them: ${JSON.stringify(esc[0])}, ${esc[2]} B elements`);
+  ok(esc[1] === ESC, `an attribute value with markup characters reads back as them: ${JSON.stringify(esc[1])}`);
+  ok(esc[3] === ESC, `a textarea value with markup characters reads back as them: ${JSON.stringify(esc[3])}`);
+  ok(esc[4] === ESC, `an option text with markup characters reads back as them: ${JSON.stringify(esc[4])}`);
 
   // A click on the button: delivered to C, and drawn once.
   let d = await draws();
