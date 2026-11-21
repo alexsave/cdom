@@ -171,3 +171,5 @@ EXPORT("deeptrap") int deeptrap(int n) {
   if (n == 0) __builtin_trap();
   return deeptrap(n - 1) + 1;
 }
+/* memory.grow: js1c writes the new pages' words (Netscape 2 dies reading a word nothing wrote). */
+EXPORT("grow") int grow(int n) { return (int)__builtin_wasm_memory_grow(0, (unsigned)n); }

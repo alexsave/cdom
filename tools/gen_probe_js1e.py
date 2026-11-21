@@ -45,6 +45,30 @@ TESTS = [
     ("parenDec", "var i = 3; var j = (i--);", "j + ',' + i"),
     ("callDec", "var x = 0; function g(a) { x = a; } var i = 3; g(i--);", "x + ',' + i"),
     ("forIncCall", "var x = 0; var i; function f(a) { x = x + a; } for (i = 0; i < 4; i++) f(1);", "x"),
+    # The same with no spaces, as js1c writes it, and JMc itself (after the first run: every spaced form parsed)
+    ("tightDecGe", "var x=0;var i;for(i=3;i>=0;i--)x++;", "x"),
+    ("tightDecGt", "var x=0;var i;for(i=3;i>0;i--)x++;", "x"),
+    ("tightPreDec", "var x=0;var i;for(i=3;i>=0;--i)x++;", "x"),
+    ("tightN", "var x=0;var i;var m=4;for(i=m-1;i>=0;i--){x++;if(x>9)break;}", "x + ',' + i"),
+    ("tightNspaced", "var x=0;var i;var m=4;for (i = m - 1; i >= 0; i--) {x++;if(x>9)break;}", "x + ',' + i"),
+    ("tightNparen", "var x=0;var i;var m=4;for(i=(m-1);i>=0;i--){x++;if(x>9)break;}", "x + ',' + i"),
+    ("tightNminus2", "var x=0;var i;var m=4;for(i=m-2;i>=0;i--){x++;if(x>9)break;}", "x + ',' + i"),
+    ("tightLit3", "var x=0;var i;var m=4;for(i=3;i>=0;i--){x++;if(x>9)break;}", "x + ',' + i"),
+    ("tightNdecStmt", "var x=0;var i;var m=4;i=m-1;i--;", "i"),
+    ("tightNassign", "var x=0;var i;var m=4;for(i=m-1;i>=0;i=i-1)x++;", "x"),
+    ("tightInc", "var x=0;var i;var m=4;for(i=0;i<m;i++)x++;", "x"),
+    ("tightElse", "var x=0;var i;if(0){}else{for(i=3;i>=0;i--)x++;}", "x"),
+    ("tightElseBraced", "var x=0;var i;if(0){}else{for(i=3;i>=0;i--){x++;}}", "x"),
+    ("tightCall", "var x=0;var i;function f(a,b){x=x+1;} function g(a){return a;} for(i=3;i>=0;i--)f(x+i,g(x+i));", "x"),
+    ("tightCallInc", "var x=0;var i;function f(a,b){x=x+1;} function g(a){return a;} for(i=0;i<4;i++)f(x+i,g(x+i));", "x"),
+    ("jmc", "var JM=new Object();function JWb(a,v){JM[a]=v;}function JLbu(a){return 0;}"
+     "function JMc(d,s,n){var i;if(d<=s){for(i=0;i<n;i++)JWb(d+i,JLbu(s+i));}else{for(i=n-1;i>=0;i--)JWb(d+i,JLbu(s+i));}}JMc(4,0,3);", "JM[6]"),
+    ("jmcNoInc", "var JM=new Object();function JWb(a,v){JM[a]=v;}function JLbu(a){return 0;}"
+     "function JMc(d,s,n){var i;if(d<=s){for(i=0;i<n;i=i+1)JWb(d+i,JLbu(s+i));}else{for(i=n-1;i>=0;i--)JWb(d+i,JLbu(s+i));}}JMc(4,0,3);", "JM[6]"),
+    ("jmcElseOnly", "var JM=new Object();function JWb(a,v){JM[a]=v;}function JLbu(a){return 0;}"
+     "function JMc(d,s,n){var i;for(i=n-1;i>=0;i--)JWb(d+i,JLbu(s+i));}JMc(4,0,3);", "JM[6]"),
+    ("twoLoops", "var x=0;var i;for(i=0;i<2;i++)x++;for(i=1;i>=0;i--)x++;", "x"),
+    ("twoLoopsPre", "var x=0;var i;for(i=0;i<2;++i)x++;for(i=1;i>=0;i--)x++;", "x"),
 ]
 
 VALUES = [("p31m1", "2147483647"), ("p31", "2147483648"), ("p32m1", "4294967295"), ("p32", "4294967296"),
@@ -68,6 +92,21 @@ TESTS += [
     ("costMod", COST + " for (i = 0; i < 20000; i++) { s = ((b + i) % 4294967296) | 0; }", "(T() - t) + 'ms'"),
     ("costIf", COST + " for (i = 0; i < 20000; i++) { s = b + i; if (s > 2147483647) s = s - 4294967296; s = s | 0; }", "(T() - t) + 'ms'"),
 ]
+
+# After the second run: every form parsed alone, and js1c's JMc line is 278 characters with its "i--)" at columns 253 to
+# 256 (from 0). Netscape 3 may read a line in pieces of 255 or 256 characters and split a two-character token across
+# the seam. Each test puts one token at a given column of its line (a padding comment first) and reports its value.
+def at(col, before, token_stmt, offset):
+    """A line whose token_stmt has its token starting at column col: offset is the token's place inside token_stmt."""
+    pad = col - offset - len(before)
+    return before + "/*" + "p" * (pad - 4) + "*/" + token_stmt
+SEAM = []
+for col in (250, 253, 254, 255, 256):
+    SEAM.append(("dec%d" % col, at(col, "var x = 5; ", "x--;", 1), "x"))
+    SEAM.append(("ge%d" % col, at(col, "var x = 5; var y = 0; ", "if(x>=5)y=1;", 4), "y"))
+    SEAM.append(("ushr%d" % col, at(col, "var x = -1; var y = 0; ", "y=x>>>28;", 3), "y"))
+    SEAM.append(("ident%d" % col, at(col, "var abcdef = 7; var y = 0; ", "y=abcdef;", 2), "y"))
+TESTS += SEAM
 
 
 def block(name, defs, expr):
