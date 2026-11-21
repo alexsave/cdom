@@ -35,6 +35,13 @@ for (const [src, what] of [
   ['var t = (new Date()).getTime();', 'a member of a new expression'],
   ['var y = (new Date).getYear;', 'a member of a new expression'],
   ['new F()();', 'a member of a new expression'],
+  ['if (isNaN(x)) f();', 'isNaN'],
+  ['var t = setInterval("f()", 10);', 'setInterval'],
+  ['var t = window.setInterval("f()", 10);', '.setInterval'],
+  ['var s = t.substr(1, 2);', '.substr'],
+  ['with (o) f();', 'with'],
+  ['debugger;', 'debugger'],
+  ['var o = new F(); o.k = 1; x = { get k() { return 1; } };', 'a getter or setter'],
   ['if (a = f()) g();', 'an assignment in a condition'],
   ['if (b && (a = f())) g();', 'an assignment in a condition'],
   ['while (a = f()) g();', 'an assignment in a condition'],
@@ -74,9 +81,16 @@ location.replace(location.search);
 var s = "a,b".split(",").join(";");`), 'new Array, new Object, new Function, typeof, ==, for-in, charAt, substring, indexOf, split, join, void and location pass');
 // Netscape 2, for the boot's first part.
 for (const [src, what] of [['if (typeof x == "string") f();', 'typeof'], ['var a = new Array();', 'Array'],
-  ['F.prototype.g = h;', '.prototype'], ['var p = s.split(",");', '.split'], ['x = void 0;', 'void'], ['var o = new Object();', 'Object']])
+  ['F.prototype.g = h;', '.prototype'], ['var p = s.split(",");', '.split'], ['x = void 0;', 'void'], ['var o = new Object();', 'Object'],
+  ['function f() { return arguments.length; }', 'arguments'], ['if (isNaN(x)) f();', 'isNaN'], ['t = setInterval("f()", 9);', 'setInterval'],
+  ['var s = t.substr(1);', '.substr'], ['if (o.constructor == F) f();', '.constructor'], ['window.onerror = h;', '.onerror'],
+  ['onerror = h;', 'onerror'], ['var n = document.images.length;', '.images'], ['var i = new Image();', 'Image'],
+  ['var w = screen.width;', 'screen'], ['var w = window.screen.width;', '.screen'], ['var n = navigator.plugins.length;', '.plugins']])
   ok(refused(src, what, { js10: true }), `js10: ${src} is refused (${what})`);
 ok(passes('if (x) f(); else g(a[0], "s".length);', { js10: true }), 'js10: if, calls, indexing and length pass');
+ok(passes('function f(a) { return f.arguments.length + a; } location.replace(location.href);', { js10: true }),
+  "js10: a function's own f.arguments and location.replace pass");
+ok(passes('function f() { return arguments.length; } var s = t.substring(1);'), 'js11: arguments and substring pass');
 ok(passes(`function boot(u, m) { var d = document; if (d.getElementById && d.createElement) { dom(u, m); return; }
   var b = u; if (!u.substring) b = u[0]; held = m; d.write("<script src=\\"x.js\\"></scr" + "ipt>"); }`,
   { js10: true, allowed: ['getElementById', 'createElement'] }), "js10: the boot's shape passes, its feature tests allowed");

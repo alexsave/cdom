@@ -16,13 +16,19 @@ const SYNTAX = {
 // from another's), and the DOM this tier has not. fromCharCode and charCodeAt are allowed where the caller says the
 // file checks for them first. Not here, since 1.0 has them on another object: indexOf and lastIndexOf (a string's;
 // an Array's are ES5), search and replace (location's; a string's are 1.2).
-const GLOBALS = new Set(['undefined', 'NaN', 'Infinity', 'JSON', 'Promise', 'Symbol', 'Map', 'Set', 'globalThis']);
+// isNaN and setInterval are JavaScript 1.2 (Netscape 3 has neither: docs/descent.md), as a global or as window's.
+const GLOBALS = new Set(['undefined', 'NaN', 'Infinity', 'JSON', 'Promise', 'Symbol', 'Map', 'Set', 'globalThis', 'isNaN', 'setInterval']);
 const METHODS = new Set(['push', 'pop', 'shift', 'unshift', 'splice', 'slice', 'concat', 'call', 'apply', 'charCodeAt',
   'fromCharCode', 'bind', 'forEach', 'map', 'filter', 'keys', 'create', 'defineProperty',
   'addEventListener', 'attachEvent', 'createElement', 'appendChild', 'insertBefore', 'removeChild', 'getElementById',
-  'innerHTML', 'match', 'test', 'exec', 'toFixed', 'hasOwnProperty']);
-// What Netscape 2 is taken to lack beyond that (Alex: "probably no Array, no typeof, no prototype"), for the boot.
-const JS10_NAMES = new Set(['Array', 'prototype', 'split', 'join', 'Function', 'Object']);
+  'innerHTML', 'match', 'test', 'exec', 'toFixed', 'hasOwnProperty', 'substr', 'isNaN', 'setInterval']);
+// What Netscape 2 is taken to lack beyond that (Alex: "probably no Array, no typeof, no prototype"), and what
+// docs/descent.md measured it lacks: constructor, window.onerror (an error always raises the alert), document.images,
+// new Image, screen and navigator.plugins, as a name or a member; location.replace it has. For the boot.
+const JS10_NAMES = new Set(['Array', 'prototype', 'split', 'join', 'Function', 'Object', 'constructor', 'onerror', 'images',
+  'Image', 'screen', 'plugins']);
+// As a name only: arguments does not exist in Netscape 2, but a function's own f.arguments does.
+const JS10_IDENTS = new Set(['arguments']);
 
 function walk(node, visit, parent) {
   if (!node || typeof node.type !== 'string') return;
@@ -87,6 +93,7 @@ export function lacks(src, { allowed = [], js10 = false } = {}) {
       && !(parent && parent.type === 'Property' && parent.key === n)) {
       if (GLOBALS.has(n.name)) add(n.name, n);
       if (js10 && JS10_NAMES.has(n.name)) add(n.name, n);
+      if (js10 && JS10_IDENTS.has(n.name)) add(n.name, n);
     }
   });
   return found;

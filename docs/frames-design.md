@@ -186,11 +186,11 @@ tools/legacy/frames.js is JavaScript 1.1 as Netscape 3 has it, and tools/legacy/
 - a member or a call of a new expression (`new Date().getTime()`, `(new Date()).getTime()`, terser's `(new Date).getTime()`), a syntax error in Netscape 2 and 3 (docs/descent.md): the shim keeps the new expression in a variable;
 - an assignment anywhere in the test of if, while, for, do-while or ?:, which Netscape 2's parser silently reads as an equality test (netscape.exe's messages: "test for equality (==) mistyped as assignment (=)?", "Assuming equality test");
 - the globals undefined, NaN and Infinity;
-- the methods of JavaScript 1.2 and later (push, pop, shift, unshift, splice, slice, concat, call, apply, charCodeAt, fromCharCode), except charCodeAt and fromCharCode where the file uses them behind a check;
+- the methods and globals of JavaScript 1.2 and later (push, pop, shift, unshift, splice, slice, concat, call, apply, substr, charCodeAt, fromCharCode, isNaN, setInterval), except charCodeAt and fromCharCode where the file uses them behind a check;
 - the DOM this tier has not (createElement, appendChild, insertBefore, removeChild, getElementById, innerHTML, addEventListener, attachEvent).
 
 It cannot tell a string's indexOf (JavaScript 1.0) from an Array's (ES5), or location's replace and search (1.0 and 1.1) from a string's (1.2), so it lets those names through.
-The boot's first part goes through the same gate with js10 on, which also refuses typeof, void, Array, Object, Function, prototype, split and join; it may name getElementById and createElement, which it tests for and never calls.
+The boot's first part goes through the same gate with js10 on, which also refuses typeof, void, Array, Object, Function, prototype, split and join, and what docs/descent.md measured Netscape 2 lacks: arguments (f.arguments it has), constructor, onerror, document.images, Image, screen and navigator.plugins (location.replace it has); it may name getElementById and createElement, which it tests for and never calls.
 
 So the language surface the tier needs of the browser is: functions declared at the top level, new Object() and new Array(), for, for-in, while, if, ?:, the bitwise operators, typeof, new Function, string charAt, indexOf, substring, split and length, Array join, escape and unescape, Math, Date, setTimeout and clearTimeout with a string, and the document and form objects of section 2.
 That list is what a Netscape 2 code path would have to give, whichever way it is made (a WebAssembly interpreter in JavaScript 1.0, or a transform of the wasm2js output): that choice is Alex's, after the probe.
