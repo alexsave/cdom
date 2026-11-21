@@ -9,6 +9,7 @@ of a block and reported by 1x1 images written by the last block, /mark/<query>/p
   probe-ns2-many<N>.html  N blocks of SIZE bytes of statements (a counter in every block says how many ran)
   probe-ns2-atoms<N>.html  N distinct global names in blocks of 30000 bytes (the engine's too many atoms)
   probe-ns2-same<N>.html  N blocks of 30000 bytes that reuse a few names (total size without new atoms)
+  probe-ns2-block<K>.html  one block of K KB of statements that reuse a few names (the largest single block)
   probe-ns2-fns.html    a function and globals defined in one block, used in the next
   probe-ns2-frames.html the frames tier's two frames (shim/boot-early.js's shape), calls and rewrites; driven by a click
   probe-ns2-big.html    the demo/uttt build's code, inline, about 150 KB: its load time is the gap between the page's GET and its mark
@@ -101,6 +102,11 @@ def manyreuse(count, size=30000):
         blocks.append(block(line * (size // len(line)) + "cnt = cnt + 1;\nlast = %d;" % k))
     tail = 'mark("cnt", cnt);\nmark("last", last);\nmark("ms", nowms() - T0);\nflush();\n'
     return page("same%d" % count, init, blocks, tail)
+
+
+def oneblock(kb):
+    """One block of kb KB of statements that reuse a few names: the largest single block, apart from the atom table."""
+    return manyreuse(1, kb * 1024).replace("same1", "block%d" % kb)
 
 
 def atoms(count):
@@ -256,6 +262,8 @@ if __name__ == "__main__":
         write("probe-ns2-atoms%d.html" % c, atoms(c))
     for c in (40, 100):
         write("probe-ns2-same%d.html" % c, manyreuse(c))
+    for kb in (2048, 4096):
+        write("probe-ns2-block%d.html" % kb, oneblock(kb))
     write("probe-ns2-fns.html", fns())
     write("probe-ns2-frames.html", FRAMES)
     if os.path.exists(os.path.join(here, "..", "demo", "uttt", "out", "uttt.wasm.js1.js")):
