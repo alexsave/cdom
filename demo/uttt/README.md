@@ -66,7 +66,7 @@ Run in the XP VM on 2026-11-21 (docs/frames-design.md section 15 has the rest an
 | IE 4.01 | all work | advances a move a tick; Pause stops it | both work | /Users/alex/VMs/ie6-xp/shots/uttt-ie4.png |
 | Netscape 4.08 | all work | advances a move a tick; the click on Pause is lost (each tick's draw replaces the button) | not run | /Users/alex/VMs/ie6-xp/shots/uttt-ns4.png |
 | Netscape 3.04 | all work, but each draw takes tens of seconds | not run | not run | /Users/alex/VMs/ie6-xp/shots/uttt-ns3.png |
-| Netscape 2.02 | the frameset is made and the view stays blank: the shim cannot be loaded (no SCRIPT SRC); the app document of docs/frames-design.md section 16 is the fix, not yet run there | | | /Users/alex/VMs/ie6-xp/shots/fr-ns2-uttt.png |
+| Netscape 2.02 | all work (`>` in 1.8 s on an idle Mac) | plays the whole game, about 3 s a move, with Netscape's "Lengthy JavaScript still running" dialog every dozen moves to answer | not run | /Users/alex/VMs/ie6-xp/shots/uttt-ns2.png, and the video uttt-ns2.mp4 |
 
 A server has to send scripts as application/x-javascript for Netscape 3 (it offers text/javascript as a download).
 `make -C demo/uttt` builds out/uttt.wasm.js1.js too, and tools/uttt.mjs drives the page in Chrome through the frameset (the app frame is `frames[1]`, the board `frames[0]`).
@@ -75,3 +75,8 @@ A server has to send scripts as application/x-javascript for Netscape 3 (it offe
 
 out/uttt.app.html is 83,879 bytes (23,304 gzipped), in 3 script blocks of at most 30,000 bytes; out/uttt.html is 28,975 bytes (11,514 gzipped), 311 smaller than before, since the boot no longer writes the frames tier's SCRIPT SRCs.
 The frames tier's two documents together are 112,854 bytes and 34,818 gzipped, where its three files were 80,425 and 30,270 (U1): the app document inlines the JavaScript 1.0 module (41,412 bytes) where the words build (19,819) was loaded before branch js1-compile, and the shim (now 40,148).
+
+## Netscape 2.02 (2026-11-21, docs/frames-design.md section 17)
+
+uttt.html?AJG7NYNQG4RFXXGVPGD7QR2ETSOYTWMCREAQ plays to its end in the real Netscape 2.02: the board is in view with the toolbar and directory buttons off, the page has a small heading and the buttons and the move count above the board, and the blocks are 66 pixels, so that the 640 x 480 screen shows all of it.
+Five engine quirks were found and fixed on the way (an empty string's indexOf, a function as false, the click redraw, a number read as null, and the layout); the Lengthy JavaScript dialog and a start that hangs about half the time are not fixed.

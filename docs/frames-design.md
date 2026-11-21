@@ -520,3 +520,74 @@ Known before writing them: docs/descent.md measured, in this guest, a rewrite of
 - N5, per move: one redraw of the board, 2 to 6 s wall of which most is Netscape's layout; a move every 600 ms in Play is then far faster than the guest can draw, so Play runs at the pace of the draw, not of the timer, and 20 moves take 1 to 2 minutes.
   Falsifier: a move under 1.5 s (the probe's own floor for 5 KB), or over 10 s.
 - N6, the typing trap: the `u` of the URL is dropped or doubled by vm.py's sendkey path, not by the guest's Run dialog; the cause is in tools/vmopen.sh's or vm.py's timing or key names, and a fix there is under 30 minutes.
+
+### 17.2 What the runs found
+
+The runs are of 2026-11-21 in the XP VM, driven by a small agent in the guest (tools/vmagent/agent.c, started once as C:\a.exe, polling tools/vmagent.py on the Mac), so that nothing is typed into the guest; tools/vmns2.sh opens a page in Netscape 2.02 through it, and tools/vmjs.sh and Open Location run `javascript:alert(...)` in the page to read its state.
+The screenshots are /Users/alex/VMs/ie6-xp/shots/ns2u-*.png.
+Every failure below was found by a probe page in tests/out (lex*.html, written for the purpose), not by reading the engine.
+
+Failures, in the order they came, each with its cause, its owner and its test:
+
+1. `is not a numeric literal` alert (the first run: frames.app.html "line 1028"; the line number is not a line of the document, and I could not explain it).
+   Dropped theory, from reading the document: the literal `1e308 * 10` (the lexer taking an exponent); it was changed to a loop, then found innocent and reverted (probe lex5: `1e308` reads back as 1e+308, and `1e308 * 10` as 1.#INF).
+   Cause, bisected with probes lex2 to lex4: Netscape 2's `"".indexOf(t)` gives no number at all (it prints as nothing), and any comparison of it raises that alert.
+   The shim called indexOf on empty strings (an empty field value, `location.search`), as did tests/frames.html's own script.
+   Owner: tools/legacy/frames.js, whose only indexOf calls are now cf_idx and cf_idxFrom; tests/frames.html reads ("x" + location.search).
+   Tests: tools/cdp.mjs's ?ns2 flavour makes an empty indexOf throw; tools/frames.mjs counts the indexOf calls (2); mutants frames-idx-raw and frames-idx-no-empty-guard, both caught.
+2. A blank view and no alert: `cdomBootWait` gave up after 400 tries, though `window.cdomFramesStart` and `window.cdomFactory` were defined.
+   Cause (probe lex5): Netscape 2 counts a function as false in a condition (`if (g)` false, `!g` true, `g != null` true, `g && g` false; objects and numbers are fine).
+   Owner: shim/boot.js and tools/legacy/frames.js (a dozen tests of a function or a method: `el.focus`, `el.setSelectionRange`, `factory`, `cf_raw.cd_lits`, `d.captureEvents`, ...), now compared with null; the js10 gate refuses a declared function, a method of the tier's list or a builtin as a bare condition or operand of `!`, `&&` and `||` (tools/legacy/js11.mjs, planted cases in tools/js11.mjs); mutant frames-function-in-condition, caught.
+   Chrome cannot make a function false, so the gate is the test.
+3. The board drew and `>` worked once; the next clicks did nothing.
+   Evidence: a trace in cf_onClick showed one click reaching the shim (`D k5 D`).
+   Cause (not proven, a fix that works): rewriting the view from inside the click's own handler leaves the frame deaf to later clicks; the same draw from a timer is fine.
+   Owner: frames.js: on Netscape 2 (no fromCharCode) a click's draw goes through cf_release's `later`, from a timer cf_LATER (250 ms) after the handler (cf_deferClick).
+   Tests: tools/frames.mjs (?ns2: a synchronous click() draws nothing until the timer, then once), tools/uttt.mjs waits for it; mutant frames-click-draws-in-handler, caught.
+   After it, 4 and then 7 further clicks all worked.
+4. Play drew the first tick's label and then stopped.
+   Cause (probe lex7): Netscape 2 reads -2147483648 and 2147483648 as equal to null (its sentinel for no value); cdom's own timer tokens start at 2^31, so `cf_tok["t" + n] == null` took a pending timer for fired (cf_onTimer returned at once).
+   Owner: frames.js: a token is kept as the string "k" and the token; tools/frames.mjs checks the source (Chrome has no such ==); mutant frames-timer-token-bare, caught.
+5. "Lengthy JavaScript still running. Continue?" every dozen moves of Play (three times in one game).
+   Not fixed: it is Netscape 2's own runaway-script guard, and each tick is a long chain of its interpreter; OK continues, and tools/vmfilm-uttt.sh answers it (it is in the video).
+6. Not fixed: changing Options (toolbar, location, directory buttons) while the page is up resizes the window and the frames reload, after which the view shows the app document's script as text.
+   The options were set before the page was opened and saved (Options, Save Options), so this guest's Netscape 2 now starts with no toolbar and no directory buttons; the Location bar is still on.
+7. Start hangs: about half of the starts stop with "Waiting for reply" and a grey view; the server has seen the page's GET and often not the app document's, so it happens before the frames; it is not the app.
+   tools/vmns2.sh detects it (the view's pixel, the server's log) and starts again.
+   Two runs of the page without a heading hung after both GETs; it was never seen with a heading in six; the heading is back (a guess, unproven).
+8. Layout, not a failure: the 640 x 480 screen showed the board only down to its second row, so the page lost its h2 for a small heading, the buttons and the move count moved above the board, and the blocks are 66 pixels (demo/uttt/uttt_replay.c); the whole board and the counter are in view with the toolbar off.
+
+The typing trap (a `u` in the URL): not reproduced.
+`C:\NS202\Program\netscape.exe http://10.0.2.2:8110/r1/uttt.html?AJG7...` typed through vm.py into Run opened the page (shots/ns2u-type3.png), so vm.py's key mapping was not changed; the agent made the question moot.
+The agent needed a .vbs to be installed: `mshta vbscript:Execute(...)` with XMLHTTP is refused ("Permission denied"), so three typed lines wrote C:\d.vbs, which fetched a.exe.
+
+### 17.3 The checklist of 16.6, in Netscape 2.02
+
+1. frames.html and uttt.html?<code>: the frameset is made, the app frame requests the app document with the page's query, and no script file (the server's log: the page and the app document only).
+2. No alert, after failures 1 to 4 were fixed.
+3. The blocks of 29,605, 29,645 and 24,292 bytes (frames.app.html) and of uttt.app.html parse; BLOCK_MAX stays 30,000.
+4. frames.html: heading, count, button and fields; "inc" adds one; a typed name echoes once the field is left (the trace `f41 c4 f40 ...`: focus, change, blur reach the shim).
+   uttt: the board, `>` (and `<`, `|<`, `>|` as the video's last frames show), and Play to the end of the game: "Move 50 of 50. O wins."
+5. The assumptions: `undefined == null` holds (lex5); `"" + f` was not needed; number keys, escape, forms[0].elements[k] and `parent.cdomApp.cdomF.k(n)` from onClick and a javascript: URL work (frames.html and uttt run); setting document.onmousedown is harmless; 83 KB of script in 3 blocks is not over a limit (no atoms alert).
+   Not run: the Open button with a typed code, and a bad code.
+6. History: not looked at.
+
+The controls (Netscape 3.04, 4.08, IE 4.01) were not needed: each failure was found with probe pages in Netscape 2 itself.
+
+### 17.4 Predictions against the runs
+
+| | Predicted | Found | Verdict |
+| --- | --- | --- | --- |
+| N1, what breaks first | the string table, then number keys, `"" + f`, the click | none of them: `"".indexOf` (1), a function as false (2), the click redraw (3), INT_MIN == null (4) | refuted: four engine quirks that 16.6 item 5 did not list |
+| N2, atoms | under 65,536 | no alert | confirmed |
+| N3, load time | 6 to 15 s from GET to the board | 15 to 20 s when the Mac is otherwise idle (the detector polls every 5 s, minimum 15 s); 25 to 30 s under load | refuted by a little |
+| N4, the first draw | 2 to 5 s | not separated from N3 | not measured |
+| N5, per move | 2 to 6 s a step; Play at the pace of the draw, 20 moves in 1 to 2 minutes | 1.8 s a step on an idle Mac, 4.4 to 5.4 s while other jobs ran (tap to the counter changing, polled twice a second); Play 33 changes in 98 s, about 3 s a move, plus three dialogs; the whole game in about 2 minutes | confirmed |
+| N6, the `u` trap | in vm.py's path, fixed there in under 30 minutes | not reproduced | refuted |
+
+### 17.5 The screenshot and the video
+
+/Users/alex/VMs/ie6-xp/shots/uttt-ns2.png: Move 34 of 50, Netscape 2.02's title bar and menu.
+/Users/alex/VMs/ie6-xp/shots/uttt-ns2.mp4: 1280 x 960, 136 s, the real pace: the desktop, the page opened, the board, four `>`, Play, three "Lengthy JavaScript" dialogs answered, to "Move 50 of 50. O wins."
+Method: QEMU screendumps (tools/vmfilm.py, about six a second, a frame equal to the last dropped), each shown for the real time to the next, assembled by ffmpeg (nearest neighbour, 2 times); macOS's screencapture was not used because the QEMU window is a full-screen Space that is not on screen.
+Frames from the start, the middle and the end were extracted and looked at.
