@@ -213,10 +213,14 @@ ok(d1000 <= B && d1000 === J.st.max, `rec(1000) reaches JavaScript depth ${d1000
 let dmax = 0;
 for (const [name, ...args] of CASES) { J.st.max = 0; J.call(name, ...args); if (J.st.max > dmax) dmax = J.st.max; }
 ok(dmax <= B, `the deepest JavaScript depth over every case is ${dmax}, at or under the bound ${B}`);
-// The gate on every js1c output this build wrote.
+// The gate on every js1c output this build wrote; and no ++ or -- at all (Netscape 3.04 refuses one at column 254,
+// tools/legacy/js11.mjs's seam rule: js1c writes none, so no line's length can put one there).
 for (const f of fs.readdirSync(out).filter((f) => f.endsWith('.js1.js'))) {
-  const found = lacks10(fs.readFileSync(path.join(out, f), 'utf8'));
+  const src = fs.readFileSync(path.join(out, f), 'utf8');
+  const found = lacks10(src);
   ok(found.length === 0, `${f} is JavaScript 1.0 (tools/js10.mjs)${found.length ? ': ' + found.slice(0, 5).join(', ') : ''}`);
+  const incdec = [...acorn.tokenizer(src, { ecmaVersion: 5, locations: true })].filter((t) => t.type.label === '++/--');
+  ok(incdec.length === 0, `${f} has no ++ or --${incdec.length ? `: ${incdec.length}, the first on line ${incdec[0].loc.start.line}` : ''}`);
 }
 // Time slicing: with a budget, the export pauses and Jmore() goes on, to the same result.
 {
