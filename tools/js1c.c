@@ -901,9 +901,11 @@ static int is_cmp(const Expr *e) {
   return e->k == E_BIN && ((e->op >= 0x46 && e->op <= 0x4f) || (e->op >= 0x61 && e->op <= 0x66));
 }
 static void fconst(Buf *b, double d) {
-  if (d != d) { bs(b, "(0/0)"); return; }
-  if (d == 1.0 / 0.0) { bs(b, "(1/0)"); return; }
-  if (d == -1.0 / 0.0) { bs(b, "(-1/0)"); return; }
+  /* Infinity and NaN from the runtime's JIn and JNa, made by overflow: Netscape 2.02's 1 / 0 is 0 (main's
+   * tests/probe-js1d.html), and Netscape 3.04 lost infinity the same way (docs/js1-compile-design.md section 12). */
+  if (d != d) { bs(b, "JNa"); return; }
+  if (d == 1.0 / 0.0) { bs(b, "JIn"); return; }
+  if (d == -1.0 / 0.0) { bs(b, "(-JIn)"); return; }
   if (d == 0 && 1 / d < 0) { bs(b, "(-0)"); return; }
   char t[64];
   snprintf(t, sizeof t, "%.17g", d);
@@ -1653,7 +1655,7 @@ static void analyse(void) {
  * tools/legacy/js11.mjs's seam rule), and i=i+1 costs the same, so js1c writes none rather than counting columns. */
 static const char *RUNTIME =
   "var JM=new Object(),JS=new Object(),JE=new Object(),JY=new Object(),JF=new Object();\n"
-  "var JP=0,JQ=0,JR=0,JT=0,JX=0,JN=0,JW=0,JB=-1,JMp=0,JMmax=65536,JO=0,JL2=Math.log(2),JPT=0,JK=0;\n"
+  "var JP=0,JQ=0,JR=0,JT=0,JX=0,JN=0,JW=0,JB=-1,JMp=0,JMmax=65536,JO=0,JL2=Math.log(2),JPT=0,JK=0,JIn=1e308*10,JNa=JIn-JIn;\n"
   "function JMu(a,b){var l=(a&65535)*(b&65535),h=((a>>>16)*(b&65535)&65535)+((a&65535)*(b>>>16)&65535);"
   "return (l+h*65536)%4294967296|0;}\n"
   "function JDs(a,b){if(b==0||(a==-2147483648&&b==-1)){JT=1;return 0;}return (a-a%b)/b|0;}\n"
@@ -1679,9 +1681,9 @@ static const char *RUNTIME =
   "function JP2(e){var i,v;if(!JPT){JPT=new Object();v=1;for(i=0;i<=1023;i=i+1){JPT[i+1074]=v;v=v*2;}"
   "v=1;for(i=0;i>=-1074;i=i-1){JPT[i+1074]=v;v=v/2;}}return JPT[e+1074];}\n"
   "function JWD(lo,hi){var e=hi>>>20&2047,m=(hi&1048575)*4294967296+(lo>>>0),s=1;if(hi<0)s=-1;"
-  "if(e==2047){if(m)return 0/0;return s/0;}if(e==0)return s*m*JP2(-1074);return s*(m/4503599627370496+1)*JP2(e-1023);}\n"
+  "if(e==2047){if(m)return JNa;return s*JIn;}if(e==0)return s*m*JP2(-1074);return s*(m/4503599627370496+1)*JP2(e-1023);}\n"
   "function JDW(x){var s=0,e,m,h;if(x!=x){JX=2146959360;return 0;}if(x<0||(x==0&&1/x<0)){s=-2147483648;x=-x;}"
-  "if(x==1/0){JX=s|2146435072;return 0;}if(x==0){JX=s;return 0;}e=Math.floor(Math.log(x)/JL2);"
+  "if(x==JIn){JX=s|2146435072;return 0;}if(x==0){JX=s;return 0;}e=Math.floor(Math.log(x)/JL2);"
   "if(e>1023)e=1023;if(e<-1074)e=-1074;while(e>-1074&&JP2(e)>x)e=e-1;while(e<1023&&JP2(e+1)<=x)e=e+1;"
   "if(e<-1022){m=x*JP2(1022)*4503599627370496;e=0;}else{m=(x/JP2(e)-1)*4503599627370496;e=e+1023;}"
   "h=Math.floor(m/4294967296);JX=s|e<<20|h;return m-h*4294967296|0;}\n"
