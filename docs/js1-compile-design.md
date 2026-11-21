@@ -117,14 +117,14 @@ Measured after the predictions were committed (2ce4030), with node 22 and headle
 
 | | Predicted | Measured | Verdict |
 | --- | --- | --- | --- |
-| Q1, size | at most 2.0 times the IE 9 build, 1.6 gzipped | frames: 32,227 bytes against 15,552 (2.07), 7,156 gzipped against 5,576 (1.28); js1diff: 1.72 and 1.27 | refuted (frames' bytes) |
+| Q1, size | at most 2.0 times the IE 9 build, 1.6 gzipped | frames: 32,278 bytes against 15,552 (2.08), 7,190 gzipped against 5,576 (1.29); js1diff: 1.81 and 1.26 | refuted (frames' bytes) |
 | Q2, statements | at most 1.5 a wasm instruction | frames 3,159 for 2,924 instructions (1.08); js1diff 0.78 | confirmed |
 | Q3, integer loop, 1e5 | at most 1.5 times the IE 9 build, 10 times wasm | 0.218 ms against 0.489 (0.45 times) and wasm's 0.217 (1.0 times) | confirmed |
-| Q4, 1000-deep recursion | at most 5 times the IE 9 build | as first built 0.285 ms against 0.021 (13.7 times); after the fix below 0.032 ms (1.55 times, 2.1 times wasm) | refuted, then fixed |
+| Q4, 1000-deep recursion | at most 5 times the IE 9 build | as first built 0.285 ms against 0.021 (13.7 times); after the fix below 0.032 to 0.036 ms (1.46 to 1.55 times, 2.1 to 2.4 times wasm) | refuted, then fixed |
 | Q5, depth | at most js1c's bound, the bound at most 12 | bound 7 for both modules; js1diff's deepest 4 over all 279 cases (rec(1000) and rec(10) alike), frames.c's 5 in Chromium | confirmed |
 | Q6, data | digits 40% smaller, 90% fewer statements, each under 5 ms | 234 bytes and 4 statements against 701 and 47 (67% and 91%); 0.8 and 0.6 ms for the whole file | confirmed |
-| Q7, slicing at 1,000 steps | at most 5% slower on the loop | the loop -0.4%; rec(1000) +69% (0.055 ms against 0.032) | confirmed as worded, but see below |
-| Q8, correctness | every export bit for bit, the trap included | 279 of 279 cases and the whole memory word for word; tests/out/js1diff.html 26 of 26 in node and in Chromium | confirmed |
+| Q7, slicing at 1,000 steps | at most 5% slower on the loop | the loop -2.5% to -0.4%; rec(1000) from -14% to +69% over four runs | confirmed as worded, but see below |
+| Q8, correctness | every export bit for bit, the trap included | 279 of 279 cases and the whole memory word for word; tests/out/js1diff.html 26 of 26 in node and in Chromium; 19 of 19 mutants caught (tools/mutate.py) | confirmed |
 
 What the misses say:
 
@@ -133,7 +133,7 @@ What the misses say:
   The factory now writes the initial memory with zeros first, in order, where window.Int32Array exists, which no frames-tier browser has (they keep every object as a hash table, and would pay 35 microseconds a word on Netscape 2 for nothing).
   Timed in a node vm context instead, rec(1000) was 75 times the IE 9 build: a vm context's globals go through interceptors, and js1c's state is all globals (JavaScript 1.0 has no closures to keep it in), so tools/js1.mjs times each build in a process of its own.
 - Q7: the loop is a direct function, so the driver runs one step for it and slicing never applies; the prediction was about the wrong test.
-  On the recursion, which does go through the driver, slicing at 1,000 steps costs 69% in node: a pause every 1,000 driver steps, each a return through Jgo and a call of js1_more.
+  On the recursion, which does go through the driver, rec(1000) is about 2,000 driver steps, so two pauses; the sliced time ranged from 14% faster to 69% slower over four runs, noise on a 0.03 ms call, so node says only that the pauses are not the cost; the real browsers' times on tests/out/js1diff.html, which runs sliced, are the measurement.
 - Not predicted: the 1000-deep recursion's JavaScript depth is 4, the same as at 10, and tests/out/js1diff.html runs rec(5000) in Chromium.
 
 ## 11. Verifying in the real browsers
