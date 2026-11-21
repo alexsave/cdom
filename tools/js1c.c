@@ -1722,6 +1722,15 @@ static void b36(Buf *b, uint32_t v) {
   while (n) bput(b, &t[--n], 1);
 }
 
+/* A data word, as a signed int32 in base 36: Netscape 3.04's parseInt keeps a value only up to 2^31 - 1 (it answered 2147483647 for
+ * the string table's stamp, 3396446046, in docs/frames-design.md section 15), and takes a negative one, which `|0` leaves as is. */
+static void b36s(Buf *b, uint32_t v) {
+  if ((int32_t)v < 0) {
+    bput(b, "-", 1);
+    b36(b, (uint32_t)(0u - v));
+  } else b36(b, v);
+}
+
 static int is_ident(const char *s) {
   if (!*s || (*s >= '0' && *s <= '9')) return 0;
   for (const char *p = s; *p; p++)
@@ -2133,7 +2142,7 @@ int main(int argc, char **argv) {
         b36(&chunk, w - last - 1);
         bs(&chunk, ".");
       }
-      b36(&chunk, words[w]);
+      b36s(&chunk, words[w]);
       bs(&chunk, ",");
       last = w;
       if (chunk.n >= 4000) {
