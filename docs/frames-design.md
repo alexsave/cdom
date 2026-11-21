@@ -142,6 +142,8 @@ The focus that the shim gives back is not delivered to C as a new focus, and nei
 Leaving a field for a button fires change, blur and focus between the press and the release.
 A rewrite there would replace the button under the pointer, and the click would be lost (tools/frames.mjs saw it lost before this rule).
 So the draw after a change, a focus or a blur waits cf_LATER (250 ms), and the click that comes in that time draws once for all of them.
+A press held longer than that would still lose it, so the frame's document also tracks its mouse button (document.onmousedown and onmouseup, captured on Netscape 4 and routed on), where the browser has them: a put-off draw waits while the button is down, up to 20 waits (5 s) for a release the frame never sees, and the release sets a 0 ms poll, which runs after the click the release makes.
+Netscape 2 and 3 and IE 3 have no document.onmousedown, and keep the 250 ms rule alone.
 
 ## 7. History
 

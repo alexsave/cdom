@@ -30,6 +30,10 @@ var cf_FRAMESET = "<frameset rows=\"100%\" border=\"0\" frameborder=\"0\" frames
  * the press and the release, and a rewrite there would replace the button under the pointer, and lose the click, so
  * they are drawn once, after the click. */
 var cf_LATER = 250;
+/* A put-off draw also waits while a mouse button is down in the frame (cf_onDown, where the browser has
+ * document.onmousedown): a press held past cf_LATER would see its button replaced and its click lost. At most this many
+ * waits of cf_LATER, for a release the frame never sees (outside the window). */
+var cf_PRESSCAP = 20;
 
 /* The handlers' entry points and what a page or a test reads. */
 var cdomF = new Object();
@@ -904,6 +908,8 @@ var cf_pending = 0;   /* a draw the frame was not there for yet */
 var cf_later = 0;     /* a draw put off by cf_LATER */
 var cf_over = 0;      /* the frameset was written over the page (cf_poll) */
 var cf_waits = 0;
+var cf_pressed = 0;   /* a mouse button is down in the frame */
+var cf_pressWaits = 0;
 function cf_cRun(name, a, b, c, d, e, f, g, h) {
   var r;
   cf_busy++;
@@ -1075,6 +1081,9 @@ function cf_draw() {
   d.open("text/html", "replace");
   d.write(html);
   d.close();
+  d.onmousedown = cf_onDown;
+  d.onmouseup = cf_onUp;
+  if (d.captureEvents && w.Event) d.captureEvents(w.Event.MOUSEDOWN | w.Event.MOUSEUP);
   cf_drawing = 0;
   cdomF.draws++;
   cdomF.bytes = html.length;
@@ -1449,6 +1458,24 @@ function cf_onOver(n, on) {
   else cf_fire(x, cf_OUT, 0);
   cf_release(0);
 }
+/* The frame document's mouse button, down and up. Netscape 4 captures the two at the document (captureEvents), and
+ * routes each on to its target. Up: the click, if there is one, comes next and draws; a draw that waited is drawn after
+ * it, with no wait of its own. */
+function cf_route(e) {
+  var w = cf_view();
+  if (e && w && w.document.routeEvent) return w.document.routeEvent(e);
+  return true;
+}
+function cf_onDown(e) {
+  cf_pressed = 1;
+  cf_pressWaits = 0;
+  return cf_route(e);
+}
+function cf_onUp(e) {
+  cf_pressed = 0;
+  if (cf_later) setTimeout("cdomF.p()", 0);
+  return cf_route(e);
+}
 function cf_onTimer(n) {
   var token = cf_tok[n];
   if (token == null) return;
@@ -1478,6 +1505,12 @@ function cf_poll() {
     setTimeout("cdomF.p()", 20);
     return;
   }
+  if (cf_later && cf_pressed && cf_pressWaits < cf_PRESSCAP) {
+    cf_pressWaits++;
+    setTimeout("cdomF.p()", cf_LATER);
+    return;
+  }
+  cf_pressWaits = 0;
   cf_hold(1);
   cf_later = 0;
   cf_release(0);
