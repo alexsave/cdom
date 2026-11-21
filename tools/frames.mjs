@@ -192,6 +192,15 @@ run: try {
   ok((await stat(STAT.radios)) === 12 && (await E(`${field('r2')}.checked && !${field('r1')}.checked && ${field('r1')}.name === "grp" && ${field('r2')}.name === "grp"`)),
     `two radios of one name are one group: C read ${await stat(STAT.radios)} (want 1 then 2: 12), r1 ${await E(`${field('r1')}.checked`)}, r2 ${await E(`${field('r2')}.checked`)}`);
 
+  // A form element from C is a DIV in the shim's one FORM: the fields in it and after it are that FORM's elements, in
+  // order, and read back as such.
+  ok(await E(`(function () { var d = ${F}, f = d.forms[0], i = d.querySelector("#inform"), a = d.querySelector("#afterform");
+    return d.forms.length === 1 && !!i && !!a && i.form === f && a.form === f && ${field('inform')} === i && ${field('afterform')} === a
+      && d.querySelector("#appform").tagName === "DIV"; })()`), 'a form from C is a DIV: the fields in it and after it stay in the one FORM, in order');
+  await E(`${field('afterform')}.value = "typed after"`);
+  await E('X.touch()');
+  ok((await E(`${field('afterform')}.value`)) === 'typed after', `a field after the form is read back across a redraw: ${JSON.stringify(await E(`${field('afterform')}.value`))}`);
+
   // A timer's callback draws.
   d = await draws();
   await E('X.tick_after(10)');

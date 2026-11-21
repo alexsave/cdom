@@ -1011,6 +1011,7 @@ M = [
   ('frames-profile-ie4-keeps-setselectionrange', 'tools/cdp.mjs', "'selectionDirection', 'setSelectionRange', 'setRangeText']) delete p[k];", "'selectionDirection', 'setRangeText']) delete p[k];", FRAMES, 'FAIL ie4: the field has no selectionStart'),
   ('frames-press-untracked', 'tools/legacy/frames.js', '  cf_pressed = 1;\n  cf_pressWaits = 0;\n', '', FRAMES, 'FAIL a click held 600 ms that left a field reaches C'),
   ('frames-radio-renamed', 'tools/legacy/frames.js', '  if (x.t == "input" && name != null && cf_type(x) == "radio") return', '  if (false) return', FRAMES, 'FAIL two radios of one name are one group'),
+  ('frames-form-nested', 'tools/legacy/frames.js', ' nav main aside figure form ";', ' nav main aside figure ";', FRAMES, 'FAIL a form from C is a DIV'),
   ('js11-try-allowed', 'tools/legacy/js11.mjs', "SwitchStatement: 'switch', DoWhileStatement: 'do-while', LabeledStatement: 'a label', TryStatement: 'try',", "SwitchStatement: 'switch', DoWhileStatement: 'do-while', LabeledStatement: 'a label',", JS11T, 'FAIL try { f(); } catch (e) {} is refused'),
   ('js11-literal-allowed', 'tools/legacy/js11.mjs', "ThrowStatement: 'throw', ObjectExpression: 'an object literal', ", "ThrowStatement: 'throw', ", JS11T, 'FAIL var o = {}; is refused'),
   ('js11-strict-equality-allowed', 'tools/legacy/js11.mjs', "    if (n.type === 'BinaryExpression' && (n.operator === '===' || n.operator === '!==')) add(n.operator, n);", '', JS11T, 'FAIL if (a === b) f(); is refused'),

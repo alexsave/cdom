@@ -1095,7 +1095,9 @@ var cf_out = null;
 var cf_on = 0;
 var cf_KEEP = " id href src alt title width height align valign border colspan rowspan cellpadding cellspacing size maxlength rows cols target ";
 var cf_SKIP = " svg canvas script style template ";
-var cf_DIV = " section article header footer nav main aside figure ";
+/* form too: every control is in the shim's one FORM, and a FORM inside it is dropped by the parser, whose </form> then
+ * closes the shim's, and the controls after it leave form.elements. */
+var cf_DIV = " section article header footer nav main aside figure form ";
 var cf_VOID = " br hr img wbr ";
 function cf_in(list, name) {
   return list.indexOf(" " + name + " ") >= 0;

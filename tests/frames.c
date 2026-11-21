@@ -51,6 +51,9 @@ void cd_main(void) {
   /* Two radios of one group: checking one unchecks the other. */
   ids[R1] = el("input", "r1"); cd_attr("type", "radio"); cd_attr("name", "grp"); cd_attr("value", "a"); cd_close();
   ids[R2] = el("input", "r2"); cd_attr("type", "radio"); cd_attr("name", "grp"); cd_attr("value", "b"); cd_close();
+  /* A form of the app's, with a field in it and one after it: both must stay in the shim's one FORM. */
+  cd_open("form"); cd_attr("id", "appform"); cd_open("input"); cd_attr("id", "inform"); cd_attr("value", "in"); cd_close(); cd_close();
+  cd_open("input"); cd_attr("id", "afterform"); cd_attr("value", "after"); cd_close();
   cd_sel(ids[INC]); cd_listen(ids[INC], CD_EV_CLICK);
   cd_sel(ids[LINKS]); cd_listen(ids[LINKS], CD_EV_CLICK);
   cd_sel(ids[NAME]); cd_listen(ids[NAME], CD_EV_INPUT);
