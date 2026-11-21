@@ -226,6 +226,10 @@ CDOM_PAGE_TOOL  := $(CDOM)/tools/out/cdpage
 %/out/cdpage: %/cdpage.c
 	@mkdir -p $(@D)
 	$(HOST_CC) $(HOST_STD) -O2 -Wall -Wextra -Werror -o $@.tmp$$$$ $< && mv $@.tmp$$$$ $@
+# The wasm to JavaScript 1.0 compiler of the frames tier (tools/js1c.c, docs/js1-compile-design.md), built the same way.
+%/out/js1c: %/js1c.c
+	@mkdir -p $(@D)
+	$(HOST_CC) $(HOST_STD) -O2 -Wall -Wextra -Werror -o $@.tmp$$$$ $< && mv $@.tmp$$$$ $@
 
 # $(call cdom_lits,linked.wasm,out.wasm): the step after a link, for an app's own rules; it writes
 # out.wasm and out.wasm.lits. Make the rule depend on $(CDOM_LITS).
