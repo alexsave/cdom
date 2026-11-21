@@ -2116,6 +2116,15 @@ int main(int argc, char **argv) {
     if (js_name(mods[k])) bf(&out, "Ji%d=imp.%s;", k, mods[k]);
     else bf(&out, "Ji%d=imp[\"%s\"];", k, mods[k]);
   }
+  /* A modern engine keeps an object whose first number key is high (the data, above the stack) as a slow dictionary:
+   * there the initial memory is written with zeros first, in order, so it stays an array (rec(1000) 9 times faster in
+   * node). No frames-tier browser has Int32Array, and none of them pays for it (docs/js1-compile-design.md). */
+  {
+    uint64_t fill = (uint64_t)mem_min * 16384;
+    if (fill > 1u << 20) fill = 1u << 20;
+    if (fill < nw) fill = nw;
+    bf(&out, "if(window.Int32Array){for(x=0;x<%u;x++)JM[x]=0;}", (unsigned)fill);
+  }
   for (int k = 0; k <= ninit; k++) bf(&out, "Jdata%d();", k);
   for (uint32_t g = 0; g < nglobals; g++) {
     bf(&out, "Jg%u=", g);
