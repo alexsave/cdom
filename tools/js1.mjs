@@ -173,6 +173,34 @@ ok(J.o.js1_trap === 0 && afterTrap === W.x.loop(10), `after a trap the next call
 J.call('deeptrap', 30); const sp = J.ctx.JP;
 ok(J.o.js1_trap === 1 && sp === 0, `a trap 30 calls down puts the explicit stack back: JP ${sp}`);
 
+// Netscape 2.02 dies on undefined | 0 ("33041 is not a number.", docs/js1-compile-design.md section 12): every case again,
+// on a fresh instance whose memory throws on a read of a word nothing wrote, as Netscape 2 does, and memory.grow's new
+// words too.
+{
+  const N = loadJs1(js1File, { count: false });
+  const strict = (o) => new Proxy(o, { get(t, k) { if (typeof k === 'string' && /^\d+$/.test(k) && !(k in t)) throw new Error(`${k} is not a number`); return t[k]; } });
+  N.ctx.JM = strict(N.ctx.JM);
+  let nok = 0, nfirst = null;
+  W.log.length = 0;
+  const W2 = await loadWasm(wasmFile);
+  for (const [name, ...args] of CASES) {
+    W2.log.length = 0; N.ctx.log.length = 0;
+    let wr, wt = false, jr, err = null;
+    try { wr = W2.x[name](...args); } catch (e) { wt = true; }
+    try { jr = N.call(name, ...args); } catch (e) { err = String(e.message || e); N.ctx.JP = 0; N.ctx.JQ = 0; }
+    const jt = !!N.o.js1_trap;
+    if (!err && wt === jt && (wt || wr === jr) && W2.log.join(',') === N.ctx.log.join(',')) nok++;
+    else if (!nfirst) nfirst = `${name}(${args}): ${err || 'differs'}`;
+  }
+  ok(nok === CASES.length, `every case agrees on a memory that throws on a word never written (Netscape 2): ${nok} of ${CASES.length}${nfirst ? `\n  first: ${nfirst}` : ''}`);
+  const fresh = loadJs1(js1File, { count: false }), pages = fresh.ctx.JMp;
+  let hole = -1;
+  for (let i = 0; i < pages * 16384 && hole < 0; i++) if (!(i in fresh.ctx.JM)) hole = i;
+  const got = fresh.call('grow', 2);
+  for (let i = pages * 16384; i < (pages + 2) * 16384 && hole < 0; i++) if (!(i in fresh.ctx.JM)) hole = i;
+  ok(hole < 0 && got === pages, `every word of the initial memory (${pages} pages) and of memory.grow's 2 new pages is written${hole < 0 ? '' : `: word ${hole} is not`}`);
+}
+
 // Depth: the 1000-deep recursion runs at a constant JavaScript depth, at or under js1c's bound.
 const lowered = js1File + '.lowered.wasm';
 const said = spawnSync(path.join(top, 'tools/out/js1c'), [lowered, path.join(out, 'js1.tmp.js')], { encoding: 'utf8' });

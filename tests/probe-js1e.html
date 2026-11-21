@@ -96,6 +96,106 @@ var x = 0; var i; function f(a) { x = x + a; } for (i = 0; i < 4; i++) f(1);
 mark("forIncCall", x);
 </SCRIPT>
 <SCRIPT LANGUAGE="JavaScript">
+mark("tightDecGe", "start");
+var x=0;var i;for(i=3;i>=0;i--)x++;
+mark("tightDecGe", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tightDecGt", "start");
+var x=0;var i;for(i=3;i>0;i--)x++;
+mark("tightDecGt", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tightPreDec", "start");
+var x=0;var i;for(i=3;i>=0;--i)x++;
+mark("tightPreDec", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tightN", "start");
+var x=0;var i;var m=4;for(i=m-1;i>=0;i--){x++;if(x>9)break;}
+mark("tightN", x + ',' + i);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tightNspaced", "start");
+var x=0;var i;var m=4;for (i = m - 1; i >= 0; i--) {x++;if(x>9)break;}
+mark("tightNspaced", x + ',' + i);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tightNparen", "start");
+var x=0;var i;var m=4;for(i=(m-1);i>=0;i--){x++;if(x>9)break;}
+mark("tightNparen", x + ',' + i);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tightNminus2", "start");
+var x=0;var i;var m=4;for(i=m-2;i>=0;i--){x++;if(x>9)break;}
+mark("tightNminus2", x + ',' + i);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tightLit3", "start");
+var x=0;var i;var m=4;for(i=3;i>=0;i--){x++;if(x>9)break;}
+mark("tightLit3", x + ',' + i);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tightNdecStmt", "start");
+var x=0;var i;var m=4;i=m-1;i--;
+mark("tightNdecStmt", i);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tightNassign", "start");
+var x=0;var i;var m=4;for(i=m-1;i>=0;i=i-1)x++;
+mark("tightNassign", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tightInc", "start");
+var x=0;var i;var m=4;for(i=0;i<m;i++)x++;
+mark("tightInc", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tightElse", "start");
+var x=0;var i;if(0){}else{for(i=3;i>=0;i--)x++;}
+mark("tightElse", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tightElseBraced", "start");
+var x=0;var i;if(0){}else{for(i=3;i>=0;i--){x++;}}
+mark("tightElseBraced", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tightCall", "start");
+var x=0;var i;function f(a,b){x=x+1;} function g(a){return a;} for(i=3;i>=0;i--)f(x+i,g(x+i));
+mark("tightCall", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("tightCallInc", "start");
+var x=0;var i;function f(a,b){x=x+1;} function g(a){return a;} for(i=0;i<4;i++)f(x+i,g(x+i));
+mark("tightCallInc", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("jmc", "start");
+var JM=new Object();function JWb(a,v){JM[a]=v;}function JLbu(a){return 0;}function JMc(d,s,n){var i;if(d<=s){for(i=0;i<n;i++)JWb(d+i,JLbu(s+i));}else{for(i=n-1;i>=0;i--)JWb(d+i,JLbu(s+i));}}JMc(4,0,3);
+mark("jmc", JM[6]);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("jmcNoInc", "start");
+var JM=new Object();function JWb(a,v){JM[a]=v;}function JLbu(a){return 0;}function JMc(d,s,n){var i;if(d<=s){for(i=0;i<n;i=i+1)JWb(d+i,JLbu(s+i));}else{for(i=n-1;i>=0;i--)JWb(d+i,JLbu(s+i));}}JMc(4,0,3);
+mark("jmcNoInc", JM[6]);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("jmcElseOnly", "start");
+var JM=new Object();function JWb(a,v){JM[a]=v;}function JLbu(a){return 0;}function JMc(d,s,n){var i;for(i=n-1;i>=0;i--)JWb(d+i,JLbu(s+i));}JMc(4,0,3);
+mark("jmcElseOnly", JM[6]);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("twoLoops", "start");
+var x=0;var i;for(i=0;i<2;i++)x++;for(i=1;i>=0;i--)x++;
+mark("twoLoops", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("twoLoopsPre", "start");
+var x=0;var i;for(i=0;i<2;++i)x++;for(i=1;i>=0;i--)x++;
+mark("twoLoopsPre", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
 mark("or0_p31m1", "start");
 var x = 2147483647;
 mark("or0_p31m1", x | 0);
@@ -574,6 +674,106 @@ mark("costMod", (T() - t) + 'ms');
 mark("costIf", "start");
 var a = 1234567; var b = 3000000001; var s = 0; var i; var t = T(); for (i = 0; i < 20000; i++) { s = b + i; if (s > 2147483647) s = s - 4294967296; s = s | 0; }
 mark("costIf", (T() - t) + 'ms');
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("dec250", "start");
+var x = 5; /*pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/x--;
+mark("dec250", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ge250", "start");
+var x = 5; var y = 0; /*pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/if(x>=5)y=1;
+mark("ge250", y);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr250", "start");
+var x = -1; var y = 0; /*pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/y=x>>>28;
+mark("ushr250", y);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ident250", "start");
+var abcdef = 7; var y = 0; /*ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/y=abcdef;
+mark("ident250", y);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("dec253", "start");
+var x = 5; /*ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/x--;
+mark("dec253", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ge253", "start");
+var x = 5; var y = 0; /*ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/if(x>=5)y=1;
+mark("ge253", y);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr253", "start");
+var x = -1; var y = 0; /*ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/y=x>>>28;
+mark("ushr253", y);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ident253", "start");
+var abcdef = 7; var y = 0; /*pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/y=abcdef;
+mark("ident253", y);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("dec254", "start");
+var x = 5; /*pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/x--;
+mark("dec254", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ge254", "start");
+var x = 5; var y = 0; /*pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/if(x>=5)y=1;
+mark("ge254", y);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr254", "start");
+var x = -1; var y = 0; /*pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/y=x>>>28;
+mark("ushr254", y);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ident254", "start");
+var abcdef = 7; var y = 0; /*ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/y=abcdef;
+mark("ident254", y);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("dec255", "start");
+var x = 5; /*ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/x--;
+mark("dec255", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ge255", "start");
+var x = 5; var y = 0; /*ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/if(x>=5)y=1;
+mark("ge255", y);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr255", "start");
+var x = -1; var y = 0; /*ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/y=x>>>28;
+mark("ushr255", y);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ident255", "start");
+var abcdef = 7; var y = 0; /*pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/y=abcdef;
+mark("ident255", y);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("dec256", "start");
+var x = 5; /*pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/x--;
+mark("dec256", x);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ge256", "start");
+var x = 5; var y = 0; /*pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/if(x>=5)y=1;
+mark("ge256", y);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ushr256", "start");
+var x = -1; var y = 0; /*pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/y=x>>>28;
+mark("ushr256", y);
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ident256", "start");
+var abcdef = 7; var y = 0; /*ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp*/y=abcdef;
+mark("ident256", y);
 </SCRIPT>
 <SCRIPT LANGUAGE="JavaScript">
 mark("done", "end");

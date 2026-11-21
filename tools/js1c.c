@@ -1661,7 +1661,7 @@ static const char *RUNTIME =
   "function JTu(x){if(x>-1&&x<4294967296)return x|0;JT=1;return 0;}\n"
   "function JSs(x){if(x!=x)return 0;if(x<=-2147483648)return -2147483648;if(x>=2147483647)return 2147483647;return x|0;}\n"
   "function JSu(x){if(x!=x||x<=-1)return 0;if(x>=4294967295)return -1;return x|0;}\n"
-  "function JMg(n){var o=JMp;n=n>>>0;if(JMp+n>JMmax)return -1;JMp=JMp+n;return o;}\n"
+  "function JMg(n){var o=JMp,i;n=n>>>0;if(JMp+n>JMmax)return -1;for(i=JMp*16384;i<(JMp+n)*16384;i=i+1)JM[i]=0;JMp=JMp+n;return o;}\n"
   "function JMf(d,v,n){var e=(d>>>0)+(n>>>0);v=v&255;d=d>>>0;while(d<e&&(d&3)!=0){JWb(d,v);d++;}"
   "v=v|v<<8|v<<16|v<<24;while(d+4<=e){JM[d>>2]=v;d=d+4;}while(d<e){JWb(d,v);d++;}}\n"
   "function JMc(d,s,n){var i;d=d>>>0;s=s>>>0;n=n>>>0;if(((d|s|n)&3)==0){if(d<=s){for(i=0;i<n;i=i+4)JM[(d+i)>>2]=JM[(s+i)>>2]|0;}"
@@ -2116,15 +2116,11 @@ int main(int argc, char **argv) {
     if (js_name(mods[k])) bf(&out, "Ji%d=imp.%s;", k, mods[k]);
     else bf(&out, "Ji%d=imp[\"%s\"];", k, mods[k]);
   }
-  /* A modern engine keeps an object whose first number key is high (the data, above the stack) as a slow dictionary:
-   * there the initial memory is written with zeros first, in order, so it stays an array (rec(1000) 9 times faster in
-   * node). No frames-tier browser has Int32Array, and none of them pays for it (docs/js1-compile-design.md). */
-  {
-    uint64_t fill = (uint64_t)mem_min * 16384;
-    if (fill > 1u << 20) fill = 1u << 20;
-    if (fill < nw) fill = nw;
-    bf(&out, "if(window.Int32Array){for(x=0;x<%u;x++)JM[x]=0;}", (unsigned)fill);
-  }
+  /* Every word of the initial memory is written before the data: Netscape 2.02 dies on undefined | 0 ("33041 is not a
+   * number.", docs/js1-compile-design.md section 12), so a word nothing wrote must not be read as undefined. Written in
+   * order from 0, which also keeps a modern engine's object an array (rec(1000) 9 times faster in node than a dictionary
+   * whose first number key is the data's, high above the stack). memory.grow writes its new words the same way (JMg). */
+  bf(&out, "for(x=0;x<%u;x=x+1)JM[x]=0;", (unsigned)((uint64_t)mem_min * 16384));
   for (int k = 0; k <= ninit; k++) bf(&out, "Jdata%d();", k);
   for (uint32_t g = 0; g < nglobals; g++) {
     bf(&out, "Jg%u=", g);
