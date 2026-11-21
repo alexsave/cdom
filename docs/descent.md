@@ -775,3 +775,57 @@ A block reports by a 1x1 image written at the end of the page, as the earlier pr
 - Q5: a 150 KB inline-script document (the size of demo/uttt's compiled module) loads in 2 to 8 s: compile is linear, and the guest is slow.
   Falsifier: over 30 s, which would make the inline plan too slow, or a crash.
 - The recommended block constant, if Q1 and Q2 hold as predicted: 30000 bytes is safe.
+
+### What the runs found
+
+The runs are of 2026-11-21 in the XP VM, Netscape 2.02, served by tools/vmserve.py from tests/ (`VMDIR=tests tools/vmprobe.sh`).
+The screenshots are /Users/alex/VMs/ie6-xp/shots/ns2lim-*.png (ns2lim-final.png is the empty desktop at the end).
+Times are the server's wall clock (vmserve.py logs milliseconds now), from the page's GET to its mark.
+This guest's clock runs about 3 times slow (the taskbar clock gained 27 minutes in 79 of the host's, and the engine's `Date` gave 1.3 s for a block the server saw take 3.8 s), so the engine's own ms in the marks are a third of the wall time.
+
+| test | result |
+| --- | --- |
+| one block of statements `var a123=123;`, 8K, 16K, 32K, 64K, 128K, 256K, 512K | all run; the page takes 0.5 s, 0.6 s, 0.5 s, 1.0 s, 1.5 s, 2.7 s, 3.8 s |
+| the same, 1024K (70,000 distinct names) | an alert "JavaScript Error: too many atoms", and the page stops: the later blocks never run, no mark |
+| one block of 1024K, 1536K of statements that reuse three names | runs, 13 s and 20 s |
+| one block of 2048K (the same statements) | Netscape 2 crashes at 83% of the load: Windows' "has encountered a problem" box (Don't Send), nothing runs |
+| one string literal, 1K to 128K (one page) | all run, the length read back is exact; 4.1 s for the page |
+| one string literal alone: 512K, 1024K | run, the length exact; 44 s and 165 s (the lexer is quadratic: 128K costs about a second, 512K 44 s) |
+| 10, 20 blocks of 30000 bytes of statements with new names | run, 2.2 s and 4.1 s (300 KB, 600 KB) |
+| 40 blocks of 30000 bytes with new names (80,000 names) | "too many atoms", then nothing: no mark |
+| distinct global names: 30,000, 50,000, 60,000, 65,000 / 70,000 | run / "too many atoms", so the table holds about 65,536 (2 to the 16th) |
+| 40, 100 blocks of 30000 bytes that reuse three names (1.2 MB, 3 MB in all) | run, 9.5 s and 22 s |
+| a function and a global defined in block 1, used in blocks 2 and 3, and a `var` of block 2 read in the last block | all seen: the global 5, the call 42, the `var` 11, a function of block 3 calling block 1's, 12 |
+| 150 KB of the demo/uttt build's code (cdom.frames.js, then its .js1.js module three times, in 6 blocks of at most 30000 bytes), run twice | 2.4 s and 2.3 s from the GET to the mark (the engine's clock said 0.7 s) |
+| the frames tier's two frames (probe-ns2-frames.html, driven by two clicks) | the frameset is made, the app frame runs (`window.name` is cdomApp), the view's `javascript:parent.cdomApp.f(1)` link calls in, and the rewrite of the view from inside that call works (the view showed "hit1", shots ns2lim-fr4-call.png); 12 rewrites of a 5.2 KB document, one after the other, take 18.2 s, 1.5 s each (the engine's clock: 5.8 s) |
+
+Other things the runs showed:
+
+- Numeric constants are not atoms: the 512K page has 35,000 distinct names and 35,000 distinct numbers and ran, so a name or a literal string counts and a number does not (a string was not counted separately; the longest literal pages have one each).
+- An image written into a document that another frame wrote (the view, after `open`, `write` and `close`) was not requested from the server in the one run; so marks from there are lost, and the probe reports by navigating the view to a /mark/ URL instead.
+- A page that writes several marks by `document.write` of an image each lost most of them in 3 of the first runs (the later requests never reached the server, "Waiting for reply" in the status line): the probes now report in one image, as one URL.
+- The first all-in-one page hung for ten minutes with no alert on screen: the probe's own bug, `new Date().getTime()` (Netscape 2 has no method call on a `new` expression), raised an alert that sat behind the window.
+- The letter u in a URL typed into Run broke the guest's command line: every start of Netscape 2 whose URL had one (reuse40, ?u40) ended with "Unable to locate REG.INI in directory C:\NS202\Program" and a blank window; pages and queries without the letter u started every time.
+  This is vm.py's typing, not a limit of the browser, and was not chased further.
+- After a long-running page the guest answers slowly (keys arrive minutes late and typed lines pile up into Run dialogs that say "ill" and "explore.exe" cannot be found); waiting, and closing each dialog, clears it.
+
+### The predictions, marked
+
+- Q1, statements 8K to 32K and 64K run: right.
+  128K does not run: wrong, it runs, as do 256K, 512K and (with few names) 1536K; the real limit is a crash between 1.5 and 2 MB, and the atom table before that.
+  An alert past the limit, not a silent stop: right for the atom table ("too many atoms", and the page stops), wrong for the size (a crash of Netscape 2).
+- Q1, string literal: 64K runs, right; 32K runs and 128K fails: wrong, 128K runs, and so do 512K and 1 MB, at a cost that grows with the square of the length.
+- Q2: no limit on the number of blocks or on the total before memory: right for the bytes (3 MB in 100 blocks ran), wrong in that the count of distinct names stops it at 65,536 ("too many atoms").
+  The longest literal equals the longest block: wrong, both are far above any size that matters, but at different costs (a 1 MB block 13 s, a 1 MB string 165 s).
+- Q3: right.
+- Q4: the call arrives and the rewrite from inside it works: right.
+  100 to 400 ms for a rewrite of 5 KB: wrong, 1.5 s on the wall (0.5 s of the guest's clock), 4 times the top of the prediction.
+- Q5: 2 to 8 s: right, 2.3 s.
+- The block constant: 30000 is safe: right.
+
+### What this means for the inline plan
+
+The plan works in Netscape 2.02: nothing in it needs more than a small part of the limits.
+Keep the block constant at 30000: a block of 1.5 MB runs, so the constant is not near anything, and 30000 keeps each block quick to read.
+What can break the plan is not the size of a block or the total but the names: the app frame's script must hold fewer than 65,536 distinct global names and string literals in all (js1c's output for demo/uttt has a few hundred), and a literal of a few hundred KB costs seconds in the lexer, so the string table is better as many literals of a few KB joined by `+` (it already is, `\001"+"4`).
+A 150 KB app frame loads in about 2.3 s on this guest, a rewrite of a 5 KB view takes about 1.5 s, and that is the number to design the frames tier's per-click cost around.
