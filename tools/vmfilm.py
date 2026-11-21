@@ -14,12 +14,17 @@ if sys.argv[1] == "capture":
     while True:
         t = int(time.time() * 1000)
         f = os.path.join(d, f"{t}.ppm")
-        vm.hmp("screendump " + f)
-        time.sleep(0.05)
-        # a frame equal to the one before is dropped: it lasts until the next one that differs, which is the same film
-        b = open(f, "rb").read()
-        if b == last: os.remove(f)
-        else: last = b
+        try:
+            vm.hmp("screendump " + f)
+            time.sleep(0.05)
+            # a frame equal to the one before is dropped: it lasts until the next one that differs, which is the same film
+            b = open(f, "rb").read()
+            if b == last: os.remove(f)
+            else: last = b
+        except Exception:
+            # a screendump that failed or is not written yet (another tool's screendump at the same moment, as
+            # tools/vmrender.py's): no frame, and the capture goes on
+            time.sleep(0.2)
         time.sleep(0.1)
 else:
     d, out = os.path.abspath(sys.argv[2]), os.path.abspath(sys.argv[3])

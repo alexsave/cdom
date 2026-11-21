@@ -13,3 +13,4 @@ run d (2026-11-21 17:38, string keys, b8 j0, no GIF cache; a Game Boy build, bui
   click Features: details, end.gif 369.2 s (first GIF 274.2 s), 1,022 GIF requests, c 41,534 m 35,170 w 4,468 t 94,015; three Lengthy JavaScript dialogs; 0 pixels different
   back (the details page's Back pill, still from the cache): end.gif 146.4 s (first GIF 18.6 s), c 0 w 5,562 t 5,922; 0 pixels different
   every redraw asks for about 14 GIFs a colour again (1,318 for 95 colours), with or without an Expires
+run film (2026-11-21 17:59, the same build as d, filmed; the capture stopped after a minute): load end.gif 378.8 s (first GIF 255.7 s), c 55,155 m 8,829 w 3,438 t 80,266, 0 pixels different; hover end.gif 200.3 s (first GIF 86.0 s), c 16,547 m 4,234 w 5,718 t 29,843, two Lengthy JavaScript dialogs (57 s, 59 s), 0 pixels different
