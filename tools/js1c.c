@@ -732,7 +732,7 @@ static void build(Func *f) {
 /* Bit sets of a function's variables: its locals, then its temporaries. */
 static int nvars, nwords;
 static uint64_t *bset(void) { return xalloc(sizeof(uint64_t) * (size_t)nwords); }
-static void bcopy(uint64_t *d, const uint64_t *s) { memcpy(d, s, sizeof(uint64_t) * (size_t)nwords); }
+static void bsetcopy(uint64_t *d, const uint64_t *s) { memcpy(d, s, sizeof(uint64_t) * (size_t)nwords); }
 static void bor(uint64_t *d, const uint64_t *s) { for (int i = 0; i < nwords; i++) d[i] |= s[i]; }
 static int beq(const uint64_t *a, const uint64_t *b) { return !memcmp(a, b, sizeof(uint64_t) * (size_t)nwords); }
 static void bset1(uint64_t *d, int v) { d[v >> 6] |= 1ULL << (v & 63); }
@@ -751,7 +751,7 @@ static uint64_t *live_list(Stmt *s, const uint64_t *out);
 static uint64_t *target_live(Label *l, const Expr *val) {
   uint64_t *t = bset();
   if (l->kind != L_FUNC) {
-    bcopy(t, l->live);
+    bsetcopy(t, l->live);
     if (val) bclr(t, cur_nlocals + l->slot);
   }
   return t;
@@ -759,24 +759,24 @@ static uint64_t *target_live(Label *l, const Expr *val) {
 static uint64_t *live_stmt(Stmt *s, const uint64_t *cur) {
   uint64_t *r = bset();
   switch (s->k) {
-  case S_SETL: bcopy(r, cur); bclr(r, s->i); uses(r, s->a); break;
-  case S_SETT: bcopy(r, cur); bclr(r, cur_nlocals + s->i); uses(r, s->a); break;
+  case S_SETL: bsetcopy(r, cur); bclr(r, s->i); uses(r, s->a); break;
+  case S_SETT: bsetcopy(r, cur); bclr(r, cur_nlocals + s->i); uses(r, s->a); break;
   case S_SETG: case S_STORE: case S_EXPR: case S_FILL: case S_COPY:
-    bcopy(r, cur); uses(r, s->a); uses(r, s->b); uses(r, s->c); break;
-  case S_GROW: bcopy(r, cur); bclr(r, cur_nlocals + s->rslot); uses(r, s->a); break;
+    bsetcopy(r, cur); uses(r, s->a); uses(r, s->b); uses(r, s->c); break;
+  case S_GROW: bsetcopy(r, cur); bclr(r, cur_nlocals + s->rslot); uses(r, s->a); break;
   case S_CALL: case S_CALLI:
-    bcopy(r, cur);
+    bsetcopy(r, cur);
     if (s->rslot >= 0) bclr(r, cur_nlocals + s->rslot);
     if (!s->spill) s->spill = bset();
-    bcopy(s->spill, r);
+    bsetcopy(s->spill, r);
     for (int i = 0; i < s->nargs; i++) uses(r, s->args[i]);
     uses(r, s->c);
     break;
   case S_BLOCK: {
     if (!s->lab->live) s->lab->live = bset();
-    bcopy(s->lab->live, cur);
+    bsetcopy(s->lab->live, cur);
     uint64_t *x = live_list(s->body, cur);
-    bcopy(r, x);
+    bsetcopy(r, x);
     free(x);
     break;
   }
@@ -786,18 +786,18 @@ static uint64_t *live_stmt(Stmt *s, const uint64_t *cur) {
     for (;;) {
       uint64_t *x = live_list(s->body, cur);
       int same = beq(x, s->lab->live);
-      bcopy(s->lab->live, x);
+      bsetcopy(s->lab->live, x);
       free(x);
       if (same) break;
     }
-    bcopy(r, s->lab->live);
+    bsetcopy(r, s->lab->live);
     break;
   }
   case S_IF: {
     if (!s->lab->live) s->lab->live = bset();
-    bcopy(s->lab->live, cur);
+    bsetcopy(s->lab->live, cur);
     uint64_t *x = live_list(s->body, cur), *y = live_list(s->els, cur);
-    bcopy(r, x);
+    bsetcopy(r, x);
     bor(r, y);
     free(x);
     free(y);
@@ -806,7 +806,7 @@ static uint64_t *live_stmt(Stmt *s, const uint64_t *cur) {
   }
   case S_BR: {
     uint64_t *t = target_live(s->lab, s->a);
-    bcopy(r, t);
+    bsetcopy(r, t);
     free(t);
     uses(r, s->a);
     if (s->b) {
@@ -836,7 +836,7 @@ static uint64_t *live_list(Stmt *s, const uint64_t *out) {
   n = 0;
   for (Stmt *t = s; t; t = t->next) v[n++] = t;
   uint64_t *cur = bset();
-  bcopy(cur, out);
+  bsetcopy(cur, out);
   for (int i = n - 1; i >= 0; i--) {
     uint64_t *x = live_stmt(v[i], cur);
     free(cur);
