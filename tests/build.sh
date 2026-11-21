@@ -80,6 +80,8 @@ wasm -O2 "$here/out/frames.wasm" "$here/frames.c" "$here/../src/cdom.c" "$here/.
 # The app as the tier loads it: compiled to JavaScript 1.0 by tools/js1c (docs/js1-compile-design.md); the IE 9 build
 # and the data as statements (js1c -s) beside it, for tools/js1.mjs's measurements.
 "$here/../tools/js1.sh" "$here/out/frames.wasm" "$here/out/frames.wasm.js1.js"
+# The same file with every word of the initial memory written, as js1c did before it wrote only the words below __heap_base: tests/probe-zero.html times both.
+sed 's/JA=\([0-9]*\);if(JZ)JA=\([0-9]*\);/JA=\2;/' "$here/out/frames.wasm.js1.js" > "$here/out/frames.eager.js"
 "$here/../tools/js1.sh" "$here/out/frames.wasm" "$here/out/frames.wasm.js1s.js" -s -q
 node "$legacy" app-ie9 "$here/out/frames.wasm" "$here/out/frames.wasm.ie9.js"
 page "$here/frames.html" "$here/out/frames.shim.html" "$here/out/frames.wasm"
@@ -87,7 +89,7 @@ node "$legacy" page "$here/out/frames.shim.html" "$here/out/frames.html"
 sed 's|</head><div id="m">|</head><body><div id="m">|' "$here/out/frames.html" > "$here/out/frames-body.html"
 grep -q '<body><div id="m">' "$here/out/frames-body.html"
 # The script engine probe (docs/ie5-design.md), served beside the pages for the XP VM's browsers.
-cp "$here/probe.html" "$here/probe-fs.html" "$here/probe-fsd.html" "$here/probe-fs3.html" "$here/probe-split.html" "$here/probe-undef.html" "$here/out/"
+cp "$here/probe.html" "$here/probe-fs.html" "$here/probe-fsd.html" "$here/probe-fs3.html" "$here/probe-split.html" "$here/probe-undef.html" "$here/probe-zero.html" "$here/out/"
 # The hold that keeps the Utilu IE 5.01 and 5.5 builds from crashing at a page's Done (tools/ie5hold.py) is the test
 # rig's alone: no shipped file and no built page may name its port.
 if grep -l "10.0.2.2:8096" "$here/../shim/"*.js "$here/../tools/legacy/"*.js "$here/"*.html "$here/out/cdom.legacy"*.js \
