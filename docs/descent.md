@@ -1074,3 +1074,65 @@ Calibration: the js1c bench of docs/js1-compile-design.md ran loop(2000) in 313 
 - R7, exactness: the view in Netscape 2 is the native picture to the pixel (0 pixels different, tools/paintcheck.py), links included.
 - R8, the "Lengthy JavaScript" prompt: none, since every timer's batch of 8 rows is under 2 s of script; falsifier: the prompt appears at all.
 - R9, text's share: the still page without text (RD_SKIP_TEXT, a native check) has half the runs; in Netscape 2 the text costs 45% of the compute (glyph spans are 7,000 of the 10,101 spans) and 50% of the layout.
+
+### What the runs found
+
+The runs are of 2026-11-21 in the XP VM's Netscape 2.02, driven by tools/vmrender.py through the guest agent (no typing); the raw lines are in results/ns2render_runs.txt and the screendumps in /Users/alex/VMs/ie6-xp/shots/ns2r-*.png.
+A draw's own times are the engine's milliseconds in end.gif's query (c compute in the module, m markup in host.js, w the write() calls, t the whole draw); the walls are the Mac's seconds from the server's log.
+The guest's clock runs slow and its speed varies: the same build's still page took 74 s of engine compute in run b and 33 s in run c, and run d had a Game Boy build (not this work) at 100% of a Mac core throughout.
+
+Three things Netscape 2 does that the Mac's tests could not see, each found by a run:
+
+1. **Every written document asks for its GIFs again, about 14 times a colour.**
+   The still page has 95 colours and every draw of it makes 1,318 GIF requests: written in 40 write() calls, in 20, or in one; with the server's no-store or with an Expires a day ahead (VMSERVE_GIF_CACHE); on the first draw and on every redraw.
+   A static page asks once a colour ("A framebuffer of 1x1 GIFs", Q5); a written one does not keep them.
+   This is most of a redraw's time: a view that needs no compute at all (from the host's cache) takes 2 to 2.5 minutes, nearly all of it after the first GIF request.
+2. **o[n], n a number, is the object's nth property**, not the property named n, unless the number keys were written in order from 0 (as js1c writes its memory, which is why the module works).
+   The host's batch cache and the link tables were keyed by row and by page * 16 + link; in run c the cache always missed (the hover computed every row again) and the details page's links had no target.
+   They are keyed by strings now ("y" + row, "k" + n).
+3. **"Lengthy JavaScript still running. Continue?" comes up although every timer slice is short**: 2 times in the hover draw and 3 in the click's details draw of run d, none in a first load.
+   The count it keeps is not reset between timer callbacks, as uttt found for Play; no batch size avoids it, only less script overall.
+   vmrender.py presses OK (the dialog's time is in that draw's engine times).
+
+Also found, and fixed: written as it is made (a write() a batch), the view draws progressively but 85 rows took 3.5 minutes (run a): the views are now made whole and written in one call.
+On the Mac: a full gradient cache made a probe never end (rendering with 256 gradient steps), and a batch that starts lower down (the cache's partial redraw) took in items that had ended above it; both found by tests, both fixed.
+
+The compute was cut once, after run m1 showed it was the cost: what Netscape 2 pays for is the words of js1c's memory object (about 35 us each; the first draw read and wrote 1.45 million), not the arithmetic.
+Packed segments spliced in place (found by binary search), packed spans and glyph data (a struct's fields are a word read each), a colour cache per composite, gradient step tables and lines written in place took it to 0.64 million words (tests/out/jmcount.js counts them in node), and run b's compute to 74 s from m1's 112 s.
+
+The timings (the walls of runs b and c are without the Game Boy build; run d's with it):
+
+| | run | wall, from the step's start to end.gif | engine: compute | markup | write | whole draw | GIF requests |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| still, first load (one batch a write) | m1 | 355 s from the app document's GET | 112.5 s | 14.8 s | 4.4 s | 134.2 s | 1,178 |
+| still, first load | b | 199 s from the app document's GET | 74.3 s | 10.2 s | 1.9 s | 97.6 s | about 1,300 |
+| still, first load | c | 125 s from the app document's GET | 33.2 s | 4.4 s | 1.7 s | 53.0 s | 1,318 |
+| still, first load | d | 380 s from the run's start | 65.3 s | 10.1 s | 4.0 s | 91.6 s | 1,318 |
+| hover: pointer onto the pill, 10 of 40 batches computed | d | 198 s | 20.6 s | 5.4 s | 5.4 s | 35.0 s | 1,331 |
+| unhover: pointer onto Features, all from the cache | d | 137 s | 0 | 0 | 5.9 s | 5.9 s | 1,318 |
+| click Features: details, first draw | d | 369 s | 41.5 s | 35.2 s | 4.5 s | 94.0 s | 1,022 |
+| back: the details page's Back pill, still from the cache | d | 146 s | 0 | 0 | 5.6 s | 5.9 s | 1,318 |
+
+The status bar shows a link's text within 1 s of the pointer reaching it (shots/ns2r-c-hover-status.png: "Get started: open the details page").
+Pixels: every view of run d is the native build's picture exactly, 0 of 184,085 pixels different (the whole 592 x 320 picture less XP's activation balloon): the load, the hover state, the normal state again, details and back (shots/ns2r-d-load.png, -hover, -unhover, -click, -back); run b's load too.
+Against Chrome (tools/ns2render_check.py, the Mac): the non-text pixels within 24 levels of Chrome's (or of one of their 8 neighbours, as Chrome anti-aliases every edge) for 100.00% of the still page's 173,890 and of the details page's 177,602, the rounded corners 100.00% and 99.98%, the overlaps 100.00% and 99.98%; exactly Chrome's colour for 44.8% and 56.4% (the palette's own error), the worst pixel 109 levels (the anti-aliased edge of a corner); the text, in our font, within 24 levels for 47% and 44% of its pixels.
+The node and native numbers after the cut: compute 58 ms (node --jitless) and 0.9 ms (native) for still; the app document 112,484 bytes, 40,432 gzipped, in 5 blocks.
+
+### The predictions, marked
+
+- R1, compute 60 s (40 to 90) in the engine's time: right for runs b and d (74 and 65 s), wrong for run c (33 s, under the range but above the 20 s falsifier), and wrong for m1 before the cut (112 s); the guest's speed alone varies by 2 times between runs, which the prediction did not allow for.
+- R2, markup 6 s (3 to 12): right (4.4 to 10.2 s for still); wrong for details (35 s in run d, with three dialogs inside it).
+- R3, write and layout 8 s (6 to 12): wrong.
+  The write() calls are 2 to 6 s, but from the first GIF request to end.gif is 50 s (run c) to 2 minutes (run d), all of it the 1,318 GIF requests the written document makes (finding 1), which "A framebuffer of 1x1 GIFs" never saw because its pages were static.
+- R4, the start: the first GIF 6 s after the frameset's GET: wrong, the start is not separable from the compute in these runs (the app document's GET to the first GIF is 76 s in run c, start and compute together).
+- R5, whole first load 80 s (55 to 120), compute the larger part: wrong by a little at best (125 s in run c), and wrong in runs b and d (199 and 380 s); the compute is the larger part of the engine's time (33 of 53 s) but not of the wall, where the GIF requests are.
+- R6, the hover redraw 70 s and the click's details 55 s: wrong, 198 s and 369 s (run d, with the Game Boy build on the Mac and the dialogs); the cache cut the hover's compute to a third (20.6 s), but every redraw pays the GIFs.
+- R7, exact to the pixel: right, 0 pixels different in every view.
+- R8, no "Lengthy JavaScript" dialog: wrong, 2 in the hover draw and 3 in the details draw (finding 3).
+- R9, text's share: half the runs, 45% of the compute: right for the runs (8,534 of 17,133, 50%); the compute's share was not measured in Netscape 2 (a run without text was not made).
+
+### What this means
+
+Netscape 2.02 does draw the modern page itself: a C renderer of boxes, compiled to JavaScript 1.0, computes every run of every row in the browser, and the result is the native picture to the pixel, with live links, a status bar and a hover state.
+It is slow, and the time is in two places: the module's memory words (0.64 million for a whole page, at about 35 us each) and the browser's own image requests, about 14 a colour for every document it is given.
+The first is the renderer's to cut further (the words a row, not the arithmetic); the second is Netscape 2's: a redraw from a cache that needs no compute at all still takes 2 minutes, so the next step is fewer colours (the requests go with the palette's size) or a view that changes without a new document (frames for the parts that change, as "A framebuffer of 1x1 GIFs" measured with tiles), not a faster renderer.
