@@ -982,7 +982,7 @@ M = [
   ('frames-early-query', 'shim/boot-early.js', 'cdomQ + "cdomApp\\"', 'cdomQ + "x\\"', FRAMES, 'FAIL the shim lives in the app frame'),
   ('frames-handler-parent', 'tools/legacy/frames.js', 'on + "=\\"parent.cdomApp.cdomF." + f', 'on + "=\\"parent.cdomF." + f', FRAMES, 'FAIL a click on the button reached C'),
   ('frames-url-own', 'tools/legacy/frames.js', 'var l = top.location,', 'var l = location,', FRAMES, "FAIL the app reads the top window's URL"),
-  ('frames-boot-no-wait', 'shim/boot.js', 'if (cdomBootTries < 400) setTimeout("cdomBootWait()", 50);', 'if (0) setTimeout("cdomBootWait()", 50);', FRAMES, 'FAIL the boot does not start without cdom.frames.js, and tries again'),  # IE 4 runs the written script before the file
+  ('frames-boot-no-wait', 'shim/boot.js', 'if (cdomBootTries < 400) setTimeout("cdomBootWait()", 50);', 'if (0) setTimeout("cdomBootWait()", 50);', FRAMES, 'FAIL the boot starts once cdom.frames.js has run'),  # IE 4 runs the written script before the file
   ('frames-boot-takes-dom', 'shim/boot.js', '  cdomBootFrames(url, mount, env, ready, options);\n}', '  cdomBootDom(url, mount, env, ready, options);\n}', FRAMES, 'FAIL booted'),
   ('frames-boot-not-js10', 'shim/boot.js', '  var base = url;\n  if (!url.substring)', '  var base = url, none = {};\n  if (!url.substring)', FRAMES, 'shim/boot.js part 1 is not JavaScript 1.0'),
   ('frames-shim-not-js11', 'tools/legacy/frames.js', '  cf_fields[cf_nfields] = x;', '  cf_fields.push(x);', FRAMES, 'frames.js is not JavaScript 1.1: .push'),
