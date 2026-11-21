@@ -184,6 +184,7 @@ tools/legacy/frames.js is JavaScript 1.1 as Netscape 3 has it, and tools/legacy/
 
 - try, catch, throw, switch, do-while, labels, delete, in, instanceof, ===, !==, regex literals, object and array literals, function expressions and nested function declarations, getters, const and let, and \u escapes;
 - a member or a call of a new expression (`new Date().getTime()`, `(new Date()).getTime()`, terser's `(new Date).getTime()`), a syntax error in Netscape 2 and 3 (docs/descent.md): the shim keeps the new expression in a variable;
+- an assignment anywhere in the test of if, while, for, do-while or ?:, which Netscape 2's parser silently reads as an equality test (netscape.exe's messages: "test for equality (==) mistyped as assignment (=)?", "Assuming equality test");
 - the globals undefined, NaN and Infinity;
 - the methods of JavaScript 1.2 and later (push, pop, shift, unshift, splice, slice, concat, call, apply, charCodeAt, fromCharCode), except charCodeAt and fromCharCode where the file uses them behind a check;
 - the DOM this tier has not (createElement, appendChild, insertBefore, removeChild, getElementById, innerHTML, addEventListener, attachEvent).
