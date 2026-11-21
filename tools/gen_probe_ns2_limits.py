@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Writes the probe pages of docs/descent.md "Netscape 2's limits for inline code" into tests/probe-ns2-*.html.
-Run: python3 tools/gen_probe_ns2_limits.py        (writes every page; needs demo/uttt/out built for probe-ns2-big.html)
+Run: python3 tools/gen_probe_ns2_limits.py        (writes every page into tests/, which git ignores; needs demo/uttt/out built for probe-ns2-big.html)
 Pages (JavaScript 1.0 only, one test per <script> block so a block that fails kills only itself; flags are set at the end
 of a block and reported by 1x1 images written by the last block, /mark/<query>/p-<n>-<name>-<value>, which the server's log holds):
   probe-ns2-stmt.html   blocks of 2K .. 128K of statements `var a123=123;`, ascending
