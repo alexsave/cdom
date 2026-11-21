@@ -26,12 +26,13 @@ const mouse = (type, x, y, buttons = 0, button = 'none') =>
 // [-1, -1] when there is no such element (a broken shim), which clickAt does not click.
 const centre = (sel) => E(`(function () { var e = ${F}.querySelector(${JSON.stringify(sel)}), r; if (!e) return [-1, -1]; r = e.getBoundingClientRect();
   return [Math.round((r.left + r.right) / 2), Math.round((r.top + r.bottom) / 2)]; })()`);
-async function clickAt(x, y) {
+// hold: how long the button is down, in ms.
+async function clickAt(x, y, hold = 30) {
   if (x < 0) return;
-  await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y, 1, 'left'); await sleep(30);
+  await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y, 1, 'left'); await sleep(hold);
   await mouse('mouseReleased', x, y, 0, 'left'); await sleep(60);
 }
-const click = async (sel) => clickAt(...await centre(sel));
+const click = async (sel, hold) => clickAt(...await centre(sel), hold);
 const draws = () => E('cdomF.draws');
 const stat = (k) => E(`X.stat(${k})`);
 const STAT = { count: 0, path: 1, inputs: 2, changes: 3, checks: 4, focuses: 5, blurs: 6, ticks: 7, items: 8 };
@@ -132,7 +133,7 @@ run: try {
   await b.send('Input.insertText', { text: 'héllo' }); await sleep(30);
   d = await draws();
   await click('#inc');
-  await sleep(400);
+  await until(`cdomF.draws > ${d}`);
   ok((await stat(STAT.inputs)) === 1 && (await stat(STAT.changes)) === 1 && (await stat(STAT.blurs)) === 1,
     `leaving the field: one input, one change, one blur: ${await stat(STAT.inputs)}, ${await stat(STAT.changes)}, ${await stat(STAT.blurs)}`);
   ok((await textOf('#echop')) === 'echo héllo', `the input reached C, which read the value and drew it: ${JSON.stringify(await textOf('#echop'))}`);
@@ -144,8 +145,19 @@ run: try {
   await b.send('Input.insertText', { text: 'abc' }); await sleep(30);
   d = await draws();
   await clickAt(600, 700);
-  await sleep(400);
+  await until(`cdomF.draws > ${d}`);
   ok((await textOf('#echop')) === 'echo abc' && (await draws()) === d + 1, `a change that C answers draws once: ${JSON.stringify(await textOf('#echop'))}, ${(await draws()) - d}`);
+  // A slow click that leaves the field: the press held 600 ms, past cf_LATER, while the change and blur wait to be
+  // drawn. The draw waits for the button's release, so the button under the pointer is still there for the click.
+  await click('#name');
+  await E(`${field('name')}.select()`);
+  await b.send('Input.insertText', { text: 'slow' }); await sleep(30);
+  d = await draws();
+  const before = await stat(STAT.count);
+  await click('#inc', 600);
+  await until(`cdomF.draws > ${d}`);
+  ok((await stat(STAT.count)) === before + 1 && (await textOf('#echop')) === 'echo slow' && (await draws()) === d + 1,
+    `a click held 600 ms that left a field reaches C, drawn once: count ${(await stat(STAT.count)) - before}, ${JSON.stringify(await textOf('#echop'))}, ${(await draws()) - d} draws`);
 
   // Typed text C has not seen survives a redraw, and so does the focus and the caret in it.
   await click('#note');
