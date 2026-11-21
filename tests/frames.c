@@ -54,6 +54,9 @@ void cd_main(void) {
   /* A form of the app's, with a field in it and one after it: both must stay in the shim's one FORM. */
   cd_open("form"); cd_attr("id", "appform"); cd_open("input"); cd_attr("id", "inform"); cd_attr("value", "in"); cd_close(); cd_close();
   cd_open("input"); cd_attr("id", "afterform"); cd_attr("value", "after"); cd_close();
+  /* Tags in capitals: the same tags to the shim. */
+  cd_open("BUTTON"); cd_attr("id", "upbtn"); cd_text("UP"); cd_close();
+  cd_open("SVG"); cd_attr("id", "upsvg"); cd_close();
   cd_sel(ids[INC]); cd_listen(ids[INC], CD_EV_CLICK);
   cd_sel(ids[LINKS]); cd_listen(ids[LINKS], CD_EV_CLICK);
   cd_sel(ids[NAME]); cd_listen(ids[NAME], CD_EV_INPUT);
@@ -113,6 +116,12 @@ EXPORT("move_foreign") void move_foreign(void) {
   cd_flush();
 }
 EXPORT("move_self") void move_self(void) { cd_move(m1, m1); cd_set_text_node_num(ids[COUNT], ++count); cd_flush(); }
+/* A tag that is not letters and digits, which would write markup of its own: drawn as a span. */
+EXPORT("bad_tag") void bad_tag(void) {
+  cd_at(CD_MOUNT, CD_APPEND);
+  cd_open("p onclick=\"parent.cdomBad=1\""); cd_attr("id", "badtag"); cd_text("bad"); cd_close();
+  cd_flush();
+}
 /* select on a checkbox, which has no selection to set. */
 EXPORT("select_check") void select_check(void) { cd_call(ids[CHECK], "select"); cd_flush(); }
 /* A trap after the count was set and flushed: the call into C never returns to the shim, which must recover. */

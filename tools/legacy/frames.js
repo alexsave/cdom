@@ -408,8 +408,19 @@ function cf_push(el) {
   cf_lastEl = el;
   cf_dirty = 1;
 }
+/* A tag as the serializer compares and writes it: lowercase (cf_SKIP, cf_DIV and cf_VOID, and the tags it writes by
+ * itself, are), and letters and digits only, since it is written into the markup as it is: any other is noted and
+ * drawn as a SPAN. */
+var cf_ALNUM = "abcdefghijklmnopqrstuvwxyz0123456789";
+function cf_tag(name) {
+  var t = name.toLowerCase(), k;
+  for (k = 0; k < t.length; k++) if (cf_ALNUM.indexOf(t.charAt(k)) < 0) break;
+  if (t.length && k == t.length) return t;
+  cf_fail("cdom: the tag " + name + " is not letters and digits: drawn as a span");
+  return "span";
+}
 function cf_op_open(tag) {
-  cf_push(new cf_Node(1, cf_str(tag), null));
+  cf_push(new cf_Node(1, cf_tag(cf_str(tag)), null));
 }
 function cf_op_close() {
   cf_depth--;

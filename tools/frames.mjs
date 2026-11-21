@@ -192,6 +192,9 @@ run: try {
   ok((await stat(STAT.radios)) === 12 && (await E(`${field('r2')}.checked && !${field('r1')}.checked && ${field('r1')}.name === "grp" && ${field('r2')}.name === "grp"`)),
     `two radios of one name are one group: C read ${await stat(STAT.radios)} (want 1 then 2: 12), r1 ${await E(`${field('r1')}.checked`)}, r2 ${await E(`${field('r2')}.checked`)}`);
 
+  // Tags in capitals are the same tags: BUTTON an INPUT TYPE=button, SVG not drawn.
+  ok(await E(`(function () { var b = ${F}.querySelector("#upbtn"); return !!b && b.tagName === "INPUT" && b.type === "button" && b.value === "UP" && !${F}.querySelector("#upsvg"); })()`),
+    'a tag in capitals is the same tag: BUTTON as an INPUT TYPE=button, SVG not drawn');
   // A form element from C is a DIV in the shim's one FORM: the fields in it and after it are that FORM's elements, in
   // order, and read back as such.
   ok(await E(`(function () { var d = ${F}, f = d.forms[0], i = d.querySelector("#inform"), a = d.querySelector("#afterform");
@@ -243,6 +246,12 @@ run: try {
   await click('#inc');
   ok(focusThrew && (await stat(STAT.count)) === n0 + 1 && (await E('cdomF.errors.join()')).includes('a draw did not finish'),
     `a throw while the shim draws does not lock the page: ${focusThrew ? 'threw' : 'no throw'}, the next click reached C (${(await stat(STAT.count)) - n0}), noted: ${JSON.stringify(await E('cdomF.errors'))}`);
+
+  // A tag that is not letters and digits is drawn as a SPAN, and noted: nothing of it reaches the markup.
+  await E('X.bad_tag()');
+  ok(await E(`(function () { var e = ${F}.querySelector("#badtag"); return !!e && e.tagName === "SPAN" && !e.getAttribute("onclick") && e.innerText === "bad"; })()`)
+    && (await E('cdomF.errors.join()')).includes('is not letters and digits'),
+    `a tag that is not letters and digits is a SPAN, with nothing of it in the markup, and noted: ${await E(`(function () { var e = ${F}.querySelector("#badtag"); return e ? e.tagName + " " + e.getAttribute("onclick") : "none"; })()`)}`);
 
   // cd_move as the DOM's insertBefore: before a node of another parent is an error, noted, and nothing moves; before
   // itself, nothing moves (a self-link would hang the next serialization).
