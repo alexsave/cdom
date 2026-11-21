@@ -401,3 +401,22 @@ The first run of Netscape 2 and 3 after a kill shows the license agreement; Acce
 - Netscape 3.04 needs `application/x-javascript` for a script from the server.
 - Not run: frames-body.html and Open, a typed code and the bad code on Netscape 3 and 4 (the first two also), and Play to its end on all three; IE 3 has no script.
 - The inlined modern shim and the boot's second part are still sent to the frames tier (about 24 KB of a page).
+
+## 16. One shim in JavaScript 1.0, one inline path (branch frames-js10)
+
+Netscape 2.02 made the frameset and then showed nothing: it has no SCRIPT SRC (A12), so neither cdom.frames.js nor the app's .js1.js was ever requested (15.5).
+This section makes the tier right for it by construction, and proves what Chrome can prove.
+
+### 16.1 Predictions, written before any measuring
+
+Seen before writing them: cdom.frames.js was 30,024 to 32,112 bytes minified (13 and the uttt README), uttt.wasm.ie9.js 19,819 bytes, and uttt.html 28,494 bytes; no .js1.js size and no app document has been measured.
+
+- S1, the shim: tools/legacy/frames.js passes the js10 gate with only charCodeAt, fromCharCode and the mouse and capture hooks in its allowed list, and its minified size grows by at most 15% (at most 35,000 bytes), since the export wrappers and the lacking imports become declared functions instead of new Function.
+- S2, what the js10 gate finds in today's frames.js: about 40 sites, mostly Array (about 15), typeof (about 8), split (about 5), new Function (2), join (1) and arguments-free code otherwise; no nested function, no mixed returns.
+- S3, the app documents: tests/out/frames.app.html is at most 100,000 bytes and 30,000 gzipped (gzip -9); demo/uttt's out/uttt.app.html at most 120,000 bytes and 36,000 gzipped.
+  The .js1.js module is the largest part of each, about twice cdom.frames.js.
+- S4, the modern pages do not grow: frames.html and uttt.html are each at most their size on main, and I expect each to shrink by 50 to 300 bytes (the boot's first part no longer writes SCRIPT SRCs, and the early script names the app document instead of rebuilding the query).
+- S5, blocks: at 30,000 bytes a block, frames.app.html has 4 to 6 script blocks and uttt.app.html 5 to 7; the largest top-level statement of each js1c output is under 30,000 bytes (falsifier: the build refuses a statement over the limit, and js1c would have to split functions).
+- S6, the recursion: the deepest element nesting is about 8 in tests/frames.c and about 10 in uttt; the serializer's cf_node and cf_kids hold about 16 slots a level of the 512, so about 160 at uttt's depth: not near the limit for these two apps, but an app's depth is its own (a tree 30 deep would overflow), so the walk is made a loop with no JavaScript recursion, and that changes no drawn byte.
+- S7, Chrome: tools/frames.mjs, tools/uttt.mjs, tools/js1.mjs, js10.mjs, js11.mjs and tests/lits pass through the app document; with document.onmousedown and onmouseup never firing, and no charCodeAt or fromCharCode (the Netscape 2 hooks this Chrome can take away), the frames page still counts clicks, takes field changes and draws once a click.
+- What I expect to break first: the string table, since Netscape 2's `new Array(a, b, c)` drops its arguments and its split returns undefined, so cdomFramesStart's `table[3].split(...)` would fail there even once the files load; and any numbered table of the shim that is not filled 0, 1, 2 in order (cf_tok and cf_tid start at 1), since Netscape 2 reads a number key below the object's property count as its nth property.
