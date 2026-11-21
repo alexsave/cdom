@@ -190,7 +190,7 @@ static cd_id button(const char *idattr, const char *label) {
 
 void cd_main(void) {
   cd_open("h4"); cd_text("Ultimate Tic-Tac-Toe replay"); cd_close();
-  /* A small heading (the first element of the page must not be a P: Netscape 2.02 hangs on one, docs/frames-design.md 17) and the
+  /* A small heading (the page without one hung Netscape 2.02 twice in two runs, and with it never in six: unproven, docs/frames-design.md 17) and the
    * buttons above the board: the page then fits the 640 x 480 screen with the toolbar, the location and the directory
    * buttons off, board and move count in view together. */
   cd_open("p");
