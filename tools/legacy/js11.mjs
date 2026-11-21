@@ -35,6 +35,19 @@ function walk(node, visit, parent) {
   }
 }
 
+// Netscape 3.04 refuses a "--" (and, untested, a "++") that starts at column 254 of its line (from 0): "missing ) after
+// for-loop control." on js1c's "for(i=n-1;i>=0;i--)" whose "--" sat at columns 254 and 255, and in tests/probe-js1e.html
+// the same "x--;" parses at columns 250, 253, 255 and 256 and dies only at 254, while ">=" and ">>>" parse there
+// (docs/js1-compile-design.md, section 12). The rule is the measured one; other seams further along a line are not.
+export function seam(src) {
+  const found = [];
+  try {
+    for (const t of acorn.tokenizer(src, { ecmaVersion: 5, locations: true }))
+      if (t.type.label === '++/--' && t.loc.start.column === 254) found.push(`${t.value} at column 254 (line ${t.loc.start.line})`);
+  } catch (e) { /* lacks() reports what does not parse */ }
+  return found;
+}
+
 // The constructs of src JavaScript 1.1 lacks, one string each (with its line), or [] when it has none. allowed: the
 // names of METHODS the file uses behind a check. js10 adds JS10_NAMES and refuses typeof and void.
 export function lacks(src, { allowed = [], js10 = false } = {}) {
@@ -57,6 +70,7 @@ export function lacks(src, { allowed = [], js10 = false } = {}) {
     }
   };
   nested(tree, 0);
+  for (const f of seam(src)) found.push(f);
   walk(tree, (n, parent) => {
     if (SYNTAX[n.type]) add(SYNTAX[n.type], n);
     if (n.type === 'VariableDeclaration' && n.kind !== 'var') add(n.kind, n);

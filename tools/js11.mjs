@@ -8,6 +8,12 @@ const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console
 const refused = (src, what, options) => lacks(src, options).some((f) => f.startsWith(what));
 const passes = (src, options) => lacks(src, options).length === 0;
 
+// Netscape 3.04's seam: a "--" or "++" starting at column 254 of its line (tests/probe-js1e.html).
+const pad = (col, stmt) => '/*' + 'p'.repeat(col - 5) + '*/' + stmt;
+ok(refused(pad(254, 'x--;'), '-- at column 254'), 'x-- with its -- at column 254 is refused');
+ok(refused(pad(254, 'x++;'), '++ at column 254'), 'x++ with its ++ at column 254 is refused');
+ok(passes(pad(253, 'x--;')) && passes(pad(255, 'x--;')) && passes(pad(254, 'x>=1;')), 'x-- at columns 253 and 255, and >= at 254, pass');
+
 // Syntax of JavaScript 1.2 to 1.4.
 for (const [src, what] of [
   ['try { f(); } catch (e) {}', 'try'],

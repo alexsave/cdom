@@ -1615,7 +1615,9 @@ static void analyse(void) {
   }
 }
 
-/* The JavaScript 1.0 runtime: the helpers the output calls. Kept in this file so one tool writes one file. */
+/* The JavaScript 1.0 runtime: the helpers the output calls. Kept in this file so one tool writes one file. No ++ or --
+ * anywhere in the output: Netscape 3.04 refuses a "--" at column 254 of a line ("missing ) after for-loop control.",
+ * tools/legacy/js11.mjs's seam rule), and i=i+1 costs the same, so js1c writes none rather than counting columns. */
 static const char *RUNTIME =
   "var JM=new Object(),JS=new Object(),JE=new Object(),JY=new Object(),JF=new Object();\n"
   "var JP=0,JQ=0,JR=0,JT=0,JX=0,JN=0,JW=0,JB=-1,JMp=0,JMmax=65536,JO=0,JL2=Math.log(2),JPT=0,JK=0;\n"
@@ -1626,9 +1628,9 @@ static const char *RUNTIME =
   "function JRu(a,b){if(b==0){JT=1;return 0;}return (a>>>0)%(b>>>0)|0;}\n"
   "function JRl(x,k){k=k&31;return x<<k|x>>>(32-k);}\n"
   "function JRr(x,k){k=k&31;return x>>>k|x<<(32-k);}\n"
-  "function JCz(x){var n=0;if(x==0)return 32;while(x>0){n++;x=x<<1;}return n;}\n"
-  "function JCt(x){var n=0;if(x==0)return 32;while((x&1)==0){n++;x=x>>1;}return n;}\n"
-  "function JPc(x){var n=0;while(x!=0){n++;x=x&(x-1);}return n;}\n"
+  "function JCz(x){var n=0;if(x==0)return 32;while(x>0){n=n+1;x=x<<1;}return n;}\n"
+  "function JCt(x){var n=0;if(x==0)return 32;while((x&1)==0){n=n+1;x=x>>1;}return n;}\n"
+  "function JPc(x){var n=0;while(x!=0){n=n+1;x=x&(x-1);}return n;}\n"
   "function JLbu(a){return JM[a>>2]>>>((a&3)<<3)&255;}\n"
   "function JLbs(a){return JM[a>>2]<<(24-((a&3)<<3))>>24;}\n"
   "function JLhu(a){return JM[a>>2]>>>((a&2)<<3)&65535;}\n"
@@ -1640,13 +1642,13 @@ static const char *RUNTIME =
   "function JWh(a,v){var i=a>>2,s=(a&2)<<3;if(a&1){JWb(a,v);JWb(a+1,v>>8);return;}JM[i]=JM[i]&~(65535<<s)|(v&65535)<<s;}\n"
   "function JWw(a,v){var s=(a&3)<<3,i=a>>2;if(s==0){JM[i]=v|0;return;}JM[i]=JM[i]&~(-1<<s)|v<<s;"
   "JM[i+1]=JM[i+1]&-1<<s|v>>>(32-s);}\n"
-  "function JP2(e){var i,v;if(!JPT){JPT=new Object();v=1;for(i=0;i<=1023;i++){JPT[i+1074]=v;v=v*2;}"
-  "v=1;for(i=0;i>=-1074;i--){JPT[i+1074]=v;v=v/2;}}return JPT[e+1074];}\n"
+  "function JP2(e){var i,v;if(!JPT){JPT=new Object();v=1;for(i=0;i<=1023;i=i+1){JPT[i+1074]=v;v=v*2;}"
+  "v=1;for(i=0;i>=-1074;i=i-1){JPT[i+1074]=v;v=v/2;}}return JPT[e+1074];}\n"
   "function JWD(lo,hi){var e=hi>>>20&2047,m=(hi&1048575)*4294967296+(lo>>>0),s=1;if(hi<0)s=-1;"
   "if(e==2047){if(m)return 0/0;return s/0;}if(e==0)return s*m*JP2(-1074);return s*(m/4503599627370496+1)*JP2(e-1023);}\n"
   "function JDW(x){var s=0,e,m,h;if(x!=x){JX=2146959360;return 0;}if(x<0||(x==0&&1/x<0)){s=-2147483648;x=-x;}"
   "if(x==1/0){JX=s|2146435072;return 0;}if(x==0){JX=s;return 0;}e=Math.floor(Math.log(x)/JL2);"
-  "if(e>1023)e=1023;if(e<-1074)e=-1074;while(e>-1074&&JP2(e)>x)e--;while(e<1023&&JP2(e+1)<=x)e++;"
+  "if(e>1023)e=1023;if(e<-1074)e=-1074;while(e>-1074&&JP2(e)>x)e=e-1;while(e<1023&&JP2(e+1)<=x)e=e+1;"
   "if(e<-1022){m=x*JP2(1022)*4503599627370496;e=0;}else{m=(x/JP2(e)-1)*4503599627370496;e=e+1023;}"
   "h=Math.floor(m/4294967296);JX=s|e<<20|h;return m-h*4294967296|0;}\n"
   "function JLd(a){return JWD(JLw(a),JLw(a+4));}\n"
@@ -1662,17 +1664,17 @@ static const char *RUNTIME =
   "function JSs(x){if(x!=x)return 0;if(x<=-2147483648)return -2147483648;if(x>=2147483647)return 2147483647;return x|0;}\n"
   "function JSu(x){if(x!=x||x<=-1)return 0;if(x>=4294967295)return -1;return x|0;}\n"
   "function JMg(n){var o=JMp,i;n=n>>>0;if(JMp+n>JMmax)return -1;for(i=JMp*16384;i<(JMp+n)*16384;i=i+1)JM[i]=0;JMp=JMp+n;return o;}\n"
-  "function JMf(d,v,n){var e=(d>>>0)+(n>>>0);v=v&255;d=d>>>0;while(d<e&&(d&3)!=0){JWb(d,v);d++;}"
-  "v=v|v<<8|v<<16|v<<24;while(d+4<=e){JM[d>>2]=v;d=d+4;}while(d<e){JWb(d,v);d++;}}\n"
+  "function JMf(d,v,n){var e=(d>>>0)+(n>>>0);v=v&255;d=d>>>0;while(d<e&&(d&3)!=0){JWb(d,v);d=d+1;}"
+  "v=v|v<<8|v<<16|v<<24;while(d+4<=e){JM[d>>2]=v;d=d+4;}while(d<e){JWb(d,v);d=d+1;}}\n"
   "function JMc(d,s,n){var i;d=d>>>0;s=s>>>0;n=n>>>0;if(((d|s|n)&3)==0){if(d<=s){for(i=0;i<n;i=i+4)JM[(d+i)>>2]=JM[(s+i)>>2]|0;}"
   "else{for(i=n-4;i>=0;i=i-4)JM[(d+i)>>2]=JM[(s+i)>>2]|0;}return;}"
-  "if(d<=s){for(i=0;i<n;i++)JWb(d+i,JLbu(s+i));}else{for(i=n-1;i>=0;i--)JWb(d+i,JLbu(s+i));}}\n"
+  "if(d<=s){for(i=0;i<n;i=i+1)JWb(d+i,JLbu(s+i));}else{for(i=n-1;i>=0;i=i-1)JWb(d+i,JLbu(s+i));}}\n"
   "var JZ0=0,JZ1=0;function Jzsf(x){JZ0=JDW(x);JZ1=JX;}function Jzlf(){return JWD(JZ0,JZ1);}\n"
   "function Jzsi(k,v){if(k)JZ1=v|0;else JZ0=v|0;}function Jzli(k){if(k)return JZ1;return JZ0;}\n"
   "function Jgo(n){var k=JB;while(n){if(k==0){JN=n;return 1;}k=k-1;n=JF[n]();}JN=0;return 0;}\n"
   "function Jmore(){if(Jgo(JN))return 1;JP=JW;JQ=0;JO.js1_paused=0;if(JT)JO.js1_trap=1;JO.js1_result=JR;return 0;}\n"
   "function Jdz(s){var i=0,n=s.length,j,t,d,k=JK;while(i<n){j=s.indexOf(\",\",i);t=s.substring(i,j);d=t.indexOf(\".\");"
-  "if(d>=0){k=k+parseInt(t.substring(0,d),36);t=t.substring(d+1,t.length);}JM[k]=parseInt(t,36)|0;k++;i=j+1;}JK=k;}\n";
+  "if(d>=0){k=k+parseInt(t.substring(0,d),36);t=t.substring(d+1,t.length);}JM[k]=parseInt(t,36)|0;k=k+1;i=j+1;}JK=k;}\n";
 
 static void b36(Buf *b, uint32_t v) {
   char t[16];

@@ -6,6 +6,8 @@
 import * as acorn from 'acorn';
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
+// Netscape 3.04's "--" at column 254: one rule, owned by the frames tier's gate (tools/legacy/js11.mjs).
+import { seam } from './legacy/js11.mjs';
 
 // Syntax: "no run" in Netscape 2.02's column (a syntax error kills the whole file).
 const SYNTAX = {
@@ -46,6 +48,7 @@ export function lacks10(src) {
     return [`not even ES5: ${e.message}`];
   }
   const add = (what, n) => found.push(`${what} (line ${n.loc.start.line})`);
+  for (const f of seam(src)) found.push(f);
   walk(tree, (n, parent, depth) => {
     if (SYNTAX[n.type]) add(SYNTAX[n.type], n);
     if (n.type === 'FunctionDeclaration' && depth > 0) add('a nested function declaration', n);
@@ -90,7 +93,7 @@ function selfTest() {
     ['a.push(1);', '.push'], ['F.prototype.g = h;', '.prototype'], ['var m = Math.imul(a, b);', '.imul'],
     ['var r = s.replace("a", "b");', '.replace'], ['var h = n.toString(16);', 'toString(radix)'],
     ['var s = "\\u00e9";', 'a \\u escape'], ['var s = q.substr(1);', '.substr'], ['var f = Math.fround(x);', '.fround'],
-    ['let x = 1;', 'not even ES5'],
+    ['let x = 1;', 'not even ES5'], ['/*' + 'p'.repeat(249) + '*/x--;', '-- at column 254'],
   ]) ok(refused(src, what), `${src} is refused (${what})`);
   ok(lacks10(`var JM = new Object(), JA = new Array(4), d = new Date(), t;
 function f(a, b) { var i, s = ""; t = d.getTime(); for (i = 0; i < 3; i++) { if (a == b || a != 0) s = s + "x"; }
