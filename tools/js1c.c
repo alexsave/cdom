@@ -1067,19 +1067,26 @@ static void bin_i32(Buf *b, const Expr *e) {
     call2(b, "JMu", x, W_I, y, W_I);
     return;
   case 0x6d:
-    if (yc && k != 0 && k != -1) {
-      bs(b, "(");
-      ex(b, x, W_I);
-      bf(b, "/%d|0)", k);
+    if (yc && k != 0 && k != -1 && simple_addr(x)) {
+      /* (x - x % k) / k: the quotient truncated before its | 0, since Netscape 3.04 gives NaN for a fraction's | 0
+       * (docs/js1-compile-design.md section 12); x is read twice, so only a plain value is inlined. */
+      Buf t = { 0 }, c = { 0 };
+      ex(&t, x, W_I);
+      if (k < 0) bf(&c, "(%d)", k);
+      else bf(&c, "%d", k);
+      bf(b, "((%s-%s%%%s)/%s|0)", t.p, t.p, c.p, c.p);
+      free(t.p);
+      free(c.p);
       return;
     }
     call2(b, "JDs", x, W_I, y, W_I);
     return;
   case 0x6e:
-    if (yc && k != 0) {
-      bs(b, "(");
-      ex(b, x, W_U);
-      bf(b, "/%u|0)", (uint32_t)k);
+    if (yc && k != 0 && simple_addr(x)) {
+      Buf t = { 0 };
+      ex(&t, x, W_U);
+      bf(b, "((%s-%s%%%u)/%u|0)", t.p, t.p, (uint32_t)k, (uint32_t)k);
+      free(t.p);
       return;
     }
     call2(b, "JDu", x, W_I, y, W_I);
@@ -1649,8 +1656,8 @@ static const char *RUNTIME =
   "var JP=0,JQ=0,JR=0,JT=0,JX=0,JN=0,JW=0,JB=-1,JMp=0,JMmax=65536,JO=0,JL2=Math.log(2),JPT=0,JK=0;\n"
   "function JMu(a,b){var l=(a&65535)*(b&65535),h=((a>>>16)*(b&65535)&65535)+((a&65535)*(b>>>16)&65535);"
   "return (l+h*65536)%4294967296|0;}\n"
-  "function JDs(a,b){if(b==0||(a==-2147483648&&b==-1)){JT=1;return 0;}return a/b|0;}\n"
-  "function JDu(a,b){if(b==0){JT=1;return 0;}return (a>>>0)/(b>>>0)|0;}\n"
+  "function JDs(a,b){if(b==0||(a==-2147483648&&b==-1)){JT=1;return 0;}return (a-a%b)/b|0;}\n"
+  "function JDu(a,b){if(b==0){JT=1;return 0;}a=a>>>0;b=b>>>0;return (a-a%b)/b|0;}\n"
   "function JRs(a,b){if(b==0){JT=1;return 0;}return a%b|0;}\n"
   "function JRu(a,b){if(b==0){JT=1;return 0;}return (a>>>0)%(b>>>0)|0;}\n"
   "function JRl(x,k){k=k&31;return x<<k|x>>>(32-k);}\n"
@@ -1686,10 +1693,10 @@ static const char *RUNTIME =
   "function JMn(a,b){if(a!=a)return a;if(b!=b)return b;if(a==b){if(a==0&&1/a<0)return a;return b;}if(a<b)return a;return b;}\n"
   "function JMx(a,b){if(a!=a)return a;if(b!=b)return b;if(a==b){if(a==0&&1/a>0)return a;return b;}if(a>b)return a;return b;}\n"
   "function JCs(a,b){if(a<0||(a==0&&1/a<0))a=-a;if(b<0||(b==0&&1/b<0))return -a;return a;}\n"
-  "function JTs(x){if(x>-2147483649&&x<2147483648)return x|0;JT=1;return 0;}\n"
-  "function JTu(x){if(x>-1&&x<4294967296)return x|0;JT=1;return 0;}\n"
-  "function JSs(x){if(x!=x)return 0;if(x<=-2147483648)return -2147483648;if(x>=2147483647)return 2147483647;return x|0;}\n"
-  "function JSu(x){if(x!=x||x<=-1)return 0;if(x>=4294967295)return -1;return x|0;}\n"
+  "function JTs(x){if(x>-2147483649&&x<2147483648)return JTr(x)|0;JT=1;return 0;}\n"
+  "function JTu(x){if(x>-1&&x<4294967296)return JTr(x)|0;JT=1;return 0;}\n"
+  "function JSs(x){if(x!=x)return 0;if(x<=-2147483648)return -2147483648;if(x>=2147483647)return 2147483647;return JTr(x)|0;}\n"
+  "function JSu(x){if(x!=x||x<=-1)return 0;if(x>=4294967295)return -1;return JTr(x)|0;}\n"
   "function JMg(n){var o=JMp,i;n=n>>>0;if(JMp+n>JMmax)return -1;for(i=JMp*16384;i<(JMp+n)*16384;i=i+1)JM[i]=0;JMp=JMp+n;return o;}\n"
   "function JMf(d,v,n){var e=(d>>>0)+(n>>>0);v=v&255;d=d>>>0;while(d<e&&(d&3)!=0){JWb(d,v);d=d+1;}"
   "v=v|v<<8|v<<16|v<<24;while(d+4<=e){JM[d>>2]=v;d=d+4;}while(d<e){JWb(d,v);d=d+1;}}\n"
