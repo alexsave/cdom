@@ -64,7 +64,12 @@ On this tier the page becomes a frameset whose one frame shows the app:
 The top window keeps everything: the node tree, C's memory and the app.
 The frame only shows HTML, and its handlers call `parent.cdomF`.
 If the FRAMESET is not made (A13 false), the fallback is A14: once the page has loaded, the shim replaces the top document itself by open, write and close with the same FRAMESET.
-The prototype has both, and LEGACY=frames runs the first; the fallback is chosen by the probe's answer.
+The prototype has both, and takes the fallback by itself when no frame is there once the page has loaded (readyState complete, or 50 waits of 20 ms where there is no readyState).
+
+Found while building it: a BODY tag sets HTML5's frameset-ok flag to "not ok", so Chrome ignores a FRAMESET written after `<body>`, even an empty one, and Netscape's documented rule is the same.
+An implied BODY (the page opens with `</head><div id="m">`) keeps the flag, and the written FRAMESET takes the body's place.
+So a frames-tier page should not open its BODY with a tag; one that does (shim/page.html, cdom.mk's default page, does) still runs, through the fallback.
+tests/frames.html has no BODY tag, and tests/build.sh makes tests/out/frames-body.html, the same page with one; tools/frames.mjs runs both.
 
 ### The boot itself
 
@@ -127,8 +132,12 @@ All the controls are written inside one FORM (Netscape shows a control only in a
 Before each rewrite (at each entry from the browser) the shim reads every field back: a text's value, a checkbox's checked, a SELECT's selectedIndex, and the focused field's selection where the browser has selectionStart.
 That includes text the user typed that C has not seen yet; C sees it at the next onChange or onKeyUp, as an input event.
 The new markup writes those values back, and after the rewrite the shim focuses the field that had focus, puts the selection back (setSelectionRange, or IE 4's createTextRange) and scrolls the frame back where it was (scrollTo, A15).
-Where there is no scrollTo, an anchor is written before the focused field and the frame's location is replaced with it.
-The focus that the shim gives back is not delivered to C as a new focus.
+Where there is no scrollTo, window.scroll (JavaScript 1.0) takes its place.
+The focus that the shim gives back is not delivered to C as a new focus, and neither is a focus C asks for (cd_call "focus").
+
+Leaving a field for a button fires change, blur and focus between the press and the release.
+A rewrite there would replace the button under the pointer, and the click would be lost (tools/frames.mjs saw it lost before this rule).
+So the draw after a change, a focus or a blur waits cf_LATER (250 ms), and the click that comes in that time draws once for all of them.
 
 ## 7. History
 
@@ -151,6 +160,7 @@ CSS is dropped (Netscape 4's is partial and known to crash), and what can be car
 | background-color, background (a color) | a one-cell TABLE with BGCOLOR around the element; the mount's or the body's becomes the BODY's BGCOLOR |
 | width, height in px on IMG, TABLE, TD, TH | WIDTH, HEIGHT |
 | display: none | the element is not written (its fields keep their values in the tree) |
+| a style attribute | read into the same properties, then as above |
 | every other property | dropped |
 
 Tags: BUTTON becomes INPUT TYPE=button with its text as the value; SECTION, ARTICLE, HEADER, FOOTER, NAV, MAIN, ASIDE and FIGURE become DIV; SVG and CANVAS and everything inside them, SCRIPT, STYLE and TEMPLATE are not written (they draw nothing here for now).
@@ -173,7 +183,11 @@ tools/legacy/frames.js is JavaScript 1.1 as Netscape 3 has it, and tools/legacy/
 
 - try, catch, throw, switch, do-while, labels, delete, in, instanceof, ===, !==, regex literals, object and array literals, function expressions and nested function declarations, getters, const and let, and \u escapes;
 - the globals undefined, NaN and Infinity;
-- the methods of JavaScript 1.2 and later (push, pop, shift, unshift, splice, slice, concat, call, apply, charCodeAt, fromCharCode), except charCodeAt and fromCharCode where the file uses them behind a check.
+- the methods of JavaScript 1.2 and later (push, pop, shift, unshift, splice, slice, concat, call, apply, charCodeAt, fromCharCode), except charCodeAt and fromCharCode where the file uses them behind a check;
+- the DOM this tier has not (createElement, appendChild, insertBefore, removeChild, getElementById, innerHTML, addEventListener, attachEvent).
+
+It cannot tell a string's indexOf (JavaScript 1.0) from an Array's (ES5), or location's replace and search (1.0 and 1.1) from a string's (1.2), so it lets those names through.
+The boot's first part goes through the same gate with js10 on, which also refuses typeof, void, Array, Object, Function, prototype, split and join; it may name getElementById and createElement, which it tests for and never calls.
 
 So the language surface the tier needs of the browser is: functions declared at the top level, new Object() and new Array(), for, for-in, while, if, ?:, the bitwise operators, typeof, new Function, string charAt, indexOf, substring, split and length, Array join, escape and unescape, Math, Date, setTimeout and clearTimeout with a string, and the document and form objects of section 2.
 That list is what a Netscape 2 code path would have to give, whichever way it is made (a WebAssembly interpreter in JavaScript 1.0, or a transform of the wasm2js output): that choice is Alex's, after the probe.
@@ -207,7 +221,53 @@ Alex's XP VM serves pages from the host at http://10.0.2.2:<port>/.
 1. Build: `tests/build.sh` writes tests/out/frames.html, cdom.frames.js and frames.wasm.ie9.js.
 2. Serve tests/out: `python3 -m http.server 8000 --directory tests/out` on the host.
 3. In each of Netscape 2.02, 3.04 and 4.08 and IE 3 and 4, open http://10.0.2.2:8000/frames.html.
+   Then frames-body.html, the same page with a BODY tag, which takes the fallback (A14).
 4. Check, in order: the frame shows the heading, the count, the button and the fields (A13, or the fallback for A14); "inc" adds one to the count; typing in the note field, then clicking "inc", keeps the typed text; typing in the name field and leaving it echoes the text; the history list (Go menu) does not grow with each click (A3).
 5. Record each assumption of section 2 that turned out otherwise.
    Expected on today's files, before the code path decision: every one of the five stops at the app file, which has throw (JavaScript 1.4, JScript 5), and Netscape 2 and 3 and IE 3 at the string table (an array literal) too, with the error dialog A18 is about.
    What the five can check today is the boot: that it parses, takes this tier, writes the FRAMESET and loads cdom.frames.js (A12, A13), and that cdom.frames.js parses (the JavaScript 1.1 gate's claim).
+
+## 13. Results
+
+Measured after the predictions were committed (e22b529); headless Chrome 153 on a Linux x86-64 VM, under LEGACY=frames, so indicative only.
+`FRAMES_MEASURE=1 LEGACY=frames node tools/frames.mjs` prints them; four runs.
+
+| | Predicted | Measured | Verdict |
+| --- | --- | --- | --- |
+| P1, size | at most 16,384 bytes minified, 6,144 gzipped | 30,024 bytes minified, 9,757 gzipped | refuted |
+| P2, redraw cost at 2,000 nodes | at most 6 us a node, serializing at most half | 6.2, 5.15, 5.85 and 4.7 us a node; serializing 0.15 | refuted (one run of four over 6) |
+| P3, linear | 4,000 nodes within 1.5 times 1,000's cost a node | 0.71 to 0.80 times (4.8 to 5.6 against 6.6 to 7.4 us) | confirmed |
+| P4, redraws per event | 1 click, 1 change, 0 unchanged, 1 cd_main | 1, 1, 0, 1, and 1 for a timer, a change with the click after it, and an export of 15 ops | confirmed |
+| P5, bytes a node | at most 60 | 5.7 (17 bytes an LI of 3 nodes) | confirmed |
+| P6, history in Chrome | 0, 0, 0, 0 and 20 | 0 for all five, location.href = javascript: too | refuted |
+
+What the misses say:
+
+- P1: every name of the shim is a global, since JavaScript 1.1 has no closures to keep them in, so terser can mangle only the locals; and it runs with compress off, since compress could write what the gate refuses.
+  The names (cf_ and the rest) are 10,053 of the 30,024 bytes.
+  A build that renames the globals to short ones, as the markup's cdomF already is, is the obvious next step.
+- P2: the cost is the browser's, not the shim's: serializing is 0.15 us a node, under 3% of it, and the rest is Chrome parsing and laying out the written document.
+  The clock was new Date() (1 ms), not performance.now (IE 9 has none, and LEGACY=frames takes it), so each sample is the mean of 10 redraws in a row, and the median of 7 samples is kept, where P2 said the median of 10 redraws.
+- P6: Chrome adds no history entry for any of the five; a javascript: URL's result replaces the frame's document in place (the HTML standard has such a navigation replace).
+  So in Chrome the history check can only catch a rewrite that navigates by URL; tools/mutate.py's frames-history-entry plants a fragment navigation, which it catches.
+  Netscape 3 and 4 and IE 4 are said to add one for open() without "replace", and Netscape 2 for every rewrite (A3); that is the probe's to measure.
+
+## 14. Tests
+
+tools/frames.mjs, under LEGACY=frames (CI runs it beside the other levels), checks:
+
+- the boot takes the fifth tier and fetches its two files and no other tier's; the page and its frame have no createElement, appendChild, innerHTML, getElementById or listeners; the page is a frameset of one frame;
+- the frame's HTML is the tree's (the frame's document, serialized, against the shim's serialization of the tree parsed afresh), after cd_main, after a click and at the end; every element of the tree with an id is in the frame with its text; display: none and the SVG are not written; the styles are FONT COLOR, B, I and U, with no style attribute; the button is an INPUT TYPE=button in the one FORM;
+- a click on the button, on two links and on a span's text under one listener reach C, the latter three with the right paths;
+- focus, input, change and blur reach C; the input's value is read in C (non-ASCII, through both UTF-8 directions); the click that left a field still reaches C;
+- typed text C has not seen survives a redraw, with its focus and caret, and typing goes on at the caret; C reads it, sets a value and moves the focus;
+- a checkbox's change, with checked read in C; a timer's callback;
+- the redraw counts of P4, and one draw for an export of 15 ops;
+- no redraw adds a history entry; no error noted, no page exception;
+- a trap in C is thrown out of the call with nothing drawn, and the next click recovers;
+- frames-body.html (a BODY tag) runs through the fallback, and a click there reaches C.
+
+tools/js11.mjs checks each rule of the gates on code planted for it.
+The other levels are unaffected: tools/legacy.mjs passes on '', 1, ie9, ie6 and below, LEGACY=ie6 tools/fuzz.mjs, tools/es3.mjs, tools/words.mjs and tools/legacyfresh.mjs pass, and every built file of the other tiers (cdom.legacy.js, cdom.legacy-ie9.js, cdom.legacy-ie6.js, each app's .wasm.js and .wasm.ie9.js) is byte-identical to main's.
+The pages that inline the boot (legacy.html, listfuzz.html) differ by the boot alone: two scripts now, where there was one.
+tools/mutate.py has 37 mutants for this tier (frames-, js11- and js10-), each caught by its own assertion.
