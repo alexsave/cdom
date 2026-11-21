@@ -1221,9 +1221,9 @@ M = [
   # demo/uttt, the replay viewer (tools/uttt.mjs; FOOLISH=/abs/path/to/foolish python3 tools/mutate.py uttt-...)
   ('uttt-forward-skips', 'demo/uttt/uttt_replay.c', '  else if (id == b_fwd && shown < game.n_plies) shown++;', '  else if (id == b_fwd && shown < game.n_plies) shown += 2;', UTTT, 'FAIL webassembly: > 1 times: the board is the game after 1 plies'),
   ('uttt-won-block-not-shown', 'demo/uttt/uttt_replay.c', '  if (won == UTTT_X || won == UTTT_O) {', '  if (0) {', UTTT, '  big marks: shown'),
-  ('uttt-forced-not-lit', 'demo/uttt/uttt_replay.c', '  if ((legal >> b) & 1u) bg = "background-color:#ffff66";', '  if (0) bg = "background-color:#ffff66";', UTTT, '  backgrounds: shown'),
+  ('uttt-forced-not-lit', 'demo/uttt/uttt_replay.c', '  if ((legal >> b) & 1u) bg = "background-color:#ffff66";', '  if ((legal & 0) >> b) bg = "background-color:#ffff66";', UTTT, '  backgrounds: shown'),
   ('uttt-play-no-stop', 'demo/uttt/uttt_replay.c', '  if (shown >= game.n_plies) set_playing(0);\n  else cd_timer_set(&timer, TICK_MS, tick, nullptr);', '  cd_timer_set(&timer, TICK_MS, tick, nullptr);', UTTT, 'FAIL webassembly: Play stops at the end'),
-  ('uttt-last-not-bold', 'demo/uttt/uttt_replay.c', '        if (i == last) cd_open("b");\n        cd_text(MARK[m]);\n        if (i == last) cd_close();', '        cd_text(MARK[m]);', UTTT, '  bold: shown'),
+  ('uttt-last-not-bold', 'demo/uttt/uttt_replay.c', '        if (i == last) cd_open("b");\n        cd_text(MARK[m]);\n        if (i == last) cd_close();', '        if (i == last + 81) cd_open("b");\n        cd_text(MARK[m]);\n        if (i == last + 81) cd_close();', UTTT, '  bold: shown'),
   ('uttt-bad-code-silent', 'demo/uttt/uttt_replay.c', '    cd_set_text_node(err_txt, "That is not a game code.', '    cd_set_text_node(err_txt, "', UTTT, 'FAIL webassembly: a bad code shows the error line'),
   ('uttt-query-ignored', 'demo/uttt/uttt_replay.c', '  if (n > 1 && n < sizeof buf - 1) {', '  if (0) {', UTTT, 'FAIL webassembly: the query: the board is the game after 0 plies'),
 ]
