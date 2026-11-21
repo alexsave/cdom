@@ -237,6 +237,28 @@ ok(J.o.js1_trap === 1 && sp === 0, `a trap 30 calls down puts the explicit stack
   ok(nok === CASES.length && ins.length > 100, `every case agrees with every bitwise operand in Netscape 3's range, -2^31 to 2^32 - 1 (${ins.length / 2} operands checked): ${nok} of ${CASES.length}${nfirst ? `\n  first: ${nfirst}` : ''}`);
 }
 
+// Netscape 2.02 makes o[0] the first property set by name on o (main's tests/probe-js1d.html: o.A = 1; o["0"] = 52
+// overwrites o.A), so an object indexed by number must have no named property, and one with named properties must not
+// be indexed by number. After every case above, the tables' keys are all numbers and the exports' none; and in the
+// file no table is read by name, and no named object by a number.
+{
+  const TABLES = ['JM', 'JS', 'JE', 'JY', 'JF', 'JPT'], NAMED = ['JO'];
+  const num = (k) => /^\d+$/.test(k);
+  const bad = [];
+  for (const t of TABLES) { const o = J.ctx[t]; if (o && typeof o === 'object') for (const k of Object.keys(o)) if (!num(k)) bad.push(`${t}.${k}`); }
+  for (const t of NAMED) for (const k of Object.keys(J.ctx[t])) if (num(k)) bad.push(`${t}[${k}]`);
+  for (const k of Object.keys(J.o.memory)) if (num(k)) bad.push(`memory[${k}]`);
+  (function w(n) {
+    if (!n || typeof n.type !== 'string') return;
+    if (n.type === 'MemberExpression' && n.object.type === 'Identifier') {
+      if (TABLES.includes(n.object.name) && (!n.computed || (n.property.type === 'Literal' && typeof n.property.value === 'string'))) bad.push(`${n.object.name}.${n.property.name || n.property.value} in the file`);
+      if (NAMED.includes(n.object.name) && n.computed && n.property.type === 'Literal' && typeof n.property.value === 'number') bad.push(`${n.object.name}[${n.property.value}] in the file`);
+    }
+    for (const k of Object.keys(n)) { const v = n[k]; if (Array.isArray(v)) v.forEach(w); else if (v && typeof v.type === 'string') w(v); }
+  })(acorn.parse(fs.readFileSync(js1File, 'utf8'), { ecmaVersion: 5 }));
+  ok(bad.length === 0 && Object.keys(J.ctx.JM).length > 0, `no table (${TABLES.join(', ')}) has a named property, and the exports object no number key${bad.length ? ': ' + bad.slice(0, 5).join(', ') : ''}`);
+}
+
 // Depth: the 1000-deep recursion runs at a constant JavaScript depth, at or under js1c's bound.
 const lowered = js1File + '.lowered.wasm';
 const said = spawnSync(path.join(top, 'tools/out/js1c'), [lowered, path.join(out, 'js1.tmp.js')], { encoding: 'utf8' });
