@@ -19,7 +19,7 @@ try {
   for (const f of ['package.json', 'package-lock.json', 'shim/cdom.js', 'shim/boot.js',
     'tools/legacy/build.mjs', 'tools/legacy/package.json', 'tools/legacy/package-lock.json', 'tools/legacy/polyfills.js',
     'tools/legacy/memory-words.js', 'tools/legacy/words.js', 'tools/legacy/memory.mjs', 'tools/legacy/es3.mjs',
-    'tools/legacy/polyfills-es3.js', 'tools/legacy/dom-old.js', 'tools/legacy/shim-old.js', 'tools/legacy/js11.mjs', 'tools/legacy/frames.js',
+    'tools/legacy/polyfills-es3.js', 'tools/legacy/dom-old.js', 'tools/legacy/vml.js', 'tools/legacy/shim-old.js', 'tools/legacy/js11.mjs', 'tools/legacy/frames.js',
     'tools/legacy/words1.js', 'tools/legacy/js1.mjs', 'tools/legacy/js10.mjs']) {
     fs.mkdirSync(path.dirname(path.join(T, f)), { recursive: true });
     fs.copyFileSync(path.join(top, f), path.join(T, f));
@@ -54,7 +54,7 @@ try {
     'tools/legacy/js10.mjs'];
   // The fourth tier's shim: the third's without PEP, and its own files.
   must['shim-ie6'] = [...must['shim-ie9'].filter((f) => !f.endsWith('pep.js')), 'tools/legacy/polyfills-es3.js', 'tools/legacy/dom-old.js',
-    'tools/legacy/shim-old.js', 'tools/legacy/es3.mjs'];
+    'tools/legacy/vml.js', 'tools/legacy/shim-old.js', 'tools/legacy/es3.mjs'];
   for (const b of builds) for (const f of must[b.cmd]) ok(b.inputs.map(rel).includes(f), `${b.cmd} does not name ${f} as an input`);
 
   const stamp = (f) => { try { return fs.statSync(f, { bigint: true }).mtimeNs; } catch { return -1n; } };

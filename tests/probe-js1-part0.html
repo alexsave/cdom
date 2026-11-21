@@ -1,0 +1,214 @@
+<HTML>
+<HEAD>
+<TITLE>cdom probe-js1</TITLE>
+<SCRIPT LANGUAGE="JavaScript">
+var n = 0;
+var TAG = "" + location.search;
+TAG = TAG.substring(1, TAG.length);
+if (TAG == "") { TAG = "x"; }
+function mark(name, v) {
+  n = n + 1;
+  document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
+}
+var late_n = 0;
+function late(name, v) {
+  late_n = late_n + 1;
+  var u = '/mark/' + TAG + '/p-L' + late_n + '-' + name + '-' + escape("" + v);
+  if (window.Image) {
+    var im = new Image();
+    im.src = u;
+  } else {
+    document.write('<IMG SRC="' + u + '" WIDTH=1 HEIGHT=1>');
+  }
+}
+</SCRIPT>
+</HEAD>
+<BODY>
+<H3>cdom probe-js1</H3>
+<P>Reports to /mark/ as it loads.
+<FORM NAME="f0"><INPUT TYPE=text NAME="t0" VALUE="v0"></FORM>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ua", "start");
+
+mark("ua", navigator.userAgent);
+mark("ua", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("appVersion", "start");
+
+mark("appVersion", navigator.appVersion);
+mark("appVersion", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("appName", "start");
+
+mark("appName", navigator.appName);
+mark("appName", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("onerror_pre", "start");
+
+mark("onerror_pre", window.onerror);
+mark("onerror_pre", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newArray3", "start");
+var a = new Array(3);
+mark("newArray3", a.length);
+mark("newArray3", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newArrayCall", "start");
+
+mark("newArrayCall", new Array(3).length);
+mark("newArrayCall", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("typeof", "start");
+
+mark("typeof", typeof 1);
+mark("typeof", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("typeofUndef", "start");
+
+mark("typeofUndef", typeof zzUndefined);
+mark("typeofUndef", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("void", "start");
+
+mark("void", void 0);
+mark("void", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("protoAssign", "start");
+function A(){}; A.prototype.x = 1; var a = new A();
+mark("protoAssign", a.x);
+mark("protoAssign", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("objLit", "start");
+var o = {a:1};
+mark("objLit", o.a);
+mark("objLit", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arrLit", "start");
+var a = [1,2];
+mark("arrLit", a.length);
+mark("arrLit", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("fnExpr", "start");
+
+mark("fnExpr", (function(){return 1})());
+mark("fnExpr", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newFunction", "start");
+var f = new Function('a', 'return a+1');
+mark("newFunction", f(1));
+mark("newFunction", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newFunctionCall", "start");
+
+mark("newFunctionCall", new Function('a', 'return a+1')(1));
+mark("newFunctionCall", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arrJoin", "start");
+var a = new Array(3); a[0]=1; a[1]=2; a[2]=3;
+mark("arrJoin", a.join('-'));
+mark("arrJoin", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arrGrow", "start");
+var a = new Array(3); a[5] = 1;
+mark("arrGrow", a.length);
+mark("arrGrow", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arrSort", "start");
+var a = new Array(3); a[0]=3; a[1]=1; a[2]=2; a.sort();
+mark("arrSort", a.join(''));
+mark("arrSort", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arrReverse", "start");
+var a = new Array(3); a[0]=3; a[1]=1; a[2]=2; a.reverse();
+mark("arrReverse", a.join(''));
+mark("arrReverse", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arrPush", "start");
+var a = new Array(1); a.push(5);
+mark("arrPush", a.length);
+mark("arrPush", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arrPop", "start");
+var a = new Array(2); a[1] = 7;
+mark("arrPop", a.pop());
+mark("arrPop", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arrSlice", "start");
+var a = new Array(3); a[0]=1; a[1]=2; a[2]=3;
+mark("arrSlice", a.slice(1).length);
+mark("arrSlice", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arrSplice", "start");
+var a = new Array(3); a[0]=1; a[1]=2; a[2]=3; a.splice(1,1);
+mark("arrSplice", a.length);
+mark("arrSplice", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arrConcat", "start");
+var a = new Array(1); var b = new Array(2);
+mark("arrConcat", a.concat(b).length);
+mark("arrConcat", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("arrNoLen", "start");
+var o = new Object(); o.length = 0;
+mark("arrNoLen", o.length);
+mark("arrNoLen", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ctorProp", "start");
+function A(){}; var a = new A();
+mark("ctorProp", a.constructor == A);
+mark("ctorProp", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("instanceof", "start");
+function A(){}; var a = new A();
+mark("instanceof", a instanceof A);
+mark("instanceof", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("dateGetTime", "start");
+var d = new Date();
+mark("dateGetTime", d.getTime() > 0);
+mark("dateGetTime", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("dateGetTimeCall", "start");
+
+mark("dateGetTimeCall", new Date().getTime() > 0);
+mark("dateGetTimeCall", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("isNaN", "start");
+
+mark("isNaN", isNaN(NaN));
+mark("isNaN", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("done", "end");
+</SCRIPT>
+</BODY>
+</HTML>

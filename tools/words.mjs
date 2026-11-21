@@ -25,6 +25,13 @@ let fails = 0, checks = 0;
 const ok = (c, m) => { checks++; if (!c && fails++ < 20) console.log('FAIL', m); };
 const section = (name, f) => { const before = fails, n0 = checks; f(); console.log(`${fails === before ? 'ok  ' : 'FAIL'} ${name} (${checks - n0} checks)`); };
 
+// It runs as the app file arrives, possibly before the shim's polyfills: nothing JScript 5.0 (IE 5.0) lacks, or IE 5.01
+// stops at its first push ("Object doesn't support this property or method") and the app never starts.
+const { boot50 } = await import('./legacy/es3.mjs');
+const newer = boot50(src.replace(/\/\*[\s\S]*?\*\//g, ''));
+ok(!newer.length, `words.js names what JScript 5.0 lacks: ${newer.join(' ')}`);
+console.log(`${newer.length ? 'FAIL' : 'ok  '} words.js names nothing JScript 5.0 lacks`);
+
 let state = SEED >>> 0; // xorshift32
 const next = () => { state ^= state << 13; state >>>= 0; state ^= state >>> 17; state ^= state << 5; state >>>= 0; return state; };
 
