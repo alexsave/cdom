@@ -1026,3 +1026,51 @@ For a still picture use rows of IMG with BR (a table is slower and fails past ab
 A dithered photo at 1 pixel is 184,320 tags and 141 s; at 4 pixels (144 x 80 cells) it is 11 s, at 8 pixels 6 s.
 For something that updates, a whole-picture rewrite costs what a load costs (5.5 s at 72 x 40 cells, 11.6 s at 144 x 80), so a few redraws a second are out of reach; one redraw every 5 to 10 seconds is what a full small picture allows, and a change confined to a tile of a 4 x 4 split costs 1.3 to 3 s.
 Cells that react to a click cost a link each: at 72 x 40 one link per run or per shape makes a clickable picture of about 10 KB that draws in 2 s, and a link per cell 215 KB and 4.4 s.
+
+## Netscape 2 paints itself
+
+Alex rejected the precomputed picture of "Painting a modern page" ("so... its just a picture? nah we need to do this inside netscape itself"): Netscape 2.02 must draw the page itself, live, from a compact description of its boxes, with the renderer written in C and compiled to JavaScript 1.0 by tools/js1c.
+The code is demo/ns2render (branch ns2-render):
+
+- **The box description** (demo/ns2render/render.h): fixed C structs, no text format.
+  An item is a rounded rectangle (a radius at the top and at the bottom; a circle is a square of half its side) with a paint (a solid colour, or a linear gradient at any angle with its stops) and an alpha, in paint order; a ring (a border) paints only its band; a text item is glyphs placed at pixel positions, in its colour and alpha; a link region wraps the runs inside it.
+  Soft shadows are nested translucent rounded rectangles (6 layers, each one's alpha chosen so the layers composite to a Gaussian's edge at the middle of its band), the hero's radial highlight 8 nested translucent circles.
+  tools/gen_ns2_render.py writes demo/ns2render/page_data.c from the layout headless Chrome gives the design (tools/ns2render_layout.mjs dumps every box, its computed background, radius, shadow and border, and every character's box), so the boxes are the design's: still is 88 items, details 72.
+- **The renderer** (render.c): per row, the items crossing it (an active list, in paint order), each as a sorted list of spans merged into the row's segments in one pass (an opaque span replaces what is under it, a translucent one makes a composite of its colour over each segment it covers, hash-consed); rounded corners are a per-row inset; then each segment becomes runs (a gradient's segment one run a gradient step, 64 steps along the gradient line, the x where a step ends from the line's equation), runs of one colour merge, link regions cut them, and identical rows make one line.
+  Never per pixel.
+  Colours are mapped to a palette of 256 (the page's 64 most frequent colours exact, then a max-coverage cut, as "Painting a modern page" does) by the exact nearest colour among the candidates of an 8 x 8 x 8 grid cell, cached per composite and gradient step: 1,061 lookups for the still page.
+- **Text**: Inter 4.001 (SIL Open Font License 1.1, github.com/rsms/inter), rasterised once offline at every size and weight the pages use, 3 levels (none, half, full), each glyph row stored as runs: 269 glyphs, 5,768 runs; placed at the positions Chrome gave its own font's characters.
+- **The host** (demo/ns2render/host.js, JavaScript 1.0): the frameset's cdomApp frame holds the module and the host inline (tools/legacy/build.mjs app-doc-raw: the app document's blocks without cdom's boot and node-tree shim, which would make a node object of every run); a draw asks the module for 8 rows at a time from a timer, turns the ops into IMG markup (the same bytes as render.c's rd_html) and document.writes them into cdomView; the last image, end.gif, carries the draw's times in its query.
+  A click is `javascript:parent.cdomApp.rsK(n)`, which draws the target page from a timer; onMouseOver calls rsO(n), which returns the status text and, on the pill, draws the hover state (the whole view again).
+
+The Mac's numbers, seen while building it (native clang -O2, and node 22 on the JavaScript 1.0 build):
+
+| | still | still, pill hovered | details |
+| --- | --- | --- | --- |
+| runs (IMG tags) | 17,131 | 17,131 | 12,175 |
+| the same without text | 8,588 | | 3,687 |
+| lines (BR) | 297 | 297 | 273 |
+| runs a line, mean and most | 57.7, 224 | | 44.6, 259 |
+| A tags | 106 | 106 | 63 |
+| HTML bytes | 595,820 | 595,820 | 419,622 |
+| native time a picture | 0.98 ms | 0.98 ms | 0.66 ms |
+| node, JavaScript 1.0 build, compute | 12 ms | 12 ms | 8 ms |
+| node --jitless, the same | 73 ms | 69 ms | 52 ms |
+
+The app document is 110,151 bytes (42,448 gzipped) in 5 blocks, the module 106 KB of it, its memory 3 pages (Netscape 2 writes all 49,152 words at the start).
+Text adds 50% of the still page's runs (8,543) and 70% of the details page's.
+
+### What I expect, written before the first run in Netscape 2
+
+Calibration: the js1c bench of docs/js1-compile-design.md ran loop(2000) in 313 to 390 ms and rec(5000) in 1,719 ms in Netscape 2.02; node --jitless runs the same in 0.30 and 1.77 ms, so Netscape 2 is 600 to 1,200 times node --jitless on js1c's output.
+"Painting a modern page" drew its precomputed still page of 28,012 tags in 12.0 s at best: 0.43 ms a tag with the palette's fetch.
+
+- R1, the renderer's compute in Netscape 2 (the time inside rs_rows, the draw's `c`, in the engine's milliseconds converted to the wall by the guest clock's factor of about 3): still 60 s (40 to 90), details 45 s; falsifier: under 20 s or over 150 s.
+- R2, the markup (strings in host.js, the `m`): 17,131 runs of 4 concatenations each, still 6 s (3 to 12).
+- R3, writing and layout (`w`, plus the time from the last write to end.gif's request): still 8 s (6 to 12) for 17,131 tags, 0.45 ms a tag; details 6 s.
+- R4, the start: the app document of 110 KB in 5 blocks parses in 3 s, the factory's memory and data 2.5 s (49,152 words at 35 us, and the data's 20,000 words decoded); the first image of the still page 6 s after the frameset's GET.
+- R5, whole: from the frameset's GET to end.gif's request, still 80 s (55 to 120); far slower than the 12 s picture, and the compute is the larger part (R1 over R3): falsifier, compute under half the total.
+- R6, the hover redraw: a whole draw again, 70 s (50 to 110) from the pointer to end.gif; the click on a nav item draws details in 55 s (40 to 80).
+- R7, exactness: the view in Netscape 2 is the native picture to the pixel (0 pixels different, tools/paintcheck.py), links included.
+- R8, the "Lengthy JavaScript" prompt: none, since every timer's batch of 8 rows is under 2 s of script; falsifier: the prompt appears at all.
+- R9, text's share: the still page without text (RD_SKIP_TEXT, a native check) has half the runs; in Netscape 2 the text costs 45% of the compute (glyph spans are 7,000 of the 10,101 spans) and 50% of the layout.

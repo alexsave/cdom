@@ -2131,7 +2131,7 @@ int main(int argc, char **argv) {
   } else {
     Buf chunk = { 0 };
     uint32_t last = 0;
-    int started = 0;
+    int started = 0, nchunks = 0;
     for (uint32_t w = 0; w < nw; w++) {
       if (!words[w]) continue;
       if (!started) {
@@ -2146,10 +2146,17 @@ int main(int argc, char **argv) {
       bs(&chunk, ",");
       last = w;
       if (chunk.n >= 4000) {
+        /* six strings a function: a function is one statement of the app document, whose blocks are at most 30,000 bytes
+         * (tools/legacy/build.mjs BLOCK_MAX); JK, the next word, carries over to the next function */
+        if (nchunks == 6) {
+          bf(&out, "}\nfunction Jdata%d(){", ++ninit);
+          nchunks = 0;
+        }
         bs(&out, "Jdz(\"");
         bs(&out, chunk.p);
         bs(&out, "\");");
         chunk.n = 0;
+        nchunks++;
       }
     }
     if (chunk.n) {
