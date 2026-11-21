@@ -1,0 +1,158 @@
+// js1c's checks in node (docs/js1-compile-design.md): tests/js1diff.c run as real wasm and as js1c's JavaScript 1.0
+// (tests/out/js1diff.wasm.js1.js) must agree on every return, every out() call, every trap and every byte of memory;
+// the JavaScript call depth, counted by wrapping every compiled function, stays at or under the bound js1c printed;
+// every js1c output passes the JavaScript 1.0 gate (tools/js10.mjs). JS1_MEASURE=1 also prints section 9's
+// measurements (sizes, statements, timings), which are never asserted. node tools/js1.mjs; exit 1 on any failure.
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+import zlib from 'node:zlib';
+import { execFileSync, spawnSync } from 'node:child_process';
+import * as acorn from 'acorn';
+import { lacks10 } from './js10.mjs';
+
+const top = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const out = path.join(top, 'tests/out');
+let fails = 0;
+const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console.log('ok  ', m); };
+
+// A js1c file in a fresh context: its factory's exports, the out() log, and the deepest JavaScript call depth seen
+// through the compiled functions, the driver, the export wrappers and the imports (each wrapped to count).
+export function loadJs1(file, { count = true } = {}) {
+  const src = fs.readFileSync(file, 'utf8');
+  const ctx = { window: {}, log: [] };
+  vm.createContext(ctx);
+  vm.runInContext(src, ctx, { filename: file });
+  const st = { depth: 0, max: 0 };
+  ctx.st = st;
+  if (count) {
+    for (const k of Object.keys(ctx)) {
+      if (!/^(J[fdx]\d+|Jgo|Jmore|Jstart\d+)$/.test(k) || typeof ctx[k] !== 'function') continue;
+      const f = ctx[k];
+      ctx[k] = function (...a) { st.depth++; if (st.depth > st.max) st.max = st.depth; try { return f.apply(this, a); } finally { st.depth--; } };
+    }
+  }
+  const env = { out: (v) => { st.depth++; if (st.depth > st.max) st.max = st.depth; ctx.log.push(v | 0); st.depth--; } };
+  const o = ctx.window.cdomFactory({ env });
+  return { o, ctx, st };
+}
+async function loadWasm(file) {
+  const log = [];
+  const { instance } = await WebAssembly.instantiate(fs.readFileSync(file), { env: { out: (v) => log.push(v | 0) } });
+  return { x: instance.exports, log };
+}
+function loadIe9(file) {
+  const ctx = { window: {}, log: [] };
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: file });
+  const x = ctx.window.cdomFactory({ env: { out: (v) => ctx.log.push(v | 0) } });
+  return { x, log: ctx.log };
+}
+const E = [0, 1, -1, 2, 7, -7, 31, 32, 33, 255, 256, 65535, 65536, 0x7fffffff, -0x80000000, 0x55aa55aa, -123456789, 1000000007, 3, 100];
+const CASES = [];
+for (const a of E) for (const b of [0, 1, -1, 5, 31, 37, -0x80000000, 0x7fffffff, 0x12345678, -3]) CASES.push(['ints', a, b]);
+for (const [a, b, c, d] of [[0, 1, 0, 1], [0, 0, 0, 0], [-1, -1, 0, 1], [0x7fffffff, -1, 0, 3], [-0x80000000, 0, -1, -1], [0x12345678, 0x9abcdef0 | 0, 0, 17],
+  [0, 1000000007, 0, 10], [-5, 12345, 7, -99], [1, 0, 0, 63], [0x0badf00d, 0x12345, -2, 0x7ff], [0, 0, 0, 0x40]]) CASES.push(['i64s', a, b, c, d]);
+for (const a of [0, 1, -1, 7, 100, -100, 123456, -2000000000, 2000000000]) for (const b of [0, 3, -4, 1000]) CASES.push(['dbl', a, b]);
+for (const n of [0, 1, 10, 1000]) CASES.push(['loop', n]);
+for (const n of [0, 1, 10, 300, 1000]) CASES.push(['rec', n]);
+for (const a of [0, 1, 3, -1, 200, 77777]) CASES.push(['mem', a]);
+for (const n of [0, 1, 5, 100]) CASES.push(['ind', n]);
+for (const n of [0, 1, 11, 50, 200]) CASES.push(['sw', n]);
+CASES.push(['ind_bad', 1], ['trap', 0], ['trap', 1], ['divz', 7, 2], ['divz', 7, 0], ['divz', -0x80000000, -1], ['deeptrap', 50], ['ints', 3, 4]);
+
+const wasmFile = path.join(out, 'js1diff.wasm'), js1File = path.join(out, 'js1diff.wasm.js1.js');
+const W = await loadWasm(wasmFile);
+const J = loadJs1(js1File);
+const words = (u8, p, n) => { const a = []; for (let i = 0; i < n; i++) a.push(u8[p + i]); return a.join(','); };
+let agree = 0, first = null;
+for (const [name, ...args] of CASES) {
+  W.log.length = 0; J.ctx.log.length = 0;
+  let wr, wt = false;
+  try { wr = W.x[name](...args); } catch (e) { wt = e instanceof WebAssembly.RuntimeError; if (!wt) throw e; }
+  const jr = J.o[name](...args), jt = !!J.o.js1_trap;
+  const same = wt === jt && (wt || wr === jr) && W.log.join(',') === J.ctx.log.join(',');
+  if (same) agree++;
+  else if (!first) first = `${name}(${args}) wasm ${wt ? 'trap' : wr} [${W.log.slice(0, 40)}] js1 ${jt ? 'trap' : jr} [${J.ctx.log.slice(0, 40)}]`;
+}
+ok(agree === CASES.length, `every export agrees with wasm: ${agree} of ${CASES.length} cases${first ? `\n  first difference: ${first}` : ''}`);
+// The whole memory, word by word, after all of it (the C stack, the statics, the packed structs).
+const mem = new Int32Array(W.x.memory.buffer), jw = J.o.memory.words;
+let diff = -1;
+for (let i = 0; i < mem.length; i++) if (mem[i] !== ((jw[i] | 0))) { diff = i; break; }
+ok(diff < 0, `the memory agrees word for word after every case${diff < 0 ? '' : `: word ${diff} is ${mem[diff]} in wasm and ${jw[diff]} in js1`}`);
+const bp = W.x.buf();
+ok(words(new Uint8Array(W.x.memory.buffer), bp, 64).length > 0 && J.o.buf() === bp, 'buf() is the same address in both');
+// Traps: each one in its own case above; here, that a trap does not leave the next call broken.
+J.o.trap(1); const afterTrap = J.o.loop(10);
+ok(J.o.js1_trap === 0 && afterTrap === W.x.loop(10), `after a trap the next call runs: trap flag ${J.o.js1_trap}, loop(10) ${afterTrap}`);
+J.o.deeptrap(30); const sp = J.ctx.JP;
+ok(J.o.js1_trap === 1 && sp === 0, `a trap 30 calls down puts the explicit stack back: JP ${sp}`);
+
+// Depth: the 1000-deep recursion runs at a constant JavaScript depth, at or under js1c's bound.
+const lowered = js1File + '.lowered.wasm';
+const said = spawnSync(path.join(top, 'tools/out/js1c'), [lowered, path.join(out, 'js1.tmp.js')], { encoding: 'utf8' });
+fs.unlinkSync(path.join(out, 'js1.tmp.js'));
+const B = +(/JS depth bound (\d+)/.exec(said.stderr) || [0, 0])[1];
+J.st.max = 0; J.o.rec(1000);
+const d1000 = J.st.max;
+J.st.max = 0; J.o.rec(10);
+ok(d1000 <= B && d1000 === J.st.max, `rec(1000) reaches JavaScript depth ${d1000}, the same as rec(10) (${J.st.max}), at or under the bound ${B}`);
+let dmax = 0;
+for (const [name, ...args] of CASES) { J.st.max = 0; J.o[name](...args); if (J.st.max > dmax) dmax = J.st.max; }
+ok(dmax <= B, `the deepest JavaScript depth over every case is ${dmax}, at or under the bound ${B}`);
+// The gate on every js1c output this build wrote.
+for (const f of fs.readdirSync(out).filter((f) => f.endsWith('.js1.js'))) {
+  const found = lacks10(fs.readFileSync(path.join(out, f), 'utf8'));
+  ok(found.length === 0, `${f} is JavaScript 1.0 (tools/js10.mjs)${found.length ? ': ' + found.slice(0, 5).join(', ') : ''}`);
+}
+// Time slicing: with a budget, the export pauses and Jmore() goes on, to the same result.
+{
+  const S = loadJs1(js1File, { count: false });
+  S.ctx.JB = 50;
+  let r = S.o.rec(1000), steps = 0;
+  const paused = S.o.js1_paused;
+  while (S.o.js1_paused && steps < 100000) { S.o.js1_more(); steps++; }
+  r = S.o.js1_result;
+  W.log.length = 0;
+  ok(paused === 1 && steps > 10 && r === W.x.rec(1000), `sliced at 50 steps, rec(1000) pauses (${paused}), goes on ${steps} times and gives wasm's ${r}`);
+}
+
+if (process.env.JS1_MEASURE) await measure();
+console.log(fails ? `${fails} FAILED` : 'all ok');
+process.exit(fails ? 1 : 0);
+
+async function measure() {
+  const gz = (b) => zlib.gzipSync(b, { level: 9 }).length;
+  const stmts = (src) => { let n = 0; (function w(x) { if (!x || typeof x.type !== 'string') return; if (/Statement$|Declaration$/.test(x.type)) n++; for (const k of Object.keys(x)) { const v = x[k]; if (Array.isArray(v)) v.forEach(w); else if (v && typeof v.type === 'string') w(v); } })(acorn.parse(src, { ecmaVersion: 5 })); return n; };
+  const instrs = (wasm) => { const t = execFileSync('wasm-dis', [wasm], { encoding: 'utf8', maxBuffer: 1 << 28 }); return (t.match(/\((?:i32|f64|f32|i64|local|global|call|call_indirect|br|br_if|br_table|block|loop|if|select|drop|return|unreachable|memory|nop)\b[.\w]*/g) || []).length; };
+  for (const app of ['frames', 'js1diff']) {
+    const j = fs.readFileSync(path.join(out, `${app}.wasm.js1.js`)), i9 = fs.readFileSync(path.join(out, `${app}.wasm.ie9.js`));
+    console.log(`measure ${app}: js1 ${j.length} bytes, ${gz(j)} gzipped; ie9 ${i9.length} bytes, ${gz(i9)} gzipped; ratio ${(j.length / i9.length).toFixed(2)}, gzipped ${(gz(j) / gz(i9)).toFixed(2)}`);
+    const n = stmts(j.toString()), w = instrs(path.join(out, `${app}.wasm.js1.js.lowered.wasm`));
+    console.log(`measure ${app}: ${n} statements, ${w} instructions in the lowered module: ${(n / w).toFixed(2)} a wasm instruction; ie9 ${stmts(i9.toString())} statements`);
+  }
+  for (const f of ['frames.wasm.js1.js', 'frames.wasm.js1s.js']) {
+    const p = path.join(out, f);
+    if (!fs.existsSync(p)) continue;
+    const src = fs.readFileSync(p, 'utf8'), data = /function Jdata0\(\)\{[\s\S]*?\n(?=function cdomFactoryJs1)/.exec(src)[0];
+    const t0 = process.hrtime.bigint();
+    for (let i = 0; i < 20; i++) loadJs1(p, { count: false });
+    const ms = Number(process.hrtime.bigint() - t0) / 20e6;
+    console.log(`measure data ${f}: ${data.length} bytes, ${stmts(data)} statements; the whole file loads and its factory runs in ${ms.toFixed(2)} ms`);
+  }
+  const time = (fn, n) => { fn(); const t0 = process.hrtime.bigint(); for (let i = 0; i < n; i++) fn(); return Number(process.hrtime.bigint() - t0) / n / 1e6; };
+  const I = loadIe9(path.join(out, 'js1diff.wasm.ie9.js')), Jn = loadJs1(js1File, { count: false });
+  const runs = { loop: [() => W.x.loop(100000), () => I.x.loop(100000), () => Jn.o.loop(100000)], rec: [() => W.x.rec(1000), () => I.x.rec(1000), () => Jn.o.rec(1000)] };
+  for (const [k, [w, i, j]] of Object.entries(runs)) {
+    const tw = time(w, 50), ti = time(i, 50), tj = time(j, 50);
+    console.log(`measure ${k}: wasm ${tw.toFixed(3)} ms, ie9 ${ti.toFixed(3)} ms, js1 ${tj.toFixed(3)} ms: js1 is ${(tj / ti).toFixed(2)} times ie9 and ${(tj / tw).toFixed(1)} times wasm`);
+  }
+  const Sl = loadJs1(js1File, { count: false });
+  const sliced = () => { Sl.ctx.JB = 1000; Sl.o.loop(100000); while (Sl.o.js1_paused) Sl.o.js1_more(); };
+  const Un = loadJs1(js1File, { count: false });
+  const ts = time(sliced, 50), tu = time(() => Un.o.loop(100000), 50);
+  const Sr = loadJs1(js1File, { count: false });
+  const tsr = time(() => { Sr.ctx.JB = 1000; Sr.o.rec(1000); while (Sr.o.js1_paused) Sr.o.js1_more(); }, 50), tur = time(() => Un.o.rec(1000), 50);
+  console.log(`measure slicing at 1000 steps: loop ${ts.toFixed(3)} ms against ${tu.toFixed(3)} unsliced (${((ts / tu - 1) * 100).toFixed(1)}%), rec ${tsr.toFixed(3)} against ${tur.toFixed(3)} (${((tsr / tur - 1) * 100).toFixed(1)}%)`);
+}
