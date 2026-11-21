@@ -1131,6 +1131,8 @@ M = [
   ('ns-gif-random', 'tools/noscript_gif.py', "        order = [c for _, c in sorted(colours, key=lambda nc: (-nc[0], nc[1]))]\n", "        order = [c for _, c in sorted(colours, key=lambda nc: (-nc[0], nc[1]))]\n        import random\n        random.shuffle(order)\n", NOSCRIPT, 'FAIL determinism'),
   ('ns-gif89a', 'tools/noscript_gif.py', "    out.save(dst, 'GIF', optimize=False, interlace=False)\n    with open(dst, 'rb') as f:\n        head = f.read(6)\n    if head != b'GIF87a':", "    out.save(dst, 'GIF', optimize=False, interlace=False, comment=b'cdom')\n    with open(dst, 'rb') as f:\n        head = f.read(6)\n    if False:", NOSCRIPT, 'FAIL the GIFs'),
   # js1c, the wasm to JavaScript 1.0 compiler (tools/js1c.c, tools/js10.mjs, docs/js1-compile-design.md)
+  ('js1c-memory-unwritten', 'tools/js1c.c', '"for(x=0;x<%u;x=x+1)JM[x]=0;"', '"for(x=0;x<%u;x=x+1)JM[x+1]=0;"', JS1, 'FAIL every word of the initial memory'),
+  ('js1c-grow-unwritten', 'tools/js1c.c', 'for(i=JMp*16384;i<(JMp+n)*16384;i=i+1)JM[i]=0;', '', JS1, 'FAIL every word of the initial memory'),
   ('js1c-mul-overflows', 'tools/js1c.c', '"function JMu(a,b){return (a&65535)*b+((a>>>16)*b&65535)*65536|0;}\\n"', '"function JMu(a,b){return (a&65535)*b+((a>>>16)*b)*65536|0;}\\n"', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-spills-nothing', 'tools/js1c.c', '    bsetcopy(s->spill, r);', '    memset(s->spill, 0, sizeof(uint64_t) * (size_t)nwords);', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-resume-evaluates-if', 'tools/js1c.c', '      else if (guarded && tl) bs(b, "R||");', '      else if (guarded && tl) bs(b, "");', JS1, 'FAIL every export agrees with wasm'),
