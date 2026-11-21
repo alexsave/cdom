@@ -1006,13 +1006,39 @@ static void bin_i32(Buf *b, const Expr *e) {
   case 0x74: o = "<<"; break;
   case 0x75: o = ">>"; break;
   }
+  if (e->op == 0x6a || e->op == 0x6b) {
+    /* Netscape 3.04 converts to 32 bits right only from -2^31 to 2^32 - 1 and gives NaN outside
+     * (docs/js1-compile-design.md section 12), and the sum or difference of two i32 reaches -2^32 to 2^32. With a
+     * constant the range is known and needs no reduction: x + c for c >= 0, and (x >>> 0) - c for c > 0, stay in it
+     * (and a negative constant turns one into the other). Otherwise 2^32 is added and the sum reduced modulo 2^32. */
+    int sub = e->op == 0x6b;
+    if (yc || (!sub && x->k == E_CI)) {
+      const Expr *v = yc ? x : y;
+      int64_t c = yc ? (sub ? -(int64_t)k : (int64_t)k) : (int64_t)x->i;
+      if (c >= 0) {
+        bs(b, "(");
+        ex(b, v, W_I);
+        bf(b, "+%lld|0)", (long long)c);
+      } else {
+        bs(b, "(");
+        ex(b, v, W_U);
+        bf(b, "-%lld|0)", (long long)-c);
+      }
+      return;
+    }
+    bs(b, "((");
+    ex(b, x, W_I);
+    bs(b, sub ? "-" : "+");
+    ex(b, y, W_I);
+    bs(b, "+4294967296)%4294967296|0)");
+    return;
+  }
   if (o) {
     bs(b, "(");
     ex(b, x, W_I);
     bs(b, o);
     if (yc && (e->op == 0x74 || e->op == 0x75)) bf(b, "%d", k & 31);
     else ex(b, y, W_I);
-    if (e->op == 0x6a || e->op == 0x6b) bs(b, "|0");
     bs(b, ")");
     return;
   }
@@ -1026,16 +1052,16 @@ static void bin_i32(Buf *b, const Expr *e) {
     bs(b, "|0)");
     return;
   case 0x6c:
-    if (yc && k > -(1 << 21) && k < (1 << 21)) {
-      bs(b, "(");
-      ex(b, x, W_I);
-      bf(b, "*%d|0)", k);
-      return;
-    }
-    if (x->k == E_CI && x->i > -(1 << 21) && x->i < (1 << 21)) {
-      bf(b, "(%d*", x->i);
-      ex(b, y, W_I);
-      bs(b, "|0)");
+    /* By a small constant c the product is exact (under 2^52); for |c| > 1 it is moved up by a multiple of 2^32 to
+     * no less than 0 and reduced modulo 2^32, since Netscape 3.04 gives NaN outside -2^31 to 2^32 - 1. */
+    if ((yc && k > -(1 << 21) && k < (1 << 21)) || (x->k == E_CI && x->i > -(1 << 21) && x->i < (1 << 21))) {
+      const Expr *v = yc ? x : y;
+      int32_t c = yc ? k : x->i;
+      int64_t up = 4294967296LL * (((int64_t)(c < 0 ? -c : c) + 1) / 2);
+      bs(b, c >= -1 && c <= 1 ? "(" : "((");
+      ex(b, v, W_I);
+      if (c >= -1 && c <= 1) bf(b, "*%d|0)", c);
+      else bf(b, "*%d+%lld)%%4294967296|0)", c, (long long)up);
       return;
     }
     call2(b, "JMu", x, W_I, y, W_I);
@@ -1621,7 +1647,8 @@ static void analyse(void) {
 static const char *RUNTIME =
   "var JM=new Object(),JS=new Object(),JE=new Object(),JY=new Object(),JF=new Object();\n"
   "var JP=0,JQ=0,JR=0,JT=0,JX=0,JN=0,JW=0,JB=-1,JMp=0,JMmax=65536,JO=0,JL2=Math.log(2),JPT=0,JK=0;\n"
-  "function JMu(a,b){return (a&65535)*b+((a>>>16)*b&65535)*65536|0;}\n"
+  "function JMu(a,b){var l=(a&65535)*(b&65535),h=((a>>>16)*(b&65535)&65535)+((a&65535)*(b>>>16)&65535);"
+  "return (l+h*65536)%4294967296|0;}\n"
   "function JDs(a,b){if(b==0||(a==-2147483648&&b==-1)){JT=1;return 0;}return a/b|0;}\n"
   "function JDu(a,b){if(b==0){JT=1;return 0;}return (a>>>0)/(b>>>0)|0;}\n"
   "function JRs(a,b){if(b==0){JT=1;return 0;}return a%b|0;}\n"
@@ -1630,7 +1657,7 @@ static const char *RUNTIME =
   "function JRr(x,k){k=k&31;return x>>>k|x<<(32-k);}\n"
   "function JCz(x){var n=0;if(x==0)return 32;while(x>0){n=n+1;x=x<<1;}return n;}\n"
   "function JCt(x){var n=0;if(x==0)return 32;while((x&1)==0){n=n+1;x=x>>1;}return n;}\n"
-  "function JPc(x){var n=0;while(x!=0){n=n+1;x=x&(x-1);}return n;}\n"
+  "function JPc(x){var n=0;x=x>>>0;while(x!=0){n=n+1;x=(x&(x-1))>>>0;}return n;}\n"
   "function JLbu(a){return JM[a>>2]>>>((a&3)<<3)&255;}\n"
   "function JLbs(a){return JM[a>>2]<<(24-((a&3)<<3))>>24;}\n"
   "function JLhu(a){return JM[a>>2]>>>((a&2)<<3)&65535;}\n"
