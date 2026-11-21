@@ -13,7 +13,7 @@ open http://localhost:8000/uttt.html?AJG7NYNQG4RFXXGVPGD7QR2ETSOYTWMCREAQ
 ```
 
 The build needs what cdom's does (clang and wasm-ld from LLVM 23, wasm2js from binaryen 130, `npm ci` at the root and in tools/legacy).
-One page serves every tier: the boot (shim/boot.js) starts out/uttt.wasm where there is WebAssembly, and on the frames tier loads out/cdom.frames.js and out/uttt.wasm.ie9.js, the words build of the same module.
+One page serves every tier: the boot (shim/boot.js) starts out/uttt.wasm where there is WebAssembly, and on the frames tier loads out/cdom.frames.js and out/uttt.wasm.js1.js, the same module compiled to JavaScript 1.0 by tools/js1c (out/uttt.wasm.ie9.js, the words build, is for IE 6 to 9).
 
 ## What the page is made of
 
@@ -55,3 +55,17 @@ Measured after the predictions were committed; headless Chromium (Playwright's, 
 
 What the miss says: the page itself (28,494 bytes) is mostly the inlined shim/cdom.min.js and the boot, which the frames tier never runs; cdom.frames.js is the largest file, as docs/frames-design.md's P1 found.
 The WebAssembly module is 10,213 bytes (5,562 gzipped).
+
+## The real browsers
+
+Run in the XP VM on 2026-11-21 (docs/frames-design.md section 15 has the rest and the failures that were fixed on the way); `uttt.html?<code>` opens the game in each.
+
+| | board, > and < , \|< and >\| | Play | Open with a typed code, a bad code | screenshot |
+| --- | --- | --- | --- | --- |
+| IE 4.01 | all work | advances a move a tick; Pause stops it | both work | /Users/alex/VMs/ie6-xp/shots/uttt-ie4.png |
+| Netscape 4.08 | all work | advances a move a tick; the click on Pause is lost (each tick's draw replaces the button) | not run | /Users/alex/VMs/ie6-xp/shots/uttt-ns4.png |
+| Netscape 3.04 | all work, but each draw takes tens of seconds | not run | not run | /Users/alex/VMs/ie6-xp/shots/uttt-ns3.png |
+| Netscape 2.02 | the frameset is made and the view stays blank: the shim cannot be loaded (no SCRIPT SRC) | | | /Users/alex/VMs/ie6-xp/shots/fr-ns2-uttt.png |
+
+A server has to send scripts as application/x-javascript for Netscape 3 (it offers text/javascript as a download).
+`make -C demo/uttt` builds out/uttt.wasm.js1.js too, and tools/uttt.mjs drives the page in Chrome through the frameset (the app frame is `frames[1]`, the board `frames[0]`).

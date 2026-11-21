@@ -10,7 +10,16 @@ import http.server
 import sys
 
 
+class Server(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+    request_queue_size = 128
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
+    timeout = 20  # a connection a killed browser left open does not hold a thread for ever
+    # HTTP/1.1 with the Content-Length the base class sends: Netscape 3.04 asks for keep-alive, and a server that closes the
+    # connection after each answer (HTTP/1.0) sometimes left its next request, the frame's page, unanswered for ever.
+    protocol_version = "HTTP/1.1"
     # /r<digits>/ before a path is dropped: a run's own URLs (vmprobe.sh gives each run one), since Netscape 3.04 keeps a
     # hung load's URL poisoned after the browser is killed, and the next run of that URL hangs as well (docs/frames-design.md 15).
     def translate_path(self, path):
@@ -28,4 +37,4 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 root, port = sys.argv[1], int(sys.argv[2])
 print(f"serving {root} on http://127.0.0.1:{port}/ (in the guest: http://10.0.2.2:{port}/)", flush=True)
-http.server.ThreadingHTTPServer(("127.0.0.1", port), functools.partial(Handler, directory=root)).serve_forever()
+Server(("127.0.0.1", port), functools.partial(Handler, directory=root)).serve_forever()

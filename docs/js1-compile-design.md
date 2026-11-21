@@ -263,3 +263,8 @@ What is still open:
 - The doubles Netscape 2 and 3 cannot represent (subnormals, NaN from infinity minus infinity, and Netscape 2's -0).
 - The seam rule is the one measured column (254); a `--` at a later seam of a long line (if any) is not measured, and js1c writes none anyway.
 - IE 4.01's lost image marks on long pages (item 5) are the page's, not js1c's; the page's wanted values chain through the program's state, so js1-real's bench page could compute each run's wanted value from a fresh instance to be robust to a lost run.
+
+### 12.8 The frames tier's runs (2026-11-21)
+
+docs/frames-design.md section 15 has the runs of the frames tier in Netscape 4.08, IE 4.01 and Netscape 3.04.
+They changed js1c in three places: the initial memory is written only below __heap_base on engines that read a missing word as 0 (Netscape 2.02, told by an Array with no length, writes every word as before; the factory's start-up on Netscape 4 and 3 fell from about 1.1 and 1.5 s to 0.45 and 0.8 s); every direct function ends in `return 0;` (Netscape 3.04 refuses a function that returns a value and does not end in a return, as Netscape 2.02 does, and the gate checks it); and a data word is a signed int32 in base 36 (Netscape 3.04's parseInt keeps a value only up to 2^31 - 1).
