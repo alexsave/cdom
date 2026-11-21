@@ -925,6 +925,7 @@ function cf_recover() {
     cf_fail("cdom: a call into C did not return");
     cf_busy = 0;
     cf_holds = 0;
+    cf_drawing = 0;
     cf_callEnded();
   }
 }
@@ -1041,15 +1042,16 @@ function cf_restore(w) {
   var f = cf_focus, form, el, r;
   cf_wantFocus = 0;
   if (!w) return;
-  cf_drawing = 1;
+  cf_quiet();
   if (f && f.jd == cf_serial) {
     form = w.document.forms[0];
     el = null;
     if (form) el = form.elements[f.j];
     if (el && el.focus) {
       el.focus();
-      if (f.ss >= 0 && el.setSelectionRange) el.setSelectionRange(f.ss, f.se);
-      else if (f.ss >= 0 && el.createTextRange) {
+      /* Only a text field has a selection: a checkbox's setSelectionRange throws (cd_call(checkbox, "select")). */
+      if (f.ss >= 0 && cf_isText(el.type) && el.setSelectionRange) el.setSelectionRange(f.ss, f.se);
+      else if (f.ss >= 0 && cf_isText(el.type) && el.createTextRange) {
         r = el.createTextRange();
         r.collapse(true);
         r.moveEnd("character", f.se);
@@ -1064,6 +1066,22 @@ function cf_restore(w) {
   }
   cf_drawing = 0;
 }
+/* The handlers keep quiet while the shim draws (cf_drawing). A draw that throws (JavaScript 1.1 has no finally) would
+ * leave them quiet for good, so each sets a timer that, run with nothing on the stack, finds it still up only after
+ * such a throw: it is put down, and noted. */
+var cf_settling = 0;
+function cf_quiet() {
+  cf_drawing = 1;
+  if (cf_settling) return;
+  cf_settling = 1;
+  setTimeout("cdomF.s()", 0);
+}
+function cf_settle() {
+  cf_settling = 0;
+  if (!cf_drawing) return;
+  cf_drawing = 0;
+  cf_fail("cdom: a draw did not finish");
+}
 /* The tree, written whole into the frame: one open, write and close, replacing the frame's history entry where the
  * browser takes "replace" (section 7). */
 function cf_draw() {
@@ -1077,7 +1095,7 @@ function cf_draw() {
   cf_dirty = 0;
   html = cf_html();
   d = w.document;
-  cf_drawing = 1;
+  cf_quiet();
   d.open("text/html", "replace");
   d.write(html);
   d.close();
@@ -1529,6 +1547,7 @@ cdomF.o = cf_onOver;
 cdomF.t = cf_onTimer;
 cdomF.r = cf_onRaf;
 cdomF.p = cf_poll;
+cdomF.s = cf_settle;
 
 /* The imports, by shim/cdom.js's names; what the tier lacks answers through cf_lacks, named. */
 var cf_imports = new Object();
