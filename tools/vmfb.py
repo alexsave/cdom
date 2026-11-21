@@ -107,6 +107,8 @@ def run_once(page, d, wait, keep, shotname, hang):
         if t_get is None and now - t0 > 45:
             break
         # the known start hang: the page was served, the end mark has not come, and for `hang` seconds neither a request nor a change of the screen
+        if page.startswith("rw") and t_get is not None and t_end is None:
+            t_end = t_get   # the frame probes have no end mark: settled is the screen alone
         quiet = now - max(x for x in (t_get, t_lastimg, last_change, t0) if x is not None)
         if hang and t_get is not None and t_end is None and quiet > hang:
             hung = True
@@ -120,6 +122,8 @@ def run_once(page, d, wait, keep, shotname, hang):
             done = True
             break
     t_stop = time.time()
+    vm.tap(632, 441, 0)   # the pointer rests on the status bar, not on the picture (it is a pixel of the screendump)
+    time.sleep(0.6)
     shot = os.path.join(SHOTS, shotname + ".png")
     im = screen(tmp)
     if im is not None:

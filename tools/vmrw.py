@@ -18,7 +18,7 @@ def view_bytes(tmp):
         try:
             im = Image.open(tmp)
             im.load()
-            return im.convert("RGB").crop((2, 84, 638, 430)).tobytes(), im
+            return im.convert("RGB").crop((2, 104, 638, 430)).tobytes(), im
         except Exception:
             time.sleep(0.05)
     return None, None

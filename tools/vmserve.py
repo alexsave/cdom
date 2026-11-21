@@ -17,7 +17,7 @@ class Server(http.server.ThreadingHTTPServer):
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
-    timeout = 600  # a connection a killed browser left open does not hold a thread for ever (Netscape 2 busy in a long layout opens its image connections late: 20 s closed them under it, "Connection reset by peer")
+    timeout = 3600  # a connection a killed browser left open does not hold a thread for ever (Netscape 2 busy in a long layout opens its image connections late: 20 s closed them under it, "Connection reset by peer")
     # HTTP/1.1 with the Content-Length the base class sends: Netscape 3.04 asks for keep-alive, and a server that closes the
     # connection after each answer (HTTP/1.0) sometimes left its next request, the frame's page, unanswered for ever.
     protocol_version = "HTTP/1.1"
