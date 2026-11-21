@@ -201,6 +201,42 @@ ok(J.o.js1_trap === 1 && sp === 0, `a trap 30 calls down puts the explicit stack
   ok(hole < 0 && got === pages, `every word of the initial memory (${pages} pages) and of memory.grow's 2 new pages is written${hole < 0 ? '' : `: word ${hole} is not`}`);
 }
 
+// Netscape 3.04 converts to 32 bits right only from -2^31 to 2^32 - 1, and gives NaN outside (x | 0, x >>> 0, x & 255,
+// x << 1 and the rest: tests/probe-js1e.html, docs/js1-compile-design.md section 12). Every case again on a copy of the
+// file whose every bitwise operand goes through a check that throws outside that range, as Netscape 3 would answer NaN.
+{
+  const src = fs.readFileSync(js1File, 'utf8'), ins = [];
+  const BIT = new Set(['|', '&', '^', '<<', '>>', '>>>']);
+  const wrap = (n) => { ins.push([n.start, 'J3c(', -(n.end - n.start)]); ins.push([n.end, ')', n.end - n.start]); };
+  (function w(n) {
+    if (!n || typeof n.type !== 'string') return;
+    if (n.type === 'BinaryExpression' && BIT.has(n.operator)) { wrap(n.left); wrap(n.right); }
+    if (n.type === 'UnaryExpression' && n.operator === '~') wrap(n.argument);
+    if (n.type === 'AssignmentExpression' && n.operator !== '=' && BIT.has(n.operator.slice(0, -1))) wrap(n.right);
+    for (const k of Object.keys(n)) { const v = n[k]; if (Array.isArray(v)) v.forEach(w); else if (v && typeof v.type === 'string') w(v); }
+  })(acorn.parse(src, { ecmaVersion: 5 }));
+  // Inserts at one place: closings of inner operands first, then openings of outer ones.
+  ins.sort((a, b) => b[0] - a[0] || b[2] - a[2]);
+  let t = src;
+  for (const [at, text] of ins) t = t.slice(0, at) + text + t.slice(at);
+  const ns3File = path.join(out, 'js1diff.ns3.js');
+  fs.writeFileSync(ns3File, 'function J3c(x){if(typeof x=="number"&&!(x>=-2147483648&&x<4294967296))throw new Error("Netscape 3 NaN: "+x);return x;}\n' + t);
+  const N = loadJs1(ns3File, { count: false });
+  const W3 = await loadWasm(wasmFile);
+  let nok = 0, nfirst = null;
+  for (const [name, ...args] of CASES) {
+    W3.log.length = 0; N.ctx.log.length = 0;
+    let wr, wt = false, jr, err = null;
+    try { wr = W3.x[name](...args); } catch (e) { wt = true; }
+    try { jr = N.call(name, ...args); } catch (e) { err = String(e.message || e); N.ctx.JP = 0; N.ctx.JQ = 0; }
+    const jt = !!N.o.js1_trap;
+    if (!err && wt === jt && (wt || wr === jr) && W3.log.join(',') === N.ctx.log.join(',')) nok++;
+    else if (!nfirst) nfirst = `${name}(${args}): ${err || 'differs'}`;
+  }
+  fs.unlinkSync(ns3File);
+  ok(nok === CASES.length && ins.length > 100, `every case agrees with every bitwise operand in Netscape 3's range, -2^31 to 2^32 - 1 (${ins.length / 2} operands checked): ${nok} of ${CASES.length}${nfirst ? `\n  first: ${nfirst}` : ''}`);
+}
+
 // Depth: the 1000-deep recursion runs at a constant JavaScript depth, at or under js1c's bound.
 const lowered = js1File + '.lowered.wasm';
 const said = spawnSync(path.join(top, 'tools/out/js1c'), [lowered, path.join(out, 'js1.tmp.js')], { encoding: 'utf8' });
