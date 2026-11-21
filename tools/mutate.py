@@ -54,6 +54,7 @@ LEGW2J = ['env', 'LEGACY=1', 'node', 'tools/legacy.mjs']             # the legac
 NOSCRIPT = ['tests/noscript/run.sh']                                 # the no-script fallback: Chrome off and on, lynx, the lens, cdpage's refusals
 FRAMES = ['env', 'LEGACY=frames', 'node', 'tools/frames.mjs']       # the fifth tier: no DOM mutation, frames written whole
 JS11T = ['node', 'tools/js11.mjs']                                   # the frames tier's language gates, in node
+UTTT = ['node', 'tools/uttt.mjs']                                    # demo/uttt on the WebAssembly and frames tiers: needs FOOLISH, an absolute path to a foolish checkout (else it skips, and every uttt- mutant is missed)
 
 # name, file, old, new, test command, text the failure must contain
 M = [
@@ -1217,6 +1218,14 @@ M = [
   ('ns-stamp-never-matches', 'tools/noscript.mjs', "  if (old.join('\\n') === [...head, ...files, ...outs()].join('\\n')) process.exit(0); // up to date: no Chrome", "  if (false) process.exit(0);", NOSCRIPT, 'FAIL the content stamp: a page of the same bytes'),
   ('ns-gif-random', 'tools/noscript_gif.py', "        order = [c for _, c in sorted(colours, key=lambda nc: (-nc[0], nc[1]))]\n", "        order = [c for _, c in sorted(colours, key=lambda nc: (-nc[0], nc[1]))]\n        import random\n        random.shuffle(order)\n", NOSCRIPT, 'FAIL determinism'),
   ('ns-gif89a', 'tools/noscript_gif.py', "    out.save(dst, 'GIF', optimize=False, interlace=False)\n    with open(dst, 'rb') as f:\n        head = f.read(6)\n    if head != b'GIF87a':", "    out.save(dst, 'GIF', optimize=False, interlace=False, comment=b'cdom')\n    with open(dst, 'rb') as f:\n        head = f.read(6)\n    if False:", NOSCRIPT, 'FAIL the GIFs'),
+  # demo/uttt, the replay viewer (tools/uttt.mjs; FOOLISH=/abs/path/to/foolish python3 tools/mutate.py uttt-...)
+  ('uttt-forward-skips', 'demo/uttt/uttt_replay.c', '  else if (id == b_fwd && shown < game.n_plies) shown++;', '  else if (id == b_fwd && shown < game.n_plies) shown += 2;', UTTT, 'FAIL webassembly: > 1 times: the board is the game after 1 plies'),
+  ('uttt-won-block-not-shown', 'demo/uttt/uttt_replay.c', '  if (won == UTTT_X || won == UTTT_O) {', '  if (0) {', UTTT, '  big marks: shown'),
+  ('uttt-forced-not-lit', 'demo/uttt/uttt_replay.c', '  if ((legal >> b) & 1u) bg = "background-color:#ffff66";', '  if (0) bg = "background-color:#ffff66";', UTTT, '  backgrounds: shown'),
+  ('uttt-play-no-stop', 'demo/uttt/uttt_replay.c', '  if (shown >= game.n_plies) set_playing(0);\n  else cd_timer_set(&timer, TICK_MS, tick, nullptr);', '  cd_timer_set(&timer, TICK_MS, tick, nullptr);', UTTT, 'FAIL webassembly: Play stops at the end'),
+  ('uttt-last-not-bold', 'demo/uttt/uttt_replay.c', '        if (i == last) cd_open("b");\n        cd_text(MARK[m]);\n        if (i == last) cd_close();', '        cd_text(MARK[m]);', UTTT, '  bold: shown'),
+  ('uttt-bad-code-silent', 'demo/uttt/uttt_replay.c', '    cd_set_text_node(err_txt, "That is not a game code.', '    cd_set_text_node(err_txt, "', UTTT, 'FAIL webassembly: a bad code shows the error line'),
+  ('uttt-query-ignored', 'demo/uttt/uttt_replay.c', '  if (n > 1 && n < sizeof buf - 1) {', '  if (0) {', UTTT, 'FAIL webassembly: the query: the board is the game after 0 plies'),
 ]
 
 def build_and_run(root, cmd, minify=False):

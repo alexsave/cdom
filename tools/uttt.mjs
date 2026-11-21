@@ -176,6 +176,7 @@ run: try {
 
   // Play advances a move a tick, Pause stops it, and reaching the end stops it.
   await click('#start');
+  const dPlay = await draws();
   await click('#play');
   ok((await playLabel()) === 'Pause', `Play becomes Pause: ${JSON.stringify(await playLabel())}`);
   ok(await until(`(function () { var e = ${q('#status')}; return !!e && e.innerText.indexOf("Move 2 of") === 0; })()`, 100), `Play advances: ${JSON.stringify(await status())}`);
@@ -183,6 +184,9 @@ run: try {
   const paused = await status();
   await sleep(1300);
   ok((await status()) === paused && (await playLabel()) === 'Play', `Pause stops it: ${JSON.stringify(paused)}, then ${JSON.stringify(await status())}`);
+  // Play's label, a draw a tick, and Pause's label: on the frames tier one draw each.
+  const ticked = +paused.split(' ')[1];
+  if (FRAMES) ok((await draws()) - dPlay === ticked + 2, `Play draws once a tick: ${(await draws()) - dPlay} draws for Play, ${ticked} ticks and Pause`);
   await click('#end');
   for (let k = 0; k < 3; k++) await click('#back');
   await click('#play');
