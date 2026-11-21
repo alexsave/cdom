@@ -63,6 +63,10 @@ export function lacks10(src) {
         for (const k of Object.keys(x)) { const v = x[k]; if (Array.isArray(v)) v.forEach(r); else if (v && typeof v.type === 'string') r(v); }
       })(n.body);
       if (value && bare) add('a function that returns a value and also none', n);
+      // ... and one that returns a value but whose last statement is not a return, even if every path returns before it
+      // (a while (1) loop): Netscape 3.04 gave "function does not always return a value." on js1c's output for uttt.
+      const last = n.body.body[n.body.body.length - 1];
+      if (value && (!last || last.type !== 'ReturnStatement')) add('a function that returns a value and does not end in a return', n);
     }
     if (n.type === 'VariableDeclaration' && n.kind !== 'var') add(n.kind, n);
     if (n.type === 'Literal' && n.regex) add('a regex literal', n);
@@ -105,7 +109,8 @@ function selfTest() {
     ['a.push(1);', '.push'], ['F.prototype.g = h;', '.prototype'], ['var m = Math.imul(a, b);', '.imul'],
     ['var r = s.replace("a", "b");', '.replace'], ['var h = n.toString(16);', 'toString(radix)'],
     ['var s = "\\u00e9";', 'a \\u escape'], ['var s = q.substr(1);', '.substr'], ['var f = Math.fround(x);', '.fround'],
-    ['let x = 1;', 'not even ES5'], ['function f(a) { if (a) return 1; return; }', 'a function that returns a value and also none'], ['/*' + 'p'.repeat(249) + '*/x--;', '-- at column 254'],
+    ['let x = 1;', 'not even ES5'], ['function f(a) { if (a) return 1; return; }', 'a function that returns a value and also none'],
+    ['function f(a) { while (1) { if (a) return 1; } }', 'a function that returns a value and does not end in a return'], ['/*' + 'p'.repeat(249) + '*/x--;', '-- at column 254'],
   ]) ok(refused(src, what), `${src} is refused (${what})`);
   ok(lacks10(`var JM = new Object(), JA = new Array(4), d = new Date(), t;
 function f(a, b) { var i, s = ""; t = d.getTime(); for (i = 0; i < 3; i++) { if (a == b || a != 0) s = s + "x"; }
