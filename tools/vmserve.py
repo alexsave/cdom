@@ -17,7 +17,7 @@ class Server(http.server.ThreadingHTTPServer):
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
-    timeout = 20  # a connection a killed browser left open does not hold a thread for ever
+    timeout = 600  # a connection a killed browser left open does not hold a thread for ever (Netscape 2 busy in a long layout opens its image connections late: 20 s closed them under it, "Connection reset by peer")
     # HTTP/1.1 with the Content-Length the base class sends: Netscape 3.04 asks for keep-alive, and a server that closes the
     # connection after each answer (HTTP/1.0) sometimes left its next request, the frame's page, unanswered for ever.
     protocol_version = "HTTP/1.1"
@@ -38,6 +38,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
+        # Netscape 2 asks for keep-alive but does not end an answer at its Content-Length: it waits for the close, so with
+        # HTTP/1.1 every batch of its 4 connections sat out the 20 s timeout above (a page of 700 images took 160 s, found by
+        # the framebuffer probes, docs/descent.md).  Its answers say close, and the connection is closed after each.
+        if self.headers.get("User-Agent", "").startswith("Mozilla/2"):
+            self.send_header("Connection", "close")
+            self.close_connection = True
         super().end_headers()
 
 

@@ -173,7 +173,10 @@ def pal_page():
     rows = []
     for y in range(16):
         rows.append("<TR>" + "".join("<TD>" + img(y * 16 + x, 8, 8) + "</TD>" for x in range(16)) + "</TR>\n")
-    write("pal.html", page("palette", "<TABLE BORDER=0 CELLPADDING=0 CELLSPACING=0>\n" + "".join(rows) + "</TABLE>\n", "pal"))
+    t = "<TABLE BORDER=0 CELLPADDING=0 CELLSPACING=0>\n" + "".join(rows) + "</TABLE>\n"
+    write("pal.html", page("palette", t, "pal"))
+    # the same table four times in a page: 1024 IMG tags for 256 files, to see whether a file is fetched once
+    write("pal4.html", page("palette x4", t * 4, "pal4"))
 
 
 def pic_pages(stats):
