@@ -421,21 +421,33 @@ static uint32_t fnv(void) {
   return h ? h : 1;
 }
 
-/* One entry of the table text. A control byte and "<" are written as a three-digit octal escape (\001, \074), which
- * ends after three digits whatever follows: Netscape 3 reads a \x escape greedily, as every hex digit after it
- * (docs/frames-design.md, section 15), so "\x01cd" would be one character. "<" is escaped so that "</script>" and
- * "<!--" cannot end the script. The separator is \001 (not NUL: Netscape 2 and 3 end a string at one). */
-static void js_string(Buf *o, const uint8_t *s, size_t n) {
+/* The table text. A control byte and "<" are written as a three-digit octal escape (\001, \074): "<" so that
+ * "</script>" and "<!--" cannot end the script, a control byte since it cannot be written raw. Netscape 3 reads an octal
+ * escape greedily, as every octal digit after it, and a \x escape as every hex digit (docs/frames-design.md, section 15),
+ * so a digit that follows an escape starts a new literal: \001"+"4. */
+static int after_esc; /* the last thing written was an escape */
+static void js_byte(Buf *o, uint8_t c) {
+  if (after_esc && c >= '0' && c <= '9') bstr(o, "\"+\"");
+  after_esc = 0;
+  bbyte(o, c);
+}
+static void js_escape(Buf *o, uint8_t c) {
   char t[8];
+  snprintf(t, sizeof t, "\\%03o", c);
+  bstr(o, t);
+  after_esc = 1;
+}
+static void js_string(Buf *o, const uint8_t *s, size_t n) {
   for (size_t i = 0; i < n; i++) {
     uint8_t c = s[i];
-    if (c == '\\') bstr(o, "\\\\");
-    else if (c == '"') bstr(o, "\\\"");
-    else if (c == '<' || c < 32 || c == 127) { snprintf(t, sizeof t, "\\%03o", c); bstr(o, t); }
+    if (c == '\\') { bstr(o, "\\\\"); after_esc = 0; }
+    else if (c == '"') { bstr(o, "\\\""); after_esc = 0; }
+    else if (c == '<' || c < 32 || c == 127) js_escape(o, c);
     else if (c == 0xe2 && i + 2 < n && s[i + 1] == 0x80 && (s[i + 2] == 0xa8 || s[i + 2] == 0xa9)) {
       bstr(o, s[i + 2] == 0xa8 ? "\\u2028" : "\\u2029"); /* line terminators end a JS string literal */
+      after_esc = 0;
       i += 2;
-    } else bbyte(o, c);
+    } else js_byte(o, c);
   }
 }
 
@@ -476,8 +488,9 @@ static void do_build(const char *outw, const char *outl) {
    * arguments it is the four-element array in every engine. */
   snprintf(t, sizeof t, "var cdomLits=new Array(%u,%u,\"\xe2\x98\x83\",\"", have_lits ? lits_start : 0, stamp);
   bstr(&lits, t);
+  after_esc = 0;
   for (size_t k = 0; k < nslots; k++) {
-    if (k) bstr(&lits, "\\001");
+    if (k) js_escape(&lits, 1);
     /* The separator is 0x01, not 0: Netscape 2 and 3 end a string at a NUL (docs/frames-design.md, section 15). */
     if (memchr(slots[k].bytes.p, 1, slots[k].bytes.n)) die("a string literal holds the byte 0x01, which separates the table's entries");
     js_string(&lits, slots[k].bytes.p, slots[k].bytes.n);
