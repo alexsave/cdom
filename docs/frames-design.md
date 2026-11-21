@@ -130,6 +130,7 @@ preventDefault and stopPropagation do nothing: a javascript: URL navigates nowhe
 ## 6. Field state, focus and scroll
 
 All the controls are written inside one FORM (Netscape shows a control only in a FORM, A17), in document order, so the shim's list of the fields it wrote is in the order of form.elements.
+Each is named cN after its index there, but a radio keeps the app's name attribute, which is what makes radios of one name one group; read-back goes by the index either way.
 Before each rewrite (at each entry from the browser) the shim reads every field back: a text's value, a checkbox's checked, a SELECT's selectedIndex, and the focused field's selection where the browser has selectionStart.
 That includes text the user typed that C has not seen yet; C sees it at the next onChange or onKeyUp, as an input event.
 The new markup writes those values back, and after the rewrite the shim focuses the field that had focus, puts the selection back (setSelectionRange, or IE 4's createTextRange) and scrolls the frame back where it was (scrollTo, A15).

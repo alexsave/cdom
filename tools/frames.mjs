@@ -35,7 +35,7 @@ async function clickAt(x, y, hold = 30) {
 const click = async (sel, hold) => clickAt(...await centre(sel), hold);
 const draws = () => E('cdomF.draws');
 const stat = (k) => E(`X.stat(${k})`);
-const STAT = { count: 0, path: 1, inputs: 2, changes: 3, checks: 4, focuses: 5, blurs: 6, ticks: 7, items: 8 };
+const STAT = { count: 0, path: 1, inputs: 2, changes: 3, checks: 4, focuses: 5, blurs: 6, ticks: 7, items: 8, radios: 9 };
 const textOf = (sel) => E(`(function () { var e = ${F}.querySelector(${JSON.stringify(sel)}); return e ? e.innerText : null; })()`);
 // The field the frame's form calls name cN for the tree's input of id attribute id.
 // A stand-in with no value and methods that do nothing when there is no such field (a broken shim), so a check fails
@@ -185,6 +185,12 @@ run: try {
   ok((await stat(STAT.checks)) === 2 && (await E(`${field('check')}.checked`)), `the checkbox's change reached C with checked 1: ${await stat(STAT.checks)}`);
   await click('#check');
   ok((await stat(STAT.checks)) === 21, `and again with checked 0: ${await stat(STAT.checks)}`);
+
+  // Two radios of one group (name grp): the second's click unchecks the first, in the frame and as C reads them.
+  await click('#r1');
+  await click('#r2');
+  ok((await stat(STAT.radios)) === 12 && (await E(`${field('r2')}.checked && !${field('r1')}.checked && ${field('r1')}.name === "grp" && ${field('r2')}.name === "grp"`)),
+    `two radios of one name are one group: C read ${await stat(STAT.radios)} (want 1 then 2: 12), r1 ${await E(`${field('r1')}.checked`)}, r2 ${await E(`${field('r2')}.checked`)}`);
 
   // A timer's callback draws.
   d = await draws();
