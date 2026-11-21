@@ -267,6 +267,16 @@ run: try {
   ok(!(await E('cdomF.errors.length')), `no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
   ok(!errs().length, `no page exceptions: ${JSON.stringify(errs())}`);
 
+  // The boot waits for cdom.frames.js: IE 4 runs the written script that starts it before the SCRIPT SRC has run (Object
+  // expected at cdomFramesStart). Here the start is hidden, cdomBootWait called, and the start given back later.
+  await E(`(function () { window.__real = window.cdomFramesStart; window.__fac = window.cdomFactory; window.cdomFramesStart = null;
+    window.cdomFactory = function () {}; window.__w = 0; window.__t = cdomBootTries; cdomBootWait(); })()`);
+  await sleep(120);
+  ok((await E('window.__w === 0 && cdomBootTries > window.__t')), `the boot does not start without cdom.frames.js, and tries again: ${await E('cdomBootTries - window.__t')} tries`);
+  await E('window.cdomFramesStart = function (f) { window.__w = f === window.cdomFactory ? 1 : 2; }');
+  ok(await until('window.__w !== 0') && (await E('window.__w === 1')), 'the boot starts once cdom.frames.js has run, with the app\'s factory');
+  await E('(function () { window.cdomFramesStart = window.__real; window.cdomFactory = window.__fac; cdomBootTries = 0; })()');
+
   // A trap in C: thrown out of the call, which never comes back to the shim (no finally in JavaScript 1.1), so nothing
   // is drawn; the next entry from the browser puts the counts back, notes it, and draws what the call had done.
   d = await draws();

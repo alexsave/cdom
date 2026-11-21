@@ -44,7 +44,20 @@ function cdomBootFrames(url, mount, env, ready, options) {
   cdomBootReady = ready;
   cdomBootOptions = options;
   document.write("<script src=\"cdom.frames.js\"></scr" + "ipt><script src=\"" + base + ".js1.js\"></scr" + "ipt>"
-    + "<script>cdomFramesStart(window.cdomFactory, cdomBootMount, cdomBootEnv, cdomBootReady, cdomBootOptions)</scr" + "ipt>");
+    + "<script>cdomBootWait()</scr" + "ipt>");
+}
+/* Calls the start once both files have run. The written script calls this at once, which is after both files in
+ * Netscape 3 and 4 (they block on a SCRIPT SRC), and before them in IE 4 (it fetches a SCRIPT SRC written by script
+ * without waiting, and "Object expected" at cdomFramesStart is what it said: docs/frames-design.md, section 15), so it
+ * tries again every 50 ms, for 20 s. */
+var cdomBootTries = 0;
+function cdomBootWait() {
+  if (window.cdomFramesStart && window.cdomFactory) {
+    cdomFramesStart(window.cdomFactory, cdomBootMount, cdomBootEnv, cdomBootReady, cdomBootOptions);
+    return;
+  }
+  cdomBootTries++;
+  if (cdomBootTries < 400) setTimeout("cdomBootWait()", 50);
 }
 /*CDOM_BOOT_ES3*/
 /* The four DOM tiers. */
