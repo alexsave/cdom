@@ -33,7 +33,24 @@ const net = (q, r) => {
   } else if (route === '/net/drop') q.socket.destroy();
   else if (route !== '/net/hang') { r.writeHead(404); r.end(); } // /net/hang is never answered
 };
-const srv = http.createServer((q, r) => { if (q.url.startsWith('/net/')) return net(q, r);
+// The boot starts the shim and the app file at once (shim/boot.js, two load() calls in a row). To prove that on any machine
+// speed, the first request for the tier's shim file is held until the app file's request has reached this server (or HOLD_MS
+// has passed), and held.appFirst records whether it had. Resource timing alone races: a local shim can arrive before the
+// browser has even started the app request. Every other request, and every later request for the shim, is answered at once.
+const HOLD_MS = 5000;
+const [holdShim, holdApp] = (TIER_FILES('legacy')[TIER] || []).length === 2 ? TIER_FILES('legacy')[TIER] : [];
+const held = { shim: false, appSeen: false, appFirst: null, wake: null };
+const appArrived = new Promise((res) => { held.wake = res; });
+const holdFor = async (route) => {
+  if (!holdShim) return;
+  if (route === '/' + holdApp && !held.appSeen) { held.appSeen = true; held.wake(true); }
+  else if (route === '/' + holdShim && !held.shim) {
+    held.shim = true;
+    held.appFirst = await Promise.race([appArrived, sleep(HOLD_MS).then(() => false)]);
+  }
+};
+const srv = http.createServer(async (q, r) => { if (q.url.startsWith('/net/')) return net(q, r);
+  await holdFor(q.url.split(/[?#]/)[0]);
   if (q.url.startsWith('/slow.png')) { setTimeout(() => { r.writeHead(404); r.end(); }, 1500); return; }
   const f = path.join(root, q.url.split(/[?#]/)[0]);
   fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': types[path.extname(f)] }); r.end(b); }); }).listen(0);
@@ -122,11 +139,11 @@ run: try {
       ok(await E('Array.isArray(X.memory.words) && X.memory.words.length * 4 === X.memory.grow(0) * 65536 && !("buffer" in X.memory)'),
         'the exports keep C\'s memory in one plain Array of words');
     }
-    // The two fallback files are fetched in parallel: the app's starts before the shim's has arrived.
+    // The two fallback files are fetched in parallel: the app's request reaches the server while the shim's is still held.
     const [shimFile, appFile] = TIER_FILES('legacy')[TIER];
     const [shim, app] = await E(`${JSON.stringify([shimFile, appFile])}.map(f => performance.getEntriesByType('resource')
       .find(r => r.name.endsWith('/' + f))).map(r => r && [r.startTime, r.responseEnd])`);
-    ok(shim && app && app[0] < shim[1], `${appFile} requested before ${shimFile} had arrived: ${JSON.stringify({ shim, app })}`);
+    ok(held.appFirst === true, `${appFile} requested while ${shimFile} was held (a serial load never asks within ${HOLD_MS} ms): ${JSON.stringify({ held: held.appFirst, shim, app })}`);
   }
   // cd_seed: from crypto.getRandomValues wherever there is one (msCrypto on the second tier), and the weak
   // fallback (shim seed(): Math.random and the clock) only on the third, which has no crypto at all.
