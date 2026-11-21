@@ -133,6 +133,9 @@ All the controls are written inside one FORM (Netscape shows a control only in a
 Before each rewrite (at each entry from the browser) the shim reads every field back: a text's value, a checkbox's checked, a SELECT's selectedIndex, and the focused field's selection where the browser has selectionStart.
 That includes text the user typed that C has not seen yet; C sees it at the next onChange or onKeyUp, as an input event.
 The new markup writes those values back, and after the rewrite the shim focuses the field that had focus, puts the selection back (setSelectionRange, or IE 4's createTextRange) and scrolls the frame back where it was (scrollTo, A15).
+IE 4 has no selectionStart: the shim reads the caret from document.selection.createRange(), a TextRange whose text is the selection and which, moved back to the field's start, measures the selection's end.
+Netscape 4 has neither, and so cannot put the caret back: there a key typed in a field whose handler changes the tree draws nothing, and the draw waits for the field's change or blur.
+tools/cdp.mjs models both under LEGACY=frames: the top page's ?ie4 (no selectionStart, End or setSelectionRange, with createTextRange and document.selection) and ?ns4 (none of them).
 Where there is no scrollTo, window.scroll (JavaScript 1.0) takes its place.
 The focus that the shim gives back is not delivered to C as a new focus, and neither is a focus C asks for (cd_call "focus").
 

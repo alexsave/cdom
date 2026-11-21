@@ -927,10 +927,12 @@ function cf_hold(fromBrowser) {
   if (cf_holds == 0 && cf_busy == 0) cf_sync();
   cf_holds++;
 }
-/* later: a change, a focus or a blur, whose draw waits cf_LATER for the click that may follow. */
+/* later: 1 for a change, a focus or a blur, whose draw waits cf_LATER for the click that may follow; 2 for a key
+ * typed in a field whose caret cannot be read (cf_blind), whose draw waits for that field's change or blur. */
 function cf_release(later) {
   cf_holds--;
   if (cf_holds || cf_busy) return;
+  if (cf_dirty && later == 2) return;
   if (cf_dirty && later) {
     if (!cf_later) setTimeout("cdomF.p()", cf_LATER);
     cf_later = 1;
@@ -988,10 +990,7 @@ function cf_sync() {
     } else if (t == "select-one" || t == "select-multiple") x.fs = el.selectedIndex;
     else if (cf_isText(t)) {
       x.fv = el.value;
-      if (x == cf_focus && typeof el.selectionStart == "number") {
-        x.ss = el.selectionStart;
-        x.se = el.selectionEnd;
-      }
+      if (x == cf_focus) cf_caret(w, el, x);
     }
   }
   b = w.document.body;
@@ -1002,6 +1001,33 @@ function cf_sync() {
     cf_sx = b.scrollLeft;
     cf_sy = b.scrollTop;
   }
+}
+/* The focused field's selection, into x.ss and x.se: selectionStart where the browser has it; on IE 4, which has not,
+ * from the document's selection, a TextRange: its text is the selection, and moved back to the field's start (moveStart
+ * stops there) its text is everything before the selection's end. Netscape 4 has neither, and leaves them as they were. */
+function cf_caret(w, el, x) {
+  var r, n;
+  if (typeof el.selectionStart == "number") {
+    x.ss = el.selectionStart;
+    x.se = el.selectionEnd;
+  } else if (w.document.selection && el.createTextRange) {
+    r = w.document.selection.createRange().duplicate();
+    n = r.text.length;
+    r.moveStart("character", -el.value.length - 1);
+    x.se = r.text.length;
+    x.ss = x.se - n;
+  }
+}
+/* A browser that cannot read the caret (Netscape 4: no selectionStart, no document.selection) would put it back at the
+ * field's start or end on every redraw, so a redraw while a key is typed waits for the field's change or blur. */
+function cf_blind(x) {
+  var w = cf_view(), form, el;
+  if (!w || x.jd != cf_serial) return 0;
+  form = w.document.forms[0];
+  if (!form) return 0;
+  el = form.elements[x.j];
+  if (!el || typeof el.selectionStart == "number" || (w.document.selection && el.createTextRange)) return 0;
+  return 1;
 }
 /* Focus, the selection and the scroll back where they were, after a draw (section 6). The focus given back is no
  * new focus to C: cf_drawing keeps the handlers quiet. */
@@ -1391,14 +1417,14 @@ function cf_onKeyUp(n, e) {
   cf_hold(1);
   cf_input(x);
   cf_fire(x, cf_KEYUP, cf_key(e));
-  cf_release(0);
+  cf_release(2 * cf_blind(x));
 }
 function cf_onKeyDown(n, e) {
   var x = cf_hit[n];
   if (cf_drawing || !x) return;
   cf_hold(1);
   cf_fire(x, cf_KEYDOWN, cf_key(e));
-  cf_release(0);
+  cf_release(2 * cf_blind(x));
 }
 function cf_onFocus(n, on) {
   var x = cf_hit[n];
