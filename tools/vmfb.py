@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""vmfb.py <page> [--wait 120] [--shot name] [--keep] [--dir tests/out]: one framebuffer probe in Netscape 2.02 of the XP guest
+"""vmfb.py <page> [--wait 120] [--shot name] [--keep] [--dir tests/out] [--sub fb]: one framebuffer probe in Netscape 2.02 of the XP guest
 (docs/descent.md "A framebuffer of 1x1 GIFs").  Through the guest agent (tools/vmagent.py; no typing): ends the browsers, restarts
-tools/vmserve.py on <dir> (port 8110), opens http://10.0.2.2:8110/r<time>/fb/<page> in Netscape 2, then watches the server's log
+tools/vmserve.py on <dir> (port 8110), opens http://10.0.2.2:8110/r<time>/<sub>/<page> in Netscape 2, then watches the server's log
 and the screen (QEMU screendump, about 2 a second) until the page's end mark has been requested and the view has not changed for
 STABLE seconds, or <wait> s have passed.  Prints, in the Mac's wall seconds from the page's GET: the end mark, the last image
 request, the last change of the screen, the request counts (all, distinct GIFs); saves shots/<name>.png (the screen at the
@@ -16,6 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LOG = "/Users/alex/VMs/ie6-xp/serve-frames-real.log"
 SHOTS = "/Users/alex/VMs/ie6-xp/shots"
 STABLE = 8.0
+SUB = "fb"      # the folder of tests/out the page is in (--sub; the paint pages of tools/gen_ns2_paint.py are in paint/<variant>)
 NS2 = r"C:\NS202\Program\netscape.exe"
 
 
@@ -68,7 +69,7 @@ def run_once(page, d, wait, keep, shotname, hang):
     time.sleep(1.5)
     off = os.path.getsize(LOG)
     rid = "r%d" % int(time.time())
-    url = "http://10.0.2.2:8110/%s/fb/%s" % (rid, page)
+    url = "http://10.0.2.2:8110/%s/%s/%s" % (rid, SUB, page)
     res = agent('run "%s" %s' % (NS2, url))
     t0 = time.time()
     tmp = os.path.join(SHOTS, ".fb.ppm")
@@ -95,9 +96,9 @@ def run_once(page, d, wait, keep, shotname, hang):
             t = log_time(l)
             m = re.search(r'"GET (\S+)', l)
             path = m.group(1)
-            if "/fb/" + page in path and t_get is None:
+            if "/%s/%s" % (SUB, page) in path and t_get is None:
                 t_get = t
-            if t_get is not None and "/fb/" in path:
+            if t_get is not None and "/%s/" % SUB in path:
                 if re.search(r"/[0-9A-F]{2}\.gif$", path):
                     gifs[path] = gifs.get(path, 0) + 1
                     t_lastimg = t
@@ -114,9 +115,9 @@ def run_once(page, d, wait, keep, shotname, hang):
             hung = True
             break
         if t_end is not None and last_change is not None and now - last_change > STABLE:
-            # a hung load can have asked for every image and still show a blank magenta view ("Waiting for reply"): not done
+            # a hung load can have asked for every image and still show a blank view of the page's colour ("Waiting for reply"): not done
             cur = im.crop((2, 54, 638, 430)) if im is not None else None
-            if cur is not None and page != "q1_view.html" and cur.getcolors(2) == [(636 * 376, (255, 0, 255))]:
+            if cur is not None and page != "q1_view.html" and cur.getcolors(1) is not None:
                 hung = True
                 break
             done = True
@@ -146,7 +147,10 @@ def main():
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--hang", type=float, default=30, help="seconds without a request or a screen change, after the page's GET and before the end mark, that count as a hung start (0: off)")
     ap.add_argument("--dir", default=os.path.join(HERE, "..", "tests", "out"))
+    ap.add_argument("--sub", default="fb")
     a = ap.parse_args()
+    global SUB
+    SUB = a.sub
     shot = a.shot or ("ns2fb-" + a.page.replace(".html", ""))
     for attempt in (1, 2, 3):
         r = run_once(a.page, a.dir, a.wait, a.keep, shot, a.hang)
