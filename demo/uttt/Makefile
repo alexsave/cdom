@@ -4,7 +4,8 @@
 #   out/uttt.wasm          the module the WebAssembly tier starts
 #   out/uttt.wasm.ie9.js   the same module as words-build JavaScript, which IE 6 to 9 run
 #   out/uttt.wasm.js1.js   and as JavaScript 1.0 from tools/js1c, which the frames tier runs
-#   out/cdom.frames.js     the frames tier's shim
+#   out/uttt.app.html      the frames tier's app document: the boot's first part, the string table, the frames shim and
+#                          uttt.wasm.js1.js inline (Netscape 2 has no SCRIPT SRC: docs/frames-design.md, section 16)
 # make -C demo/uttt [FOOLISH=path/to/foolish]; serve out/ and open uttt.html, or uttt.html?<code>.
 CDOM := $(abspath ../..)
 FOOLISH ?= $(abspath $(CDOM)/../foolish)
@@ -23,7 +24,7 @@ APP_PAGE_SRC := uttt.html
 APP_PAGE := out/uttt.shim.html
 CDOM_NOSCRIPT := 0
 
-all: out/uttt.html out/uttt.wasm.ie9.js out/uttt.wasm.js1.js out/cdom.frames.js
+all: out/uttt.html out/uttt.wasm.ie9.js out/uttt.app.html
 .PHONY: all clean
 include $(CDOM)/cdom.mk
 
@@ -31,15 +32,14 @@ $(UTTT)/uttt.c:
 	@echo "demo/uttt: no foolish checkout at FOOLISH=$(FOOLISH) (git clone https://github.com/alexsave/foolish there, or set FOOLISH)" >&2; exit 1
 
 # The boot (shim/boot.js) inlined at /*CDOM_BOOT*/: the page every tier opens.
-out/uttt.html: out/uttt.shim.html $(LEGACY_BUILD) $(CDOM)/shim/boot.js
+out/uttt.html: out/uttt.shim.html $(LEGACY_BUILD) $(CDOM)/shim/boot.js $(CDOM)/shim/boot-early.js
 	$(NODE) $(LEGACY_BUILD) page $< $@
 out/uttt.wasm.ie9.js: out/uttt.wasm $(LEGACY_BUILD)
 	$(NODE) $(LEGACY_BUILD) app-ie9 $< $@
 out/uttt.wasm.js1.js: out/uttt.wasm $(CDOM)/tools/js1.sh $(CDOM)/tools/js1c.c
 	$(CDOM)/tools/js1.sh $< $@
-out/cdom.frames.js: $(LEGACY_BUILD) $(CDOM)/tools/legacy/frames.js
-	@mkdir -p out
-	$(NODE) $(LEGACY_BUILD) shim-frames $@
+out/uttt.app.html: out/uttt.html out/uttt.wasm.js1.js $(LEGACY_BUILD) $(CDOM)/shim/boot.js $(CDOM)/tools/legacy/frames.js $(CDOM)/tools/legacy/js11.mjs $(CDOM)/tools/js10.mjs
+	$(NODE) $(LEGACY_BUILD) app-doc out/uttt.html out/uttt.wasm.js1.js $@
 
 clean:
 	rm -rf out

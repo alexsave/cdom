@@ -39,11 +39,14 @@ export const GAPS = LEVEL !== '' && LEVEL !== '1';
 // The files of each tier, for a page whose wasm is app (a name without .wasm): only its own may be fetched. wasm names
 // what the first tier fetches, when the page starts a pair (APP_SIMD) and this Chrome takes the SIMD twin; the
 // fallbacks take the scalar module's builds, and fetch no .wasm at all.
+// The fifth tier fetches no script at all: its cdomApp frame is the page's app document, which holds the shim and the
+// module inline (docs/frames-design.md, section 16), so the two files it once loaded are fetched by no tier (NEVER).
 export const TIER_FILES = (app, wasm = `${app}.wasm`) => ({ 1: [wasm], 2: ['cdom.legacy.js', `${app}.wasm.js`], 3: ['cdom.legacy-ie9.js', `${app}.wasm.ie9.js`],
-  4: ['cdom.legacy-ie6.js', `${app}.wasm.ie9.js`], 5: ['cdom.frames.js', `${app}.wasm.js1.js`] });
+  4: ['cdom.legacy-ie6.js', `${app}.wasm.ie9.js`], 5: [] });
+const NEVER = (app) => ['cdom.frames.js', `${app}.wasm.js1.js`];
 // [pass, message] for the files a page fetched: all of its tier's, none of another's, and only the tier's own .wasm.
 export function tierFetched(got, app, wasm) {
-  const files = TIER_FILES(app, wasm), want = files[TIER] || [], other = Object.values(files).flat().filter((f) => !want.includes(f));
+  const files = TIER_FILES(app, wasm), want = files[TIER] || [], other = [...Object.values(files).flat(), ...NEVER(app)].filter((f) => !want.includes(f));
   const wasms = got.filter((f) => f.endsWith('.wasm'));
   return [want.every((f) => got.includes(f)) && !other.some((f) => got.includes(f)) && wasms.every((f) => want.includes(f)),
     `tier ${TIER} files only (${want.join(' ') || 'none'}): fetched ${got.filter((f) => /\.(js|wasm)$/.test(f)).join(' ')}`];
@@ -241,8 +244,16 @@ const FRAMES_OLD = `
   // Two flavours, by the top page's query string, for the caret: ?ie4, IE 4's fields (no selectionStart, End or
   // setSelectionRange, but createTextRange and document.selection.createRange, TextRanges of character moves), and
   // ?ns4, Netscape 4's (neither). Both keep select() and focus(), which both browsers have.
+  // A third, ?ns2, is what of Netscape 2 this Chrome can take away (docs/frames-design.md, section 16): Netscape 4's
+  // fields, no mouse button or key event reaching the page (stopped at the window, so document.onmousedown and a field's
+  // onkeyup never run; the click and the typing still happen), and no charCodeAt or fromCharCode.
   const caretQ = (() => { try { return window.top.location.search; } catch { return ''; } })();
-  const caretFlavour = /[?&]ie4(&|$)/.test(caretQ) ? 'ie4' : /[?&]ns4(&|$)/.test(caretQ) ? 'ns4' : '';
+  const ns2 = /[?&]ns2(&|$)/.test(caretQ);
+  const caretFlavour = /[?&]ie4(&|$)/.test(caretQ) ? 'ie4' : /[?&]ns4(&|$)/.test(caretQ) || ns2 ? 'ns4' : '';
+  if (ns2) {
+    for (const t of ['mousedown', 'mouseup', 'keydown', 'keyup', 'keypress']) add.call(window, t, (e) => e.stopImmediatePropagation(), true);
+    delete String.prototype.charCodeAt; delete String.fromCharCode;
+  }
   if (caretFlavour) {
     const real = []; // [input's, textarea's]: no Map, and Reflect.apply, not call (IE 6's profile took both)
     for (const C of [HTMLInputElement, HTMLTextAreaElement]) {
