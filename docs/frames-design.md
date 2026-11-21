@@ -420,3 +420,74 @@ Seen before writing them: cdom.frames.js was 30,024 to 32,112 bytes minified (13
 - S6, the recursion: the deepest element nesting is about 8 in tests/frames.c and about 10 in uttt; the serializer's cf_node and cf_kids hold about 16 slots a level of the 512, so about 160 at uttt's depth: not near the limit for these two apps, but an app's depth is its own (a tree 30 deep would overflow), so the walk is made a loop with no JavaScript recursion, and that changes no drawn byte.
 - S7, Chrome: tools/frames.mjs, tools/uttt.mjs, tools/js1.mjs, js10.mjs, js11.mjs and tests/lits pass through the app document; with document.onmousedown and onmouseup never firing, and no charCodeAt or fromCharCode (the Netscape 2 hooks this Chrome can take away), the frames page still counts clicks, takes field changes and draws once a click.
 - What I expect to break first: the string table, since Netscape 2's `new Array(a, b, c)` drops its arguments and its split returns undefined, so cdomFramesStart's `table[3].split(...)` would fail there even once the files load; and any numbered table of the shim that is not filled 0, 1, 2 in order (cf_tok and cf_tid start at 1), since Netscape 2 reads a number key below the object's property count as its nth property.
+
+### 16.2 The design
+
+One shim, in JavaScript 1.0, and one inline path, for every browser of the tier (Netscape 2, 3 and 4, IE 3 and 4 alike).
+
+- tools/legacy/frames.js is JavaScript 1.0: tools/legacy/build.mjs gates it with js10 on (tools/legacy/js11.mjs), on the source and on terser's output.
+  What it names of Netscape 3 and later is behind a check, and listed in js11.mjs's FRAMES_ALLOWED: charCodeAt and fromCharCode (cf_hasAt, cf_hasFrom), String and Number (read as window.String and window.Number first: Netscape 2 has no String global), captureEvents, routeEvent and Event (Netscape 4), and the two button hooks, onmousedown and onmouseup, which it only assigns: where the browser fires no such event they are plain properties, cf_pressed never becomes 1, and the cf_LATER rule of section 6 works alone.
+- What changed in the shim for Netscape 2: no Array (its `new Array(a, b)` drops the arguments and nothing has a length), so a list is a `new Object()` filled from 0 in order with its count kept apart (pair lists are a cf_Pairs of n and e); no split or join (they return undefined), so cf_split cuts by indexOf and substring, and the markup is written in pieces of about 1 KB that are joined in pairs (cf_joined); no typeof, so a string is told by its substring, a node by z, a function by its text, and the scroll and the caret by what the browser has (setSelectionRange for selectionStart); no new Function, so the page's export wrappers are a pool of 48 declared functions (cf_x0 to cf_x47) and each import the tier lacks is a declared function of its own; tables keyed by an id from C (nodes, masks, templates, slots, timers) are keyed by a letter and the id, since Netscape 2 reads a number key below the object's count of properties as its nth property; a mask word is read through cf_maskOf, since `undefined | x` dies; a field's kind comes from the tree, not from the field's type (JavaScript 1.1); and the doubles of cd_set and cd_call are read from their two words (cf_f64: the .js1.js memory has no load_f64, which was a bug on Netscape 3 and 4 too).
+- The gate gained what it can check of Netscape 2: a function that returns a value on one path and none on another, and one that returns a value but does not end in a return (both "function does not always return a value." in Netscape 2.02 and 3.04), in every mode; in js10, the names String, Number, captureEvents, routeEvent, Event, onmousedown and onmouseup; and Object only as `new Object()`.
+  Assignment in a condition, nested functions, typeof and void it refused before.
+- No recursion: the serializer (cf_kids and cf_node), cf_textOf and cf_deep walk the tree by its parent links, and an opened element keeps what its children inherit and what closes it on itself (wi, wx, wc).
+- The app document: `node tools/legacy/build.mjs app-doc <page.html> <app.js1.js> <page.app.html>` writes, beside each page, the document of its cdomApp frame: the boot's first part, the string table, the minified shim, the app's .js1.js and the page's own scripts (every script after the boot, gated as JavaScript 1.0 too), all inline, with no `<script src`.
+  The early script (shim/boot-early.js) names it, for every browser of the tier: the build writes the page's name with .app.html for .html into it, and the frame's URL is that and the page's query (`frames.app.html?q`).
+  The app's URL ops read the top window's location as before (cf_op_url_read).
+  The boot's cdomBootFrames no longer writes SCRIPT SRCs: it keeps its arguments and calls cdomBootWait, which starts the shim at once, since the shim and the module are already there.
+  The modern page carries none of it, and no longer grows.
+- The string table: the page's `new Array(base, stamp, "U+2603", text)` cannot be read on Netscape 2, so the app document has four globals instead (cdomLitsBase, cdomLitsStamp, cdomLitsUtf8, cdomLitsText), and the text is assigned in statements of at most LITS_PIECE (4,096) bytes, cut between literals or inside one but never inside an escape.
+  The build owns this, since the build writes the app document; tools/cdlits is unchanged.
+- Blocks: every script is cut at top-level statement boundaries into `<script>` blocks of at most BLOCK_MAX bytes, a constant in tools/legacy/build.mjs, 30,000 for now, since Netscape 2's limit on one inline script is not known yet (a probe on the XP VM measures it).
+  A statement over BLOCK_MAX stops the build, naming it; js1c's largest statement is 5,589 bytes (frames.wasm.js1.js) and 4,892 (uttt.wasm.js1.js), and its data strings are 4,096 characters at most already, so js1c needs no change.
+  A block that holds `</script` or `<!--` stops the build too.
+- cdom.frames.js is still built by tests/build.sh (its size is measured), but no page loads it; demo/uttt no longer builds it.
+- tools/cdp.mjs's ?ns2 flavour of LEGACY=frames is what of Netscape 2 this Chrome can take away: Netscape 4's fields (no selectionStart), no mouse button or key event reaching the page, no charCodeAt or fromCharCode, no type on a field, and no String or Number global.
+
+### 16.3 Results
+
+Measured in headless Chromium (Playwright's, build 1243) on a Linux x86-64 VM, under LEGACY=frames; gzip -9; main is origin/main at fc7093f, built the same way.
+
+| | Predicted | Measured | Verdict |
+| --- | --- | --- | --- |
+| S1, the shim | passes js10 with the hooks allowed; at most 35,000 bytes minified | passes, with FRAMES_ALLOWED; 40,148 bytes, 11,929 gzipped (main 32,033 and 10,381): 25% and 15% larger | refuted (size) |
+| S2, what js10 found in main's frames.js | about 40 sites: Array about 15, typeof about 8, split about 5, new Function 2, join 1 | 49: Array 21, Object 9 (as `new Object()`, which the gate then refused everywhere), typeof 9, split 7, Function 2, join 1; no nested function, no mixed returns | about right |
+| S3, the app documents | frames at most 100,000 and 30,000 gzipped; uttt at most 120,000 and 36,000 | frames.app.html 83,380 and 20,687; uttt.app.html 83,879 and 23,304 | confirmed |
+| S4, the modern pages | each at most main's, 50 to 300 bytes smaller | frames.html 86,791 (main 87,100: 309 smaller), uttt.html 28,975 (main 29,286: 311 smaller); gzipped 27,120 and 11,514 (main 27,240 and 11,619) | confirmed that they do not grow; the shrink is 9 and 11 bytes over the range |
+| S5, blocks | frames 4 to 6, uttt 5 to 7; js1c's largest statement under 30,000 | 3 each (frames 29,352, 29,600 and 24,284 bytes; uttt 29,030, 29,943 and 24,741); largest statements 5,589 and 4,892 | refuted on the count, confirmed on the statements |
+| S6, the recursion | depth about 8 in tests/frames.c and 10 in uttt; about 16 slots a level | the deepest element under the mount is 3 levels in tests/frames.c (48 nodes) and 11 in uttt (333 nodes); see 16.4 | wrong on frames.c, right on uttt |
+| S7, Chrome | the suites pass through the app document, and the ?ns2 page works | they do (16.5) | confirmed |
+| Expected to break first | the string table and the numbered tables | the table (new Array and split) and the timers (cf_tok from 1) were rewritten before any run; nothing else broke in Chrome | not testable in Chrome beyond that |
+
+What the misses say:
+
+- S1: the pool of 48 export wrappers and the 34 declared functions for what the tier lacks are about 7 KB minified of the 8 KB; new Function made each at run time before.
+  A build that generates them would not make the file smaller, only the source; renaming the globals (13's P1) is still the way to a smaller shim.
+- S5: the shim and the module minify better than I took them to; the app documents' 83 KB fits in 3 blocks of 30,000.
+
+### 16.4 The recursion estimate
+
+Netscape 2's value stack is 512 slots of 16 bytes, and a frame holds the function, its arguments and (I take it, unmeasured) its locals and the temporaries of the expression it is in; docs/descent.md measured 2, 3 and 5 slots for frames of 1 and 4 arguments with no locals.
+Before this branch the serializer recursed twice a level: cf_node (the function, 3 arguments, 6 locals: 10) and cf_kids (the function, 3 arguments, 1 local: 5), and each call pushes its arguments (about 4) first, so between 6 slots a level (arguments alone) and about 23 (locals too).
+At uttt's depth of 11 that is 66 to 250 slots, on top of the handler's chain (cdomF.k, cf_onClick, cf_release, cf_draw, cf_html: about 30); at the worst, half the stack for an app of 11 levels, and an app 25 levels deep would overflow.
+cf_textOf recursed once a level (called from inside a call into C, under js1c's own frames), and cf_deep once a level (cd_clone).
+So all three are loops now: the deepest chain of the shim's own calls while drawing a tree 60 deep is 5 (tools/frames.mjs wraps every cf_ function to count it), whatever the depth.
+What is left on the stack is js1c's: its direct functions nest at most its printed "JS depth bound" (7 for frames.wasm, 10 for uttt.wasm), each frame holding its arguments and locals, plus the imports' few frames under them; that is js1c's to bound (docs/js1-compile-design.md).
+
+### 16.5 Tests
+
+- tools/frames.mjs (LEGACY=frames): the early script names frames.app.html; the app document's scripts are plain `<script>` blocks, none with a src, none over BLOCK_MAX (read from build.mjs), holding, in order, the boot, the table, the shim, the module and the page's own script, and the page holds neither the shim nor the module; a string table of 71,340 bytes (the real one joined to itself and a long literal of escapes) goes through app-doc and, run in node, is the page's four values again, cut into 19 statements over 3 blocks; the app frame is frames.app.html with the page's query; a tree 60 deep is written, copied and read with the shim's calls nested 5 deep; and first of all, on ?ns2, the page boots with no charCodeAt, fromCharCode, String or Number, a click is drawn within 500 ms with cf_pressed still 0, a field's change (with an é, through escape) reaches C, and nothing is noted.
+  95 checks pass.
+- tools/uttt.mjs: the webassembly, frames, frames-ns4 and (new) frames-ns2 profiles pass, through uttt.app.html.
+- tools/js11.mjs: the new rules on planted code, and frames.js before and after terser as JavaScript 1.0.
+- tools/js1.mjs, tools/js10.mjs, tests/lits/run.sh, tools/seeds.mjs, LEGACY=1, ie9, ie6 and below tools/legacy.mjs (the tier files: no tier fetches cdom.frames.js or a .js1.js now) and tools/legacyfresh.mjs (which also gains app-doc, and copies shim/boot-early.js, which it lacked on main and so failed there) pass.
+- tools/mutate.py: the mutants of this section are in the PR, each with whether it was caught.
+
+### 16.6 What the VM job must check in Netscape 2.02
+
+1. frames.html and uttt.html?<code>: the frameset is made, and the cdomApp frame requests frames.app.html (uttt.app.html) with the page's query, and nothing else: no script file at all.
+2. No alert: a syntax error alert names a block of the app document by its line, so the line says which part (the boot, the table, the shim, the module, the page's script) broke; LEGACY_PRETTY=1 makes the shim one statement a line for that.
+3. A block of 30,000 bytes parses: if one is refused (an alert, or a part of the document's scripts silently missing: cdomFramesStart or cdomFactory undefined), BLOCK_MAX is the one constant to lower, and the probe's measured limit is the value.
+4. The view shows the heading, the count, the button and the fields (frames.html), the board (uttt); "inc" adds one; a typed name echoes once the field is left; > and < step the game.
+5. What this design assumes of Netscape 2 and Chrome cannot check: that `undefined == null` (the shim compares missing properties with null, as before); that `"" + f` of a function starts "function"; that a number key read on an object with only number keys filled from 0 in order is that key; that `escape` gives a %XX for every byte above 127 (cf_code without charCodeAt); that document.forms[0].elements[k] is the kth control in the markup; that setting document.onmousedown is harmless; that `parent.cdomApp.cdomF.k(n)` from a javascript: URL and an onClick reaches the app frame; and that a document of 83 KB of script in 3 blocks is not over some other limit (atoms, a script's total size, memory).
+6. History: each redraw is one more entry on Netscape 2 (A3), as before.
