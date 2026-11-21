@@ -1267,7 +1267,8 @@ M = [
   ('js1c-byte-sign', 'tools/js1c.c', '"function JLbs(a){return JM[a>>2]<<(24-((a&3)<<3))>>24;}\\n"', '"function JLbs(a){return JM[a>>2]<<(24-((a&3)<<3))>>>24;}\\n"', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-subnormal-bits', 'tools/js1c.c', 'm=x*JP2(1022)*4503599627370496', 'm=x*JP2(1021)*4503599627370496', JS1, 'FAIL every export agrees with wasm'),
   ('js1c-memmove-forwards', 'tools/js1c.c', 'if(d<=s){for(i=0;i<n;i=i+1)JWb', 'if(1){for(i=0;i<n;i=i+1)JWb', JS1, 'FAIL every export agrees with wasm'),
-  ('lits-separator-nul', 'tools/cdlits.c', '    if (k) bstr(&lits, "\\\\x01");', '    if (k) bstr(&lits, "\\\\x00");', LITST, 'FAIL table: the lits file separates by'),  # Netscape 2 and 3 end a string at a NUL
+  ('lits-separator-nul', 'tools/cdlits.c', '    if (k) bstr(&lits, "\\\\001");', '    if (k) bstr(&lits, "\\\\000");', LITST, 'FAIL table: the lits file separates by'),  # Netscape 2 and 3 end a string at a NUL
+  ('lits-escape-hex', 'tools/cdlits.c', 'snprintf(t, sizeof t, "\\\\%03o", c);', 'snprintf(t, sizeof t, "\\\\x%02x", c);', LITST, 'FAIL table: the lits file separates by'),  # Netscape 3 reads a \\x escape greedily
   ('lits-array-literal', 'tools/cdlits.c', '"var cdomLits=new Array(%u,%u,', '"var cdomLits=[%u,%u,', LITST, 'FAIL table: the lits file separates by'),  # Netscape 2 and 3 cannot parse one
   ('lits-separator-in-literal', 'tools/cdlits.c', 'if (memchr(slots[k].bytes.p, 1, slots[k].bytes.n)) die(', 'if (0) die(', LITST, 'FAIL error: the table separator inside a literal'),
   ('js1c-bound-too-low', 'tools/js1c.c', '  int bound = 4 + hmax;', '  int bound = 1 + hmax;', FRAMES, "FAIL js1c: a click, a link and growing the list by 5 reach JavaScript depth"),

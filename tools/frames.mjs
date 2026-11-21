@@ -88,7 +88,7 @@ const port = srv.address().port;
   ok(hidden.length === 2 && /cdom shim:|GENERATED from/.test(hidden[0]) && hidden[1].startsWith('function cdomBootDom'),
     `the inlined shim and the boot's second part are language="JavaScript1.5" scripts, which Netscape 2 to 4 skip: ${JSON.stringify(hidden)}`);
   const table = /\nvar cdomLits=new Array\(\d+,\d+,"[^"]*","([^\n]*)"\);\n/.exec(html);
-  ok(!!table && !table[1].includes('\\x00') && table[1].includes('\\x01'), 'the string table is new Array(...) with entries separated by \\x01: Netscape 2 and 3 cannot parse a literal, and end a string at a NUL');
+  ok(!!table && !table[1].includes('\\x') && !table[1].includes('\\000') && table[1].includes('\\001'), 'the string table is new Array(...) with entries separated by \\001 and no \\x escape: Netscape 2 and 3 cannot parse a literal and end a string at a NUL, and Netscape 3 reads \\x greedily');
 }
 const measure = !!process.env.FRAMES_MEASURE;
 run: try {

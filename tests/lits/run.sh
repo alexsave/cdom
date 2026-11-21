@@ -120,7 +120,7 @@ if bw "$n.linked.wasm" -Oz "$here/table.c" "$here/stub.c" && strip_to "$n.linked
   nodelog "$n" k_table > "$n.node" 2> "$n.node.log" || cat "$n.node.log"
   same "table: every entry comes back byte for byte (three equal, </script>, quote, backslash, newline, U+2028, a digit after a separator)" "$n.expect" "$n.node"
   if [ "$(grep -c '' "$n.lits")" -eq 1 ] && ! grep -q '<' "$n.lits"; then ok "table: one line, no '<' in it"; else bad "table: the lits file is not one line without '<'"; fi
-  if grep -qF '\x01' "$n.lits" && ! grep -qF '\x00' "$n.lits" && grep -q '^var cdomLits=new Array(' "$n.lits"; then ok "table: entries are separated by \\x01, never \\x00 (Netscape 2 and 3 end a string at a NUL), in new Array(...), not an array literal"; else bad "table: the lits file separates by \\x00 or is an array literal"; fi
+   if grep -qF '\001' "$n.lits" && ! grep -qF '\000' "$n.lits" && ! grep -q '\\x' "$n.lits" && grep -q '^var cdomLits=new Array(' "$n.lits"; then ok "table: entries are separated by \\001, never NUL (Netscape 2 and 3 end a string at one), controls are 3-digit octal (Netscape 3 reads \\x greedily), in new Array(...), not an array literal"; else bad "table: the lits file separates by NUL, uses \\x escapes or is an array literal"; fi
   if [ "$(grep -o 'same' "$n.lits" | wc -l | tr -d ' ')" -eq 3 ]; then ok "table: a literal at three sites is three entries"; else bad "table: 'same' is not written three times"; fi
 else bad "table: build or cdlits failed:"; cat "$n.linked.wasm.log" "$n.log" 2> /dev/null; fi
 

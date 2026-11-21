@@ -424,14 +424,14 @@ Steps of the build form:
 8. Write `out.wasm`, then `out.lits`, one line of JavaScript text:
 
    ```
-   var cdomLits=new Array(BASE,STAMP,"☃","every slot's string, in slot order, joined by \x01");
+   var cdomLits=new Array(BASE,STAMP,"☃","every slot's string, in slot order, joined by \001");
    ```
 
    `BASE` is `__start_cd_lits` (0 with no literal).
    A string used at five call sites is written five times.
    Strings are written with `\\`, `\"`, `\x3c` for `<` (so `</script>` and `<!--` cannot end the script), `\xNN` for bytes below 32 and 127, ` ` and ` ` escaped, and every other byte as it is (UTF-8).
-   The separator is always written `\x01`, never `\1`, so a digit after it cannot make an octal escape.
-   It is not `\x00` since Netscape 2 and 3 end a string at a NUL; a literal that holds the byte 0x01 is refused at build time.
+   The separator is always written `\001`: three octal digits end the escape, so a digit after it cannot continue it, and Netscape 3 would read a `\x` escape as every hex digit after it (a control byte and "<" in an entry are written the same way).
+   It is not NUL since Netscape 2 and 3 end a string at a NUL; a literal that holds the byte 0x01 is refused at build time.
    The third element is U+2603 as raw UTF-8: the shim compares it with `"☃"`, and a page read in another encoding fails at start with a message instead of showing wrong text.
    (Any character that is non-ASCII, in the Basic Multilingual Plane and not combining would do; this one is the usual choice for the job.)
 9. Both outputs are written to temporary names and renamed, `out.wasm` last.

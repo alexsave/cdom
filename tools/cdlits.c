@@ -421,15 +421,17 @@ static uint32_t fnv(void) {
   return h ? h : 1;
 }
 
-/* One entry of the table text. The separator is \x01, never \1, so a digit after it cannot make an octal
- * escape; "<" is \x3c so that "</script>" and "<!--" cannot end the script. */
+/* One entry of the table text. A control byte and "<" are written as a three-digit octal escape (\001, \074), which
+ * ends after three digits whatever follows: Netscape 3 reads a \x escape greedily, as every hex digit after it
+ * (docs/frames-design.md, section 15), so "\x01cd" would be one character. "<" is escaped so that "</script>" and
+ * "<!--" cannot end the script. The separator is \001 (not NUL: Netscape 2 and 3 end a string at one). */
 static void js_string(Buf *o, const uint8_t *s, size_t n) {
   char t[8];
   for (size_t i = 0; i < n; i++) {
     uint8_t c = s[i];
     if (c == '\\') bstr(o, "\\\\");
     else if (c == '"') bstr(o, "\\\"");
-    else if (c == '<' || c < 32 || c == 127) { snprintf(t, sizeof t, "\\x%02x", c); bstr(o, t); }
+    else if (c == '<' || c < 32 || c == 127) { snprintf(t, sizeof t, "\\%03o", c); bstr(o, t); }
     else if (c == 0xe2 && i + 2 < n && s[i + 1] == 0x80 && (s[i + 2] == 0xa8 || s[i + 2] == 0xa9)) {
       bstr(o, s[i + 2] == 0xa8 ? "\\u2028" : "\\u2029"); /* line terminators end a JS string literal */
       i += 2;
@@ -475,8 +477,8 @@ static void do_build(const char *outw, const char *outl) {
   snprintf(t, sizeof t, "var cdomLits=new Array(%u,%u,\"\xe2\x98\x83\",\"", have_lits ? lits_start : 0, stamp);
   bstr(&lits, t);
   for (size_t k = 0; k < nslots; k++) {
-    if (k) bstr(&lits, "\\x01");
-    /* The separator is \x01, not \x00: Netscape 2 and 3 end a string at a NUL (docs/frames-design.md, section 15). */
+    if (k) bstr(&lits, "\\001");
+    /* The separator is 0x01, not 0: Netscape 2 and 3 end a string at a NUL (docs/frames-design.md, section 15). */
     if (memchr(slots[k].bytes.p, 1, slots[k].bytes.n)) die("a string literal holds the byte 0x01, which separates the table's entries");
     js_string(&lits, slots[k].bytes.p, slots[k].bytes.n);
   }
