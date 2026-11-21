@@ -17,7 +17,7 @@ second page fetches few new ones), never dithered; "cube" in --stats is the fixe
 tools/gen_probe_ns2_fb.py for comparison.  Usage: python3 tools/gen_ns2_paint.py [--stats] [--colours N] [--widths]
   --stats    prints the table of tags, links and bytes of every variant (and of the cube palette and of rows unmerged), writes nothing
   --colours  the palette's size (default 256)
-  --widths   also writes tests/out/paint/w/w<width>.html: bars of 8 pixels, 800 tall, at widths 572 to 600, for the scroll-safe width
+  --widths   also writes tests/out/paint/w/w<width>.html: bars of 8 pixels, 800 tall, at widths 572 to 600, for the scroll-safe width (and w<width>.ref.png)
 There is no randomness here: the colour cut and the mapping are deterministic."""
 import os, struct, sys
 import numpy as np
@@ -186,6 +186,8 @@ def write_widths():
         for r in range(100):            # 100 rows of 8 pixels, the bars shifted by a colour each row: a wrapped row shows anywhere
             row = "".join("<IMG SRC=%02X.gif WIDTH=%d HEIGHT=8>" % ((x // 8 + r) % 4, min(8, w - x)) for x in range(0, w, 8))
             rows.append(row + "<BR>\n")
+        ref = np.array([[cols[(x // 8 + y // 8) % 4] for x in range(w)] for y in range(800)], dtype=np.uint8)
+        Image.fromarray(ref, "RGB").save(os.path.join(d, "w%d.ref.png" % w))
         with open(os.path.join(d, "w%d.html" % w), "w") as f:
             f.write('<HTML><HEAD><TITLE>w%d</TITLE></HEAD>\n<BODY BGCOLOR="#%02X%02X%02X">\n%s<IMG SRC=end.gif WIDTH=1 HEIGHT=1>\n</BODY></HTML>\n'
                     % ((w,) + PAPER + ("".join(rows),)))
