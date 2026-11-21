@@ -234,6 +234,34 @@ run: try {
       await click('#inc');
       ok((await textOf('#countp')) === 'count 1', `and a click there reaches C: ${JSON.stringify(await textOf('#countp'))}`);
     }
+    // The caret on IE 4 and Netscape 4, the browsers with onkeyup (tools/cdp.mjs's ?ie4 and ?ns4 flavours): typing in
+    // the middle of the name field, whose input C answers by changing the echo. IE 4 reads the caret from
+    // document.selection and redraws on each key; Netscape 4 cannot read it, and draws once the field is left.
+    const key = (type, k, code, vk, text) => b.send('Input.dispatchKeyEvent', { type, key: k, code, windowsVirtualKeyCode: vk, text });
+    const press = async (k, code, vk, text) => { await key(text ? 'keyDown' : 'rawKeyDown', k, code, vk, text); await key('keyUp', k, code, vk); await sleep(40); };
+    for (const flavour of ['ie4', 'ns4']) {
+      await b.send('Page.navigate', { url: `http://127.0.0.1:${port}/frames.html?${flavour}` });
+      if (!(await until('!!window.READY && window.cdomF && cdomF.draws > 0'))) { ok(false, `${flavour}: booted`); continue; }
+      const el = field('name');
+      ok(await E(`typeof ${el}.selectionStart === "undefined" && !${el}.setSelectionRange && ${flavour === 'ie4' ? '' : '!'}(!!${el}.createTextRange && !!${F}.selection)`),
+        `${flavour}: the field has no selectionStart${flavour === 'ie4' ? ', and has createTextRange and document.selection' : ', createTextRange or document.selection'}`);
+      await click('#name');
+      await press('Home', 'Home', 36); await press('ArrowRight', 'ArrowRight', 39); await press('ArrowRight', 'ArrowRight', 39);
+      const d = await draws();
+      await press('X', 'KeyX', 88, 'X');
+      if (flavour === 'ie4') await until(`cdomF.draws > ${d}`);
+      await press('Y', 'KeyY', 89, 'Y');
+      if (flavour === 'ie4') await until(`cdomF.draws > ${d + 1}`);
+      const typed = await E(`${field('name')}.value`), drew = (await draws()) - d;
+      ok(typed === 'stXYart', `${flavour}: typing in the middle of a field C answers goes on at the caret: ${JSON.stringify(typed)} (${drew} draws)`);
+      if (flavour === 'ie4') ok(drew === 2 && (await textOf('#echop')) === 'echo stXYart', `ie4: a draw a key, with the echo: ${drew}, ${JSON.stringify(await textOf('#echop'))}`);
+      else {
+        ok(drew === 0, `ns4: no draw while a key is typed in the focused field: ${drew}`);
+        await clickAt(600, 700);
+        await until(`cdomF.draws > ${d}`);
+        ok((await textOf('#echop')) === 'echo stXYart', `ns4: drawn once the field is left: ${JSON.stringify(await textOf('#echop'))}`);
+      }
+    }
     if (measure) {
       // History: what each way of rewriting the frame does to the top's history.length, 20 rewrites each, in a page
       // of its own (the same frameset, under LEGACY=frames).
