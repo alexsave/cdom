@@ -10,7 +10,11 @@ function mark(name, v) {
   n = n + 1;
   document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
 }
-var T0 = new Date().getTime();
+function nowms() {
+  var d = new Date();
+  return d.getTime();
+}
+var T0 = nowms();
 var cnt = 0;
 var last = 0;
 
@@ -33086,7 +33090,7 @@ last = 20;
 <SCRIPT LANGUAGE="JavaScript">
 mark("cnt", cnt);
 mark("last", last);
-mark("ms", new Date().getTime() - T0);
+mark("ms", nowms() - T0);
 
 </SCRIPT>
 </BODY>

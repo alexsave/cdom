@@ -10,7 +10,11 @@ function mark(name, v) {
   n = n + 1;
   document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
 }
-var T0 = new Date().getTime();
+function nowms() {
+  var d = new Date();
+  return d.getTime();
+}
+var T0 = nowms();
 
 </SCRIPT>
 </HEAD>
@@ -393,7 +397,7 @@ function Jf69(){var a,b,c,d,e,f,g,R=0,B=0;if(JQ){JQ=0;R=JS[JP-2];}else{a=Ja0;}if
 <SCRIPT LANGUAGE="JavaScript">
 mark("blocks", 6);
 mark("bytes", 150542);
-mark("ms", new Date().getTime() - T0);
+mark("ms", nowms() - T0);
 
 </SCRIPT>
 </BODY>

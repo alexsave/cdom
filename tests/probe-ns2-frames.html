@@ -31,7 +31,6 @@ function mk(name, v) {
 }
 function draw(tag, extra) {
   var d = parent.cdomView.document;
-  var t0 = new Date().getTime();
   d.open("text/html", "replace");
   var b = body5k(tag);
   d.write(b);

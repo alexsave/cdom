@@ -4,6 +4,7 @@ Run: python3 tools/gen_probe_ns2_limits.py        (writes every page; needs demo
 Pages (JavaScript 1.0 only, one test per <script> block so a block that fails kills only itself; flags are set at the end
 of a block and reported by 1x1 images written by the last block, /mark/<query>/p-<n>-<name>-<value>, which the server's log holds):
   probe-ns2-stmt.html   blocks of 2K .. 128K of statements `var a123=123;`, ascending
+  probe-ns2-stmt<K>.html, probe-ns2-str<K>.html  the same with one block of K KB per page (the all-in-one pages are slow)
   probe-ns2-str.html    blocks of one string literal of 1K .. 128K, ascending; the length the block saw is reported
   probe-ns2-many<N>.html  N blocks of SIZE bytes of statements (a counter in every block says how many ran)
   probe-ns2-fns.html    a function and globals defined in one block, used in the next
@@ -27,7 +28,11 @@ function mark(name, v) {
   n = n + 1;
   document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
 }
-var T0 = new Date().getTime();
+function nowms() {
+  var d = new Date();
+  return d.getTime();
+}
+var T0 = nowms();
 %(init)s
 </SCRIPT>
 </HEAD>
@@ -55,30 +60,28 @@ def page(name, init, blocks, tail):
     return HEAD % {"name": name, "init": init} + "".join(blocks) + block(tail) + "</BODY>\n</HTML>\n"
 
 
-def stmt():
-    sizes = [2, 4, 8, 16, 32, 64, 128]
+def stmt(sizes=(2, 4, 8, 16, 32, 64, 128), name="stmt"):
     init = "".join("var ok%d = 0;\n" % k for k in sizes)
     blocks = [block(stmts(k * 1024, "s%d" % k) + "ok%d = 1;" % k) for k in sizes]
-    tail = "".join('mark("ok%d", ok%d);\n' % (k, k) for k in sizes) + 'mark("ms", new Date().getTime() - T0);\n'
-    return page("stmt", init, blocks, tail)
+    tail = "".join('mark("ok%d", ok%d);\n' % (k, k) for k in sizes) + 'mark("ms", nowms() - T0);\n'
+    return page(name, init, blocks, tail)
 
 
-def string():
-    sizes = [1, 2, 4, 8, 16, 32, 64, 128]
+def string(sizes=(1, 2, 4, 8, 16, 32, 64, 128), name="str"):
     init = "".join("var ok%d = 0;\nvar len%d = 0;\n" % (k, k) for k in sizes)
     blocks = []
     for k in sizes:
         lit = ("0123456789abcdef" * (k * 64))[: k * 1024]
         blocks.append(block('var s%d = "%s";\nlen%d = s%d.length;\nok%d = 1;' % (k, lit, k, k, k)))
     tail = "".join('mark("ok%d", ok%d);\nmark("len%d", len%d);\n' % (k, k, k, k) for k in sizes)
-    tail += 'mark("ms", new Date().getTime() - T0);\n'
-    return page("str", init, blocks, tail)
+    tail += 'mark("ms", nowms() - T0);\n'
+    return page(name, init, blocks, tail)
 
 
 def many(count, size):
     init = "var cnt = 0;\nvar last = 0;\n"
     blocks = [block(stmts(size, "m%d" % k) + "cnt = cnt + 1;\nlast = %d;" % k) for k in range(1, count + 1)]
-    tail = 'mark("cnt", cnt);\nmark("last", last);\nmark("ms", new Date().getTime() - T0);\n'
+    tail = 'mark("cnt", cnt);\nmark("last", last);\nmark("ms", nowms() - T0);\n'
     return page("many%d" % count, init, blocks, tail)
 
 
@@ -124,7 +127,6 @@ function mk(name, v) {
 }
 function draw(tag, extra) {
   var d = parent.cdomView.document;
-  var t0 = new Date().getTime();
   d.open("text/html", "replace");
   var b = body5k(tag);
   d.write(b);
@@ -191,7 +193,7 @@ def big():
         blocks.append(block("\n".join(chunk)))
         total += size
     init = ""
-    tail = 'mark("blocks", %d);\nmark("bytes", %d);\nmark("ms", new Date().getTime() - T0);\n' % (len(blocks), total)
+    tail = 'mark("blocks", %d);\nmark("bytes", %d);\nmark("ms", nowms() - T0);\n' % (len(blocks), total)
     return page("big", init, blocks, tail)
 
 
@@ -204,6 +206,9 @@ def write(name, text):
 if __name__ == "__main__":
     write("probe-ns2-stmt.html", stmt())
     write("probe-ns2-str.html", string())
+    for k in (8, 16, 32, 64, 128, 256, 512, 1024):  # one block per page: the all-in-one pages are slow to load (docs/descent.md)
+        write("probe-ns2-stmt%d.html" % k, stmt((k,), "stmt%d" % k))
+        write("probe-ns2-str%d.html" % k, string((k,), "str%d" % k))
     for c in (10, 20, 40):
         write("probe-ns2-many%d.html" % c, many(c, 30000))
     write("probe-ns2-fns.html", fns())

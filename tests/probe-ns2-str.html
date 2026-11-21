@@ -10,7 +10,11 @@ function mark(name, v) {
   n = n + 1;
   document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
 }
-var T0 = new Date().getTime();
+function nowms() {
+  var d = new Date();
+  return d.getTime();
+}
+var T0 = nowms();
 var ok1 = 0;
 var len1 = 0;
 var ok2 = 0;
@@ -89,7 +93,7 @@ mark("ok64", ok64);
 mark("len64", len64);
 mark("ok128", ok128);
 mark("len128", len128);
-mark("ms", new Date().getTime() - T0);
+mark("ms", nowms() - T0);
 
 </SCRIPT>
 </BODY>
