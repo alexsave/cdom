@@ -1,0 +1,460 @@
+<HTML>
+<HEAD>
+<TITLE>cdom probe-js1b</TITLE>
+<SCRIPT LANGUAGE="JavaScript">
+var n = 0;
+var TAG = "" + location.search;
+TAG = TAG.substring(1, TAG.length);
+if (TAG == "") { TAG = "x"; }
+function mark(name, v) {
+  n = n + 1;
+  document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
+}
+var late_n = 0;
+function late(name, v) {
+  late_n = late_n + 1;
+  var u = '/mark/' + TAG + '/p-L' + late_n + '-' + name + '-' + escape("" + v);
+  if (window.Image) {
+    var im = new Image();
+    im.src = u;
+  } else {
+    document.write('<IMG SRC="' + u + '" WIDTH=1 HEIGHT=1>');
+  }
+}
+</SCRIPT>
+</HEAD>
+<BODY>
+<H3>cdom probe-js1b</H3>
+<P>Reports to /mark/ as it loads.
+<FORM NAME="f0"><INPUT TYPE=text NAME="t0" VALUE="v0"></FORM>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ua", "start");
+
+mark("ua", navigator.userAgent);
+mark("ua", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("splitVarLen", "start");
+var s = "a,b,c"; var p = s.split(",");
+mark("splitVarLen", p.length);
+mark("splitVarLen", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("splitVar0", "start");
+var s = "a,b,c"; var p = s.split(",");
+mark("splitVar0", p[0]);
+mark("splitVar0", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("splitVar1", "start");
+var s = "a,b,c"; var p = s.split(",");
+mark("splitVar1", p[1]);
+mark("splitVar1", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("splitVar2", "start");
+var s = "a,b,c"; var p = s.split(",");
+mark("splitVar2", p[2]);
+mark("splitVar2", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("splitVarStr", "start");
+var s = "a,b,c"; var p = s.split(",");
+mark("splitVarStr", "" + p);
+mark("splitVarStr", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("splitLitVar0", "start");
+var p = "a,b,c".split(",");
+mark("splitLitVar0", p[0]);
+mark("splitLitVar0", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("splitLitLen", "start");
+
+mark("splitLitLen", "a,b,c".split(",").length);
+mark("splitLitLen", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("litLength", "start");
+
+mark("litLength", "abc".length);
+mark("litLength", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("litCharAt", "start");
+
+mark("litCharAt", "abc".charAt(1));
+mark("litCharAt", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("litIndexOf", "start");
+
+mark("litIndexOf", "abc".indexOf("c"));
+mark("litIndexOf", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newArray3Len", "start");
+var a = new Array(3);
+mark("newArray3Len", a.length);
+mark("newArray3Len", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newArray3El0", "start");
+var a = new Array(3);
+mark("newArray3El0", a[0]);
+mark("newArray3El0", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newArray3Grow", "start");
+var a = new Array(3); a[5] = 1;
+mark("newArray3Grow", a.length);
+mark("newArray3Grow", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newArray3Str", "start");
+var a = new Array(3);
+mark("newArray3Str", "" + a);
+mark("newArray3Str", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newArrayEmptyLen", "start");
+var a = new Array();
+mark("newArrayEmptyLen", a.length);
+mark("newArrayEmptyLen", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newArrayEmptyGrow", "start");
+var a = new Array(); a[0] = 1; a[1] = 2;
+mark("newArrayEmptyGrow", a.length);
+mark("newArrayEmptyGrow", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newArrayList1", "start");
+var a = new Array(1,2,3);
+mark("newArrayList1", a[1]);
+mark("newArrayList1", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newArrayListLen", "start");
+var a = new Array(1,2,3);
+mark("newArrayListLen", a.length);
+mark("newArrayListLen", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("newArrayListStr", "start");
+var a = new Array(1,2,3);
+mark("newArrayListStr", "" + a);
+mark("newArrayListStr", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("chop", "start");
+var s = "hello";
+mark("chop", s.chop());
+mark("chop", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("chopAfter", "start");
+var s = "hello"; var c = s.chop();
+mark("chopAfter", s);
+mark("chopAfter", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("match", "start");
+var s = "hello";
+mark("match", s.match("ell"));
+mark("match", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("matchMiss", "start");
+var s = "hello";
+mark("matchMiss", s.match("zz"));
+mark("matchMiss", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("substrVar", "start");
+var s = "hello";
+mark("substrVar", s.substr(1,2));
+mark("substrVar", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ifAssign05", "start");
+var x = 0; var y = 5; var r = "none"; if (x = y) { r = "assigned-true"; } else { r = "compared-false"; }
+mark("ifAssign05", r + " x=" + x);
+mark("ifAssign05", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("ifAssign00", "start");
+var x = 0; var y = 0; var r = "none"; if (x = y) { r = "compared-true"; } else { r = "assigned-false"; }
+mark("ifAssign00", r + " x=" + x);
+mark("ifAssign00", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("whileAssign03", "start");
+var x = 0; var y = 3; var c = 0; while (x = y) { c = c + 1; if (c > 5) { break; } }
+mark("whileAssign03", "c=" + c + " x=" + x);
+mark("whileAssign03", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("whileAssign00", "start");
+var x = 0; var y = 0; var c = 0; while (x = y) { c = c + 1; if (c > 5) { break; } }
+mark("whileAssign00", "c=" + c + " x=" + x);
+mark("whileAssign00", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_50", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_50", r0(50) == 0);
+mark("depth0_50", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_50", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_50", r1(50));
+mark("depth1_50", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_50", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_50", r3(50,1,2,3) == 0);
+mark("depth3_50", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_100", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_100", r0(100) == 0);
+mark("depth0_100", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_100", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_100", r1(100));
+mark("depth1_100", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_100", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_100", r3(100,1,2,3) == 0);
+mark("depth3_100", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_120", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_120", r0(120) == 0);
+mark("depth0_120", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_120", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_120", r1(120));
+mark("depth1_120", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_120", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_120", r3(120,1,2,3) == 0);
+mark("depth3_120", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_140", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_140", r0(140) == 0);
+mark("depth0_140", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_140", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_140", r1(140));
+mark("depth1_140", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_140", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_140", r3(140,1,2,3) == 0);
+mark("depth3_140", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_160", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_160", r0(160) == 0);
+mark("depth0_160", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_160", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_160", r1(160));
+mark("depth1_160", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_160", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_160", r3(160,1,2,3) == 0);
+mark("depth3_160", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_180", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_180", r0(180) == 0);
+mark("depth0_180", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_180", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_180", r1(180));
+mark("depth1_180", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_180", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_180", r3(180,1,2,3) == 0);
+mark("depth3_180", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_200", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_200", r0(200) == 0);
+mark("depth0_200", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_200", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_200", r1(200));
+mark("depth1_200", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_200", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_200", r3(200,1,2,3) == 0);
+mark("depth3_200", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_225", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_225", r0(225) == 0);
+mark("depth0_225", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_225", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_225", r1(225));
+mark("depth1_225", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_225", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_225", r3(225,1,2,3) == 0);
+mark("depth3_225", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_250", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_250", r0(250) == 0);
+mark("depth0_250", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_250", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_250", r1(250));
+mark("depth1_250", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_250", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_250", r3(250,1,2,3) == 0);
+mark("depth3_250", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_275", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_275", r0(275) == 0);
+mark("depth0_275", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_275", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_275", r1(275));
+mark("depth1_275", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_275", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_275", r3(275,1,2,3) == 0);
+mark("depth3_275", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_300", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_300", r0(300) == 0);
+mark("depth0_300", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_300", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_300", r1(300));
+mark("depth1_300", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_300", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_300", r3(300,1,2,3) == 0);
+mark("depth3_300", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_400", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_400", r0(400) == 0);
+mark("depth0_400", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_400", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_400", r1(400));
+mark("depth1_400", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_400", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_400", r3(400,1,2,3) == 0);
+mark("depth3_400", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_512", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_512", r0(512) == 0);
+mark("depth0_512", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_512", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_512", r1(512));
+mark("depth1_512", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_512", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_512", r3(512,1,2,3) == 0);
+mark("depth3_512", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth0_600", "start");
+function r0(n){ if (n == 0) { return 0; } return r0(n-1); }
+mark("depth0_600", r0(600) == 0);
+mark("depth0_600", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth1_600", "start");
+function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }
+mark("depth1_600", r1(600));
+mark("depth1_600", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("depth3_600", "start");
+function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }
+mark("depth3_600", r3(600,1,2,3) == 0);
+mark("depth3_600", "ok");
+</SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+mark("done", "end");
+</SCRIPT>
+</BODY>
+</HTML>

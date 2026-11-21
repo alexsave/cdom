@@ -12,6 +12,14 @@ Run: python3 tools/gen_probe_js1.py > tests/probe-js1.html
      python3 tools/gen_probe_js1.py speed speedLoop > tests/probe-speed-loop.html   (one speed test alone, one page each: the
      marks of a page reach the server only when its scripts end in Netscape 2, so the wall time of a page, from its GET
      to its marks, is the measure, and the in-engine ms is Date's, which Netscape 2 gets wrong)
+     python3 tools/gen_probe_js1.py b > tests/probe-js1b.html   (the second probe: the questions netscape.exe raised, see
+     docs/descent.md "The second probe"; the recursion depth grid comes last, so an engine that stops on a stack overflow
+     has reported everything else first)
+     python3 tools/gen_probe_js1.py b part 0 15 > tests/probe-js1b-part0.html   (15 tests from the first: for IE 4)
+     python3 tools/gen_probe_js1.py c > tests/probe-js1c.html   (its follow-up: are the methods that return undefined
+     present at all, and the depth limits to a step of 2 to 5)
+     python3 tools/gen_probe_js1.py nested > tests/probe-nested.html   (a function inside a function, alone: the alert's text)
+     python3 tools/gen_probe_js1.py events > tests/probe-events.html   (which event handlers fire: driven by hand)
 Written for JS 1.0: no typeof, no try, no literals, no function expressions in the helper block."""
 
 import sys
@@ -203,6 +211,102 @@ TESTS = [
     ("innerWidth", "", "window.innerWidth"),
     ("documentBgColor", "", "document.bgColor"),
 ]
+# The second probe (tests/probe-js1b.html): what reading netscape.exe left open.  Double quotes throughout (the first
+# probe's string tests used single quotes).
+DEPTHS = [50, 100, 120, 140, 160, 180, 200, 225, 250, 275, 300, 400, 512, 600]
+RFUNCS = [
+    ("r0", "function r0(n){ if (n == 0) { return 0; } return r0(n-1); }", "r0(%d) == 0"),
+    ("r1", "function r1(n){ if (n == 0) { return 0; } return 1 + r1(n-1); }", "r1(%d)"),
+    ("r3", "function r3(n,a,b,c){ if (n == 0) { return 0; } return r3(n-1,a,b,c); }", "r3(%d,1,2,3) == 0"),
+]
+SPLIT = 'var s = "a,b,c"; var p = s.split(",");'
+HELLO = 'var s = "hello";'
+TESTS_B = [
+    ("ua", "", "navigator.userAgent"),
+    # split on a variable, and its parts one by one (the array may lack a length even if split works)
+    ("splitVarLen", SPLIT, "p.length"),
+    ("splitVar0", SPLIT, "p[0]"),
+    ("splitVar1", SPLIT, "p[1]"),
+    ("splitVar2", SPLIT, "p[2]"),
+    ("splitVarStr", SPLIT, '"" + p'),
+    ("splitLitVar0", 'var p = "a,b,c".split(",");', "p[0]"),
+    ("splitLitLen", "", '"a,b,c".split(",").length'),
+    # methods on a string literal at all
+    ("litLength", "", '"abc".length'),
+    ("litCharAt", "", '"abc".charAt(1)'),
+    ("litIndexOf", "", '"abc".indexOf("c")'),
+    # new Array
+    ("newArray3Len", "var a = new Array(3);", "a.length"),
+    ("newArray3El0", "var a = new Array(3);", "a[0]"),
+    ("newArray3Grow", "var a = new Array(3); a[5] = 1;", "a.length"),
+    ("newArray3Str", "var a = new Array(3);", '"" + a'),
+    ("newArrayEmptyLen", "var a = new Array();", "a.length"),
+    ("newArrayEmptyGrow", "var a = new Array(); a[0] = 1; a[1] = 2;", "a.length"),
+    ("newArrayList1", "var a = new Array(1,2,3);", "a[1]"),
+    ("newArrayListLen", "var a = new Array(1,2,3);", "a.length"),
+    ("newArrayListStr", "var a = new Array(1,2,3);", '"" + a'),
+    # chop, match, substr on a variable
+    ("chop", HELLO, "s.chop()"),
+    ("chopAfter", HELLO + " var c = s.chop();", "s"),
+    ("match", HELLO, 's.match("ell")'),
+    ("matchMiss", HELLO, 's.match("zz")'),
+    ("substrVar", HELLO, "s.substr(1,2)"),
+    # an assignment written as a condition: assigned (x becomes y) or compared (x stays)?
+    ("ifAssign05", 'var x = 0; var y = 5; var r = "none"; if (x = y) { r = "assigned-true"; } else { r = "compared-false"; }', 'r + " x=" + x'),
+    ("ifAssign00", 'var x = 0; var y = 0; var r = "none"; if (x = y) { r = "compared-true"; } else { r = "assigned-false"; }', 'r + " x=" + x'),
+    ("whileAssign03", "var x = 0; var y = 3; var c = 0; while (x = y) { c = c + 1; if (c > 5) { break; } }", '"c=" + c + " x=" + x'),
+    ("whileAssign00", "var x = 0; var y = 0; var c = 0; while (x = y) { c = c + 1; if (c > 5) { break; } }", '"c=" + c + " x=" + x'),
+] + [("depth%s_%d" % (f[1:], d), defs, expr % d) for d in DEPTHS for (f, defs, expr) in RFUNCS]
+
+# The second probe's follow-up (tests/probe-js1c.html), after Netscape 2's first run of probe-js1b: is a method that
+# returns undefined there (chop, match, substr, split) present at all, and the depth limits to within a step of 2 to 5.
+STRV = 'var s = "a,b,c";'
+TESTS_C = [
+    ("ua", "", "navigator.userAgent"),
+    ("charAtProp", STRV, '"" + s.charAt'),
+    ("splitProp", STRV, '"" + s.split'),
+    ("chopProp", STRV, '"" + s.chop'),
+    ("matchProp", STRV, '"" + s.match'),
+    ("substrProp", STRV, '"" + s.substr'),
+    ("missingProp", STRV, '"" + s.zzz'),
+    ("missingCall", STRV, "s.zzz(1)"),
+    ("splitResult", STRV, '"" + s.split(",")'),
+    ("splitStrObj1", 'var s = new String("a,b,c"); var p = s.split(",");', "p[1]"),
+    ("strObjCharAt", 'var s = new String("a,b,c");', "s.charAt(2)"),
+] + [("depth0_%d" % d, RFUNCS[0][1], RFUNCS[0][2] % d) for d in range(252, 275, 2)] \
+  + [("depth1_%d" % d, RFUNCS[1][1], RFUNCS[1][2] % d) for d in range(162, 179, 2)] \
+  + [("depth3_%d" % d, RFUNCS[2][1], RFUNCS[2][2] % d) for d in range(55, 100, 5)]
+
+NESTED = [("nestedFunc", "function f(){ function g(){ return 1; } return g(); }", "f()")]
+
+EVENTS = """<HTML>
+<HEAD>
+<TITLE>cdom probe-events</TITLE>
+<SCRIPT LANGUAGE="JavaScript">
+var TAG = "" + location.search;
+TAG = TAG.substring(1, TAG.length);
+if (TAG == "") { TAG = "x"; }
+function ev(s) {
+  document.forms[0].log.value = document.forms[0].log.value + s + " ";
+}
+function report() {
+  location.href = "/mark/" + TAG + "/p-1-events-" + escape(document.forms[0].log.value);
+}
+</SCRIPT>
+</HEAD>
+<BODY>
+<H3>cdom probe-events</H3>
+<FORM NAME="f0">
+<INPUT TYPE=text NAME="log" SIZE=60 VALUE=""><BR>
+<INPUT TYPE=button NAME="b" VALUE="press me" onClick="ev('click')" onMouseDown="ev('mousedown')" onMouseUp="ev('mouseup')"><BR>
+<INPUT TYPE=text NAME="k" SIZE=20 VALUE="" onKeyDown="ev('keydown')" onKeyPress="ev('keypress')" onKeyUp="ev('keyup')" onChange="ev('change')"><BR>
+<INPUT TYPE=button NAME="r" VALUE="report" onClick="report()">
+</FORM>
+<P><A HREF="#top" onMouseOver="ev('over'); return true" onMouseOut="ev('out')">hover link</A>
+</BODY>
+</HTML>
+"""
+
 
 # Speed: ms from T().  A start mark, the ms, an ok mark.
 TDEF = "function T(){ var d = new Date(); return d.getTime(); } "
@@ -230,6 +334,21 @@ def main():
         # part <k> <size>: tests k*size .. (k+1)*size, for an engine that hangs on one block of the whole page
         k, size = int(sys.argv[2]), int(sys.argv[3])
         out.append("".join(block(*t) for t in TESTS[k * size:(k + 1) * size] if not t[0].startswith("recurse")))
+        out.append('<SCRIPT LANGUAGE="JavaScript">\nmark("done", "end");\n</SCRIPT>\n</BODY>\n</HTML>\n')
+        print("".join(out), end="")
+        return
+    if sys.argv[1:2] == ["events"]:
+        print(EVENTS, end="")
+        return
+    pages = {"b": ("b", TESTS_B), "c": ("c", TESTS_C), "nested": ("-nested", NESTED)}
+    if sys.argv[1:2] and sys.argv[1] in pages:
+        suffix, tests = pages[sys.argv[1]]
+        if sys.argv[2:3] == ["part"]:
+            # b part <k> <size>: for IE 4, whose page stalls loading after some tens of marks
+            k, size = int(sys.argv[3]), int(sys.argv[4])
+            tests = tests[k * size:(k + 1) * size]
+        out[0] = out[0].replace("probe-js1</", "probe-js1%s</" % suffix)
+        out.append("".join(block(*t) for t in tests))
         out.append('<SCRIPT LANGUAGE="JavaScript">\nmark("done", "end");\n</SCRIPT>\n</BODY>\n</HTML>\n')
         print("".join(out), end="")
         return
