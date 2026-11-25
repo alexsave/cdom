@@ -417,8 +417,8 @@ def convert(path):
     return unit, False
 
 
-def verify(path):
-    _, lines = read_lines(path)
+def verify(root, path):
+    _, lines = read_lines(os.path.join(root, path))
     _, recs = run(lines, lang_for(path), None)
     problems = []
     tabs = [r.lineno for r in recs if r.kind == 'code' and r.tab]
@@ -444,7 +444,7 @@ def main(argv):
     if mode == 'verify':
         problems = []
         for p in paths:
-            problems += verify(os.path.join(root, p) if not os.path.isabs(p) else p)
+            problems += verify(root, p)
         for line in problems:
             print(line)
         print('reindent4 --verify: %d files in scope, %d problems' % (len(paths), len(problems)))
