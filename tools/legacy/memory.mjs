@@ -142,136 +142,136 @@ const stmts = (src) => parseSync(src, { sourceType: 'script', configFile: false,
 // whose own value is dropped. A typed-array store evaluates to the value stored, before conversion, which no
 // rewrite below keeps, so a store used as a value is refused.
 function unused(p) {
-  const up = p.parentPath;
-  if (up.isExpressionStatement()) return true;
-  if (up.isSequenceExpression()) {
-    const all = up.node.expressions;
-    return all[all.length - 1] !== p.node || unused(up);
-  }
-  return up.isForStatement() && p.key !== 'test';
+    const up = p.parentPath;
+    if (up.isExpressionStatement()) return true;
+    if (up.isSequenceExpression()) {
+        const all = up.node.expressions;
+        return all[all.length - 1] !== p.node || unused(up);
+    }
+    return up.isForStatement() && p.key !== 'test';
 }
 
 // head: wasm2js output with its import lines cut (build.mjs wasm2js). words: the names words.js declares, none of
 // which may already be in head. Returns the rewritten source.
 export function memoryWords(head, words) {
-  const ast = parseSync(head, { sourceType: 'script', configFile: false, babelrc: false });
-  const used = new Set();
-  traverse(ast, { Identifier(p) { if (p.isReferencedIdentifier() || p.isBindingIdentifier()) used.add(p.node.name); } });
-  const clash = words.filter((n) => used.has(n));
-  if (clash.length) throw new Error(`memory pass: words.js names already in the wasm2js output: ${clash.join(' ')}`);
+    const ast = parseSync(head, { sourceType: 'script', configFile: false, babelrc: false });
+    const used = new Set();
+    traverse(ast, { Identifier(p) { if (p.isReferencedIdentifier() || p.isBindingIdentifier()) used.add(p.node.name); } });
+    const clash = words.filter((n) => used.has(n));
+    if (clash.length) throw new Error(`memory pass: words.js names already in the wasm2js output: ${clash.join(' ')}`);
 
-  const fail = (p, why) => {
-    throw new Error(`memory pass: ${why}: ${generate(p.node).code.slice(0, 200)}`);
-  };
-  let rewritten = 0, helpers = 0;
-  // A statement wasm2js writes around memory: replaced or dropped as KNOWN says, or the declaration of the memory
-  // itself (asmFunc's `var buffer = new ArrayBuffer(bytes)`, which becomes words_init(bytes)).
-  function statement(p) {
-    if (p.isVariableDeclaration() && p.node.declarations.length === 1) {
-      const d = p.node.declarations[0];
-      if (t.isIdentifier(d.id, { name: 'buffer' }) && t.isNewExpression(d.init) && t.isIdentifier(d.init.callee, { name: 'ArrayBuffer' })
-        && d.init.arguments.length === 1 && t.isNumericLiteral(d.init.arguments[0])) {
-        p.replaceWith(t.expressionStatement(t.callExpression(t.identifier('words_init'), [d.init.arguments[0]])));
-        helpers++;
-        return;
-      }
-    }
-    const to = known.get(tokens(head.slice(p.node.start, p.node.end)));
-    if (to === undefined) return;
-    helpers++;
-    if (to) p.replaceWithMultiple(stmts(to)); else p.remove();
-  }
-  traverse(ast, {
-    Program(p) { for (const s of p.get('body')) statement(s); },
-    FunctionDeclaration(p) {
-      if (p.node.id.name !== 'asmFunc') return;
-      for (const s of p.get('body.body')) statement(s);
-    },
-  });
-  // The exported memory object, in asmFunc's return.
-  traverse(ast, {
-    ObjectProperty(p) {
-      if (!t.isStringLiteral(p.node.key, { value: 'memory' }) && !t.isIdentifier(p.node.key, { name: 'memory' })) return;
-      const v = p.node.value;
-      if (tokens(head.slice(v.start, v.end)) !== MEMORY_FROM) fail(p, 'the exported memory object changed shape');
-      p.get('value').replaceWith(expr(MEMORY_TO));
-      helpers++;
-    },
-  });
-  traverse(ast, {
-    // HEAPxx[i] = v.
-    AssignmentExpression(p) {
-      const left = p.node.left;
-      if (!t.isMemberExpression(left) || !t.isIdentifier(left.object) || !VIEWS.includes(left.object.name)) return;
-      if (!left.computed) fail(p, 'a view property assigned');
-      if (p.node.operator !== '=') fail(p, 'a compound store');
-      if (!unused(p)) fail(p, 'a store whose value is used');
-      const view = left.object.name, i = left.property, v = p.node.right;
-      const call = (f) => t.callExpression(t.identifier(f), [i, v]);
-      if (view === 'HEAP32' || view === 'HEAPU32') {
-        p.replaceWith(t.assignmentExpression('=', t.memberExpression(t.identifier('W'), i, true), t.binaryExpression('|', v, t.numericLiteral(0))));
-      } else {
-        p.replaceWith(call({ HEAP8: 'store8', HEAPU8: 'store8', HEAP16: 'store16', HEAPU16: 'store16', HEAPF32: 'store_f32', HEAPF64: 'store_f64' }[view]));
-      }
-      rewritten++;
-    },
-    UpdateExpression(p) {
-      const a = p.node.argument;
-      if (t.isMemberExpression(a) && t.isIdentifier(a.object) && VIEWS.includes(a.object.name)) fail(p, 'an increment of memory');
-    },
-    // HEAPxx[i] read, and Math.fround.
-    MemberExpression(p) {
-      const o = p.node.object;
-      if (t.isIdentifier(o, { name: 'Math' }) && !p.node.computed && t.isIdentifier(p.node.property, { name: 'fround' })) {
-        p.replaceWith(t.identifier('fround'));
-        return;
-      }
-      if (!t.isIdentifier(o) || !VIEWS.includes(o.name)) return;
-      if (!p.node.computed) fail(p, 'a view property read');
-      if (p.parentPath.isAssignmentExpression() && p.key === 'left') fail(p, 'a store the pass did not see');
-      const i = p.node.property, view = o.name;
-      const w = () => t.memberExpression(t.identifier('W'), i, true);
-      if (view === 'HEAP32') p.replaceWith(w());
-      else if (view === 'HEAPU32') p.replaceWith(t.binaryExpression('>>>', w(), t.numericLiteral(0)));
-      else {
-        p.replaceWith(t.callExpression(t.identifier({ HEAP8: 'load8_s', HEAPU8: 'load8_u', HEAP16: 'load16_s', HEAPU16: 'load16_u',
-          HEAPF32: 'load_f32', HEAPF64: 'load_f64' }[view]), [i]));
-      }
-      rewritten++;
-    },
-    // A data segment, and the reinterpret helpers' calls.
-    CallExpression(p) {
-      const c = p.node.callee;
-      if (t.isIdentifier(c, { name: 'base64DecodeToExistingUint8Array' })) {
-        const a = p.node.arguments;
-        if (a.length !== 3 || !t.isIdentifier(a[0], { name: 'bufferView' }) || !t.isNumericLiteral(a[1]) || !t.isStringLiteral(a[2])) {
-          fail(p, 'a data segment of another shape');
+    const fail = (p, why) => {
+        throw new Error(`memory pass: ${why}: ${generate(p.node).code.slice(0, 200)}`);
+    };
+    let rewritten = 0, helpers = 0;
+    // A statement wasm2js writes around memory: replaced or dropped as KNOWN says, or the declaration of the memory
+    // itself (asmFunc's `var buffer = new ArrayBuffer(bytes)`, which becomes words_init(bytes)).
+    function statement(p) {
+        if (p.isVariableDeclaration() && p.node.declarations.length === 1) {
+            const d = p.node.declarations[0];
+            if (t.isIdentifier(d.id, { name: 'buffer' }) && t.isNewExpression(d.init) && t.isIdentifier(d.init.callee, { name: 'ArrayBuffer' })
+              && d.init.arguments.length === 1 && t.isNumericLiteral(d.init.arguments[0])) {
+                p.replaceWith(t.expressionStatement(t.callExpression(t.identifier('words_init'), [d.init.arguments[0]])));
+                helpers++;
+                return;
+            }
         }
-        p.replaceWith(t.callExpression(t.identifier('words_base64'), [a[1], a[2]]));
+        const to = known.get(tokens(head.slice(p.node.start, p.node.end)));
+        if (to === undefined) return;
         helpers++;
-      } else if (t.isIdentifier(c) && SCRATCH[c.name]) {
-        p.get('callee').replaceWith(t.identifier(SCRATCH[c.name]));
-      }
-    },
-  });
-  // Nothing of the typed memory may be left: its views, its buffer, a helper the pass did not replace.
-  const banned = new Set([...TYPED, ...LEFTOVERS, ...Object.keys(SCRATCH)]);
-  const left = new Set();
-  traverse(ast, { Identifier(p) { if (banned.has(p.node.name)) left.add(p.node.name); } });
-  if (left.size) throw new Error(`memory pass: typed memory left in the wasm2js output: ${[...left].join(' ')}`);
-  if (!rewritten || !helpers) throw new Error(`memory pass: nothing rewritten (${rewritten} accesses, ${helpers} helpers): not wasm2js output?`);
-  return generate(ast, { comments: false }).code;
+        if (to) p.replaceWithMultiple(stmts(to)); else p.remove();
+    }
+    traverse(ast, {
+        Program(p) { for (const s of p.get('body')) statement(s); },
+        FunctionDeclaration(p) {
+            if (p.node.id.name !== 'asmFunc') return;
+            for (const s of p.get('body.body')) statement(s);
+        },
+    });
+    // The exported memory object, in asmFunc's return.
+    traverse(ast, {
+        ObjectProperty(p) {
+            if (!t.isStringLiteral(p.node.key, { value: 'memory' }) && !t.isIdentifier(p.node.key, { name: 'memory' })) return;
+            const v = p.node.value;
+            if (tokens(head.slice(v.start, v.end)) !== MEMORY_FROM) fail(p, 'the exported memory object changed shape');
+            p.get('value').replaceWith(expr(MEMORY_TO));
+            helpers++;
+        },
+    });
+    traverse(ast, {
+        // HEAPxx[i] = v.
+        AssignmentExpression(p) {
+            const left = p.node.left;
+            if (!t.isMemberExpression(left) || !t.isIdentifier(left.object) || !VIEWS.includes(left.object.name)) return;
+            if (!left.computed) fail(p, 'a view property assigned');
+            if (p.node.operator !== '=') fail(p, 'a compound store');
+            if (!unused(p)) fail(p, 'a store whose value is used');
+            const view = left.object.name, i = left.property, v = p.node.right;
+            const call = (f) => t.callExpression(t.identifier(f), [i, v]);
+            if (view === 'HEAP32' || view === 'HEAPU32') {
+                p.replaceWith(t.assignmentExpression('=', t.memberExpression(t.identifier('W'), i, true), t.binaryExpression('|', v, t.numericLiteral(0))));
+            } else {
+                p.replaceWith(call({ HEAP8: 'store8', HEAPU8: 'store8', HEAP16: 'store16', HEAPU16: 'store16', HEAPF32: 'store_f32', HEAPF64: 'store_f64' }[view]));
+            }
+            rewritten++;
+        },
+        UpdateExpression(p) {
+            const a = p.node.argument;
+            if (t.isMemberExpression(a) && t.isIdentifier(a.object) && VIEWS.includes(a.object.name)) fail(p, 'an increment of memory');
+        },
+        // HEAPxx[i] read, and Math.fround.
+        MemberExpression(p) {
+            const o = p.node.object;
+            if (t.isIdentifier(o, { name: 'Math' }) && !p.node.computed && t.isIdentifier(p.node.property, { name: 'fround' })) {
+                p.replaceWith(t.identifier('fround'));
+                return;
+            }
+            if (!t.isIdentifier(o) || !VIEWS.includes(o.name)) return;
+            if (!p.node.computed) fail(p, 'a view property read');
+            if (p.parentPath.isAssignmentExpression() && p.key === 'left') fail(p, 'a store the pass did not see');
+            const i = p.node.property, view = o.name;
+            const w = () => t.memberExpression(t.identifier('W'), i, true);
+            if (view === 'HEAP32') p.replaceWith(w());
+            else if (view === 'HEAPU32') p.replaceWith(t.binaryExpression('>>>', w(), t.numericLiteral(0)));
+            else {
+                p.replaceWith(t.callExpression(t.identifier({ HEAP8: 'load8_s', HEAPU8: 'load8_u', HEAP16: 'load16_s', HEAPU16: 'load16_u',
+                    HEAPF32: 'load_f32', HEAPF64: 'load_f64' }[view]), [i]));
+            }
+            rewritten++;
+        },
+        // A data segment, and the reinterpret helpers' calls.
+        CallExpression(p) {
+            const c = p.node.callee;
+            if (t.isIdentifier(c, { name: 'base64DecodeToExistingUint8Array' })) {
+                const a = p.node.arguments;
+                if (a.length !== 3 || !t.isIdentifier(a[0], { name: 'bufferView' }) || !t.isNumericLiteral(a[1]) || !t.isStringLiteral(a[2])) {
+                    fail(p, 'a data segment of another shape');
+                }
+                p.replaceWith(t.callExpression(t.identifier('words_base64'), [a[1], a[2]]));
+                helpers++;
+            } else if (t.isIdentifier(c) && SCRATCH[c.name]) {
+                p.get('callee').replaceWith(t.identifier(SCRATCH[c.name]));
+            }
+        },
+    });
+    // Nothing of the typed memory may be left: its views, its buffer, a helper the pass did not replace.
+    const banned = new Set([...TYPED, ...LEFTOVERS, ...Object.keys(SCRATCH)]);
+    const left = new Set();
+    traverse(ast, { Identifier(p) { if (banned.has(p.node.name)) left.add(p.node.name); } });
+    if (left.size) throw new Error(`memory pass: typed memory left in the wasm2js output: ${[...left].join(' ')}`);
+    if (!rewritten || !helpers) throw new Error(`memory pass: nothing rewritten (${rewritten} accesses, ${helpers} helpers): not wasm2js output?`);
+    return generate(ast, { comments: false }).code;
 }
 
 // The minified file names no typed array, view or buffer: a scan of its tokens, as build.mjs's es5() scans.
 export function noTypedArrays(name, code) {
-  const bad = new Set();
-  for (const k of acorn.tokenizer(code, { ecmaVersion: 5 })) {
-    if (k.type.label === 'name' && (TYPED.includes(k.value) || VIEWS.includes(k.value) || ['bufferView', 'copyWithin', 'subarray'].includes(k.value))) {
-      bad.add(k.value);
+    const bad = new Set();
+    for (const k of acorn.tokenizer(code, { ecmaVersion: 5 })) {
+        if (k.type.label === 'name' && (TYPED.includes(k.value) || VIEWS.includes(k.value) || ['bufferView', 'copyWithin', 'subarray'].includes(k.value))) {
+            bad.add(k.value);
+        }
     }
-  }
-  if (bad.size) throw new Error(`${name} still names typed-array memory: ${[...bad].join(' ')}`);
+    if (bad.size) throw new Error(`${name} still names typed-array memory: ${[...bad].join(' ')}`);
 }
 
 // What shim-ie9 (build.mjs) must not leave in cdom.legacy-ie9.js, Babel's output before minifying, given acorn: a
@@ -283,19 +283,19 @@ export function noTypedArrays(name, code) {
 export const SHIM_TYPED_ALLOWED = new Set(['seed', 'randomBytes', 'simdProbe', 'jobWorker']);
 export const SHIM_VIEWS = new Set(['u8', 'u32', 'i32', 'f32', 'f64']);
 export function shimLeftovers(code, acorn) {
-  const found = new Set();
-  const names = new Set(TYPED);
-  (function walk(node, fn, parent) {
-    if (!node || typeof node.type !== 'string') return;
-    if (node.type === 'FunctionDeclaration') fn = node.id.name;
-    if (node.type === 'Identifier' && names.has(node.name) && !SHIM_TYPED_ALLOWED.has(fn)) found.add(`${node.name} in ${fn || 'the top level'}`);
-    if (node.type === 'Identifier' && SHIM_VIEWS.has(node.name) && !(parent && parent.type === 'VariableDeclarator' && parent.id === node)) {
-      found.add(`${node.name} in ${fn || 'the top level'}`);
-    }
-    for (const k of Object.keys(node)) {
-      const v = node[k];
-      if (Array.isArray(v)) for (const c of v) walk(c, fn, node); else if (v && typeof v === 'object' && k !== 'loc') walk(v, fn, node);
-    }
-  })(acorn.parse(code, { ecmaVersion: 5, sourceType: 'script' }), null, null);
-  return [...found];
+    const found = new Set();
+    const names = new Set(TYPED);
+    (function walk(node, fn, parent) {
+        if (!node || typeof node.type !== 'string') return;
+        if (node.type === 'FunctionDeclaration') fn = node.id.name;
+        if (node.type === 'Identifier' && names.has(node.name) && !SHIM_TYPED_ALLOWED.has(fn)) found.add(`${node.name} in ${fn || 'the top level'}`);
+        if (node.type === 'Identifier' && SHIM_VIEWS.has(node.name) && !(parent && parent.type === 'VariableDeclarator' && parent.id === node)) {
+            found.add(`${node.name} in ${fn || 'the top level'}`);
+        }
+        for (const k of Object.keys(node)) {
+            const v = node[k];
+            if (Array.isArray(v)) for (const c of v) walk(c, fn, node); else if (v && typeof v === 'object' && k !== 'loc') walk(v, fn, node);
+        }
+    })(acorn.parse(code, { ecmaVersion: 5, sourceType: 'script' }), null, null);
+    return [...found];
 }

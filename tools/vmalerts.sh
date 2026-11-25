@@ -5,16 +5,16 @@
 cd /Users/alex/VMs/ie6-xp || exit 1
 max="$1"; name="${2:-alert}"; k=0
 while [ $k -lt "$max" ]; do
-  python3 vm.py shot /Users/alex/VMs/ie6-xp/shots/.alert.png >/dev/null
-  g=$(python3 -c "
+    python3 vm.py shot /Users/alex/VMs/ie6-xp/shots/.alert.png >/dev/null
+    g=$(python3 -c "
 from PIL import Image
 p=Image.open('shots/.alert.png').convert('RGB').getpixel((300,110))
 print(1 if abs(p[0]-187)<8 and abs(p[1]-187)<8 and abs(p[2]-187)<8 else 0)")
-  [ "$g" = 1 ] || break
-  k=$((k+1))
-  python3 -c "
+    [ "$g" = 1 ] || break
+    k=$((k+1))
+    python3 -c "
 from PIL import Image
 Image.open('shots/.alert.png').crop((0,0,640,130)).save('shots/$name-$k.png')"
-  python3 vm.py tap 299 170; sleep 1
+    python3 vm.py tap 299 170; sleep 1
 done
 echo "alerts read: $k"

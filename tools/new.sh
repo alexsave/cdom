@@ -11,25 +11,25 @@ set -eu
 dir="${1:-}"
 from="${2:-}"
 if [ -z "$dir" ]; then
-  echo "usage: make -C path/to/cdom new DIR=path/to/app" >&2
-  exit 2
+    echo "usage: make -C path/to/cdom new DIR=path/to/app" >&2
+    exit 2
 fi
 case "$dir" in
-  "~") dir="$HOME" ;;
-  "~/"*) dir="$HOME/${dir#"~/"}" ;;
+    "~") dir="$HOME" ;;
+    "~/"*) dir="$HOME/${dir#"~/"}" ;;
 esac
 case "$dir" in
-  /*) ;;
-  *)
-    if [ -z "$from" ]; then
-      echo "cdom new: DIR=$dir is relative, and make did not say where it was run from; give an absolute DIR" >&2
-      exit 2
-    fi
-    dir="$from/$dir" ;;
+    /*) ;;
+    *)
+        if [ -z "$from" ]; then
+            echo "cdom new: DIR=$dir is relative, and make did not say where it was run from; give an absolute DIR" >&2
+            exit 2
+        fi
+        dir="$from/$dir" ;;
 esac
 if [ -e "$dir" ] && [ -n "$(ls -A "$dir")" ]; then
-  echo "cdom new: $dir is not empty; give a new or empty directory" >&2
-  exit 1
+    echo "cdom new: $dir is not empty; give a new or empty directory" >&2
+    exit 1
 fi
 cdom="$(cd "$(dirname "$0")/.." && pwd -P)"
 mkdir -p "$dir/src"

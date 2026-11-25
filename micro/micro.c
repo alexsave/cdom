@@ -18,26 +18,26 @@ EXPORT("ops_ptr") uint32_t *ops_ptr(void) { return ops; }
 EXPORT("loop_nop") void loop_nop(uint32_t n) { for (uint32_t i = 0; i < n; i++) nop(); }
 EXPORT("loop_attr") void loop_attr(uint32_t n) { for (uint32_t i = 0; i < n; i++) set_attr(1, i & 7); }
 EXPORT("loop_attr_utf8") void loop_attr_utf8(uint32_t n) {
-  for (uint32_t i = 0; i < n; i++) set_attr_utf8(1, vals[i & 7], lens[i & 7]);
+    for (uint32_t i = 0; i < n; i++) set_attr_utf8(1, vals[i & 7], lens[i & 7]);
 }
 EXPORT("loop_attr_ascii") void loop_attr_ascii(uint32_t n) {
-  for (uint32_t i = 0; i < n; i++) set_attr_ascii(1, vals[i & 7], lens[i & 7]);
+    for (uint32_t i = 0; i < n; i++) set_attr_ascii(1, vals[i & 7], lens[i & 7]);
 }
 EXPORT("loop_text") void loop_text(uint32_t n) { for (uint32_t i = 0; i < n; i++) set_text(1, i & 7); }
 /* The batched shape: write (node, val) records, one call applies each 4096. */
 EXPORT("batch_attr") void batch_attr(uint32_t n) {
-  for (uint32_t done = 0; done < n;) {
-    uint32_t c = n - done < 4096 ? n - done : 4096;
-    for (uint32_t i = 0; i < c; i++) { ops[2 * i] = 1; ops[2 * i + 1] = (done + i) & 7; }
-    apply(c);
-    done += c;
-  }
+    for (uint32_t done = 0; done < n;) {
+        uint32_t c = n - done < 4096 ? n - done : 4096;
+        for (uint32_t i = 0; i < c; i++) { ops[2 * i] = 1; ops[2 * i + 1] = (done + i) & 7; }
+        apply(c);
+        done += c;
+    }
 }
 EXPORT("batch_empty") void batch_empty(uint32_t n) {
-  for (uint32_t done = 0; done < n;) {
-    uint32_t c = n - done < 4096 ? n - done : 4096;
-    for (uint32_t i = 0; i < c; i++) { ops[2 * i] = 1; ops[2 * i + 1] = (done + i) & 7; }
-    apply(0);
-    done += c;
-  }
+    for (uint32_t done = 0; done < n;) {
+        uint32_t c = n - done < 4096 ? n - done : 4096;
+        for (uint32_t i = 0; i < c; i++) { ops[2 * i] = 1; ops[2 * i + 1] = (done + i) & 7; }
+        apply(0);
+        done += c;
+    }
 }

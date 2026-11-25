@@ -34,29 +34,29 @@ static cd_timer_slot note_timer; /* at most one timer pending: the one that clea
 
 /* The clock now, in ms: a run that is going adds the time since it started. */
 static double elapsed_ms(void) {
-  return accumulated_ms + (running ? cd_now() - started_ms : 0.0);
+    return accumulated_ms + (running ? cd_now() - started_ms : 0.0);
 }
 
 /* Whole hundredths, rounded down, which is what the display shows. The double is cut to an integer once,
  * here, and everything after it is integer math. The cap keeps the cast in range after 497 days. */
 static uint32_t hundredths(double ms) {
-  double cs = ms / 10.0;
-  return cs >= 4294967295.0 ? 0xffffffffu : (uint32_t)cs;
+    double cs = ms / 10.0;
+    return cs >= 4294967295.0 ? 0xffffffffu : (uint32_t)cs;
 }
 
 /* MM:SS.cc, each part zero-padded. Minutes take more digits past 99, as they should. */
 #define TIME_CAP 16 /* 7 digits of minutes at most, ":SS.cc", and the 0 */
 static void format_time(char *buf, uint32_t cs) {
-  snprintf(buf, TIME_CAP, "%02u:%02u.%02u", cs / 6000, (cs / 100) % 60, cs % 100);
+    snprintf(buf, TIME_CAP, "%02u:%02u.%02u", cs / 6000, (cs / 100) % 60, cs % 100);
 }
 
 /* The view of the clock: one text write. The buffer is read from C memory when it is used, so it is never
  * stale. */
 static void show(uint32_t cs) {
-  char buf[TIME_CAP];
-  format_time(buf, cs);
-  cd_set_text_node(time_text, buf);
-  shown_cs = cs;
+    char buf[TIME_CAP];
+    format_time(buf, cs);
+    cd_set_text_node(time_text, buf);
+    shown_cs = cs;
 }
 
 /* cd_on_frame runs before each paint while cd_frames(true) is on. It reads the clock now, and writes only when
@@ -64,33 +64,33 @@ static void show(uint32_t cs) {
  * hundredth already on the screen, and those skip the write. The frame's own timestamp is not used: the clock
  * is read at the moment of the draw. */
 void cd_on_frame(double) {
-  uint32_t cs = hundredths(elapsed_ms());
-  if (cs != shown_cs) show(cs);
+    uint32_t cs = hundredths(elapsed_ms());
+    if (cs != shown_cs) show(cs);
 }
 
 /* The view of the buttons: the start button's label, and which buttons can be pressed. Lap needs a run going.
  * Reset needs something to reset, and no run going. */
 static void sync(void) {
-  cd_set_text_node(start_text, running ? "Stop" : "Start");
-  cd_set_bool(lap_btn, "disabled", !running);
-  cd_set_bool(reset_btn, "disabled", running || accumulated_ms == 0.0);
+    cd_set_text_node(start_text, running ? "Stop" : "Start");
+    cd_set_bool(lap_btn, "disabled", !running);
+    cd_set_bool(reset_btn, "disabled", running || accumulated_ms == 0.0);
 }
 
 /* The lap rows are built from the keys, and the keys are the lap numbers, newest first. A row is created
  * once, when its lap is taken, and its text is fixed from then on. The text is read from C memory when
  * the row is created, so no lap is kept anywhere else. */
 static cd_id lap_create(void *, uint32_t i, uint32_t *data) {
-  uint32_t n = keys[i];
-  char name[16], split[TIME_CAP]; /* "Lap " and up to 10 digits, and the 0 */
-  snprintf(name, sizeof name, "Lap %u", n);
-  format_time(split, split_cs[n - 1]);
+    uint32_t n = keys[i];
+    char name[16], split[TIME_CAP]; /* "Lap " and up to 10 digits, and the 0 */
+    snprintf(name, sizeof name, "Lap %u", n);
+    format_time(split, split_cs[n - 1]);
 
-  cd_id row = cd_open_id("li");
-  cd_el_text("span", "name", name);
-  cd_el_text("span", "split", split);
-  cd_close();
-  *data = 0; /* a row keeps nothing of its own: no ids and no handlers */
-  return row;
+    cd_id row = cd_open_id("li");
+    cd_el_text("span", "name", name);
+    cd_el_text("span", "split", split);
+    cd_close();
+    *data = 0; /* a row keeps nothing of its own: no ids and no handlers */
+    return row;
 }
 
 /* patch: a lap survived, and there is nothing to write. A lap's number and its split are fixed when it is
@@ -108,13 +108,13 @@ static const cd_list_fns LAP_FNS = {nullptr, lap_create, lap_patch, lap_destroy}
 
 /* The list is the laps, newest first: the keys are the lap numbers, the largest on top. */
 static void render_laps(void) {
-  for (uint32_t i = 0; i < nlaps; i++) keys[i] = nlaps - i;
-  cd_list_update(&laps_list, keys, nlaps, &LAP_FNS);
+    for (uint32_t i = 0; i < nlaps; i++) keys[i] = nlaps - i;
+    cd_list_update(&laps_list, keys, nlaps, &LAP_FNS);
 }
 
 /* The note's timer: it clears the note after NOTE_MS. */
 static void clear_note(void *) {
-  cd_set_text_node(note_text, "");
+    cd_set_text_node(note_text, "");
 }
 
 /* ---- handlers ---- */
@@ -123,68 +123,68 @@ static void clear_note(void *) {
  * where the frame loop is turned off: there is no effect to clean up later, because no frame is asked for
  * after this point. */
 static void on_start_stop(const cd_event_rec *, void *) {
-  if (running) {
-    accumulated_ms = elapsed_ms(); /* still running here, so this adds the run that ends now */
-    running = 0;
-    cd_frames(false);
-    show(hundredths(accumulated_ms)); /* the last draw, so the display ends on the stop time */
-  } else {
-    started_ms = cd_now();
-    running = 1;
-    cd_frames(true);
-  }
-  sync();
+    if (running) {
+        accumulated_ms = elapsed_ms(); /* still running here, so this adds the run that ends now */
+        running = 0;
+        cd_frames(false);
+        show(hundredths(accumulated_ms)); /* the last draw, so the display ends on the stop time */
+    } else {
+        started_ms = cd_now();
+        running = 1;
+        cd_frames(true);
+    }
+    sync();
 }
 
 static void on_lap(const cd_event_rec *, void *) {
-  if (!running || nlaps == LAP_CAP) return;
-  /* The split is taken from whole hundredths, so the splits add up to the time shown. */
-  uint32_t cs = hundredths(elapsed_ms());
-  split_cs[nlaps++] = cs - lap_mark_cs;
-  lap_mark_cs = cs;
-  render_laps();
+    if (!running || nlaps == LAP_CAP) return;
+    /* The split is taken from whole hundredths, so the splits add up to the time shown. */
+    uint32_t cs = hundredths(elapsed_ms());
+    split_cs[nlaps++] = cs - lap_mark_cs;
+    lap_mark_cs = cs;
+    render_laps();
 }
 
 static void on_reset(const cd_event_rec *, void *) {
-  accumulated_ms = 0.0;
-  nlaps = 0;
-  lap_mark_cs = 0;
-  render_laps(); /* no laps: the keyed list removes every row, in one operation */
-  show(0);
-  sync();
+    accumulated_ms = 0.0;
+    nlaps = 0;
+    lap_mark_cs = 0;
+    render_laps(); /* no laps: the keyed list removes every row, in one operation */
+    show(0);
+    sync();
 
-  /* One note at a time. cd_timer_set stops the slot's pending timer, if any, before it starts the new one,
-   * so a Reset before the last note cleared cannot have the old timer clear the new note early. */
-  cd_set_text_node(note_text, "Reset");
-  cd_timer_set(&note_timer, NOTE_MS, clear_note, nullptr);
+    /* One note at a time. cd_timer_set stops the slot's pending timer, if any, before it starts the new one,
+     * so a Reset before the last note cleared cannot have the old timer clear the new note early. */
+    cd_set_text_node(note_text, "Reset");
+    cd_timer_set(&note_timer, NOTE_MS, clear_note, nullptr);
 }
 
 /* The page's CSS is src/app.css. The build puts every .css file under src/ in a <style> in the page's
  * <head>, so the page is styled before this code runs. */
 
 void cd_main(void) {
-  cd_open("main"); cd_class("watch");
-  cd_open("output"); cd_class("time"); cd_text("00:00.00"); cd_name_text(time_text = cd_id_new()); cd_close();
+    cd_open("main"); cd_class("watch");
+    cd_open("output"); cd_class("time"); cd_text("00:00.00"); cd_name_text(time_text = cd_id_new()); cd_close();
 
-  cd_open("div"); cd_class("controls");
-  /* cd_button (cdom_ui.h): a class, a label and the click handler; the start button also says where its
-   * label's text node goes, so sync() can change it. */
-  cd_button("start", "Start", on_start_stop, nullptr, &start_text);
-  lap_btn = cd_button("lap", "Lap", on_lap, nullptr, nullptr);
-  reset_btn = cd_button("reset", "Reset", on_reset, nullptr, nullptr);
-  cd_close();
+    cd_open("div"); cd_class("controls");
+    /* cd_button (cdom_ui.h): a class, a label and the click handler; the start button also says where its
+     * label's text node goes, so sync() can change it. */
+    cd_button("start", "Start", on_start_stop, nullptr, &start_text);
+    lap_btn = cd_button("lap", "Lap", on_lap, nullptr, nullptr);
+    reset_btn = cd_button("reset", "Reset", on_reset, nullptr, nullptr);
+    cd_close();
 
-  /* The note keeps its height when it is empty, so the page does not move when it appears. */
-  cd_open("p"); cd_class("note"); cd_attr("role", "status");
-  cd_text(""); cd_name_text(note_text = cd_id_new());
-  cd_close();
+    /* The note keeps its height when it is empty, so the page does not move when it appears. */
+    cd_open("p"); cd_class("note"); cd_attr("role", "status");
+    cd_text(""); cd_name_text(note_text = cd_id_new());
+    cd_close();
 
-  /* The list's own element: it holds nothing but the laps, so owns_parent lets a clear be one operation. */
-  laps_ol = cd_open_id("ol"); cd_class("laps"); cd_close();
-  laps_list.parent = laps_ol;
-  laps_list.owns_parent = 1;
-  cd_close();
+    /* The list's own element: it holds nothing but the laps, so owns_parent lets a clear be one operation. */
+    laps_ol = cd_open_id("ol"); cd_class("laps"); cd_close();
+    laps_list.parent = laps_ol;
+    laps_list.owns_parent = 1;
+    cd_close();
 
-  show(0);
-  sync();
+    show(0);
+    sync();
 }

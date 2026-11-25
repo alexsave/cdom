@@ -7,9 +7,9 @@ static volatile uint32_t size = 1u << 20;
 static void *volatile kept;
 void cd_main(void) {
 #ifdef REALLOC
-  kept = cd_realloc(cd_alloc(16), size);
+    kept = cd_realloc(cd_alloc(16), size);
 #else
-  kept = cd_alloc(size);
+    kept = cd_alloc(size);
 #endif
-  cd_open("div"); cd_text_num((uint32_t)(uintptr_t)kept); cd_close();
+    cd_open("div"); cd_text_num((uint32_t)(uintptr_t)kept); cd_close();
 }

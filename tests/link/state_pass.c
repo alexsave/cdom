@@ -14,30 +14,30 @@ static cd_state n_state;
 #endif
 static void view(void *) { cd_set_text_node_num(txt, n); }
 static void box_show(void) {
-  if (!cd_region_show(&box, 1)) return;
-  cd_open("p"); cd_name_open(box.root);
-  cd_text_num(n); cd_name_text(txt = cd_id_new());
-  cd_close();
+    if (!cd_region_show(&box, 1)) return;
+    cd_open("p"); cd_name_open(box.root);
+    cd_text_num(n); cd_name_text(txt = cd_id_new());
+    cd_close();
 #ifdef WATCH
-  cd_watch(&n_state, view, nullptr);
+    cd_watch(&n_state, view, nullptr);
 #endif
-  cd_region_end(&box);
+    cd_region_end(&box);
 }
 static void click(const cd_event_rec *, void *) {
-  n++;
+    n++;
 #ifdef WATCH
-  cd_changed(&n_state);
+    cd_changed(&n_state);
 #else
-  cd_dirty(view, nullptr);
+    cd_dirty(view, nullptr);
 #endif
 }
 static void toggle(const cd_event_rec *, void *) {
-  if (box.shown) cd_region_hide(&box); else box_show();
+    if (box.shown) cd_region_hide(&box); else box_show();
 }
 void cd_main(void) {
-  cd_id b = cd_open_id("button"); cd_close();
-  cd_on(b, CD_EV_CLICK, click, nullptr);
-  cd_id t = cd_open_id("button"); cd_close();
-  cd_on(t, CD_EV_CLICK, toggle, nullptr);
-  box_show();
+    cd_id b = cd_open_id("button"); cd_close();
+    cd_on(b, CD_EV_CLICK, click, nullptr);
+    cd_id t = cd_open_id("button"); cd_close();
+    cd_on(t, CD_EV_CLICK, toggle, nullptr);
+    box_show();
 }

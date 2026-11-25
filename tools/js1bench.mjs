@@ -26,8 +26,8 @@ import { createRequire } from 'node:module';
 const [kind, outFile, ...inline] = process.argv.slice(2);
 const FIX = process.env.NS2FIX === '1';
 if (!'tic'.includes(kind) || kind.length !== 1 || !outFile || !inline.length) {
-  console.error('usage: node tools/js1bench.mjs <t|i|c> <out.html> <file to inline>...');
-  process.exit(2);
+    console.error('usage: node tools/js1bench.mjs <t|i|c> <out.html> <file to inline>...');
+    process.exit(2);
 }
 const wasm = fs.readFileSync(path.join(path.dirname(outFile), 'js1bench.wasm'));
 const ref = new WebAssembly.Instance(new WebAssembly.Module(wasm), {}).exports;
@@ -38,9 +38,9 @@ const RUNS = [['loop2000', 'loop', 2000, 3], ['mem', 'mem', 7, 1], ['rec25', 're
 // js1bench.c's memory, in words: the data (mix, 9 words) at 16384, buf, sink and big up to 33100.
 const zero = 'var bk; for (bk = 0; bk < 16384; bk++) JM[bk] = 0; for (bk = 16393; bk < 33100; bk++) JM[bk] = 0;';
 const load = {
-  t: 'X = cdomFactory(new Object());',
-  i: 'X = wm_factory(new Object());',
-  c: 'var imp = new Object(); imp.env = new Object(); X = cdomFactoryJs1(imp);' + (FIX ? '\n' + zero : ''),
+    t: 'X = cdomFactory(new Object());',
+    i: 'X = wm_factory(new Object());',
+    c: 'var imp = new Object(); imp.env = new Object(); X = cdomFactoryJs1(imp);' + (FIX ? '\n' + zero : ''),
 }[kind];
 const trapped = { t: 'X.cdom_trapped()', i: 'wi_trapped()', c: 'X.js1_trap' }[kind];
 // The compiler's driver may pause on its step budget (JB, -1: none); go on in place, so the time is the whole call.
@@ -79,38 +79,38 @@ function brun(name, f, n, want) {
 }`;
 const blocks = ['bmark("ua", navigator.userAgent);', `var bt = bnow();\n${load}\nbmark("load", (bnow() - bt) + "ms");`];
 for (const [name, f, n, reps] of RUNS) {
-  for (let k = 1; k <= reps; k++) blocks.push(`brun("${name}${reps > 1 ? '_' + k : ''}", "${f}", ${n}, ${ref[f](n) >>> 0});`);
+    for (let k = 1; k <= reps; k++) blocks.push(`brun("${name}${reps > 1 ? '_' + k : ''}", "${f}", ${n}, ${ref[f](n) >>> 0});`);
 }
 blocks.push('bmark("done", "end");');
 const title = { t: 'js1bench-t (js1-transform)', i: 'js1bench-i (js1-interp)', c: 'js1bench-c (js1-compile)' }[kind];
 function fix(src) {
-  if (FIX && kind === 'c') return src.replace(/(\w+)--\)/g, '$1=$1-1)');
-  if (!FIX || kind !== 'i') return src;
-  const acorn = createRequire(import.meta.url)('acorn');
-  const edits = []; // [offset, text to insert, length to replace]
-  const visit = (node, fn) => {
-    if (!node || typeof node.type !== 'string') return;
-    if (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression') {
-      const rets = [];
-      const inner = (n) => {
-        if (!n || typeof n.type !== 'string') return;
-        if (n !== node && (n.type === 'FunctionDeclaration' || n.type === 'FunctionExpression')) { visit(n); return; }
-        if (n.type === 'ReturnStatement') rets.push(n);
-        for (const k of Object.keys(n)) { const v = n[k]; if (Array.isArray(v)) v.forEach(inner); else if (v && typeof v.type === 'string') inner(v); }
-      };
-      inner(node);
-      if (rets.some((r) => r.argument)) {
-        for (const r of rets) if (!r.argument) edits.push([r.start, 'return 0', 6]);
-        edits.push([node.body.end - 1, ';return 0;', 0]);
-      }
-      return;
-    }
-    for (const k of Object.keys(node)) { const v = node[k]; if (Array.isArray(v)) v.forEach((c) => visit(c)); else if (v && typeof v.type === 'string') visit(v); }
-  };
-  visit(acorn.parse(src, { ecmaVersion: 5 }));
-  edits.sort((a, b) => b[0] - a[0]);
-  for (const [at, text, len] of edits) src = src.slice(0, at) + text + src.slice(at + len);
-  return src.replace(/\[(\w+)\.charAt\((\w+)\)\]/g, '["k"+$1.charAt($2)]');
+    if (FIX && kind === 'c') return src.replace(/(\w+)--\)/g, '$1=$1-1)');
+    if (!FIX || kind !== 'i') return src;
+    const acorn = createRequire(import.meta.url)('acorn');
+    const edits = []; // [offset, text to insert, length to replace]
+    const visit = (node, fn) => {
+        if (!node || typeof node.type !== 'string') return;
+        if (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression') {
+            const rets = [];
+            const inner = (n) => {
+                if (!n || typeof n.type !== 'string') return;
+                if (n !== node && (n.type === 'FunctionDeclaration' || n.type === 'FunctionExpression')) { visit(n); return; }
+                if (n.type === 'ReturnStatement') rets.push(n);
+                for (const k of Object.keys(n)) { const v = n[k]; if (Array.isArray(v)) v.forEach(inner); else if (v && typeof v.type === 'string') inner(v); }
+            };
+            inner(node);
+            if (rets.some((r) => r.argument)) {
+                for (const r of rets) if (!r.argument) edits.push([r.start, 'return 0', 6]);
+                edits.push([node.body.end - 1, ';return 0;', 0]);
+            }
+            return;
+        }
+        for (const k of Object.keys(node)) { const v = node[k]; if (Array.isArray(v)) v.forEach((c) => visit(c)); else if (v && typeof v.type === 'string') visit(v); }
+    };
+    visit(acorn.parse(src, { ecmaVersion: 5 }));
+    edits.sort((a, b) => b[0] - a[0]);
+    for (const [at, text, len] of edits) src = src.slice(0, at) + text + src.slice(at + len);
+    return src.replace(/\[(\w+)\.charAt\((\w+)\)\]/g, '["k"+$1.charAt($2)]');
 }
 const html = `<HTML>
 <HEAD>

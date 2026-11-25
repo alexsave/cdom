@@ -6,8 +6,8 @@ static uint32_t heard;
 static cd_id node;
 static void on_click(const cd_event_rec *, void *ctx) { ++*(uint32_t *)ctx; }
 void cd_main(void) {
-  node = cd_id_new();
-  cd_on(node, CD_EV_CLICK, on_click, &heard);
+    node = cd_id_new();
+    cd_on(node, CD_EV_CLICK, on_click, &heard);
 }
 __attribute__((export_name("node"))) cd_id node_id(void) { return node; }
 __attribute__((export_name("heard"))) uint32_t heard_n(void) { return heard; }

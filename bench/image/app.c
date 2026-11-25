@@ -11,9 +11,9 @@ EXPORT("room") void *room(uint32_t n) { return cd_alloc_try(n ? n : 1); }
 EXPORT("drop") void drop(void *p) { cd_free(p); }
 EXPORT("out") uint32_t *out_at(void) { return out; }
 EXPORT("resize") uint32_t resize(const uint8_t *p, uint32_t len, uint32_t bw, uint32_t bh) {
-  uint8_t *rgba;
-  uint32_t st = cd_image_resize(p, len, bw, bh, &rgba, &out[0], &out[1]);
-  out[2] = (uint32_t)(uintptr_t)rgba;
-  return st;
+    uint8_t *rgba;
+    uint32_t st = cd_image_resize(p, len, bw, bh, &rgba, &out[0], &out[1]);
+    out[2] = (uint32_t)(uintptr_t)rgba;
+    return st;
 }
 void cd_main(void) {}

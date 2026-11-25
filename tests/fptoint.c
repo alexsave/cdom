@@ -14,12 +14,12 @@ EXPORT("u32") uint32_t u32(double v) { return (uint32_t)v; }
 EXPORT("i32") int32_t i32(double v) { return (int32_t)v; }
 /* The conversion that stopped a real app's build: a fixed-point round of a double. */
 EXPORT("scaled_lo") uint32_t scaled_lo(double v, uint32_t scale) {
-  uint64_t q = (uint64_t)(v * (double)scale + 0.5);
-  return (uint32_t)q;
+    uint64_t q = (uint64_t)(v * (double)scale + 0.5);
+    return (uint32_t)q;
 }
 EXPORT("scaled_hi") uint32_t scaled_hi(double v, uint32_t scale) {
-  uint64_t q = (uint64_t)(v * (double)scale + 0.5);
-  return (uint32_t)(q >> 32);
+    uint64_t q = (uint64_t)(v * (double)scale + 0.5);
+    return (uint32_t)(q >> 32);
 }
 /* The same from a float, which wasm2js lowers on its own path. */
 EXPORT("f32_u64_lo") uint32_t f32_u64_lo(float v) { return (uint32_t)(uint64_t)v; }

@@ -25,176 +25,176 @@ const keystroke = (x) => { ta.value += String.fromCharCode(97 + (ta.value.length
 let ta;
 const fillTa = () => { ta = document.querySelector('textarea'); ta.value = 'x'.repeat(BIG); };
 const SC = {
-  S1: { n: 10000, op: (x) => x.op_currency(), total: 1 },
-  S2: { n: 10000, op: (x) => x.op_select(), total: 1 },
-  S3_10k: { n: 10000, op: (x) => x.op_row() },
-  S3_100k: { n: 100000, op: (x) => x.op_row() },
-  S4: { n: 0, op: (x) => x.op_field() },
-  S5: { n: 0, op: (x) => x.op_fields() },
-  S6: { n: 10000, op: (x) => x.op_bulk(entry === 'B' ? 10 : 1000) },
-  S6_B1000: { n: 10000, op: (x) => x.op_bulk(1000), one: 1, single: 1 },
-  S7: { n: 0, pair: 1, total: 1, one: 1 },
-  S8: { n: 10000, op: (x) => x.op_draft() },
-  S9a1: { n: 10000, op: (x) => x.op_replace_reset(), total: 1, one: 1 },
-  S9a2: { n: 10000, op: (x) => x.op_replace_disjoint(), total: 1, one: 1 },
-  S9b: { n: 10000, op: (x) => x.op_replace_same(), total: 1, one: 1 },
-  S9d: { n: 10000, op: (x) => x.op_replace_region(), total: 1, one: 1 },
-  S10: { n: 0, pre: () => fillTa(), before: keystroke, op: (x) => x.op_big(), total: 1, one: 1 },
-  S11: { n: 0, pre: (x) => { fillTa(); x.op_big(); }, op: (x) => x.op_field() },
-  S12_4: { n: 0, op: (x) => x.op_dirty(4) },
-  S12_1k: { n: 0, op: (x) => x.op_dirty(1000) },
-  S12_10k: { n: 0, op: (x) => x.op_dirty(10000) },
-  S13i_10k: { n: 10000, op: (x) => x.op_nochange() },
-  S13i_100k: { n: 100000, op: (x) => x.op_nochange() },
-  S13ii_10k: { n: 10000, op: (x) => x.op_row_same() },
-  S13ii_100k: { n: 100000, op: (x) => x.op_row_same() },
+    S1: { n: 10000, op: (x) => x.op_currency(), total: 1 },
+    S2: { n: 10000, op: (x) => x.op_select(), total: 1 },
+    S3_10k: { n: 10000, op: (x) => x.op_row() },
+    S3_100k: { n: 100000, op: (x) => x.op_row() },
+    S4: { n: 0, op: (x) => x.op_field() },
+    S5: { n: 0, op: (x) => x.op_fields() },
+    S6: { n: 10000, op: (x) => x.op_bulk(entry === 'B' ? 10 : 1000) },
+    S6_B1000: { n: 10000, op: (x) => x.op_bulk(1000), one: 1, single: 1 },
+    S7: { n: 0, pair: 1, total: 1, one: 1 },
+    S8: { n: 10000, op: (x) => x.op_draft() },
+    S9a1: { n: 10000, op: (x) => x.op_replace_reset(), total: 1, one: 1 },
+    S9a2: { n: 10000, op: (x) => x.op_replace_disjoint(), total: 1, one: 1 },
+    S9b: { n: 10000, op: (x) => x.op_replace_same(), total: 1, one: 1 },
+    S9d: { n: 10000, op: (x) => x.op_replace_region(), total: 1, one: 1 },
+    S10: { n: 0, pre: () => fillTa(), before: keystroke, op: (x) => x.op_big(), total: 1, one: 1 },
+    S11: { n: 0, pre: (x) => { fillTa(); x.op_big(); }, op: (x) => x.op_field() },
+    S12_4: { n: 0, op: (x) => x.op_dirty(4) },
+    S12_1k: { n: 0, op: (x) => x.op_dirty(1000) },
+    S12_10k: { n: 0, op: (x) => x.op_dirty(10000) },
+    S13i_10k: { n: 10000, op: (x) => x.op_nochange() },
+    S13i_100k: { n: 100000, op: (x) => x.op_nochange() },
+    S13ii_10k: { n: 10000, op: (x) => x.op_row_same() },
+    S13ii_100k: { n: 100000, op: (x) => x.op_row_same() },
 };
 const WRITES = new Set(['open', 'close', 'text', 'text_num', 'attr', 'class', 'value', 'value_num', 'clone', 'tpl_text',
   'tpl_text_num', 'set_text', 'set_text_num', 'set_attr', 'set_class', 'style', 'style_num', 'remove', 'move', 'clear',
   'detach', 'attach', 'set', 'call', 'blit', 'image_bytes', 'encode', 'walk_value', 'walk_value_num']);
 const calls = {};
 if (mode === 'count') { // wrap every import before the shim instantiates the module
-  const wrap = (imports) => {
-    for (const ns of Object.keys(imports)) for (const [k, f] of Object.entries(imports[ns])) {
-      if (typeof f !== 'function') continue;
-      imports[ns][k] = function (...a) { calls[k] = (calls[k] || 0) + 1; return f.apply(this, a); };
-    }
-    return imports;
-  };
-  const s = WebAssembly.instantiateStreaming, i = WebAssembly.instantiate;
-  WebAssembly.instantiateStreaming = (r, imp) => s.call(WebAssembly, r, wrap(imp));
-  WebAssembly.instantiate = (b, imp) => i.call(WebAssembly, b, wrap(imp));
+    const wrap = (imports) => {
+        for (const ns of Object.keys(imports)) for (const [k, f] of Object.entries(imports[ns])) {
+            if (typeof f !== 'function') continue;
+            imports[ns][k] = function (...a) { calls[k] = (calls[k] || 0) + 1; return f.apply(this, a); };
+        }
+        return imports;
+    };
+    const s = WebAssembly.instantiateStreaming, i = WebAssembly.instantiate;
+    WebAssembly.instantiateStreaming = (r, imp) => s.call(WebAssembly, r, wrap(imp));
+    WebAssembly.instantiate = (b, imp) => i.call(WebAssembly, b, wrap(imp));
 }
 async function load(src) {
-  const s = document.createElement('script');
-  s.text = await (await fetch(src)).text();
-  document.head.appendChild(s);
+    const s = document.createElement('script');
+    s.text = await (await fetch(src)).text();
+    document.head.appendChild(s);
 }
 const now = () => performance.now();
 const median = (v) => { const s = [...v].sort((a, b) => a - b); return s[s.length >> 1]; };
 function series(c, x, layout, K, warm, n) { // ms per call of n samples, each a block of K calls
-  const one = () => {
-    let t = 0;
-    for (let k = 0; k < K; k++) {
-      if (c.before) c.before(x);
-      const t0 = now();
-      c.op(x);
-      if (layout) void document.body.offsetHeight;
-      t += now() - t0;
-    }
-    return t / K;
-  };
-  for (let i = 0; i < warm; i++) one();
-  const v = [];
-  for (let i = 0; i < n; i++) v.push(one());
-  return v;
+    const one = () => {
+        let t = 0;
+        for (let k = 0; k < K; k++) {
+            if (c.before) c.before(x);
+            const t0 = now();
+            c.op(x);
+            if (layout) void document.body.offsetHeight;
+            t += now() - t0;
+        }
+        return t / K;
+    };
+    for (let i = 0; i < warm; i++) one();
+    const v = [];
+    for (let i = 0; i < n; i++) v.push(one());
+    return v;
 }
 function pairSeries(x, layout, warm, n) { // S7: [build ms], [clear ms]
-  const b = [], c = [];
-  for (let i = 0; i < warm + n; i++) {
-    let t0 = now(); x.op_build(10000); if (layout) void document.body.offsetHeight; const tb = now() - t0;
-    t0 = now(); x.op_clear(); if (layout) void document.body.offsetHeight; const tc = now() - t0;
-    if (i >= warm) { b.push(tb); c.push(tc); }
-  }
-  return [b, c];
+    const b = [], c = [];
+    for (let i = 0; i < warm + n; i++) {
+        let t0 = now(); x.op_build(10000); if (layout) void document.body.offsetHeight; const tb = now() - t0;
+        t0 = now(); x.op_clear(); if (layout) void document.body.offsetHeight; const tc = now() - t0;
+        if (i >= warm) { b.push(tb); c.push(tc); }
+    }
+    return [b, c];
 }
 function touched(mem) {
-  const b = new Uint32Array(mem.buffer);
-  let t = 0;
-  for (let p = 0; p < b.length; p += 1024) { for (let k = p; k < p + 1024; k++) if (b[k]) { t++; break; } }
-  return { pages: mem.buffer.byteLength / 65536, touchedKB: t * 4 };
+    const b = new Uint32Array(mem.buffer);
+    let t = 0;
+    for (let p = 0; p < b.length; p += 1024) { for (let k = p; k < p + 1024; k++) if (b[k]) { t++; break; } }
+    return { pages: mem.buffer.byteLength / 65536, touchedKB: t * 4 };
 }
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); }
 function domScript(x) { // every op, in a fixed order; the same seed makes the same rows in every entry
-  const app = document.getElementById('app'), steps = [], bad = [];
-  const look = (name) => { // after each step: a hash of the page but the big text, and two invariants
-    const tb = document.querySelector('tbody');
-    const pre = new Set([...document.querySelectorAll('tbody tr td:nth-child(2)')].map((td) => td.textContent.replace(/[0-9.]+$/, '')));
-    if (pre.size > 1) bad.push(`${name}: ${pre.size} prefixes`);
-    if (document.querySelectorAll('tbody tr.sel').length > 1) bad.push(`${name}: more than one selected row`);
-    steps.push(hash((tb ? tb.innerHTML : '') + app.children[1].innerHTML + app.children[2].textContent + app.lastChild.textContent.length));
-  };
-  const S = [['setup', () => x.setup(50)], ['currency', () => x.op_currency()]];
-  for (let i = 0; i < 3; i++) S.push(['select', () => x.op_select()]);
-  for (let i = 0; i < 7; i++) S.push(['row', () => x.op_row()]);
-  for (let i = 0; i < 3; i++) S.push(['field', () => x.op_field()]);
-  S.push(['fields', () => x.op_fields()], ['bulk10', () => x.op_bulk(10)], ['bulk1000', () => x.op_bulk(1000)]);
-  for (let i = 0; i < 205; i++) S.push(['draft', () => x.op_draft()]);
-  S.push(['same', () => x.op_replace_same()], ['select', () => x.op_select()], ['disjoint', () => x.op_replace_disjoint()],
-    ['currency', () => x.op_currency()], ['select', () => x.op_select()], ['reset', () => x.op_replace_reset()], ['row', () => x.op_row()],
-    ['region', () => x.op_replace_region()], ['select', () => x.op_select()], ['row', () => x.op_row()], ['currency', () => x.op_currency()],
-    ['clear', () => x.op_clear()], ['build', () => x.op_build(30)], ['select', () => x.op_select()], ['row', () => x.op_row()],
-    ['currency', () => x.op_currency()], ['big', () => { fillTa(); x.op_big(); }], ['big', () => { keystroke(); x.op_big(); }],
-    ['dirty', () => x.op_dirty(10)], ['nochange', () => x.op_nochange && x.op_nochange()], ['row_same', () => x.op_row_same()]);
-  for (const [name, f] of S) { f(); look(name); }
-  return { steps, bad };
+    const app = document.getElementById('app'), steps = [], bad = [];
+    const look = (name) => { // after each step: a hash of the page but the big text, and two invariants
+        const tb = document.querySelector('tbody');
+        const pre = new Set([...document.querySelectorAll('tbody tr td:nth-child(2)')].map((td) => td.textContent.replace(/[0-9.]+$/, '')));
+        if (pre.size > 1) bad.push(`${name}: ${pre.size} prefixes`);
+        if (document.querySelectorAll('tbody tr.sel').length > 1) bad.push(`${name}: more than one selected row`);
+        steps.push(hash((tb ? tb.innerHTML : '') + app.children[1].innerHTML + app.children[2].textContent + app.lastChild.textContent.length));
+    };
+    const S = [['setup', () => x.setup(50)], ['currency', () => x.op_currency()]];
+    for (let i = 0; i < 3; i++) S.push(['select', () => x.op_select()]);
+    for (let i = 0; i < 7; i++) S.push(['row', () => x.op_row()]);
+    for (let i = 0; i < 3; i++) S.push(['field', () => x.op_field()]);
+    S.push(['fields', () => x.op_fields()], ['bulk10', () => x.op_bulk(10)], ['bulk1000', () => x.op_bulk(1000)]);
+    for (let i = 0; i < 205; i++) S.push(['draft', () => x.op_draft()]);
+    S.push(['same', () => x.op_replace_same()], ['select', () => x.op_select()], ['disjoint', () => x.op_replace_disjoint()],
+      ['currency', () => x.op_currency()], ['select', () => x.op_select()], ['reset', () => x.op_replace_reset()], ['row', () => x.op_row()],
+      ['region', () => x.op_replace_region()], ['select', () => x.op_select()], ['row', () => x.op_row()], ['currency', () => x.op_currency()],
+      ['clear', () => x.op_clear()], ['build', () => x.op_build(30)], ['select', () => x.op_select()], ['row', () => x.op_row()],
+      ['currency', () => x.op_currency()], ['big', () => { fillTa(); x.op_big(); }], ['big', () => { keystroke(); x.op_big(); }],
+      ['dirty', () => x.op_dirty(10)], ['nochange', () => x.op_nochange && x.op_nochange()], ['row_same', () => x.op_row_same()]);
+    for (const [name, f] of S) { f(); look(name); }
+    return { steps, bad };
 }
 async function run() {
-  const c = SC[sc];
-  if (!c) throw new Error('no scenario ' + sc);
-  await load(`out/bench-${entry}.wasm.lits`);
-  await load('../../../shim/cdom.js');
-  const x = await cdom.start(`out/bench-${entry}.wasm`, 'app', null, { seed: SEED });
-  if (mode === 'dom') {
-    const { steps, bad } = domScript(x);
-    const app = document.getElementById('app');
-    return { hash: hash(app.innerHTML), steps: hash(steps.join()), nsteps: steps.length, bad, len: app.innerHTML.length,
-      rows: document.querySelectorAll('tbody tr').length, first: document.querySelector('tbody tr')?.outerHTML,
-      mirror: app.lastChild.textContent.length };
-  }
-  if (mode === 'mem') {
-    if (sc === 'S7') {
-      x.setup(0);
-      const before = touched(x.memory);
-      x.op_build(10000);
-      const after = touched(x.memory);
-      return { before, after, rowStruct: x.row_struct_size(), rows: x.nrows() };
+    const c = SC[sc];
+    if (!c) throw new Error('no scenario ' + sc);
+    await load(`out/bench-${entry}.wasm.lits`);
+    await load('../../../shim/cdom.js');
+    const x = await cdom.start(`out/bench-${entry}.wasm`, 'app', null, { seed: SEED });
+    if (mode === 'dom') {
+        const { steps, bad } = domScript(x);
+        const app = document.getElementById('app');
+        return { hash: hash(app.innerHTML), steps: hash(steps.join()), nsteps: steps.length, bad, len: app.innerHTML.length,
+            rows: document.querySelectorAll('tbody tr').length, first: document.querySelector('tbody tr')?.outerHTML,
+            mirror: app.lastChild.textContent.length };
     }
-    if (sc === 'S10') {
-      x.setup(0); fillTa();
-      for (let i = 0; i < 5; i++) { keystroke(); x.op_big(); }
-      return { after: touched(x.memory) };
+    if (mode === 'mem') {
+        if (sc === 'S7') {
+            x.setup(0);
+            const before = touched(x.memory);
+            x.op_build(10000);
+            const after = touched(x.memory);
+            return { before, after, rowStruct: x.row_struct_size(), rows: x.nrows() };
+        }
+        if (sc === 'S10') {
+            x.setup(0); fillTa();
+            for (let i = 0; i < 5; i++) { keystroke(); x.op_big(); }
+            return { after: touched(x.memory) };
+        }
+        throw new Error('mem: S7 or S10');
     }
-    throw new Error('mem: S7 or S10');
-  }
-  x.setup(c.n);
-  if (c.pre) c.pre(x);
-  if (mode === 'count') {
-    const rec = () => { for (const k of Object.keys(calls)) delete calls[k]; };
+    x.setup(c.n);
+    if (c.pre) c.pre(x);
+    if (mode === 'count') {
+        const rec = () => { for (const k of Object.keys(calls)) delete calls[k]; };
+        if (c.pair) {
+            x.op_build(10000); x.op_clear(); rec(); x.op_build(10000); const b = { ...calls }; rec(); x.op_clear();
+            return { calls: b, calls2: { ...calls } };
+        }
+        if (c.before) c.before(x);
+        c.op(x); // warm: a first call may differ (a first draw, a buffer's growth)
+        if (c.before) c.before(x);
+        rec();
+        c.op(x);
+        return { calls: { ...calls } };
+    }
+    // time
     if (c.pair) {
-      x.op_build(10000); x.op_clear(); rec(); x.op_build(10000); const b = { ...calls }; rec(); x.op_clear();
-      return { calls: b, calls2: { ...calls } };
+        const [b, cl] = pairSeries(x, false, 3, 15);
+        const [bt, ct] = pairSeries(x, true, 3, 15);
+        return { K: 1, script: b, total: bt, script2: cl, total2: ct };
     }
+    if (c.single) { const t0 = now(); c.op(x); return { K: 1, script: [now() - t0], total: [] }; }
+    let K = 1;
     if (c.before) c.before(x);
-    c.op(x); // warm: a first call may differ (a first draw, a buffer's growth)
-    if (c.before) c.before(x);
-    rec();
-    c.op(x);
-    return { calls: { ...calls } };
-  }
-  // time
-  if (c.pair) {
-    const [b, cl] = pairSeries(x, false, 3, 15);
-    const [bt, ct] = pairSeries(x, true, 3, 15);
-    return { K: 1, script: b, total: bt, script2: cl, total2: ct };
-  }
-  if (c.single) { const t0 = now(); c.op(x); return { K: 1, script: [now() - t0], total: [] }; }
-  let K = 1;
-  if (c.before) c.before(x);
-  let t0 = now(); c.op(x); const first = now() - t0;
-  const slow = first > 100;
-  if (!c.one && !slow) {
-    for (;;) {
-      t0 = now();
-      for (let k = 0; k < K; k++) c.op(x);
-      if (now() - t0 > 3 || K >= 1 << 16) break;
-      K *= 2;
+    let t0 = now(); c.op(x); const first = now() - t0;
+    const slow = first > 100;
+    if (!c.one && !slow) {
+        for (;;) {
+            t0 = now();
+            for (let k = 0; k < K; k++) c.op(x);
+            if (now() - t0 > 3 || K >= 1 << 16) break;
+            K *= 2;
+        }
     }
-  }
-  const warm = slow ? 1 : 3, n = slow ? 5 : 15;
-  const script = series(c, x, false, K, warm, n);
-  const total = c.total ? series(c, x, true, K, warm, n) : [];
-  return { K, script, total, first };
+    const warm = slow ? 1 : 3, n = slow ? 5 : 15;
+    const script = series(c, x, false, K, warm, n);
+    const total = c.total ? series(c, x, true, K, warm, n) : [];
+    return { K, script, total, first };
 }
 run().then((r) => { window.RESULT = r; }, (e) => { window.RESULT = { error: String(e.stack || e) }; });
 </script></body></html>

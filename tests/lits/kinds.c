@@ -16,9 +16,9 @@ EX(k_literal) void k_literal(void) { cd_text("div"); }
 EX(k_concat) void k_concat(void) { cd_text("a" "b"); }
 EX(k_macro) void k_macro(void) { cd_text(GREETING); }
 EX(k_stack) void k_stack(void) {
-  char b[8] = "stack";
-  b[0] = 'S';
-  cd_text(b);
+    char b[8] = "stack";
+    b[0] = 'S';
+    cd_text(b);
 }
 EX(k_pointer) void k_pointer(void) { cd_text(param_text); }
 EX(k_table) void k_table(void) { cd_text(names[1]); }
@@ -29,11 +29,11 @@ EX(k_ternary) void k_ternary(void) { cd_text(sel ? "danger" : ""); }
 EX(k_ternary_s) void k_ternary_s(void) { cd_text(sel ? cd_s("danger-s") : cd_s("")); }
 EX(k_helper) void k_helper(void) { label("via-helper"); }
 EX(k_cdstr) void k_cdstr(void) {
-  cd_str k = cd_s("kept");
-  char b[8] = "tmp-str";
-  cd_text(k);
-  cd_text(cd_tmp(b, 3));
-  cd_text(cd_tmpz(b));
-  cd_attr("class", b);
+    cd_str k = cd_s("kept");
+    char b[8] = "tmp-str";
+    cd_text(k);
+    cd_text(cd_tmp(b, 3));
+    cd_text(cd_tmpz(b));
+    cd_attr("class", b);
 }
 EX(k_twice) void k_twice(void) { cd_attr("data-x", "data-x"); }

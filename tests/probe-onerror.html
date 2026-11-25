@@ -9,13 +9,13 @@ TAG = TAG.substring(1, TAG.length);
 if (TAG == "") { TAG = "x"; }
 var n = 0;
 function mark(name, v) {
-  n = n + 1;
-  document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
+    n = n + 1;
+    document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
 }
 var seen = "";
 function oe(m, u, l) {
-  seen = "called";
-  return true;
+    seen = "called";
+    return true;
 }
 mark("onerrorbefore", window.onerror);
 window.onerror = oe;

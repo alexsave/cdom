@@ -16,37 +16,37 @@ bad=0
 log="$(mktemp)"
 # ubuntu <llvm major, or distro> <expect: stops or builds>: lesson 1 on Ubuntu 24.04 with that clang and lld.
 ubuntu() {
-  local v="$1" want="$2" cc=clang ld=wasm-ld setup mount=() root
-  setup='apt-get update -qq >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq make gcc clang lld curl ca-certificates >/dev/null 2>&1
+    local v="$1" want="$2" cc=clang ld=wasm-ld setup mount=() root
+    setup='apt-get update -qq >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq make gcc clang lld curl ca-certificates >/dev/null 2>&1
 cp -r /src /w && find /w/tools/out /w/tutorial/01-hello/build -delete 2>/dev/null'
-  if [ "$v" != distro ]; then
-    cc="/usr/lib/llvm-$v/bin/clang" ld="/usr/lib/llvm-$v/bin/wasm-ld"
-    root="CDOM_LINUX_LLVM_$v"; root="${!root:-}"
-    if [ -n "$root" ]; then mount=(-v "$(cd "$root" && pwd -P):/usr/lib/llvm-$v:ro")
-    else setup="$setup
+    if [ "$v" != distro ]; then
+        cc="/usr/lib/llvm-$v/bin/clang" ld="/usr/lib/llvm-$v/bin/wasm-ld"
+        root="CDOM_LINUX_LLVM_$v"; root="${!root:-}"
+        if [ -n "$root" ]; then mount=(-v "$(cd "$root" && pwd -P):/usr/lib/llvm-$v:ro")
+        else setup="$setup
 curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key > /etc/apt/trusted.gpg.d/apt.llvm.org.asc
 echo 'deb http://apt.llvm.org/noble/ llvm-toolchain-noble-$v main' > /etc/apt/sources.list.d/llvm.list
 apt-get update -qq >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq clang-$v lld-$v >/dev/null 2>&1"
+        fi
     fi
-  fi
-  local found="$setup
+    local found="$setup
 lld=\"\$($ld --version)\"
 make -s -C /w/tutorial/01-hello WASM_CC=$cc > /tmp/log 2>&1; rc=\$?"
-  if [ "$want" = builds ]; then found="$found
+    if [ "$want" = builds ]; then found="$found
 [ \$rc = 0 ] && [ -s /w/tutorial/01-hello/build/index.html ] || { cat /tmp/log; exit 1; }
 echo \"\$lld\""
-  else found="$found
+    else found="$found
 [ \$rc != 0 ] && grep -qF \"cdom.mk: $cc links with \$lld, which does not define __rodata_start\" /tmp/log \\
   && grep -qF 'cdom.mk: install LLVM 23 or later:' /tmp/log && ! grep -q 'error:' /tmp/log \\
   && [ ! -e /w/tutorial/01-hello/build/app.wasm ] || { echo \"\$lld\"; cat /tmp/log; exit 1; }
 echo \"\$lld\""
-  fi
-  local out
-  if out=$(docker run --rm -v "$top:/src:ro" ${mount[@]+"${mount[@]}"} ubuntu:24.04 bash -c "$found" 2> "$log"); then
-    echo "ok   ubuntu 24.04, clang $v${root:+ ($root)} ($out): lesson 1 $want"
-  else
-    echo "FAIL ubuntu 24.04, clang $v${root:+ ($root)}: wanted lesson 1 $want:"; echo "$out" | head -5; head -5 "$log"; bad=1
-  fi
+    fi
+    local out
+    if out=$(docker run --rm -v "$top:/src:ro" ${mount[@]+"${mount[@]}"} ubuntu:24.04 bash -c "$found" 2> "$log"); then
+        echo "ok   ubuntu 24.04, clang $v${root:+ ($root)} ($out): lesson 1 $want"
+    else
+        echo "FAIL ubuntu 24.04, clang $v${root:+ ($root)}: wanted lesson 1 $want:"; echo "$out" | head -5; head -5 "$log"; bad=1
+    fi
 }
 ubuntu distro "stops at the toolchain check"
 ubuntu 22 "stops at the toolchain check"
@@ -57,8 +57,8 @@ for cc in gcc clang; do for t in cdlits cdpage; do
   $cc -std=c2x -O2 -Wall -Wextra -Werror -o /tmp/$t /src/tools/$t.c 2>/tmp/err || { echo "$cc $t: $(head -1 /tmp/err)"; r=1; }
 done; done; exit $r'
 if out=$(docker run --rm -v "$top:/src:ro" alpine:3.20 sh -c "$alpine" 2>&1); then
-  echo "ok   alpine 3.20: cdlits and cdpage build with gcc 13 and clang 17"
+    echo "ok   alpine 3.20: cdlits and cdpage build with gcc 13 and clang 17"
 else
-  echo "FAIL alpine 3.20: $out"; bad=1
+    echo "FAIL alpine 3.20: $out"; bad=1
 fi
 exit $bad

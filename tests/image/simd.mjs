@@ -12,10 +12,10 @@ const { instance } = await WebAssembly.instantiate(fs.readFileSync(process.argv[
 const x = instance.exports;
 let bad = 0;
 for (let i = 0; i < names.length; i++) {
-  let r, trap = '';
-  try { r = x.run(i); } catch (e) { r = -1; trap = ` trapped: ${e.message}`; }
-  const cases = x.last_case() + 1;
-  if (r === 0) console.log(`ok   ${names[i]}: ${cases} cases equal`);
-  else { bad++; console.log(`FAIL ${names[i]}: ${trap ? 'case ' + (x.last_case()) + trap : `case ${x.first_case()} differs (detail ${r})`}`); }
+    let r, trap = '';
+    try { r = x.run(i); } catch (e) { r = -1; trap = ` trapped: ${e.message}`; }
+    const cases = x.last_case() + 1;
+    if (r === 0) console.log(`ok   ${names[i]}: ${cases} cases equal`);
+    else { bad++; console.log(`FAIL ${names[i]}: ${trap ? 'case ' + (x.last_case()) + trap : `case ${x.first_case()} differs (detail ${r})`}`); }
 }
 process.exit(bad ? 1 : 0);

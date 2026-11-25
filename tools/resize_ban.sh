@@ -14,14 +14,14 @@ cd "$top" || exit 1
 skip=" tools/resize_ban.sh tools/mutate.py "
 files=()
 while IFS= read -r -d '' f; do
-  case "$skip" in *" $f "*) continue;; esac
-  [ -f "$f" ] && files+=("$f")
+    case "$skip" in *" $f "*) continue;; esac
+    [ -f "$f" ] && files+=("$f")
 done < <(git ls-files -z -- shim src tools cdom.mk Makefile)
 if [ "${#files[@]}" -eq 0 ]; then echo "FAIL resize ban: no files to read under $top"; exit 1; fi
 fail=0
 # The option and property names, anywhere (a key, a member, a string).
 if hits="$(grep -nE '\b(resizeWidth|resizeHeight|resizeQuality|imageSmoothingQuality)\b' "${files[@]}")"; then
-  while IFS= read -r h; do echo "FAIL resize ban: $h"; done <<< "$hits"; fail=1
+    while IFS= read -r h; do echo "FAIL resize ban: $h"; done <<< "$hits"; fail=1
 fi
 # drawImage with more than three arguments: the commas at the call's own depth, across lines, counted by perl
 # (strings and nested calls taken as they come: a comma inside one nested level of brackets is not counted).
@@ -35,7 +35,7 @@ if hits="$(perl -0777 -ne '
     }
     if ($commas >= 3) { my $line = 1 + (substr($_, 0, $at) =~ tr/\n//); print "$ARGV:$line: drawImage with ", $commas + 1, " arguments (a scaling form)\n"; }
   }' "${files[@]}")" && [ -n "$hits" ]; then
-  while IFS= read -r h; do echo "FAIL resize ban: $h"; done <<< "$hits"; fail=1
+    while IFS= read -r h; do echo "FAIL resize ban: $h"; done <<< "$hits"; fail=1
 fi
 if [ $fail = 0 ]; then echo "ok   resize ban: no browser scaling (createImageBitmap's resize options, imageSmoothingQuality, drawImage with a size) in ${#files[@]} files of shim/, src/, cdom.mk, Makefile and tools/"; fi
 exit $fail

@@ -9,9 +9,9 @@ export PATH=/opt/homebrew/bin:$PATH
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 mkdef() {  # mkdef <dll> <name@bytes>...
-  dll=$1; shift
-  { echo "LIBRARY $dll"; echo EXPORTS; for f in "$@"; do echo "  $f"; done; } > "$T/$dll.def"
-  "$L/llvm-dlltool" -k -m i386 -d "$T/$dll.def" -l "$T/$dll.lib"
+    dll=$1; shift
+    { echo "LIBRARY $dll"; echo EXPORTS; for f in "$@"; do echo "  $f"; done; } > "$T/$dll.def"
+    "$L/llvm-dlltool" -k -m i386 -d "$T/$dll.def" -l "$T/$dll.lib"
 }
 mkdef kernel32.dll CreateProcessA@40 CloseHandle@4 Sleep@4 ExitProcess@4 GetLastError@0 GetCurrentProcessId@0 \
   CreateToolhelp32Snapshot@8 Process32First@8 Process32Next@8 OpenProcess@12 TerminateProcess@8

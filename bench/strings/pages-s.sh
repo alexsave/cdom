@@ -23,6 +23,6 @@ d="$o/synth-s"; mkdir -p "$d"
   --wasm "$d/app.wasm" --title synth
 rm "$d/linked.wasm"
 for p in hello-a hello-s synth-a synth-s; do
-  printf '%-9s page %7s B  brotli %6s B\n' "$p" "$(wc -c < "$o/$p/index.html" | tr -d ' ')" "$(brotli -q 11 -c "$o/$p/index.html" | wc -c | tr -d ' ')"
+    printf '%-9s page %7s B  brotli %6s B\n' "$p" "$(wc -c < "$o/$p/index.html" | tr -d ' ')" "$(brotli -q 11 -c "$o/$p/index.html" | wc -c | tr -d ' ')"
 done
 printf 'synth-s wasm %s B\n' "$(wc -c < "$d/app.wasm" | tr -d ' ')"

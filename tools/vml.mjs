@@ -77,49 +77,49 @@ is('M0 0 a10 10 0 1 0 10 10', path('M0 0 A10 10 0 1 0 10 10'), 'flags 1 0, the l
 // from the ellipse itself, not from the converter's endpoint-to-centre arithmetic. Every sampled point of the true arc
 // must be within 0.0003 r + 0.01 px of the converted curve, and every point of the curve that near the true ellipse (A1).
 const cubics = (vmlPath) => {
-  const nums = (s) => s.split(',').map((v) => +v / K), out = [];
-  let at = null;
-  for (const t of vmlPath.split(' ')) {
-    if (t[0] === 'm' || t[0] === 'l') { const [x, y] = nums(t.slice(1)); if (t[0] === 'l') out.push([at, at, [x, y], [x, y]]); at = [x, y]; }
-    else if (t[0] === 'c') { const n = nums(t.slice(1)); out.push([at, [n[0], n[1]], [n[2], n[3]], [n[4], n[5]]]); at = [n[4], n[5]]; }
-  }
-  return out;
+    const nums = (s) => s.split(',').map((v) => +v / K), out = [];
+    let at = null;
+    for (const t of vmlPath.split(' ')) {
+        if (t[0] === 'm' || t[0] === 'l') { const [x, y] = nums(t.slice(1)); if (t[0] === 'l') out.push([at, at, [x, y], [x, y]]); at = [x, y]; }
+        else if (t[0] === 'c') { const n = nums(t.slice(1)); out.push([at, [n[0], n[1]], [n[2], n[3]], [n[4], n[5]]]); at = [n[4], n[5]]; }
+    }
+    return out;
 };
 const bez = ([p0, p1, p2, p3], t) => { const u = 1 - t; return [0, 1].map((k) => u * u * u * p0[k] + 3 * u * u * t * p1[k] + 3 * u * t * t * p2[k] + t * t * t * p3[k]); };
 const curvePoints = (segs) => segs.flatMap((s) => Array.from({ length: 401 }, (_, i) => bez(s, i / 400)));
 // The distance from p to the polyline through pts (each sample joined to the next), not to the nearest sample.
 const toLine = (p, pts) => {
-  let near = Infinity;
-  for (let i = 1; i < pts.length; i++) {
-    const [ax, ay] = pts[i - 1], [bx, by] = pts[i], dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy;
-    const t = l ? Math.max(0, Math.min(1, ((p[0] - ax) * dx + (p[1] - ay) * dy) / l)) : 0;
-    near = Math.min(near, Math.hypot(ax + t * dx - p[0], ay + t * dy - p[1]));
-  }
-  return near;
+    let near = Infinity;
+    for (let i = 1; i < pts.length; i++) {
+        const [ax, ay] = pts[i - 1], [bx, by] = pts[i], dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy;
+        const t = l ? Math.max(0, Math.min(1, ((p[0] - ax) * dx + (p[1] - ay) * dy) / l)) : 0;
+        near = Math.min(near, Math.hypot(ax + t * dx - p[0], ay + t * dy - p[1]));
+    }
+    return near;
 };
 let worst = 0;
 const arcCase = (m, cx, cy, rx, ry, deg, t1, t2, ctm = [1, 1, 0, 0]) => {
-  const phi = deg * Math.PI / 180;
-  const on = (t) => [cx + rx * Math.cos(phi) * Math.cos(t) - ry * Math.sin(phi) * Math.sin(t), cy + rx * Math.sin(phi) * Math.cos(t) + ry * Math.cos(phi) * Math.sin(t)];
-  const [x1, y1] = on(t1), [x2, y2] = on(t2), dt = t2 - t1;
-  const d = `M${x1} ${y1} A${rx} ${ry} ${deg} ${Math.abs(dt) > Math.PI ? 1 : 0} ${dt > 0 ? 1 : 0} ${x2} ${y2}`;
-  const map = ([x, y]) => [ctm[0] * x + ctm[2], ctm[1] * y + ctm[3]];
-  const pts = curvePoints(cubics(path(d, ...ctm)));
-  const tol = 0.0003 * Math.max(rx * ctm[0], ry * ctm[1]) + 0.01;
-  let far = 0;
-  for (let i = 0; i <= 200; i++) {
-    const p = map(on(t1 + dt * i / 200));
-    far = Math.max(far, toLine(p, pts));
-  }
-  // and the curve stays on the ellipse: each curve point near some point of the true arc, sampled finely
-  const fine = Array.from({ length: 801 }, (_, i) => map(on(t1 + dt * i / 800)));
-  let off = 0;
-  for (const c of pts.filter((_, i) => i % 13 === 0)) {
-    off = Math.max(off, toLine(c, fine));
-  }
-  const err = Math.max(far, off);
-  worst = Math.max(worst, err / tol);
-  ok(err <= tol, `${m}: within ${err.toFixed(5)} px of the true arc (tolerance ${tol.toFixed(5)})`);
+    const phi = deg * Math.PI / 180;
+    const on = (t) => [cx + rx * Math.cos(phi) * Math.cos(t) - ry * Math.sin(phi) * Math.sin(t), cy + rx * Math.sin(phi) * Math.cos(t) + ry * Math.cos(phi) * Math.sin(t)];
+    const [x1, y1] = on(t1), [x2, y2] = on(t2), dt = t2 - t1;
+    const d = `M${x1} ${y1} A${rx} ${ry} ${deg} ${Math.abs(dt) > Math.PI ? 1 : 0} ${dt > 0 ? 1 : 0} ${x2} ${y2}`;
+    const map = ([x, y]) => [ctm[0] * x + ctm[2], ctm[1] * y + ctm[3]];
+    const pts = curvePoints(cubics(path(d, ...ctm)));
+    const tol = 0.0003 * Math.max(rx * ctm[0], ry * ctm[1]) + 0.01;
+    let far = 0;
+    for (let i = 0; i <= 200; i++) {
+        const p = map(on(t1 + dt * i / 200));
+        far = Math.max(far, toLine(p, pts));
+    }
+    // and the curve stays on the ellipse: each curve point near some point of the true arc, sampled finely
+    const fine = Array.from({ length: 801 }, (_, i) => map(on(t1 + dt * i / 800)));
+    let off = 0;
+    for (const c of pts.filter((_, i) => i % 13 === 0)) {
+        off = Math.max(off, toLine(c, fine));
+    }
+    const err = Math.max(far, off);
+    worst = Math.max(worst, err / tol);
+    ok(err <= tol, `${m}: within ${err.toFixed(5)} px of the true arc (tolerance ${tol.toFixed(5)})`);
 };
 arcCase('a quarter circle', 0, 0, 10, 10, 0, 0, Math.PI / 2);
 arcCase('a half circle the other way', 50, 50, 40, 40, 0, Math.PI, 0);
@@ -131,24 +131,24 @@ arcCase('nearly a whole turn', 10, 10, 20, 15, 15, 0, 2 * Math.PI - 0.01);
 arcCase('under a CTM (scale 2.5, 0.75, then a translate)', 30, 40, 25, 10, 45, 0.2, 3.9, [2.5, 0.75, 7, -3]);
 // Radii too small: scaled up until the arc fits, a half circle of radius 10 centred at (10, 0) going up (sweep 1, y down).
 {
-  const pts = curvePoints(cubics(path('M0 0 A1 1 0 0 1 20 0')));
-  const r = Math.max(...pts.map(([x, y]) => Math.abs(Math.hypot(x - 10, y) - 10)));
-  ok(r <= 0.0003 * 10 + 0.01 && pts.every(([, y]) => y <= 0.01), `radii too small scale up to the half circle of radius 10 above the line: off by ${r.toFixed(5)}`);
+    const pts = curvePoints(cubics(path('M0 0 A1 1 0 0 1 20 0')));
+    const r = Math.max(...pts.map(([x, y]) => Math.abs(Math.hypot(x - 10, y) - 10)));
+    ok(r <= 0.0003 * 10 + 0.01 && pts.every(([, y]) => y <= 0.01), `radii too small scale up to the half circle of radius 10 above the line: off by ${r.toFixed(5)}`);
 }
 console.log(`A1: the worst arc used ${(worst * 100).toFixed(1)}% of its tolerance`);
 
 // T1: paths converted per ms, a 12-command path with lines, cubics, a quadratic and an arc.
 if (process.env.VML_TIME) {
-  const d = 'M10 10 L50 10 l0 20 H80 v15 C90 50 100 60 110 50 s20 -10 30 0 Q160 70 170 50 t20 0 A15 10 30 0 1 220 60 L230 80 Z';
-  for (let i = 0; i < 2000; i++) path(d, 1.5, 1.5, 3, 4);
-  const runs = [];
-  for (let r = 0; r < 5; r++) {
-    const n = 20000, t = process.hrtime.bigint();
-    for (let i = 0; i < n; i++) path(d, 1.5, 1.5, 3, 4);
-    runs.push(n / (Number(process.hrtime.bigint() - t) / 1e6));
-  }
-  runs.sort((a, b) => a - b);
-  console.log(`T1: ${Math.round(runs[2])} paths per ms (median of 5 runs of 20,000; ${runs.map(Math.round).join(', ')}), node ${process.version}`);
+    const d = 'M10 10 L50 10 l0 20 H80 v15 C90 50 100 60 110 50 s20 -10 30 0 Q160 70 170 50 t20 0 A15 10 30 0 1 220 60 L230 80 Z';
+    for (let i = 0; i < 2000; i++) path(d, 1.5, 1.5, 3, 4);
+    const runs = [];
+    for (let r = 0; r < 5; r++) {
+        const n = 20000, t = process.hrtime.bigint();
+        for (let i = 0; i < n; i++) path(d, 1.5, 1.5, 3, 4);
+        runs.push(n / (Number(process.hrtime.bigint() - t) / 1e6));
+    }
+    runs.sort((a, b) => a - b);
+    console.log(`T1: ${Math.round(runs[2])} paths per ms (median of 5 runs of 20,000; ${runs.map(Math.round).join(', ')}), node ${process.version}`);
 }
 
 console.log(fails ? `${fails} FAILED` : 'all ok');

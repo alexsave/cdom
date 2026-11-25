@@ -16,27 +16,27 @@ typedef struct { size_t n; size_t pad; } hdr;   /* 16 bytes, so the block keeps 
 void host_reset(size_t room) { host_room = room; host_full = 0; host_peak = host_live; host_calls = 0; }
 
 void *cd_alloc_try(uint32_t n) {
-  host_calls++;
-  if (host_full || n > host_room - host_live || host_live + n > host_room) { host_full = 1; return 0; }
-  hdr *h = malloc(sizeof(hdr) + n);
-  if (!h) return 0;
-  h->n = n;
-  host_live += n; host_blocks++;
-  if (host_live > host_peak) host_peak = host_live;
-  return h + 1;
+    host_calls++;
+    if (host_full || n > host_room - host_live || host_live + n > host_room) { host_full = 1; return 0; }
+    hdr *h = malloc(sizeof(hdr) + n);
+    if (!h) return 0;
+    h->n = n;
+    host_live += n; host_blocks++;
+    if (host_live > host_peak) host_peak = host_live;
+    return h + 1;
 }
 void cd_free(void *p) {
-  if (!p) return;
-  hdr *h = (hdr *)p - 1;
-  host_live -= h->n; host_blocks--;
-  free(h);
+    if (!p) return;
+    hdr *h = (hdr *)p - 1;
+    host_live -= h->n; host_blocks--;
+    free(h);
 }
 void *cd_realloc_try(void *p, uint32_t n) {
-  if (!p) return cd_alloc_try(n);
-  hdr *h = (hdr *)p - 1;
-  void *q = cd_alloc_try(n);
-  if (!q) return 0;
-  memcpy(q, p, h->n < n ? h->n : n);
-  cd_free(p);
-  return q;
+    if (!p) return cd_alloc_try(n);
+    hdr *h = (hdr *)p - 1;
+    void *q = cd_alloc_try(n);
+    if (!q) return 0;
+    memcpy(q, p, h->n < n ? h->n : n);
+    cd_free(p);
+    return q;
 }

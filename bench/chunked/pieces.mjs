@@ -104,28 +104,28 @@ async function overlap(kind, n) {
 const srv = http.createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html' }); r.end(page); }).listen(0);
 const b = await launch();
 try {
-  await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/` });
-  for (let i = 0; i < 100 && !(await b.evaluate('typeof run === "function"')); i++) await new Promise((r) => setTimeout(r, 50));
-  const { result: { result: { objectId } } } = await b.send('Runtime.evaluate', { expression: 'document.getElementById("pick")' });
-  await b.send('DOM.setFileInputFiles', { files: [file], objectId });
-  const arms = [['whole', 0], ['fr', 65536], ['fr', 262144], ['fr', 1048576], ['ab', 65536], ['ab', 262144], ['ab', 1048576],
-    ['ab2', 262144], ['stream', 0], ['sync', 65536], ['sync', 262144], ['sync', 1048576]];
-  const res = arms.map(() => []);
-  for (let r = 0; r < reps; r++) for (let a = 0; a < arms.length; a++) res[a].push(await b.evaluate(`run(${JSON.stringify(arms[a][0])}, ${arms[a][1]})`));
-  const oarms = [['ovl-whole', 0], ['ovl-ab', 262144], ['ovl-ab', 1048576], ['ovl-stream', 0], ['ovl-sync', 262144], ['ovl-sync', 1048576],
-    ['ovl-wab', 1048576], ['ovl-wstream', 0]];
-  const ores = oarms.map(() => []);
-  for (let r = 0; r < reps; r++) for (let a = 0; a < oarms.length; a++) ores[a].push(await b.evaluate(`overlap(${JSON.stringify(oarms[a][0])}, ${oarms[a][1]})`));
-  console.log(`# ${b.version}, ${file}, ${reps} rounds, medians`);
-  console.log('arm\tpiece\tpieces\ttotal ms\tper piece ms\tlongest piece ms (stream: largest piece bytes)\tinside the worker ms');
-  var med = (xs) => xs.slice().sort((x, y) => x - y)[xs.length >> 1];
-  arms.forEach(([k, n], a) => {
-    const ms = med(res[a].map((x) => x.ms)), p = res[a][0].pieces;
-    console.log([k, n || '-', p, ms.toFixed(1), (ms / p).toFixed(3), med(res[a].map((x) => x.longest)).toFixed(k === 'stream' ? 0 : 2),
-      k === 'sync' ? med(res[a].map((x) => x.inner)).toFixed(1) : '-'].join('\t'));
-  });
-  console.log(`# overlap: a stand-in decode of 30 ms per MiB on the reading thread (worker arms: in a worker, timed from the post)`);
-  console.log('arm\tpiece\ttotal ms\tbusy ms\tadded by reading ms');
-  oarms.forEach(([k, n], a) => { const ms = med(ores[a].map((x) => x.ms)), bz = ores[a][0].busy;
-    console.log([k, n || '-', ms.toFixed(1), bz.toFixed(1), (ms - bz).toFixed(1)].join('\t')); });
+    await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.address().port}/` });
+    for (let i = 0; i < 100 && !(await b.evaluate('typeof run === "function"')); i++) await new Promise((r) => setTimeout(r, 50));
+    const { result: { result: { objectId } } } = await b.send('Runtime.evaluate', { expression: 'document.getElementById("pick")' });
+    await b.send('DOM.setFileInputFiles', { files: [file], objectId });
+    const arms = [['whole', 0], ['fr', 65536], ['fr', 262144], ['fr', 1048576], ['ab', 65536], ['ab', 262144], ['ab', 1048576],
+      ['ab2', 262144], ['stream', 0], ['sync', 65536], ['sync', 262144], ['sync', 1048576]];
+    const res = arms.map(() => []);
+    for (let r = 0; r < reps; r++) for (let a = 0; a < arms.length; a++) res[a].push(await b.evaluate(`run(${JSON.stringify(arms[a][0])}, ${arms[a][1]})`));
+    const oarms = [['ovl-whole', 0], ['ovl-ab', 262144], ['ovl-ab', 1048576], ['ovl-stream', 0], ['ovl-sync', 262144], ['ovl-sync', 1048576],
+      ['ovl-wab', 1048576], ['ovl-wstream', 0]];
+    const ores = oarms.map(() => []);
+    for (let r = 0; r < reps; r++) for (let a = 0; a < oarms.length; a++) ores[a].push(await b.evaluate(`overlap(${JSON.stringify(oarms[a][0])}, ${oarms[a][1]})`));
+    console.log(`# ${b.version}, ${file}, ${reps} rounds, medians`);
+    console.log('arm\tpiece\tpieces\ttotal ms\tper piece ms\tlongest piece ms (stream: largest piece bytes)\tinside the worker ms');
+    var med = (xs) => xs.slice().sort((x, y) => x - y)[xs.length >> 1];
+    arms.forEach(([k, n], a) => {
+        const ms = med(res[a].map((x) => x.ms)), p = res[a][0].pieces;
+        console.log([k, n || '-', p, ms.toFixed(1), (ms / p).toFixed(3), med(res[a].map((x) => x.longest)).toFixed(k === 'stream' ? 0 : 2),
+          k === 'sync' ? med(res[a].map((x) => x.inner)).toFixed(1) : '-'].join('\t'));
+    });
+    console.log(`# overlap: a stand-in decode of 30 ms per MiB on the reading thread (worker arms: in a worker, timed from the post)`);
+    console.log('arm\tpiece\ttotal ms\tbusy ms\tadded by reading ms');
+    oarms.forEach(([k, n], a) => { const ms = med(ores[a].map((x) => x.ms)), bz = ores[a][0].busy;
+        console.log([k, n || '-', ms.toFixed(1), bz.toFixed(1), (ms - bz).toFixed(1)].join('\t')); });
 } finally { await b.close(); srv.close(); }

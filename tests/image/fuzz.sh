@@ -22,16 +22,16 @@ o="$out/obj"; rm -rf "$o"; mkdir -p "$o"
 for f in "${OWN[@]}" "$top/src/cdom_image_sjlj.c" "$here/host_alloc.c"; do "$CC" "${F[@]}" -Wall -Wextra -Werror "${OWNF[@]}" -c -o "$o/$(basename "$f" .c).o" "$f"; done
 for f in "${VENDOR[@]}"; do "$CC" "${F[@]}" "${VENDORF[@]}" -c -o "$o/v_$(basename "$f" .c).o" "$f"; done
 for t in jpeg png; do
-  case " $targets " in *" $t "*) ;; *) continue;; esac
-  "$CC" -O1 -g -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=undefined -I"$top/src" -I"$here" -o "$out/fuzz_$t" "$here/fuzz_$t.c" "$o"/*.o
-  mkdir -p "$out/corpus_$t" "$out/seeds_$t"
-  ext=$([ $t = jpeg ] && echo jpg || echo png)
-  for s in "$top/tests/out/image/inputs"/*."$ext"; do
-    [ "$(wc -c < "$s")" -le 200000 ] || continue
-    b="$(basename "$s")"; n="$(wc -c < "$s")"
-    cp "$s" "$out/seeds_$t/$b"
-    head -c $((n / 3)) "$s" > "$out/seeds_$t/$b.cut1"; head -c $((2 * n / 3)) "$s" > "$out/seeds_$t/$b.cut2"
-  done
+    case " $targets " in *" $t "*) ;; *) continue;; esac
+    "$CC" -O1 -g -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=undefined -I"$top/src" -I"$here" -o "$out/fuzz_$t" "$here/fuzz_$t.c" "$o"/*.o
+    mkdir -p "$out/corpus_$t" "$out/seeds_$t"
+    ext=$([ $t = jpeg ] && echo jpg || echo png)
+    for s in "$top/tests/out/image/inputs"/*."$ext"; do
+        [ "$(wc -c < "$s")" -le 200000 ] || continue
+        b="$(basename "$s")"; n="$(wc -c < "$s")"
+        cp "$s" "$out/seeds_$t/$b"
+        head -c $((n / 3)) "$s" > "$out/seeds_$t/$b.cut1"; head -c $((2 * n / 3)) "$s" > "$out/seeds_$t/$b.cut2"
+    done
 done
 # the inflate against zlib (fuzz_inflate.c, which links the system's zlib); its seeds: a byte that picks the pieces,
 # then zlib streams of a few kinds (one-off, from Python's zlib, nothing random)
@@ -52,13 +52,13 @@ secs="${1:-600}"
 cd "$out"
 export ASAN_OPTIONS="quarantine_size_mb=16"   # leaks: the targets check the counted heap
 for t in $targets; do
-  ./fuzz_$t "corpus_$t" "seeds_$t" -max_total_time="$secs" -timeout=20 -rss_limit_mb=320 -malloc_limit_mb=100 -max_len=200000 \
-    -artifact_prefix="$out/crash-$t-" > "$t.log" 2>&1 &
+    ./fuzz_$t "corpus_$t" "seeds_$t" -max_total_time="$secs" -timeout=20 -rss_limit_mb=320 -malloc_limit_mb=100 -max_len=200000 \
+      -artifact_prefix="$out/crash-$t-" > "$t.log" 2>&1 &
 done
 wait || true
 fail=0
 for t in $targets; do
-  tail -n 2 "$t.log"
-  if ls "$out"/crash-$t-* > /dev/null 2>&1; then echo "FAIL fuzz_$t found: $(ls "$out"/crash-$t-*)"; fail=1; else echo "ok   fuzz_$t: $secs s, no crash, leak or limit"; fi
+    tail -n 2 "$t.log"
+    if ls "$out"/crash-$t-* > /dev/null 2>&1; then echo "FAIL fuzz_$t found: $(ls "$out"/crash-$t-*)"; fail=1; else echo "ok   fuzz_$t: $secs s, no crash, leak or limit"; fi
 done
 exit $fail

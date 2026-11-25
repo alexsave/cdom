@@ -77,13 +77,13 @@ ok(refused(joined, 'a member of a new expression'), `and the gate refuses terser
 // JavaScript 1.0, Netscape 2's, with only the names it checks for first (FRAMES_ALLOWED).
 const shimSrc = fs.readFileSync(new URL('./legacy/frames.js', import.meta.url), 'utf8');
 for (const [what, src] of [['frames.js', shimSrc], ['frames.js once minified', await terse(shimSrc)]]) {
-  const found = lacks(src, { js10: true, allowed: FRAMES_ALLOWED });
-  ok(!found.length, `${what} is JavaScript 1.0: ${found.slice(0, 6).join(', ')}`);
+    const found = lacks(src, { js10: true, allowed: FRAMES_ALLOWED });
+    ok(!found.length, `${what} is JavaScript 1.0: ${found.slice(0, 6).join(', ')}`);
 }
 // The methods of 1.2 and later, and the DOM this tier has not.
 for (const m of ['push', 'pop', 'shift', 'unshift', 'splice', 'slice', 'concat', 'call', 'apply', 'charCodeAt',
   'fromCharCode', 'createElement', 'appendChild', 'addEventListener', 'getElementById', 'innerHTML'])
-  ok(refused(`o.${m}(x);`, `.${m}`), `.${m} is refused`);
+    ok(refused(`o.${m}(x);`, `.${m}`), `.${m} is refused`);
 ok(passes('if (s.charCodeAt) n = s.charCodeAt(0);', { allowed: ['charCodeAt'] }), 'charCodeAt passes where the file says it checks for it');
 ok(refused('o.push(x);', '.push', { allowed: ['charCodeAt'] }), 'and push is still refused there');
 // What JavaScript 1.1 has.
@@ -103,7 +103,7 @@ for (const [src, what] of [['if (typeof x == "string") f();', 'typeof'], ['var a
   ['var s = t.substr(1);', '.substr'], ['if (o.constructor == F) f();', '.constructor'], ['window.onerror = h;', '.onerror'],
   ['onerror = h;', 'onerror'], ['var n = document.images.length;', '.images'], ['var i = new Image();', 'Image'],
   ['var w = screen.width;', 'screen'], ['function g() { return 1; } if (g) x = 1;', 'a function in a condition'], ['if (el.setSelectionRange) f();', 'a function in a condition'], ['if (window.cdomFramesStart && window.cdomFactory) f();', 'a function in a condition'], ['var n = !String;', 'a function in a condition'], ['var w = window.screen.width;', '.screen'], ['var n = navigator.plugins.length;', '.plugins']])
-  ok(refused(src, what, { js10: true }), `js10: ${src} is refused (${what})`);
+    ok(refused(src, what, { js10: true }), `js10: ${src} is refused (${what})`);
 ok(passes('if (x) f(); else g(a[0], "s".length);', { js10: true }), 'js10: if, calls, indexing and length pass');
 ok(passes('var o = new Object(); o.k = 1;', { js10: true }), 'js10: new Object() passes (Netscape 2 has it: js1c\'s output runs on it)');
 ok(passes('if (window.String != null && String.fromCharCode != null) c = String.fromCharCode(65); if (window.Number != null) n = Number.NaN; document.onmousedown = h;',

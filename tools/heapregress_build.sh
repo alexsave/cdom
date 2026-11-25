@@ -20,5 +20,5 @@ PATH="$ld:/usr/bin:/bin" "$CC" -Oz "${CDOM_CFLAGS[@]}" "${CDOM_LDFLAGS[@]}" \
 wasm-opt -Oz -g "$out/app.linked.wasm" -o "$out/app.named.wasm"
 rm "$out/app.linked.wasm"
 wasm-objdump -x "$out/app.named.wasm" | sed -n '/^Code\[/,/^[A-Z][a-z]*\[/p' | grep "size=" |
-  sed -E 's/ - func\[[0-9]+\] size=([0-9]+) <(.*)>.*/\2 \1/; s/ - func\[([0-9]+)\] size=([0-9]+)$/func\1 \2/' | sort > "$out/funcs.txt"
+    sed -E 's/ - func\[[0-9]+\] size=([0-9]+) <(.*)>.*/\2 \1/; s/ - func\[([0-9]+)\] size=([0-9]+)$/func\1 \2/' | sort > "$out/funcs.txt"
 printf '%s: stripped %s bytes, named code %s bytes\n' "$name" "$(wc -c < "$out/app.stripped.wasm" | tr -d ' ')" "$(awk '{s+=$2} END{print s}' "$out/funcs.txt")"

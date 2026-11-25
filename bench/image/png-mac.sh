@@ -10,6 +10,6 @@ make -s inputs > /dev/null && make -s page && make -s simd && ./old.sh "${1:-ori
 day="$(date +%Y-%m-%d)"; name="${2:-png-mac}"
 for br in chrome safari; do [ ! -e "results/$day-$name-$br.log" ] || { echo "results/$day-$name-$br.log exists: give another name" >&2; exit 1; }; done
 for br in chrome safari; do
-  { uptime; BROWSER=$br node run.mjs 9 900 C-old,C-js,C-simd,B1,B2; uptime; } 2>&1 | tee "results/$day-$name-$br.log"
-  raw="$(ls -t results/raw/*.tsv | head -1)"; cp "$raw" "results/$day-$name-$br.tsv"
+    { uptime; BROWSER=$br node run.mjs 9 900 C-old,C-js,C-simd,B1,B2; uptime; } 2>&1 | tee "results/$day-$name-$br.log"
+    raw="$(ls -t results/raw/*.tsv | head -1)"; cp "$raw" "results/$day-$name-$br.tsv"
 done

@@ -13,18 +13,18 @@ static void put32(uint8_t *p, uint32_t v) { for (int i = 0; i < 4; i++) p[i] = (
 static void put16(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
 /* 16-bit mono PCM: noise whose loudness falls by 1/64 every sample (to under 1/10,000 by the end). */
 static void make_click(void) {
-  uint8_t *w = click_wav;
-  __builtin_memcpy(w, "RIFF", 4); put32(w + 4, 36 + 2 * SAMPLES);
-  __builtin_memcpy(w + 8, "WAVEfmt ", 8); put32(w + 16, 16);
-  put16(w + 20, 1); put16(w + 22, 1); put32(w + 24, RATE); put32(w + 28, 2 * RATE);
-  put16(w + 32, 2); put16(w + 34, 16);
-  __builtin_memcpy(w + 36, "data", 4); put32(w + 40, 2 * SAMPLES);
-  int32_t loudness = 24000;
-  for (uint32_t i = 0; i < SAMPLES; i++) {
-    int32_t sample = (int32_t)(cd_rand() % (uint32_t)(2 * loudness + 1)) - loudness;
-    put16(w + 44 + 2 * i, (uint32_t)sample);
-    loudness = loudness * 63 / 64;
-  }
+    uint8_t *w = click_wav;
+    __builtin_memcpy(w, "RIFF", 4); put32(w + 4, 36 + 2 * SAMPLES);
+    __builtin_memcpy(w + 8, "WAVEfmt ", 8); put32(w + 16, 16);
+    put16(w + 20, 1); put16(w + 22, 1); put32(w + 24, RATE); put32(w + 28, 2 * RATE);
+    put16(w + 32, 2); put16(w + 34, 16);
+    __builtin_memcpy(w + 36, "data", 4); put32(w + 40, 2 * SAMPLES);
+    int32_t loudness = 24000;
+    for (uint32_t i = 0; i < SAMPLES; i++) {
+        int32_t sample = (int32_t)(cd_rand() % (uint32_t)(2 * loudness + 1)) - loudness;
+        put16(w + 44 + 2 * i, (uint32_t)sample);
+        loudness = loudness * 63 / 64;
+    }
 }
 
 static uint32_t clip = CD_AUDIO_FAILED;
@@ -32,39 +32,39 @@ static uint32_t played;
 static cd_id hint, button, played_txt;
 
 static void show_state(void) {
-  uint32_t state = cd_audio_state();
-  cd_set_text_node(hint, state == CD_AUDIO_RUNNING ? "sound on" : "tap for sound");
+    uint32_t state = cd_audio_state();
+    cd_set_text_node(hint, state == CD_AUDIO_RUNNING ? "sound on" : "tap for sound");
 }
 
 void cd_main(void) {
-  make_click();
-  cd_audio_load(1, click_wav, sizeof click_wav);
-  cd_open("p"); cd_text("tap for sound"); cd_name_text(hint = cd_id_new()); cd_close();
-  cd_open("button");
-  cd_attr("style", "font: 24px sans-serif; padding: 24px 48px; touch-action: manipulation;");
-  cd_listen(button = cd_id_new(), CD_EV_POINTERDOWN);
-  cd_text("Tap");
-  cd_close();
-  cd_open("p"); cd_text("clicks played: "); cd_text_num(0); cd_name_text(played_txt = cd_id_new()); cd_close();
-  show_state();
+    make_click();
+    cd_audio_load(1, click_wav, sizeof click_wav);
+    cd_open("p"); cd_text("tap for sound"); cd_name_text(hint = cd_id_new()); cd_close();
+    cd_open("button");
+    cd_attr("style", "font: 24px sans-serif; padding: 24px 48px; touch-action: manipulation;");
+    cd_listen(button = cd_id_new(), CD_EV_POINTERDOWN);
+    cd_text("Tap");
+    cd_close();
+    cd_open("p"); cd_text("clicks played: "); cd_text_num(0); cd_name_text(played_txt = cd_id_new()); cd_close();
+    show_state();
 }
 
 void cd_on_audio_loaded(uint32_t, uint32_t loaded) {
-  clip = loaded;
+    clip = loaded;
 }
 
 void cd_on_audio_state(uint32_t) {
-  show_state();
+    show_state();
 }
 
 /* A tap plays the click now, its pitch within 10% either way. */
 void cd_on_event(const cd_event_rec *e) {
-  if (e->type != CD_EV_POINTERDOWN || (cd_id)e->id != button || clip == CD_AUDIO_FAILED) return;
-  double rate = 0.9 + (double)(cd_rand() % 21) / 100;
-  cd_audio_play(clip, 0.8, rate, 0);
+    if (e->type != CD_EV_POINTERDOWN || (cd_id)e->id != button || clip == CD_AUDIO_FAILED) return;
+    double rate = 0.9 + (double)(cd_rand() % 21) / 100;
+    cd_audio_play(clip, 0.8, rate, 0);
 }
 
 void cd_on_audio_ended(uint32_t) {
-  played++;
-  cd_set_text_node_num(played_txt, played);
+    played++;
+    cd_set_text_node_num(played_txt, played);
 }

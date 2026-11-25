@@ -7,19 +7,19 @@ var TAG = "" + location.search;
 TAG = TAG.substring(1, TAG.length);
 if (TAG == "") { TAG = "x"; }
 function mark(name, v) {
-  n = n + 1;
-  document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
+    n = n + 1;
+    document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
 }
 var late_n = 0;
 function late(name, v) {
-  late_n = late_n + 1;
-  var u = '/mark/' + TAG + '/p-L' + late_n + '-' + name + '-' + escape("" + v);
-  if (window.Image) {
-    var im = new Image();
-    im.src = u;
-  } else {
-    document.write('<IMG SRC="' + u + '" WIDTH=1 HEIGHT=1>');
-  }
+    late_n = late_n + 1;
+    var u = '/mark/' + TAG + '/p-L' + late_n + '-' + name + '-' + escape("" + v);
+    if (window.Image) {
+        var im = new Image();
+        im.src = u;
+    } else {
+        document.write('<IMG SRC="' + u + '" WIDTH=1 HEIGHT=1>');
+    }
 }
 </SCRIPT>
 </HEAD>

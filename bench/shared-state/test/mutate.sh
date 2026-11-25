@@ -14,14 +14,14 @@ mutants=(
   'read-always|s/if \(w->view == running\) return;/return;/|^FAIL 8\.'
 )
 for m in "${mutants[@]}"; do
-  IFS='|' read -r name sub want <<< "$m"
-  d="$here/out/mut-$name"; mkdir -p "$d"
-  perl -0pe "$sub" "$lib" > "$d/cd_state.c"
-  if cmp -s "$lib" "$d/cd_state.c"; then echo "MUTANT $name: the substitution changed nothing"; status=1; continue; fi
-  LIB="$d/cd_state.c" OUT="$d" "$here/build.sh" || { echo "MUTANT $name: does not build"; status=1; continue; }
-  res="$(node "$here/test.mjs" "out/mut-$name" 2>&1)"
-  echo "== mutant $name"; diff <(cat "$lib") "$d/cd_state.c" | sed 's/^/   /'
-  echo "$res" | grep -E '^FAIL' | sed 's/^/   /'
-  if echo "$res" | grep -Eq "$want"; then echo "   KILLED (wanted $want)"; else echo "   SURVIVED (wanted $want)"; status=1; fi
+    IFS='|' read -r name sub want <<< "$m"
+    d="$here/out/mut-$name"; mkdir -p "$d"
+    perl -0pe "$sub" "$lib" > "$d/cd_state.c"
+    if cmp -s "$lib" "$d/cd_state.c"; then echo "MUTANT $name: the substitution changed nothing"; status=1; continue; fi
+    LIB="$d/cd_state.c" OUT="$d" "$here/build.sh" || { echo "MUTANT $name: does not build"; status=1; continue; }
+    res="$(node "$here/test.mjs" "out/mut-$name" 2>&1)"
+    echo "== mutant $name"; diff <(cat "$lib") "$d/cd_state.c" | sed 's/^/   /'
+    echo "$res" | grep -E '^FAIL' | sed 's/^/   /'
+    if echo "$res" | grep -Eq "$want"; then echo "   KILLED (wanted $want)"; else echo "   SURVIVED (wanted $want)"; status=1; fi
 done
 exit $status

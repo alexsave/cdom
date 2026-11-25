@@ -9,91 +9,91 @@
 let words; // memory.words
 
 function views() {
-  words = memory.words;
+    words = memory.words;
 }
 // The words never go stale: a grow pushes onto the same Array.
 function stale() {
-  return false;
+    return false;
 }
 function load8(ptr) {
-  return memory.load8_u(ptr);
+    return memory.load8_u(ptr);
 }
 function load32(index) {
-  return words[index] >>> 0;
+    return words[index] >>> 0;
 }
 function store32(index, value) {
-  words[index] = value | 0;
+    words[index] = value | 0;
 }
 function storeF32(index, value) {
-  memory.store_f32(index, value);
+    memory.store_f32(index, value);
 }
 function loadF64(index) {
-  return memory.load_f64(index);
+    return memory.load_f64(index);
 }
 function storeF64(index, value) {
-  memory.store_f64(index, value);
+    memory.store_f64(index, value);
 }
 // With no views, every read of bytes is a copy.
 function bytes(ptr, length) {
-  const out = [];
-  for (let i = 0; i < length; i++) {
-    out.push(memory.load8_u(ptr + i));
-  }
-  return out;
+    const out = [];
+    for (let i = 0; i < length; i++) {
+        out.push(memory.load8_u(ptr + i));
+    }
+    return out;
 }
 function copyBytes(ptr, length) {
-  return bytes(ptr, length);
+    return bytes(ptr, length);
 }
 function viewBytes(ptr, length) {
-  return bytes(ptr, length);
+    return bytes(ptr, length);
 }
 function writeBytes(ptr, data, length) {
-  for (let i = 0; i < length; i++) {
-    memory.store8(ptr + i, data[i]);
-  }
+    for (let i = 0; i < length; i++) {
+        memory.store8(ptr + i, data[i]);
+    }
 }
 // What reaches deliver here: the polyfilled TextEncoder's Arrays (no browser without typed arrays makes an
 // ArrayBuffer).
 function bytesOf(data) {
-  return data;
+    return data;
 }
 function isBytes(data) {
-  return Array.isArray(data);
+    return Array.isArray(data);
 }
 function encodeTo(ptr, capacity, text) {
-  const out = new Array(capacity); // encodeInto writes into it up to its length, whole characters only
-  const result = textEncoder.encodeInto(text, out);
-  writeBytes(ptr, out, result.written);
-  return result;
+    const out = new Array(capacity); // encodeInto writes into it up to its length, whole characters only
+    const result = textEncoder.encodeInto(text, out);
+    writeBytes(ptr, out, result.written);
+    return result;
 }
 function randomBytes(ptr, length) {
-  const random = new Uint8Array(length);
-  crypto.getRandomValues(random);
-  writeBytes(ptr, random, length);
+    const random = new Uint8Array(length);
+    crypto.getRandomValues(random);
+    writeBytes(ptr, random, length);
 }
 // IE 9 has no ImageData constructor, but its canvas makes one.
 function pixels(ptr, width, height, channels, context) {
-  const image = context.createImageData(width, height);
-  const data = image.data;
-  for (let from = ptr, to = 0; to < width * height * 4; from += channels, to += 4) {
-    data[to] = memory.load8_u(from);
-    data[to + 1] = memory.load8_u(from + 1);
-    data[to + 2] = memory.load8_u(from + 2);
-    data[to + 3] = channels === 3 ? 255 : memory.load8_u(from + 3);
-  }
-  return image;
+    const image = context.createImageData(width, height);
+    const data = image.data;
+    for (let from = ptr, to = 0; to < width * height * 4; from += channels, to += 4) {
+        data[to] = memory.load8_u(from);
+        data[to + 1] = memory.load8_u(from + 1);
+        data[to + 2] = memory.load8_u(from + 2);
+        data[to + 3] = channels === 3 ? 255 : memory.load8_u(from + 3);
+    }
+    return image;
 }
 function newWords(length, old) {
-  const out = old || [];
-  while (out.length < length) {
-    out.push(0);
-  }
-  return out;
+    const out = old || [];
+    while (out.length < length) {
+        out.push(0);
+    }
+    return out;
 }
 function ascii(p, n) {
-  let v = "";
-  for (let k = 0; k < n; k++) {
-    v += String.fromCharCode(memory.load8_u(p + k));
-  }
-  return v;
+    let v = "";
+    for (let k = 0; k < n; k++) {
+        v += String.fromCharCode(memory.load8_u(p + k));
+    }
+    return v;
 }

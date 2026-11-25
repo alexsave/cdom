@@ -26,16 +26,16 @@
 
 typedef struct cd_watcher cd_watcher;
 typedef struct cd_state {
-  uint32_t ver;                 /* moves on at every cd_changed; read it freely */
-  uint32_t asked;               /* the prototype's: on the list of changed states */
-  cd_watcher *first, *last;     /* the views watching, oldest first */
-  struct cd_state *next_asked;
+    uint32_t ver;                 /* moves on at every cd_changed; read it freely */
+    uint32_t asked;               /* the prototype's: on the list of changed states */
+    cd_watcher *first, *last;     /* the views watching, oldest first */
+    struct cd_state *next_asked;
 } cd_state;
 struct cd_watcher {
-  cd_state *of; cd_watcher *next, *prev;
-  cd_watcher *view;             /* the first watcher of the same (fn, ctx): one view, however many states */
-  cd_render_fn fn; void *ctx;
-  uint32_t round, slot;         /* on the view: the round it was last queued in, and its place in the queue + 1 */
+    cd_state *of; cd_watcher *next, *prev;
+    cd_watcher *view;             /* the first watcher of the same (fn, ctx): one view, however many states */
+    cd_render_fn fn; void *ctx;
+    uint32_t round, slot;         /* on the view: the round it was last queued in, and its place in the queue + 1 */
 };
 
 void cd_changed(cd_state *s);

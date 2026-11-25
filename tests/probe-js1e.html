@@ -7,8 +7,8 @@ var TAG = "" + location.href;
 var Q = TAG.indexOf("?");
 if (Q < 0) { TAG = "x"; } else { TAG = TAG.substring(Q + 1, TAG.length); }
 function mark(name, v) {
-  n = n + 1;
-  document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
+    n = n + 1;
+    document.write('<IMG SRC="/mark/' + TAG + '/p-' + n + '-' + name + '-' + escape("" + v) + '" WIDTH=1 HEIGHT=1>');
 }
 function T() { var d = new Date(); return d.getTime(); }
 </SCRIPT>

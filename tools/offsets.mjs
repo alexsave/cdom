@@ -18,33 +18,33 @@ const VIEW = new RegExp(String.raw`\b(?:u8|u32|i32|f32|f64)(?:\s*\[|\.(?:set|sub
 
 // The text from just after an opening bracket to its partner, and where it ends.
 function balanced(text, from) {
-  let level = 1;
-  for (let i = from; i < text.length; i++) {
-    const c = text[i];
-    if (c === '(' || c === '[' || c === '{') {
-      level++;
-    } else if (c === ')' || c === ']' || c === '}') {
-      if (--level === 0) {
-        return text.slice(from, i);
-      }
+    let level = 1;
+    for (let i = from; i < text.length; i++) {
+        const c = text[i];
+        if (c === '(' || c === '[' || c === '{') {
+            level++;
+        } else if (c === ')' || c === ']' || c === '}') {
+            if (--level === 0) {
+                return text.slice(from, i);
+            }
+        }
     }
-  }
-  return text.slice(from);
+    return text.slice(from);
 }
 // The first argument of an argument list, at top level.
 function firstArgument(args) {
-  let level = 0;
-  for (let i = 0; i < args.length; i++) {
-    const c = args[i];
-    if (c === '(' || c === '[' || c === '{') {
-      level++;
-    } else if (c === ')' || c === ']' || c === '}') {
-      level--;
-    } else if (c === ',' && level === 0) {
-      return args.slice(0, i);
+    let level = 0;
+    for (let i = 0; i < args.length; i++) {
+        const c = args[i];
+        if (c === '(' || c === '[' || c === '{') {
+            level++;
+        } else if (c === ')' || c === ']' || c === '}') {
+            level--;
+        } else if (c === ',' && level === 0) {
+            return args.slice(0, i);
+        }
     }
-  }
-  return args;
+    return args;
 }
 
 // Comments blanked, lines kept (a "//" after a colon is a URL, not a comment).
@@ -52,59 +52,59 @@ const uncommented = (source) => source.replace(/(^|[^:])\/\/[^\n]*/gm, (c, keep)
 
 // Every literal offset into C memory in source: [{ line, text }].
 export function literalOffsets(source) {
-  const code = uncommented(source);
-  const found = [];
-  for (const m of code.matchAll(VIEW)) {
-    const inside = balanced(code, m.index + m[0].length);
-    let reach = inside; // an index, or set's and subarray's arguments: all of it
-    if (m[0].endsWith(',')) {
-      reach = firstArgument(inside); // a typed array over memory.buffer: its offset, the argument after the buffer
-    } else if (new RegExp(String.raw`\b(?:${ACCESSORS})\s*\($`).test(m[0])) {
-      reach = firstArgument(inside); // the helpers and accessors: their pointer or index
+    const code = uncommented(source);
+    const found = [];
+    for (const m of code.matchAll(VIEW)) {
+        const inside = balanced(code, m.index + m[0].length);
+        let reach = inside; // an index, or set's and subarray's arguments: all of it
+        if (m[0].endsWith(',')) {
+            reach = firstArgument(inside); // a typed array over memory.buffer: its offset, the argument after the buffer
+        } else if (new RegExp(String.raw`\b(?:${ACCESSORS})\s*\($`).test(m[0])) {
+            reach = firstArgument(inside); // the helpers and accessors: their pointer or index
+        }
+        const bare = reach.replace(/>>>?\s*\d+/g, '');
+        // A number in it is an offset; an array literal set onto a view writes a struct by position.
+        if (/\b\d+(?:\.\d+)?\b/.test(bare) || (/\.set\s*\($/.test(m[0]) && /^\s*\[/.test(inside))) {
+            const line = code.slice(0, m.index).split('\n').length;
+            found.push({ line, text: source.split('\n')[line - 1].trim() });
+        }
     }
-    const bare = reach.replace(/>>>?\s*\d+/g, '');
-    // A number in it is an offset; an array literal set onto a view writes a struct by position.
-    if (/\b\d+(?:\.\d+)?\b/.test(bare) || (/\.set\s*\($/.test(m[0]) && /^\s*\[/.test(inside))) {
-      const line = code.slice(0, m.index).split('\n').length;
-      found.push({ line, text: source.split('\n')[line - 1].trim() });
+    // A base: a name set to a pointer turned into words or doubles (`const record = ptr >> 2`). Read
+    // bare (`i32[record]`) it is the struct's first field by position, an offset of 0 written as nothing;
+    // moved by a number (`index * 4` in its value, `meta += 3`) it steps by a hardcoded size.
+    const bases = new Set();
+    const report = (index) => {
+        const line = code.slice(0, index).split('\n').length;
+        found.push({ line, text: source.split('\n')[line - 1].trim() });
+    };
+    for (const m of code.matchAll(/\b(?:const|let|var)\s+(\w+)\s*=\s*([^;\n]*)/g)) {
+        if (/>>>?\s*[23]\b/.test(m[2]) && !/=>/.test(m[2])) {
+            bases.add(m[1]);
+            if (/\b\d+\b/.test(m[2].replace(/>>>?\s*\d+/g, ''))) {
+                report(m.index);
+            }
+        }
     }
-  }
-  // A base: a name set to a pointer turned into words or doubles (`const record = ptr >> 2`). Read
-  // bare (`i32[record]`) it is the struct's first field by position, an offset of 0 written as nothing;
-  // moved by a number (`index * 4` in its value, `meta += 3`) it steps by a hardcoded size.
-  const bases = new Set();
-  const report = (index) => {
-    const line = code.slice(0, index).split('\n').length;
-    found.push({ line, text: source.split('\n')[line - 1].trim() });
-  };
-  for (const m of code.matchAll(/\b(?:const|let|var)\s+(\w+)\s*=\s*([^;\n]*)/g)) {
-    if (/>>>?\s*[23]\b/.test(m[2]) && !/=>/.test(m[2])) {
-      bases.add(m[1]);
-      if (/\b\d+\b/.test(m[2].replace(/>>>?\s*\d+/g, ''))) {
-        report(m.index);
-      }
+    for (const name of bases) {
+        for (const m of code.matchAll(new RegExp(`\\b(?:u8|u32|i32|f32|f64)\\s*\\[\\s*${name}\\s*\\]|\\b(?:${ACCESSORS})\\s*\\(\\s*${name}\\s*[,)]|\\b${name}\\s*[-+]=\\s*[^;,)\\n]*\\d`, 'g'))) {
+            report(m.index);
+        }
     }
-  }
-  for (const name of bases) {
-    for (const m of code.matchAll(new RegExp(`\\b(?:u8|u32|i32|f32|f64)\\s*\\[\\s*${name}\\s*\\]|\\b(?:${ACCESSORS})\\s*\\(\\s*${name}\\s*[,)]|\\b${name}\\s*[-+]=\\s*[^;,)\\n]*\\d`, 'g'))) {
-      report(m.index);
-    }
-  }
-  found.sort((x, y) => x.line - y.line);
-  return found;
+    found.sort((x, y) => x.line - y.line);
+    return found;
 }
 // How many places the scan looked at, so a scan that matches nothing is not mistaken for a pass.
 export function memoryReaches(source) {
-  return [...uncommented(source).matchAll(VIEW)].length;
+    return [...uncommented(source).matchAll(VIEW)].length;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)) {
-  const file = process.argv[2] || path.join(path.dirname(new URL(import.meta.url).pathname), '../shim/cdom.js');
-  const source = fs.readFileSync(file, 'utf8');
-  const found = literalOffsets(source);
-  for (const f of found) {
-    console.log(`FAIL ${path.basename(file)}:${f.line}: a literal offset into C memory: ${f.text}`);
-  }
-  console.log(`${memoryReaches(source)} reaches into C memory, ${found.length} with a literal offset`);
-  process.exit(found.length ? 1 : 0);
+    const file = process.argv[2] || path.join(path.dirname(new URL(import.meta.url).pathname), '../shim/cdom.js');
+    const source = fs.readFileSync(file, 'utf8');
+    const found = literalOffsets(source);
+    for (const f of found) {
+        console.log(`FAIL ${path.basename(file)}:${f.line}: a literal offset into C memory: ${f.text}`);
+    }
+    console.log(`${memoryReaches(source)} reaches into C memory, ${found.length} with a literal offset`);
+    process.exit(found.length ? 1 : 0);
 }

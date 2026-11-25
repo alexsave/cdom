@@ -11,8 +11,8 @@ const mem = ['21_ready-memory', '22_run-memory', '23_update5-memory', '24_run5-m
 const loadFile = process.argv[4], tag = process.argv[5] || '';
 const loads = new Map();
 if (loadFile) for (const l of fs.readFileSync(loadFile, 'utf8').trim().split('\n').slice(1)) {
-  const [b, f, before, after, , , t] = l.split('\t');
-  if ((t || '') === tag) loads.set(`${b}|${f}`, before);
+    const [b, f, before, after, , , t] = l.split('\t');
+    if ((t || '') === tag) loads.set(`${b}|${f}`, before);
 }
 const dirOf = f => f.replace(/-v[\d.]+-keyed$|-keyed$/, '');
 const at = (b, f) => { const l = loads.get(`${b.slice(0, 3)}|${dirOf(f)}`); return l ? ` @${l}` : ''; };
@@ -24,11 +24,11 @@ const row = cells => out.push('| ' + cells.join(' | ') + ' |');
 row(['benchmark (ms, median)', ...fws.map(short)]); row(['---', ...fws.map(() => '---:')]);
 const logs = fws.map(() => 0); let wsum = 0;
 cpu.forEach((b, i) => {
-  const v = fws.map(f => med(f, b));
-  const best = Math.min(...v.filter(x => x !== undefined));
-  row([b, ...v.map((x, j) => x === undefined ? '-' : `${fmt(x)} (${(x / best).toFixed(2)})${at(b, fws[j])}`)]);
-  v.forEach((x, j) => { if (x !== undefined) logs[j] += W[i] * Math.log(x / best); });
-  wsum += W[i];
+    const v = fws.map(f => med(f, b));
+    const best = Math.min(...v.filter(x => x !== undefined));
+    row([b, ...v.map((x, j) => x === undefined ? '-' : `${fmt(x)} (${(x / best).toFixed(2)})${at(b, fws[j])}`)]);
+    v.forEach((x, j) => { if (x !== undefined) logs[j] += W[i] * Math.log(x / best); });
+    wsum += W[i];
 });
 row(['**weighted geometric mean**', ...logs.map(l => `**${Math.exp(l / wsum).toFixed(2)}**`)]);
 for (const b of mem) { const v = fws.map(f => med(f, b, 'DEFAULT')); if (v.some(x => x !== undefined)) row([b + ' (MB)', ...v.map((x, j) => fmt(x) + at(b, fws[j]))]); }

@@ -60,11 +60,11 @@
 #define CD_IMAGE_PNG 2
 
 typedef struct {
-  uint32_t format;         /* CD_IMAGE_JPEG or CD_IMAGE_PNG */
-  uint32_t width, height;  /* as stored */
-  uint32_t orientation;    /* the EXIF orientation, 1 to 8 (1 for a PNG, and for a JPEG without one) */
-  uint32_t shown_w, shown_h; /* the size with the orientation applied (width and height swapped for 5 to 8) */
-  uint32_t progressive;    /* 1 for a progressive JPEG */
+    uint32_t format;         /* CD_IMAGE_JPEG or CD_IMAGE_PNG */
+    uint32_t width, height;  /* as stored */
+    uint32_t orientation;    /* the EXIF orientation, 1 to 8 (1 for a PNG, and for a JPEG without one) */
+    uint32_t shown_w, shown_h; /* the size with the orientation applied (width and height swapped for 5 to 8) */
+    uint32_t progressive;    /* 1 for a progressive JPEG */
 } cd_image_info;
 
 /* Reads the header only (no allocation) and fills info. Answers OK, or the status cd_image_resize would answer

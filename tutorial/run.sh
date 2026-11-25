@@ -4,9 +4,9 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 if [ $# -eq 0 ]; then
-  set -- "$here"/[0-9][0-9]-*/
+    set -- "$here"/[0-9][0-9]-*/
 fi
 for d in "$@"; do
-  make -s -C "$d"
+    make -s -C "$d"
 done
 node "$here/test.mjs" "$@"

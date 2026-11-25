@@ -9,10 +9,10 @@ scratch="$here/out/a-tutorial"
 mkdir -p "$scratch"
 (cd "$before" && JFB_KEYED="$scratch" bench/build.sh)
 copy() { # from to
-  local d="${keyed:?}/${2:?}"
-  rm -rf "$d"
-  cp -R "$scratch/$1" "$d"
-  sed -i '' "s/js-framework-benchmark-$1\"/js-framework-benchmark-$2\"/" "$d/package.json" "$d/package-lock.json"
-  sed -i '' "s/<title>$1-/<title>$2-/" "$d/index.html"
+    local d="${keyed:?}/${2:?}"
+    rm -rf "$d"
+    cp -R "$scratch/$1" "$d"
+    sed -i '' "s/js-framework-benchmark-$1\"/js-framework-benchmark-$2\"/" "$d/package.json" "$d/package-lock.json"
+    sed -i '' "s/<title>$1-/<title>$2-/" "$d/index.html"
 }
 copy cdom st-a; copy cdom st-a2; copy cdom-notpl st-a-n; copy cdom-notpl st-a2-n

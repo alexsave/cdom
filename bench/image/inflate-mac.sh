@@ -17,6 +17,6 @@ rm -rf build-old build-old-simd; cp -r "$wt/bench/image/build-js" build-old; cp 
 git -C "$top" worktree remove --force "$wt"
 echo "old: $(git -C "$top" rev-parse --short "$rev")"
 for br in chrome safari; do
-  { uptime; BROWSER=$br node run.mjs 9 900 C-old,C-old-simd,C-js,C-simd,B1,B2 p12.jpg,p12.png,p12a.png,p12g.png; uptime; } 2>&1 | tee "results/$day-$name-$br.log"
-  raw="$(ls -t results/raw/*.tsv | head -1)"; cp "$raw" "results/$day-$name-$br.tsv"
+    { uptime; BROWSER=$br node run.mjs 9 900 C-old,C-old-simd,C-js,C-simd,B1,B2 p12.jpg,p12.png,p12a.png,p12g.png; uptime; } 2>&1 | tee "results/$day-$name-$br.log"
+    raw="$(ls -t results/raw/*.tsv | head -1)"; cp "$raw" "results/$day-$name-$br.tsv"
 done

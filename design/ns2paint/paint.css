@@ -1,18 +1,18 @@
 /* The modern page that tools/gen_ns2_paint.py paints into Netscape 2.02 as a framebuffer of 1x1 GIFs (docs/descent.md,
    "Painting a modern page").  A design file: rendered by headless Chrome, never served to Netscape 2. */
 :root {
-  --ink: #141632;
-  --ink-2: #4a4f6e;
-  --ink-3: #8a8fab;
-  --line: #e6e8f2;
-  --paper: #f6f7fb;
-  --card: #ffffff;
-  --indigo: #4f46e5;
-  --violet: #8b5cf6;
-  --coral: #fb7185;
-  --amber: #f59e0b;
-  --teal: #14b8a6;
-  --sky: #0ea5e9;
+    --ink: #141632;
+    --ink-2: #4a4f6e;
+    --ink-3: #8a8fab;
+    --line: #e6e8f2;
+    --paper: #f6f7fb;
+    --card: #ffffff;
+    --indigo: #4f46e5;
+    --violet: #8b5cf6;
+    --coral: #fb7185;
+    --amber: #f59e0b;
+    --teal: #14b8a6;
+    --sky: #0ea5e9;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { background: var(--paper); overflow: hidden; }
@@ -22,33 +22,33 @@ a { color: inherit; text-decoration: none; }
 .nav { position: absolute; left: 0; right: 0; top: 0; height: 44px; display: flex; align-items: center; padding: 0 18px; z-index: 5; }
 .logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; letter-spacing: -0.2px; color: #fff; }
 .mark { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(135deg, #fff 0%, #fde68a 100%);
-  box-shadow: 0 2px 6px rgba(20, 22, 50, .25); position: relative; }
+    box-shadow: 0 2px 6px rgba(20, 22, 50, .25); position: relative; }
 .mark::after { content: ""; position: absolute; left: 6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--indigo); }
 .links { display: flex; gap: 18px; margin-left: 28px; font-size: 12.5px; font-weight: 500; color: rgba(255, 255, 255, .86); }
 .links a { padding: 4px 0; }
 .signin { margin-left: auto; font-size: 12px; font-weight: 600; color: #fff; padding: 6px 13px; border-radius: 999px;
-  background: rgba(255, 255, 255, .18); border: 1px solid rgba(255, 255, 255, .35); }
+    background: rgba(255, 255, 255, .18); border: 1px solid rgba(255, 255, 255, .35); }
 
 .hero { position: absolute; left: 0; right: 0; top: 0; background: linear-gradient(120deg, #4338ca 0%, #7c3aed 48%, #f472b6 100%);
-  overflow: hidden; }
+    overflow: hidden; }
 .hero::before { content: ""; position: absolute; width: 300px; height: 300px; border-radius: 50%; right: -90px; top: -150px;
-  background: radial-gradient(circle, rgba(255, 255, 255, .28) 0%, rgba(255, 255, 255, 0) 70%); }
+    background: radial-gradient(circle, rgba(255, 255, 255, .28) 0%, rgba(255, 255, 255, 0) 70%); }
 .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 600; color: #fff; padding: 3px 10px 3px 4px;
-  border-radius: 999px; background: rgba(255, 255, 255, .16); }
+    border-radius: 999px; background: rgba(255, 255, 255, .16); }
 .chip b { background: #fff; color: var(--indigo); border-radius: 999px; padding: 1px 7px; font-size: 9.5px; letter-spacing: .4px; }
 .h1 { color: #fff; font-weight: 800; letter-spacing: -0.8px; line-height: 1.08; }
 .sub { color: rgba(255, 255, 255, .84); line-height: 1.45; }
 .pill { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; border-radius: 999px; background: #fff; color: var(--indigo);
-  box-shadow: 0 6px 18px rgba(30, 20, 80, .35); }
+    box-shadow: 0 6px 18px rgba(30, 20, 80, .35); }
 .pill i { font-style: normal; display: inline-block; width: 18px; height: 18px; border-radius: 50%; background: var(--indigo); color: #fff;
-  text-align: center; line-height: 18px; font-size: 11px; }
+    text-align: center; line-height: 18px; font-size: 11px; }
 .ghost { color: #fff; font-weight: 600; font-size: 12.5px; }
 
 .card { position: absolute; background: var(--card); border-radius: 16px;
-  box-shadow: 0 1px 2px rgba(20, 22, 50, .06), 0 10px 28px rgba(20, 22, 50, .16); }
+    box-shadow: 0 1px 2px rgba(20, 22, 50, .06), 0 10px 28px rgba(20, 22, 50, .16); }
 .badge { position: absolute; border-radius: 999px; background: linear-gradient(135deg, var(--amber), var(--coral)); color: #fff;
-  font-weight: 800; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(251, 113, 133, .5);
-  border: 3px solid #fff; z-index: 3; }
+    font-weight: 800; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(251, 113, 133, .5);
+    border: 3px solid #fff; z-index: 3; }
 .ct { font-size: 11px; font-weight: 600; color: var(--ink-3); letter-spacing: .3px; text-transform: uppercase; }
 .cv { font-size: 22px; font-weight: 800; letter-spacing: -0.6px; }
 .up { font-size: 11px; font-weight: 700; color: #059669; background: #d1fae5; border-radius: 999px; padding: 1px 7px; margin-left: 6px; }
@@ -74,13 +74,13 @@ a { color: inherit; text-decoration: none; }
 .lead { font-size: 12px; color: var(--ink-2); line-height: 1.5; }
 .eyebrow { font-size: 10.5px; font-weight: 700; color: var(--indigo); letter-spacing: 1px; text-transform: uppercase; }
 .fcard { position: absolute; background: #fff; border-radius: 14px; padding: 16px;
-  box-shadow: 0 1px 2px rgba(20, 22, 50, .05), 0 8px 22px rgba(20, 22, 50, .10); }
+    box-shadow: 0 1px 2px rgba(20, 22, 50, .05), 0 8px 22px rgba(20, 22, 50, .10); }
 .fcard .sq { width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
 .fcard .sq svg { width: 17px; height: 17px; }
 .fcard h3 { font-size: 13.5px; font-weight: 700; margin-bottom: 4px; letter-spacing: -0.2px; }
 .fcard p { font-size: 11px; color: var(--ink-2); line-height: 1.45; }
 .avatar { border-radius: 50%; background: linear-gradient(135deg, var(--teal), var(--sky)); color: #fff; font-weight: 800;
-  display: flex; align-items: center; justify-content: center; }
+    display: flex; align-items: center; justify-content: center; }
 .price { font-size: 26px; font-weight: 800; letter-spacing: -1px; }
 .price small { font-size: 11px; font-weight: 600; color: var(--ink-3); letter-spacing: 0; }
 .tick { font-size: 11px; color: var(--ink-2); line-height: 1.9; }

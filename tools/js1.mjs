@@ -15,47 +15,47 @@ import { lacks10 } from './js10.mjs';
 // process of its own with the file run in the main realm (as a browser runs a script: its globals are the global
 // object's, which a vm context's interceptors would slow); the measurements below call it.
 if (process.argv[2] === 'bench') {
-  const [, , , file, kind, name, arg, reps, budget] = process.argv;
-  let f;
-  if (kind === 'wasm') {
-    const { instance } = await WebAssembly.instantiate(fs.readFileSync(file), { env: { out() {} } });
-    f = () => instance.exports[name](+arg);
-  } else {
-    globalThis.window = globalThis;
-    (0, eval)(fs.readFileSync(file, 'utf8'));
-    const o = globalThis.cdomFactory({ env: { out() {} } });
-    if (budget) f = () => { globalThis.JB = +budget; o[name](+arg); while (o.js1_paused) o.js1_more(); };
-    else f = () => o[name](+arg);
-  }
-  for (let i = 0; i < 20; i++) f();
-  const t0 = process.hrtime.bigint();
-  for (let i = 0; i < +reps; i++) f();
-  console.log(Number(process.hrtime.bigint() - t0) / +reps / 1e6);
-  process.exit(0);
+    const [, , , file, kind, name, arg, reps, budget] = process.argv;
+    let f;
+    if (kind === 'wasm') {
+        const { instance } = await WebAssembly.instantiate(fs.readFileSync(file), { env: { out() {} } });
+        f = () => instance.exports[name](+arg);
+    } else {
+        globalThis.window = globalThis;
+        (0, eval)(fs.readFileSync(file, 'utf8'));
+        const o = globalThis.cdomFactory({ env: { out() {} } });
+        if (budget) f = () => { globalThis.JB = +budget; o[name](+arg); while (o.js1_paused) o.js1_more(); };
+        else f = () => o[name](+arg);
+    }
+    for (let i = 0; i < 20; i++) f();
+    const t0 = process.hrtime.bigint();
+    for (let i = 0; i < +reps; i++) f();
+    console.log(Number(process.hrtime.bigint() - t0) / +reps / 1e6);
+    process.exit(0);
 }
 // node tools/js1.mjs page: tests/out/js1diff.html, the page for the real browsers (docs/js1-compile-design.md,
 // section 11). Netscape 2 has no SCRIPT SRC, so js1diff.wasm.js1.js is inlined; a subset of the cases, with wasm's
 // answers computed here, runs one a tick (setTimeout with a string), the long ones sliced, and the page writes each
 // result, its time and the tally into a TEXTAREA. All of it JavaScript 1.0, checked by the gate.
 if (process.argv[2] === 'page') {
-  const dir = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
-  const log = [];
-  const { instance } = await WebAssembly.instantiate(fs.readFileSync(path.join(dir, 'js1diff.wasm')), { env: { out: (v) => log.push(v | 0) } });
-  const x = instance.exports;
-  const cases = [['ints', 7, 3], ['ints', -0x80000000, -1], ['ints', 0x55aa55aa, 37], ['ints', -123456789, 0], ['i64s', 0x12345678, 0x9abcdef0 | 0, 0, 17],
-    ['i64s', -5, 12345, 7, -99], ['i64s', 0x7fffffff, -1, 0, 3], ['dbl', 7, 3], ['dbl', -2000000000, 1000], ['dbl', 123456, -4], ['mem', 3], ['mem', 77777],
-    ['ind', 100], ['sw', 200], ['loop', 1000], ['rec', 100], ['rec', 299], ['rec', 1000], ['loop', 100000], ['trap', 0], ['trap', 1], ['divz', 7, 0],
-    ['divz', -0x80000000, -1], ['ind_bad', 1], ['deeptrap', 300], ['rec', 5000]];
-  const lines = [];
-  cases.forEach(([n, ...a], i) => {
-    log.length = 0;
-    let r;
-    try { r = String(x[n](...a)); } catch (e) { r = 'trap'; }
-    const args = [0, 0, 0, 0].map((d, k) => (a[k] === undefined ? 0 : a[k]));
-    lines.push(`CN[${i}]="${n}";CA[${i}]=${args[0]};CB[${i}]=${args[1]};CC[${i}]=${args[2]};CD[${i}]=${args[3]};CE[${i}]="${r + log.map((v) => ',' + v).join('')}";`);
-  });
-  const js1 = fs.readFileSync(path.join(dir, 'js1diff.wasm.js1.js'), 'utf8');
-  const test = `var CN=new Object(),CA=new Object(),CB=new Object(),CC=new Object(),CD=new Object(),CE=new Object();
+    const dir = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
+    const log = [];
+    const { instance } = await WebAssembly.instantiate(fs.readFileSync(path.join(dir, 'js1diff.wasm')), { env: { out: (v) => log.push(v | 0) } });
+    const x = instance.exports;
+    const cases = [['ints', 7, 3], ['ints', -0x80000000, -1], ['ints', 0x55aa55aa, 37], ['ints', -123456789, 0], ['i64s', 0x12345678, 0x9abcdef0 | 0, 0, 17],
+      ['i64s', -5, 12345, 7, -99], ['i64s', 0x7fffffff, -1, 0, 3], ['dbl', 7, 3], ['dbl', -2000000000, 1000], ['dbl', 123456, -4], ['mem', 3], ['mem', 77777],
+      ['ind', 100], ['sw', 200], ['loop', 1000], ['rec', 100], ['rec', 299], ['rec', 1000], ['loop', 100000], ['trap', 0], ['trap', 1], ['divz', 7, 0],
+      ['divz', -0x80000000, -1], ['ind_bad', 1], ['deeptrap', 300], ['rec', 5000]];
+    const lines = [];
+    cases.forEach(([n, ...a], i) => {
+        log.length = 0;
+        let r;
+        try { r = String(x[n](...a)); } catch (e) { r = 'trap'; }
+        const args = [0, 0, 0, 0].map((d, k) => (a[k] === undefined ? 0 : a[k]));
+        lines.push(`CN[${i}]="${n}";CA[${i}]=${args[0]};CB[${i}]=${args[1]};CC[${i}]=${args[2]};CD[${i}]=${args[3]};CE[${i}]="${r + log.map((v) => ',' + v).join('')}";`);
+    });
+    const js1 = fs.readFileSync(path.join(dir, 'js1diff.wasm.js1.js'), 'utf8');
+    const test = `var CN=new Object(),CA=new Object(),CB=new Object(),CC=new Object(),CD=new Object(),CE=new Object();
 ${lines.join('\n')}
 var NC=${cases.length},I=0,OK=0,L="",O=0,T0=0,R0="";
 function out(v){L=L+","+v;}
@@ -71,9 +71,9 @@ L="";T0=now();JB=1000;r=O[CN[I]](CA[I],CB[I],CC[I],CD[I]);if(O.js1_paused){setTi
 function start(){var env=new Object(),imp=new Object();env.out=out;imp.env=env;O=cdomFactoryJs1(imp);
 show(navigator.userAgent);show("loaded; "+NC+" cases, each a tick, the driver sliced at 1000 steps");setTimeout("step()",0);}
 `;
-  const bad = lacks10(js1 + test);
-  if (bad.length) { console.error('js1.mjs page: not JavaScript 1.0: ' + bad.slice(0, 5).join(', ')); process.exit(1); }
-  const html = `<HTML><HEAD><TITLE>js1c differential test</TITLE></HEAD>
+    const bad = lacks10(js1 + test);
+    if (bad.length) { console.error('js1.mjs page: not JavaScript 1.0: ' + bad.slice(0, 5).join(', ')); process.exit(1); }
+    const html = `<HTML><HEAD><TITLE>js1c differential test</TITLE></HEAD>
 <BODY>
 <H3>js1c: tests/js1diff.c compiled to JavaScript 1.0 against wasm's answers</H3>
 <FORM><TEXTAREA NAME="t" ROWS="32" COLS="100"></TEXTAREA><BR><INPUT TYPE="text" NAME="tally" SIZE="20" VALUE="running"></FORM>
@@ -84,8 +84,8 @@ ${test}start();
 </SCRIPT>
 </BODY></HTML>
 `;
-  fs.writeFileSync(path.join(dir, 'js1diff.html'), html);
-  process.exit(0);
+    fs.writeFileSync(path.join(dir, 'js1diff.html'), html);
+    process.exit(0);
 }
 const top = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const out = path.join(top, 'tests/out');
@@ -96,43 +96,43 @@ const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } else console
 // through the compiled functions, the driver, the export wrappers and the imports (each wrapped to count).
 // ns2: as Netscape 2.02 has it, an Array that is a plain object with no length, by which the file tells that engine (JZ).
 export function loadJs1(file, { count = true, ns2 = false } = {}) {
-  const src = fs.readFileSync(file, 'utf8');
-  const ctx = { window: {}, log: [] };
-  if (ns2) ctx.Array = function () { return new Object(); };
-  vm.createContext(ctx);
-  vm.runInContext(src, ctx, { filename: file });
-  const st = { depth: 0, max: 0 };
-  ctx.st = st;
-  if (count) {
-    for (const k of Object.keys(ctx)) {
-      if (!/^(J[fdx]\d+|Jgo|Jmore|Jstart\d+)$/.test(k) || typeof ctx[k] !== 'function') continue;
-      const f = ctx[k];
-      ctx[k] = function (...a) { st.depth++; if (st.depth > st.max) st.max = st.depth; try { return f.apply(this, a); } finally { st.depth--; } };
+    const src = fs.readFileSync(file, 'utf8');
+    const ctx = { window: {}, log: [] };
+    if (ns2) ctx.Array = function () { return new Object(); };
+    vm.createContext(ctx);
+    vm.runInContext(src, ctx, { filename: file });
+    const st = { depth: 0, max: 0 };
+    ctx.st = st;
+    if (count) {
+        for (const k of Object.keys(ctx)) {
+            if (!/^(J[fdx]\d+|Jgo|Jmore|Jstart\d+)$/.test(k) || typeof ctx[k] !== 'function') continue;
+            const f = ctx[k];
+            ctx[k] = function (...a) { st.depth++; if (st.depth > st.max) st.max = st.depth; try { return f.apply(this, a); } finally { st.depth--; } };
+        }
     }
-  }
-  const env = { out: (v) => { st.depth++; if (st.depth > st.max) st.max = st.depth; ctx.log.push(v | 0); st.depth--; } };
-  const o = ctx.window.cdomFactory({ env });
-  ctx.X = o;
-  // A call with a time limit: a miscompiled loop that never ends is a hung call (the string 'hung'), not a hung run.
-  const call = (name, ...a) => {
-    try { return vm.runInContext(`X[${JSON.stringify(name)}](${a.map(Number).join(',')})`, ctx, { timeout: 5000 }); } catch (e) {
-      if (/timed out/.test(String(e))) { st.depth = 0; return 'hung'; }
-      throw e;
-    }
-  };
-  return { o, ctx, st, call };
+    const env = { out: (v) => { st.depth++; if (st.depth > st.max) st.max = st.depth; ctx.log.push(v | 0); st.depth--; } };
+    const o = ctx.window.cdomFactory({ env });
+    ctx.X = o;
+    // A call with a time limit: a miscompiled loop that never ends is a hung call (the string 'hung'), not a hung run.
+    const call = (name, ...a) => {
+        try { return vm.runInContext(`X[${JSON.stringify(name)}](${a.map(Number).join(',')})`, ctx, { timeout: 5000 }); } catch (e) {
+            if (/timed out/.test(String(e))) { st.depth = 0; return 'hung'; }
+            throw e;
+        }
+    };
+    return { o, ctx, st, call };
 }
 async function loadWasm(file) {
-  const log = [];
-  const { instance } = await WebAssembly.instantiate(fs.readFileSync(file), { env: { out: (v) => log.push(v | 0) } });
-  return { x: instance.exports, log };
+    const log = [];
+    const { instance } = await WebAssembly.instantiate(fs.readFileSync(file), { env: { out: (v) => log.push(v | 0) } });
+    return { x: instance.exports, log };
 }
 function loadIe9(file) {
-  const ctx = { window: {}, log: [] };
-  vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: file });
-  const x = ctx.window.cdomFactory({ env: { out: (v) => ctx.log.push(v | 0) } });
-  return { x, log: ctx.log };
+    const ctx = { window: {}, log: [] };
+    vm.createContext(ctx);
+    vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: file });
+    const x = ctx.window.cdomFactory({ env: { out: (v) => ctx.log.push(v | 0) } });
+    return { x, log: ctx.log };
 }
 const E = [0, 1, -1, 2, 7, -7, 31, 32, 33, 255, 256, 65535, 65536, 0x7fffffff, -0x80000000, 0x55aa55aa, -123456789, 1000000007, 3, 100];
 const CASES = [];
@@ -156,13 +156,13 @@ const J = loadJs1(js1File);
 const words = (u8, p, n) => { const a = []; for (let i = 0; i < n; i++) a.push(u8[p + i]); return a.join(','); };
 let agree = 0, first = null;
 for (const [name, ...args] of CASES) {
-  W.log.length = 0; J.ctx.log.length = 0;
-  let wr, wt = false;
-  try { wr = W.x[name](...args); } catch (e) { wt = e instanceof WebAssembly.RuntimeError; if (!wt) throw e; }
-  const jr = J.call(name, ...args), jt = !!J.o.js1_trap;
-  const same = wt === jt && (wt || wr === jr) && W.log.join(',') === J.ctx.log.join(',');
-  if (same) agree++;
-  else if (!first) first = `${name}(${args}) wasm ${wt ? 'trap' : wr} [${W.log.slice(0, 40)}] js1 ${jt ? 'trap' : jr} [${J.ctx.log.slice(0, 40)}]`;
+    W.log.length = 0; J.ctx.log.length = 0;
+    let wr, wt = false;
+    try { wr = W.x[name](...args); } catch (e) { wt = e instanceof WebAssembly.RuntimeError; if (!wt) throw e; }
+    const jr = J.call(name, ...args), jt = !!J.o.js1_trap;
+    const same = wt === jt && (wt || wr === jr) && W.log.join(',') === J.ctx.log.join(',');
+    if (same) agree++;
+    else if (!first) first = `${name}(${args}) wasm ${wt ? 'trap' : wr} [${W.log.slice(0, 40)}] js1 ${jt ? 'trap' : jr} [${J.ctx.log.slice(0, 40)}]`;
 }
 ok(agree === CASES.length, `every export agrees with wasm: ${agree} of ${CASES.length} cases${first ? `\n  first difference: ${first}` : ''}`);
 // The whole memory, word by word, after all of it (the C stack, the statics, the packed structs).
@@ -182,28 +182,28 @@ ok(J.o.js1_trap === 1 && sp === 0, `a trap 30 calls down puts the explicit stack
 // on a fresh instance whose memory throws on a read of a word nothing wrote, as Netscape 2 does, and memory.grow's new
 // words too.
 {
-  const N = loadJs1(js1File, { count: false, ns2: true });
-  const strict = (o) => new Proxy(o, { get(t, k) { if (typeof k === 'string' && /^\d+$/.test(k) && !(k in t)) throw new Error(`${k} is not a number`); return t[k]; } });
-  N.ctx.JM = strict(N.ctx.JM);
-  let nok = 0, nfirst = null;
-  W.log.length = 0;
-  const W2 = await loadWasm(wasmFile);
-  for (const [name, ...args] of CASES) {
-    W2.log.length = 0; N.ctx.log.length = 0;
-    let wr, wt = false, jr, err = null;
-    try { wr = W2.x[name](...args); } catch (e) { wt = true; }
-    try { jr = N.call(name, ...args); } catch (e) { err = String(e.message || e); N.ctx.JP = 0; N.ctx.JQ = 0; }
-    const jt = !!N.o.js1_trap;
-    if (!err && wt === jt && (wt || wr === jr) && W2.log.join(',') === N.ctx.log.join(',')) nok++;
-    else if (!nfirst) nfirst = `${name}(${args}): ${err || 'differs'}`;
-  }
-  ok(nok === CASES.length, `every case agrees on a memory that throws on a word never written (Netscape 2): ${nok} of ${CASES.length}${nfirst ? `\n  first: ${nfirst}` : ''}`);
-  const fresh = loadJs1(js1File, { count: false, ns2: true }), pages = fresh.ctx.JMp;
-  let hole = -1;
-  for (let i = 0; i < pages * 16384 && hole < 0; i++) if (!(i in fresh.ctx.JM)) hole = i;
-  const got = fresh.call('grow', 2);
-  for (let i = pages * 16384; i < (pages + 2) * 16384 && hole < 0; i++) if (!(i in fresh.ctx.JM)) hole = i;
-  ok(hole < 0 && got === pages, `every word of the initial memory (${pages} pages) and of memory.grow's 2 new pages is written${hole < 0 ? '' : `: word ${hole} is not`}`);
+    const N = loadJs1(js1File, { count: false, ns2: true });
+    const strict = (o) => new Proxy(o, { get(t, k) { if (typeof k === 'string' && /^\d+$/.test(k) && !(k in t)) throw new Error(`${k} is not a number`); return t[k]; } });
+    N.ctx.JM = strict(N.ctx.JM);
+    let nok = 0, nfirst = null;
+    W.log.length = 0;
+    const W2 = await loadWasm(wasmFile);
+    for (const [name, ...args] of CASES) {
+        W2.log.length = 0; N.ctx.log.length = 0;
+        let wr, wt = false, jr, err = null;
+        try { wr = W2.x[name](...args); } catch (e) { wt = true; }
+        try { jr = N.call(name, ...args); } catch (e) { err = String(e.message || e); N.ctx.JP = 0; N.ctx.JQ = 0; }
+        const jt = !!N.o.js1_trap;
+        if (!err && wt === jt && (wt || wr === jr) && W2.log.join(',') === N.ctx.log.join(',')) nok++;
+        else if (!nfirst) nfirst = `${name}(${args}): ${err || 'differs'}`;
+    }
+    ok(nok === CASES.length, `every case agrees on a memory that throws on a word never written (Netscape 2): ${nok} of ${CASES.length}${nfirst ? `\n  first: ${nfirst}` : ''}`);
+    const fresh = loadJs1(js1File, { count: false, ns2: true }), pages = fresh.ctx.JMp;
+    let hole = -1;
+    for (let i = 0; i < pages * 16384 && hole < 0; i++) if (!(i in fresh.ctx.JM)) hole = i;
+    const got = fresh.call('grow', 2);
+    for (let i = pages * 16384; i < (pages + 2) * 16384 && hole < 0; i++) if (!(i in fresh.ctx.JM)) hole = i;
+    ok(hole < 0 && got === pages, `every word of the initial memory (${pages} pages) and of memory.grow's 2 new pages is written${hole < 0 ? '' : `: word ${hole} is not`}`);
 }
 
 // Netscape 3, Netscape 4 and IE 4 read a word nothing wrote as 0 in every bitwise operator (tests/probe-undef.html), as node does, and
@@ -211,24 +211,24 @@ ok(J.o.js1_trap === 1 && sp === 0, `a trap 30 calls down puts the explicit stack
 // again on that memory, in an engine that has an Array with a length: the same answers as wasm, only the words below the heap written,
 // none for memory.grow's new pages, and the words of the heap that tests/js1diff.c's peek reads, which nothing wrote, are 0.
 {
-  const L = loadJs1(js1File, { count: false }), W3 = await loadWasm(wasmFile);
-  const pages = L.ctx.JMp, total = pages * 16384, written = Object.keys(L.ctx.JM).length;
-  const base = +(/JA=new Array\(1\);JZ=!JA\.length;JA=(\d+);/.exec(fs.readFileSync(js1File, 'utf8')) || [0, 0])[1];
-  ok(base > 0 && base < total && written === base && !((total - 1) in L.ctx.JM) && L.ctx.JZ === false,
-    `the initial memory is written only below __heap_base: ${written} of ${total} words (the heap starts at word ${base})`);
-  let nok = 0, nfirst = null;
-  for (const [name, ...args] of CASES) {
-    W3.log.length = 0; L.ctx.log.length = 0;
-    let wr, wt = false, jr, err = null;
-    try { wr = W3.x[name](...args); } catch (e) { wt = true; }
-    try { jr = L.call(name, ...args); } catch (e) { err = String(e.message || e); L.ctx.JP = 0; L.ctx.JQ = 0; }
-    const jt = !!L.o.js1_trap;
-    if (!err && wt === jt && (wt || wr === jr) && W3.log.join(',') === L.ctx.log.join(',')) nok++;
-    else if (!nfirst) nfirst = `${name}(${args}): ${err || 'differs'}`;
-  }
-  ok(nok === CASES.length, `every case agrees on a memory written only below __heap_base: ${nok} of ${CASES.length}${nfirst ? `\n  first: ${nfirst}` : ''}`);
-  const g = L.call('grow', 2);
-  ok(g === pages && Object.keys(L.ctx.JM).length >= written && !((total + 5) in L.ctx.JM) && L.call('peek', 7) === 0, `memory.grow writes none of its new words, and a read of one is 0: grown from page ${g}`);
+    const L = loadJs1(js1File, { count: false }), W3 = await loadWasm(wasmFile);
+    const pages = L.ctx.JMp, total = pages * 16384, written = Object.keys(L.ctx.JM).length;
+    const base = +(/JA=new Array\(1\);JZ=!JA\.length;JA=(\d+);/.exec(fs.readFileSync(js1File, 'utf8')) || [0, 0])[1];
+    ok(base > 0 && base < total && written === base && !((total - 1) in L.ctx.JM) && L.ctx.JZ === false,
+      `the initial memory is written only below __heap_base: ${written} of ${total} words (the heap starts at word ${base})`);
+    let nok = 0, nfirst = null;
+    for (const [name, ...args] of CASES) {
+        W3.log.length = 0; L.ctx.log.length = 0;
+        let wr, wt = false, jr, err = null;
+        try { wr = W3.x[name](...args); } catch (e) { wt = true; }
+        try { jr = L.call(name, ...args); } catch (e) { err = String(e.message || e); L.ctx.JP = 0; L.ctx.JQ = 0; }
+        const jt = !!L.o.js1_trap;
+        if (!err && wt === jt && (wt || wr === jr) && W3.log.join(',') === L.ctx.log.join(',')) nok++;
+        else if (!nfirst) nfirst = `${name}(${args}): ${err || 'differs'}`;
+    }
+    ok(nok === CASES.length, `every case agrees on a memory written only below __heap_base: ${nok} of ${CASES.length}${nfirst ? `\n  first: ${nfirst}` : ''}`);
+    const g = L.call('grow', 2);
+    ok(g === pages && Object.keys(L.ctx.JM).length >= written && !((total + 5) in L.ctx.JM) && L.call('peek', 7) === 0, `memory.grow writes none of its new words, and a read of one is 0: grown from page ${g}`);
 }
 
 // Netscape 3.04 converts to 32 bits right only from -2^31 to 2^32 - 1, and only an integer: it gives NaN outside that
@@ -236,36 +236,36 @@ ok(J.o.js1_trap === 1 && sp === 0, `a trap 30 calls down puts the explicit stack
 // on Netscape 3.04; docs/js1-compile-design.md section 12). Every case again on a copy of the
 // file whose every bitwise operand goes through a check that throws outside that range, as Netscape 3 would answer NaN.
 {
-  const src = fs.readFileSync(js1File, 'utf8'), ins = [];
-  const BIT = new Set(['|', '&', '^', '<<', '>>', '>>>']);
-  const wrap = (n) => { ins.push([n.start, 'J3c(', -(n.end - n.start)]); ins.push([n.end, ')', n.end - n.start]); };
-  (function w(n) {
-    if (!n || typeof n.type !== 'string') return;
-    if (n.type === 'BinaryExpression' && BIT.has(n.operator)) { wrap(n.left); wrap(n.right); }
-    if (n.type === 'UnaryExpression' && n.operator === '~') wrap(n.argument);
-    if (n.type === 'AssignmentExpression' && n.operator !== '=' && BIT.has(n.operator.slice(0, -1))) wrap(n.right);
-    for (const k of Object.keys(n)) { const v = n[k]; if (Array.isArray(v)) v.forEach(w); else if (v && typeof v.type === 'string') w(v); }
-  })(acorn.parse(src, { ecmaVersion: 5 }));
-  // Inserts at one place: closings of inner operands first, then openings of outer ones.
-  ins.sort((a, b) => b[0] - a[0] || b[2] - a[2]);
-  let t = src;
-  for (const [at, text] of ins) t = t.slice(0, at) + text + t.slice(at);
-  const ns3File = path.join(out, 'js1diff.ns3.js');
-  fs.writeFileSync(ns3File, 'function J3c(x){if(typeof x=="number"&&!(x>=-2147483648&&x<4294967296&&x==Math.floor(x)))throw new Error("Netscape 3 NaN: "+x);return x;}\n' + t);
-  const N = loadJs1(ns3File, { count: false });
-  const W3 = await loadWasm(wasmFile);
-  let nok = 0, nfirst = null;
-  for (const [name, ...args] of CASES) {
-    W3.log.length = 0; N.ctx.log.length = 0;
-    let wr, wt = false, jr, err = null;
-    try { wr = W3.x[name](...args); } catch (e) { wt = true; }
-    try { jr = N.call(name, ...args); } catch (e) { err = String(e.message || e); N.ctx.JP = 0; N.ctx.JQ = 0; }
-    const jt = !!N.o.js1_trap;
-    if (!err && wt === jt && (wt || wr === jr) && W3.log.join(',') === N.ctx.log.join(',')) nok++;
-    else if (!nfirst) nfirst = `${name}(${args}): ${err || 'differs'}`;
-  }
-  fs.unlinkSync(ns3File);
-  ok(nok === CASES.length && ins.length > 100, `every case agrees with every bitwise operand an integer in Netscape 3's range, -2^31 to 2^32 - 1 (${ins.length / 2} operands checked): ${nok} of ${CASES.length}${nfirst ? `\n  first: ${nfirst}` : ''}`);
+    const src = fs.readFileSync(js1File, 'utf8'), ins = [];
+    const BIT = new Set(['|', '&', '^', '<<', '>>', '>>>']);
+    const wrap = (n) => { ins.push([n.start, 'J3c(', -(n.end - n.start)]); ins.push([n.end, ')', n.end - n.start]); };
+    (function w(n) {
+        if (!n || typeof n.type !== 'string') return;
+        if (n.type === 'BinaryExpression' && BIT.has(n.operator)) { wrap(n.left); wrap(n.right); }
+        if (n.type === 'UnaryExpression' && n.operator === '~') wrap(n.argument);
+        if (n.type === 'AssignmentExpression' && n.operator !== '=' && BIT.has(n.operator.slice(0, -1))) wrap(n.right);
+        for (const k of Object.keys(n)) { const v = n[k]; if (Array.isArray(v)) v.forEach(w); else if (v && typeof v.type === 'string') w(v); }
+    })(acorn.parse(src, { ecmaVersion: 5 }));
+    // Inserts at one place: closings of inner operands first, then openings of outer ones.
+    ins.sort((a, b) => b[0] - a[0] || b[2] - a[2]);
+    let t = src;
+    for (const [at, text] of ins) t = t.slice(0, at) + text + t.slice(at);
+    const ns3File = path.join(out, 'js1diff.ns3.js');
+    fs.writeFileSync(ns3File, 'function J3c(x){if(typeof x=="number"&&!(x>=-2147483648&&x<4294967296&&x==Math.floor(x)))throw new Error("Netscape 3 NaN: "+x);return x;}\n' + t);
+    const N = loadJs1(ns3File, { count: false });
+    const W3 = await loadWasm(wasmFile);
+    let nok = 0, nfirst = null;
+    for (const [name, ...args] of CASES) {
+        W3.log.length = 0; N.ctx.log.length = 0;
+        let wr, wt = false, jr, err = null;
+        try { wr = W3.x[name](...args); } catch (e) { wt = true; }
+        try { jr = N.call(name, ...args); } catch (e) { err = String(e.message || e); N.ctx.JP = 0; N.ctx.JQ = 0; }
+        const jt = !!N.o.js1_trap;
+        if (!err && wt === jt && (wt || wr === jr) && W3.log.join(',') === N.ctx.log.join(',')) nok++;
+        else if (!nfirst) nfirst = `${name}(${args}): ${err || 'differs'}`;
+    }
+    fs.unlinkSync(ns3File);
+    ok(nok === CASES.length && ins.length > 100, `every case agrees with every bitwise operand an integer in Netscape 3's range, -2^31 to 2^32 - 1 (${ins.length / 2} operands checked): ${nok} of ${CASES.length}${nfirst ? `\n  first: ${nfirst}` : ''}`);
 }
 
 // Netscape 2.02 makes o[0] the first property set by name on o (main's tests/probe-js1d.html: o.A = 1; o["0"] = 52
@@ -273,21 +273,21 @@ ok(J.o.js1_trap === 1 && sp === 0, `a trap 30 calls down puts the explicit stack
 // be indexed by number. After every case above, the tables' keys are all numbers and the exports' none; and in the
 // file no table is read by name, and no named object by a number.
 {
-  const TABLES = ['JM', 'JS', 'JE', 'JY', 'JF', 'JPT'], NAMED = ['JO'];
-  const num = (k) => /^\d+$/.test(k);
-  const bad = [];
-  for (const t of TABLES) { const o = J.ctx[t]; if (o && typeof o === 'object') for (const k of Object.keys(o)) if (!num(k)) bad.push(`${t}.${k}`); }
-  for (const t of NAMED) for (const k of Object.keys(J.ctx[t])) if (num(k)) bad.push(`${t}[${k}]`);
-  for (const k of Object.keys(J.o.memory)) if (num(k)) bad.push(`memory[${k}]`);
-  (function w(n) {
-    if (!n || typeof n.type !== 'string') return;
-    if (n.type === 'MemberExpression' && n.object.type === 'Identifier') {
-      if (TABLES.includes(n.object.name) && (!n.computed || (n.property.type === 'Literal' && typeof n.property.value === 'string'))) bad.push(`${n.object.name}.${n.property.name || n.property.value} in the file`);
-      if (NAMED.includes(n.object.name) && n.computed && n.property.type === 'Literal' && typeof n.property.value === 'number') bad.push(`${n.object.name}[${n.property.value}] in the file`);
-    }
-    for (const k of Object.keys(n)) { const v = n[k]; if (Array.isArray(v)) v.forEach(w); else if (v && typeof v.type === 'string') w(v); }
-  })(acorn.parse(fs.readFileSync(js1File, 'utf8'), { ecmaVersion: 5 }));
-  ok(bad.length === 0 && Object.keys(J.ctx.JM).length > 0, `no table (${TABLES.join(', ')}) has a named property, and the exports object no number key${bad.length ? ': ' + bad.slice(0, 5).join(', ') : ''}`);
+    const TABLES = ['JM', 'JS', 'JE', 'JY', 'JF', 'JPT'], NAMED = ['JO'];
+    const num = (k) => /^\d+$/.test(k);
+    const bad = [];
+    for (const t of TABLES) { const o = J.ctx[t]; if (o && typeof o === 'object') for (const k of Object.keys(o)) if (!num(k)) bad.push(`${t}.${k}`); }
+    for (const t of NAMED) for (const k of Object.keys(J.ctx[t])) if (num(k)) bad.push(`${t}[${k}]`);
+    for (const k of Object.keys(J.o.memory)) if (num(k)) bad.push(`memory[${k}]`);
+    (function w(n) {
+        if (!n || typeof n.type !== 'string') return;
+        if (n.type === 'MemberExpression' && n.object.type === 'Identifier') {
+            if (TABLES.includes(n.object.name) && (!n.computed || (n.property.type === 'Literal' && typeof n.property.value === 'string'))) bad.push(`${n.object.name}.${n.property.name || n.property.value} in the file`);
+            if (NAMED.includes(n.object.name) && n.computed && n.property.type === 'Literal' && typeof n.property.value === 'number') bad.push(`${n.object.name}[${n.property.value}] in the file`);
+        }
+        for (const k of Object.keys(n)) { const v = n[k]; if (Array.isArray(v)) v.forEach(w); else if (v && typeof v.type === 'string') w(v); }
+    })(acorn.parse(fs.readFileSync(js1File, 'utf8'), { ecmaVersion: 5 }));
+    ok(bad.length === 0 && Object.keys(J.ctx.JM).length > 0, `no table (${TABLES.join(', ')}) has a named property, and the exports object no number key${bad.length ? ': ' + bad.slice(0, 5).join(', ') : ''}`);
 }
 
 // Depth: the 1000-deep recursion runs at a constant JavaScript depth, at or under js1c's bound.
@@ -305,79 +305,79 @@ ok(dmax <= B, `the deepest JavaScript depth over every case is ${dmax}, at or un
 // The gate on every js1c output this build wrote; and no ++ or -- at all (Netscape 3.04 refuses one at column 254,
 // tools/legacy/js11.mjs's seam rule: js1c writes none, so no line's length can put one there).
 for (const f of fs.readdirSync(out).filter((f) => f.endsWith('.js1.js'))) {
-  const src = fs.readFileSync(path.join(out, f), 'utf8');
-  const found = lacks10(src);
-  ok(found.length === 0, `${f} is JavaScript 1.0 (tools/js10.mjs)${found.length ? ': ' + found.slice(0, 5).join(', ') : ''}`);
-  const incdec = [...acorn.tokenizer(src, { ecmaVersion: 5, locations: true })].filter((t) => t.type.label === '++/--');
-  // No division by a literal 0: Netscape 2.02's 1 / 0 is 0, and Netscape 3.04 lost the infinity of js1diff's dbl.
-  const byZero = [];
-  (function w(n) { if (!n || typeof n.type !== 'string') return; if (n.type === 'BinaryExpression' && n.operator === '/' && n.right.type === 'Literal' && n.right.value === 0) byZero.push(n.loc.start.line); for (const k of Object.keys(n)) { const v = n[k]; if (Array.isArray(v)) v.forEach(w); else if (v && typeof v.type === 'string') w(v); } })(acorn.parse(src, { ecmaVersion: 5, locations: true }));
-  ok(byZero.length === 0, `${f} divides by no literal 0${byZero.length ? `: ${byZero.length}, the first on line ${byZero[0]}` : ''}`);
-  ok(incdec.length === 0, `${f} has no ++ or --${incdec.length ? `: ${incdec.length}, the first on line ${incdec[0].loc.start.line}` : ''}`);
-  // Netscape 3.04's parseInt keeps a value only up to 2^31 - 1 (it gave 2147483647 for 3396446046, the string table's stamp, in
-  // uttt's data: docs/frames-design.md section 15), so a data word is written as a signed int32: no token of a Jdz string is above it.
-  const big = [];
-  for (const m of src.matchAll(/Jdz\("([^"]*)"\)/g)) for (const t of m[1].split(',')) {
-    if (!t) continue;
-    const v = parseInt(t.includes('.') ? t.slice(t.indexOf('.') + 1) : t, 36);
-    if (!(v >= -2147483648 && v <= 2147483647)) big.push(t);
-  }
-  ok(big.length === 0, `${f}: every data word is an int32 in base 36, none above 2^31 - 1${big.length ? `: ${big.slice(0, 3).join(' ')}` : ''}`);
+    const src = fs.readFileSync(path.join(out, f), 'utf8');
+    const found = lacks10(src);
+    ok(found.length === 0, `${f} is JavaScript 1.0 (tools/js10.mjs)${found.length ? ': ' + found.slice(0, 5).join(', ') : ''}`);
+    const incdec = [...acorn.tokenizer(src, { ecmaVersion: 5, locations: true })].filter((t) => t.type.label === '++/--');
+    // No division by a literal 0: Netscape 2.02's 1 / 0 is 0, and Netscape 3.04 lost the infinity of js1diff's dbl.
+    const byZero = [];
+    (function w(n) { if (!n || typeof n.type !== 'string') return; if (n.type === 'BinaryExpression' && n.operator === '/' && n.right.type === 'Literal' && n.right.value === 0) byZero.push(n.loc.start.line); for (const k of Object.keys(n)) { const v = n[k]; if (Array.isArray(v)) v.forEach(w); else if (v && typeof v.type === 'string') w(v); } })(acorn.parse(src, { ecmaVersion: 5, locations: true }));
+    ok(byZero.length === 0, `${f} divides by no literal 0${byZero.length ? `: ${byZero.length}, the first on line ${byZero[0]}` : ''}`);
+    ok(incdec.length === 0, `${f} has no ++ or --${incdec.length ? `: ${incdec.length}, the first on line ${incdec[0].loc.start.line}` : ''}`);
+    // Netscape 3.04's parseInt keeps a value only up to 2^31 - 1 (it gave 2147483647 for 3396446046, the string table's stamp, in
+    // uttt's data: docs/frames-design.md section 15), so a data word is written as a signed int32: no token of a Jdz string is above it.
+    const big = [];
+    for (const m of src.matchAll(/Jdz\("([^"]*)"\)/g)) for (const t of m[1].split(',')) {
+        if (!t) continue;
+        const v = parseInt(t.includes('.') ? t.slice(t.indexOf('.') + 1) : t, 36);
+        if (!(v >= -2147483648 && v <= 2147483647)) big.push(t);
+    }
+    ok(big.length === 0, `${f}: every data word is an int32 in base 36, none above 2^31 - 1${big.length ? `: ${big.slice(0, 3).join(' ')}` : ''}`);
 }
 // Time slicing: with a budget, the export pauses and Jmore() goes on, to the same result.
 {
-  const S = loadJs1(js1File, { count: false });
-  S.ctx.JB = 50;
-  let r = S.call('rec', 1000), steps = 0;
-  const paused = S.o.js1_paused;
-  while (S.o.js1_paused && steps < 100000 && S.call('js1_more') !== 'hung') steps++;
-  r = S.o.js1_result;
-  W.log.length = 0;
-  ok(paused === 1 && steps > 10 && r === W.x.rec(1000), `sliced at 50 steps, rec(1000) pauses (${paused}), goes on ${steps} times and gives wasm's ${r}`);
+    const S = loadJs1(js1File, { count: false });
+    S.ctx.JB = 50;
+    let r = S.call('rec', 1000), steps = 0;
+    const paused = S.o.js1_paused;
+    while (S.o.js1_paused && steps < 100000 && S.call('js1_more') !== 'hung') steps++;
+    r = S.o.js1_result;
+    W.log.length = 0;
+    ok(paused === 1 && steps > 10 && r === W.x.rec(1000), `sliced at 50 steps, rec(1000) pauses (${paused}), goes on ${steps} times and gives wasm's ${r}`);
 }
 
 // tests/out/js1diff.html, the real browsers' page, run here with a stand-in document: every case agrees.
 {
-  const html = fs.readFileSync(path.join(out, 'js1diff.html'), 'utf8');
-  const scripts = [...html.matchAll(/<SCRIPT LANGUAGE="JavaScript">\n([\s\S]*?)<\/SCRIPT>/g)].map((m) => m[1]);
-  const ta = { value: '' }, tally = { value: '' }, q = [];
-  const ctx = { window: {}, navigator: { userAgent: 'node' }, document: { forms: { 0: { elements: { 0: ta, 1: tally } } } }, setTimeout: (s) => q.push(s), Date };
-  ctx.window = ctx;
-  vm.createContext(ctx);
-  for (const sc of scripts) vm.runInContext(sc, ctx);
-  try { for (let n = 0; q.length && n < 20000; n++) vm.runInContext(q.shift(), ctx, { timeout: 5000 }); } catch (e) { ta.value += `FAIL the page stopped: ${e}\n`; }
-  const m = /(\d+) of (\d+)/.exec(tally.value);
-  ok(scripts.length === 2 && m && m[1] === m[2], `tests/out/js1diff.html runs to its end and agrees: ${tally.value}${m && m[1] === m[2] ? '' : '\n' + ta.value.split('\n').filter((l) => l.startsWith('FAIL')).slice(0, 3).join('\n')}`);
+    const html = fs.readFileSync(path.join(out, 'js1diff.html'), 'utf8');
+    const scripts = [...html.matchAll(/<SCRIPT LANGUAGE="JavaScript">\n([\s\S]*?)<\/SCRIPT>/g)].map((m) => m[1]);
+    const ta = { value: '' }, tally = { value: '' }, q = [];
+    const ctx = { window: {}, navigator: { userAgent: 'node' }, document: { forms: { 0: { elements: { 0: ta, 1: tally } } } }, setTimeout: (s) => q.push(s), Date };
+    ctx.window = ctx;
+    vm.createContext(ctx);
+    for (const sc of scripts) vm.runInContext(sc, ctx);
+    try { for (let n = 0; q.length && n < 20000; n++) vm.runInContext(q.shift(), ctx, { timeout: 5000 }); } catch (e) { ta.value += `FAIL the page stopped: ${e}\n`; }
+    const m = /(\d+) of (\d+)/.exec(tally.value);
+    ok(scripts.length === 2 && m && m[1] === m[2], `tests/out/js1diff.html runs to its end and agrees: ${tally.value}${m && m[1] === m[2] ? '' : '\n' + ta.value.split('\n').filter((l) => l.startsWith('FAIL')).slice(0, 3).join('\n')}`);
 }
 if (process.env.JS1_MEASURE) await measure();
 console.log(fails ? `${fails} FAILED` : 'all ok');
 process.exit(fails ? 1 : 0);
 
 async function measure() {
-  const gz = (b) => zlib.gzipSync(b, { level: 9 }).length;
-  const stmts = (src) => { let n = 0; (function w(x) { if (!x || typeof x.type !== 'string') return; if (/Statement$|Declaration$/.test(x.type)) n++; for (const k of Object.keys(x)) { const v = x[k]; if (Array.isArray(v)) v.forEach(w); else if (v && typeof v.type === 'string') w(v); } })(acorn.parse(src, { ecmaVersion: 5 })); return n; };
-  const instrs = (wasm) => { const t = execFileSync('wasm-dis', [wasm], { encoding: 'utf8', maxBuffer: 1 << 28 }); return (t.match(/\((?:i32|f64|f32|i64|local|global|call|call_indirect|br|br_if|br_table|block|loop|if|select|drop|return|unreachable|memory|nop)\b[.\w]*/g) || []).length; };
-  for (const app of ['frames', 'js1diff']) {
-    const j = fs.readFileSync(path.join(out, `${app}.wasm.js1.js`)), i9 = fs.readFileSync(path.join(out, `${app}.wasm.ie9.js`));
-    console.log(`measure ${app}: js1 ${j.length} bytes, ${gz(j)} gzipped; ie9 ${i9.length} bytes, ${gz(i9)} gzipped; ratio ${(j.length / i9.length).toFixed(2)}, gzipped ${(gz(j) / gz(i9)).toFixed(2)}`);
-    const n = stmts(j.toString()), w = instrs(path.join(out, `${app}.wasm.js1.js.lowered.wasm`));
-    console.log(`measure ${app}: ${n} statements, ${w} instructions in the lowered module: ${(n / w).toFixed(2)} a wasm instruction; ie9 ${stmts(i9.toString())} statements`);
-  }
-  for (const f of ['frames.wasm.js1.js', 'frames.wasm.js1s.js']) {
-    const p = path.join(out, f);
-    if (!fs.existsSync(p)) continue;
-    const src = fs.readFileSync(p, 'utf8'), data = /function Jdata0\(\)\{[\s\S]*?\n(?=function cdomFactoryJs1)/.exec(src)[0];
-    const t0 = process.hrtime.bigint();
-    for (let i = 0; i < 20; i++) loadJs1(p, { count: false });
-    const ms = Number(process.hrtime.bigint() - t0) / 20e6;
-    console.log(`measure data ${f}: ${data.length} bytes, ${stmts(data)} statements; the whole file loads and its factory runs in ${ms.toFixed(2)} ms`);
-  }
-  const bench = (file, kind, name, arg, reps, budget) => { const t = []; for (let i = 0; i < 5; i++) t.push(+execFileSync(process.execPath, [new URL(import.meta.url).pathname, 'bench', file, kind, name, String(arg), String(reps), ...(budget ? [String(budget)] : [])], { encoding: 'utf8' })); return t.sort((x, y) => x - y)[2]; };
-  const ie9File = path.join(out, 'js1diff.wasm.ie9.js');
-  for (const [k, arg, reps] of [['loop', 100000, 50], ['rec', 1000, 200]]) {
-    const tw = bench(wasmFile, 'wasm', k, arg, reps), ti = bench(ie9File, 'ie9', k, arg, reps), tj = bench(js1File, 'js1', k, arg, reps);
-    console.log(`measure ${k}(${arg}), the median of 5 processes: wasm ${tw.toFixed(3)} ms, ie9 ${ti.toFixed(3)} ms, js1 ${tj.toFixed(3)} ms: js1 is ${(tj / ti).toFixed(2)} times ie9 and ${(tj / tw).toFixed(1)} times wasm`);
-    const ts = bench(js1File, 'js1', k, arg, reps, 1000);
-    console.log(`measure ${k}(${arg}) sliced at 1000 steps: ${ts.toFixed(3)} ms, ${((ts / tj - 1) * 100).toFixed(1)}% against unsliced`);
-  }
+    const gz = (b) => zlib.gzipSync(b, { level: 9 }).length;
+    const stmts = (src) => { let n = 0; (function w(x) { if (!x || typeof x.type !== 'string') return; if (/Statement$|Declaration$/.test(x.type)) n++; for (const k of Object.keys(x)) { const v = x[k]; if (Array.isArray(v)) v.forEach(w); else if (v && typeof v.type === 'string') w(v); } })(acorn.parse(src, { ecmaVersion: 5 })); return n; };
+    const instrs = (wasm) => { const t = execFileSync('wasm-dis', [wasm], { encoding: 'utf8', maxBuffer: 1 << 28 }); return (t.match(/\((?:i32|f64|f32|i64|local|global|call|call_indirect|br|br_if|br_table|block|loop|if|select|drop|return|unreachable|memory|nop)\b[.\w]*/g) || []).length; };
+    for (const app of ['frames', 'js1diff']) {
+        const j = fs.readFileSync(path.join(out, `${app}.wasm.js1.js`)), i9 = fs.readFileSync(path.join(out, `${app}.wasm.ie9.js`));
+        console.log(`measure ${app}: js1 ${j.length} bytes, ${gz(j)} gzipped; ie9 ${i9.length} bytes, ${gz(i9)} gzipped; ratio ${(j.length / i9.length).toFixed(2)}, gzipped ${(gz(j) / gz(i9)).toFixed(2)}`);
+        const n = stmts(j.toString()), w = instrs(path.join(out, `${app}.wasm.js1.js.lowered.wasm`));
+        console.log(`measure ${app}: ${n} statements, ${w} instructions in the lowered module: ${(n / w).toFixed(2)} a wasm instruction; ie9 ${stmts(i9.toString())} statements`);
+    }
+    for (const f of ['frames.wasm.js1.js', 'frames.wasm.js1s.js']) {
+        const p = path.join(out, f);
+        if (!fs.existsSync(p)) continue;
+        const src = fs.readFileSync(p, 'utf8'), data = /function Jdata0\(\)\{[\s\S]*?\n(?=function cdomFactoryJs1)/.exec(src)[0];
+        const t0 = process.hrtime.bigint();
+        for (let i = 0; i < 20; i++) loadJs1(p, { count: false });
+        const ms = Number(process.hrtime.bigint() - t0) / 20e6;
+        console.log(`measure data ${f}: ${data.length} bytes, ${stmts(data)} statements; the whole file loads and its factory runs in ${ms.toFixed(2)} ms`);
+    }
+    const bench = (file, kind, name, arg, reps, budget) => { const t = []; for (let i = 0; i < 5; i++) t.push(+execFileSync(process.execPath, [new URL(import.meta.url).pathname, 'bench', file, kind, name, String(arg), String(reps), ...(budget ? [String(budget)] : [])], { encoding: 'utf8' })); return t.sort((x, y) => x - y)[2]; };
+    const ie9File = path.join(out, 'js1diff.wasm.ie9.js');
+    for (const [k, arg, reps] of [['loop', 100000, 50], ['rec', 1000, 200]]) {
+        const tw = bench(wasmFile, 'wasm', k, arg, reps), ti = bench(ie9File, 'ie9', k, arg, reps), tj = bench(js1File, 'js1', k, arg, reps);
+        console.log(`measure ${k}(${arg}), the median of 5 processes: wasm ${tw.toFixed(3)} ms, ie9 ${ti.toFixed(3)} ms, js1 ${tj.toFixed(3)} ms: js1 is ${(tj / ti).toFixed(2)} times ie9 and ${(tj / tw).toFixed(1)} times wasm`);
+        const ts = bench(js1File, 'js1', k, arg, reps, 1000);
+        console.log(`measure ${k}(${arg}) sliced at 1000 steps: ${ts.toFixed(3)} ms, ${((ts / tj - 1) * 100).toFixed(1)}% against unsliced`);
+    }
 }
