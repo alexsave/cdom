@@ -46,10 +46,10 @@ export const TIER_FILES = (app, wasm = `${app}.wasm`) => ({ 1: [wasm], 2: ['cdom
 const NEVER = (app) => ['cdom.frames.js', `${app}.wasm.js1.js`];
 // [pass, message] for the files a page fetched: all of its tier's, none of another's, and only the tier's own .wasm.
 export function tierFetched(got, app, wasm) {
-  const files = TIER_FILES(app, wasm), want = files[TIER] || [], other = [...Object.values(files).flat(), ...NEVER(app)].filter((f) => !want.includes(f));
-  const wasms = got.filter((f) => f.endsWith('.wasm'));
-  return [want.every((f) => got.includes(f)) && !other.some((f) => got.includes(f)) && wasms.every((f) => want.includes(f)),
-    `tier ${TIER} files only (${want.join(' ') || 'none'}): fetched ${got.filter((f) => /\.(js|wasm)$/.test(f)).join(' ')}`];
+    const files = TIER_FILES(app, wasm), want = files[TIER] || [], other = [...Object.values(files).flat(), ...NEVER(app)].filter((f) => !want.includes(f));
+    const wasms = got.filter((f) => f.endsWith('.wasm'));
+    return [want.every((f) => got.includes(f)) && !other.some((f) => got.includes(f)) && wasms.every((f) => want.includes(f)),
+      `tier ${TIER} files only (${want.join(' ') || 'none'}): fetched ${got.filter((f) => /\.(js|wasm)$/.test(f)).join(' ')}`];
 }
 // What IE 9 lacks that IE 11 has, each with the IE version it arrived in, from mdn/browser-compat-data
 // (main, read 2026-11-08); "never" is a feature BCD lists with no IE entry, which is how BCD records an IE
@@ -328,92 +328,92 @@ export const FETCHED = "(function () { var e = performance.getEntriesByType('res
 // SIGKILL (whose senders kill the process group: tools/mutate.py). tools/cdpself.mjs checks each way.
 const live = new Map(); // proc -> profile dir
 const killAll = () => {
-  for (const [p, dir] of live) {
-    try { p.kill('SIGKILL'); } catch {}
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
-  }
-  live.clear();
+    for (const [p, dir] of live) {
+        try { p.kill('SIGKILL'); } catch {}
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+    }
+    live.clear();
 };
 let hooked = false;
 const hook = () => {
-  if (hooked) return;
-  hooked = true;
-  process.on('exit', killAll); // a normal end, process.exit and an uncaught throw
-  for (const [sig, n] of [['SIGINT', 2], ['SIGTERM', 15], ['SIGHUP', 1]])
-    process.on(sig, () => { killAll(); process.exit(128 + n); }); // a signal ends the process without 'exit'
+    if (hooked) return;
+    hooked = true;
+    process.on('exit', killAll); // a normal end, process.exit and an uncaught throw
+    for (const [sig, n] of [['SIGINT', 2], ['SIGTERM', 15], ['SIGHUP', 1]])
+        process.on(sig, () => { killAll(); process.exit(128 + n); }); // a signal ends the process without 'exit'
 };
 
 export async function launch(args = []) { // args: Chrome flags of the caller's own
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cdom-chrome-'));
-  // Port 0: the OS gives this Chrome a free port, which it writes to DevToolsActivePort in its own
-  // profile, so a run can only ever reach the Chrome it started. A picked port (a range, a guess) lets two
-  // parallel runs collide: the second Chrome fails to bind, and its run drives the first one's browser,
-  // flags and all (a unit run then saw no window.gc). CDP_PORT still fixes one, for a debugger.
-  const want = +(process.env.CDP_PORT || 0);
-  const errFile = process.env.CHROME_LOG ? process.env.CHROME_LOG + '.err' : path.join(dir, 'chrome.err');
-  // --use-mock-keychain and --password-store=basic: under a temporary HOME, Chrome would ask macOS for a keychain in a dialog.
-  const proc = spawn(process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    ['--headless=new', `--remote-debugging-port=${want}`, `--user-data-dir=${dir}`, '--no-first-run', '--use-mock-keychain', '--password-store=basic',
-     '--no-default-browser-check', '--disable-extensions', '--mute-audio', '--window-size=1280,800', ...args, ...(process.env.CHROME_ARGS ? process.env.CHROME_ARGS.split(' ') : []), 'about:blank'],
-    // Chrome's stderr goes to the profile by default (CHROME_LOG names another place), so a launch that
-    // fails can say why: the error below quotes its tail.
-    { stdio: ['ignore', process.env.CHROME_LOG ? fs.openSync(process.env.CHROME_LOG, 'w') : 'ignore', fs.openSync(errFile, 'w')] });
-  let exited = false, spawnErr = '';
-  live.set(proc, dir);
-  hook();
-  proc.on('exit', () => { exited = true; live.delete(proc); });
-  proc.on('error', (e) => { exited = true; spawnErr = e.message; }); // no such binary: say so, don't crash the run
-  const portFile = path.join(dir, 'DevToolsActivePort');
-  // One deadline for the whole start, not a loop count: a cold CI runner's first Chrome (a new profile,
-  // the shader and font caches) can take well over 10 s. CDP_START_MS overrides it. Chrome exiting
-  // stops the wait at once.
-  const deadline = performance.now() + +(process.env.CDP_START_MS || 60000);
-  const why = () => { if (spawnErr) return spawnErr; try { return fs.readFileSync(errFile, 'utf8').trim().split('\n').slice(-8).join('\n'); } catch { return ''; } };
-  let dbg = 0;
-  while (!dbg && !exited && performance.now() < deadline) {
-    try { dbg = +fs.readFileSync(portFile, 'utf8').split('\n')[0]; } catch { await sleep(100); }
-  }
-  const fail = (msg) => { proc.kill('SIGKILL'); return new Error(msg); }; // a launch that fails leaves no Chrome
-  if (!dbg) throw fail(`cdp: Chrome ${exited ? 'exited' : 'wrote no DevToolsActivePort'} (profile ${dir})\n${why()}`);
-  let ver;
-  while (!ver && !exited && performance.now() < deadline) {
-    try { ver = await (await fetch(`http://127.0.0.1:${dbg}/json/version`)).json(); } catch { await sleep(200); }
-  }
-  if (!ver) throw fail(`cdp: no answer from Chrome on port ${dbg}${exited ? ' (it exited)' : ''}\n${why()}`);
-  const ws = new WebSocket(ver.webSocketDebuggerUrl);
-  await new Promise(r => ws.onopen = r);
-  let id = 0; const pend = new Map();
-  const api = {};
-  // exceptions: every uncaught page exception since the last navigation, as "file:line message".
-  const exceptions = [];
-  const thrown = (d) => {
-    if (d.method === 'Page.frameNavigated' && !d.params.frame.parentId) exceptions.length = 0;
-    if (d.method !== 'Runtime.exceptionThrown') return;
-    const x = d.params.exceptionDetails;
-    exceptions.push(`${(x.url || '').split('/').pop()}:${x.lineNumber + 1} ${x.exception?.description?.split('\n')[0] || x.text}`);
-  };
-  ws.onmessage = m => { const d = JSON.parse(m.data); if (d.id && pend.has(d.id)) { pend.get(d.id)(d); pend.delete(d.id); } else if (d.method) { thrown(d); if (api.onEvent) api.onEvent(d); } };
-  const send = (method, params = {}, sessionId) => new Promise(r => { const i = ++id; pend.set(i, r); ws.send(JSON.stringify({ id: i, method, params, sessionId })); });
-  const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank', newWindow: true });
-  const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true });
-  const s = (m, p) => send(m, p, sessionId);
-  await s('Page.enable'); await s('Runtime.enable');
-  // The page behaves as focused whatever the OS window does: with several Chromes at once (tools/mutate.py -j N)
-  // a window can lose focus, and the browser then fires no focus or blur events (a removed input's focusout).
-  await s('Emulation.setFocusEmulationEnabled', { enabled: true });
-  if (LEGACY) await s('Page.addScriptToEvaluateOnNewDocument', { source: OLD });
-  const evaluate = async (expr) => {
-    const r = await s('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
-    if (r.result?.exceptionDetails) throw new Error(JSON.stringify(r.result.exceptionDetails));
-    return r.result?.result?.value;
-  };
-  const close = async () => {
-    try { await send('Target.closeTarget', { targetId }); ws.close(); } catch {}
-    proc.kill('SIGTERM');
-    await sleep(300);
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
-  };
-  return Object.assign(api, { pid: proc.pid, version: ver.Browser, send: s, sendBrowser: send, targetId, evaluate, close, exceptions });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cdom-chrome-'));
+    // Port 0: the OS gives this Chrome a free port, which it writes to DevToolsActivePort in its own
+    // profile, so a run can only ever reach the Chrome it started. A picked port (a range, a guess) lets two
+    // parallel runs collide: the second Chrome fails to bind, and its run drives the first one's browser,
+    // flags and all (a unit run then saw no window.gc). CDP_PORT still fixes one, for a debugger.
+    const want = +(process.env.CDP_PORT || 0);
+    const errFile = process.env.CHROME_LOG ? process.env.CHROME_LOG + '.err' : path.join(dir, 'chrome.err');
+    // --use-mock-keychain and --password-store=basic: under a temporary HOME, Chrome would ask macOS for a keychain in a dialog.
+    const proc = spawn(process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      ['--headless=new', `--remote-debugging-port=${want}`, `--user-data-dir=${dir}`, '--no-first-run', '--use-mock-keychain', '--password-store=basic',
+       '--no-default-browser-check', '--disable-extensions', '--mute-audio', '--window-size=1280,800', ...args, ...(process.env.CHROME_ARGS ? process.env.CHROME_ARGS.split(' ') : []), 'about:blank'],
+      // Chrome's stderr goes to the profile by default (CHROME_LOG names another place), so a launch that
+      // fails can say why: the error below quotes its tail.
+      { stdio: ['ignore', process.env.CHROME_LOG ? fs.openSync(process.env.CHROME_LOG, 'w') : 'ignore', fs.openSync(errFile, 'w')] });
+    let exited = false, spawnErr = '';
+    live.set(proc, dir);
+    hook();
+    proc.on('exit', () => { exited = true; live.delete(proc); });
+    proc.on('error', (e) => { exited = true; spawnErr = e.message; }); // no such binary: say so, don't crash the run
+    const portFile = path.join(dir, 'DevToolsActivePort');
+    // One deadline for the whole start, not a loop count: a cold CI runner's first Chrome (a new profile,
+    // the shader and font caches) can take well over 10 s. CDP_START_MS overrides it. Chrome exiting
+    // stops the wait at once.
+    const deadline = performance.now() + +(process.env.CDP_START_MS || 60000);
+    const why = () => { if (spawnErr) return spawnErr; try { return fs.readFileSync(errFile, 'utf8').trim().split('\n').slice(-8).join('\n'); } catch { return ''; } };
+    let dbg = 0;
+    while (!dbg && !exited && performance.now() < deadline) {
+        try { dbg = +fs.readFileSync(portFile, 'utf8').split('\n')[0]; } catch { await sleep(100); }
+    }
+    const fail = (msg) => { proc.kill('SIGKILL'); return new Error(msg); }; // a launch that fails leaves no Chrome
+    if (!dbg) throw fail(`cdp: Chrome ${exited ? 'exited' : 'wrote no DevToolsActivePort'} (profile ${dir})\n${why()}`);
+    let ver;
+    while (!ver && !exited && performance.now() < deadline) {
+        try { ver = await (await fetch(`http://127.0.0.1:${dbg}/json/version`)).json(); } catch { await sleep(200); }
+    }
+    if (!ver) throw fail(`cdp: no answer from Chrome on port ${dbg}${exited ? ' (it exited)' : ''}\n${why()}`);
+    const ws = new WebSocket(ver.webSocketDebuggerUrl);
+    await new Promise(r => ws.onopen = r);
+    let id = 0; const pend = new Map();
+    const api = {};
+    // exceptions: every uncaught page exception since the last navigation, as "file:line message".
+    const exceptions = [];
+    const thrown = (d) => {
+        if (d.method === 'Page.frameNavigated' && !d.params.frame.parentId) exceptions.length = 0;
+        if (d.method !== 'Runtime.exceptionThrown') return;
+        const x = d.params.exceptionDetails;
+        exceptions.push(`${(x.url || '').split('/').pop()}:${x.lineNumber + 1} ${x.exception?.description?.split('\n')[0] || x.text}`);
+    };
+    ws.onmessage = m => { const d = JSON.parse(m.data); if (d.id && pend.has(d.id)) { pend.get(d.id)(d); pend.delete(d.id); } else if (d.method) { thrown(d); if (api.onEvent) api.onEvent(d); } };
+    const send = (method, params = {}, sessionId) => new Promise(r => { const i = ++id; pend.set(i, r); ws.send(JSON.stringify({ id: i, method, params, sessionId })); });
+    const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank', newWindow: true });
+    const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true });
+    const s = (m, p) => send(m, p, sessionId);
+    await s('Page.enable'); await s('Runtime.enable');
+    // The page behaves as focused whatever the OS window does: with several Chromes at once (tools/mutate.py -j N)
+    // a window can lose focus, and the browser then fires no focus or blur events (a removed input's focusout).
+    await s('Emulation.setFocusEmulationEnabled', { enabled: true });
+    if (LEGACY) await s('Page.addScriptToEvaluateOnNewDocument', { source: OLD });
+    const evaluate = async (expr) => {
+        const r = await s('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
+        if (r.result?.exceptionDetails) throw new Error(JSON.stringify(r.result.exceptionDetails));
+        return r.result?.result?.value;
+    };
+    const close = async () => {
+        try { await send('Target.closeTarget', { targetId }); ws.close(); } catch {}
+        proc.kill('SIGTERM');
+        await sleep(300);
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+    };
+    return Object.assign(api, { pid: proc.pid, version: ver.Browser, send: s, sendBrowser: send, targetId, evaluate, close, exceptions });
 }
 
 // Under LEGACY=below the boot must refuse the browser cleanly (see shim/boot.js): one error naming each missing
@@ -423,13 +423,13 @@ export async function launch(args = []) { // args: Chrome flags of the caller's 
 export const FLOOR = ['addEventListener or attachEvent'];
 export const REFUSAL = `cdom: this browser cannot run cdom: it has no ${FLOOR.join(', ')}`;
 export async function refused(b, mount) {
-  for (let i = 0; i < 100 && (await b.evaluate('document.readyState')) !== 'complete'; i++) await sleep(50);
-  await sleep(500); // a fallback file still loading would have run by now
-  const errs = b.exceptions.filter(e => !/^[\w.-]+\.html:\d+ ReferenceError: TextDecoder is not defined$/.test(e));
-  const got = (await b.evaluate(FETCHED)).filter(f => /\.(js|wasm)$/.test(f) && f !== 'cdom.js');
-  return [
-    [errs.length === 1 && errs[0].endsWith(`Error: ${REFUSAL}`), `one error, the boot's, naming all ${FLOOR.length} missing: ${JSON.stringify(errs)}`],
-    [!got.length, `no fallback file or wasm fetched: ${got.join(' ')}`],
-    [await b.evaluate(`document.querySelector(${JSON.stringify(mount)}).childNodes.length === 0`), `nothing drawn in ${mount}`],
-  ];
+    for (let i = 0; i < 100 && (await b.evaluate('document.readyState')) !== 'complete'; i++) await sleep(50);
+    await sleep(500); // a fallback file still loading would have run by now
+    const errs = b.exceptions.filter(e => !/^[\w.-]+\.html:\d+ ReferenceError: TextDecoder is not defined$/.test(e));
+    const got = (await b.evaluate(FETCHED)).filter(f => /\.(js|wasm)$/.test(f) && f !== 'cdom.js');
+    return [
+      [errs.length === 1 && errs[0].endsWith(`Error: ${REFUSAL}`), `one error, the boot's, naming all ${FLOOR.length} missing: ${JSON.stringify(errs)}`],
+      [!got.length, `no fallback file or wasm fetched: ${got.join(' ')}`],
+      [await b.evaluate(`document.querySelector(${JSON.stringify(mount)}).childNodes.length === 0`), `nothing drawn in ${mount}`],
+    ];
 }

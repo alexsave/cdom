@@ -15,6 +15,6 @@ uint32_t cd_prefs(void) { return j_prefs(); }
 
 __attribute__((weak)) void cd_on_prefs(uint32_t) { }
 EXPORT("cd_prefs_changed") void cd_prefs_changed(uint32_t prefs) {
-  cd_on_prefs(prefs);
-  cd_flush();
+    cd_on_prefs(prefs);
+    cd_flush();
 }

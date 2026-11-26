@@ -11,11 +11,11 @@ if (TAG == "") { TAG = "x"; }
 // the host.
 var BASE = "http://" + location.host;
 function go() {
-  parent.f.document.open();
-  parent.f.document.write('<HTML><BODY>written into f<IMG SRC="' + BASE + '/mark/' + TAG + '/p-f1-childwrote-yes" WIDTH=1 HEIGHT=1>');
-  parent.f.document.write('<SCRIPT LANGUAGE="JavaScript">document.write("<IMG SRC=' + BASE + '/mark/' + TAG + '/p-f2-childscript-ran WIDTH=1 HEIGHT=1>");<' + '/SCRIPT>');
-  parent.f.document.write('</BODY></HTML>');
-  parent.f.document.close();
+    parent.f.document.open();
+    parent.f.document.write('<HTML><BODY>written into f<IMG SRC="' + BASE + '/mark/' + TAG + '/p-f1-childwrote-yes" WIDTH=1 HEIGHT=1>');
+    parent.f.document.write('<SCRIPT LANGUAGE="JavaScript">document.write("<IMG SRC=' + BASE + '/mark/' + TAG + '/p-f2-childscript-ran WIDTH=1 HEIGHT=1>");<' + '/SCRIPT>');
+    parent.f.document.write('</BODY></HTML>');
+    parent.f.document.close();
 }
 </SCRIPT>
 </HEAD>

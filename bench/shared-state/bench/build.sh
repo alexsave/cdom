@@ -14,16 +14,16 @@ rm -rf "$here/out/main" && mkdir -p "$here/out/main"
 git -C "$top" archive cfee569 src | tar -x -C "$here/out/main"
 src=(main.c model.c ops.c live.c entry.c)
 for x in ${ENTRIES:-A B C CL E L EI LI}; do
-  files=("${src[@]/#/$here/src/}")
-  cdom="$here/out/main/src" def=("-DENTRY_$x")
-  case "$x" in
-    E|L) files+=("$here/../lib/cd_state.c");;
-    EI|LI) cdom="$top/src" def=("-DENTRY_${x%I}" -DCD_STATE_REAL);;
-  esac
-  # cdom.h through cdom's own -I (the flags' -I src first, then the one for the tree this entry is on)
-  "$CC" -Oz -I"$cdom" "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror "${def[@]}" -I"$here/src" -I"$here/../lib" "${CDOM_LDFLAGS[@]}" \
-    -o "$here/out/bench-$x.linked.wasm" "${files[@]}" "$cdom/cdom.c" "$cdom/mini.c" "$cdom/cdom_ui.c"
-  "$CDOM_LITS" "$here/out/bench-$x.linked.wasm" "$here/out/bench-$x.wasm" "$here/out/bench-$x.wasm.lits"
-  rm "$here/out/bench-$x.linked.wasm"
+    files=("${src[@]/#/$here/src/}")
+    cdom="$here/out/main/src" def=("-DENTRY_$x")
+    case "$x" in
+        E|L) files+=("$here/../lib/cd_state.c");;
+        EI|LI) cdom="$top/src" def=("-DENTRY_${x%I}" -DCD_STATE_REAL);;
+    esac
+    # cdom.h through cdom's own -I (the flags' -I src first, then the one for the tree this entry is on)
+    "$CC" -Oz -I"$cdom" "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror "${def[@]}" -I"$here/src" -I"$here/../lib" "${CDOM_LDFLAGS[@]}" \
+      -o "$here/out/bench-$x.linked.wasm" "${files[@]}" "$cdom/cdom.c" "$cdom/mini.c" "$cdom/cdom_ui.c"
+    "$CDOM_LITS" "$here/out/bench-$x.linked.wasm" "$here/out/bench-$x.wasm" "$here/out/bench-$x.wasm.lits"
+    rm "$here/out/bench-$x.linked.wasm"
 done
 ls -l "$here/out" | awk 'NR > 1 {print $5, $9}'

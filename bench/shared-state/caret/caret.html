@@ -6,8 +6,8 @@
 const v = new URLSearchParams(location.search).get('v');
 async function load(src) { const s = document.createElement('script'); s.text = await (await fetch(src)).text(); document.head.appendChild(s); }
 (async () => {
-  await load(`out/caret-${v}.wasm.lits`);
-  await load('../../../shim/cdom.js');
-  window.X = await cdom.start(`out/caret-${v}.wasm`, 'app', null, { seed: 1 });
+    await load(`out/caret-${v}.wasm.lits`);
+    await load('../../../shim/cdom.js');
+    window.X = await cdom.start(`out/caret-${v}.wasm`, 'app', null, { seed: 1 });
 })().catch((e) => { window.LOADERR = String(e.stack || e); });
 </script></body></html>

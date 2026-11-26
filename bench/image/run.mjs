@@ -26,15 +26,15 @@ const SAFARI = process.env.BROWSER === 'safari';
 for (const i of inputs) if (!fs.existsSync(path.join(here, 'inputs', i))) { console.error(`no inputs/${i}: make -C bench/image inputs`); process.exit(1); }
 
 const srv = http.createServer((q, r) => {
-  const f = path.join(here, decodeURIComponent(q.url.split(/[?#]/)[0]));
-  if (!f.startsWith(here)) { r.writeHead(403); r.end(); return; }
-  fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': f.endsWith('.html') ? 'text/html' : 'application/octet-stream' }); r.end(b); });
+    const f = path.join(here, decodeURIComponent(q.url.split(/[?#]/)[0]));
+    if (!f.startsWith(here)) { r.writeHead(403); r.end(); return; }
+    fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': f.endsWith('.html') ? 'text/html' : 'application/octet-stream' }); r.end(b); });
 }).listen(0);
 const base = () => `http://127.0.0.1:${srv.address().port}`;
 const load1 = () => os.loadavg()[0];
 async function gate() {
-  for (let w = 0; w < 1200; w += 10) { if (load1() < LOADMAX) return w; await sleep(10000); }
-  return -1;
+    for (let w = 0; w < 1200; w += 10) { if (load1() < LOADMAX) return w; await sleep(10000); }
+    return -1;
 }
 const med = (v) => { const s = [...v].sort((a, b) => a - b); return s.length % 2 ? s[s.length >> 1] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2; };
 
@@ -46,29 +46,29 @@ const b = SAFARI ? await safari() : await chrome();
 console.log(b.version);
 const all = {};
 try {
-  for (let r = 0; r < rounds; r++) {
-    for (const input of inputs) {
-      for (let k = 0; k < arms.length; k++) {
-        const arm = arms[(k + r) % arms.length];
-        const waited = await gate();
-        const loadBefore = load1();
-        const page = arm === 'C-simd' ? 'build-simd' : arm.startsWith('C-') ? 'build-' + arm.slice(2) : 'build-js';   // C-js, C-eh, C-js-o2: build-js, build-eh, build-js-o2; C-simd: the CDOM_IMAGE_SIMD=1 page
-        const at = `${base()}/${page}/index.html`;
-        await (SAFARI ? b.navigate(at) : b.send('Page.navigate', { url: at }));
-        for (let i = 0; i < 200 && !(await b.evaluate('!!window.READY')); i++) await sleep(25);
-        const res = await b.evaluate(`arm(${JSON.stringify(arm.startsWith('C') ? 'C' : arm)}, ${JSON.stringify(`${base()}/inputs/${input}`)}, ${box})`);
-        fs.appendFileSync(out, [r, input, arm, res.ms.toFixed(2), res.status ?? '', res.w, res.h, res.bytes ?? '', loadBefore.toFixed(2), waited].join('\t') + '\n');
-        (all[`${input}\t${arm}`] ||= []).push(res);
-        console.log(`round ${r} ${input} ${arm}: ${res.ms.toFixed(1)} ms ${res.w}x${res.h}${res.bytes ? ` wasm ${(res.bytes / 1048576).toFixed(1)} MiB` : ''} (load ${loadBefore.toFixed(2)})`);
-      }
+    for (let r = 0; r < rounds; r++) {
+        for (const input of inputs) {
+            for (let k = 0; k < arms.length; k++) {
+                const arm = arms[(k + r) % arms.length];
+                const waited = await gate();
+                const loadBefore = load1();
+                const page = arm === 'C-simd' ? 'build-simd' : arm.startsWith('C-') ? 'build-' + arm.slice(2) : 'build-js';   // C-js, C-eh, C-js-o2: build-js, build-eh, build-js-o2; C-simd: the CDOM_IMAGE_SIMD=1 page
+                const at = `${base()}/${page}/index.html`;
+                await (SAFARI ? b.navigate(at) : b.send('Page.navigate', { url: at }));
+                for (let i = 0; i < 200 && !(await b.evaluate('!!window.READY')); i++) await sleep(25);
+                const res = await b.evaluate(`arm(${JSON.stringify(arm.startsWith('C') ? 'C' : arm)}, ${JSON.stringify(`${base()}/inputs/${input}`)}, ${box})`);
+                fs.appendFileSync(out, [r, input, arm, res.ms.toFixed(2), res.status ?? '', res.w, res.h, res.bytes ?? '', loadBefore.toFixed(2), waited].join('\t') + '\n');
+                (all[`${input}\t${arm}`] ||= []).push(res);
+                console.log(`round ${r} ${input} ${arm}: ${res.ms.toFixed(1)} ms ${res.w}x${res.h}${res.bytes ? ` wasm ${(res.bytes / 1048576).toFixed(1)} MiB` : ''} (load ${loadBefore.toFixed(2)})`);
+            }
+        }
     }
-  }
 } finally {
-  await b.close();
-  srv.close();
+    await b.close();
+    srv.close();
 }
 console.log(`\ninput\tarm\tmedian ms\tmin\tmax\twasm MiB\t(${rounds} rounds, box ${box}, ${out})`);
 for (const [key, v] of Object.entries(all)) {
-  const ms = v.map((x) => x.ms);
-  console.log(`${key}\t${med(ms).toFixed(1)}\t${Math.min(...ms).toFixed(1)}\t${Math.max(...ms).toFixed(1)}\t${v[0].bytes ? (Math.max(...v.map((x) => x.bytes)) / 1048576).toFixed(1) : ''}`);
+    const ms = v.map((x) => x.ms);
+    console.log(`${key}\t${med(ms).toFixed(1)}\t${Math.min(...ms).toFixed(1)}\t${Math.max(...ms).toFixed(1)}\t${v[0].bytes ? (Math.max(...v.map((x) => x.bytes)) / 1048576).toFixed(1) : ''}`);
 }

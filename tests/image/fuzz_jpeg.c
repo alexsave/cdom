@@ -8,11 +8,11 @@
 #include "host_alloc.h"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-  uint8_t *rgba; uint32_t w, h;
-  size_t live = host_live;
-  uint32_t st = cd_image_resize(data, (uint32_t)size, 900, 900, &rgba, &w, &h);
-  if (st == CD_IMAGE_OK) cd_free(rgba);
-  else if (rgba || w || h) __builtin_trap();     /* a refusal with an image */
-  if (host_live != live) __builtin_trap();       /* something left allocated */
-  return 0;
+    uint8_t *rgba; uint32_t w, h;
+    size_t live = host_live;
+    uint32_t st = cd_image_resize(data, (uint32_t)size, 900, 900, &rgba, &w, &h);
+    if (st == CD_IMAGE_OK) cd_free(rgba);
+    else if (rgba || w || h) __builtin_trap();     /* a refusal with an image */
+    if (host_live != live) __builtin_trap();       /* something left allocated */
+    return 0;
 }

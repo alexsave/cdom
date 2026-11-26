@@ -10,9 +10,9 @@ lib="${LIB:-$here/../lib/cd_state.c}"
 out="${OUT:-$here/out}"
 mkdir -p "$out"
 for v in test test-check; do
-  def=(); [ "$v" = test-check ] && def=(-DCD_STATE_CHECK)
-  "$CC" -Oz "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror ${def[@]+"${def[@]}"} -I"$here/../lib" "${CDOM_LDFLAGS[@]}" \
-    -o "$out/$v.linked.wasm" "$here/test.c" "$lib" "$top/src/cdom.c" "$top/src/mini.c" "$top/src/cdom_ui.c"
-  "$CDOM_LITS" "$out/$v.linked.wasm" "$out/$v.wasm" "$out/$v.wasm.lits"
-  rm "$out/$v.linked.wasm"
+    def=(); [ "$v" = test-check ] && def=(-DCD_STATE_CHECK)
+    "$CC" -Oz "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror ${def[@]+"${def[@]}"} -I"$here/../lib" "${CDOM_LDFLAGS[@]}" \
+      -o "$out/$v.linked.wasm" "$here/test.c" "$lib" "$top/src/cdom.c" "$top/src/mini.c" "$top/src/cdom_ui.c"
+    "$CDOM_LITS" "$out/$v.linked.wasm" "$out/$v.wasm" "$out/$v.wasm.lits"
+    rm "$out/$v.linked.wasm"
 done

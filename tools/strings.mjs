@@ -11,21 +11,21 @@ const GONE = /\b(?:CD_LIT|cd_intern|cd_internz|cd_bytes)\b/;
 const files = execFileSync('git', ['ls-files', '-z', '--', '*.c', '*.h'], { cwd: top, encoding: 'utf8' }).split('\0').filter(Boolean);
 let hits = 0;
 for (const f of files) {
-  let text;
-  try {
-    text = fs.readFileSync(path.join(top, f), 'utf8');
-  } catch {
-    continue; // tracked, deleted in the tree
-  }
-  text.split('\n').forEach((line, i) => {
-    const m = GONE.exec(line);
-    if (m) {
-      console.log(`FAIL ${f}:${i + 1}: ${m[0]} is gone, write the string: ${line.trim().slice(0, 120)}`);
-      hits++;
+    let text;
+    try {
+        text = fs.readFileSync(path.join(top, f), 'utf8');
+    } catch {
+        continue; // tracked, deleted in the tree
     }
-  });
+    text.split('\n').forEach((line, i) => {
+        const m = GONE.exec(line);
+        if (m) {
+            console.log(`FAIL ${f}:${i + 1}: ${m[0]} is gone, write the string: ${line.trim().slice(0, 120)}`);
+            hits++;
+        }
+    });
 }
 if (!hits) {
-  console.log(`ok   strings: none of ${files.length} tracked C files names CD_LIT, cd_intern, cd_internz or cd_bytes`);
+    console.log(`ok   strings: none of ${files.length} tracked C files names CD_LIT, cd_intern, cd_internz or cd_bytes`);
 }
 process.exit(hits ? 1 : 0);

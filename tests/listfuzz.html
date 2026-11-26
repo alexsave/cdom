@@ -17,52 +17,52 @@ const ib = Node.prototype.insertBefore;
 Node.prototype.insertBefore = function (n, r) { if (n.parentNode === this && this.tagName === 'UL') moves++; return Reflect.apply(ib, this, [n, r]); };
 function lisLen(a) { const t = []; for (const v of a) { let lo = 0, hi = t.length; while (lo < hi) { const m = (lo + hi) >> 1; if (t[m] < v) lo = m + 1; else hi = m; } t[lo] = v; } return t.length; }
 const checker = (sel, anchored) => (p, n, round) => {
-  rounds++;
-  // C's keys: a view of its memory, or on the third tier (no typed arrays) a copy from its words.
-  const mem = window.__x.memory;
-  const keys = mem.words ? mem.words.slice(p >> 2, (p >> 2) + n).map(w => w >>> 0) : new Uint32Array(mem.buffer, p, n);
-  let lis = [...document.querySelectorAll(sel)];
-  if (anchored) {
-    const end = lis.pop();
-    if (!end || end.innerText !== 'end') errors.push(`round ${round}: the anchor is not last (${end && end.innerText})`);
-  }
-  const now = {};
-  if (lis.length !== n) errors.push(`round ${round}: ${lis.length} nodes, want ${n}`);
-  for (let i = 0; i < Math.min(n, lis.length); i++) {
-    const want = String(keys[i]) + ['', '\u00e9', '\u65e5', '\u{1F600}'][keys[i] % 4];
-    if (lis[i].innerText !== want) { errors.push(`round ${round}: [${i}] = ${lis[i].innerText}, want ${want}`); break; }
-    now[keys[i]] = lis[i];
-    if (keys[i] in prev && prev[keys[i]] !== lis[i]) { errors.push(`round ${round}: key ${keys[i]} lost its node`); break; }
-  }
-  // Moves must not exceed survivors minus the longest run already in order.
-  const oldPos = {}; prevKeys.forEach((k, i) => { oldPos[k] = i; });
-  const surv = [...keys].filter(k => k in oldPos).map(k => oldPos[k]);
-  if (moves > surv.length - lisLen(surv)) errors.push(`round ${round}: ${moves} moves, bound ${surv.length - lisLen(surv)}`);
-  moves = 0; prevKeys = [...keys];
-  prev = now;
-  if (errors.length > 5) throw new Error(errors.join('\n'));
+    rounds++;
+    // C's keys: a view of its memory, or on the third tier (no typed arrays) a copy from its words.
+    const mem = window.__x.memory;
+    const keys = mem.words ? mem.words.slice(p >> 2, (p >> 2) + n).map(w => w >>> 0) : new Uint32Array(mem.buffer, p, n);
+    let lis = [...document.querySelectorAll(sel)];
+    if (anchored) {
+        const end = lis.pop();
+        if (!end || end.innerText !== 'end') errors.push(`round ${round}: the anchor is not last (${end && end.innerText})`);
+    }
+    const now = {};
+    if (lis.length !== n) errors.push(`round ${round}: ${lis.length} nodes, want ${n}`);
+    for (let i = 0; i < Math.min(n, lis.length); i++) {
+        const want = String(keys[i]) + ['', '\u00e9', '\u65e5', '\u{1F600}'][keys[i] % 4];
+        if (lis[i].innerText !== want) { errors.push(`round ${round}: [${i}] = ${lis[i].innerText}, want ${want}`); break; }
+        now[keys[i]] = lis[i];
+        if (keys[i] in prev && prev[keys[i]] !== lis[i]) { errors.push(`round ${round}: key ${keys[i]} lost its node`); break; }
+    }
+    // Moves must not exceed survivors minus the longest run already in order.
+    const oldPos = {}; prevKeys.forEach((k, i) => { oldPos[k] = i; });
+    const surv = [...keys].filter(k => k in oldPos).map(k => oldPos[k]);
+    if (moves > surv.length - lisLen(surv)) errors.push(`round ${round}: ${moves} moves, bound ${surv.length - lisLen(surv)}`);
+    moves = 0; prevKeys = [...keys];
+    prev = now;
+    if (errors.length > 5) throw new Error(errors.join('\n'));
 };
 const env = { check: checker('#m ul:not(.tail) > li', false), check_end: checker('#m ul.tail > li', true) };
 // Through the boot, so LEGACY=1 node tools/fuzz.mjs runs the same rounds on the wasm2js build.
 cdomBoot('listfuzz.wasm', document.getElementById('m'), env, x => { try { window.__x = x; x.run_fuzz(SEED, 20000);
-    prev = {}; prevKeys = [];
-    x.run_fuzz_end(SEED, 20000);
-    try {
-      x.run_walks();
-      const r = document.querySelector('#m > div:last-of-type');
-      const deep = r.querySelector('.w20'), inner = r.querySelector('.w'), w19 = r.querySelector('.w19');
-      if (!deep || deep.innerText !== 'deep' || deep.children.length) errors.push('walks: up from the last node');
-      if (!inner || inner.tagName !== 'I' || inner.parentNode.tagName !== 'I') errors.push('walks: sel down next next down');
-      let d = 0; for (let n = w19; n && n !== r; n = n.parentNode) d++;
-      if (!w19 || d !== 19) errors.push('walks: 19 steps landed at depth ' + d);
-    } catch (e) { errors.push('walks: ' + e); }
-    try { x.run_freeruns(SEED, 3000); }
-    catch (e) { errors.push('freeruns: ' + e); }
-    const want = ['plain', 'h\u00e9llo', '\u65e5\u672c', '\u{1F600}x', ''];
-    for (const big of [0, 1]) {
-      x.run_strings(big);
-      const got = [...document.querySelectorAll('#m > p:last-child > b')].map(b => b.innerText);
-      const exp = []; for (let r = 0; r < (big ? 20 : 1); r++) for (const w of want) exp.push(w + String.fromCharCode(97 + r % 26));
-      if (got.join('|') !== exp.join('|')) errors.push(`strings big=${big}: ${got.slice(0, 6).join('|')}`);
-    } } catch (e) { errors.push(String(e)); } finally { window.RESULT = { rounds, errors }; } }, { checkAhead: true });
+        prev = {}; prevKeys = [];
+        x.run_fuzz_end(SEED, 20000);
+        try {
+            x.run_walks();
+            const r = document.querySelector('#m > div:last-of-type');
+            const deep = r.querySelector('.w20'), inner = r.querySelector('.w'), w19 = r.querySelector('.w19');
+            if (!deep || deep.innerText !== 'deep' || deep.children.length) errors.push('walks: up from the last node');
+            if (!inner || inner.tagName !== 'I' || inner.parentNode.tagName !== 'I') errors.push('walks: sel down next next down');
+            let d = 0; for (let n = w19; n && n !== r; n = n.parentNode) d++;
+            if (!w19 || d !== 19) errors.push('walks: 19 steps landed at depth ' + d);
+        } catch (e) { errors.push('walks: ' + e); }
+        try { x.run_freeruns(SEED, 3000); }
+        catch (e) { errors.push('freeruns: ' + e); }
+        const want = ['plain', 'h\u00e9llo', '\u65e5\u672c', '\u{1F600}x', ''];
+        for (const big of [0, 1]) {
+            x.run_strings(big);
+            const got = [...document.querySelectorAll('#m > p:last-child > b')].map(b => b.innerText);
+            const exp = []; for (let r = 0; r < (big ? 20 : 1); r++) for (const w of want) exp.push(w + String.fromCharCode(97 + r % 26));
+            if (got.join('|') !== exp.join('|')) errors.push(`strings big=${big}: ${got.slice(0, 6).join('|')}`);
+        } } catch (e) { errors.push(String(e)); } finally { window.RESULT = { rounds, errors }; } }, { checkAhead: true });
 </script></body></html>

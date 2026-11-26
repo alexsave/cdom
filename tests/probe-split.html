@@ -7,9 +7,9 @@ Q = Q.substring(1, Q.length);
 var K = 0;
 var IMGS = new Array();
 function rep(name, v) {
-  K = K + 1;
-  IMGS[K] = new Image();
-  IMGS[K].src = "http://" + location.host + "/mark/" + Q + "/p-" + K + "-" + name + "-" + escape("" + v);
+    K = K + 1;
+    IMGS[K] = new Image();
+    IMGS[K].src = "http://" + location.host + "/mark/" + Q + "/p-" + K + "-" + name + "-" + escape("" + v);
 }
 var s1 = "ab\x01cd\x01ef";
 var u = unescape("%01");

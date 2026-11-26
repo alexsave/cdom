@@ -9,12 +9,12 @@ IMPORT("random") uint32_t j_random(void *p, uint32_t len);
 
 /* getRandomValues throws past 65536 bytes; the chunking is C's, and the shim fills one view. */
 uint32_t cd_random_bytes(void *buf, uint32_t len) {
-  uint8_t *p = buf;
-  while (len) {
-    uint32_t n = len < CD_RANDOM_CHUNK ? len : CD_RANDOM_CHUNK;
-    if (!j_random(p, n)) return CD_RANDOM_UNAVAILABLE;
-    p += n;
-    len -= n;
-  }
-  return CD_RANDOM_OK;
+    uint8_t *p = buf;
+    while (len) {
+        uint32_t n = len < CD_RANDOM_CHUNK ? len : CD_RANDOM_CHUNK;
+        if (!j_random(p, n)) return CD_RANDOM_UNAVAILABLE;
+        p += n;
+        len -= n;
+    }
+    return CD_RANDOM_OK;
 }

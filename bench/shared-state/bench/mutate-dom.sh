@@ -12,19 +12,19 @@ mutants=(
   'entry_e.c|E|s/  cd_watch_at\(&r->w\[1\], &selected_state, row_view, r, &r->w\[0\]\);\n//'
 )
 for m in "${mutants[@]}"; do
-  IFS='|' read -r file entry sub <<< "$m"
-  f="$here/src/$file"
-  cp "$f" "$f.orig"
-  perl -0pi -e "$sub" "$f"
-  if cmp -s "$f" "$f.orig"; then echo "MUTANT $file: changed nothing"; status=1; mv "$f.orig" "$f"; continue; fi
-  echo "== mutant $file ($entry)"; diff "$f.orig" "$f" | sed 's/^/   /'
-  if ENTRIES="$entry" "$here/build.sh" > /dev/null; then
-    res="$(node "$here/check.mjs" dom 2>&1)"
-    echo "$res" | grep '^FAIL' | sed 's/^/   /'
-    if echo "$res" | grep -q '^FAIL'; then echo "   KILLED"; else echo "   SURVIVED"; status=1; fi
-  else echo "   does not build"; status=1; fi
-  mv "$f.orig" "$f"
-  ENTRIES="$entry" "$here/build.sh" > /dev/null
+    IFS='|' read -r file entry sub <<< "$m"
+    f="$here/src/$file"
+    cp "$f" "$f.orig"
+    perl -0pi -e "$sub" "$f"
+    if cmp -s "$f" "$f.orig"; then echo "MUTANT $file: changed nothing"; status=1; mv "$f.orig" "$f"; continue; fi
+    echo "== mutant $file ($entry)"; diff "$f.orig" "$f" | sed 's/^/   /'
+    if ENTRIES="$entry" "$here/build.sh" > /dev/null; then
+        res="$(node "$here/check.mjs" dom 2>&1)"
+        echo "$res" | grep '^FAIL' | sed 's/^/   /'
+        if echo "$res" | grep -q '^FAIL'; then echo "   KILLED"; else echo "   SURVIVED"; status=1; fi
+    else echo "   does not build"; status=1; fi
+    mv "$f.orig" "$f"
+    ENTRIES="$entry" "$here/build.sh" > /dev/null
 done
 node "$here/check.mjs" dom | tail -1
 exit $status

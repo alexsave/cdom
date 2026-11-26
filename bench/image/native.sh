@@ -17,6 +17,6 @@ for f in "${VENDOR[@]}"; do cc "${VENDORF[@]}" -c -o "$o/v_$(basename "$f" .c).o
 cc -o "$o/native" "$o"/*.o || exit 1
 reps="${1:-20}"; shift || true
 for i in "${@:-p12.jpg p12p.jpg p48.jpg p12.png}"; do for n in $i; do
-  echo "== $n"; "${PERF:-perf}" record -q -F 5000 -e cpu-clock -o "$o/perf.data" "$o/native" "$here/inputs/$n" "$reps" 2>&1 | tail -1
-  "${PERF:-perf}" report -i "$o/perf.data" --no-children --stdio 2>/dev/null | grep -v '^#' | grep -v '^$' | head -${TOP:-12}
+    echo "== $n"; "${PERF:-perf}" record -q -F 5000 -e cpu-clock -o "$o/perf.data" "$o/native" "$here/inputs/$n" "$reps" 2>&1 | tail -1
+    "${PERF:-perf}" report -i "$o/perf.data" --no-children --stdio 2>/dev/null | grep -v '^#' | grep -v '^$' | head -${TOP:-12}
 done; done

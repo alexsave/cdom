@@ -16,38 +16,38 @@ const FOOLISH = path.resolve(process.env.FOOLISH || path.join(top, '../foolish')
 const out = path.join(top, 'demo/uttt/out');
 const CODE = 'AJG7NYNQG4RFXXGVPGD7QR2ETSOYTWMCREAQ'; // foolish's uttt/web/README.md's example
 if (!fs.existsSync(path.join(FOOLISH, 'uttt/c/src/uttt_code.c'))) {
-  console.log(`skip tools/uttt.mjs: FOOLISH=${FOOLISH} is not a checkout of github.com/alexsave/foolish (set FOOLISH to one)`);
-  process.exit(0);
+    console.log(`skip tools/uttt.mjs: FOOLISH=${FOOLISH} is not a checkout of github.com/alexsave/foolish (set FOOLISH to one)`);
+    process.exit(0);
 }
 
 if (!process.env.UTTT_PROFILE) {
-  // The parent: build the viewer and the expectations, then one child a profile, since tools/cdp.mjs fixes the tier
-  // for its process (LEGACY).
-  execFileSync('make', ['-s', '-C', path.join(top, 'demo/uttt'), `FOOLISH=${FOOLISH}`], { stdio: 'inherit' });
-  const src = path.join(FOOLISH, 'uttt/c/src'), shared = path.join(FOOLISH, 'shared/c');
-  execFileSync(process.env.HOST_CC || 'cc', ['-std=c2x', '-O1', '-Wall', '-Wextra', '-Werror', `-I${src}`, '-o', path.join(out, 'uttt_expect'),
-    path.join(top, 'tools/uttt_expect.c'), path.join(src, 'uttt.c'), path.join(src, 'uttt_code.c'), path.join(shared, 'b32.c'),
-    path.join(shared, 'mixrad.c'), '-lm'], { stdio: 'inherit' });
-  fs.writeFileSync(path.join(out, 'expect.txt'), execFileSync(path.join(out, 'uttt_expect'), [CODE], { encoding: 'utf8' }));
-  if (process.env.UTTT_MEASURE) {
-    const sz = (f) => { const b = fs.readFileSync(path.join(out, f)); return [b.length, zlib.gzipSync(b, { level: 9 }).length]; };
-    // The frames tier's two documents: the page and its app document (docs/frames-design.md, section 16), which inlines the
-    // shim and uttt.wasm.js1.js.
-    const files = ['uttt.html', 'uttt.app.html', 'uttt.wasm.js1.js'], s = files.map(sz);
-    for (let i = 0; i < files.length; i++) console.log(`measure ${files[i]} ${s[i][0]} bytes, ${s[i][1]} gzipped`);
-    console.log(`measure the frames tier's two documents ${s[0][0] + s[1][0]} bytes, ${s[0][1] + s[1][1]} gzipped`);
-    console.log(`measure uttt.wasm ${sz('uttt.wasm')[0]} bytes, ${sz('uttt.wasm')[1]} gzipped`);
-    const ref = path.join(top, 'tests/out/frames.wasm.js1.js');
-    if (fs.existsSync(ref)) console.log(`measure uttt.wasm.js1.js is ${s[2][0] - fs.statSync(ref).size} bytes larger than tests/out/frames.wasm.js1.js`);
-  }
-  let failed = 0;
-  for (const [profile, legacy] of [['webassembly', ''], ['frames', 'frames'], ['frames-ns4', 'frames'], ['frames-ns2', 'frames']]) {
-    console.log(`-- ${profile}`);
-    const r = spawnSync(process.execPath, [new URL(import.meta.url).pathname], { stdio: 'inherit', env: { ...process.env, LEGACY: legacy, UTTT_PROFILE: profile } });
-    if (r.status !== 0) failed++;
-  }
-  console.log(failed ? `${failed} profile(s) FAILED` : 'all ok');
-  process.exit(failed ? 1 : 0);
+    // The parent: build the viewer and the expectations, then one child a profile, since tools/cdp.mjs fixes the tier
+    // for its process (LEGACY).
+    execFileSync('make', ['-s', '-C', path.join(top, 'demo/uttt'), `FOOLISH=${FOOLISH}`], { stdio: 'inherit' });
+    const src = path.join(FOOLISH, 'uttt/c/src'), shared = path.join(FOOLISH, 'shared/c');
+    execFileSync(process.env.HOST_CC || 'cc', ['-std=c2x', '-O1', '-Wall', '-Wextra', '-Werror', `-I${src}`, '-o', path.join(out, 'uttt_expect'),
+      path.join(top, 'tools/uttt_expect.c'), path.join(src, 'uttt.c'), path.join(src, 'uttt_code.c'), path.join(shared, 'b32.c'),
+      path.join(shared, 'mixrad.c'), '-lm'], { stdio: 'inherit' });
+    fs.writeFileSync(path.join(out, 'expect.txt'), execFileSync(path.join(out, 'uttt_expect'), [CODE], { encoding: 'utf8' }));
+    if (process.env.UTTT_MEASURE) {
+        const sz = (f) => { const b = fs.readFileSync(path.join(out, f)); return [b.length, zlib.gzipSync(b, { level: 9 }).length]; };
+        // The frames tier's two documents: the page and its app document (docs/frames-design.md, section 16), which inlines the
+        // shim and uttt.wasm.js1.js.
+        const files = ['uttt.html', 'uttt.app.html', 'uttt.wasm.js1.js'], s = files.map(sz);
+        for (let i = 0; i < files.length; i++) console.log(`measure ${files[i]} ${s[i][0]} bytes, ${s[i][1]} gzipped`);
+        console.log(`measure the frames tier's two documents ${s[0][0] + s[1][0]} bytes, ${s[0][1] + s[1][1]} gzipped`);
+        console.log(`measure uttt.wasm ${sz('uttt.wasm')[0]} bytes, ${sz('uttt.wasm')[1]} gzipped`);
+        const ref = path.join(top, 'tests/out/frames.wasm.js1.js');
+        if (fs.existsSync(ref)) console.log(`measure uttt.wasm.js1.js is ${s[2][0] - fs.statSync(ref).size} bytes larger than tests/out/frames.wasm.js1.js`);
+    }
+    let failed = 0;
+    for (const [profile, legacy] of [['webassembly', ''], ['frames', 'frames'], ['frames-ns4', 'frames'], ['frames-ns2', 'frames']]) {
+        console.log(`-- ${profile}`);
+        const r = spawnSync(process.execPath, [new URL(import.meta.url).pathname], { stdio: 'inherit', env: { ...process.env, LEGACY: legacy, UTTT_PROFILE: profile } });
+        if (r.status !== 0) failed++;
+    }
+    console.log(failed ? `${failed} profile(s) FAILED` : 'all ok');
+    process.exit(failed ? 1 : 0);
 }
 
 // A child: one profile.
@@ -60,8 +60,8 @@ const n = +lines[0].split(' ')[1];
 const want = lines.slice(1).map((l) => { const [k, cells, blocks, bgs, over, turn, last] = l.split(' '); return { k: +k, cells, blocks, bgs, over, turn, last: +last }; });
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
 const srv = http.createServer((q, r) => {
-  const f = path.join(out, q.url.split(/[?#]/)[0]);
-  fs.readFile(f, (e, body) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': types[path.extname(f)] || 'text/plain' }); r.end(body); });
+    const f = path.join(out, q.url.split(/[?#]/)[0]);
+    fs.readFile(f, (e, body) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': types[path.extname(f)] || 'text/plain' }); r.end(body); });
 }).listen(0);
 const b = await launch();
 let fails = 0;
@@ -76,20 +76,20 @@ const D = FRAMES ? 'parent.frames[0].document' : 'document';
 const go = async (url) => { await b.send('Page.navigate', { url }); if (FRAMES) await sleep(600); };
 const q = (sel) => `${D}.querySelector(${JSON.stringify(sel)})`;
 const mouse = (type, x, y, buttons = 0, button = 'none') =>
-  b.send('Input.dispatchMouseEvent', { type, x, y, buttons, button, clickCount: type === 'mouseMoved' ? 0 : 1 });
+    b.send('Input.dispatchMouseEvent', { type, x, y, buttons, button, clickCount: type === 'mouseMoved' ? 0 : 1 });
 async function click(sel) {
-  const [x, y] = await E(`(function () { var e = ${q(sel)}, r; if (!e) return [-1, -1]; r = e.getBoundingClientRect();
+    const [x, y] = await E(`(function () { var e = ${q(sel)}, r; if (!e) return [-1, -1]; r = e.getBoundingClientRect();
     return [Math.round((r.left + r.right) / 2), Math.round((r.top + r.bottom) / 2)]; })()`);
-  if (x < 0) return;
-  await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y, 1, 'left'); await sleep(20);
-  await mouse('mouseReleased', x, y, 0, 'left'); await sleep(40);
-  // On ?ns2 a click's draw comes from a timer, cf_LATER (250 ms) after the handler (docs/frames-design.md 17).
-  if (flavour === '&ns2') await sleep(320);
+    if (x < 0) return;
+    await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y, 1, 'left'); await sleep(20);
+    await mouse('mouseReleased', x, y, 0, 'left'); await sleep(40);
+    // On ?ns2 a click's draw comes from a timer, cf_LATER (250 ms) after the handler (docs/frames-design.md 17).
+    if (flavour === '&ns2') await sleep(320);
 }
 async function until(expr, tries = 100) {
-  const now = async () => { try { return await E(expr); } catch { return false; } };
-  for (let i = 0; i < tries && !(await now()); i++) await sleep(20);
-  return now();
+    const now = async () => { try { return await E(expr); } catch { return false; } };
+    for (let i = 0; i < tries && !(await now()); i++) await sleep(20);
+    return now();
 }
 const draws = () => (FRAMES ? E('cdomF.draws') : 0);
 const status = () => E(`(function () { var e = ${q('#status')}; return e ? e.innerText.replace(/^\s+|\s+$/g, "") : null; })()`);
@@ -120,119 +120,119 @@ const BOARD = `(function () { var d = ${D}, cells = "", blocks = "", bgs = "", b
   return [cells, blocks, bgs, bold.join(" ")]; })()`;
 // What the board must be after w's plies: a won block's cells are not drawn (its big mark is).
 function expected(w) {
-  const blocks = [...w.blocks].map((c) => (c === 'X' || c === 'O' ? c : '.')).join('');
-  const cells = [...w.cells].map((c, i) => (blocks[Math.floor(i / 9)] === '.' ? c : '-')).join('');
-  const bold = w.last >= 0 && blocks[Math.floor(w.last / 9)] === '.' ? String(w.last) : '';
-  return [cells, blocks, w.bgs, bold];
+    const blocks = [...w.blocks].map((c) => (c === 'X' || c === 'O' ? c : '.')).join('');
+    const cells = [...w.cells].map((c, i) => (blocks[Math.floor(i / 9)] === '.' ? c : '-')).join('');
+    const bold = w.last >= 0 && blocks[Math.floor(w.last / 9)] === '.' ? String(w.last) : '';
+    return [cells, blocks, w.bgs, bold];
 }
 async function boardIs(k, what) {
-  const got = await E(BOARD), exp = expected(want[k]), st = await status();
-  const same = got.join('|') === exp.join('|') && st === statusOf(want[k]);
-  if (!same) {
-    const parts = ['cells', 'big marks', 'backgrounds', 'bold'].map((p, i) => (got[i] === exp[i] ? '' : `\n  ${p}: shown ${JSON.stringify(got[i])}\n  ${' '.repeat(p.length)}  want  ${JSON.stringify(exp[i])}`)).join('');
-    ok(false, `${what}: the board is the game after ${k} plies${parts}${st === statusOf(want[k]) ? '' : `\n  status ${JSON.stringify(st)}, want ${JSON.stringify(statusOf(want[k]))}`}`);
-  }
-  return same;
+    const got = await E(BOARD), exp = expected(want[k]), st = await status();
+    const same = got.join('|') === exp.join('|') && st === statusOf(want[k]);
+    if (!same) {
+        const parts = ['cells', 'big marks', 'backgrounds', 'bold'].map((p, i) => (got[i] === exp[i] ? '' : `\n  ${p}: shown ${JSON.stringify(got[i])}\n  ${' '.repeat(p.length)}  want  ${JSON.stringify(exp[i])}`)).join('');
+        ok(false, `${what}: the board is the game after ${k} plies${parts}${st === statusOf(want[k]) ? '' : `\n  status ${JSON.stringify(st)}, want ${JSON.stringify(statusOf(want[k]))}`}`);
+    }
+    return same;
 }
 const booted = () => until(`!!window.READY${FRAMES ? ' && window.cdomF && cdomF.draws > 0' : ''}`);
 async function type(text) {
-  await click('#code');
-  await E(`(function () { var f = ${q('#code')}; if (f) { f.focus(); f.select(); } })()`);
-  await b.send('Input.insertText', { text }); await sleep(30);
-  await click('#open');
-  await sleep(FRAMES ? 320 : 40); // the frames tier draws a change 250 ms later (docs/frames-design.md, section 6)
+    await click('#code');
+    await E(`(function () { var f = ${q('#code')}; if (f) { f.focus(); f.select(); } })()`);
+    await b.send('Input.insertText', { text }); await sleep(30);
+    await click('#open');
+    await sleep(FRAMES ? 320 : 40); // the frames tier draws a change 250 ms later (docs/frames-design.md, section 6)
 }
 const port = srv.address().port;
 const page = (query) => `http://127.0.0.1:${port}/uttt.html${query}`;
 
 run: try {
-  await go(page(flavour ? `?${flavour.slice(1)}` : ''));
-  ok(await booted(), 'booted');
-  if (!(await E('!!window.READY'))) break run;
-  ok(...tierFetched(await E(FETCHED), 'uttt'));
-  if (FRAMES) ok(await ET('frames.length === 2 && typeof document.getElementById === "undefined"') && await E('typeof document.getElementById === "undefined"'), 'the page is the frames tier: a frameset of the view and the app frame, no getElementById');
-  else ok(await E('frames.length === 0'), 'the page is the WebAssembly tier: no frameset');
-  ok((await status()) === 'No game open.' && !(await E(`!!${q('#c0')}`)), `no code: no board, and the status says so: ${JSON.stringify(await status())}`);
+    await go(page(flavour ? `?${flavour.slice(1)}` : ''));
+    ok(await booted(), 'booted');
+    if (!(await E('!!window.READY'))) break run;
+    ok(...tierFetched(await E(FETCHED), 'uttt'));
+    if (FRAMES) ok(await ET('frames.length === 2 && typeof document.getElementById === "undefined"') && await E('typeof document.getElementById === "undefined"'), 'the page is the frames tier: a frameset of the view and the app frame, no getElementById');
+    else ok(await E('frames.length === 0'), 'the page is the WebAssembly tier: no frameset');
+    ok((await status()) === 'No game open.' && !(await E(`!!${q('#c0')}`)), `no code: no board, and the status says so: ${JSON.stringify(await status())}`);
 
-  // A bad code: the error line, and no board; the page lives on and opens a good one after it.
-  await type('NOTACODE');
-  ok((await errLine()).includes('not a game code') && (await status()) === 'No game open.' && !(await E(`!!${q('#c0')}`)),
-    `a bad code shows the error line and no board: ${JSON.stringify(await errLine())}, ${JSON.stringify(await status())}`);
-  await type(`https://uttt.live/${CODE}`);
-  ok((await errLine()) === '' && (await status()) === statusOf(want[0]), `after the bad code, a uttt.live link opens: ${JSON.stringify(await status())}`);
-  ok(lines[0] === `ok ${n}` && n > 0 && (await status()).endsWith(`of ${n}. X to play.`), `the move count is uttt_replay_read's n_plies, ${n}`);
-  await boardIs(0, 'opened');
+    // A bad code: the error line, and no board; the page lives on and opens a good one after it.
+    await type('NOTACODE');
+    ok((await errLine()).includes('not a game code') && (await status()) === 'No game open.' && !(await E(`!!${q('#c0')}`)),
+      `a bad code shows the error line and no board: ${JSON.stringify(await errLine())}, ${JSON.stringify(await status())}`);
+    await type(`https://uttt.live/${CODE}`);
+    ok((await errLine()) === '' && (await status()) === statusOf(want[0]), `after the bad code, a uttt.live link opens: ${JSON.stringify(await status())}`);
+    ok(lines[0] === `ok ${n}` && n > 0 && (await status()).endsWith(`of ${n}. X to play.`), `the move count is uttt_replay_read's n_plies, ${n}`);
+    await boardIs(0, 'opened');
 
-  // > k times: the game after k plies, for every k; one draw a step on the frames tier.
-  let all = true, oneDraw = true;
-  for (let k = 1; k <= n; k++) {
-    const d = await draws();
+    // > k times: the game after k plies, for every k; one draw a step on the frames tier.
+    let all = true, oneDraw = true;
+    for (let k = 1; k <= n; k++) {
+        const d = await draws();
+        await click('#fwd');
+        if (FRAMES) await until(`cdomF.draws > ${d}`, 25);
+        if (FRAMES && (await draws()) !== d + 1) oneDraw = false;
+        if (!(await boardIs(k, `> ${k} times`))) { all = false; break; }
+    }
+    ok(all, `> k times shows the game after k plies, for k = 1 to ${n} (cells, big marks, the forced block, the last move in bold, the status)`);
+    if (FRAMES) ok(oneDraw, 'each > draws the frame once');
     await click('#fwd');
-    if (FRAMES) await until(`cdomF.draws > ${d}`, 25);
-    if (FRAMES && (await draws()) !== d + 1) oneDraw = false;
-    if (!(await boardIs(k, `> ${k} times`))) { all = false; break; }
-  }
-  ok(all, `> k times shows the game after k plies, for k = 1 to ${n} (cells, big marks, the forced block, the last move in bold, the status)`);
-  if (FRAMES) ok(oneDraw, 'each > draws the frame once');
-  await click('#fwd');
-  ok(await boardIs(n, '> at the end'), '> at the end stays at the end');
-  for (let k = n - 1; k >= n - 3; k--) await click('#back');
-  ok(await boardIs(n - 3, '< three times'), '< goes back a move');
-  await click('#start');
-  ok(await boardIs(0, '|<'), '|< goes to the start');
-  await click('#back');
-  ok(await boardIs(0, '< at the start'), '< at the start stays there');
-  await click('#end');
-  ok(await boardIs(n, '>|'), `>| goes to the end: ${JSON.stringify(await status())}`);
+    ok(await boardIs(n, '> at the end'), '> at the end stays at the end');
+    for (let k = n - 1; k >= n - 3; k--) await click('#back');
+    ok(await boardIs(n - 3, '< three times'), '< goes back a move');
+    await click('#start');
+    ok(await boardIs(0, '|<'), '|< goes to the start');
+    await click('#back');
+    ok(await boardIs(0, '< at the start'), '< at the start stays there');
+    await click('#end');
+    ok(await boardIs(n, '>|'), `>| goes to the end: ${JSON.stringify(await status())}`);
 
-  // Play advances a move a tick, Pause stops it, and reaching the end stops it.
-  await click('#start');
-  const dPlay = await draws();
-  await click('#play');
-  ok((await playLabel()) === 'Pause', `Play becomes Pause: ${JSON.stringify(await playLabel())}`);
-  ok(await until(`(function () { var e = ${q('#status')}; return !!e && e.innerText.indexOf("Move 2 of") === 0; })()`, 100), `Play advances: ${JSON.stringify(await status())}`);
-  await click('#play');
-  const paused = await status();
-  await sleep(1300);
-  ok((await status()) === paused && (await playLabel()) === 'Play', `Pause stops it: ${JSON.stringify(paused)}, then ${JSON.stringify(await status())}`);
-  // Play's label, a draw a tick, and Pause's label: on the frames tier one draw each.
-  const ticked = +paused.split(' ')[1];
-  if (FRAMES) ok((await draws()) - dPlay === ticked + 2, `Play draws once a tick: ${(await draws()) - dPlay} draws for Play, ${ticked} ticks and Pause`);
-  await click('#end');
-  for (let k = 0; k < 3; k++) await click('#back');
-  await click('#play');
-  await until(`(function () { var e = ${q('#play')}; return !!e && (e.value || e.innerText) === "Play"; })()`, 200);
-  const d0 = await draws();
-  await sleep(1400);
-  ok((await playLabel()) === 'Play' && (await boardIs(n, 'Play to the end')) && (await draws()) === d0,
-    `Play stops at the end: ${JSON.stringify(await playLabel())}, ${JSON.stringify(await status())}, ${(await draws()) - d0} draws after`);
-  await click('#play');
-  ok(await boardIs(0, 'Play at the end') && (await playLabel()) === 'Pause', 'Play at the end starts again from the start');
-  await click('#play');
+    // Play advances a move a tick, Pause stops it, and reaching the end stops it.
+    await click('#start');
+    const dPlay = await draws();
+    await click('#play');
+    ok((await playLabel()) === 'Pause', `Play becomes Pause: ${JSON.stringify(await playLabel())}`);
+    ok(await until(`(function () { var e = ${q('#status')}; return !!e && e.innerText.indexOf("Move 2 of") === 0; })()`, 100), `Play advances: ${JSON.stringify(await status())}`);
+    await click('#play');
+    const paused = await status();
+    await sleep(1300);
+    ok((await status()) === paused && (await playLabel()) === 'Play', `Pause stops it: ${JSON.stringify(paused)}, then ${JSON.stringify(await status())}`);
+    // Play's label, a draw a tick, and Pause's label: on the frames tier one draw each.
+    const ticked = +paused.split(' ')[1];
+    if (FRAMES) ok((await draws()) - dPlay === ticked + 2, `Play draws once a tick: ${(await draws()) - dPlay} draws for Play, ${ticked} ticks and Pause`);
+    await click('#end');
+    for (let k = 0; k < 3; k++) await click('#back');
+    await click('#play');
+    await until(`(function () { var e = ${q('#play')}; return !!e && (e.value || e.innerText) === "Play"; })()`, 200);
+    const d0 = await draws();
+    await sleep(1400);
+    ok((await playLabel()) === 'Play' && (await boardIs(n, 'Play to the end')) && (await draws()) === d0,
+      `Play stops at the end: ${JSON.stringify(await playLabel())}, ${JSON.stringify(await status())}, ${(await draws()) - d0} draws after`);
+    await click('#play');
+    ok(await boardIs(0, 'Play at the end') && (await playLabel()) === 'Pause', 'Play at the end starts again from the start');
+    await click('#play');
 
-  if (FRAMES && process.env.UTTT_MEASURE) {
-    // A step's redraw, timed in the page: 20 steps through the buttons' own handlers.
-    // Each handler is looked up again, since every draw writes the frame's document afresh.
-    const d = await draws();
-    const ms = await E(`(function () { var t = new Date(), i; for (i = 0; i < 10; i++) { ${q('#fwd')}.onclick(); ${q('#start')}.onclick(); }
+    if (FRAMES && process.env.UTTT_MEASURE) {
+        // A step's redraw, timed in the page: 20 steps through the buttons' own handlers.
+        // Each handler is looked up again, since every draw writes the frame's document afresh.
+        const d = await draws();
+        const ms = await E(`(function () { var t = new Date(), i; for (i = 0; i < 10; i++) { ${q('#fwd')}.onclick(); ${q('#start')}.onclick(); }
       return (new Date() - t) / 20; })()`);
-    console.log(`measure a step's redraw on the frames tier: ${ms} ms (${(await draws()) - d} draws for 20 steps)`);
-  }
+        console.log(`measure a step's redraw on the frames tier: ${ms} ms (${(await draws()) - d} draws for 20 steps)`);
+    }
 
-  // The address's query opens the game at once.
-  await go(page(`?${CODE}${flavour}`));
-  ok(await booted(), 'booted with the code in the query');
-  await until(`(function () { var e = ${q('#status')}; return !!e && e.innerText.indexOf("Move 0 of") === 0; })()`);
-  ok((await boardIs(0, 'the query')) && (await E(`${q('#code')}.value`)) === CODE, `uttt.html?<code> opens the game: ${JSON.stringify(await status())}`);
-  await click('#end');
-  ok(await boardIs(n, 'the query, then >|'), 'and it steps');
+    // The address's query opens the game at once.
+    await go(page(`?${CODE}${flavour}`));
+    ok(await booted(), 'booted with the code in the query');
+    await until(`(function () { var e = ${q('#status')}; return !!e && e.innerText.indexOf("Move 0 of") === 0; })()`);
+    ok((await boardIs(0, 'the query')) && (await E(`${q('#code')}.value`)) === CODE, `uttt.html?<code> opens the game: ${JSON.stringify(await status())}`);
+    await click('#end');
+    ok(await boardIs(n, 'the query, then >|'), 'and it steps');
 
-  const errs = b.exceptions.filter((e) => !/ReferenceError: TextDecoder is not defined$/.test(e));
-  ok(!errs.length, `no page exception: ${errs.join('; ')}`);
-  if (FRAMES) ok((await E('cdomF.errors')) === '', `the frames shim noted no error: ${await E('cdomF.errors')}`);
+    const errs = b.exceptions.filter((e) => !/ReferenceError: TextDecoder is not defined$/.test(e));
+    ok(!errs.length, `no page exception: ${errs.join('; ')}`);
+    if (FRAMES) ok((await E('cdomF.errors')) === '', `the frames shim noted no error: ${await E('cdomF.errors')}`);
 } catch (e) {
-  fails++;
-  console.log('FAIL', `${PROFILE}:`, e.stack || e);
+    fails++;
+    console.log('FAIL', `${PROFILE}:`, e.stack || e);
 }
 await b.close(); srv.close();
 console.log(fails ? `${PROFILE}: ${fails} FAILED` : `${PROFILE}: all ok`);

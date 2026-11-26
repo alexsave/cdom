@@ -17,11 +17,11 @@
 #if !defined(__wasm__)
 #include <setjmp.h>
 int cd_image_guard(cd_image_body body, void *ctx, void **slot) {
-  jmp_buf jb;
-  *slot = &jb;
-  if (setjmp(jb)) return 1;
-  body(ctx);
-  return 0;
+    jmp_buf jb;
+    *slot = &jb;
+    if (setjmp(jb)) return 1;
+    body(ctx);
+    return 0;
 }
 _Noreturn void cd_image_throw(void *guard) { longjmp(*(jmp_buf *)guard, 1); }
 
@@ -31,22 +31,22 @@ IMPORT("image_call") uint32_t j_image_call(cd_image_body body, void *ctx);
 IMPORT("image_throw") _Noreturn void j_image_throw(void);
 
 static inline uintptr_t sp_get(void) {
-  uintptr_t sp;
-  __asm__ volatile(".globaltype __stack_pointer, i32\n\tglobal.get __stack_pointer\n\tlocal.set %0" : "=r"(sp));
-  return sp;
+    uintptr_t sp;
+    __asm__ volatile(".globaltype __stack_pointer, i32\n\tglobal.get __stack_pointer\n\tlocal.set %0" : "=r"(sp));
+    return sp;
 }
 static inline void sp_set(uintptr_t sp) {
-  __asm__ volatile(".globaltype __stack_pointer, i32\n\tlocal.get %0\n\tglobal.set __stack_pointer" : : "r"(sp));
+    __asm__ volatile(".globaltype __stack_pointer, i32\n\tlocal.get %0\n\tglobal.set __stack_pointer" : : "r"(sp));
 }
 /* What image_call runs inside its try. */
 __attribute__((export_name("cd_image_run"))) void cd_image_run(cd_image_body body, void *ctx) { body(ctx); }
 
 int cd_image_guard(cd_image_body body, void *ctx, void **slot) {
-  *slot = 0;
-  uintptr_t sp = sp_get();
-  uint32_t thrown = j_image_call(body, ctx);
-  sp_set(sp);                                   /* the frames the throw unwound never put theirs back */
-  return thrown != 0;
+    *slot = 0;
+    uintptr_t sp = sp_get();
+    uint32_t thrown = j_image_call(body, ctx);
+    sp_set(sp);                                   /* the frames the throw unwound never put theirs back */
+    return thrown != 0;
 }
 _Noreturn void cd_image_throw(void *guard) { (void)guard; j_image_throw(); }
 
@@ -58,11 +58,11 @@ int setjmp(cd_image_jmp_buf env) __attribute__((returns_twice));
 _Noreturn void longjmp(cd_image_jmp_buf env, int val);
 
 int cd_image_guard(cd_image_body body, void *ctx, void **slot) {
-  cd_image_jmp_buf jb;
-  *slot = jb;
-  if (setjmp(jb)) return 1;
-  body(ctx);
-  return 0;
+    cd_image_jmp_buf jb;
+    *slot = jb;
+    if (setjmp(jb)) return 1;
+    body(ctx);
+    return 0;
 }
 _Noreturn void cd_image_throw(void *guard) { longjmp(guard, 1); }
 

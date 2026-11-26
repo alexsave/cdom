@@ -17,27 +17,27 @@
 #include "jerror.h"
 
 static inline void walk_reset(void) {
-  cd_image_jpegp_walk_n = CD_IMAGE_JPEGP_NOT_RUN;
-  cd_image_jpegp_read_n = 0;
-  cd_image_jpegp_in_start = 0;
+    cd_image_jpegp_walk_n = CD_IMAGE_JPEGP_NOT_RUN;
+    cd_image_jpegp_read_n = 0;
+    cd_image_jpegp_in_start = 0;
 }
 
 static inline const char *walk_check(uint32_t skipped) {
-  int32_t wn = cd_image_jpegp_walk_n;
-  uint32_t rn = cd_image_jpegp_read_n;
-  if (rn > CD_IMAGE_SCANS_MAX + 2) return "libjpeg read more scans than the record holds";
-  if (wn == CD_IMAGE_JPEGP_NOT_RUN) return rn ? "libjpeg read scans and there was no walk" : 0;
-  if (wn == CD_IMAGE_JPEGP_GAVE_UP) return skipped ? "the walk gave up and a scan was skipped" : 0;
-  if (wn < 0) return "the walk's count is not a count";
-  uint32_t k = (uint32_t)wn < rn ? (uint32_t)wn : rn;
-  for (uint32_t i = 0; i < k; i++)
-    if (cd_image_jpegp_walk_list[i] != cd_image_jpegp_read_list[i]) return "a scan of the walk is not the one libjpeg read";
-  if (rn > (uint32_t)wn) return "libjpeg read a scan the walk did not see";
-  int f = cd_image_jpeg_fatal;
-  int unmodelled = f == -1 || f == JERR_NO_BACKING_STORE || f == JERR_OUT_OF_MEMORY || f == JERR_WIDTH_OVERFLOW ||
-                   f == JERR_NO_QUANT_TABLE || f == JERR_BAD_MCU_SIZE ||
-                   ((f == JERR_NO_HUFF_TABLE || f == JERR_BAD_HUFF_TABLE) && cd_image_jpegp_in_start);
-  if (f && !unmodelled) return "libjpeg stopped with an error the walk did not give up at";
-  if ((uint32_t)wn != rn && !unmodelled) return "the walk saw scans libjpeg did not read";
-  return 0;
+    int32_t wn = cd_image_jpegp_walk_n;
+    uint32_t rn = cd_image_jpegp_read_n;
+    if (rn > CD_IMAGE_SCANS_MAX + 2) return "libjpeg read more scans than the record holds";
+    if (wn == CD_IMAGE_JPEGP_NOT_RUN) return rn ? "libjpeg read scans and there was no walk" : 0;
+    if (wn == CD_IMAGE_JPEGP_GAVE_UP) return skipped ? "the walk gave up and a scan was skipped" : 0;
+    if (wn < 0) return "the walk's count is not a count";
+    uint32_t k = (uint32_t)wn < rn ? (uint32_t)wn : rn;
+    for (uint32_t i = 0; i < k; i++)
+        if (cd_image_jpegp_walk_list[i] != cd_image_jpegp_read_list[i]) return "a scan of the walk is not the one libjpeg read";
+    if (rn > (uint32_t)wn) return "libjpeg read a scan the walk did not see";
+    int f = cd_image_jpeg_fatal;
+    int unmodelled = f == -1 || f == JERR_NO_BACKING_STORE || f == JERR_OUT_OF_MEMORY || f == JERR_WIDTH_OVERFLOW ||
+                     f == JERR_NO_QUANT_TABLE || f == JERR_BAD_MCU_SIZE ||
+                     ((f == JERR_NO_HUFF_TABLE || f == JERR_BAD_HUFF_TABLE) && cd_image_jpegp_in_start);
+    if (f && !unmodelled) return "libjpeg stopped with an error the walk did not give up at";
+    if ((uint32_t)wn != rn && !unmodelled) return "the walk saw scans libjpeg did not read";
+    return 0;
 }

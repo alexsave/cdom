@@ -8,13 +8,13 @@
 const q = new URLSearchParams(location.search);
 const build = q.get('build') || 'test', out = q.get('out') || 'out';
 async function load(src) {
-  const s = document.createElement('script');
-  s.text = await (await fetch(src)).text();
-  document.head.appendChild(s);
+    const s = document.createElement('script');
+    s.text = await (await fetch(src)).text();
+    document.head.appendChild(s);
 }
 (async () => {
-  await load(`${out}/${build}.wasm.lits`);
-  await load('../../../shim/cdom.js');
-  window.X = await cdom.start(`${out}/${build}.wasm`, 'app', null, { seed: 1 });
+    await load(`${out}/${build}.wasm.lits`);
+    await load('../../../shim/cdom.js');
+    window.X = await cdom.start(`${out}/${build}.wasm`, 'app', null, { seed: 1 });
 })().catch((e) => { window.LOADERR = String(e.stack || e); });
 </script></body></html>

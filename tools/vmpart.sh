@@ -8,7 +8,7 @@ cd /Users/alex/VMs/ie6-xp || exit 1
 sleep 10; python3 vm.py tap 340 465
 n=0
 until grep -q "/mark/$tag/p-[A-Za-z0-9]*-done-end" serve-probe.log || [ $n -ge $max ]; do
-  sleep 2; python3 vm.py tap 289 344; n=$((n+1))
+    sleep 2; python3 vm.py tap 289 344; n=$((n+1))
 done
 sleep 3
 grep -c "/mark/$tag/" serve-probe.log

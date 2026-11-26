@@ -1328,25 +1328,25 @@ M = [
 ]
 
 def build_and_run(root, cmd, minify=False):
-  # In a worker's copy, a mutant of shim/cdom.js is a mutant of the minified shim too (tests/build.sh fails
-  # when they disagree); the real tree's restored runs check the committed one as it is.
-  if minify:
-    m = subprocess.run(['node', 'tools/minshim.mjs'], cwd=root, capture_output=True, text=True)
-    if m.returncode: return 1, 'MINSHIM FAILED ' + m.stderr[-400:]
-  b = subprocess.run(['tests/build.sh'], cwd=root, capture_output=True, text=True)
-  if b.returncode: return 1, 'BUILD FAILED ' + b.stderr[-400:]
-  # A mutant can make C loop forever (a cycle in a list it walks): the page then never answers, and
-  # the run would wait on it for good. The test runs in a process group of its own (Chrome with it),
-  # killed whole past TEST_TIMEOUT. That counts as caught only for an entry marked HANGS (the worker decides):
-  # for any other a timeout is a test that never finished, so it says nothing about the mutant.
-  t = subprocess.Popen(cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
-  try:
-    out, _ = t.communicate(timeout=TEST_TIMEOUT)
-  except subprocess.TimeoutExpired:
-    os.killpg(t.pid, signal.SIGKILL)
-    out, _ = t.communicate()
-    return HUNG, f'HUNG: killed after {TEST_TIMEOUT} s\n' + (out or '')
-  return t.returncode, out
+    # In a worker's copy, a mutant of shim/cdom.js is a mutant of the minified shim too (tests/build.sh fails
+    # when they disagree); the real tree's restored runs check the committed one as it is.
+    if minify:
+        m = subprocess.run(['node', 'tools/minshim.mjs'], cwd=root, capture_output=True, text=True)
+        if m.returncode: return 1, 'MINSHIM FAILED ' + m.stderr[-400:]
+    b = subprocess.run(['tests/build.sh'], cwd=root, capture_output=True, text=True)
+    if b.returncode: return 1, 'BUILD FAILED ' + b.stderr[-400:]
+    # A mutant can make C loop forever (a cycle in a list it walks): the page then never answers, and
+    # the run would wait on it for good. The test runs in a process group of its own (Chrome with it),
+    # killed whole past TEST_TIMEOUT. That counts as caught only for an entry marked HANGS (the worker decides):
+    # for any other a timeout is a test that never finished, so it says nothing about the mutant.
+    t = subprocess.Popen(cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+    try:
+        out, _ = t.communicate(timeout=TEST_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        os.killpg(t.pid, signal.SIGKILL)
+        out, _ = t.communicate()
+        return HUNG, f'HUNG: killed after {TEST_TIMEOUT} s\n' + (out or '')
+    return t.returncode, out
 
 # A mutant's test may write into the tree it runs in (mk-any-wasm makes cdom.mk's page rule apply to every
 # .html, so make rebuilds shim/page.html and tests/link/page/marker.html in place). Restoring only the
@@ -1357,38 +1357,38 @@ def build_and_run(root, cmd, minify=False):
 # every build writes them afresh) go too, so no mutant reads what an earlier one left; the node_modules
 # link copy_tree made is kept.
 def restore_tree(root):
-  changed = subprocess.run(['git', 'diff', '--name-only'], cwd=root, capture_output=True, text=True, check=True).stdout.split()
-  if changed: subprocess.run(['git', 'checkout', '--', *changed], cwd=root, check=True)
-  clean = ['git', 'clean', '-d', '-e', 'node_modules']
-  made = [l.removeprefix('Would remove ') for l in subprocess.run(clean + ['-n'], cwd=root, capture_output=True, text=True, check=True).stdout.splitlines()]
-  if made: subprocess.run(clean + ['-f', '-q'], cwd=root, check=True)
-  return [f for f in changed if f != 'shim/cdom.min.js'] + [f + ' (new)' for f in made] # the min shim is rebuilt by every shim mutant: not news
+    changed = subprocess.run(['git', 'diff', '--name-only'], cwd=root, capture_output=True, text=True, check=True).stdout.split()
+    if changed: subprocess.run(['git', 'checkout', '--', *changed], cwd=root, check=True)
+    clean = ['git', 'clean', '-d', '-e', 'node_modules']
+    made = [l.removeprefix('Would remove ') for l in subprocess.run(clean + ['-n'], cwd=root, capture_output=True, text=True, check=True).stdout.splitlines()]
+    if made: subprocess.run(clean + ['-f', '-q'], cwd=root, check=True)
+    return [f for f in changed if f != 'shim/cdom.min.js'] + [f + ' (new)' for f in made] # the min shim is rebuilt by every shim mutant: not news
 
 def copy_tree(dst):
-  files = subprocess.run(['git', 'ls-files', '-z'], cwd=top, capture_output=True, text=True, check=True).stdout.split('\0')
-  for f in filter(None, files):
-    src = top / f
-    if not src.exists() and not src.is_symlink(): continue
-    (dst / f).parent.mkdir(parents=True, exist_ok=True)
-    if src.is_symlink(): os.symlink(os.readlink(src), dst / f) # a link as git tracks it (tests/link/apps/css/src/linked)
-    else: shutil.copy2(src, dst / f)
-  # A repo of its own, tracking what the real tree tracks, for the gates that read git ls-files (tools/edges.mjs).
-  subprocess.run(['git', 'init', '-q'], cwd=dst, check=True)
-  subprocess.run(['git', 'add', '-A'], cwd=dst, check=True)
-  if (top / 'node_modules').exists(): os.symlink(top / 'node_modules', dst / 'node_modules')
+    files = subprocess.run(['git', 'ls-files', '-z'], cwd=top, capture_output=True, text=True, check=True).stdout.split('\0')
+    for f in filter(None, files):
+        src = top / f
+        if not src.exists() and not src.is_symlink(): continue
+        (dst / f).parent.mkdir(parents=True, exist_ok=True)
+        if src.is_symlink(): os.symlink(os.readlink(src), dst / f) # a link as git tracks it (tests/link/apps/css/src/linked)
+        else: shutil.copy2(src, dst / f)
+    # A repo of its own, tracking what the real tree tracks, for the gates that read git ls-files (tools/edges.mjs).
+    subprocess.run(['git', 'init', '-q'], cwd=dst, check=True)
+    subprocess.run(['git', 'add', '-A'], cwd=dst, check=True)
+    if (top / 'node_modules').exists(): os.symlink(top / 'node_modules', dst / 'node_modules')
 
 def fit(src, old, new):
-  """The text to mutate as the file has it. The entries were written when the tree indented with 2 spaces, and
+    """The text to mutate as the file has it. The entries were written when the tree indented with 2 spaces, and
   tools/reindent4.py doubled that indent: a multi-line entry that is not in the file is tried with the leading
   spaces of its second and later lines doubled, and so is its replacement. Returns (old, new), or None."""
-  if src.count(old) == 1:
-    return old, new
-  def double(text):
-    first, *rest = text.split('\n')
-    return '\n'.join([first] + [re.sub(r'^ +', lambda m: m.group(0) * 2, line) for line in rest])
-  if src.count(double(old)) == 1:
-    return double(old), double(new)
-  return None
+    if src.count(old) == 1:
+        return old, new
+    def double(text):
+        first, *rest = text.split('\n')
+        return '\n'.join([first] + [re.sub(r'^ +', lambda m: m.group(0) * 2, line) for line in rest])
+    if src.count(double(old)) == 1:
+        return double(old), double(new)
+    return None
 
 
 args = sys.argv[1:]
@@ -1410,56 +1410,56 @@ base = pathlib.Path(tempfile.mkdtemp(prefix='cdom-mutants-'))
 missed_dir = pathlib.Path(tempfile.mkdtemp(prefix='cdom-missed-'))
 
 def worker(w):
-  root = base / f'w{w}'
-  copy_tree(root)
-  def write_fresh(p, text):
-    # A worker runs its mutants one after another in one copy: a host tool make built in the same second as the
-    # source was written (tools/out/js1c from tools/js1c.c) is otherwise not rebuilt, and the next mutant runs the last
-    # one's binary. The mtime two seconds ahead is newer than anything built before it.
-    p.write_text(text)
-    t = time.time() + 2
-    os.utime(p, (t, t))
-  while True:
-    try: k, (name, f, old, new, cmd, want, *opts) = work.get_nowait()
-    except queue.Empty: return
-    hangs = HANGS in opts
-    p = root / f
-    src = p.read_text()
-    found = fit(src, old, new)
-    if found is None:
-      line, ok = f'FAIL {name}: the text to mutate is not in {f} once', False
-    else:
-      old, new = found
-      try:
-        write_fresh(p, src.replace(old, new))
-        code, out = build_and_run(root, cmd, minify=True)
-      finally:
-        write_fresh(p, src)
-        touched = restore_tree(root)
-      ok = hangs if code == HUNG else code != 0 and want in out
-      why = '' if ok else f' (timed out after {TEST_TIMEOUT} s, and the entry is not marked HANGS)' if code == HUNG \
-        else f' (exit {code}; ' + ('the FAIL text is there' if want in out else 'no ' + repr(want)) + ')'
-      if not ok: # the whole output, kept past the run, since the tail shown here may not hold the cause
-        (missed_dir / f'{name}.log').write_text(out)
-        why += f' full output: {missed_dir / (name + ".log")}'
-      if touched: # a mutant whose test rewrote tracked files: they are back, so the next mutant runs on the real tree
-        why += ' (its test changed ' + ', '.join(touched) + '; restored)'
-      line = ('caught (HUNG, killed) ' if code == HUNG and ok else 'caught ' if ok else 'MISSED ') + name + why + ('' if ok else '\n  ' + out[-600:].replace('\n', '\n  '))
-    with lock:
-      results[k] = ok
-      print(line, flush=True)
+    root = base / f'w{w}'
+    copy_tree(root)
+    def write_fresh(p, text):
+        # A worker runs its mutants one after another in one copy: a host tool make built in the same second as the
+        # source was written (tools/out/js1c from tools/js1c.c) is otherwise not rebuilt, and the next mutant runs the last
+        # one's binary. The mtime two seconds ahead is newer than anything built before it.
+        p.write_text(text)
+        t = time.time() + 2
+        os.utime(p, (t, t))
+    while True:
+        try: k, (name, f, old, new, cmd, want, *opts) = work.get_nowait()
+        except queue.Empty: return
+        hangs = HANGS in opts
+        p = root / f
+        src = p.read_text()
+        found = fit(src, old, new)
+        if found is None:
+            line, ok = f'FAIL {name}: the text to mutate is not in {f} once', False
+        else:
+            old, new = found
+            try:
+                write_fresh(p, src.replace(old, new))
+                code, out = build_and_run(root, cmd, minify=True)
+            finally:
+                write_fresh(p, src)
+                touched = restore_tree(root)
+            ok = hangs if code == HUNG else code != 0 and want in out
+            why = '' if ok else f' (timed out after {TEST_TIMEOUT} s, and the entry is not marked HANGS)' if code == HUNG \
+              else f' (exit {code}; ' + ('the FAIL text is there' if want in out else 'no ' + repr(want)) + ')'
+            if not ok: # the whole output, kept past the run, since the tail shown here may not hold the cause
+                (missed_dir / f'{name}.log').write_text(out)
+                why += f' full output: {missed_dir / (name + ".log")}'
+            if touched: # a mutant whose test rewrote tracked files: they are back, so the next mutant runs on the real tree
+                why += ' (its test changed ' + ', '.join(touched) + '; restored)'
+            line = ('caught (HUNG, killed) ' if code == HUNG and ok else 'caught ' if ok else 'MISSED ') + name + why + ('' if ok else '\n  ' + out[-600:].replace('\n', '\n  '))
+        with lock:
+            results[k] = ok
+            print(line, flush=True)
 
 try:
-  threads = [threading.Thread(target=worker, args=(w,)) for w in range(min(jobs, len(todo)) or 1)]
-  for t in threads: t.start()
-  for t in threads: t.join()
+    threads = [threading.Thread(target=worker, args=(w,)) for w in range(min(jobs, len(todo)) or 1)]
+    for t in threads: t.start()
+    for t in threads: t.join()
 finally:
-  shutil.rmtree(base, ignore_errors=True)
+    shutil.rmtree(base, ignore_errors=True)
 bad = sum(1 for ok in results.values() if not ok)
 print(f'{len(results) - bad} of {len(todo)} caught', flush=True)
 code = 0
 for label, cmd in (('unit', UNIT), ('host', HOST), ('canvas', CANVAS)):
-  c, out = build_and_run(top, cmd)
-  print(f'restored: {label} ' + ('ok' if c == 0 else 'FAIL\n  ' + out[-1500:].replace('\n', '\n  ')), flush=True)
-  code |= c
+    c, out = build_and_run(top, cmd)
+    print(f'restored: {label} ' + ('ok' if c == 0 else 'FAIL\n  ' + out[-1500:].replace('\n', '\n  ')), flush=True)
+    code |= c
 sys.exit(1 if bad or code else 0)

@@ -17,36 +17,36 @@ here="$(cd "$(dirname "$0")" && pwd)"
 what="${1:-all}"
 build_bench() { "$here/bench/build.sh" > /dev/null; }
 case "$what" in
-  one)
-    build_bench
-    rm -rf "$here/results/one"
-    RES="$here/results/one" ONLY="$2" ENTRIES="$3" PASSES=1 node "$here/bench/run.mjs"
-    [ -f "$here/results/one/times.tsv" ] && RES="$here/results/one" node "$here/bench/summarize.mjs" > /dev/null
-    exit 0;;
-  caret)
-    "$here/caret/build.sh"
-    node "$here/caret/caret.mjs" | tee "$here/results/caret.txt"
-    exit 0;;
+    one)
+        build_bench
+        rm -rf "$here/results/one"
+        RES="$here/results/one" ONLY="$2" ENTRIES="$3" PASSES=1 node "$here/bench/run.mjs"
+        [ -f "$here/results/one/times.tsv" ] && RES="$here/results/one" node "$here/bench/summarize.mjs" > /dev/null
+        exit 0;;
+    caret)
+        "$here/caret/build.sh"
+        node "$here/caret/caret.mjs" | tee "$here/results/caret.txt"
+        exit 0;;
 esac
 if [ "$what" = checks ]; then
-  "$here/test/build.sh"
-  node "$here/test/test.mjs"
-  "$here/test/mutate.sh"
-  for d in a-rerun b-module c-version e-state; do make -s -C "$here/badge/$d" > /dev/null; done
-  node "$here/badge/drive.mjs" "$here/badge"
-  build_bench
-  node "$here/bench/check.mjs"
-  "$here/bench/mutate-dom.sh"
-  "$here/caret/build.sh"
-  node "$here/caret/caret.mjs" | tee "$here/results/caret.txt"
-  exit 0
+    "$here/test/build.sh"
+    node "$here/test/test.mjs"
+    "$here/test/mutate.sh"
+    for d in a-rerun b-module c-version e-state; do make -s -C "$here/badge/$d" > /dev/null; done
+    node "$here/badge/drive.mjs" "$here/badge"
+    build_bench
+    node "$here/bench/check.mjs"
+    "$here/bench/mutate-dom.sh"
+    "$here/caret/build.sh"
+    node "$here/caret/caret.mjs" | tee "$here/results/caret.txt"
+    exit 0
 fi
 if [ "$what" = all ]; then
-  "$here/test/build.sh"
-  node "$here/test/test.mjs"
-  "$here/test/mutate.sh"
-  for d in a-rerun b-module c-version e-state; do make -s -C "$here/badge/$d" > /dev/null; done
-  node "$here/badge/drive.mjs" "$here/badge"
+    "$here/test/build.sh"
+    node "$here/test/test.mjs"
+    "$here/test/mutate.sh"
+    for d in a-rerun b-module c-version e-state; do make -s -C "$here/badge/$d" > /dev/null; done
+    node "$here/badge/drive.mjs" "$here/badge"
 fi
 build_bench
 node "$here/bench/check.mjs"
@@ -54,6 +54,6 @@ node "$here/bench/check.mjs"
 PASSES=5 node "$here/bench/run.mjs"
 node "$here/bench/summarize.mjs"
 if [ "$what" = all ]; then
-  "$here/caret/build.sh"
-  node "$here/caret/caret.mjs" | tee "$here/results/caret.txt"
+    "$here/caret/build.sh"
+    node "$here/caret/caret.mjs" | tee "$here/results/caret.txt"
 fi

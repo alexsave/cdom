@@ -9,5 +9,5 @@
  * and the page's query), every script it needs inline, since Netscape 2 has no SCRIPT SRC (section 16); nothing
  * replaces it. The frames' names are the shim's (cdomView, cdomApp), and the view's handlers call parent.cdomApp. */
 if (!(document.getElementById && document.createElement)) {
-  document.write("<frameset rows=\"*,1\" border=\"0\" frameborder=\"0\" framespacing=\"0\"><frame name=\"cdomView\" src=\"about:blank\" marginwidth=\"8\" marginheight=\"8\"><frame name=\"cdomApp\" src=\"" + "/*CDOM_APP_DOC*/" + location.search + "\" scrolling=\"no\" noresize></frameset>");
+    document.write("<frameset rows=\"*,1\" border=\"0\" frameborder=\"0\" framespacing=\"0\"><frame name=\"cdomView\" src=\"about:blank\" marginwidth=\"8\" marginheight=\"8\"><frame name=\"cdomApp\" src=\"" + "/*CDOM_APP_DOC*/" + location.search + "\" scrolling=\"no\" noresize></frameset>");
 }

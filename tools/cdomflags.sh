@@ -5,13 +5,13 @@
 # built tools/cdlits that every link goes through, and CDOM_PAGE_TOOL the built tools/cdpage that writes pages.
 cdom_top="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cdom_mk_var() { # the value of one of cdom.mk's variables, for this checkout
-  printf 'cdom-print-var:\n\t@echo $(%s)\n' "$1" |
-    make -s --no-print-directory -f "$cdom_top/cdom.mk" -f - cdom-print-var CDOM="$cdom_top"
+    printf 'cdom-print-var:\n\t@echo $(%s)\n' "$1" |
+      make -s --no-print-directory -f "$cdom_top/cdom.mk" -f - cdom-print-var CDOM="$cdom_top"
 }
 read -r -a CDOM_CFLAGS <<< "$(cdom_mk_var CDOM_CFLAGS)"
 read -r -a CDOM_LDFLAGS <<< "$(cdom_mk_var CDOM_LDFLAGS)"
 if [ "${#CDOM_CFLAGS[@]}" -lt 3 ] || [ "${#CDOM_LDFLAGS[@]}" -lt 1 ]; then
-  echo "FAIL cdom.mk gave no CDOM_CFLAGS or CDOM_LDFLAGS" >&2; exit 1
+    echo "FAIL cdom.mk gave no CDOM_CFLAGS or CDOM_LDFLAGS" >&2; exit 1
 fi
 # CDOM_LITS: the tool every link goes through (tools/cdlits.c), built here when it is out of date. A script
 # runs it as: "$CDOM_LITS" linked.wasm out.wasm out.wasm.lits
@@ -24,16 +24,16 @@ make -s --no-print-directory -f "$cdom_top/cdom.mk" CDOM="$cdom_top" "$CDOM_PAGE
 # The scripts that build cdom modules. Each must take the set from here, never write a flag of it.
 CDOM_FLAG_USERS=(tests/build.sh tests/link/run.sh bench/build.sh tests/image/simd.sh)
 cdom_flags_gate() {
-  local bad=0 f w n
-  for f in "${CDOM_FLAG_USERS[@]}"; do
-    for w in "${CDOM_CFLAGS[@]}" "${CDOM_LDFLAGS[@]}"; do
-      case "$w" in -I*|/*) continue;; esac # cdom's paths, which a script names for its own reasons
-      n="$(grep -n -F -e "$w" "$cdom_top/$f" | head -1 | cut -d: -f1 || true)"
-      if [ -n "$n" ]; then
-        echo "FAIL $f:$n hardcodes $w, a flag of cdom.mk's set: take CDOM_CFLAGS and CDOM_LDFLAGS from tools/cdomflags.sh" >&2
-        bad=1
-      fi
+    local bad=0 f w n
+    for f in "${CDOM_FLAG_USERS[@]}"; do
+        for w in "${CDOM_CFLAGS[@]}" "${CDOM_LDFLAGS[@]}"; do
+            case "$w" in -I*|/*) continue;; esac # cdom's paths, which a script names for its own reasons
+            n="$(grep -n -F -e "$w" "$cdom_top/$f" | head -1 | cut -d: -f1 || true)"
+            if [ -n "$n" ]; then
+                echo "FAIL $f:$n hardcodes $w, a flag of cdom.mk's set: take CDOM_CFLAGS and CDOM_LDFLAGS from tools/cdomflags.sh" >&2
+                bad=1
+            fi
+        done
     done
-  done
-  return $bad
+    return $bad
 }

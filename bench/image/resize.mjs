@@ -4,9 +4,9 @@
 import { sleep } from '../../tools/cdp.mjs';
 
 export async function resizeHash(b, page, input, box) {
-  await b.send('Page.navigate', { url: page });
-  for (let i = 0; i < 200 && !(await b.evaluate('!!window.READY')); i++) await sleep(25);
-  return b.evaluate(`(async () => {
+    await b.send('Page.navigate', { url: page });
+    for (let i = 0; i < 200 && !(await b.evaluate('!!window.READY')); i++) await sleep(25);
+    return b.evaluate(`(async () => {
     const data = new Uint8Array(await (await fetch(${JSON.stringify(input)})).arrayBuffer());
     const p = X.room(data.length);
     new Uint8Array(X.memory.buffer, p, data.length).set(data);

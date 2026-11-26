@@ -14,10 +14,10 @@ mkdir -p "$here/out"
 cdom_flags_gate
 W=(-Wall -Wextra -Werror)
 wasm() { # wasm <opt> <out.wasm> <sources and extra flags...>: a cdom module, as cdom.mk builds an app's
-  local opt="$1" o="$2"; shift 2
-  "$CC" "$opt" "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -o "$o.linked" "$@"
-  "$CDOM_LITS" "$o.linked" "$o" "$o.lits" # the string table out of the module, into o.lits, as cdom.mk does
-  rm -f "$o.linked"
+    local opt="$1" o="$2"; shift 2
+    "$CC" "$opt" "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -o "$o.linked" "$@"
+    "$CDOM_LITS" "$o.linked" "$o" "$o.lits" # the string table out of the module, into o.lits, as cdom.mk does
+    rm -f "$o.linked"
 }
 # shim/cdom.min.js, which apps inline, must be what cdom.js makes now (tools/minshim.mjs).
 node "$here/../tools/minshim.mjs" check
@@ -99,7 +99,7 @@ cp "$here/probe.html" "$here/probe-fs.html" "$here/probe-fsd.html" "$here/probe-
 # rig's alone: no shipped file and no built page may name its port.
 if grep -l "10.0.2.2:8096" "$here/../shim/"*.js "$here/../tools/legacy/"*.js "$here/"*.html "$here/out/cdom.legacy"*.js \
   "$here/out/"*.wasm.js "$here/out/"*.ie9.js "$here/out/"*.js1.js "$here/out/legacy.html" "$here/out/cdom.frames.js" "$here/out/frames.html" "$here/out/frames.app.html"; then
-  echo "build.sh: the IE 5 test hold (port 8096) is in a shipped or built file" >&2; exit 1
+    echo "build.sh: the IE 5 test hold (port 8096) is in a shipped or built file" >&2; exit 1
 fi
 # js1c's differential test (tools/js1.mjs): tests/js1diff.c as wasm, through js1c and through the IE 9 build; no cdom.
 "$CC" -O2 "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -o "$here/out/js1diff.wasm" "$here/js1diff.c"
@@ -114,8 +114,8 @@ node "$legacy" app-ie9 "$here/out/memforms.wasm" "$here/out/memforms.wasm.ie9.js
 # cd_job (tools/job.mjs): the app, and the synthetic job module built as cdom.mk builds one (APP_JOBS): cdom's heap alone
 # (-DCDOM_HEAP_ONLY), mini.c, cdom_job_mod.c, no string table. The cap build has the heap at 100 pages (6.4 MB), for NO_ROOM.
 jobwasm() { # jobwasm <opt> <out.wasm> <sources and extra flags...>
-  local opt="$1" o="$2"; shift 2
-  "$CC" "$opt" "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -DCDOM_HEAP_ONLY -o "$o" "$@"
+    local opt="$1" o="$2"; shift 2
+    "$CC" "$opt" "${CDOM_CFLAGS[@]}" "${W[@]}" "${CDOM_LDFLAGS[@]}" -DCDOM_HEAP_ONLY -o "$o" "$@"
 }
 jobwasm -Oz "$here/out/shrink_job.wasm" "$here/shrink_job.c" "$here/../src/cdom.c" "$here/../src/mini.c" "$here/../src/cdom_job_mod.c"
 jobwasm -Oz "$here/out/shrink_job_cap.wasm" -DCDOM_HEAP_PAGES_MAX=100 "$here/shrink_job.c" "$here/../src/cdom.c" "$here/../src/mini.c" "$here/../src/cdom_job_mod.c"

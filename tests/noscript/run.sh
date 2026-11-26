@@ -59,7 +59,7 @@ echo "measure P4: a clean build takes ${t_on} s with the fallback, ${t_off} s wi
 if ! diff <(awk '/^<script><!--$/ { held = $0; next } held && /^document\.write\("<!-"\+"-"\);$/ { skip = 1 } held && !skip { print held }
     { held = "" } !skip { print } /<\/noscript><wbr -->$/ { skip = 0 }' "$page" \
     | sed -e 's|^<style><!--$|<style>|' -e 's|^<script><!--$|<script>|' -e 's|^//--></script>$|</script>|' -e 's|^--></style>$|</style>|') "$out/off.html" > "$out/diff.log"; then
-  bad "the page with the fallback is not the page without it plus the block and the wrappers:"; head "$out/diff.log"
+    bad "the page with the fallback is not the page without it plus the block and the wrappers:"; head "$out/diff.log"
 else ok "the page with the fallback is the page without it, plus the block at the marker and <!-- --> around its style and scripts"; fi
 
 # ---- the GIFs ----
@@ -97,7 +97,7 @@ f.save(sys.argv[2])
 EOF
 same=1
 for p in grad few; do
-  "$PY" "$top/tools/noscript_gif.py" "$out/$p.png" "$out/$p.1.gif" && "$PY" "$top/tools/noscript_gif.py" "$out/$p.png" "$out/$p.2.gif" && cmp -s "$out/$p.1.gif" "$out/$p.2.gif" || same=0
+    "$PY" "$top/tools/noscript_gif.py" "$out/$p.png" "$out/$p.1.gif" && "$PY" "$top/tools/noscript_gif.py" "$out/$p.png" "$out/$p.2.gif" && cmp -s "$out/$p.1.gif" "$out/$p.2.gif" || same=0
 done
 exact=$("$PY" -c 'import sys
 from PIL import Image
@@ -144,12 +144,12 @@ rm -f "$app/build/nonoscript.html"
 # ---- lynx ----
 if ! command -v lynx > /dev/null; then bad "lynx is not installed (apt-get install lynx)"
 else
-  lynx -dump -nolist -force_html -assume_charset=iso-8859-1 "$page" > "$out/lynx.txt" 2>&1
-  got=$(tr -s ' \n\t' '   ' < "$out/lynx.txt" | sed 's/^ //; s/ $//')
-  if [ "$got" = "$SHOT_ALT $TEXT $SNOW_ALT" ]; then ok "lynx -dump: the screenshot's ALT text, the paragraph and the snowman's ALT text, and nothing else"
-  else bad "lynx -dump shows other text:"; head -c 600 "$out/lynx.txt"; echo; fi
-  if grep -qF -e cdomLits -e document.write -e cdom.start -e '{' "$out/lynx.txt"; then bad "lynx -dump shows script or CSS source"
-  else ok "lynx -dump: no script source (cdomLits, document.write, cdom.start) and no CSS ({)"; fi
+    lynx -dump -nolist -force_html -assume_charset=iso-8859-1 "$page" > "$out/lynx.txt" 2>&1
+    got=$(tr -s ' \n\t' '   ' < "$out/lynx.txt" | sed 's/^ //; s/ $//')
+    if [ "$got" = "$SHOT_ALT $TEXT $SNOW_ALT" ]; then ok "lynx -dump: the screenshot's ALT text, the paragraph and the snowman's ALT text, and nothing else"
+    else bad "lynx -dump shows other text:"; head -c 600 "$out/lynx.txt"; echo; fi
+    if grep -qF -e cdomLits -e document.write -e cdom.start -e '{' "$out/lynx.txt"; then bad "lynx -dump shows script or CSS source"
+    else ok "lynx -dump: no script source (cdomLits, document.write, cdom.start) and no CSS ({)"; fi
 fi
 
 # ---- the HTML 2.0 lens ----
@@ -183,16 +183,16 @@ printf '<!doctype html>\n<body>\n/*CDOM_NOSCRIPT*/\n<div id="app"></div>\n<scrip
 NS=(--noscript-shot a.gif=640x480 --noscript-snowman s.gif=96x96)
 # refuse name page shim lits want [flags...]: cdpage refuses, says want, and leaves no file
 refuse() {
-  local name="$1" pg="$2" shim="$3" lits="$4" want="$5"; shift 5
-  rm -f "$r/out.html"
-  if "$CDPAGE" --page "$pg" --out "$r/out.html" --shim "$shim" --lits "$lits" "$@" 2> "$r/$name.log"; then bad "$name: taken"
-  elif [ -e "$r/out.html" ] || compgen -G "$r/out.html.tmp*" > /dev/null; then bad "$name: refused but left a file"
-  elif ! grep -qF -- "$want" "$r/$name.log"; then bad "$name: refused with another message:"; cat "$r/$name.log"
-  else ok "$name: $(head -c 200 "$r/$name.log")"; fi
+    local name="$1" pg="$2" shim="$3" lits="$4" want="$5"; shift 5
+    rm -f "$r/out.html"
+    if "$CDPAGE" --page "$pg" --out "$r/out.html" --shim "$shim" --lits "$lits" "$@" 2> "$r/$name.log"; then bad "$name: taken"
+    elif [ -e "$r/out.html" ] || compgen -G "$r/out.html.tmp*" > /dev/null; then bad "$name: refused but left a file"
+    elif ! grep -qF -- "$want" "$r/$name.log"; then bad "$name: refused with another message:"; cat "$r/$name.log"
+    else ok "$name: $(head -c 200 "$r/$name.log")"; fi
 }
 take() {
-  local name="$1" pg="$2" shim="$3" lits="$4"; shift 4
-  if "$CDPAGE" --page "$pg" --out "$r/out.html" --shim "$shim" --lits "$lits" "$@" 2> "$r/$name.log"; then ok "$name"; else bad "$name: refused:"; cat "$r/$name.log"; fi
+    local name="$1" pg="$2" shim="$3" lits="$4"; shift 4
+    if "$CDPAGE" --page "$pg" --out "$r/out.html" --shim "$shim" --lits "$lits" "$@" 2> "$r/$name.log"; then ok "$name"; else bad "$name: refused:"; cat "$r/$name.log"; fi
 }
 printf 'var a = 1; // <!-- then <script> in a comment\n' > "$r/planted.js"
 printf 'var cdomLits=[0,"<!--","<script>"];' > "$r/planted.lits"
@@ -211,10 +211,10 @@ while True:
     b = t.index(">", i) + 1; e = low.index("</script", b); out.append(t[b:e]); i = e
 open(sys.argv[2], "w", encoding="latin-1").write(chr(0).join(out))' "$1" "$1.content"; }
 for w in planted.js:ok.lits ok.js:planted.lits tag.js:ok.lits; do
-  rm -f "$r/out.html"
-  if "$CDPAGE" --page "$r/page.html" --out "$r/out.html" --shim "$r/${w%%:*}" --lits "$r/${w##*:}" "${NS[@]}" 2> "$r/w.log"; then
-    cp "$r/out.html" "$r/wrapped_${w%%.*}_${w##*:}.html"; scripts_of "$r/wrapped_${w%%.*}_${w##*:}.html"
-  else bad "with the fallback, the shim ${w%%:*} and table ${w##*:} are refused:"; cat "$r/w.log"; fi
+    rm -f "$r/out.html"
+    if "$CDPAGE" --page "$r/page.html" --out "$r/out.html" --shim "$r/${w%%:*}" --lits "$r/${w##*:}" "${NS[@]}" 2> "$r/w.log"; then
+        cp "$r/out.html" "$r/wrapped_${w%%.*}_${w##*:}.html"; scripts_of "$r/wrapped_${w%%.*}_${w##*:}.html"
+    else bad "with the fallback, the shim ${w%%:*} and table ${w##*:} are refused:"; cat "$r/w.log"; fi
 done
 node "$here/chrome.mjs" ends "$r"/wrapped_*.html > "$r/wrapped.log" 2>&1
 if [ "$(grep -c ' ended$' "$r/wrapped.log")" = 3 ]; then ok "with the fallback, the planted shim, the planted table and a <script in a string are taken: their wrapper's --> ends the escape, and Chrome reads every script to its first </script>"
@@ -240,21 +240,21 @@ cases=('<!--<script>' '<!-- <SCRIPT x>' '<!--<script/' '<!--<scripts>' '<!-- -->
 i=0
 pages=()
 for c in "${cases[@]}"; do
-  i=$((i + 1))
-  { printf '<!doctype html>\n<script>%s</script>\n<p id="after">x</p>\n<script>\n/*CDOM_SHIM*/\n</script>\n' "$c"; } > "$e/c$i.html"
-  scripts_of "$e/c$i.html"
-  if "$CDPAGE" --page "$e/c$i.html" --out "$e/c$i.out.html" --shim "$r/ok.js" --lits "$r/ok.lits" 2> "$e/c$i.log"; then echo ended > "$e/c$i.cd"
-  elif grep -qF 'double-escaped' "$e/c$i.log"; then echo ran-on > "$e/c$i.cd"
-  else echo "error" > "$e/c$i.cd"; fi
-  pages+=("$e/c$i.html")
+    i=$((i + 1))
+    { printf '<!doctype html>\n<script>%s</script>\n<p id="after">x</p>\n<script>\n/*CDOM_SHIM*/\n</script>\n' "$c"; } > "$e/c$i.html"
+    scripts_of "$e/c$i.html"
+    if "$CDPAGE" --page "$e/c$i.html" --out "$e/c$i.out.html" --shim "$r/ok.js" --lits "$r/ok.lits" 2> "$e/c$i.log"; then echo ended > "$e/c$i.cd"
+    elif grep -qF 'double-escaped' "$e/c$i.log"; then echo ran-on > "$e/c$i.cd"
+    else echo "error" > "$e/c$i.cd"; fi
+    pages+=("$e/c$i.html")
 done
 node "$here/chrome.mjs" ends "${pages[@]}" > "$e/chrome.log" 2>&1
 agree=0
 i=0
 for c in "${cases[@]}"; do
-  i=$((i + 1))
-  ch=$(grep "^c$i.html " "$e/chrome.log" | cut -d' ' -f2)
-  if [ -n "$ch" ] && [ "$ch" = "$(cat "$e/c$i.cd")" ]; then agree=$((agree + 1)); else bad "the parse check and Chrome disagree on $(printf '%q' "$c"): cdpage $(cat "$e/c$i.cd"), Chrome ${ch:-nothing}"; fi
+    i=$((i + 1))
+    ch=$(grep "^c$i.html " "$e/chrome.log" | cut -d' ' -f2)
+    if [ -n "$ch" ] && [ "$ch" = "$(cat "$e/c$i.cd")" ]; then agree=$((agree + 1)); else bad "the parse check and Chrome disagree on $(printf '%q' "$c"): cdpage $(cat "$e/c$i.cd"), Chrome ${ch:-nothing}"; fi
 done
 [ "$agree" = "${#cases[@]}" ] && ok "the parse check agrees with Chrome's parser on all ${#cases[@]} planted script texts ($(grep -c ran-on "$e/chrome.log") run on past </script>, $(grep -c ' ended' "$e/chrome.log") end there)"
 finish

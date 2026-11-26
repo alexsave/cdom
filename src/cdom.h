@@ -320,10 +320,10 @@ void cd_render_now(void);
 struct cd_view;
 struct cd_link;
 typedef struct cd_state {
-  uint64_t ver;                     /* moves on at every cd_changed; anyone may read it */
-  struct cd_link *first, *last;     /* cdom's: the views watching, in the order they began to */
-  struct cd_state *changed;         /* cdom's: the next changed state, while it is on that list */
-  uint32_t tick;                    /* cdom's: when in the pass it last changed */
+    uint64_t ver;                     /* moves on at every cd_changed; anyone may read it */
+    struct cd_link *first, *last;     /* cdom's: the views watching, in the order they began to */
+    struct cd_state *changed;         /* cdom's: the next changed state, while it is on that list */
+    uint32_t tick;                    /* cdom's: when in the pass it last changed */
 } cd_state;
 void cd_changed(cd_state *s);
 
@@ -399,9 +399,9 @@ void cd_req_drop(cd_req *r);
  * with its row class bound selects about 6% slower per click, PERF_LOG.md); it is meant for views. */
 typedef void (*cd_bound_write)(cd_id id, cd_str name, cd_str value);
 typedef struct {
-  cd_id id; cd_str name; uint32_t kind, seen, last; /* cdom's: the node, and what it last sent */
-  cd_bound_write write;                              /* cdom's: how its kind writes a string */
-  uint8_t *bytes; uint32_t blen, bcap;               /* cdom's: a cd_tmp value's bytes */
+    cd_id id; cd_str name; uint32_t kind, seen, last; /* cdom's: the node, and what it last sent */
+    cd_bound_write write;                              /* cdom's: how its kind writes a string */
+    uint8_t *bytes; uint32_t blen, bcap;               /* cdom's: a cd_tmp value's bytes */
 } cd_bound;
 void cd_bind_text(cd_bound *b, cd_id text_node);
 void cd_bind_attr(cd_bound *b, cd_id el, cd_str name);
@@ -413,7 +413,7 @@ void cd_bind_prop(cd_bound *b, cd_id el, cd_str prop);
  * thousand bound rows per event skips as fast as a hand-written last-value check. */
 void cd_bound_set_(cd_bound *b, cd_str value);
 static inline void cd_bound_set(cd_bound *b, cd_str value) {
-  if (b->seen != 1 || b->last != value.v) cd_bound_set_(b, value); /* 1: such a string was sent */
+    if (b->seen != 1 || b->last != value.v) cd_bound_set_(b, value); /* 1: such a string was sent */
 }
 void cd_bound_set_bytes(cd_bound *b, const char *p, uint32_t len);
 void cd_bound_set_num(cd_bound *b, uint32_t n);
@@ -441,9 +441,9 @@ int cd_bound_live(const cd_bound *b);
  * Fields are only ever appended. Any other event property is a path away: cd_get_str(CD_EVENT, "key"),
  * cd_get_id(CD_EVENT, "target"), "dataTransfer.files.0.name". */
 typedef struct {
-  int32_t type, id, x, y, button, key, mods, path, depth, ch, flags, ms;
-  int32_t pointer, buttons;
-  float dx, dy;
+    int32_t type, id, x, y, button, key, mods, path, depth, ch, flags, ms;
+    int32_t pointer, buttons;
+    float dx, dy;
 } cd_event_rec;
 #define CD_PREVENT 1
 #define CD_STOP 2
@@ -642,12 +642,12 @@ double cd_now(void);                              /* performance.now(), for work
 typedef void (*cd_cleanup_fn)(void *ctx);
 typedef struct { cd_cleanup_fn fn; void *ctx; } cd_cleanup;
 typedef struct cd_region {
-  cd_id parent, root; cd_id *ids; uint32_t n, cap; int shown;
-  struct cd_region *up;                 /* the parent region (set by the app, or by showing inside one) */
-  uint32_t depth;                       /* cdom's: set at each show (shared state, above) */
-  struct cd_region *kids, *next;        /* cdom's: the child regions shown now, newest first */
-  cd_cleanup *fns; uint32_t nfns, fcap; /* cdom's: the cleanups */
-  struct cd_view *views;                /* cdom's: the views its build made (cd_watch), newest first */
+    cd_id parent, root; cd_id *ids; uint32_t n, cap; int shown;
+    struct cd_region *up;                 /* the parent region (set by the app, or by showing inside one) */
+    uint32_t depth;                       /* cdom's: set at each show (shared state, above) */
+    struct cd_region *kids, *next;        /* cdom's: the child regions shown now, newest first */
+    cd_cleanup *fns; uint32_t nfns, fcap; /* cdom's: the cleanups */
+    struct cd_view *views;                /* cdom's: the views its build made (cd_watch), newest first */
 } cd_region;
 int cd_region_show(cd_region *r, int want);
 void cd_region_end(cd_region *r);
@@ -668,16 +668,16 @@ typedef struct { uint32_t key; cd_id node; uint32_t data; } cd_item;
  * list's tail go before it (0: the list runs to the parent's end). Only with owns_parent 0. */
 typedef struct { cd_item *items; uint32_t n, cap; cd_id parent; int owns_parent; cd_id end; } cd_list;
 typedef struct {
-  void *ctx;
-  /* emit the subtree for new item i (cd_at is already set); return its root id */
-  cd_id (*create)(void *ctx, uint32_t i, uint32_t *data);
-  /* item i survived: emit only what changed */
-  void (*patch)(void *ctx, uint32_t i, cd_item *it);
-  /* item is going: free the sub ids it named, and cd_region_forget a region its create opened (which
-   * runs that region's cleanups). It runs before the item's root id is freed and its node removed, so
-   * what the item holds goes before its ids, as in a region. A region opened in create is no outer
-   * region's child (the list's ids are the list's), so the item owns it. */
-  void (*destroy)(void *ctx, cd_item *it);
+    void *ctx;
+    /* emit the subtree for new item i (cd_at is already set); return its root id */
+    cd_id (*create)(void *ctx, uint32_t i, uint32_t *data);
+    /* item i survived: emit only what changed */
+    void (*patch)(void *ctx, uint32_t i, cd_item *it);
+    /* item is going: free the sub ids it named, and cd_region_forget a region its create opened (which
+     * runs that region's cleanups). It runs before the item's root id is freed and its node removed, so
+     * what the item holds goes before its ids, as in a region. A region opened in create is no outer
+     * region's child (the list's ids are the list's), so the item owns it. */
+    void (*destroy)(void *ctx, cd_item *it);
 } cd_list_fns;
 void cd_list_update(cd_list *L, const uint32_t *keys, uint32_t n, const cd_list_fns *f);
 /* The list's DOM already went (an ancestor was cleared or removed): free every item's ids,

@@ -11,6 +11,6 @@ for br in chrome safari; do [ ! -e "results/$day-$name-$br.log" ] || { echo "res
 make -s inputs > /dev/null && make -s page && make -s simd && ./old.sh "${1:-origin/main}" || exit 1
 in=p12p.jpg,p24p.jpg,p12p444.jpg,p12pmany.jpg,p48p.jpg,p12.jpg,p48.jpg,p12.png
 for br in chrome safari; do
-  { uptime; BROWSER=$br node run.mjs 9 900 C-old,C-js,C-simd,B1,B2 "$in"; uptime; } 2>&1 | tee "results/$day-$name-$br.log"
-  raw="$(ls -t results/raw/*.tsv | head -1)"; cp "$raw" "results/$day-$name-$br.tsv"
+    { uptime; BROWSER=$br node run.mjs 9 900 C-old,C-js,C-simd,B1,B2 "$in"; uptime; } 2>&1 | tee "results/$day-$name-$br.log"
+    raw="$(ls -t results/raw/*.tsv | head -1)"; cp "$raw" "results/$day-$name-$br.tsv"
 done

@@ -72,7 +72,7 @@ const out = transformSync('x.style.setProperty(a, b); y.textContent = ""; v = z.
   { babelrc: false, configFile: false, sourceType: 'script', plugins: [oldDom] }).code.replace(/\s+/g, ' ');
 for (const want of ['cdomOld.setProperty(x.style, a, b)', 'cdomOld.setText(y, "")', 'v = cdomOld.prevElement(z)', 'cdomOld.on(window, "t", f)',
   'w = cdomOld.viewportWidth()', 'cdomOld.remove(n)', 'm.remove(1)', 'r = cdomOld.rect(q)', 'cdomOld.setAttribute(p, "class", c)', 'return innerWidth;'])
-  ok(out.includes(want), `the rewrite makes ${want}`);
+    ok(out.includes(want), `the rewrite makes ${want}`);
 // m.remove(1) is not ChildNode.remove, so it is not rewritten, and the scan, which cannot tell, still refuses it.
 ok(JSON.stringify(oldDomLeftovers(out)) === '[".remove","innerWidth"]', `after it, the leftovers are m.remove(1) and the parameter innerWidth: ${JSON.stringify(oldDomLeftovers(out))}`);
 ok(JSON.stringify(oldDomLeftovers('x.addEventListener("a", f); n.textContent; if (b.getBoundingClientRect) g(); devicePixelRatio;')) ===

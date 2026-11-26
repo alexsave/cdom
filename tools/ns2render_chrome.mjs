@@ -8,8 +8,8 @@ await b.send('Emulation.setDeviceMetricsOverride', { width: 640, height: 400, de
 await b.send('Page.navigate', { url });
 let ok = 0;
 for (let i = 0; i < 100 && !ok; i++) {
-  await sleep(200);
-  ok = await b.evaluate("(function(){try{var d=frames[0].document;return d.images.length>100&&/end\\.gif/.test(d.images[d.images.length-1].src)?1:0}catch(e){return 0}})()");
+    await sleep(200);
+    ok = await b.evaluate("(function(){try{var d=frames[0].document;return d.images.length>100&&/end\\.gif/.test(d.images[d.images.length-1].src)?1:0}catch(e){return 0}})()");
 }
 const t = await b.evaluate("frames[0].document.images[frames[0].document.images.length-1].src");
 const { result } = await b.send('Page.captureScreenshot', { format: 'png' });

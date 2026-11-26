@@ -15,50 +15,50 @@ static uint8_t *zbuf, *got;
 static size_t got_n;
 static uint8_t **pp; static uint32_t *pn, pk;
 static int64_t out(void *c, uint8_t *b, uint32_t n, int last) {
-  (void)c;
-  uint32_t d = last ? n : n > CD_INFLATE_WINDOW ? n - CD_INFLATE_WINDOW : 0;
-  if (got_n + d > OUT_MAX) return -1;
-  memcpy(got + got_n, b, d); memset(b, 0x5a, d);
-  got_n += d;
-  return d;
+    (void)c;
+    uint32_t d = last ? n : n > CD_INFLATE_WINDOW ? n - CD_INFLATE_WINDOW : 0;
+    if (got_n + d > OUT_MAX) return -1;
+    memcpy(got + got_n, b, d); memset(b, 0x5a, d);
+    got_n += d;
+    return d;
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-  static cd_inflate z;
-  if (!zbuf) { zbuf = malloc(OUT_MAX); got = malloc(OUT_MAX); }
-  if (size < 1) return 0;
-  uint32_t cut = data[0] % 7 + 1;            /* pieces of 1, 2, ... 7 times a stride of the data's own picking */
-  int apart = data[0] >> 7;
-  data++; size--;
-  z_stream zs; memset(&zs, 0, sizeof zs);
-  if (inflateInit(&zs) != Z_OK) abort();
-  zs.next_in = (uint8_t *)data; zs.avail_in = (uInt)size; zs.next_out = zbuf; zs.avail_out = OUT_MAX;
-  int zr = inflate(&zs, Z_FINISH);
-  size_t zn = OUT_MAX - zs.avail_out;
-  inflateEnd(&zs);
-  pk = 0;
-  pp = malloc(sizeof *pp * (size + 1)); pn = malloc(sizeof *pn * (size + 1));
-  for (size_t at = 0; at < size;) {
-    uint32_t n = (uint32_t)(cut * 37u % 4096u + 1u) * (pk % 3 ? 1u : cut);
-    if (n > size - at) n = (uint32_t)(size - at);
-    pp[pk] = malloc(n); memcpy(pp[pk], data + at, n); pn[pk] = n; pk++; at += n;
-  }
-  size_t cap = CD_INFLATE_WINDOW + 1314;
-  uint8_t *buf = malloc(cap);
-  got_n = 0;
-  cd_inflate_begin(&z, buf, (uint32_t)cap, out, 0);
-  uint32_t st = CD_INFLATE_MORE;
-  for (uint32_t i = 0; i < pk && st == CD_INFLATE_MORE; i++) st = cd_inflate_put(&z, pp[i], pn[i], !apart && i + 1 == pk);
-  if (st == CD_INFLATE_MORE) st = cd_inflate_put(&z, 0, 0, 1);
-  if (st == CD_INFLATE_MORE) __builtin_trap();                                              /* last, and still more */
-  free(buf);
-  for (uint32_t i = 0; i < pk; i++) free(pp[i]);
-  free(pp); free(pn);
-  if (zr == Z_STREAM_END) {
-    if (st == CD_INFLATE_OK && (got_n != zn || memcmp(got, zbuf, zn))) __builtin_trap();   /* different bytes */
-    if (st != CD_INFLATE_OK) __builtin_trap();                                              /* refused or stopped on a good one */
-  } else if (!(zr == Z_BUF_ERROR && !zs.avail_out)) {
-    if (st == CD_INFLATE_OK) __builtin_trap();                                              /* took a bad one */
-  }
-  return 0;
+    static cd_inflate z;
+    if (!zbuf) { zbuf = malloc(OUT_MAX); got = malloc(OUT_MAX); }
+    if (size < 1) return 0;
+    uint32_t cut = data[0] % 7 + 1;            /* pieces of 1, 2, ... 7 times a stride of the data's own picking */
+    int apart = data[0] >> 7;
+    data++; size--;
+    z_stream zs; memset(&zs, 0, sizeof zs);
+    if (inflateInit(&zs) != Z_OK) abort();
+    zs.next_in = (uint8_t *)data; zs.avail_in = (uInt)size; zs.next_out = zbuf; zs.avail_out = OUT_MAX;
+    int zr = inflate(&zs, Z_FINISH);
+    size_t zn = OUT_MAX - zs.avail_out;
+    inflateEnd(&zs);
+    pk = 0;
+    pp = malloc(sizeof *pp * (size + 1)); pn = malloc(sizeof *pn * (size + 1));
+    for (size_t at = 0; at < size;) {
+        uint32_t n = (uint32_t)(cut * 37u % 4096u + 1u) * (pk % 3 ? 1u : cut);
+        if (n > size - at) n = (uint32_t)(size - at);
+        pp[pk] = malloc(n); memcpy(pp[pk], data + at, n); pn[pk] = n; pk++; at += n;
+    }
+    size_t cap = CD_INFLATE_WINDOW + 1314;
+    uint8_t *buf = malloc(cap);
+    got_n = 0;
+    cd_inflate_begin(&z, buf, (uint32_t)cap, out, 0);
+    uint32_t st = CD_INFLATE_MORE;
+    for (uint32_t i = 0; i < pk && st == CD_INFLATE_MORE; i++) st = cd_inflate_put(&z, pp[i], pn[i], !apart && i + 1 == pk);
+    if (st == CD_INFLATE_MORE) st = cd_inflate_put(&z, 0, 0, 1);
+    if (st == CD_INFLATE_MORE) __builtin_trap();                                              /* last, and still more */
+    free(buf);
+    for (uint32_t i = 0; i < pk; i++) free(pp[i]);
+    free(pp); free(pn);
+    if (zr == Z_STREAM_END) {
+        if (st == CD_INFLATE_OK && (got_n != zn || memcmp(got, zbuf, zn))) __builtin_trap();   /* different bytes */
+        if (st != CD_INFLATE_OK) __builtin_trap();                                              /* refused or stopped on a good one */
+    } else if (!(zr == Z_BUF_ERROR && !zs.avail_out)) {
+        if (st == CD_INFLATE_OK) __builtin_trap();                                              /* took a bad one */
+    }
+    return 0;
 }

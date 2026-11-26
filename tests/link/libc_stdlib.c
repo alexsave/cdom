@@ -21,21 +21,21 @@ void cd_main(void) {}
 
 #define CHECK(c) do { if (!(c)) return __LINE__; } while (0)
 __attribute__((export_name("libc_stdlib"))) int libc_stdlib(void) {
-  CHECK(abs(vi) == 7 && abs(-vi) == 7 && abs(0) == 0);
-  CHECK(abs(vmin) == INT_MAX);
-  CHECK(labs(vl) == 70000L && labs(-vl) == 70000L);
-  CHECK(absp(vi) == 7 && labsp(vl) == 70000L);
-  CHECK(no_file == NULL);
-  unsigned char *a = malloc(big);
-  CHECK(a != NULL);
-  memset(a, 0xab, big);
-  unsigned char *z = calloc(small, big);
-  CHECK(z != NULL && z != a);
-  for (size_t i = 0; i < small * big; i++) CHECK(z[i] == 0);
-  a = realloc(a, big * 8);
-  CHECK(a != NULL && a[0] == 0xab && a[big - 1] == 0xab);
-  free(a);
-  free(z);
-  free(NULL);
-  return 0;
+    CHECK(abs(vi) == 7 && abs(-vi) == 7 && abs(0) == 0);
+    CHECK(abs(vmin) == INT_MAX);
+    CHECK(labs(vl) == 70000L && labs(-vl) == 70000L);
+    CHECK(absp(vi) == 7 && labsp(vl) == 70000L);
+    CHECK(no_file == NULL);
+    unsigned char *a = malloc(big);
+    CHECK(a != NULL);
+    memset(a, 0xab, big);
+    unsigned char *z = calloc(small, big);
+    CHECK(z != NULL && z != a);
+    for (size_t i = 0; i < small * big; i++) CHECK(z[i] == 0);
+    a = realloc(a, big * 8);
+    CHECK(a != NULL && a[0] == 0xab && a[big - 1] == 0xab);
+    free(a);
+    free(z);
+    free(NULL);
+    return 0;
 }

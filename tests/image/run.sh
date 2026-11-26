@@ -36,15 +36,15 @@ H=(-std=c2x -O1 -g "${SAN[@]}" -I"$top/src" -I"$here")
 o="$out/native"
 rm -rf "$o"; mkdir -p "$o"
 build() { # the native test binaries, each file as cdom.mk compiles it (its part's flags), cdom's own with -Wall -Werror
-  local f
-  for f in "${OWN[@]}" "$top/src/cdom_image_sjlj.c" "$here/host_alloc.c" "$here/test_image.c" "$top/src/cdom_image_file.c" "$here/test_chunked.c"; do
-    "$HCC" "${H[@]}" -Wall -Wextra -Werror "${OWNF[@]}" -c -o "$o/$(basename "$f" .c).o" "$f" || return 1
-  done
-  for f in "${VENDOR[@]}"; do "$HCC" "${H[@]}" "${VENDORF[@]}" -c -o "$o/v_$(basename "$f" .c).o" "$f" || return 1; done
-  local lib=() g
-  for g in "$o"/*.o; do case "$(basename "$g")" in test_image.o|test_chunked.o|cdom_image_file.o) ;; *) lib+=("$g");; esac; done
-  "$HCC" "${H[@]}" -o "$o/test_image" "${lib[@]}" "$o/test_image.o"
-  "$HCC" "${H[@]}" -o "$o/test_chunked" "${lib[@]}" "$o/cdom_image_file.o" "$o/test_chunked.o"
+    local f
+    for f in "${OWN[@]}" "$top/src/cdom_image_sjlj.c" "$here/host_alloc.c" "$here/test_image.c" "$top/src/cdom_image_file.c" "$here/test_chunked.c"; do
+        "$HCC" "${H[@]}" -Wall -Wextra -Werror "${OWNF[@]}" -c -o "$o/$(basename "$f" .c).o" "$f" || return 1
+    done
+    for f in "${VENDOR[@]}"; do "$HCC" "${H[@]}" "${VENDORF[@]}" -c -o "$o/v_$(basename "$f" .c).o" "$f" || return 1; done
+    local lib=() g
+    for g in "$o"/*.o; do case "$(basename "$g")" in test_image.o|test_chunked.o|cdom_image_file.o) ;; *) lib+=("$g");; esac; done
+    "$HCC" "${H[@]}" -o "$o/test_image" "${lib[@]}" "$o/test_image.o"
+    "$HCC" "${H[@]}" -o "$o/test_chunked" "${lib[@]}" "$o/cdom_image_file.o" "$o/test_chunked.o"
 }
 if ! build > "$o/build.log" 2>&1; then echo "FAIL the native image tests do not build:"; cat "$o/build.log"; exit 1; fi
 if ! python3 -I "$here/oracle.py" "$out" > "$out/oracle.log" 2>&1; then echo "FAIL the oracle:"; cat "$out/oracle.log"; exit 1; fi
@@ -55,7 +55,7 @@ if ! python3 -I "$top/bench/chunked/edge.py" "$out/edge" > "$out/edge.log" 2>&1;
 # cdom's inflate against zlib (tests/image/inflate_diff.c): the seeded corpus, cut and damaged streams, under the
 # same sanitizers; it links the system's zlib (zlib.h and -lz) as the reference
 if "$HCC" "${H[@]}" -Wall -Wextra -Werror -o "$o/inflate_diff" "$here/inflate_diff.c" "$top/src/cdom_image_inflate.c" -lz > "$o/inflate_diff.log" 2>&1; then
-  "$o/inflate_diff" || fail=1
+    "$o/inflate_diff" || fail=1
 else echo "FAIL inflate_diff does not build:"; cat "$o/inflate_diff.log"; fail=1; fi
 if [ "${IMAGE_WASM:-1}" != 0 ]; then node "$top/tools/image.mjs" "$out" || fail=1; fi
 if [ "${IMAGE_SIMD:-1}" != 0 ]; then "$here/simd.sh" "$out/simd" || fail=1; fi
