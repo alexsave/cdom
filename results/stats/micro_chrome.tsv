@@ -1,0 +1,12 @@
+browser	Chrome/156.0.8078.47
+measurement	median	p10	p90
+empty import (wasm->JS)	4.65	4.55	4.85
+empty JS call (JS->JS)	0.45	0.45	0.5
+setAttribute via import, string by index	79	77	80
+setAttribute via import, TextDecoder per call	205	204	212
+setAttribute via import, fromCharCode per call	118	116	125
+setAttribute batched, one call per batch	80	77	81
+batch write only (C side, apply(0))	0.3	0.3	0.35
+setAttribute from JS	73	72	76
+textContent via import	146	140	172
+textContent from JS	135	128	143

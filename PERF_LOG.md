@@ -70,7 +70,7 @@ Every configuration passed the keyed check, smoke, DOM identity and listfuzz bui
 
 ## Proof: why direct calls win (2026-10-28)
 
-The scripts, arms and drivers for this are on branch `direct-calls` at 7d89337 (exp/, tools/clickprobe.mjs, tools/hbreak.mjs, tools/ffbench.mjs); the raw logs were not kept, and the numbers below are their summary.
+The scripts, arms and drivers for this are at the tag `archive/direct-calls` (7d89337) (exp/, tools/clickprobe.mjs, tools/hbreak.mjs, tools/ffbench.mjs); the raw logs were not kept; the numbers below and `results/proof/` are their summary.
 Verdict: tiering of the op list's one big `apply()`, not GC and not allocation.
 Splitting `apply()` into one small function per op (same op encoding, same batching, dispatch through a table) closes the gap completely; putting the switch back reopens it.
 Arms (exp/cfg.sh; jfb entries kept for these numbers): `pf-list` (op list, mask 0), `pf-direct` (all ops direct, 0x7ffffffe), `pf-split` (op list, `apply` dispatching through a table of per-op functions, exp/gen_split.py), `pf-dswitch` (all ops direct, but every import routed into one big switch function, exp/gen_dswitch.py).

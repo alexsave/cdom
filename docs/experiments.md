@@ -3,6 +3,13 @@
 Experiments that were measured and lost.
 Each branch was deleted on 2026-11-26, and its tip is kept at the tag named here.
 
+## The batched op list (rig at tag `archive/direct-calls`)
+
+C wrote a stream of operations that the shim interpreted; one wasm import per DOM operation won, and is what cdom ships.
+In eight load-gated sessions the list took 1.029 times the direct calls' total (95% interval 1.023 to 1.035).
+The cause was the list's one big `apply()` being optimised inside the measured click: split into a function per operation, the list matched direct calls (0.999).
+The method is in [PERF_LOG.md](../PERF_LOG.md), "Proof: why direct calls win", and the interval table and probe summaries are in [results/proof/](../results/proof/).
+
 ## A JavaScript 1.0 interpreter for Netscape 2 (tag `archive/js1-interp`, PR #105)
 
 A WebAssembly interpreter written in JavaScript 1.0.

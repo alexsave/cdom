@@ -461,6 +461,7 @@ bench/build.sh                             # writes the cdom entries into jfb
 ```
 
 wasm-bindgen and dioxus run from the bundles in the clone.
+The statistics of the passes in this file are in [results/stats/](results/stats/).
 
-The statistics of the last runs on this harness (total, script and paint per framework and benchmark) are in [results/pairs-stats/harness-last-2026-10-27.tsv](results/pairs-stats/harness-last-2026-10-27.tsv), and the tables above are their analysis.
+The statistics of the last runs on this harness (total, script and paint per framework and benchmark) are in [results/stats/harness-last-2026-10-27.tsv](results/stats/harness-last-2026-10-27.tsv), and the tables above are their analysis.
 The raw browser traces were deleted on 2026-11-26.
