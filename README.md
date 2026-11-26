@@ -3,7 +3,7 @@
 cdom is a C library for building web UIs.
 Your app is C compiled to WebAssembly: it holds the tree, the state and the keyed diff, and a small fixed JavaScript shim makes one DOM call per operation and posts events back.
 You get vanilla-JS speed at about a seventh of React's bytes, and the build is make and clang.
-The same app reaches back to Netscape 2 (see "Down to Netscape 2").
+The same app reaches back to Netscape 2: [watch Netscape paint a modern page](#netscape-2-paints-a-modern-page).
 
 ## Quick start
 
@@ -28,6 +28,20 @@ On Debian or Ubuntu, install `clang-23` and `lld-23` from [apt.llvm.org](https:/
 ## Down to Netscape 2
 
 The same C app that runs as WebAssembly today also runs in Netscape 2 (1995), the first browser with JavaScript.
+
+### Netscape 2 paints a modern page
+
+![Netscape 2.02 painting a modern landing page itself, row by row, then showing its hover state and following a link to a second page; 8 times faster than real time](docs/img/netscape2-paints-8x.gif)
+
+Gradients, rounded corners, soft shadows and antialiased text, computed inside Netscape 2.02 by a renderer written in C.
+[`demo/ns2render`](demo/ns2render/) holds the page as a list of boxes and glyphs, works out every run of every row in the browser, and writes the rows as stretched 1x1 GIFs, with live links, a status bar and a hover state.
+
+- The recording plays at 8 times real speed, with the first wait trimmed: a first load took 2 to 6 minutes, and each redraw takes minutes.
+- The boxes and glyph positions come from headless Chrome's layout of the design, and the font is rasterised ahead of time.
+- It is a demo with its own JavaScript 1.0 host, built on the same `js1c` compiler as the app tier below.
+- In a recorded run, all five views matched the native C renderer's picture to the pixel ([docs/descent.md](docs/descent.md), "Netscape 2 paints itself").
+
+### A cdom app
 
 ![Netscape 2.02 on Windows XP playing a cdom app: an Ultimate Tic-Tac-Toe replay at move 34 of 50](docs/img/netscape2-uttt.png)
 
