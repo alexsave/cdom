@@ -1,0 +1,10 @@
+framework	benchmark	type	metric	n	median	mean	stddev	min	max
+st-a-v0.1.0-keyed	21_ready-memory	memory	DEFAULT	1	0.656898	0.656898	-	0.656898	0.656898
+st-a-v0.1.0-keyed	22_run-memory	memory	DEFAULT	1	1.84604	1.84604	-	1.84604	1.84604
+st-a-v0.1.0-keyed	25_run-clear-memory	memory	DEFAULT	1	0.854115	0.854115	-	0.854115	0.854115
+st-a2-v0.1.0-keyed	21_ready-memory	memory	DEFAULT	1	0.654473	0.654473	-	0.654473	0.654473
+st-a2-v0.1.0-keyed	22_run-memory	memory	DEFAULT	1	1.84465	1.84465	-	1.84465	1.84465
+st-a2-v0.1.0-keyed	25_run-clear-memory	memory	DEFAULT	1	0.849483	0.849483	-	0.849483	0.849483
+st-s-v0.1.0-keyed	21_ready-memory	memory	DEFAULT	1	0.688959	0.688959	-	0.688959	0.688959
+st-s-v0.1.0-keyed	22_run-memory	memory	DEFAULT	1	1.84336	1.84336	-	1.84336	1.84336
+st-s-v0.1.0-keyed	25_run-clear-memory	memory	DEFAULT	1	0.790274	0.790274	-	0.790274	0.790274

@@ -1,0 +1,17 @@
+benchmark	framework	load_before	load_after	waited_s	gate
+01_	lf-tn	2.55	3.31	0	ok
+01_	lf-ln	3.31	3.18	0	ok
+01_	lf-ln2	3.18	2.96	0	ok
+01_	lf-tn2	2.96	3.31	0	ok
+01_	lf-t	3.31	2.88	0	ok
+01_	lf-l	2.88	2.88	0	ok
+01_	lf-l2	2.88	3.69	0	ok
+01_	lf-t2	3.69	3.95	0	ok
+07_	lf-tn	3.95	3.38	0	ok
+07_	lf-ln	3.38	2.98	0	ok
+07_	lf-ln2	2.98	2.62	0	ok
+07_	lf-tn2	2.62	2.62	0	ok
+07_	lf-t	2.62	3.01	0	ok
+07_	lf-l	3.01	2.73	0	ok
+07_	lf-l2	2.73	2.01	0	ok
+07_	lf-t2	2.01	2.72	0	ok

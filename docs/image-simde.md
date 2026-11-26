@@ -224,7 +224,7 @@ It stays small, under the 130 KB raw (13 KB brotli) it costs in size.
 ## The clean Mac rerun (2026-11-19, after this note's first Mac run)
 
 The first Mac run above had Alex's IE 9 VM and other jobs on the machine (load 5 to 8).
-The rerun had nothing else of ours running (load 2.0 to 2.8), same bench (`node bench/image/run.mjs 9 900 C-js,C-js-simd128,C-js-simde`), at simde-mac 52d0629.
+The rerun had nothing else of ours running (load 2.0 to 2.8), same bench (`node bench/image/run.mjs 9 900 C-js,C-js-simd128,C-js-simde`), at 52d0629 (tag `archive/simde-mac`).
 Raw rows: bench/image/results/2026-11-19-simde-mac-clean.tsv.
 
 | input | scalar ms | simd128 ms | ratio | simde ms | ratio |

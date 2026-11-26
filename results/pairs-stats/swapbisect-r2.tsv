@@ -1,0 +1,10 @@
+framework	benchmark	type	metric	n	median	mean	stddev	min	max
+st-a-v0.1.0-keyed	05_swap1k	cpu	total	15	18.7	18.6733	0.811055	17.5	20.5
+st-a-v0.1.0-keyed	05_swap1k	cpu	script	15	0.1	0.393333	0.341147	0.1	0.9
+st-a-v0.1.0-keyed	05_swap1k	cpu	paint	15	16.4	16.3267	0.63411	15.3	17.4
+st-a2-v0.1.0-keyed	05_swap1k	cpu	total	15	18.1	18.1867	0.522175	17.3	19
+st-a2-v0.1.0-keyed	05_swap1k	cpu	script	15	0.1	0.273333	0.308143	0.1	0.9
+st-a2-v0.1.0-keyed	05_swap1k	cpu	paint	15	16.2	16.02	0.667832	14.8	16.8
+st-s-v0.1.0-keyed	05_swap1k	cpu	total	15	18	18.2333	0.592412	17.7	19.8
+st-s-v0.1.0-keyed	05_swap1k	cpu	script	15	0.3	0.393333	0.293906	0.1	0.9
+st-s-v0.1.0-keyed	05_swap1k	cpu	paint	15	16.2	16.0267	0.480278	14.9	16.7
