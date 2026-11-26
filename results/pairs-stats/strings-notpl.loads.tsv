@@ -1,0 +1,7 @@
+benchmark	framework	load_before	load_after	waited_s	gate
+01_	sb-a-n	2.61	2.58	0	ok
+01_	sb-a2-n	2.58	2.14	0	ok
+01_	sb-b-n	2.14	2.00	0	ok
+07_	sb-a-n	2.00	1.70	0	ok
+07_	sb-a2-n	1.70	1.80	0	ok
+07_	sb-b-n	1.80	2.22	0	ok

@@ -1,0 +1,4 @@
+benchmark	framework	load_before	load_after	waited_s	gate
+05_	st-a	2.89	2.45	0	ok
+05_	st-a2	2.45	2.72	0	ok
+05_	st-s	2.72	3.29	0	ok

@@ -1,0 +1,13 @@
+framework	benchmark	type	metric	n	median	mean	stddev	min	max
+sb-a-v0.1.0-keyed	21_ready-memory	memory	DEFAULT	1	0.66377	0.66377	-	0.66377	0.66377
+sb-a-v0.1.0-keyed	22_run-memory	memory	DEFAULT	1	1.75484	1.75484	-	1.75484	1.75484
+sb-a-v0.1.0-keyed	25_run-clear-memory	memory	DEFAULT	1	0.852757	0.852757	-	0.852757	0.852757
+sb-a2-v0.1.0-keyed	21_ready-memory	memory	DEFAULT	1	0.652496	0.652496	-	0.652496	0.652496
+sb-a2-v0.1.0-keyed	22_run-memory	memory	DEFAULT	1	1.84254	1.84254	-	1.84254	1.84254
+sb-a2-v0.1.0-keyed	25_run-clear-memory	memory	DEFAULT	1	0.853125	0.853125	-	0.853125	0.853125
+sb-b-v0.1.0-keyed	21_ready-memory	memory	DEFAULT	1	0.665647	0.665647	-	0.665647	0.665647
+sb-b-v0.1.0-keyed	22_run-memory	memory	DEFAULT	1	1.81432	1.81432	-	1.81432	1.81432
+sb-b-v0.1.0-keyed	25_run-clear-memory	memory	DEFAULT	1	0.715358	0.715358	-	0.715358	0.715358
+sb-bx-v0.1.0-keyed	21_ready-memory	memory	DEFAULT	1	0.600971	0.600971	-	0.600971	0.600971
+sb-bx-v0.1.0-keyed	22_run-memory	memory	DEFAULT	1	1.83842	1.83842	-	1.83842	1.83842
+sb-bx-v0.1.0-keyed	25_run-clear-memory	memory	DEFAULT	1	0.77792	0.77792	-	0.77792	0.77792
