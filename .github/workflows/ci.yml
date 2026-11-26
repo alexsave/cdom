@@ -118,3 +118,6 @@ jobs:
       # the GIFs and their stamp, and tools/cdpage's parse check against Chrome's parser.
       - name: tests/noscript/run.sh
         run: tests/noscript/run.sh
+      # Every file in scope indents with 4 spaces (tools/reindent4.py): a tab, or a structural indent not in units of 4, fails here.
+      - name: tools/reindent4.py --verify
+        run: python3 -I tools/reindent4.py --verify
