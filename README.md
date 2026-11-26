@@ -1,14 +1,12 @@
 # cdom
 
-cdom is a C library for building web UIs without React.
+cdom is a C library for building web UIs.
 Your app is C compiled to WebAssembly: it holds the tree, the state and the keyed diff, and a small fixed JavaScript shim makes one DOM call per operation and posts events back.
-You get vanilla-JS speed at about a seventh of React's bytes, and the build is make and clang, with no npm, no bundler and no Node.
+You get vanilla-JS speed at about a seventh of React's bytes, and the build is make and clang.
+The same app reaches back to Netscape 2 (see "Down to Netscape 2").
 
 ## Quick start
 
-cdom needs clang with wasm-ld from LLVM 23 or later: an older wasm-ld does not define `__rodata_start` and `__rodata_end`, which cdom's string path needs, and `make` stops with the version it found.
-`apt install clang lld` is not enough: Ubuntu 24.04 ships LLVM 18 and Debian 13 LLVM 19.
-On Debian or Ubuntu, install `clang-23` and `lld-23` from [apt.llvm.org](https://apt.llvm.org) and set `WASM_CC := /usr/lib/llvm-23/bin/clang`.
 On macOS, with Homebrew:
 
 ```sh
@@ -23,12 +21,54 @@ Edit `myapp/src/app.c` (the app) or `myapp/src/app.css` (its look) and run `make
 [`tutorial/`](tutorial/) has seven small apps, each a lesson, with the same app in React beside each one.
 "Starting an app", below, has the details, and `src/cdom.h` is the API.
 
+cdom needs clang with wasm-ld from LLVM 23 or later: an older wasm-ld does not define `__rodata_start` and `__rodata_end`, which cdom's string path needs, and `make` stops with the version it found.
+`apt install clang lld` is not enough: Ubuntu 24.04 ships LLVM 18 and Debian 13 LLVM 19.
+On Debian or Ubuntu, install `clang-23` and `lld-23` from [apt.llvm.org](https://apt.llvm.org) and set `WASM_CC := /usr/lib/llvm-23/bin/clang`.
+
+## Down to Netscape 2
+
+The same C app that runs as WebAssembly today also runs in Netscape 2 (1995), the first browser with JavaScript.
+
+![Netscape 2.02 on Windows XP playing a cdom app: an Ultimate Tic-Tac-Toe replay at move 34 of 50](docs/img/netscape2-uttt.png)
+
+This is [`demo/uttt`](demo/uttt/), written in C, in a real Netscape 2.02 in a Windows XP virtual machine on 2026-11-21.
+It played a whole 50-move game: one step took 1.8 s on an idle Mac, and Play about 3 s a move ([docs/frames-design.md](docs/frames-design.md), section 17).
+
+Netscape 2 cannot run WebAssembly, change a page after it loads, or load a script file from a `SCRIPT SRC`.
+So cdom does this:
+
+- [`tools/js1c`](tools/js1c.c), a compiler written in C, turns the app's `.wasm` into JavaScript 1.0 ([docs/js1-compile-design.md](docs/js1-compile-design.md)).
+- The page becomes a frameset, with the module and a JavaScript 1.0 shim inline in a hidden frame.
+- That frame writes the visible frame whole on each change.
+
+One page serves every browser, and each takes its own tier:
+
+| Browser | What it runs |
+| --- | --- |
+| with WebAssembly | the module, on the shim |
+| IE 10 and 11 | wasm2js on typed arrays, on an ES5 shim |
+| IE 9 | wasm2js with C's memory in a plain Array of words |
+| IE 5 to 8 | the same words build, on an ES3 shim over the old DOM ([docs/ie6-design.md](docs/ie6-design.md)) |
+| Netscape 2 to 4, IE 3 and 4 | JavaScript 1.0 from `js1c`, in a frameset |
+| no script at all | a screenshot, a paragraph and a snowman ([docs/noscript-design.md](docs/noscript-design.md)) |
+
+Know these before you promise anyone Netscape:
+
+- In Netscape 2.02, click OK on the "Lengthy JavaScript still running" dialog, which came up every dozen moves of Play.
+- About half the starts there stopped at "Waiting for reply" with a grey view; start the page again.
+- Netscape 3.04, 4.08 and IE 4.01 ran an earlier build of this tier (docs/frames-design.md, section 15); run them again before relying on them.
+  IE 3 has not been run with script.
+- On this tier, layout reads answer 0, and canvas, SVG, WebSocket, fetch, IndexedDB, audio, files, jobs and the clipboard answer as unsupported ([docs/frames-design.md](docs/frames-design.md), section 9).
+- Netscape 2 and 3 show text outside Latin-1 as "?".
+
+[`demo/uttt/Makefile`](demo/uttt/Makefile) is the example to copy: it builds the page, the words build and the app document with `tools/legacy/build.mjs`, which needs Node.
+
 ## Why cdom
 
 cdom runs as fast as hand-written vanilla JS, and much faster than React, while shipping far fewer bytes.
 The four charts come from [RESULTS.md](RESULTS.md), measured on 2026-10-27 with [krausest/js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) (at ca8715d, keyed, its default puppeteer runner, headless) on an Apple M1 (16 GB), macOS 27.0.1, Chrome 156.
 The entries are vanillajs, cdom (its default then: interned strings and templates) and react-hooks (React 19.2.0).
-Since 2026-11-17 cdom has no interning: a literal is in the page's string table and any other string is read when it is used ([docs/strings-results.md](docs/strings-results.md)).
+Since 2026-11-17 a literal is in the page's string table and any other string is read when it is used ([docs/strings-results.md](docs/strings-results.md)).
 Lower is better on every chart.
 
 CPU: the weighted geometric mean of the nine CPU benchmarks (create, replace, update, select, swap, remove and clear rows), each a factor against the fastest entry in the pass, median of 15 runs ([RESULTS.md, "Every operation"](RESULTS.md#every-operation-pass-2-median-of-15), line 54):
@@ -84,8 +124,8 @@ A hello world against a modern stack, measured on 2026-11-09: the same small app
 | wall clock, start to a tested, polished app | 11 min 05 s | 6 min 33 s |
 
 The Next.js app installed 363 packages in 28 s (create-next-app 15 s, Playwright and its Chromium 13 s), put 472 MB in the app's `node_modules` and 19 MB at the root, and its page fetched 194,834 bytes over 10 requests.
-The cdom app installed no packages: its page builds with make and clang, and is one file with the shim and the module inside it.
-The cdom run's wall clock includes writing and mutation-checking its server in C, which the Next.js run's plain Node server did not need, and the time to combine the two starters into one build.
+The cdom app's page builds with make and clang, and is one file with the shim and the module inside it.
+The cdom run's wall clock includes writing and mutation-checking its server in C, where the Next.js run used a plain Node server, and the time to combine the two starters into one build.
 
 ## How it works
 
@@ -170,13 +210,12 @@ flowchart LR
 - URL helpers are in `src/cdom_url.h` (module `url`): `cd_url_encode` percent-encodes bytes as `encodeURIComponent` does (for a query value), and `cd_url_decode` reverses it; both are plain C, with no shim call.
 - A program's libc comes from cdom: `src/libc/string.h`, `src/libc/stdio.h` (`snprintf` and `vsnprintf`, integers and strings, no floats, and `FILE` as an incomplete type for headers that name it), `src/libc/stdlib.h` (the heap's `malloc`, `calloc`, `realloc` and `free`, and `abs` and `labs`) and `src/mini.c` (add `-isystem cdom/src/libc`).
 - The I/O calls external adapters build on (the `_cb` forms, the socket calls, `cd_page_origin`, `cd_random_bytes`, `cd_timer_stop`, `cd_epoch_ms`, `cd_now` and the program's libc) are a stable contract, written at the top of `src/cdom.h`: they change only additively, and `tests/link/contract.c` fails to compile if one changes in place.
-- Apps inline `shim/cdom.min.js`, the same shim minified by cdom, so an app needs no JavaScript toolchain.
-- A browser without WebAssembly runs the same app through wasm2js on an ES5 shim, down to IE 9: with typed arrays (IE 10 and 11) on them, and without (IE 9) on C's memory kept in a plain Array of 32-bit words (see RESULTS.md, "Without WebAssembly" and "IE 9, the third tier", and "Starting an app" below).
-  The floor is ES5: below it (IE 8) the boot refuses, with one error naming what is missing.
+- Apps inline `shim/cdom.min.js`, the same shim minified by cdom.
+- A browser without WebAssembly runs the same app compiled to JavaScript, down to Netscape 2 ("Down to Netscape 2", above; RESULTS.md, "Without WebAssembly" and "IE 9, the third tier").
 
 ## Starting an app
 
-One command makes a new app, with no Node:
+One command makes a new app:
 
 ```sh
 make -C path/to/cdom new DIR=path/to/myapp
@@ -184,7 +223,7 @@ make -C path/to/myapp
 ```
 
 - `make new` (`tools/new.sh`) writes four files into `DIR`, which must be new or empty: a `Makefile` (`CDOM ?=`, `APP_WASM := build/app.wasm`, `APP_SRC := src/app.c`, `APP_PAGE := build/index.html`, the include of `cdom.mk`, and `all: $(APP_PAGE)`), `src/app.c` (a few lines that put "cdom" in the middle of the page), `src/app.css` (its look, which the build writes into the page's `<head>`), and a `.gitignore` of `build/`.
-- `make` in `DIR` builds `build/index.html`: one file, with the shim and the module inside it, that opens from disk (double-click it; no server).
+- `make` in `DIR` builds `build/index.html`: one file, with the shim and the module inside it, that opens from disk (double-click it).
 - Edit `src/app.c` or `src/app.css` and run `make` again; the page says so at its foot.
 - The generator writes nothing `cdom.mk` could own: the page is cdom.mk's default page and every rule is cdom.mk's, so updating cdom updates the app's build.
 - `CDOM ?=` defaults to this checkout's absolute path, and `make CDOM=...` or a `CDOM` environment variable overrides it, for another clone, CI or a moved folder: `make new` runs no git, and works offline at any commit.
@@ -206,21 +245,21 @@ cdom.start(/*CDOM_WASM*/, "app");
 - `url` is the wasm's URL (a bundled page's `/*CDOM_WASM*/` becomes a `data:application/wasm;base64,` URL, which `fetch` takes from `file://` too, and `instantiateStreaming` still sees as `application/wasm`), or, for a browser without WebAssembly, the wasm2js build of the same module (a function that takes the imports and returns the exports).
 - `url` may also be a pair, `[scalar, simd]`, which an app built with `APP_SIMD := 1` gets at its `/*CDOM_WASM*/` (two URLs, or two `data:` URLs on a bundled page).
   `cdom.start` then asks the browser itself, with `WebAssembly.validate` on a 29-byte module that holds one wasm SIMD instruction (`tools/simd-probe.wat`), and fetches and compiles only the one it picks: the SIMD module where the probe validates, else the scalar one.
-  There is no user-agent test and no browser floor; the probe costs every page 138 bytes of the minified shim, 64 brotli.
+  The probe costs every page 138 bytes of the minified shim, 64 brotli.
 - `mount` is the element the app's `CD_MOUNT` is, or its id; given an id that the parser has not reached yet, the wasm loads while the page parses and the app starts once the DOM is ready.
 - `env` is an object of the app's own imports, the wasm's `env` module (functions its C declares with `__attribute__((import_module("env"), import_name("...")))`), and may be left out.
 - `options.openStore`, when true, opens the store (`src/cdom_store.h`) while the wasm is fetched and compiled, so an app that reads its store as it starts finds it open at its first get.
 - `options.seed` fixes `cd_seed` (`src/cdom.h`), the app's one seed for its random draws, so one line makes a run deterministic; without it the seed is 32 bits from `crypto.getRandomValues`.
   A browser with neither (IE 9 and 10) gets the one exception to the seed rule: `Math.random` mixed with the clock, so below IE 11 `cd_seed` is neither secret nor unpredictable; it is for an app's own draws, never for secrets (`cd_random_bytes` answers UNAVAILABLE there).
 - The shim's state (the node table, the memory, the module's exports) is one per page, so a second call would replace the first app's; a page runs one cdom app.
-- A page that must run without WebAssembly starts through `shim/boot.js` instead: `cdomBoot(url, mount, env, ready, options)` calls `cdom.start` itself when WebAssembly exists; otherwise, with typed arrays, it loads the ES5 shim (`cdom.legacy.js`) and the wasm2js build (`url + ".js"`), and without them (IE 9) their words twins (`cdom.legacy-ie9.js` and `url + ".ie9.js"`), and starts those.
-  `tools/legacy/build.mjs` makes all four (`shim`, `app`, `shim-ie9`, `app-ie9`), and that build needs Node; a browser fetches only its own tier's two.
+- A page that must run without WebAssembly starts through `shim/boot.js` instead: `cdomBoot(url, mount, env, ready, options)` calls `cdom.start` itself when WebAssembly exists, and otherwise starts the browser's tier ("Down to Netscape 2", above; the head of `shim/boot.js` names each tier's files).
+  `tools/legacy/build.mjs` makes those files (its head lists the commands), and that build needs Node; a browser fetches only its own tier's.
   They are files beside the page, so a page with this fallback takes `APP_WASM_SEPARATE := 1` (a bundled module has no `url + ".js"` to load).
   Given the pair (`APP_SIMD`), either fallback takes the scalar module's build, `url[0] + ".js"` or `url[0] + ".ie9.js"`.
 
 ## Testing an app's page
 
-`tools/cdp.mjs` is a small driver for headless Chrome that an app's own end-to-end test can import (Node, as a test-only tool; the app's build and start need none).
+`tools/cdp.mjs` is a small driver for headless Chrome that an app's own end-to-end test can import (Node, as a test-only tool).
 
 ```js
 import { launch, sleep } from 'path/to/cdom/tools/cdp.mjs';
@@ -251,7 +290,7 @@ APP_PAGE := out/index.html
 build: $(APP_WASM) $(APP_PAGE)
 ```
 
-From sources to one page, with make, clang and a host C compiler, and no Node:
+From sources to one page, with make, clang and a host C compiler:
 
 ```mermaid
 flowchart TB
@@ -301,12 +340,12 @@ flowchart TB
 
   It is libjpeg-turbo 3.2.1's decoder (`third_party/`, whose README has the version, the archive's sha256, the licence and every edit; `tools/third_party.py check` makes it again from the archive and compares) and cdom's own inflate for PNG (`src/cdom_image_inflate.c`, docs/image-png-speed.md).
   **An app that ships it must say, in its documentation, "This software is based in part on the work of the Independent JPEG Group"**; libjpeg-turbo's BSD notice is asked only of programs that include its TurboJPEG API, which is not here.
-  It adds 27.5 KB brotli to an app (JPEG 23.1, PNG 5.0; `bench/image/sizes/run.sh`), and nothing to an app that does not call it.
+  It adds 27.5 KB brotli to an app (JPEG 23.1, PNG 5.0; `bench/image/sizes/run.sh`) that calls it.
   libjpeg leaves a fatal error with longjmp; `CDOM_IMAGE_SJLJ` picks how: `js` (the default: a try in the shim, every browser cdom runs in, wasm2js too) or `eh` (wasm exception handling: Chrome 95, Firefox 100, Safari 15.2); docs/image-design.md has both, and the numbers.
   `CDOM_IMAGE_SIMD=1` builds the hot loops (the IDCTs, YCbCr to RGBA, the scaler, the PNG unfilter and RGB to RGBA) with hand-written wasm SIMD: bit-exact with the scalar default, 6% to 13% faster on the bench on an Apple Silicon Mac in Chrome (12% on the PNG since the Paeth fix; 5% to 14% on an x86 VM), 2.1 KB brotli more, and the module then needs wasm SIMD (Chrome 91, Firefox 89, Safari 16.4); docs/image-simd-hand.md has the profile, the predictions and the numbers.
   `APP_SIMD := 1` (below) builds both and lets the browser pick, which is how an app ships it.
 - `job` (`src/cdom_job.h`) runs a big piece of C in a worker that ends, so its memory goes back: `cd_job_cb(name, in, in_len, args, args_len, fn, ctx)` (input from C memory) and `cd_job_file_cb(name, input, index, args, args_len, fn, ctx)` (a picked file, read straight into the job's memory and never into the app's) answer once to `fn(ctx, status, bytes, len)`, with the bytes valid until it returns.
-  The job is a module of its own, built beside the app's with `APP_JOBS := image` and `APP_JOB_image_SRC := src/image_job.c` (cdom.mk): its source defines `uint32_t run(in, in_len, args, args_len)` and answers with `cd_job_answer(p, len)` (`src/cdom_job_mod.h`), over cdom's heap and `src/mini.c`, with no DOM.
+  The job is a module of its own, built beside the app's with `APP_JOBS := image` and `APP_JOB_image_SRC := src/image_job.c` (cdom.mk): its source defines `uint32_t run(in, in_len, args, args_len)` and answers with `cd_job_answer(p, len)` (`src/cdom_job_mod.h`), over cdom's heap and `src/mini.c`.
   The app names it `"image.job.wasm"`; a bundled page carries it, so the page stays one file.
   The shim compiles the module once, posts it to a fresh worker made from a `blob:` URL, transfers the input and ends the worker when it answers: the status is `CD_JOB_OK`, `NO_ROOM`, `FAILED` (a trap, a module that will not load), `UNSUPPORTED` (no Worker or no WebAssembly, the IE tiers) or `NO_FILE`.
   A page under a Content-Security-Policy needs `worker-src blob:`.
@@ -328,7 +367,7 @@ flowchart TB
   The build then wraps the page's scripts and style in HTML comments, and takes Node, headless Chrome (`CHROME`) and Python 3 with Pillow for the screenshot; `CDOM_NOSCRIPT := 0` turns it off.
   A browser with script never shows it and never fetches its images (docs/noscript-design.md).
 - Every file whose name ends in `.css` under the app's `src/` directory, in any subfolder, is written into the page's `<style>`, in byte order of its path, so `00-base.css` comes before `10-layout.css`, and that before `theme/dark.css`; a file or folder whose name starts with a dot is skipped, and nothing else is.
-  No variable names them, and none turns this off.
+  This is always on.
   They go at a line that holds only `/*CDOM_CSS*/`, inside a `<style>` and before the `/*CDOM_SHIM*/` line; the default page has that `<style>` in its `<head>`, so an app on it only adds a file.
   An app's own page with no such line fails the build while `src/` holds a `.css` file, so a page that loads a stylesheet of its own with a `<link>` keeps that file outside `src/` (`static/app.css`, say).
   The files are written as they are, but for four things: `</style` is escaped, a comment that fills its lines is left out with them (one beside a rule is kept), a byte order mark is dropped, and a file that does not end in a newline gains one.
@@ -350,7 +389,6 @@ flowchart TB
 - The rule fails, and writes nothing, when the page has no `/*CDOM_SHIM*/` line, has two, or has the marker beside other text, or has two `/*CDOM_WASM*/`; `$(call cdom_page,in.html,out.html)` does the same inside an app's own recipe, and `$(call cdom_page,in.html,out.html,module.wasm)` bundles that module too.
 - The build needs a host C compiler as well as clang: every link goes through `tools/cdlits` (`CDOM_LITS`, built from `tools/cdlits.c` with `HOST_CC`, `cc` unless set), which takes the string literals out of the module and writes them beside it as `$(APP_WASM).lits`.
 - The page gets its string table from `tools/cdpage` (`CDOM_PAGE_TOOL`, built from `tools/cdpage.c` with `HOST_CC`): it writes the `.lits` file as a script of its own before the shim, at the `/*CDOM_SHIM*/` line, so a page needs no marker for it, and `cdom.start` throws on a page with no table or a table from another build.
-- Nothing on this path needs Node: it is make, clang and the host compiler (for `tools/cdlits` and `tools/cdpage`).
 
 ## Working on cdom
 
