@@ -431,7 +431,7 @@ The tag keeps the code, should a size-bound page ever want it ([docs/experiments
 ```
 cd /Users/alex/Dev/cdom
 npm install                     # terser, which bench/build.sh minifies the shim with
-bench/build.sh                  # cdom, cdom-pertext, cdom-notpl, cdom-o2 into jfb/frameworks/keyed (NAME=x builds one entry as x)
+bench/build.sh                  # cdom, cdom-notpl, cdom-o2, cdom-bound into jfb/frameworks/keyed (NAME=x builds one entry as x)
 tests/build.sh && node tools/unit.mjs && node tools/fuzz.mjs && node tools/canvas.mjs && node tools/host.mjs && tests/link/run.sh && node tools/legacy.mjs
 LEGACY=1 node tools/fuzz.mjs && LEGACY=1 node tools/legacy.mjs   # the no-WebAssembly path
 node tools/legacyfresh.mjs      # after tests/build.sh: the fallback rebuilds exactly when an input changed
@@ -444,6 +444,23 @@ node tools/run_micro.mjs
 node tools/evcost.mjs cdom cdom-pertext   # event delivery, any entries built into jfb
 ```
 
-jfb/ is a shallow clone of krausest/js-framework-benchmark and is not committed; bench/build.sh writes the entries into it.
-The harness needs `npm ci` in jfb, jfb/server and jfb/webdriver-ts (then `npm run compile` there), and `npm ci && npm run build-prod` in jfb/frameworks/keyed/react-hooks.
-An empty jfb/frameworks/non-keyed directory has to exist, because the shallow clone has none and the server's listing fails without it.
+### Setting up the harness
+
+jfb/ is a shallow clone of [krausest/js-framework-benchmark](https://github.com/krausest/js-framework-benchmark), ignored by git.
+From the repo root:
+
+```sh
+git init -q jfb
+git -C jfb fetch -q --depth 1 https://github.com/krausest/js-framework-benchmark ca8715d9ae84916fd24de3a79457d8c328f9b766
+git -C jfb checkout -q FETCH_HEAD
+mkdir -p jfb/frameworks/non-keyed          # the server's listing needs it
+(cd jfb/server && npm ci)
+(cd jfb/webdriver-ts && npm ci && npm run compile)
+(cd jfb/frameworks/keyed/react-hooks && npm ci && npm run build-prod)
+bench/build.sh                             # writes the cdom entries into jfb
+```
+
+wasm-bindgen and dioxus run from the bundles in the clone.
+
+The statistics of the last runs on this harness (total, script and paint per framework and benchmark) are in [results/pairs-stats/harness-last-2026-10-27.tsv](results/pairs-stats/harness-last-2026-10-27.tsv), and the tables above are their analysis.
+The raw browser traces were deleted on 2026-11-26.
