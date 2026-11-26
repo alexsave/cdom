@@ -149,7 +149,8 @@ It is a model of what those browsers were documented to do, not a run of them.
 
 cdom.mk, for the APP_PAGE rule:
 
-- `CDOM_NOSCRIPT ?= 1`: the fallback for any page that has the marker; 0 removes the marker line and wraps nothing, so the page is byte for byte what it was before this change.
+- `CDOM_NOSCRIPT ?= 0`: off by default, which removes the marker line and wraps nothing, so the page is byte for byte what it was before the fallback existed; an app opts in with `CDOM_NOSCRIPT := 1` in its Makefile, and then any page that has the marker gets the fallback.
+  The default was 1 until 2026-11-26: the starter then took Node, headless Chrome and Python 3 with Pillow to build, where the quick start installs only clang and lld, and failed on a clean machine at the screenshot.
 - `CDOM_NOSCRIPT_SHOT_SIZE ?= 640x480`, `CDOM_NOSCRIPT_SNOWMAN ?= cdom-snowman.gif`, `CDOM_NOSCRIPT_SNOWMAN_SIZE ?= 96x96`; the screenshot is `<page's base name>.noscript.gif`, beside the page.
 - tools/cdpage takes `--noscript-shot url=WxH --noscript-snowman url=WxH` and writes the block and the wrappers.
 - Then, only when the page shows the block, `node tools/noscript.mjs page shot=WxH snowman=WxH`: it serves the page's folder on 127.0.0.1, opens the page in headless Chrome (tools/cdp.mjs) at the shot's size and a device pixel ratio of 1, with reduced motion and a light scheme emulated and every animation held at its start, waits for the page to load, its fonts, and 300 ms with no DOM change (5 s at most), and shoots it; then renders U+2603 in the first font that has it, black on white, and shoots that.
@@ -158,16 +159,16 @@ cdom.mk, for the APP_PAGE rule:
 - A content stamp, `<page>.noscript` beside the page, in the style of tools/legacy/build.mjs's: the tools' bytes, the Chrome binary (its resolved path, size and time), Python's and Pillow's versions, the page's bytes, every file the page fetched with its hash, and the two GIFs' hashes.
   When all of it is the same, the step launches nothing (P5); when any of it changes, both GIFs are made again.
 - A failed step removes the page, so the next make tries again.
-- Node, Chrome and Python with Pillow are needed only for a page with the marker; an app's own page without it builds as before, with plain make and C.
+- Node, Chrome and Python with Pillow are needed only with `CDOM_NOSCRIPT := 1` and a page with the marker; any other build takes plain make and C (tests/link/run.sh builds the starter under `env -i` with none of the three).
 
 An app's own page (APP_PAGE_SRC) opts in with the same marker line in its `<body>`, outside any script and style.
 The images are files beside the page, not data: URLs, which none of those browsers can show.
 
 ## Tests and mutants
 
-tests/noscript/run.sh, in CI on both runners, builds the default demo as an app builds it and checks, among its 39 lines:
+tests/noscript/run.sh, in CI on both runners, builds the default demo as an app builds it, first as `make new` writes it and then opted in with `CDOM_NOSCRIPT := 1` in its Makefile, and checks, among its 39 lines:
 
-- with CDOM_NOSCRIPT=0, no fallback, marker, wrapper or GIF; with it on, the page is the off page plus the block and the wrappers, and nothing else;
+- by default, no fallback, marker, wrapper or GIF; opted in, the page is the off page plus the block and the wrappers, and nothing else;
 - both GIFs: GIF87a, their sizes, a global colour table of 256 at most, more than one colour; the same bytes on a second shot; tools/noscript_gif.py's bytes the same twice, and a 64-colour picture kept exactly;
 - the stamp: a page of the same bytes shoots nothing; an app that draws another word is shot again; the app put back gives the first bytes again;
 - Chrome with script off: the text is exactly the paragraph, both images loaded and drawn at their sizes, both requested, the mount empty;
@@ -177,7 +178,7 @@ tests/noscript/run.sh, in CI on both runners, builds the default demo as an app 
 - an own page with the marker gets the fallback and its own screenshot, one without gets nothing and runs no Chrome;
 - cdpage's refusals: the planted `<!--` then `<script` in a shim and in a string table without the wrapper, `-->` under the wrapper, a module script, the marker in a script, twice, an image URL with `--`; the planted texts taken with the wrapper, and Chrome reading every script to its first `</script>`; and the parse check agreeing with Chrome on 18 planted texts.
 
-tools/mutate.py's ns-* mutants (21), each failing tests/noscript/run.sh on its own message: listed in the PR.
+tools/mutate.py's ns-* mutants (22), each failing tests/noscript/run.sh on its own message: listed in the PR; and starter-needs-node, the default put back to 1, fails tests/link/run.sh's starter built with make and clang alone.
 
 ## Verifying in the real browsers
 

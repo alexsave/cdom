@@ -367,7 +367,8 @@ cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(
 %.csslist: ;
 # The no-script fallback (docs/noscript-design.md): what a browser with no script at all shows (NCSA Mosaic, IE 1.5 and
 # 2, Netscape 1.1, Lynx), at the page's /*CDOM_NOSCRIPT*/ line, which the default page has in its <body> and an app's
-# own page may add. CDOM_NOSCRIPT := 0 turns it off (the marker line is then removed, and the page is as it was).
+# own page may add. An app opts in with CDOM_NOSCRIPT := 1. Off (0, the default) the marker line is removed and the
+# page is as it was, so a build takes make and clang alone (tests/link/run.sh builds the starter with nothing else).
 # With it on, tools/cdpage writes the block (a screenshot, Alex's paragraph, the snowman, in HTML 2.0) and wraps the
 # page's scripts and style in comments, and tools/noscript.mjs then makes the two GIFs beside the page:
 # <page's base name>.noscript.gif, a screenshot of the built page in headless Chrome at CDOM_NOSCRIPT_SHOT_SIZE, and
@@ -375,7 +376,7 @@ cdom_mk_csslist = $(if $(filter $@,$(APP_PAGE)),$(shell [ -x $(call cdom_mk_q,$(
 # Pillow: PYTHON). That step takes Node (CDOM_NODE), Chrome (CHROME) and Python only for a page with the block, and
 # its content stamp (<page>.noscript) launches nothing when the page and what it loads are the same bytes as before.
 # A failed step removes the page, so the next make tries again.
-CDOM_NOSCRIPT ?= 1
+CDOM_NOSCRIPT ?= 0
 CDOM_NOSCRIPT_SHOT_SIZE ?= 640x480
 CDOM_NOSCRIPT_SNOWMAN ?= cdom-snowman.gif
 CDOM_NOSCRIPT_SNOWMAN_SIZE ?= 96x96

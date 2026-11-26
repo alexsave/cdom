@@ -5,8 +5,8 @@
 # (tools/edges.mjs), the seed gate (tools/seeds.mjs) and the string-names gate (tools/strings.mjs).
 set -uo pipefail
 # The pages here are checked byte for byte against shim/page.html without the no-script fallback, whose own suite is
-# tests/noscript/run.sh: off for every make below (cdom.mk, CDOM_NOSCRIPT).
-export CDOM_NOSCRIPT=0
+# tests/noscript/run.sh: cdom.mk's default (CDOM_NOSCRIPT ?= 0), so an outside setting is dropped, not inherited.
+unset CDOM_NOSCRIPT
 here="$(cd "$(dirname "$0")" && pwd)"
 src="$here/../../src"
 out="$here/../out/link"
@@ -482,6 +482,25 @@ elif ! grep -qF "$st/cdom-link/src/cdom.c" "$st/moved.log" || ! grep -qF "$st/cd
   echo "FAIL the starter copied elsewhere ignored CDOM from the environment (built with the path make new wrote)"; fail=1
 elif [ ! -s "$st/moved/build/index.html" ]; then echo "FAIL the starter copied elsewhere wrote no page"; fail=1
 else echo "ok   the starter copied elsewhere builds with CDOM from the environment overriding the generated default"; fi
+# The starter takes make and clang alone, as the quick start installs them: built from clean under env -i, with a PATH
+# of /bin and /usr/bin without Node, Python or Chrome, plus the wasm-ld beside clang (lld; Homebrew puts it on the PATH,
+# not in llvm's bin), and CDOM_NODE, PYTHON and CHROME naming nothing, it writes the page and nothing beside it (the
+# no-script fallback, which takes all three, is an app's choice: CDOM_NOSCRIPT := 1).
+bare="$st/bare-bin"; rm -rf "$bare" "$st/app/build"; mkdir -p "$bare"
+wld="$(command -v "$("$CC" -print-prog-name=wasm-ld)")" && ln -s "$wld" "$bare/wasm-ld"
+for f in /bin/* /usr/bin/*; do
+    n="${f##*/}"
+    case "$n" in node* | python* | pip* | chrom* | google-chrome*) continue ;; esac
+    [ -x "$f" ] && [ ! -e "$bare/$n" ] && ln -s "$f" "$bare/$n"
+done
+if ! env -i PATH="$bare" HOME="$HOME" make --no-print-directory -C "$st/app" \
+    WASM_CC="$CC" CDOM_NODE=/nonexistent/node PYTHON=/nonexistent/python3 CHROME=/nonexistent/chrome > "$st/bare.log" 2>&1; then
+    echo "FAIL the starter does not build with make and clang alone (no Node, Python or Chrome):"; cat "$st/bare.log"; fail=1
+elif [ "$(cd "$st/app/build" && ls | grep -v -e '\.wasm$' -e '\.lits$' -e '\.csslist$' -e '^index\.html$' | tr '\n' ' ')" != "" ]; then
+    echo "FAIL the starter built with make and clang alone wrote more than its page and module: $(ls "$st/app/build" | tr '\n' ' ')"; fail=1
+elif grep -qF -e '<noscript' -e 'CDOM_NOSCRIPT' "$st/app/build/index.html"; then
+    echo "FAIL the starter built with make and clang alone has the no-script fallback or its marker"; fail=1
+else echo "ok   the starter builds with make and clang alone (env -i, no Node, Python or Chrome on the PATH or named), one page and its module"; fi
 node "$here/run.mjs" "$out" || fail=1
 node "$here/../../tools/edges.mjs" || fail=1
 # The image module (APP_MODULES += image) costs an app nothing it does not call, and its way out of a libjpeg error

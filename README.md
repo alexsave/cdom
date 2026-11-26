@@ -64,7 +64,7 @@ One page serves every browser, and each takes its own tier:
 | IE 9 | wasm2js with C's memory in a plain Array of words |
 | IE 5 to 8 | the same words build, on an ES3 shim over the old DOM ([docs/ie6-design.md](docs/ie6-design.md)) |
 | Netscape 2 to 4, IE 3 and 4 | JavaScript 1.0 from `js1c`, in a frameset |
-| no script at all | a screenshot, a paragraph and a snowman ([docs/noscript-design.md](docs/noscript-design.md)) |
+| no script at all | a screenshot, a paragraph and a snowman, for an app that sets `CDOM_NOSCRIPT := 1` ([docs/noscript-design.md](docs/noscript-design.md)) |
 
 Know these before you promise anyone Netscape:
 
@@ -244,6 +244,7 @@ make -C path/to/myapp
   To vendor cdom with the app instead (`make new` prints this), run `git init && git submodule add https://github.com/alexsave/cdom cdom` in `DIR` and set `CDOM ?= cdom` (and clone with `--recurse-submodules`).
 - Without a clang that targets wasm32 and a `wasm-ld`, `make` stops before compiling and prints the command that installs them (`brew install llvm lld` on macOS).
 - `tests/link/run.sh` generates the starter, builds it and opens its page from `file://` in headless Chrome (`tools/starter.mjs`), so the template cannot rot unseen.
+  It also builds the starter under `env -i` with a `PATH` that holds make, clang and the system's tools and no Node, Python or Chrome, so the quick start's two packages stay all a build needs.
 - A page that calls a server (`cd_http_cb`, sockets, the store) needs an http origin, not `file://`: serve `build/` from that server instead of opening the file (`make new` says so).
 
 The page starts the app with one call, after the shim, exactly once per page:
@@ -304,7 +305,7 @@ APP_PAGE := out/index.html
 build: $(APP_WASM) $(APP_PAGE)
 ```
 
-From sources to one page, with make, clang and a host C compiler:
+From sources to one page, with make, clang and a host C compiler (a dashed edge is a setting an app opts in to):
 
 ```mermaid
 flowchart TB
@@ -329,6 +330,7 @@ flowchart TB
   shim["shim/cdom.min.js"] -->|"at /*CDOM_SHIM*/"| cdpage
   cdpage --> out["APP_PAGE (build/index.html): one file that opens from file://,<br>starting the module bundled in it:<br>cdom.start(#quot;data:application/wasm;base64,...#quot;, #quot;app#quot;)"]
   wasm -.->|"APP_WASM_SEPARATE := 1 skips base64:<br>/*CDOM_WASM*/ becomes the URL #quot;app.wasm#quot; (APP_WASM_URL),<br>served beside the page"| out
+  out -.->|"CDOM_NOSCRIPT := 1: the no-script fallback at /*CDOM_NOSCRIPT*/,<br>and tools/noscript.mjs (Node, headless Chrome, Python 3 with Pillow)<br>writes index.noscript.gif and cdom-snowman.gif beside the page"| gifs["the fallback's two GIFs"]
 ```
 
 - `CDOM_CFLAGS` and `CDOM_LDFLAGS` are the flags every cdom module needs: wasm32 with no C library but cdom's (`src/libc`, `src/mini.c`), bulk memory, no entry point, the memory exported and the stack placed first.
@@ -377,8 +379,9 @@ flowchart TB
   An app that needs its own `<head>`, `env` or `options` brings its own page.
 - The page markers are API: the page has a `<script>` with a line that holds only `/*CDOM_SHIM*/`, which becomes `shim/cdom.min.js`, and `/*CDOM_WASM*/` stands for `cdom.start`'s first argument.
   The `<script ...>` tag before `/*CDOM_SHIM*/` must be whole on one line, since the build writes it again after the string table's script.
-- A browser with no script at all (NCSA Mosaic, IE 1.5 and 2, Netscape 1.1, Lynx) gets a fallback at a line that holds only `/*CDOM_NOSCRIPT*/` in the `<body>`, which the default page has: a screenshot of the app taken at build time, a paragraph, and a snowman, in HTML 2.0, with two GIFs beside the page (`<page>.noscript.gif` and `cdom-snowman.gif`).
-  The build then wraps the page's scripts and style in HTML comments, and takes Node, headless Chrome (`CHROME`) and Python 3 with Pillow for the screenshot; `CDOM_NOSCRIPT := 0` turns it off.
+- `CDOM_NOSCRIPT := 1` gives a browser with no script at all (NCSA Mosaic, IE 1.5 and 2, Netscape 1.1, Lynx) a fallback at a line that holds only `/*CDOM_NOSCRIPT*/` in the `<body>`, which the default page has: a screenshot of the app taken at build time, a paragraph, and a snowman, in HTML 2.0, with two GIFs beside the page (`<page>.noscript.gif` and `cdom-snowman.gif`).
+  The build then wraps the page's scripts and style in HTML comments, and takes Node, headless Chrome (`CHROME`) and Python 3 with Pillow (`PYTHON`) for the screenshot.
+  It is off by default (`CDOM_NOSCRIPT ?= 0`), so an app builds with make and clang alone; off, the marker line is removed and the page is otherwise the same.
   A browser with script never shows it and never fetches its images (docs/noscript-design.md).
 - Every file whose name ends in `.css` under the app's `src/` directory, in any subfolder, is written into the page's `<style>`, in byte order of its path, so `00-base.css` comes before `10-layout.css`, and that before `theme/dark.css`; a file or folder whose name starts with a dot is skipped, and nothing else is.
   This is always on.

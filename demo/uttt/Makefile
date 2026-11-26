@@ -22,7 +22,6 @@ APP_LDFLAGS := -Wl,--strip-all
 APP_WASM_SEPARATE := 1
 APP_PAGE_SRC := uttt.html
 APP_PAGE := out/uttt.shim.html
-CDOM_NOSCRIPT := 0
 
 all: out/uttt.html out/uttt.wasm.ie9.js out/uttt.app.html
 .PHONY: all clean
