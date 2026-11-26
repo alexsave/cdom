@@ -1,7 +1,8 @@
 #!/bin/bash
 # The no-script fallback (docs/noscript-design.md): what a browser with no script shows, and that a browser with script
 # never shows it nor fetches its images. Builds the app `make -C cdom new` writes into tests/out/noscript, as an app
-# builds, with the fallback on (cdom.mk's default), and reads its page four ways: Chrome with script off and on
+# builds: first as written (the fallback off, cdom.mk's default), then opted in as an app opts in (CDOM_NOSCRIPT := 1 in
+# its Makefile), and reads its page four ways: Chrome with script off and on
 # (tests/noscript/chrome.mjs), lynx -dump, and the HTML 2.0 lens (tools/html2lens.py, and its Netscape 2 model).
 # Then the GIFs (GIF87a, their sizes, 256 colours at most, the same bytes from the same inputs), the content stamp,
 # an app's own page with and without the marker, and tools/cdpage's refusals: a script the HTML parser would read on
@@ -37,15 +38,18 @@ app="$out/app"
 sh "$top/tools/new.sh" "$app" > /dev/null || { bad "tools/new.sh did not write the app"; finish; }
 mk() { make -s -C "$app" CDOM="$top" "$@"; }
 t=$(now)
-if ! mk CDOM_NOSCRIPT=0 > "$out/make0.log" 2>&1; then bad "the default demo does not build with CDOM_NOSCRIPT=0:"; cat "$out/make0.log"; finish; fi
+if ! mk > "$out/make0.log" 2>&1; then bad "the default demo does not build as make new writes it:"; cat "$out/make0.log"; finish; fi
 t_off=$(since "$t")
 cp "$app/build/index.html" "$out/off.html"
-if ls "$app/build/"*.gif > /dev/null 2>&1 || [ -e "$app/build/index.html.noscript" ]; then bad "CDOM_NOSCRIPT=0 made a GIF or a stamp"
-elif grep -qF -e '<noscript' -e 'CDOM_NOSCRIPT' -e '<!--' -e '<wbr' "$out/off.html"; then bad "CDOM_NOSCRIPT=0: the page has the fallback, its marker or a comment wrapper"
-else ok "CDOM_NOSCRIPT=0: no fallback, no marker line, no wrapper, no GIF"; fi
+if ls "$app/build/"*.gif > /dev/null 2>&1 || [ -e "$app/build/index.html.noscript" ]; then bad "the default (CDOM_NOSCRIPT ?= 0) made a GIF or a stamp"
+elif grep -qF -e '<noscript' -e 'CDOM_NOSCRIPT' -e '<!--' -e '<wbr' "$out/off.html"; then bad "the default (CDOM_NOSCRIPT ?= 0): the page has the fallback, its marker or a comment wrapper"
+else ok "the default (CDOM_NOSCRIPT ?= 0): no fallback, no marker line, no wrapper, no GIF"; fi
 rm -rf "$app/build"
+# The opt-in, as an app writes it: one line in its Makefile, before the include.
+subst "$app/Makefile" 'include $(CDOM)/cdom.mk' 'CDOM_NOSCRIPT := 1
+include $(CDOM)/cdom.mk'
 t=$(now)
-if ! mk > "$out/make1.log" 2>&1; then bad "the default demo does not build with the fallback on (cdom.mk's default):"; cat "$out/make1.log"; finish; fi
+if ! mk > "$out/make1.log" 2>&1; then bad "the default demo does not build with the fallback on (CDOM_NOSCRIPT := 1 in its Makefile):"; cat "$out/make1.log"; finish; fi
 t_on=$(since "$t")
 page="$app/build/index.html"
 shot="$app/build/index.noscript.gif"
