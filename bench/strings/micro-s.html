@@ -37,9 +37,12 @@ async function run() {
     shim = shim.replace(from, '__acc += str(id).length; return;').replace('var cdom = (() => {', 'var cdom = (() => {\n  let __acc = 0;');
   }
   if (q.get('split')) { // diagnosis only (split=1): str's literal test alone, the rest in a second function
-    const head = 'function str(s) {\n    if (s >= litBase && s < litEnd) {\n      return lits[(s - litBase) >> 2];\n    }';
-    if (!shim.includes(head)) throw new Error('shim str() changed');
-    shim = shim.replace(head, 'function str(s) {\n    if (s >= litBase && s < litEnd) {\n      return lits[(s - litBase) >> 2];\n    }\n    return strRest(s);\n  }\n  function strRest(s) {');
+    // the shim's own indent (one level inside the closure), whatever it is
+    const head = /function str\(s\) \{\n( +)if \(s >= litBase && s < litEnd\) \{\n( +)return lits\[\(s - litBase\) >> 2\];\n\1\}/;
+    const at = head.exec(shim);
+    if (!at) throw new Error('shim str() changed');
+    const base = at[1].slice(0, at[1].length - (at[2].length - at[1].length));
+    shim = shim.replace(head, (all) => `${all}\n${at[1]}return strRest(s);\n${base}}\n${base}function strRest(s) {`);
   }
   const s = document.createElement('script'); s.text = shim; document.head.appendChild(s);
   const exports = await cdom.start('out/micro-s.wasm', 'app');

@@ -37,7 +37,8 @@ const ALLOWED = {
 // unpredictable; shim/cdom.min.js, made from it by tools/minshim.mjs, carries the same one.
 const JS_DIRS = ['shim/', 'tools/legacy/'];
 const JS_RANDOM = /Math\.random\b/g;
-const JS_EXCEPTION = { file: 'shim/cdom.js', min: 'shim/cdom.min.js', start: '\n  function seed(options) {', end: '\n  }\n',
+// The shim's seed() is found at whatever indent it has: its end is the closing brace at that same indent.
+const JS_EXCEPTION = { file: 'shim/cdom.js', min: 'shim/cdom.min.js', startRe: /\n( *)function seed\(options\) \{/,
   comment: 'neither secret nor unpredictable' };
 // The same exception, extended to the frames tier (Alex, 2026-11-20): tools/legacy/frames.js's cf_seed(options), exactly one
 // Math.random, after the options.seed test, under a comment that says cd_seed there is "neither secret nor unpredictable".
@@ -97,8 +98,11 @@ for (const f of jsFiles) {
     continue;
   }
   const ex = f === JS_EXCEPTION.file ? JS_EXCEPTION : f === FRAMES_EXCEPTION.file ? FRAMES_EXCEPTION : null;
-  const from = ex ? text.indexOf(ex.start) : -1;
-  const to = from < 0 ? -1 : text.indexOf(ex.end, from);
+  const found = ex && ex.startRe ? ex.startRe.exec(text) : null;
+  const start = found ? found[0] : ex ? ex.start : '';
+  const end = found ? `\n${found[1]}}\n` : ex ? ex.end : '';
+  const from = ex ? text.indexOf(start) : -1;
+  const to = from < 0 ? -1 : text.indexOf(end, from);
   const body = to < 0 ? '' : text.slice(from, to);
   text.split('\n').forEach((line, i) => {
     if (!count(line)) return;

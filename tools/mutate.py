@@ -8,7 +8,7 @@ A mutant whose text to mutate is not in its file exactly once stops the run befo
 A test killed at TEST_TIMEOUT is not a catch, unless the mutant's entry ends in HANGS: the hang is then its
 expected symptom (a C loop that never ends), and the timeout or its failure message both count.
 Usage: python3 tools/mutate.py [-j N] [name ...]   (N workers, default half the cores)"""
-import subprocess, sys, pathlib, os, shutil, tempfile, threading, queue, signal, time
+import re, subprocess, sys, pathlib, os, shutil, tempfile, threading, queue, signal, time
 
 top = pathlib.Path(__file__).resolve().parent.parent
 # s: the test command alone (not the build). unit.mjs takes about 10 on a passing tree and waits at most 60 for a
@@ -1377,6 +1377,20 @@ def copy_tree(dst):
   subprocess.run(['git', 'add', '-A'], cwd=dst, check=True)
   if (top / 'node_modules').exists(): os.symlink(top / 'node_modules', dst / 'node_modules')
 
+def fit(src, old, new):
+  """The text to mutate as the file has it. The entries were written when the tree indented with 2 spaces, and
+  tools/reindent4.py doubled that indent: a multi-line entry that is not in the file is tried with the leading
+  spaces of its second and later lines doubled, and so is its replacement. Returns (old, new), or None."""
+  if src.count(old) == 1:
+    return old, new
+  def double(text):
+    first, *rest = text.split('\n')
+    return '\n'.join([first] + [re.sub(r'^ +', lambda m: m.group(0) * 2, line) for line in rest])
+  if src.count(double(old)) == 1:
+    return double(old), double(new)
+  return None
+
+
 args = sys.argv[1:]
 jobs = max(1, (os.cpu_count() or 2) // 2)
 if args[:1] == ['-j']: jobs, args = int(args[1]), args[2:]
@@ -1386,7 +1400,7 @@ if unknown: sys.exit('mutate.py: no mutant named ' + ', '.join(unknown)) # else 
 todo = [m for m in M if not only or m[0] in only]
 # A mutant whose text is gone (the file moved on) would test nothing: stop before running any.
 dead = [f'{m[0]}: the text to mutate is in {m[1]} {(top / m[1]).read_text().count(m[2])} times, not once' for m in todo
-        if (top / m[1]).read_text().count(m[2]) != 1]
+        if fit((top / m[1]).read_text(), m[2], m[3]) is None]
 if dead: sys.exit('mutate.py: FAIL dead mutants\n  ' + '\n  '.join(dead))
 results = {}
 lock = threading.Lock()
@@ -1411,9 +1425,11 @@ def worker(w):
     hangs = HANGS in opts
     p = root / f
     src = p.read_text()
-    if src.count(old) != 1:
+    found = fit(src, old, new)
+    if found is None:
       line, ok = f'FAIL {name}: the text to mutate is not in {f} once', False
     else:
+      old, new = found
       try:
         write_fresh(p, src.replace(old, new))
         code, out = build_and_run(root, cmd, minify=True)

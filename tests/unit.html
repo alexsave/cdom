@@ -349,7 +349,8 @@ cdom.start(checkPage ? 'unit_check.wasm' : 'unit.wasm', 'm', undefined, { openSt
   // The one exception (shim/cdom.js seed()): IE 9 and 10 have no crypto, so seed() falls back on Math.random and
   // the clock, after options.seed and crypto.getRandomValues. Exactly that one, there, and no other anywhere.
   check('the shim draws no stray random: one Math.random, in seed() after options.seed and crypto, no other, no Date.now seed', () => {
-    const from = shimSource.indexOf('\n  function seed(options) {'), to = shimSource.indexOf('\n  }\n', from);
+    const at = /\n( *)function seed\(options\) \{/.exec(shimSource);
+    const from = at ? at.index : -1, to = at ? shimSource.indexOf('\n' + at[1] + '}\n', from) : -1;
     const body = shimSource.slice(from, to), rest = shimSource.slice(0, from) + shimSource.slice(to);
     const count = (src) => (src.match(/Math\.random/g) || []).length;
     const r = [from > 0 && to > from, count(shimSource) === 1, count(body) === 1,

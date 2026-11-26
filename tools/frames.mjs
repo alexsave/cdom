@@ -96,7 +96,7 @@ const port = srv.address().port;
   // Netscape 2's "".indexOf(t) gives no number and its comparison raises "is not a numeric literal" (docs/frames-design.md 17):
   // the shim's only indexOf calls are the two in cf_idx and cf_idxFrom, which answer an empty string themselves.
   const shimSrc = fs.readFileSync(path.join(root, '../../tools/legacy/frames.js'), 'utf8');
-  ok((shimSrc.match(/\.indexOf\(/g) || []).length === 2 && /function cf_idx\(s, t\) \{\n  if \(s\.length == 0\)/.test(shimSrc),
+  ok((shimSrc.match(/\.indexOf\(/g) || []).length === 2 && /function cf_idx\(s, t\) \{\n\s+if \(s\.length == 0\)/.test(shimSrc),
     'frames.js calls indexOf only in cf_idx and cf_idxFrom, which answer an empty string first');
   // Netscape 2 reads -2147483648 and 2147483648 as equal to null: a timer's token (cdom's own range starts at 2^31, Play's) is kept
   // as a string, so a pending timer is not taken for a fired one (docs/frames-design.md 17; the real browser is the only test of ==).
