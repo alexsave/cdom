@@ -10,17 +10,17 @@
  * region went writes to a freed id, and the shim throws. */
 typedef struct { cd_id txt; uint32_t calls; } view_t;
 static void view_write(view_t *v) {
-  v->calls++;
-  char room[16];
-  cd_buf b = cd_buf_in(room, sizeof room);
-  cd_buf_u64(&b, v->calls);
-  cd_set_text_node(v->txt, cd_tmp(b.p, b.len));
+    v->calls++;
+    char room[16];
+    cd_buf b = cd_buf_in(room, sizeof room);
+    cd_buf_u64(&b, v->calls);
+    cd_set_text_node(v->txt, cd_tmp(b.p, b.len));
 }
 /* A region holding one <span> with one text node, for view v. */
 static void span_open(cd_region *r, view_t *v) {
-  cd_open("span"); cd_name_open(r->root);
-  cd_text(""); cd_name_text(v->txt = cd_id_new());
-  cd_close();
+    cd_open("span"); cd_name_open(r->root);
+    cd_text(""); cd_name_text(v->txt = cd_id_new());
+    cd_close();
 }
 static int show(cd_region *r) { cd_at(CD_MOUNT, CD_APPEND); return cd_region_show(r, 1); }
 
@@ -34,22 +34,22 @@ static cd_region r1;
 static view_t v1;
 static void view1(void *) { view_write(&v1); }
 EXPORT("t1_setup") uint32_t t1_setup(void) {
-  if (show(&r1)) {
-    span_open(&r1, &v1);
-    cd_watch(&s1a, view1, nullptr);
-    cd_watch(&s1b, view1, nullptr);
-    view1(nullptr);
-    cd_region_end(&r1);
-  }
-  cd_flush();
-  return v1.calls;
+    if (show(&r1)) {
+        span_open(&r1, &v1);
+        cd_watch(&s1a, view1, nullptr);
+        cd_watch(&s1b, view1, nullptr);
+        view1(nullptr);
+        cd_region_end(&r1);
+    }
+    cd_flush();
+    return v1.calls;
 }
 EXPORT("t1_go") uint32_t t1_go(void) {
-  uint32_t before = v1.calls;
-  for (int i = 0; i < 1000; i++) cd_changed(&s1a);
-  cd_changed(&s1b);
-  cd_flush();
-  return v1.calls - before;
+    uint32_t before = v1.calls;
+    for (int i = 0; i < 1000; i++) cd_changed(&s1a);
+    cd_changed(&s1b);
+    cd_flush();
+    return v1.calls - before;
 }
 
 /* 2. s2 changes, then the region of the view watching it goes, in the same entry: the view does not run. */
@@ -58,21 +58,21 @@ static cd_region r2;
 static view_t v2;
 static void view2(void *) { view_write(&v2); }
 EXPORT("t2_setup") uint32_t t2_setup(void) {
-  if (show(&r2)) {
-    span_open(&r2, &v2);
-    cd_watch(&s2, view2, nullptr);
-    view2(nullptr);
-    cd_region_end(&r2);
-  }
-  cd_flush();
-  return v2.calls;
+    if (show(&r2)) {
+        span_open(&r2, &v2);
+        cd_watch(&s2, view2, nullptr);
+        view2(nullptr);
+        cd_region_end(&r2);
+    }
+    cd_flush();
+    return v2.calls;
 }
 EXPORT("t2_go") uint32_t t2_go(void) {
-  uint32_t before = v2.calls;
-  cd_changed(&s2);
-  cd_region_hide(&r2);
-  cd_flush();
-  return v2.calls - before;
+    uint32_t before = v2.calls;
+    cd_changed(&s2);
+    cd_region_hide(&r2);
+    cd_flush();
+    return v2.calls - before;
 }
 
 /* 3. Two views of s3 queued in one round; the first hides the region of the second, which does not run. */
@@ -82,16 +82,16 @@ static view_t v3a, v3b;
 static void view3a(void *) { view_write(&v3a); if (v3a.calls > 1) cd_region_hide(&r3b); }
 static void view3b(void *) { view_write(&v3b); }
 EXPORT("t3_setup") uint32_t t3_setup(void) {
-  if (show(&r3a)) { span_open(&r3a, &v3a); cd_watch(&s3, view3a, nullptr); view3a(nullptr); cd_region_end(&r3a); }
-  if (show(&r3b)) { span_open(&r3b, &v3b); cd_watch(&s3, view3b, nullptr); view3b(nullptr); cd_region_end(&r3b); }
-  cd_flush();
-  return v3a.calls * 10 + v3b.calls;
+    if (show(&r3a)) { span_open(&r3a, &v3a); cd_watch(&s3, view3a, nullptr); view3a(nullptr); cd_region_end(&r3a); }
+    if (show(&r3b)) { span_open(&r3b, &v3b); cd_watch(&s3, view3b, nullptr); view3b(nullptr); cd_region_end(&r3b); }
+    cd_flush();
+    return v3a.calls * 10 + v3b.calls;
 }
 EXPORT("t3_go") uint32_t t3_go(void) {
-  uint32_t a = v3a.calls, b = v3b.calls;
-  cd_changed(&s3);
-  cd_flush();
-  return (v3a.calls - a) * 10 + (v3b.calls - b); /* 10: the first ran, the second did not */
+    uint32_t a = v3a.calls, b = v3b.calls;
+    cd_changed(&s3);
+    cd_flush();
+    return (v3a.calls - a) * 10 + (v3b.calls - b); /* 10: the first ran, the second did not */
 }
 
 /* 4. A view of s4 shows a region whose build watches s4 too: the new view draws in its build and is not
@@ -101,25 +101,25 @@ static cd_region r4a, r4b;
 static view_t v4a, v4b;
 static void view4b(void *) { view_write(&v4b); }
 static void view4a(void *) {
-  view_write(&v4a);
-  if (v4a.calls > 1 && show(&r4b)) {
-    span_open(&r4b, &v4b);
-    cd_watch(&s4, view4b, nullptr);
-    view4b(nullptr);
-    cd_region_end(&r4b);
-  }
+    view_write(&v4a);
+    if (v4a.calls > 1 && show(&r4b)) {
+        span_open(&r4b, &v4b);
+        cd_watch(&s4, view4b, nullptr);
+        view4b(nullptr);
+        cd_region_end(&r4b);
+    }
 }
 EXPORT("t4_setup") uint32_t t4_setup(void) {
-  if (show(&r4a)) { span_open(&r4a, &v4a); cd_watch(&s4, view4a, nullptr); view4a(nullptr); cd_region_end(&r4a); }
-  cd_flush();
-  return v4a.calls;
+    if (show(&r4a)) { span_open(&r4a, &v4a); cd_watch(&s4, view4a, nullptr); view4a(nullptr); cd_region_end(&r4a); }
+    cd_flush();
+    return v4a.calls;
 }
 /* returns runs of the pass * 100 + calls of view4a * 10 + calls of view4b */
 EXPORT("t4_go") uint32_t t4_go(void) {
-  uint32_t r = cd_state_runs(), a = v4a.calls, b = v4b.calls;
-  cd_changed(&s4);
-  cd_flush();
-  return (cd_state_runs() - r) * 100 + (v4a.calls - a) * 10 + (v4b.calls - b);
+    uint32_t r = cd_state_runs(), a = v4a.calls, b = v4b.calls;
+    cd_changed(&s4);
+    cd_flush();
+    return (cd_state_runs() - r) * 100 + (v4a.calls - a) * 10 + (v4b.calls - b);
 }
 
 /* 5. A view of s5a changes s5b: s5b's view runs in the same flush, as a second round. A view of s5c that
@@ -131,22 +131,22 @@ static void view5a(void *) { view_write(&v5a); if (v5a.calls > 1) cd_changed(&s5
 static void view5b(void *) { view_write(&v5b); }
 static void view5c(void *) { view_write(&v5c); if (v5c.calls > 1) cd_changed(&s5c); }
 EXPORT("t5_setup") uint32_t t5_setup(void) {
-  if (show(&r5a)) { span_open(&r5a, &v5a); cd_watch(&s5a, view5a, nullptr); view5a(nullptr); cd_region_end(&r5a); }
-  if (show(&r5b)) { span_open(&r5b, &v5b); cd_watch(&s5b, view5b, nullptr); view5b(nullptr); cd_region_end(&r5b); }
-  if (show(&r5c)) { span_open(&r5c, &v5c); cd_watch(&s5c, view5c, nullptr); view5c(nullptr); cd_region_end(&r5c); }
-  cd_flush();
-  return v5a.calls + v5b.calls + v5c.calls;
+    if (show(&r5a)) { span_open(&r5a, &v5a); cd_watch(&s5a, view5a, nullptr); view5a(nullptr); cd_region_end(&r5a); }
+    if (show(&r5b)) { span_open(&r5b, &v5b); cd_watch(&s5b, view5b, nullptr); view5b(nullptr); cd_region_end(&r5b); }
+    if (show(&r5c)) { span_open(&r5c, &v5c); cd_watch(&s5c, view5c, nullptr); view5c(nullptr); cd_region_end(&r5c); }
+    cd_flush();
+    return v5a.calls + v5b.calls + v5c.calls;
 }
 EXPORT("t5_go") uint32_t t5_go(void) { /* 11: both ran once in this flush */
-  uint32_t a = v5a.calls, b = v5b.calls;
-  cd_changed(&s5a);
-  cd_flush();
-  return (v5a.calls - a) * 10 + (v5b.calls - b);
+    uint32_t a = v5a.calls, b = v5b.calls;
+    cd_changed(&s5a);
+    cd_flush();
+    return (v5a.calls - a) * 10 + (v5b.calls - b);
 }
 EXPORT("t5_loop") uint32_t t5_loop(void) { /* traps; returns only when it does not */
-  cd_changed(&s5c);
-  cd_flush();
-  return v5c.calls;
+    cd_changed(&s5c);
+    cd_flush();
+    return v5c.calls;
 }
 
 /* 6. A region hidden and shown again draws the value now at its build and follows later changes; after
@@ -158,9 +158,9 @@ static view_t v6;
 static void view6(void *) { cd_read(&s6); v6.calls++; cd_set_text_node_num(v6.txt, value6); }
 static void set6(uint32_t v) { value6 = v; cd_changed(&s6); }
 EXPORT("t6_show") uint32_t t6_show(void) {
-  if (show(&r6)) { span_open(&r6, &v6); cd_watch(&s6, view6, nullptr); view6(nullptr); cd_region_end(&r6); }
-  cd_flush();
-  return watchers_of(6);
+    if (show(&r6)) { span_open(&r6, &v6); cd_watch(&s6, view6, nullptr); view6(nullptr); cd_region_end(&r6); }
+    cd_flush();
+    return watchers_of(6);
 }
 EXPORT("t6_hide") uint32_t t6_hide(void) { cd_region_hide(&r6); cd_flush(); return watchers_of(6); }
 EXPORT("t6_set") uint32_t t6_set(uint32_t v) { set6(v); cd_flush(); return v6.calls; }
@@ -174,15 +174,15 @@ static void view7a(void *) { c7a++; cd_unwatch(&w7b); }
 static void view7b(void *) { c7b++; }
 static void view7c(void *) { c7c++; }
 EXPORT("t7_go") uint32_t t7_go(void) { /* 100: only view7a ran */
-  cd_watch_at(&w7a, &s7, view7a, nullptr, nullptr);
-  cd_watch_at(&w7b, &s7, view7b, nullptr, nullptr);
-  cd_watch_at(&w7c, &s7, view7c, nullptr, nullptr);
-  cd_changed(&s7);
-  cd_unwatch(&w7c); /* not queued yet: the pass never sees it */
-  cd_flush();
-  uint32_t r = c7a * 100 + c7b * 10 + c7c;
-  cd_unwatch(&w7a);
-  return r;
+    cd_watch_at(&w7a, &s7, view7a, nullptr, nullptr);
+    cd_watch_at(&w7b, &s7, view7b, nullptr, nullptr);
+    cd_watch_at(&w7c, &s7, view7c, nullptr, nullptr);
+    cd_changed(&s7);
+    cd_unwatch(&w7c); /* not queued yet: the pass never sees it */
+    cd_flush();
+    uint32_t r = c7a * 100 + c7b * 10 + c7c;
+    cd_unwatch(&w7a);
+    return r;
 }
 /* what still watches s7 after t7_go: nothing */
 EXPORT("t7_after") uint32_t t7_after(void) { return watchers_of(7); }
@@ -196,29 +196,29 @@ static uint32_t c8other, bad8;
 static void view8(void *) { cd_read(&s8a); if (bad8) cd_read(&s8b); view_write(&v8); }
 static void view8other(void *) { cd_read(&s8b); c8other++; }
 EXPORT("t8_setup") uint32_t t8_setup(void) {
-  if (show(&r8)) {
-    span_open(&r8, &v8);
-    cd_watch(&s8a, view8, nullptr);
-    cd_watch(&s8b, view8other, nullptr);
-    view8(nullptr); /* outside the flush: nothing runs, so cd_read does not check */
-    cd_region_end(&r8);
-  }
-  cd_flush();
-  return v8.calls;
+    if (show(&r8)) {
+        span_open(&r8, &v8);
+        cd_watch(&s8a, view8, nullptr);
+        cd_watch(&s8b, view8other, nullptr);
+        view8(nullptr); /* outside the flush: nothing runs, so cd_read does not check */
+        cd_region_end(&r8);
+    }
+    cd_flush();
+    return v8.calls;
 }
 EXPORT("t8_good") uint32_t t8_good(void) { cd_changed(&s8a); cd_changed(&s8b); cd_flush(); return v8.calls * 10 + c8other; }
 EXPORT("t8_bad") uint32_t t8_bad(void) { bad8 = 1; cd_changed(&s8a); cd_flush(); return v8.calls; }
 EXPORT("check_build") uint32_t check_build(void) {
 #ifdef CD_STATE_CHECK
-  return 1;
+    return 1;
 #else
-  return 0;
+    return 0;
 #endif
 }
 
 static cd_state *const all[] = {[1] = &s1a, [2] = &s2, [3] = &s3, [4] = &s4, [5] = &s5a, [6] = &s6, [7] = &s7, [8] = &s8a};
 uint32_t watchers_of(uint32_t which) {
-  uint32_t n = 0;
-  for (cd_watcher *w = all[which]->first; w; w = w->next) n++;
-  return n;
+    uint32_t n = 0;
+    for (cd_watcher *w = all[which]->first; w; w = w->next) n++;
+    return n;
 }

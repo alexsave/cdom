@@ -13,8 +13,8 @@ if (TIER !== 5) { console.log('FAIL tools/frames.mjs runs under LEGACY=frames');
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../tests/out');
 const types = { '.html': 'text/html', '.wasm': 'application/wasm', '.js': 'text/javascript' };
 const srv = http.createServer((q, r) => {
-  const f = path.join(root, q.url.split(/[?#]/)[0]);
-  fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': types[path.extname(f)] }); r.end(b); });
+    const f = path.join(root, q.url.split(/[?#]/)[0]);
+    fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': types[path.extname(f)] }); r.end(b); });
 }).listen(0);
 const b = await launch();
 let fails = 0;
@@ -26,16 +26,16 @@ const ET = b.evaluate;
 const E = (x) => ET(`frames[1].eval(${JSON.stringify(x)})`);
 const F = 'parent.frames[0].document';
 const mouse = (type, x, y, buttons = 0, button = 'none') =>
-  b.send('Input.dispatchMouseEvent', { type, x, y, buttons, button, clickCount: type === 'mouseMoved' ? 0 : 1 });
+    b.send('Input.dispatchMouseEvent', { type, x, y, buttons, button, clickCount: type === 'mouseMoved' ? 0 : 1 });
 // An element of the frame by selector, its centre in the top window's coordinates (the frame fills the window).
 // [-1, -1] when there is no such element (a broken shim), which clickAt does not click.
 const centre = (sel) => E(`(function () { var e = ${F}.querySelector(${JSON.stringify(sel)}), r; if (!e) return [-1, -1]; r = e.getBoundingClientRect();
   return [Math.round((r.left + r.right) / 2), Math.round((r.top + r.bottom) / 2)]; })()`);
 // hold: how long the button is down, in ms.
 async function clickAt(x, y, hold = 30) {
-  if (x < 0) return;
-  await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y, 1, 'left'); await sleep(hold);
-  await mouse('mouseReleased', x, y, 0, 'left'); await sleep(60);
+    if (x < 0) return;
+    await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y, 1, 'left'); await sleep(hold);
+    await mouse('mouseReleased', x, y, 0, 'left'); await sleep(60);
 }
 const click = async (sel, hold) => clickAt(...await centre(sel), hold);
 const draws = () => E('cdomF.draws');
@@ -48,9 +48,9 @@ const textOf = (sel) => E(`(function () { var e = ${F}.querySelector(${JSON.stri
 const field = (id) => `(${F}.forms[0].elements[(function () { var i; for (i = 0; i < cf_nfields; i++) if (cf_pair(cf_fields[i].a, "id") === ${JSON.stringify(id)}) return i; return -1; })()] || { select: function () {}, setSelectionRange: function () {} })`;
 // Waits until expr is true in the app frame, or n tries of 20 ms; false while the frame is not there yet.
 async function until(expr, n = 100) {
-  const now = async () => { try { return await E(expr); } catch { return false; } };
-  for (let i = 0; i < n && !(await now()); i++) await sleep(20);
-  return now();
+    const now = async () => { try { return await E(expr); } catch { return false; } };
+    for (let i = 0; i < n && !(await now()); i++) await sleep(20);
+    return now();
 }
 // Navigates, and gives the early script's frameset time to be made: an evaluate sent while the page is still being replaced
 // by it leaves every later one unanswered (Chrome 157, headless).
@@ -60,9 +60,9 @@ const go = async (url) => { await b.send('Page.navigate', { url }); await sleep(
 const shown = `new XMLSerializer().serializeToString(${F}.body)`;
 const fresh = 'new XMLSerializer().serializeToString(new DOMParser().parseFromString(cf_html(), "text/html").body)';
 async function matches(what) {
-  // The frame's margins are the BODY's attributes in Chrome's DOM: not the shim's.
-  const [a, c] = [(await E(shown)).replace(' marginwidth="8" marginheight="8"', ''), await E(fresh)];
-  ok(a === c && a.length > 100, `${what}: the frame's HTML is the tree's (${a.length} chars)${a === c ? '' : `\n  frame ${a.slice(0, 400)}\n  tree  ${c.slice(0, 400)}`}`);
+    // The frame's margins are the BODY's attributes in Chrome's DOM: not the shim's.
+    const [a, c] = [(await E(shown)).replace(' marginwidth="8" marginheight="8"', ''), await E(fresh)];
+    ok(a === c && a.length > 100, `${what}: the frame's HTML is the tree's (${a.length} chars)${a === c ? '' : `\n  frame ${a.slice(0, 400)}\n  tree  ${c.slice(0, 400)}`}`);
 }
 // The tree's elements that have an id and are drawn, each with its text: every one must be in the frame with that text.
 const TREE_IDS = `(function () { var out = [];
@@ -79,268 +79,268 @@ const TREE_IDS = `(function () { var out = [];
 
 const port = srv.address().port;
 {
-  // The built page, as Netscape 2 to 4 are handed it: the early script in the head ahead of any content, and the two
-  // scripts they cannot parse hidden from them by language="JavaScript1.5".
-  const html = fs.readFileSync(path.join(root, 'frames.html'), 'utf8');
-  const early = html.indexOf('"frames.app.html" + location.search');
-  ok(early > 0 && html.lastIndexOf('<script>', early) > 0 && early < html.indexOf('<div') && early < html.indexOf('</head>'),
-    'the early script is in the head, ahead of any content, and names the page\'s app document');
-  const hidden = [...html.matchAll(/<script language="JavaScript1\.5">\s*\n([^\n]{0,60})/g)].map((m) => m[1]);
-  ok(hidden.length === 2 && /cdom shim:|GENERATED from/.test(hidden[0]) && hidden[1].startsWith('function cdomBootDom'),
-    `the inlined shim and the boot's second part are language="JavaScript1.5" scripts, which Netscape 2 to 4 skip: ${JSON.stringify(hidden)}`);
-  const table = /\nvar cdomLits=new Array\(\d+,\d+,"[^"]*","([^\n]*)"\);\n/.exec(html);
-  ok(!!table && !table[1].includes('\\x') && !/\\[0-7]{3}[0-9]/.test(table[1]) && !table[1].includes('\\000') && table[1].includes('\\001'), 'the string table is new Array(...) with entries separated by \\001, no \\x escape and no digit right after an escape: Netscape 2 and 3 cannot parse a literal and end a string at a NUL, and Netscape 3 reads \\x greedily');
-  // The app document (docs/frames-design.md, section 16): every script the cdomApp frame runs, inline, since Netscape 2
-  // has no SCRIPT SRC, in blocks of at most build.mjs's BLOCK_MAX bytes; the modern page carries none of it.
-  const app = fs.readFileSync(path.join(root, 'frames.app.html'), 'utf8');
-  // Netscape 2's "".indexOf(t) gives no number and its comparison raises "is not a numeric literal" (docs/frames-design.md 17):
-  // the shim's only indexOf calls are the two in cf_idx and cf_idxFrom, which answer an empty string themselves.
-  const shimSrc = fs.readFileSync(path.join(root, '../../tools/legacy/frames.js'), 'utf8');
-  ok((shimSrc.match(/\.indexOf\(/g) || []).length === 2 && /function cf_idx\(s, t\) \{\n  if \(s\.length == 0\)/.test(shimSrc),
-    'frames.js calls indexOf only in cf_idx and cf_idxFrom, which answer an empty string first');
-  // Netscape 2 reads -2147483648 and 2147483648 as equal to null: a timer's token (cdom's own range starts at 2^31, Play's) is kept
-  // as a string, so a pending timer is not taken for a fired one (docs/frames-design.md 17; the real browser is the only test of ==).
-  ok(shimSrc.includes('cf_tok["t" + cf_timers] = "k" + token;') && shimSrc.includes('token = parseInt(key.substring(1, key.length));'),
-    'frames.js keeps a timer token as the string "k" and the token, never as a bare number compared with null');
-  const max = +/\nconst BLOCK_MAX = (\d+);/.exec(fs.readFileSync(path.join(root, '../../tools/legacy/build.mjs'), 'utf8'))[1];
-  const tags = [...app.matchAll(/<script[^>]*>/gi)].map((m) => m[0]), blockBytes = [...app.matchAll(/<script>\n([\s\S]*?)\n<\/script>/g)].map((m) => Buffer.byteLength(m[1]));
-  ok(tags.length > 1 && tags.every((t) => t === '<script>') && !/<script[^>]*\ssrc\s*=/i.test(app) && blockBytes.length === tags.length,
-    `the app document's scripts are ${tags.length} plain <script> blocks, none with a src: ${[...new Set(tags)].join(' ')}`);
-  ok(max === 30000 && blockBytes.every((n) => n <= max), `no block of the app document is over BLOCK_MAX (${max}): ${blockBytes.join(', ')} bytes`);
-  ok(['function cdomBoot(', 'var cdomLitsBase=', 'function cdomFramesStart(', 'function cdomFactoryJs1(', 'cdomBoot("frames.wasm"'].every((k) => app.includes(k))
-    && app.indexOf('function cdomBoot(') < app.indexOf('var cdomLitsBase=') && app.indexOf('function cdomFactoryJs1(') < app.indexOf('cdomBoot("frames.wasm"'),
-    'the app document holds, in order, the boot, the string table, the shim, the module and the page\'s own script');
-  ok(!html.includes('function cdomFramesStart(') && !html.includes('cdomFactoryJs1') && !html.includes('<script src'),
-    'the page itself holds neither the shim nor the module, and fetches no script');
-  // A string table far over a block: frames.html with its table's text made about 70 KB (the real text, joined to itself,
-  // and one long literal of escapes), through build.mjs app-doc. The table is cut into statements of at most LITS_PIECE
-  // bytes, across blocks, never inside an escape: run in node, the four globals are the page's four values.
-  const piece = +/\nconst LITS_PIECE = (\d+);/.exec(fs.readFileSync(path.join(root, '../../tools/legacy/build.mjs'), 'utf8'))[1];
-  const m = /\nvar cdomLits=new Array\((\d+),(\d+),("[^"]*"),([^\n]*)\);\n/.exec(html);
-  let long = '"';
-  for (let i = 0; i < 20000; i++) long += ['ab', '\\001', '\\\\', '\\"', '\\074', 'é', 'xy z'][i % 7];
-  long += '"';
-  const text = Array(12).fill(m[4]).join('+') + '+' + long;
-  const big = html.replace(m[0], () => `\nvar cdomLits=new Array(${m[1]},${m[2]},${m[3]},${text});\n`);
-  fs.writeFileSync(path.join(root, 'frames-bigtable.html'), big);
-  execFileSync('node', [path.join(root, '../../tools/legacy/build.mjs'), 'app-doc', path.join(root, 'frames-bigtable.html'), path.join(root, 'frames.wasm.js1.js'),
-    path.join(root, 'frames-bigtable.app.html')], { stdio: 'inherit' });
-  const bigApp = fs.readFileSync(path.join(root, 'frames-bigtable.app.html'), 'utf8');
-  const bigBlocks = [...bigApp.matchAll(/<script>\n([\s\S]*?)\n<\/script>/g)].map((x) => x[1]);
-  const tableLines = bigBlocks.flatMap((x, k) => x.split('\n').filter((l) => /^(var cdomLitsBase=|cdomLitsText=cdomLitsText\+)/.test(l)).map((l) => [k, l]));
-  const ctx = {};
-  vm.runInNewContext(tableLines.map((x) => x[1]).join('\n'), ctx);
-  const want = vm.runInNewContext(`[${m[1]},${m[2]},${m[3]},${text}]`);
-  ok(ctx.cdomLitsText === want[3] && ctx.cdomLitsBase === want[0] && ctx.cdomLitsStamp === want[1] && ctx.cdomLitsUtf8 === want[2],
-    `a string table of ${Buffer.byteLength(text)} bytes is the page's table again in the app document (${ctx.cdomLitsText ? ctx.cdomLitsText.length : 'no'} characters of ${want[3].length})`);
-  ok(tableLines.length > 15 && new Set(tableLines.map((x) => x[0])).size > 1 && tableLines.every((x) => Buffer.byteLength(x[1]) <= piece + 40)
-    && bigBlocks.every((x) => Buffer.byteLength(x) <= max),
-    `it is cut into ${tableLines.length} statements of at most about LITS_PIECE (${piece}) bytes, over ${new Set(tableLines.map((x) => x[0])).size} blocks, none over BLOCK_MAX`);
+    // The built page, as Netscape 2 to 4 are handed it: the early script in the head ahead of any content, and the two
+    // scripts they cannot parse hidden from them by language="JavaScript1.5".
+    const html = fs.readFileSync(path.join(root, 'frames.html'), 'utf8');
+    const early = html.indexOf('"frames.app.html" + location.search');
+    ok(early > 0 && html.lastIndexOf('<script>', early) > 0 && early < html.indexOf('<div') && early < html.indexOf('</head>'),
+      'the early script is in the head, ahead of any content, and names the page\'s app document');
+    const hidden = [...html.matchAll(/<script language="JavaScript1\.5">\s*\n([^\n]{0,60})/g)].map((m) => m[1]);
+    ok(hidden.length === 2 && /cdom shim:|GENERATED from/.test(hidden[0]) && hidden[1].startsWith('function cdomBootDom'),
+      `the inlined shim and the boot's second part are language="JavaScript1.5" scripts, which Netscape 2 to 4 skip: ${JSON.stringify(hidden)}`);
+    const table = /\nvar cdomLits=new Array\(\d+,\d+,"[^"]*","([^\n]*)"\);\n/.exec(html);
+    ok(!!table && !table[1].includes('\\x') && !/\\[0-7]{3}[0-9]/.test(table[1]) && !table[1].includes('\\000') && table[1].includes('\\001'), 'the string table is new Array(...) with entries separated by \\001, no \\x escape and no digit right after an escape: Netscape 2 and 3 cannot parse a literal and end a string at a NUL, and Netscape 3 reads \\x greedily');
+    // The app document (docs/frames-design.md, section 16): every script the cdomApp frame runs, inline, since Netscape 2
+    // has no SCRIPT SRC, in blocks of at most build.mjs's BLOCK_MAX bytes; the modern page carries none of it.
+    const app = fs.readFileSync(path.join(root, 'frames.app.html'), 'utf8');
+    // Netscape 2's "".indexOf(t) gives no number and its comparison raises "is not a numeric literal" (docs/frames-design.md 17):
+    // the shim's only indexOf calls are the two in cf_idx and cf_idxFrom, which answer an empty string themselves.
+    const shimSrc = fs.readFileSync(path.join(root, '../../tools/legacy/frames.js'), 'utf8');
+    ok((shimSrc.match(/\.indexOf\(/g) || []).length === 2 && /function cf_idx\(s, t\) \{\n\s+if \(s\.length == 0\)/.test(shimSrc),
+      'frames.js calls indexOf only in cf_idx and cf_idxFrom, which answer an empty string first');
+    // Netscape 2 reads -2147483648 and 2147483648 as equal to null: a timer's token (cdom's own range starts at 2^31, Play's) is kept
+    // as a string, so a pending timer is not taken for a fired one (docs/frames-design.md 17; the real browser is the only test of ==).
+    ok(shimSrc.includes('cf_tok["t" + cf_timers] = "k" + token;') && shimSrc.includes('token = parseInt(key.substring(1, key.length));'),
+      'frames.js keeps a timer token as the string "k" and the token, never as a bare number compared with null');
+    const max = +/\nconst BLOCK_MAX = (\d+);/.exec(fs.readFileSync(path.join(root, '../../tools/legacy/build.mjs'), 'utf8'))[1];
+    const tags = [...app.matchAll(/<script[^>]*>/gi)].map((m) => m[0]), blockBytes = [...app.matchAll(/<script>\n([\s\S]*?)\n<\/script>/g)].map((m) => Buffer.byteLength(m[1]));
+    ok(tags.length > 1 && tags.every((t) => t === '<script>') && !/<script[^>]*\ssrc\s*=/i.test(app) && blockBytes.length === tags.length,
+      `the app document's scripts are ${tags.length} plain <script> blocks, none with a src: ${[...new Set(tags)].join(' ')}`);
+    ok(max === 30000 && blockBytes.every((n) => n <= max), `no block of the app document is over BLOCK_MAX (${max}): ${blockBytes.join(', ')} bytes`);
+    ok(['function cdomBoot(', 'var cdomLitsBase=', 'function cdomFramesStart(', 'function cdomFactoryJs1(', 'cdomBoot("frames.wasm"'].every((k) => app.includes(k))
+      && app.indexOf('function cdomBoot(') < app.indexOf('var cdomLitsBase=') && app.indexOf('function cdomFactoryJs1(') < app.indexOf('cdomBoot("frames.wasm"'),
+      'the app document holds, in order, the boot, the string table, the shim, the module and the page\'s own script');
+    ok(!html.includes('function cdomFramesStart(') && !html.includes('cdomFactoryJs1') && !html.includes('<script src'),
+      'the page itself holds neither the shim nor the module, and fetches no script');
+    // A string table far over a block: frames.html with its table's text made about 70 KB (the real text, joined to itself,
+    // and one long literal of escapes), through build.mjs app-doc. The table is cut into statements of at most LITS_PIECE
+    // bytes, across blocks, never inside an escape: run in node, the four globals are the page's four values.
+    const piece = +/\nconst LITS_PIECE = (\d+);/.exec(fs.readFileSync(path.join(root, '../../tools/legacy/build.mjs'), 'utf8'))[1];
+    const m = /\nvar cdomLits=new Array\((\d+),(\d+),("[^"]*"),([^\n]*)\);\n/.exec(html);
+    let long = '"';
+    for (let i = 0; i < 20000; i++) long += ['ab', '\\001', '\\\\', '\\"', '\\074', 'é', 'xy z'][i % 7];
+    long += '"';
+    const text = Array(12).fill(m[4]).join('+') + '+' + long;
+    const big = html.replace(m[0], () => `\nvar cdomLits=new Array(${m[1]},${m[2]},${m[3]},${text});\n`);
+    fs.writeFileSync(path.join(root, 'frames-bigtable.html'), big);
+    execFileSync('node', [path.join(root, '../../tools/legacy/build.mjs'), 'app-doc', path.join(root, 'frames-bigtable.html'), path.join(root, 'frames.wasm.js1.js'),
+      path.join(root, 'frames-bigtable.app.html')], { stdio: 'inherit' });
+    const bigApp = fs.readFileSync(path.join(root, 'frames-bigtable.app.html'), 'utf8');
+    const bigBlocks = [...bigApp.matchAll(/<script>\n([\s\S]*?)\n<\/script>/g)].map((x) => x[1]);
+    const tableLines = bigBlocks.flatMap((x, k) => x.split('\n').filter((l) => /^(var cdomLitsBase=|cdomLitsText=cdomLitsText\+)/.test(l)).map((l) => [k, l]));
+    const ctx = {};
+    vm.runInNewContext(tableLines.map((x) => x[1]).join('\n'), ctx);
+    const want = vm.runInNewContext(`[${m[1]},${m[2]},${m[3]},${text}]`);
+    ok(ctx.cdomLitsText === want[3] && ctx.cdomLitsBase === want[0] && ctx.cdomLitsStamp === want[1] && ctx.cdomLitsUtf8 === want[2],
+      `a string table of ${Buffer.byteLength(text)} bytes is the page's table again in the app document (${ctx.cdomLitsText ? ctx.cdomLitsText.length : 'no'} characters of ${want[3].length})`);
+    ok(tableLines.length > 15 && new Set(tableLines.map((x) => x[0])).size > 1 && tableLines.every((x) => Buffer.byteLength(x[1]) <= piece + 40)
+      && bigBlocks.every((x) => Buffer.byteLength(x) <= max),
+      `it is cut into ${tableLines.length} statements of at most about LITS_PIECE (${piece}) bytes, over ${new Set(tableLines.map((x) => x[0])).size} blocks, none over BLOCK_MAX`);
 }
 const measure = !!process.env.FRAMES_MEASURE;
 run: try {
-  // First, so that it runs whatever fails after it.
-  // Netscape 2 (tools/cdp.mjs's ?ns2: no mouse button or key event reaches the page, no charCodeAt or fromCharCode, no
-  // selectionStart, no field type): the page still counts clicks, drawn at once, and takes a field's change. The button
-  // hooks never fire, so cf_pressed stays 0 and the cf_LATER rule works alone (section 16).
-  await go(`http://127.0.0.1:${port}/frames.html?ns2`);
-  if (!(await until('!!window.READY && window.cdomF && cdomF.draws > 0'))) ok(false, 'ns2: booted');
-  else {
-    ok(await E('cf_hasAt === 0 && cf_hasFrom === 0 && !"a".charCodeAt && !window.String && !window.Number && cf_NaN === 0'),
-      `ns2: no charCodeAt, fromCharCode, String or Number: ${await E('cf_hasAt + "," + cf_hasFrom + "," + typeof window.String')}`);
-    const d0 = await draws();
-    await click('#inc');
-    ok((await until(`cdomF.draws > ${d0}`, 25)) && (await textOf('#countp')) === 'count 1' && (await E('cf_pressed')) === 0,
-      `ns2: a click on the button is drawn at once (within 500 ms): ${JSON.stringify(await textOf('#countp'))}, ${(await draws()) - d0} draws, cf_pressed ${await E('cf_pressed')}`);
-    await click('#name');
-    await E(`${field('name')}.select()`);
-    await b.send('Input.insertText', { text: 'héllo' }); await sleep(30);
-    const d1 = await draws();
-    await clickAt(600, 700);
-    await until(`cdomF.draws > ${d1}`);
-    ok((await textOf('#echop')) === 'echo héllo' && (await stat(STAT.inputs)) === 1, `ns2: a field's change reaches C, é through escape: ${JSON.stringify(await textOf('#echop'))}, ${await stat(STAT.inputs)} input`);
-    const d2 = await draws();
-    await click('#inc');
-    ok((await until(`cdomF.draws > ${d2}`, 25)) && (await textOf('#countp')) === 'count 2', `ns2: and the next click too: ${JSON.stringify(await textOf('#countp'))}`);
-    // Netscape 2.02 goes deaf to later clicks when the view is rewritten inside a click's own handler (the real browser,
-    // docs/frames-design.md 17): the draw of a click comes from a timer. A synchronous click() runs the handler to its end.
-    const d3 = await draws();
-    ok(await E(`(function () { var e = ${field('inc')}, d = cdomF.draws; e.click(); return cdomF.draws === d; })()`) && (await until(`cdomF.draws > ${d3}`, 40)),
-      "ns2: a click's draw leaves its handler (no draw before the handler returns), and comes from a timer");
-    ok((await E('cdomF.errors')) === '', `ns2: no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
-  }
+    // First, so that it runs whatever fails after it.
+    // Netscape 2 (tools/cdp.mjs's ?ns2: no mouse button or key event reaches the page, no charCodeAt or fromCharCode, no
+    // selectionStart, no field type): the page still counts clicks, drawn at once, and takes a field's change. The button
+    // hooks never fire, so cf_pressed stays 0 and the cf_LATER rule works alone (section 16).
+    await go(`http://127.0.0.1:${port}/frames.html?ns2`);
+    if (!(await until('!!window.READY && window.cdomF && cdomF.draws > 0'))) ok(false, 'ns2: booted');
+    else {
+        ok(await E('cf_hasAt === 0 && cf_hasFrom === 0 && !"a".charCodeAt && !window.String && !window.Number && cf_NaN === 0'),
+          `ns2: no charCodeAt, fromCharCode, String or Number: ${await E('cf_hasAt + "," + cf_hasFrom + "," + typeof window.String')}`);
+        const d0 = await draws();
+        await click('#inc');
+        ok((await until(`cdomF.draws > ${d0}`, 25)) && (await textOf('#countp')) === 'count 1' && (await E('cf_pressed')) === 0,
+          `ns2: a click on the button is drawn at once (within 500 ms): ${JSON.stringify(await textOf('#countp'))}, ${(await draws()) - d0} draws, cf_pressed ${await E('cf_pressed')}`);
+        await click('#name');
+        await E(`${field('name')}.select()`);
+        await b.send('Input.insertText', { text: 'héllo' }); await sleep(30);
+        const d1 = await draws();
+        await clickAt(600, 700);
+        await until(`cdomF.draws > ${d1}`);
+        ok((await textOf('#echop')) === 'echo héllo' && (await stat(STAT.inputs)) === 1, `ns2: a field's change reaches C, é through escape: ${JSON.stringify(await textOf('#echop'))}, ${await stat(STAT.inputs)} input`);
+        const d2 = await draws();
+        await click('#inc');
+        ok((await until(`cdomF.draws > ${d2}`, 25)) && (await textOf('#countp')) === 'count 2', `ns2: and the next click too: ${JSON.stringify(await textOf('#countp'))}`);
+        // Netscape 2.02 goes deaf to later clicks when the view is rewritten inside a click's own handler (the real browser,
+        // docs/frames-design.md 17): the draw of a click comes from a timer. A synchronous click() runs the handler to its end.
+        const d3 = await draws();
+        ok(await E(`(function () { var e = ${field('inc')}, d = cdomF.draws; e.click(); return cdomF.draws === d; })()`) && (await until(`cdomF.draws > ${d3}`, 40)),
+          "ns2: a click's draw leaves its handler (no draw before the handler returns), and comes from a timer");
+        ok((await E('cdomF.errors')) === '', `ns2: no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
+    }
 
-  await go(`http://127.0.0.1:${port}/frames.html`);
-  ok(await until('!!window.READY && window.cdomF && cdomF.draws > 0'), 'booted, and the frame drawn');
-  if (!(await E('!!window.READY'))) break run;
-  ok(...tierFetched(await E(FETCHED), 'frames'));
-  ok(await E('typeof cdom === "undefined" && typeof document.getElementById === "undefined" && typeof document.createElement === "undefined"'
-    + ` && typeof ${F}.createElement === "undefined" && typeof ${F}.body.appendChild === "undefined" && typeof ${F}.body.addEventListener === "undefined"`
-    + ` && typeof ${F}.body.attachEvent === "undefined" && !("innerHTML" in ${F}.body)`),
-    'no DOM mutation in the page or its frame: no createElement, appendChild, innerHTML, getElementById or listeners');
-  ok(await ET('frames.length === 2 && document.querySelector("frameset") !== null && document.querySelector("div#m") === null && frames[1].name === "cdomApp" && frames[0].name === "cdomView"'),
-    'the page is a frameset of the view and the app frame: the early script\'s FRAMESET took the body\'s place');
-  ok(await E('typeof parent.cdomF === "undefined" && !!window.cdomF && /\\/frames\\.app\\.html$/.test(location.pathname) && location.search === ""'),
-    'the shim lives in the app frame (cdomApp: the page\'s app document, with the page\'s query), not in the top window');
-  ok((await E('X.url_search()')) === 0, `the app reads the top window's URL, which has no query here: ${await E('X.url_search()')} bytes`);
-  // The path too: the app frame's is frames.app.html, the top window's frames.html (what cf_op_url_read encodes, caught).
-  const urlPath = await E('(function () { var got = null, real = cf_encode; cf_encode = function (t) { got = t; cf_wrote = 0; }; cf_op_url_read(0, 0, 0); cf_encode = real; return got; })()');
-  ok(urlPath === '/frames.html', `the app reads the top window's URL path, not its frame's: ${JSON.stringify(urlPath)}`);
-  ok((await draws()) === 1, `cd_main drew once: ${await draws()}`);
-  const h0 = await ET('history.length');
-  const errs = (x) => b.exceptions.filter((e) => !/ReferenceError: TextDecoder is not defined$/.test(e));
-  await matches('after cd_main');
-  const ids = await E(TREE_IDS);
-  const bad = [];
-  for (const [id, hidden, text] of ids) {
-    const there = await E(`!!${F}.querySelector("#" + ${JSON.stringify(id)})`);
-    if (hidden ? there : !there) bad.push(`${id} ${hidden ? 'drawn' : 'missing'}`);
-    else if (!hidden && text !== null && (await textOf('#' + id)).trim() !== text.trim()) bad.push(`${id} text ${JSON.stringify(await textOf('#' + id))} not ${JSON.stringify(text)}`);
-  }
-  ok(ids.length >= 12 && !bad.length, `each of the tree's ${ids.length} elements with an id is in the frame with its text, and none not drawn is: ${bad.join('; ')}`);
-  ok(await E(`!${F}.querySelector("#hidden") && !${F}.querySelector("#pic") && !${F}.querySelector("svg")`), 'display: none and the SVG are not written');
-  ok(await E(`(function () { var s = ${F}.querySelector("#styled"), f = s.querySelector("font"); return !!f && f.getAttribute("color") === "red"
+    await go(`http://127.0.0.1:${port}/frames.html`);
+    ok(await until('!!window.READY && window.cdomF && cdomF.draws > 0'), 'booted, and the frame drawn');
+    if (!(await E('!!window.READY'))) break run;
+    ok(...tierFetched(await E(FETCHED), 'frames'));
+    ok(await E('typeof cdom === "undefined" && typeof document.getElementById === "undefined" && typeof document.createElement === "undefined"'
+      + ` && typeof ${F}.createElement === "undefined" && typeof ${F}.body.appendChild === "undefined" && typeof ${F}.body.addEventListener === "undefined"`
+      + ` && typeof ${F}.body.attachEvent === "undefined" && !("innerHTML" in ${F}.body)`),
+      'no DOM mutation in the page or its frame: no createElement, appendChild, innerHTML, getElementById or listeners');
+    ok(await ET('frames.length === 2 && document.querySelector("frameset") !== null && document.querySelector("div#m") === null && frames[1].name === "cdomApp" && frames[0].name === "cdomView"'),
+      'the page is a frameset of the view and the app frame: the early script\'s FRAMESET took the body\'s place');
+    ok(await E('typeof parent.cdomF === "undefined" && !!window.cdomF && /\\/frames\\.app\\.html$/.test(location.pathname) && location.search === ""'),
+      'the shim lives in the app frame (cdomApp: the page\'s app document, with the page\'s query), not in the top window');
+    ok((await E('X.url_search()')) === 0, `the app reads the top window's URL, which has no query here: ${await E('X.url_search()')} bytes`);
+    // The path too: the app frame's is frames.app.html, the top window's frames.html (what cf_op_url_read encodes, caught).
+    const urlPath = await E('(function () { var got = null, real = cf_encode; cf_encode = function (t) { got = t; cf_wrote = 0; }; cf_op_url_read(0, 0, 0); cf_encode = real; return got; })()');
+    ok(urlPath === '/frames.html', `the app reads the top window's URL path, not its frame's: ${JSON.stringify(urlPath)}`);
+    ok((await draws()) === 1, `cd_main drew once: ${await draws()}`);
+    const h0 = await ET('history.length');
+    const errs = (x) => b.exceptions.filter((e) => !/ReferenceError: TextDecoder is not defined$/.test(e));
+    await matches('after cd_main');
+    const ids = await E(TREE_IDS);
+    const bad = [];
+    for (const [id, hidden, text] of ids) {
+        const there = await E(`!!${F}.querySelector("#" + ${JSON.stringify(id)})`);
+        if (hidden ? there : !there) bad.push(`${id} ${hidden ? 'drawn' : 'missing'}`);
+        else if (!hidden && text !== null && (await textOf('#' + id)).trim() !== text.trim()) bad.push(`${id} text ${JSON.stringify(await textOf('#' + id))} not ${JSON.stringify(text)}`);
+    }
+    ok(ids.length >= 12 && !bad.length, `each of the tree's ${ids.length} elements with an id is in the frame with its text, and none not drawn is: ${bad.join('; ')}`);
+    ok(await E(`!${F}.querySelector("#hidden") && !${F}.querySelector("#pic") && !${F}.querySelector("svg")`), 'display: none and the SVG are not written');
+    ok(await E(`(function () { var s = ${F}.querySelector("#styled"), f = s.querySelector("font"); return !!f && f.getAttribute("color") === "red"
     && !!s.querySelector("b i u") && !s.getAttribute("style"); })()`), 'color, font-weight, font-style and text-decoration as FONT COLOR, B, I and U, and no style attribute');
-  ok(await E(`(function () { var f = ${F}.querySelector("#title font"); return !!f && f.getAttribute("color") === "#800000"; })()`), "the heading's color as FONT COLOR");
-  ok(await E(`(function () { var i = ${F}.querySelector("#inc"); return i.tagName === "INPUT" && i.type === "button" && i.value === "inc" && i.form === ${F}.forms[0]; })()`),
-    'the button is an INPUT TYPE=button with its text as the value, in the one FORM');
-  // Markup characters in a text, an attribute, a textarea's value and an option's text: each is read back from the
-  // frame's own DOM, so markup the shim did not escape would show as elements or cut values, not as these characters.
-  const ESC = `<b>"&amp;x</b>'`;
-  const esc = await E(`(function () { var p = ${F}.querySelector("#esc"), t = ${F}.querySelector("#escta"), s = ${F}.querySelector("#escsel");
+    ok(await E(`(function () { var f = ${F}.querySelector("#title font"); return !!f && f.getAttribute("color") === "#800000"; })()`), "the heading's color as FONT COLOR");
+    ok(await E(`(function () { var i = ${F}.querySelector("#inc"); return i.tagName === "INPUT" && i.type === "button" && i.value === "inc" && i.form === ${F}.forms[0]; })()`),
+      'the button is an INPUT TYPE=button with its text as the value, in the one FORM');
+    // Markup characters in a text, an attribute, a textarea's value and an option's text: each is read back from the
+    // frame's own DOM, so markup the shim did not escape would show as elements or cut values, not as these characters.
+    const ESC = `<b>"&amp;x</b>'`;
+    const esc = await E(`(function () { var p = ${F}.querySelector("#esc"), t = ${F}.querySelector("#escta"), s = ${F}.querySelector("#escsel");
     return [p ? p.innerText : null, p ? p.getAttribute("title") : null, p ? p.getElementsByTagName("b").length : -1, t ? t.value : null,
       s && s.options[0] ? s.options[0].text : null]; })()`);
-  ok(esc[0] === ESC && esc[2] === 0, `a text with markup characters reads back as them: ${JSON.stringify(esc[0])}, ${esc[2]} B elements`);
-  ok(esc[1] === ESC, `an attribute value with markup characters reads back as them: ${JSON.stringify(esc[1])}`);
-  ok(esc[3] === ESC, `a textarea value with markup characters reads back as them: ${JSON.stringify(esc[3])}`);
-  ok(esc[4] === ESC, `an option text with markup characters reads back as them: ${JSON.stringify(esc[4])}`);
+    ok(esc[0] === ESC && esc[2] === 0, `a text with markup characters reads back as them: ${JSON.stringify(esc[0])}, ${esc[2]} B elements`);
+    ok(esc[1] === ESC, `an attribute value with markup characters reads back as them: ${JSON.stringify(esc[1])}`);
+    ok(esc[3] === ESC, `a textarea value with markup characters reads back as them: ${JSON.stringify(esc[3])}`);
+    ok(esc[4] === ESC, `an option text with markup characters reads back as them: ${JSON.stringify(esc[4])}`);
 
-  // A click on the button: delivered to C, and drawn once.
-  let d = await draws();
-  await click('#inc');
-  ok((await stat(STAT.count)) === 1 && (await textOf('#countp')) === 'count 1', `a click on the button reached C and was drawn: count ${await stat(STAT.count)}, ${JSON.stringify(await textOf('#countp'))}`);
-  ok((await draws()) === d + 1, `a click that changes the tree draws once: ${(await draws()) - d}`);
-  await matches('after a click');
+    // A click on the button: delivered to C, and drawn once.
+    let d = await draws();
+    await click('#inc');
+    ok((await stat(STAT.count)) === 1 && (await textOf('#countp')) === 'count 1', `a click on the button reached C and was drawn: count ${await stat(STAT.count)}, ${JSON.stringify(await textOf('#countp'))}`);
+    ok((await draws()) === d + 1, `a click that changes the tree draws once: ${(await draws()) - d}`);
+    await matches('after a click');
 
-  // Clicks under one listener, with the path down to the target: two links, and a span's text in a link of its own.
-  const paths = [];
-  for (const sel of ['#one', '#two', '#three a']) { await click(sel); paths.push(await stat(STAT.path)); }
-  ok(paths.join() === [1 << 16 | 0, 1 << 16 | 1, 1 << 16 | 2].join(), `links and a span's text under the listener reach it with depth 1 and paths 0, 1, 2: ${paths.map((p) => `${p >> 16}/${p & 0xffff}`)}`);
-  ok(await E(`${F}.querySelector("#one").getAttribute("href").indexOf("javascript:parent.cdomApp.cdomF.k(") === 0`), 'a listened link is a javascript: URL into the app frame');
+    // Clicks under one listener, with the path down to the target: two links, and a span's text in a link of its own.
+    const paths = [];
+    for (const sel of ['#one', '#two', '#three a']) { await click(sel); paths.push(await stat(STAT.path)); }
+    ok(paths.join() === [1 << 16 | 0, 1 << 16 | 1, 1 << 16 | 2].join(), `links and a span's text under the listener reach it with depth 1 and paths 0, 1, 2: ${paths.map((p) => `${p >> 16}/${p & 0xffff}`)}`);
+    ok(await E(`${F}.querySelector("#one").getAttribute("href").indexOf("javascript:parent.cdomApp.cdomF.k(") === 0`), 'a listened link is a javascript: URL into the app frame');
 
-  // Focus, typing, and leaving the field: focus and blur reach C, and the change is an input and a change, drawn once,
-  // later (cf_LATER), so the click that left the field is not lost.
-  d = await draws();
-  await click('#name');
-  ok((await stat(STAT.focuses)) === 1, `focus in the name field reached C: ${await stat(STAT.focuses)}`);
-  ok((await draws()) === d, `an event whose handler changes nothing draws nothing: ${(await draws()) - d}`);
-  await E(`${field('name')}.select()`);
-  await b.send('Input.insertText', { text: 'héllo' }); await sleep(30);
-  d = await draws();
-  await click('#inc');
-  await until(`cdomF.draws > ${d}`);
-  ok((await stat(STAT.inputs)) === 1 && (await stat(STAT.changes)) === 1 && (await stat(STAT.blurs)) === 1,
-    `leaving the field: one input, one change, one blur: ${await stat(STAT.inputs)}, ${await stat(STAT.changes)}, ${await stat(STAT.blurs)}`);
-  ok((await textOf('#echop')) === 'echo héllo', `the input reached C, which read the value and drew it: ${JSON.stringify(await textOf('#echop'))}`);
-  ok((await stat(STAT.count)) === 2, `the click that left the field still reached C: count ${await stat(STAT.count)}`);
-  ok((await draws()) === d + 1, `a change and the click after it draw once: ${(await draws()) - d}`);
-  // A change alone (the field left for nowhere): drawn once.
-  await click('#name');
-  await E(`${field('name')}.select()`);
-  await b.send('Input.insertText', { text: 'abc' }); await sleep(30);
-  d = await draws();
-  await clickAt(600, 700);
-  await until(`cdomF.draws > ${d}`);
-  ok((await textOf('#echop')) === 'echo abc' && (await draws()) === d + 1, `a change that C answers draws once: ${JSON.stringify(await textOf('#echop'))}, ${(await draws()) - d}`);
-  // A slow click that leaves the field: the press held 600 ms, past cf_LATER, while the change and blur wait to be
-  // drawn. The draw waits for the button's release, so the button under the pointer is still there for the click.
-  await click('#name');
-  await E(`${field('name')}.select()`);
-  await b.send('Input.insertText', { text: 'slow' }); await sleep(30);
-  d = await draws();
-  const before = await stat(STAT.count);
-  await click('#inc', 600);
-  await until(`cdomF.draws > ${d}`);
-  ok((await stat(STAT.count)) === before + 1 && (await textOf('#echop')) === 'echo slow' && (await draws()) === d + 1,
-    `a click held 600 ms that left a field reaches C, drawn once: count ${(await stat(STAT.count)) - before}, ${JSON.stringify(await textOf('#echop'))}, ${(await draws()) - d} draws`);
+    // Focus, typing, and leaving the field: focus and blur reach C, and the change is an input and a change, drawn once,
+    // later (cf_LATER), so the click that left the field is not lost.
+    d = await draws();
+    await click('#name');
+    ok((await stat(STAT.focuses)) === 1, `focus in the name field reached C: ${await stat(STAT.focuses)}`);
+    ok((await draws()) === d, `an event whose handler changes nothing draws nothing: ${(await draws()) - d}`);
+    await E(`${field('name')}.select()`);
+    await b.send('Input.insertText', { text: 'héllo' }); await sleep(30);
+    d = await draws();
+    await click('#inc');
+    await until(`cdomF.draws > ${d}`);
+    ok((await stat(STAT.inputs)) === 1 && (await stat(STAT.changes)) === 1 && (await stat(STAT.blurs)) === 1,
+      `leaving the field: one input, one change, one blur: ${await stat(STAT.inputs)}, ${await stat(STAT.changes)}, ${await stat(STAT.blurs)}`);
+    ok((await textOf('#echop')) === 'echo héllo', `the input reached C, which read the value and drew it: ${JSON.stringify(await textOf('#echop'))}`);
+    ok((await stat(STAT.count)) === 2, `the click that left the field still reached C: count ${await stat(STAT.count)}`);
+    ok((await draws()) === d + 1, `a change and the click after it draw once: ${(await draws()) - d}`);
+    // A change alone (the field left for nowhere): drawn once.
+    await click('#name');
+    await E(`${field('name')}.select()`);
+    await b.send('Input.insertText', { text: 'abc' }); await sleep(30);
+    d = await draws();
+    await clickAt(600, 700);
+    await until(`cdomF.draws > ${d}`);
+    ok((await textOf('#echop')) === 'echo abc' && (await draws()) === d + 1, `a change that C answers draws once: ${JSON.stringify(await textOf('#echop'))}, ${(await draws()) - d}`);
+    // A slow click that leaves the field: the press held 600 ms, past cf_LATER, while the change and blur wait to be
+    // drawn. The draw waits for the button's release, so the button under the pointer is still there for the click.
+    await click('#name');
+    await E(`${field('name')}.select()`);
+    await b.send('Input.insertText', { text: 'slow' }); await sleep(30);
+    d = await draws();
+    const before = await stat(STAT.count);
+    await click('#inc', 600);
+    await until(`cdomF.draws > ${d}`);
+    ok((await stat(STAT.count)) === before + 1 && (await textOf('#echop')) === 'echo slow' && (await draws()) === d + 1,
+      `a click held 600 ms that left a field reaches C, drawn once: count ${(await stat(STAT.count)) - before}, ${JSON.stringify(await textOf('#echop'))}, ${(await draws()) - d} draws`);
 
-  // Typed text C has not seen survives a redraw, and so does the focus and the caret in it.
-  await click('#note');
-  await b.send('Input.insertText', { text: 'hello' }); await sleep(30);
-  await E(`${field('note')}.setSelectionRange(2, 2)`);
-  d = await draws();
-  await E('X.touch()');
-  ok((await draws()) === d + 1, `an export that changes the tree draws once: ${(await draws()) - d}`);
-  ok((await E(`${field('note')}.value`)) === 'hello', `typed text C has not seen survives a redraw: ${JSON.stringify(await E(`${field('note')}.value`))}`);
-  ok(await E(`${F}.activeElement === ${field('note')} && ${field('note')}.selectionStart === 2`), `the focus and the caret survive it: ${await E(`${F}.activeElement && ${F}.activeElement.name`)} at ${await E(`${field('note')}.selectionStart`)}`);
-  await b.send('Input.insertText', { text: 'XY' }); await sleep(30);
-  ok((await E(`${field('note')}.value`)) === 'heXYllo', `typing goes on at the caret: ${JSON.stringify(await E(`${field('note')}.value`))}`);
-  ok((await E('X.note_len()')) === 7, `C reads the typed value from the field: ${await E('X.note_len()')} bytes`);
-  d = await draws();
-  await E('X.noop()');
-  ok((await draws()) === d, `an export that changes nothing draws nothing: ${(await draws()) - d}`);
-  // C sets a value and moves the focus.
-  await E('X.set_note()');
-  ok((await E(`${field('note')}.value`)) === 'from C' && (await E('X.note_len()')) === 6, `a value C sets is drawn and read back: ${JSON.stringify(await E(`${field('note')}.value`))}`);
-  await E('X.focus_name()');
-  ok(await E(`${F}.activeElement === ${field('name')}`), 'a focus C asks for is given');
+    // Typed text C has not seen survives a redraw, and so does the focus and the caret in it.
+    await click('#note');
+    await b.send('Input.insertText', { text: 'hello' }); await sleep(30);
+    await E(`${field('note')}.setSelectionRange(2, 2)`);
+    d = await draws();
+    await E('X.touch()');
+    ok((await draws()) === d + 1, `an export that changes the tree draws once: ${(await draws()) - d}`);
+    ok((await E(`${field('note')}.value`)) === 'hello', `typed text C has not seen survives a redraw: ${JSON.stringify(await E(`${field('note')}.value`))}`);
+    ok(await E(`${F}.activeElement === ${field('note')} && ${field('note')}.selectionStart === 2`), `the focus and the caret survive it: ${await E(`${F}.activeElement && ${F}.activeElement.name`)} at ${await E(`${field('note')}.selectionStart`)}`);
+    await b.send('Input.insertText', { text: 'XY' }); await sleep(30);
+    ok((await E(`${field('note')}.value`)) === 'heXYllo', `typing goes on at the caret: ${JSON.stringify(await E(`${field('note')}.value`))}`);
+    ok((await E('X.note_len()')) === 7, `C reads the typed value from the field: ${await E('X.note_len()')} bytes`);
+    d = await draws();
+    await E('X.noop()');
+    ok((await draws()) === d, `an export that changes nothing draws nothing: ${(await draws()) - d}`);
+    // C sets a value and moves the focus.
+    await E('X.set_note()');
+    ok((await E(`${field('note')}.value`)) === 'from C' && (await E('X.note_len()')) === 6, `a value C sets is drawn and read back: ${JSON.stringify(await E(`${field('note')}.value`))}`);
+    await E('X.focus_name()');
+    ok(await E(`${F}.activeElement === ${field('name')}`), 'a focus C asks for is given');
 
-  // A checkbox: its click is a change, with checked read in C.
-  await click('#check');
-  ok((await stat(STAT.checks)) === 2 && (await E(`${field('check')}.checked`)), `the checkbox's change reached C with checked 1: ${await stat(STAT.checks)}`);
-  await click('#check');
-  ok((await stat(STAT.checks)) === 21, `and again with checked 0: ${await stat(STAT.checks)}`);
+    // A checkbox: its click is a change, with checked read in C.
+    await click('#check');
+    ok((await stat(STAT.checks)) === 2 && (await E(`${field('check')}.checked`)), `the checkbox's change reached C with checked 1: ${await stat(STAT.checks)}`);
+    await click('#check');
+    ok((await stat(STAT.checks)) === 21, `and again with checked 0: ${await stat(STAT.checks)}`);
 
-  // Two radios of one group (name grp): the second's click unchecks the first, in the frame and as C reads them.
-  await click('#r1');
-  await click('#r2');
-  ok((await stat(STAT.radios)) === 12 && (await E(`${field('r2')}.checked && !${field('r1')}.checked && ${field('r1')}.name === "grp" && ${field('r2')}.name === "grp"`)),
-    `two radios of one name are one group: C read ${await stat(STAT.radios)} (want 1 then 2: 12), r1 ${await E(`${field('r1')}.checked`)}, r2 ${await E(`${field('r2')}.checked`)}`);
+    // Two radios of one group (name grp): the second's click unchecks the first, in the frame and as C reads them.
+    await click('#r1');
+    await click('#r2');
+    ok((await stat(STAT.radios)) === 12 && (await E(`${field('r2')}.checked && !${field('r1')}.checked && ${field('r1')}.name === "grp" && ${field('r2')}.name === "grp"`)),
+      `two radios of one name are one group: C read ${await stat(STAT.radios)} (want 1 then 2: 12), r1 ${await E(`${field('r1')}.checked`)}, r2 ${await E(`${field('r2')}.checked`)}`);
 
-  // Tags in capitals are the same tags: BUTTON an INPUT TYPE=button, SVG not drawn.
-  ok(await E(`(function () { var b = ${F}.querySelector("#upbtn"); return !!b && b.tagName === "INPUT" && b.type === "button" && b.value === "UP" && !${F}.querySelector("#upsvg"); })()`),
-    'a tag in capitals is the same tag: BUTTON as an INPUT TYPE=button, SVG not drawn');
-  // A form element from C is a DIV in the shim's one FORM: the fields in it and after it are that FORM's elements, in
-  // order, and read back as such.
-  ok(await E(`(function () { var d = ${F}, f = d.forms[0], i = d.querySelector("#inform"), a = d.querySelector("#afterform");
+    // Tags in capitals are the same tags: BUTTON an INPUT TYPE=button, SVG not drawn.
+    ok(await E(`(function () { var b = ${F}.querySelector("#upbtn"); return !!b && b.tagName === "INPUT" && b.type === "button" && b.value === "UP" && !${F}.querySelector("#upsvg"); })()`),
+      'a tag in capitals is the same tag: BUTTON as an INPUT TYPE=button, SVG not drawn');
+    // A form element from C is a DIV in the shim's one FORM: the fields in it and after it are that FORM's elements, in
+    // order, and read back as such.
+    ok(await E(`(function () { var d = ${F}, f = d.forms[0], i = d.querySelector("#inform"), a = d.querySelector("#afterform");
     return d.forms.length === 1 && !!i && !!a && i.form === f && a.form === f && ${field('inform')} === i && ${field('afterform')} === a
       && d.querySelector("#appform").tagName === "DIV"; })()`), 'a form from C is a DIV: the fields in it and after it stay in the one FORM, in order');
-  await E(`${field('afterform')}.value = "typed after"`);
-  await E('X.touch()');
-  ok((await E(`${field('afterform')}.value`)) === 'typed after', `a field after the form is read back across a redraw: ${JSON.stringify(await E(`${field('afterform')}.value`))}`);
+    await E(`${field('afterform')}.value = "typed after"`);
+    await E('X.touch()');
+    ok((await E(`${field('afterform')}.value`)) === 'typed after', `a field after the form is read back across a redraw: ${JSON.stringify(await E(`${field('afterform')}.value`))}`);
 
-  // A timer's callback draws.
-  d = await draws();
-  await E('X.tick_after(10)');
-  ok(await until('X.stat(7) === 1') && (await textOf('#tickp')) === 'ticks 1', `a timer reached C and was drawn: ${JSON.stringify(await textOf('#tickp'))}`);
-  ok((await draws()) === d + 1, `a timer draws once: ${(await draws()) - d}`);
-
-  // A timer's draw while a button is down waits for the release, so that the click on the button it would replace is not lost
-  // (Play's tick against the click on Pause, which Netscape 4.08 lost until the draw waited).
-  {
-    const [x, y] = await centre('#inc');
-    const n0 = await stat(STAT.count), t0 = await stat(STAT.ticks);
+    // A timer's callback draws.
     d = await draws();
-    await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y, 1, 'left');
     await E('X.tick_after(10)');
-    await sleep(120);
-    ok((await stat(STAT.ticks)) === t0 + 1 && (await draws()) === d, `a timer's draw waits while a button is down: the tick ran (${(await stat(STAT.ticks)) - t0}), draws ${(await draws()) - d}`);
-    await mouse('mouseReleased', x, y, 0, 'left'); await sleep(60);
-    await until(`cdomF.draws > ${d}`);
-    ok((await stat(STAT.count)) === n0 + 1 && (await textOf('#tickp')) === `ticks ${t0 + 1}` && (await draws()) === d + 1,
-      `after the release the click reached C and the tick was drawn, once: count ${(await stat(STAT.count)) - n0}, ${JSON.stringify(await textOf('#tickp'))}, ${(await draws()) - d} draws`);
-  }
+    ok(await until('X.stat(7) === 1') && (await textOf('#tickp')) === 'ticks 1', `a timer reached C and was drawn: ${JSON.stringify(await textOf('#tickp'))}`);
+    ok((await draws()) === d + 1, `a timer draws once: ${(await draws()) - d}`);
 
-  // Many ops in one call: still one draw.
-  d = await draws();
-  await E('X.grow(5)');
-  ok((await draws()) === d + 1 && (await E(`${F}.querySelectorAll("#list li").length`)) === 5, `an export of 15 ops (5 items) draws once: ${(await draws()) - d}`);
-  ok((await ET('history.length')) === h0, `no redraw added a history entry: ${h0} then ${await ET('history.length')}`);
-  await matches('at the end');
-  // cd_seed (the seed exception of 2026-11-20, tools/seeds.mjs): the page passed options.seed = 7, so it is cd_seed; without one
-  // cf_seed draws from the engine's generator and the clock, stubbed here so the answers are fixed.
-  ok((await E('X.seed()')) === 7, `cd_seed is options.seed where the page passes one: ${await E('X.seed()')}`);
-  const seeds = await E(`(function () {
+    // A timer's draw while a button is down waits for the release, so that the click on the button it would replace is not lost
+    // (Play's tick against the click on Pause, which Netscape 4.08 lost until the draw waited).
+    {
+        const [x, y] = await centre('#inc');
+        const n0 = await stat(STAT.count), t0 = await stat(STAT.ticks);
+        d = await draws();
+        await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y, 1, 'left');
+        await E('X.tick_after(10)');
+        await sleep(120);
+        ok((await stat(STAT.ticks)) === t0 + 1 && (await draws()) === d, `a timer's draw waits while a button is down: the tick ran (${(await stat(STAT.ticks)) - t0}), draws ${(await draws()) - d}`);
+        await mouse('mouseReleased', x, y, 0, 'left'); await sleep(60);
+        await until(`cdomF.draws > ${d}`);
+        ok((await stat(STAT.count)) === n0 + 1 && (await textOf('#tickp')) === `ticks ${t0 + 1}` && (await draws()) === d + 1,
+          `after the release the click reached C and the tick was drawn, once: count ${(await stat(STAT.count)) - n0}, ${JSON.stringify(await textOf('#tickp'))}, ${(await draws()) - d} draws`);
+    }
+
+    // Many ops in one call: still one draw.
+    d = await draws();
+    await E('X.grow(5)');
+    ok((await draws()) === d + 1 && (await E(`${F}.querySelectorAll("#list li").length`)) === 5, `an export of 15 ops (5 items) draws once: ${(await draws()) - d}`);
+    ok((await ET('history.length')) === h0, `no redraw added a history entry: ${h0} then ${await ET('history.length')}`);
+    await matches('at the end');
+    // cd_seed (the seed exception of 2026-11-20, tools/seeds.mjs): the page passed options.seed = 7, so it is cd_seed; without one
+    // cf_seed draws from the engine's generator and the clock, stubbed here so the answers are fixed.
+    ok((await E('X.seed()')) === 7, `cd_seed is options.seed where the page passes one: ${await E('X.seed()')}`);
+    const seeds = await E(`(function () {
     var D = Date, R = Math.random, out = new Array(), clock = 1000, rnd = 0.25;
     Date = function () { this.getTime = function () { return clock; }; };
     Math.random = function () { return rnd; };
@@ -355,98 +355,98 @@ run: try {
     Date = D; Math.random = R;
     return out.join(",");
   })()`);
-  const sd = seeds.split(',').map(Number);
-  ok(sd.slice(0, 8).every((n) => Number.isInteger(n) && n >= 0 && n <= 0xffffffff), `cd_seed without options.seed is a 32-bit unsigned number: ${seeds}`);
-  ok(sd[0] === sd[1] && sd[0] !== sd[2], `two boots with a different clock give different seeds: ${sd[0]} and ${sd[2]}`);
-  ok(sd[0] !== sd[3], `and a different draw from the generator: ${sd[0]} and ${sd[3]}`);
-  ok(sd[4] === 5 && sd[5] === 1000 && sd[6] === 2000, `with no generator the clock alone, no throw: ${sd[5]}, ${sd[6]}`);
-  ok(sd[7] === 1000 && sd[8] === 7, `a broken generator gives the clock alone, and options.seed still wins: ${sd[7]}, ${sd[8]}`);
-  ok((await E('cdomF.errors')) === '', `no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
-  ok(!errs().length, `no page exceptions: ${JSON.stringify(errs())}`);
+    const sd = seeds.split(',').map(Number);
+    ok(sd.slice(0, 8).every((n) => Number.isInteger(n) && n >= 0 && n <= 0xffffffff), `cd_seed without options.seed is a 32-bit unsigned number: ${seeds}`);
+    ok(sd[0] === sd[1] && sd[0] !== sd[2], `two boots with a different clock give different seeds: ${sd[0]} and ${sd[2]}`);
+    ok(sd[0] !== sd[3], `and a different draw from the generator: ${sd[0]} and ${sd[3]}`);
+    ok(sd[4] === 5 && sd[5] === 1000 && sd[6] === 2000, `with no generator the clock alone, no throw: ${sd[5]}, ${sd[6]}`);
+    ok(sd[7] === 1000 && sd[8] === 7, `a broken generator gives the clock alone, and options.seed still wins: ${sd[7]}, ${sd[8]}`);
+    ok((await E('cdomF.errors')) === '', `no errors noted: ${JSON.stringify(await E('cdomF.errors'))}`);
+    ok(!errs().length, `no page exceptions: ${JSON.stringify(errs())}`);
 
-  // The boot waits for the shim and the module (in the app document they are there at once; IE 4 once ran a written script
-  // before the SCRIPT SRC it followed, and the wait is kept). Here the start is hidden, cdomBootWait called, and the start
-  // given back later.
-  await E(`(function () { window.__real = window.cdomFramesStart; window.__fac = window.cdomFactory; window.cdomFramesStart = null;
+    // The boot waits for the shim and the module (in the app document they are there at once; IE 4 once ran a written script
+    // before the SCRIPT SRC it followed, and the wait is kept). Here the start is hidden, cdomBootWait called, and the start
+    // given back later.
+    await E(`(function () { window.__real = window.cdomFramesStart; window.__fac = window.cdomFactory; window.cdomFramesStart = null;
     window.cdomFactory = function () {}; window.__w = 0; window.__t = cdomBootTries; cdomBootWait(); })()`);
-  await sleep(120);
-  ok((await E('window.__w === 0 && cdomBootTries > window.__t')), `the boot does not start without the shim, and tries again: ${await E('cdomBootTries - window.__t')} tries`);
-  await E('window.cdomFramesStart = function (f) { window.__w = f === window.cdomFactory ? 1 : 2; }');
-  ok(await until('window.__w !== 0') && (await E('window.__w === 1')), 'the boot starts once the shim has run, with the app\'s factory');
-  await E('(function () { window.cdomFramesStart = window.__real; window.cdomFactory = window.__fac; cdomBootTries = 0; })()');
+    await sleep(120);
+    ok((await E('window.__w === 0 && cdomBootTries > window.__t')), `the boot does not start without the shim, and tries again: ${await E('cdomBootTries - window.__t')} tries`);
+    await E('window.cdomFramesStart = function (f) { window.__w = f === window.cdomFactory ? 1 : 2; }');
+    ok(await until('window.__w !== 0') && (await E('window.__w === 1')), 'the boot starts once the shim has run, with the app\'s factory');
+    await E('(function () { window.cdomFramesStart = window.__real; window.cdomFactory = window.__fac; cdomBootTries = 0; })()');
 
-  // A trap in C: thrown out of the call, which never comes back to the shim (no finally in JavaScript 1.1), so nothing
-  // is drawn; the next entry from the browser puts the counts back, notes it, and draws what the call had done.
-  d = await draws();
-  const was = await stat(STAT.count);
-  // The js1c build cannot throw: its trap ends the call with the exports' js1_trap set, and cf_cRun returns as a throw would.
-  let threw = '';
-  try { await E('X.trap()'); } catch (e) { threw = String(e).slice(0, 80); }
-  const trapped = await E('!!(cf_raw && cf_raw.js1_trap) && cf_busy > 0');
-  ok((threw || trapped) && (await draws()) === d, `a trap ends the call, and nothing is drawn: ${threw ? 'threw' : trapped ? 'js1_trap set, the call left' : 'no throw'}, ${(await draws()) - d} draws`);
-  await click('#inc');
-  ok((await textOf('#countp')) === `count ${was + 2}` && (await E('cdomF.errors')).includes('did not return'),
-    `the next click recovers: drawn with both counts (${JSON.stringify(await textOf('#countp'))}, want count ${was + 2}), and noted: ${JSON.stringify(await E('cdomF.errors'))}`);
+    // A trap in C: thrown out of the call, which never comes back to the shim (no finally in JavaScript 1.1), so nothing
+    // is drawn; the next entry from the browser puts the counts back, notes it, and draws what the call had done.
+    d = await draws();
+    const was = await stat(STAT.count);
+    // The js1c build cannot throw: its trap ends the call with the exports' js1_trap set, and cf_cRun returns as a throw would.
+    let threw = '';
+    try { await E('X.trap()'); } catch (e) { threw = String(e).slice(0, 80); }
+    const trapped = await E('!!(cf_raw && cf_raw.js1_trap) && cf_busy > 0');
+    ok((threw || trapped) && (await draws()) === d, `a trap ends the call, and nothing is drawn: ${threw ? 'threw' : trapped ? 'js1_trap set, the call left' : 'no throw'}, ${(await draws()) - d} draws`);
+    await click('#inc');
+    ok((await textOf('#countp')) === `count ${was + 2}` && (await E('cdomF.errors')).includes('did not return'),
+      `the next click recovers: drawn with both counts (${JSON.stringify(await textOf('#countp'))}, want count ${was + 2}), and noted: ${JSON.stringify(await E('cdomF.errors'))}`);
 
-  // A throw in the shim's own draw must not leave the handlers quiet (cf_drawing) for good. select on a checkbox gives
-  // the focus back with no selection set, so it does not throw at all; a focus that throws while the shim gives it back
-  // (planted once on the frame's inputs) leaves cf_drawing up, which the draw's settle timer puts down and notes.
-  let selectThrew = '';
-  try { await E('X.select_check()'); } catch (e) { selectThrew = String(e).slice(0, 120); }
-  let n0 = await stat(STAT.count);
-  await click('#inc');
-  ok(!selectThrew && (await stat(STAT.count)) === n0 + 1, `cd_call(checkbox, "select") does not throw, and the next click reaches C: ${selectThrew || 'no throw'}, count ${(await stat(STAT.count)) - n0}`);
-  await E('(function () { var P = parent.frames[0].HTMLInputElement.prototype, f = P.focus; P.focus = function () { P.focus = f; throw new Error("planted"); }; })()');
-  let focusThrew = '';
-  try { await E('X.focus_name()'); } catch (e) { focusThrew = String(e).slice(0, 120); }
-  await until('cdomF.errors.indexOf("a draw did not finish") >= 0');
-  n0 = await stat(STAT.count);
-  await click('#inc');
-  ok(focusThrew && (await stat(STAT.count)) === n0 + 1 && (await E('cdomF.errors')).includes('a draw did not finish'),
-    `a throw while the shim draws does not lock the page: ${focusThrew ? 'threw' : 'no throw'}, the next click reached C (${(await stat(STAT.count)) - n0}), noted: ${JSON.stringify(await E('cdomF.errors'))}`);
+    // A throw in the shim's own draw must not leave the handlers quiet (cf_drawing) for good. select on a checkbox gives
+    // the focus back with no selection set, so it does not throw at all; a focus that throws while the shim gives it back
+    // (planted once on the frame's inputs) leaves cf_drawing up, which the draw's settle timer puts down and notes.
+    let selectThrew = '';
+    try { await E('X.select_check()'); } catch (e) { selectThrew = String(e).slice(0, 120); }
+    let n0 = await stat(STAT.count);
+    await click('#inc');
+    ok(!selectThrew && (await stat(STAT.count)) === n0 + 1, `cd_call(checkbox, "select") does not throw, and the next click reaches C: ${selectThrew || 'no throw'}, count ${(await stat(STAT.count)) - n0}`);
+    await E('(function () { var P = parent.frames[0].HTMLInputElement.prototype, f = P.focus; P.focus = function () { P.focus = f; throw new Error("planted"); }; })()');
+    let focusThrew = '';
+    try { await E('X.focus_name()'); } catch (e) { focusThrew = String(e).slice(0, 120); }
+    await until('cdomF.errors.indexOf("a draw did not finish") >= 0');
+    n0 = await stat(STAT.count);
+    await click('#inc');
+    ok(focusThrew && (await stat(STAT.count)) === n0 + 1 && (await E('cdomF.errors')).includes('a draw did not finish'),
+      `a throw while the shim draws does not lock the page: ${focusThrew ? 'threw' : 'no throw'}, the next click reached C (${(await stat(STAT.count)) - n0}), noted: ${JSON.stringify(await E('cdomF.errors'))}`);
 
-  // A tag that is not letters and digits is drawn as a SPAN, and noted: nothing of it reaches the markup.
-  await E('X.bad_tag()');
-  ok(await E(`(function () { var e = ${F}.querySelector("#badtag"); return !!e && e.tagName === "SPAN" && !e.getAttribute("onclick") && e.innerText === "bad"; })()`)
-    && (await E('cdomF.errors')).includes('is not letters and digits'),
-    `a tag that is not letters and digits is a SPAN, with nothing of it in the markup, and noted: ${await E(`(function () { var e = ${F}.querySelector("#badtag"); return e ? e.tagName + " " + e.getAttribute("onclick") : "none"; })()`)}`);
+    // A tag that is not letters and digits is drawn as a SPAN, and noted: nothing of it reaches the markup.
+    await E('X.bad_tag()');
+    ok(await E(`(function () { var e = ${F}.querySelector("#badtag"); return !!e && e.tagName === "SPAN" && !e.getAttribute("onclick") && e.innerText === "bad"; })()`)
+      && (await E('cdomF.errors')).includes('is not letters and digits'),
+      `a tag that is not letters and digits is a SPAN, with nothing of it in the markup, and noted: ${await E(`(function () { var e = ${F}.querySelector("#badtag"); return e ? e.tagName + " " + e.getAttribute("onclick") : "none"; })()`)}`);
 
-  // cd_move as the DOM's insertBefore: before a node of another parent is an error, noted, and nothing moves; before
-  // itself, nothing moves (a self-link would hang the next serialization).
-  const items = `(function () { var l = ${F}.querySelectorAll("#list li"), o = [], i; for (i = 0; i < l.length; i++) o[i] = l[i].innerText; return o.join(); })()`;
-  const listWas = await E(items);
-  await E('X.move_foreign()');
-  ok((await E(items)) === `${listWas},m1,m2` && (await E('cdomF.errors')).includes('not a child of the parent'),
-    `cd_move before another parent's node moves nothing, and is noted: ${await E(items)}; ${JSON.stringify(await E('cdomF.errors'))}`);
-  d = await draws();
-  const selfErr = await E('(function () { try { X.move_self(); return ""; } catch (e) { return String(e); } })()');
-  ok(!selfErr && (await E(items)) === `${listWas},m1,m2` && (await draws()) === d + 1,
-    `cd_move before itself moves nothing, and the page draws: ${await E(items)}, ${(await draws()) - d} draws${selfErr ? '; threw ' + selfErr : ''}`);
+    // cd_move as the DOM's insertBefore: before a node of another parent is an error, noted, and nothing moves; before
+    // itself, nothing moves (a self-link would hang the next serialization).
+    const items = `(function () { var l = ${F}.querySelectorAll("#list li"), o = [], i; for (i = 0; i < l.length; i++) o[i] = l[i].innerText; return o.join(); })()`;
+    const listWas = await E(items);
+    await E('X.move_foreign()');
+    ok((await E(items)) === `${listWas},m1,m2` && (await E('cdomF.errors')).includes('not a child of the parent'),
+      `cd_move before another parent's node moves nothing, and is noted: ${await E(items)}; ${JSON.stringify(await E('cdomF.errors'))}`);
+    d = await draws();
+    const selfErr = await E('(function () { try { X.move_self(); return ""; } catch (e) { return String(e); } })()');
+    ok(!selfErr && (await E(items)) === `${listWas},m1,m2` && (await draws()) === d + 1,
+      `cd_move before itself moves nothing, and the page draws: ${await E(items)}, ${(await draws()) - d} draws${selfErr ? '; threw ' + selfErr : ''}`);
 
-  // js1c's bound (docs/js1-compile-design.md, Q5): every compiled function, the driver and the export wrappers wrapped
-  // to count, and the depth a click, a field's change and a timer reach is at or under the bound js1c printed.
-  {
-    const said = spawnSync(path.join(root, '../../tools/out/js1c'), [path.join(root, 'frames.wasm.js1.js.lowered.wasm'), path.join(root, 'frames.bound.tmp.js')], { encoding: 'utf8' });
-    fs.rmSync(path.join(root, 'frames.bound.tmp.js'), { force: true });
-    const bound = +(/JS depth bound (\d+)/.exec(said.stderr) || [0, 0])[1];
-    await E(`(function () { var k, f; window.JSD = 0; window.JSM = 0;
+    // js1c's bound (docs/js1-compile-design.md, Q5): every compiled function, the driver and the export wrappers wrapped
+    // to count, and the depth a click, a field's change and a timer reach is at or under the bound js1c printed.
+    {
+        const said = spawnSync(path.join(root, '../../tools/out/js1c'), [path.join(root, 'frames.wasm.js1.js.lowered.wasm'), path.join(root, 'frames.bound.tmp.js')], { encoding: 'utf8' });
+        fs.rmSync(path.join(root, 'frames.bound.tmp.js'), { force: true });
+        const bound = +(/JS depth bound (\d+)/.exec(said.stderr) || [0, 0])[1];
+        await E(`(function () { var k, f; window.JSD = 0; window.JSM = 0;
       function wrap(f) { return function () { var r; JSD++; if (JSD > JSM) JSM = JSD; try { r = f.apply(this, arguments); } finally { JSD--; } return r; }; }
       for (k in window) if (/^(J[fdx]\\d+|Jgo)$/.test(k) && typeof window[k] === 'function') window[k] = wrap(window[k]);
       for (k in JF) JF[k] = window['Jf' + (k - 1)];
       for (k in cf_raw) if (typeof cf_raw[k] === 'function' && k !== 'js1_more') cf_raw[k] = wrap(cf_raw[k]);
       for (k in cf_ops) cf_ops[k] = wrap(cf_ops[k]); })()`);
-    await click('#inc');
-    await click('#one');
-    await E('X.grow(5)');
-    const deepest = await E('JSM');
-    ok(bound > 0 && deepest > 2 && deepest <= bound, `js1c: a click, a link and growing the list by 5 reach JavaScript depth ${deepest} through the compiled code and the imports, at or under js1c's bound ${bound}`);
-  }
+        await click('#inc');
+        await click('#one');
+        await E('X.grow(5)');
+        const deepest = await E('JSM');
+        ok(bound > 0 && deepest > 2 && deepest <= bound, `js1c: a click, a link and growing the list by 5 reach JavaScript depth ${deepest} through the compiled code and the imports, at or under js1c's bound ${bound}`);
+    }
 
-  // No recursion in the shim (Netscape 2's value stack is 512 slots: docs/frames-design.md, section 16): a detached tree
-  // 60 elements deep, written, copied and read for its text, with every cf_ function wrapped to count how deep the
-  // JavaScript calls nest. A recursive walk would nest at least 60 deep; the loops nest a few calls whatever the depth.
-  {
-    const deep = await E(`(function () { var names = [], k, real = {}, depth = 0, most = 0, r = new cf_Node(1, "div", null), x = r, i, html, copy, text;
+    // No recursion in the shim (Netscape 2's value stack is 512 slots: docs/frames-design.md, section 16): a detached tree
+    // 60 elements deep, written, copied and read for its text, with every cf_ function wrapped to count how deep the
+    // JavaScript calls nest. A recursive walk would nest at least 60 deep; the loops nest a few calls whatever the depth.
+    {
+        const deep = await E(`(function () { var names = [], k, real = {}, depth = 0, most = 0, r = new cf_Node(1, "div", null), x = r, i, html, copy, text;
       for (i = 0; i < 60; i++) { var c = new cf_Node(1, "div", null); cf_place(x, c, null); x = c; }
       cf_place(x, new cf_Node(3, null, "bottom"), null);
       for (k in window) if (/^cf_/.test(k) && typeof window[k] === "function" && k !== "cf_Node" && k !== "cf_Pairs") names.push(k);
@@ -457,107 +457,107 @@ run: try {
         copy = cf_deep(r); text = cf_textOf(copy);
       } finally { for (i = 0; i < names.length; i++) window[names[i]] = real[names[i]]; }
       return [most, (html.match(/<div>/g) || []).length, html.indexOf("bottom") > 0, text]; })()`);
-    ok(deep[0] <= 6 && deep[1] === 60 && deep[2] && deep[3] === 'bottom',
-      `a tree 60 deep is written, copied and read with the shim's calls nested ${deep[0]} deep (at most 6): ${deep[1]} DIVs written, text ${JSON.stringify(deep[3])}`);
-  }
+        ok(deep[0] <= 6 && deep[1] === 60 && deep[2] && deep[3] === 'bottom',
+          `a tree 60 deep is written, copied and read with the shim's calls nested ${deep[0]} deep (at most 6): ${deep[1]} DIVs written, text ${JSON.stringify(deep[3])}`);
+    }
 
-  if (measure) {
-    // Redraw cost: a page grown to n nodes, X.touch() (one text changed) timed whole and cf_html() alone, 10 of each.
-    const median = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
-    const nodes = 'cf_count(cf_mount)';
-    await E('window.cf_count = function (x) { var n = 1, c; for (c = x.f; c; c = c.n) n += cf_count(c); return n; }');
-    const rows = [];
-    for (const want of [1000, 2000, 4000]) {
-      const have = await E(nodes);
-      if (have < want) await E(`X.grow(${Math.ceil((want - have) / 3)})`);
-      // No performance.now under LEGACY=frames (IE 9 has none) and no Date.now (IE 6): the clock is new Date(), 1 ms
-      // apart, so each sample is the mean of 10 in a row, and the median of 7 samples is kept.
-      const n = await E(nodes), whole = [], ser = [];
-      const mean10 = (call) => E(`(function () { var t = new Date().getTime(), i; for (i = 0; i < 10; i++) ${call}; return (new Date().getTime() - t) / 10; })()`);
-      for (let i = 0; i < 7; i++) {
-        whole.push(await mean10('X.touch()'));
-        ser.push(await mean10('cf_html()'));
-      }
-      rows.push({ nodes: n, us_node: +(median(whole) * 1000 / n).toFixed(2), serialize_us_node: +(median(ser) * 1000 / n).toFixed(2), bytes: await E('cdomF.bytes') });
-    }
-    console.log('measure redraw', JSON.stringify(rows));
-    const li = (rows[1].bytes - rows[0].bytes) / (rows[1].nodes - rows[0].nodes) * 3;
-    console.log('measure bytes a list item (3 nodes)', li.toFixed(1), 'a node', (li / 3).toFixed(1));
-    console.log('measure size cdom.frames.js', fs.statSync(path.join(root, 'cdom.frames.js')).size);
-  }
-} finally {
-  if (!fails || measure) {
-    // A page that opens its BODY with a tag: the early script is in the head, so the frameset is the same.
-    await go(`http://127.0.0.1:${port}/frames-body.html`);
-    ok(await until('!!window.READY && window.cdomF && cdomF.draws > 0') && await ET('frames.length === 2'), 'frames-body.html (a BODY tag): booted, and drawn in the same frameset');
-    if (await ET('frames.length === 2')) {
-      await click('#inc');
-      ok((await textOf('#countp')) === 'count 1', `and a click there reaches C: ${JSON.stringify(await textOf('#countp'))}`);
-    }
-    // The page's own query, read from the top window: frames.html?q reads as "?q", 2 bytes.
-    await go(`http://127.0.0.1:${port}/frames.html?q`);
-    ok((await until('!!window.READY')) && (await E('X.url_search()')) === 2, `the app reads the top window's query ("?q"), not its frame's: ${await E('X.url_search()')} bytes`);
-    // A trap in cd_start (cd_main, on seed 13): noted, and the frame still drawn with what cd_main had flushed.
-    for (const page of ['frames.html', 'frames-body.html']) {
-      await go(`http://127.0.0.1:${port}/${page}?trapstart`);
-      const drawn = await until('!!window.cdomF && cdomF.draws > 0');
-      ok(drawn && (await E('cdomF.errors')).includes('cd_start did not return') && (await textOf('#title')) === 'frames',
-        `${page}: a trap in cd_start is noted, and the frame still drawn: ${drawn ? 'drawn' : 'not drawn'}, ${JSON.stringify(await E('window.cdomF ? cdomF.errors : null'))}`);
-    }
-    // The caret on IE 4 and Netscape 4, the browsers with onkeyup (tools/cdp.mjs's ?ie4 and ?ns4 flavours): typing in
-    // the middle of the name field, whose input C answers by changing the echo. IE 4 reads the caret from
-    // document.selection and redraws on each key; Netscape 4 cannot read it, and draws once the field is left.
-    const key = (type, k, code, vk, text) => b.send('Input.dispatchKeyEvent', { type, key: k, code, windowsVirtualKeyCode: vk, text });
-    const press = async (k, code, vk, text) => { await key(text ? 'keyDown' : 'rawKeyDown', k, code, vk, text); await key('keyUp', k, code, vk); await sleep(40); };
-    for (const flavour of ['ie4', 'ns4']) {
-      await go(`http://127.0.0.1:${port}/frames.html?${flavour}`);
-      if (!(await until('!!window.READY && window.cdomF && cdomF.draws > 0'))) { ok(false, `${flavour}: booted`); continue; }
-      const el = field('name');
-      ok(await E(`typeof ${el}.selectionStart === "undefined" && !${el}.setSelectionRange && ${flavour === 'ie4' ? '' : '!'}(!!${el}.createTextRange && !!${F}.selection)`),
-        `${flavour}: the field has no selectionStart${flavour === 'ie4' ? ', and has createTextRange and document.selection' : ', createTextRange or document.selection'}`);
-      await click('#name');
-      await press('Home', 'Home', 36); await press('ArrowRight', 'ArrowRight', 39); await press('ArrowRight', 'ArrowRight', 39);
-      const d = await draws();
-      await press('X', 'KeyX', 88, 'X');
-      if (flavour === 'ie4') await until(`cdomF.draws > ${d}`);
-      await press('Y', 'KeyY', 89, 'Y');
-      if (flavour === 'ie4') await until(`cdomF.draws > ${d + 1}`);
-      const typed = await E(`${field('name')}.value`), drew = (await draws()) - d;
-      ok(typed === 'stXYart', `${flavour}: typing in the middle of a field C answers goes on at the caret: ${JSON.stringify(typed)} (${drew} draws)`);
-      if (flavour === 'ie4') ok(drew === 2 && (await textOf('#echop')) === 'echo stXYart', `ie4: a draw a key, with the echo: ${drew}, ${JSON.stringify(await textOf('#echop'))}`);
-      else {
-        ok(drew === 0, `ns4: no draw while a key is typed in the focused field: ${drew}`);
-        await clickAt(600, 700);
-        await until(`cdomF.draws > ${d}`);
-        ok((await textOf('#echop')) === 'echo stXYart', `ns4: drawn once the field is left: ${JSON.stringify(await textOf('#echop'))}`);
-      }
-    }
     if (measure) {
-      // History: what each way of rewriting the frame does to the top's history.length, 20 rewrites each, in a page
-      // of its own (the same frameset, under LEGACY=frames).
-      const ways = {
-        'open()': 'd.open(); d.write(h); d.close();',
-        'open("text/html")': 'd.open("text/html"); d.write(h); d.close();',
-        'open("text/html", "replace")': 'd.open("text/html", "replace"); d.write(h); d.close();',
-        'location.replace(javascript:)': 'w.location.replace("javascript:parent.__h");',
-        'location.href = javascript:': 'w.location.href = "javascript:parent.__h";',
-      };
-      const out = {};
-      for (const [k, how] of Object.entries(ways)) {
-        await go(`http://127.0.0.1:${port}/frames.html`);
-        await until('!!window.READY && cdomF.draws > 0');
-        const before = await ET('history.length');
-        for (let i = 0; i < 20; i++) {
-          await ET(`(function () { var w = frames[0], d = w.document, h = "<p>" + ${i} + "</p>"; window.__h = h; ${how} })()`);
-          await sleep(40);
+        // Redraw cost: a page grown to n nodes, X.touch() (one text changed) timed whole and cf_html() alone, 10 of each.
+        const median = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
+        const nodes = 'cf_count(cf_mount)';
+        await E('window.cf_count = function (x) { var n = 1, c; for (c = x.f; c; c = c.n) n += cf_count(c); return n; }');
+        const rows = [];
+        for (const want of [1000, 2000, 4000]) {
+            const have = await E(nodes);
+            if (have < want) await E(`X.grow(${Math.ceil((want - have) / 3)})`);
+            // No performance.now under LEGACY=frames (IE 9 has none) and no Date.now (IE 6): the clock is new Date(), 1 ms
+            // apart, so each sample is the mean of 10 in a row, and the median of 7 samples is kept.
+            const n = await E(nodes), whole = [], ser = [];
+            const mean10 = (call) => E(`(function () { var t = new Date().getTime(), i; for (i = 0; i < 10; i++) ${call}; return (new Date().getTime() - t) / 10; })()`);
+            for (let i = 0; i < 7; i++) {
+                whole.push(await mean10('X.touch()'));
+                ser.push(await mean10('cf_html()'));
+            }
+            rows.push({ nodes: n, us_node: +(median(whole) * 1000 / n).toFixed(2), serialize_us_node: +(median(ser) * 1000 / n).toFixed(2), bytes: await E('cdomF.bytes') });
         }
-        // What the frame shows after: the last rewrite's text, or the rewrite did not happen and the count says nothing.
-        out[k] = [(await ET('history.length')) - before, await ET('frames[0].document.body ? frames[0].document.body.innerText : ""')];
-      }
-      console.log('measure history', JSON.stringify(out));
+        console.log('measure redraw', JSON.stringify(rows));
+        const li = (rows[1].bytes - rows[0].bytes) / (rows[1].nodes - rows[0].nodes) * 3;
+        console.log('measure bytes a list item (3 nodes)', li.toFixed(1), 'a node', (li / 3).toFixed(1));
+        console.log('measure size cdom.frames.js', fs.statSync(path.join(root, 'cdom.frames.js')).size);
     }
-  }
-  await b.close(); srv.close();
+} finally {
+    if (!fails || measure) {
+        // A page that opens its BODY with a tag: the early script is in the head, so the frameset is the same.
+        await go(`http://127.0.0.1:${port}/frames-body.html`);
+        ok(await until('!!window.READY && window.cdomF && cdomF.draws > 0') && await ET('frames.length === 2'), 'frames-body.html (a BODY tag): booted, and drawn in the same frameset');
+        if (await ET('frames.length === 2')) {
+            await click('#inc');
+            ok((await textOf('#countp')) === 'count 1', `and a click there reaches C: ${JSON.stringify(await textOf('#countp'))}`);
+        }
+        // The page's own query, read from the top window: frames.html?q reads as "?q", 2 bytes.
+        await go(`http://127.0.0.1:${port}/frames.html?q`);
+        ok((await until('!!window.READY')) && (await E('X.url_search()')) === 2, `the app reads the top window's query ("?q"), not its frame's: ${await E('X.url_search()')} bytes`);
+        // A trap in cd_start (cd_main, on seed 13): noted, and the frame still drawn with what cd_main had flushed.
+        for (const page of ['frames.html', 'frames-body.html']) {
+            await go(`http://127.0.0.1:${port}/${page}?trapstart`);
+            const drawn = await until('!!window.cdomF && cdomF.draws > 0');
+            ok(drawn && (await E('cdomF.errors')).includes('cd_start did not return') && (await textOf('#title')) === 'frames',
+              `${page}: a trap in cd_start is noted, and the frame still drawn: ${drawn ? 'drawn' : 'not drawn'}, ${JSON.stringify(await E('window.cdomF ? cdomF.errors : null'))}`);
+        }
+        // The caret on IE 4 and Netscape 4, the browsers with onkeyup (tools/cdp.mjs's ?ie4 and ?ns4 flavours): typing in
+        // the middle of the name field, whose input C answers by changing the echo. IE 4 reads the caret from
+        // document.selection and redraws on each key; Netscape 4 cannot read it, and draws once the field is left.
+        const key = (type, k, code, vk, text) => b.send('Input.dispatchKeyEvent', { type, key: k, code, windowsVirtualKeyCode: vk, text });
+        const press = async (k, code, vk, text) => { await key(text ? 'keyDown' : 'rawKeyDown', k, code, vk, text); await key('keyUp', k, code, vk); await sleep(40); };
+        for (const flavour of ['ie4', 'ns4']) {
+            await go(`http://127.0.0.1:${port}/frames.html?${flavour}`);
+            if (!(await until('!!window.READY && window.cdomF && cdomF.draws > 0'))) { ok(false, `${flavour}: booted`); continue; }
+            const el = field('name');
+            ok(await E(`typeof ${el}.selectionStart === "undefined" && !${el}.setSelectionRange && ${flavour === 'ie4' ? '' : '!'}(!!${el}.createTextRange && !!${F}.selection)`),
+              `${flavour}: the field has no selectionStart${flavour === 'ie4' ? ', and has createTextRange and document.selection' : ', createTextRange or document.selection'}`);
+            await click('#name');
+            await press('Home', 'Home', 36); await press('ArrowRight', 'ArrowRight', 39); await press('ArrowRight', 'ArrowRight', 39);
+            const d = await draws();
+            await press('X', 'KeyX', 88, 'X');
+            if (flavour === 'ie4') await until(`cdomF.draws > ${d}`);
+            await press('Y', 'KeyY', 89, 'Y');
+            if (flavour === 'ie4') await until(`cdomF.draws > ${d + 1}`);
+            const typed = await E(`${field('name')}.value`), drew = (await draws()) - d;
+            ok(typed === 'stXYart', `${flavour}: typing in the middle of a field C answers goes on at the caret: ${JSON.stringify(typed)} (${drew} draws)`);
+            if (flavour === 'ie4') ok(drew === 2 && (await textOf('#echop')) === 'echo stXYart', `ie4: a draw a key, with the echo: ${drew}, ${JSON.stringify(await textOf('#echop'))}`);
+            else {
+                ok(drew === 0, `ns4: no draw while a key is typed in the focused field: ${drew}`);
+                await clickAt(600, 700);
+                await until(`cdomF.draws > ${d}`);
+                ok((await textOf('#echop')) === 'echo stXYart', `ns4: drawn once the field is left: ${JSON.stringify(await textOf('#echop'))}`);
+            }
+        }
+        if (measure) {
+            // History: what each way of rewriting the frame does to the top's history.length, 20 rewrites each, in a page
+            // of its own (the same frameset, under LEGACY=frames).
+            const ways = {
+                'open()': 'd.open(); d.write(h); d.close();',
+                'open("text/html")': 'd.open("text/html"); d.write(h); d.close();',
+                'open("text/html", "replace")': 'd.open("text/html", "replace"); d.write(h); d.close();',
+                'location.replace(javascript:)': 'w.location.replace("javascript:parent.__h");',
+                'location.href = javascript:': 'w.location.href = "javascript:parent.__h";',
+            };
+            const out = {};
+            for (const [k, how] of Object.entries(ways)) {
+                await go(`http://127.0.0.1:${port}/frames.html`);
+                await until('!!window.READY && cdomF.draws > 0');
+                const before = await ET('history.length');
+                for (let i = 0; i < 20; i++) {
+                    await ET(`(function () { var w = frames[0], d = w.document, h = "<p>" + ${i} + "</p>"; window.__h = h; ${how} })()`);
+                    await sleep(40);
+                }
+                // What the frame shows after: the last rewrite's text, or the rewrite did not happen and the count says nothing.
+                out[k] = [(await ET('history.length')) - before, await ET('frames[0].document.body ? frames[0].document.body.innerText : ""')];
+            }
+            console.log('measure history', JSON.stringify(out));
+        }
+    }
+    await b.close(); srv.close();
 }
 console.log(fails ? `${fails} FAILED` : 'all ok');
 process.exit(fails ? 1 : 0);

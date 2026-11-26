@@ -17,45 +17,45 @@ static uint32_t len[N];
 
 /* One block from cd_alloc, given back: with an app's malloc and cdom's free this must trap. */
 __attribute__((export_name("free_one"))) int free_one(void) {
-  void *p = cd_alloc(24);
-  cd_free(p);
-  return 0;
+    void *p = cd_alloc(24);
+    cd_free(p);
+    return 0;
 }
 
 /* cdom's own tables come from the same heap: take enough ids to grow them, then give them back. */
 __attribute__((export_name("grow_tables"))) int grow_tables(void) {
-  static cd_id ids[3000];
-  for (int i = 0; i < 3000; i++) ids[i] = cd_id_new();
-  for (int i = 0; i < 3000; i++) cd_id_free(ids[i]);
-  return 0;
+    static cd_id ids[3000];
+    for (int i = 0; i < 3000; i++) ids[i] = cd_id_new();
+    for (int i = 0; i < 3000; i++) cd_id_free(ids[i]);
+    return 0;
 }
 
 __attribute__((export_name("run"))) int run(void) {
-  uint32_t rng = 99;
-  for (int round = 0; round < 3; round++) {
-    for (int i = 0; i < N; i++) {
-      rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
-      uint32_t n = 1 + (rng >> 4) % ((rng & 7) == 0 ? 65536 : 300);
-      int kind = (int)(rng % 3);
-      blk[i] = kind == 0 ? cd_alloc(n) : kind == 1 ? malloc(n) : calloc(n, 1);
-      len[i] = n;
-      if (!blk[i]) return -1;
-      for (uint32_t k = 0; k < n; k++) blk[i][k] = (uint8_t)i;
-      /* free some, so free lists are reused across the two callers */
-      if (i % 5 == 4) { if (i % 2) cd_free(blk[i - 2]); else free(blk[i - 2]); blk[i - 2] = 0; }
-      /* and grow some through cd_realloc, which must keep the bytes */
-      if (i % 7 == 6 && blk[i - 1]) {
-        blk[i - 1] = cd_realloc(blk[i - 1], len[i - 1] * 2 + 1);
-        for (uint32_t k = len[i - 1]; k < len[i - 1] * 2 + 1; k++) blk[i - 1][k] = (uint8_t)(i - 1);
-        len[i - 1] = len[i - 1] * 2 + 1;
-      }
+    uint32_t rng = 99;
+    for (int round = 0; round < 3; round++) {
+        for (int i = 0; i < N; i++) {
+            rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
+            uint32_t n = 1 + (rng >> 4) % ((rng & 7) == 0 ? 65536 : 300);
+            int kind = (int)(rng % 3);
+            blk[i] = kind == 0 ? cd_alloc(n) : kind == 1 ? malloc(n) : calloc(n, 1);
+            len[i] = n;
+            if (!blk[i]) return -1;
+            for (uint32_t k = 0; k < n; k++) blk[i][k] = (uint8_t)i;
+            /* free some, so free lists are reused across the two callers */
+            if (i % 5 == 4) { if (i % 2) cd_free(blk[i - 2]); else free(blk[i - 2]); blk[i - 2] = 0; }
+            /* and grow some through cd_realloc, which must keep the bytes */
+            if (i % 7 == 6 && blk[i - 1]) {
+                blk[i - 1] = cd_realloc(blk[i - 1], len[i - 1] * 2 + 1);
+                for (uint32_t k = len[i - 1]; k < len[i - 1] * 2 + 1; k++) blk[i - 1][k] = (uint8_t)(i - 1);
+                len[i - 1] = len[i - 1] * 2 + 1;
+            }
+        }
+        for (int i = 0; i < N; i++) {
+            if (!blk[i]) continue;
+            for (uint32_t k = 0; k < len[i]; k++) if (blk[i][k] != (uint8_t)i) return 1000 * round + i + 1;
+            cd_free(blk[i]);
+            blk[i] = 0;
+        }
     }
-    for (int i = 0; i < N; i++) {
-      if (!blk[i]) continue;
-      for (uint32_t k = 0; k < len[i]; k++) if (blk[i][k] != (uint8_t)i) return 1000 * round + i + 1;
-      cd_free(blk[i]);
-      blk[i] = 0;
-    }
-  }
-  return 0;
+    return 0;
 }

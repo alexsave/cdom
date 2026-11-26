@@ -13,30 +13,30 @@ legacy="$top/tools/legacy/build.mjs"
 [ -d "$top/tools/legacy/node_modules" ] || (cd "$top/tools/legacy" && npm ci --no-audit --no-fund)
 
 build() { # name, version note, extra flags...
-  local name="$1" note="$2"; shift 2
-  local OPT="$OPT"; case "$name" in *-o2) OPT=-O2;; esac
-  local out="$jfb/$name"
-  mkdir -p "$out"
-  "$CC" $OPT "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror \
-    "${CDOM_LDFLAGS[@]}" -Wl,--strip-all "$@" \
-    -o "$out/app.wasm.linked" "${APP_SRC:-$here/cdom-keyed/src/app.c}" "$top/src/cdom.c" "$top/src/mini.c"
-  "$CDOM_LITS" "$out/app.wasm.linked" "$out/app.wasm" "$out/app.wasm.lits"
-  rm -f "$out/app.wasm.linked"
-  # The shim is inlined into the page: one request fewer, and it starts the wasm before the stylesheets.
-  # It is the committed shim/cdom.min.js, as an app inlines it (tools/minshim.mjs makes it from cdom.js).
-  rm -f "$out/cdom.js"
-  node "$top/tools/minshim.mjs" check
-  # Inlined as cdom.mk's cdom_page does it (tools/cdpage), after the entry's name goes in.
-  sed -e "s/cdom-\"keyed\"/$name-\"keyed\"/" "$here/cdom-keyed/index.html" > "$out/index.named.html"
-  "$CDOM_PAGE_TOOL" --page "$out/index.named.html" --out "$out/index.src.html" --shim "$top/shim/cdom.min.js" --lits "$out/app.wasm.lits"
-  rm -f "$out/app.wasm.lits" # inlined in the page now
-  rm "$out/index.named.html"
-  # The boot goes in a script of its own after the shim's; without WebAssembly it loads these two instead.
-  node "$legacy" page "$out/index.src.html" "$out/index.html"
-  rm "$out/index.src.html"
-  node "$legacy" shim "$out/cdom.legacy.js"
-  node "$legacy" app "$out/app.wasm" "$out/app.wasm.js"
-  cat > "$out/package.json" <<JSON
+    local name="$1" note="$2"; shift 2
+    local OPT="$OPT"; case "$name" in *-o2) OPT=-O2;; esac
+    local out="$jfb/$name"
+    mkdir -p "$out"
+    "$CC" $OPT "${CDOM_CFLAGS[@]}" -Wall -Wextra -Werror \
+      "${CDOM_LDFLAGS[@]}" -Wl,--strip-all "$@" \
+      -o "$out/app.wasm.linked" "${APP_SRC:-$here/cdom-keyed/src/app.c}" "$top/src/cdom.c" "$top/src/mini.c"
+    "$CDOM_LITS" "$out/app.wasm.linked" "$out/app.wasm" "$out/app.wasm.lits"
+    rm -f "$out/app.wasm.linked"
+    # The shim is inlined into the page: one request fewer, and it starts the wasm before the stylesheets.
+    # It is the committed shim/cdom.min.js, as an app inlines it (tools/minshim.mjs makes it from cdom.js).
+    rm -f "$out/cdom.js"
+    node "$top/tools/minshim.mjs" check
+    # Inlined as cdom.mk's cdom_page does it (tools/cdpage), after the entry's name goes in.
+    sed -e "s/cdom-\"keyed\"/$name-\"keyed\"/" "$here/cdom-keyed/index.html" > "$out/index.named.html"
+    "$CDOM_PAGE_TOOL" --page "$out/index.named.html" --out "$out/index.src.html" --shim "$top/shim/cdom.min.js" --lits "$out/app.wasm.lits"
+    rm -f "$out/app.wasm.lits" # inlined in the page now
+    rm "$out/index.named.html"
+    # The boot goes in a script of its own after the shim's; without WebAssembly it loads these two instead.
+    node "$legacy" page "$out/index.src.html" "$out/index.html"
+    rm "$out/index.src.html"
+    node "$legacy" shim "$out/cdom.legacy.js"
+    node "$legacy" app "$out/app.wasm" "$out/app.wasm.js"
+    cat > "$out/package.json" <<JSON
 {
   "name": "js-framework-benchmark-$name",
   "version": "0.1.0",
@@ -45,8 +45,8 @@ build() { # name, version note, extra flags...
   "scripts": { "build-prod": "../../../../bench/build.sh" }
 }
 JSON
-  printf '{ "name": "js-framework-benchmark-%s", "version": "0.1.0", "lockfileVersion": 3, "requires": true, "packages": {} }\n' "$name" > "$out/package-lock.json"
-  printf '%s %s: %s bytes, %s gz\n' "$name" "$OPT" "$(wc -c < "$out/app.wasm" | tr -d ' ')" "$(gzip -9c "$out/app.wasm" | wc -c | tr -d ' ')"
+    printf '{ "name": "js-framework-benchmark-%s", "version": "0.1.0", "lockfileVersion": 3, "requires": true, "packages": {} }\n' "$name" > "$out/package-lock.json"
+    printf '%s %s: %s bytes, %s gz\n' "$name" "$OPT" "$(wc -c < "$out/app.wasm" | tr -d ' ')" "$(gzip -9c "$out/app.wasm" | wc -c | tr -d ' ')"
 }
 
 out="$here/strings/out"; mkdir -p "$out"

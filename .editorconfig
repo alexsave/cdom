@@ -1,0 +1,14 @@
+# cdom indents with 4 spaces everywhere, except Makefiles, which keep tabs (make needs them).
+# Markdown is left out of the indent rule: its indentation has meaning.
+root = true
+
+[*]
+indent_style = space
+indent_size = 4
+
+[{Makefile,*.mk}]
+indent_style = tab
+
+[*.md]
+indent_style = unset
+indent_size = unset

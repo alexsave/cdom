@@ -18,41 +18,41 @@ const srv = serve();
 const b = await launch();
 let bad = 0;
 async function page(entry, sc, mode, limit = 120) {
-  await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.port}/bench/shared-state/bench/page.html?entry=${entry}&sc=${sc}&mode=${mode}` });
-  let r;
-  for (let i = 0; i < limit * 10 && !r; i++) { await sleep(100); try { r = await b.evaluate('window.RESULT'); } catch {} }
-  return r || { error: 'TIMEOUT' };
+    await b.send('Page.navigate', { url: `http://127.0.0.1:${srv.port}/bench/shared-state/bench/page.html?entry=${entry}&sc=${sc}&mode=${mode}` });
+    let r;
+    for (let i = 0; i < limit * 10 && !r; i++) { await sleep(100); try { r = await b.evaluate('window.RESULT'); } catch {} }
+    return r || { error: 'TIMEOUT' };
 }
 try {
-  if (what === 'all' || what === 'dom') {
-    const seen = {};
-    for (const e of ['A', 'B', 'C', 'CL', 'E', 'L', 'EI', 'LI']) {
-      const r = await page(e, 'S1', 'dom');
-      console.log('dom', e, r.error || `final ${r.hash} steps ${r.steps} (${r.nsteps}) len=${r.len} rows=${r.rows} mirror=${r.mirror} first=${r.first} invariants broken: ${r.bad.length ? r.bad.join('; ') : 'none'}`);
-      if (r.error) { bad++; continue; }
-      if (r.bad.length) bad++;
-      seen[r.hash + '/' + r.steps] = (seen[r.hash + '/' + r.steps] || []).concat(e);
+    if (what === 'all' || what === 'dom') {
+        const seen = {};
+        for (const e of ['A', 'B', 'C', 'CL', 'E', 'L', 'EI', 'LI']) {
+            const r = await page(e, 'S1', 'dom');
+            console.log('dom', e, r.error || `final ${r.hash} steps ${r.steps} (${r.nsteps}) len=${r.len} rows=${r.rows} mirror=${r.mirror} first=${r.first} invariants broken: ${r.bad.length ? r.bad.join('; ') : 'none'}`);
+            if (r.error) { bad++; continue; }
+            if (r.bad.length) bad++;
+            seen[r.hash + '/' + r.steps] = (seen[r.hash + '/' + r.steps] || []).concat(e);
+        }
+        const n = Object.keys(seen).length;
+        console.log(n === 1 ? 'ok   every entry leaves the same DOM' : `FAIL the entries leave ${n} different DOMs: ${JSON.stringify(seen)}`);
+        if (n !== 1) bad++;
     }
-    const n = Object.keys(seen).length;
-    console.log(n === 1 ? 'ok   every entry leaves the same DOM' : `FAIL the entries leave ${n} different DOMs: ${JSON.stringify(seen)}`);
-    if (n !== 1) bad++;
-  }
-  if (what === 'all' || what === 'count') {
-    const lines = [['scenario', 'entry', 'op', 'crossings', 'dom_writes', 'other', 'by_import'].join('\t')];
-    for (const s of SCENARIOS) for (const e of s.entries) {
-      const r = await page(e, s.sc, 'count');
-      if (r.error) { console.log('count', s.sc, e, r.error); lines.push([s.sc, e, '', 'ERROR', '', '', r.error.split('\n')[0]].join('\t')); continue; }
-      const one = (label, calls) => {
-        const all = Object.values(calls).reduce((a, c) => a + c, 0);
-        const w = Object.entries(calls).filter(([k]) => WRITES.has(k)).reduce((a, [, c]) => a + c, 0);
-        const by = Object.entries(calls).sort((p, q) => q[1] - p[1]).map(([k, c]) => `${k}:${c}`).join(' ');
-        lines.push([s.sc, e, label, all, w, all - w, by].join('\t'));
-        console.log(s.sc, e, label, all, w, all - w, by);
-      };
-      if (r.calls2) { one('build', r.calls); one('clear', r.calls2); } else one('op', r.calls);
+    if (what === 'all' || what === 'count') {
+        const lines = [['scenario', 'entry', 'op', 'crossings', 'dom_writes', 'other', 'by_import'].join('\t')];
+        for (const s of SCENARIOS) for (const e of s.entries) {
+            const r = await page(e, s.sc, 'count');
+            if (r.error) { console.log('count', s.sc, e, r.error); lines.push([s.sc, e, '', 'ERROR', '', '', r.error.split('\n')[0]].join('\t')); continue; }
+            const one = (label, calls) => {
+                const all = Object.values(calls).reduce((a, c) => a + c, 0);
+                const w = Object.entries(calls).filter(([k]) => WRITES.has(k)).reduce((a, [, c]) => a + c, 0);
+                const by = Object.entries(calls).sort((p, q) => q[1] - p[1]).map(([k, c]) => `${k}:${c}`).join(' ');
+                lines.push([s.sc, e, label, all, w, all - w, by].join('\t'));
+                console.log(s.sc, e, label, all, w, all - w, by);
+            };
+            if (r.calls2) { one('build', r.calls); one('clear', r.calls2); } else one('op', r.calls);
+        }
+        fs.mkdirSync(path.join(here, '../results'), { recursive: true });
+        fs.writeFileSync(path.join(here, '../results/crossings.tsv'), lines.join('\n') + '\n');
     }
-    fs.mkdirSync(path.join(here, '../results'), { recursive: true });
-    fs.writeFileSync(path.join(here, '../results/crossings.tsv'), lines.join('\n') + '\n');
-  }
 } finally { await b.close(); srv.close(); }
 process.exit(bad ? 1 : 0);

@@ -6,10 +6,10 @@ var TAG = "" + location.search;
 TAG = TAG.substring(1, TAG.length);
 if (TAG == "") { TAG = "x"; }
 function ev(s) {
-  document.forms[0].log.value = document.forms[0].log.value + s + " ";
+    document.forms[0].log.value = document.forms[0].log.value + s + " ";
 }
 function report() {
-  location.href = "/mark/" + TAG + "/p-1-events-" + escape(document.forms[0].log.value);
+    location.href = "/mark/" + TAG + "/p-1-events-" + escape(document.forms[0].log.value);
 }
 </SCRIPT>
 </HEAD>

@@ -14,7 +14,7 @@ if (/nomap/.test(location.search)) window.Map = undefined;
 // LEGACY=ie6 no addEventListener (window.onerror is every browser's).
 var LOG = [], ERRORS = [];
 window.onerror = function (message, file, line, column, error) {
-  ERRORS.push(error ? error.name + ': ' + error.message : String(message));
+    ERRORS.push(error ? error.name + ': ' + error.message : String(message));
 };
 var env = { ev: function (t, id, x, y, p, b) { LOG.push([t, id >>> 0, x, y, p, b]); } };
 // ?nolits: a page whose string table is gone, so cdom.start fails; the boot must throw that again for window.onerror.
@@ -23,20 +23,20 @@ if (/nolits/.test(location.search)) window.cdomLits = undefined;
 // so the start finds DOMContentLoaded long gone: it must fail once the page has loaded, never wait for good.
 var mount = document.getElementById('m');
 if (/nomount/.test(location.search)) {
-  mount = 'no-such-mount';
-  document.write('<img src="slow.png" width="1" height="1">');
+    mount = 'no-such-mount';
+    document.write('<img src="slow.png" width="1" height="1">');
 }
 // ?svg draws the SVG case (docs/vml-design.md: VML on the fourth tier), and ?svgmany=N builds N paths and shows how long that
 // took in the title: the build, then the build and what ran before a timeout could (for the real IE runs).
 function svgCase(x) {
-  var many = /svgmany=([0-9]+)/.exec(location.search), t, built;
-  if (/[?&]svg(&|$)/.test(location.search)) x.svg();
-  if (!many) return;
-  t = new Date().getTime();
-  x.svg_many(+many[1]);
-  built = new Date().getTime() - t;
-  document.title = 'svg_many ' + many[1] + ': ' + built + ' ms';
-  setTimeout(function () { document.title += ', ' + (new Date().getTime() - t) + ' ms to the next timeout'; }, 0);
+    var many = /svgmany=([0-9]+)/.exec(location.search), t, built;
+    if (/[?&]svg(&|$)/.test(location.search)) x.svg();
+    if (!many) return;
+    t = new Date().getTime();
+    x.svg_many(+many[1]);
+    built = new Date().getTime() - t;
+    document.title = 'svg_many ' + many[1] + ': ' + built + ' ms';
+    setTimeout(function () { document.title += ', ' + (new Date().getTime() - t) + ' ms to the next timeout'; }, 0);
 }
 cdomBoot(['legacy.wasm', 'legacy.simd.wasm'], mount, env, function (x) { window.X = x; window.READY = true; svgCase(x); });
 </script></body></html>

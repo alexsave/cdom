@@ -13,29 +13,29 @@ var BASE = "http://" + location.host;
 var K = 0;
 var IMGS = new Array();
 function rep(name, v) {
-  K = K + 1;
-  var i = new Image();
-  IMGS[K] = i;
-  i.src = BASE + "/mark/" + TAG + "-" + MODE + "/p-" + K + "-" + name + "-" + escape("" + v);
+    K = K + 1;
+    var i = new Image();
+    IMGS[K] = i;
+    i.src = BASE + "/mark/" + TAG + "-" + MODE + "/p-" + K + "-" + name + "-" + escape("" + v);
 }
 var FS = '<frameset rows="*"><frame name="v" src="about:blank"></frameset>';
 function go() {
-  var r = rep;
-  var f = FS;
-  var w = window;
-  r("pre", "G1=" + typeof G1);
-  document.open("text/html", "replace");
-  document.write(f);
-  document.close();
-  r("post", "G1=" + typeof G1 + " rep=" + typeof rep + " frames=" + w.frames.length);
-  w.setTimeout("rep('tstr', 'G1=' + typeof G1 + ' frames=' + window.frames.length)", 1500);
+    var r = rep;
+    var f = FS;
+    var w = window;
+    r("pre", "G1=" + typeof G1);
+    document.open("text/html", "replace");
+    document.write(f);
+    document.close();
+    r("post", "G1=" + typeof G1 + " rep=" + typeof rep + " frames=" + w.frames.length);
+    w.setTimeout("rep('tstr', 'G1=' + typeof G1 + ' frames=' + window.frames.length)", 1500);
 }
 </script></head>
 <script>
 if (MODE != "A") document.write('<div id="m"></div>');
 if (MODE != "C") {
-  document.write(FS);
-  rep("written", "G1=" + typeof G1 + " frames=" + window.frames.length);
+    document.write(FS);
+    rep("written", "G1=" + typeof G1 + " frames=" + window.frames.length);
 }
 </script>
 <script>rep("script2", "ran")</script>

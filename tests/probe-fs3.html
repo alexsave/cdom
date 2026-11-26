@@ -9,42 +9,42 @@ var BASE = "http://" + location.host;
 var K = 0;
 var IMGS = new Array();
 function rep(name, v) {
-  K = K + 1;
-  var i = new Image();
-  IMGS[K] = i;
-  i.src = BASE + "/mark/" + TAG + "-F/p-" + K + "-" + name + "-" + escape("" + v);
+    K = K + 1;
+    var i = new Image();
+    IMGS[K] = i;
+    i.src = BASE + "/mark/" + TAG + "-F/p-" + K + "-" + name + "-" + escape("" + v);
 }
 var G1 = "alive";
 var HITS = 0;
 function hit(who) {
-  HITS = HITS + 1;
-  rep("hit", who + " hits=" + HITS + " G1=" + typeof G1);
+    HITS = HITS + 1;
+    rep("hit", who + " hits=" + HITS + " G1=" + typeof G1);
 }
 function draw() {
-  var d = parent.cdomView.document;
-  d.open("text/html", "replace");
-  d.write('<html><body>view drawn<br><a href="javascript:parent.cdomApp.hit(\'click\')">click me</a> ');
-  d.write('<form><input type=button value="press" onClick="parent.cdomApp.hit(\'press\')"></form>');
-  d.write('<script>parent.cdomApp.hit("viewscript")<' + '/script></body></html>');
-  d.close();
-  rep("drawn", "G1=" + typeof G1);
+    var d = parent.cdomView.document;
+    d.open("text/html", "replace");
+    d.write('<html><body>view drawn<br><a href="javascript:parent.cdomApp.hit(\'click\')">click me</a> ');
+    d.write('<form><input type=button value="press" onClick="parent.cdomApp.hit(\'press\')"></form>');
+    d.write('<script>parent.cdomApp.hit("viewscript")<' + '/script></body></html>');
+    d.close();
+    rep("drawn", "G1=" + typeof G1);
 }
 function topreport() {
-  var f = window.frames;
-  rep("top", "n=" + f.length + " f0=" + typeof f[0] + " f1=" + typeof f[1]);
-  rep("top1", "f1name=" + f[1].name + " f1href=" + f[1].location.href + " title=" + f[1].document.title + " K=" + f[1].K);
+    var f = window.frames;
+    rep("top", "n=" + f.length + " f0=" + typeof f[0] + " f1=" + typeof f[1]);
+    rep("top1", "f1name=" + f[1].name + " f1href=" + f[1].location.href + " title=" + f[1].document.title + " K=" + f[1].K);
 }
 if (window.name != "cdomApp") {
-  setTimeout("topreport()", 3000);
-  document.write('<frameset rows="*,1" border="0" frameborder="0" framespacing="0"><frame name="cdomView" src="about:blank"><frame name="cdomApp" src="' + location.pathname + '?' + TAG + '&app"></frameset>');
+    setTimeout("topreport()", 3000);
+    document.write('<frameset rows="*,1" border="0" frameborder="0" framespacing="0"><frame name="cdomView" src="about:blank"><frame name="cdomApp" src="' + location.pathname + '?' + TAG + '&app"></frameset>');
 }
 </script></head>
 <body>
 <script>
 if (window.name == "cdomApp") {
-  rep("app", "name=" + window.name + " parent=" + (parent != window) + " G1=" + typeof G1);
-  setTimeout("draw()", 1000);
-  setTimeout("rep('later', 'G1=' + typeof G1 + ' hits=' + HITS)", 4000);
+    rep("app", "name=" + window.name + " parent=" + (parent != window) + " G1=" + typeof G1);
+    setTimeout("draw()", 1000);
+    setTimeout("rep('later', 'G1=' + typeof G1 + ' hits=' + HITS)", 4000);
 }
 </script>
 app frame body

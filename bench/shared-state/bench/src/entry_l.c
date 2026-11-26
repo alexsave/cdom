@@ -17,33 +17,33 @@ void rows_changed(void) { cd_changed(&rows_state); }
 
 static uint32_t row_rev(uint32_t i) { return ((rows[i].rev + currency_state.ver) << 1) | (rows[i].id == selected); }
 static cd_id row_create(void *, uint32_t i, uint32_t *data) {
-  row_view_t *r = &rv[rows[i].id - 1];
-  r->tr = row_build(i, &r->txt, 1);
-  *data = row_rev(i);
-  return r->tr;
+    row_view_t *r = &rv[rows[i].id - 1];
+    r->tr = row_build(i, &r->txt, 1);
+    *data = row_rev(i);
+    return r->tr;
 }
 static void row_patch(void *, uint32_t i, cd_item *it) {
-  uint32_t rev = row_rev(i);
-  if (rev == it->data) return;
-  row_view_t *r = &rv[it->key - 1];
-  if ((rev ^ it->data) >> 1) row_write_text(r->txt, i);
-  if ((rev ^ it->data) & 1) cd_set_class(r->tr, sel_cls[rev & 1]);
-  it->data = rev;
+    uint32_t rev = row_rev(i);
+    if (rev == it->data) return;
+    row_view_t *r = &rv[it->key - 1];
+    if ((rev ^ it->data) >> 1) row_write_text(r->txt, i);
+    if ((rev ^ it->data) & 1) cd_set_class(r->tr, sel_cls[rev & 1]);
+    it->data = rev;
 }
 static void row_destroy(void *, cd_item *it) { cd_id_free(rv[it->key - 1].txt); }
 const cd_list_fns row_fns = {nullptr, row_create, row_patch, row_destroy};
 
 static void rows_view(void *) { cd_list_update(&list, keys, nrows, &row_fns); }
 void table_built(void) {
-  cd_watch(&currency_state, rows_view, nullptr);
-  cd_watch(&selected_state, rows_view, nullptr);
-  cd_watch(&rows_state, rows_view, nullptr);
-  rows_view(nullptr);
+    cd_watch(&currency_state, rows_view, nullptr);
+    cd_watch(&selected_state, rows_view, nullptr);
+    cd_watch(&rows_state, rows_view, nullptr);
+    rows_view(nullptr);
 }
 void rows_reserve(uint32_t cap) {
-  cd_free(rv);
-  rv = cd_alloc(cap * sizeof *rv);
-  __builtin_memset(rv, 0, cap * sizeof *rv);
+    cd_free(rv);
+    rv = cd_alloc(cap * sizeof *rv);
+    __builtin_memset(rv, 0, cap * sizeof *rv);
 }
 uint32_t row_struct_size(void) { return sizeof(row_view_t); }
 

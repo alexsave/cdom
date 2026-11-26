@@ -13,17 +13,17 @@ void cd_free(void *p);
 /* The streaming box scaler: source rows go in one at a time, and the scaled image, with the orientation applied,
  * comes out in one RGBA block. An exact area average in integers (cdom_image.c). */
 typedef struct {
-  uint32_t sw, sh, dw, dh;  /* source and scaled sizes, as stored */
-  uint32_t o;               /* orientation 1 to 8 */
-  uint32_t ow, oh;          /* the output's size, after orientation */
-  uint8_t *out;             /* ow x oh RGBA */
-  uint64_t *acc;            /* dw x 3: the output row being summed (with CDOM_IMAGE_SIMD, dw x 3 bytes more after them: the quotients) */
-  uint32_t *hrow;           /* dw x 3: the current source row, reduced across */
-  uint64_t ypos;            /* position in the vertical sum, in units of 1/dh of a source row */
-  uint32_t oy;              /* the next output row to finish */
-  uint32_t row;             /* source rows taken so far */
-  uint32_t step;            /* bytes a source pixel: 4 (RGBA, alpha ignored; init's), 3 (RGB) or 1 (grey: one sum a
-                             * pixel through across, down and the divide, made R, G and B as it is stored), set after init */
+    uint32_t sw, sh, dw, dh;  /* source and scaled sizes, as stored */
+    uint32_t o;               /* orientation 1 to 8 */
+    uint32_t ow, oh;          /* the output's size, after orientation */
+    uint8_t *out;             /* ow x oh RGBA */
+    uint64_t *acc;            /* dw x 3: the output row being summed (with CDOM_IMAGE_SIMD, dw x 3 bytes more after them: the quotients) */
+    uint32_t *hrow;           /* dw x 3: the current source row, reduced across */
+    uint64_t ypos;            /* position in the vertical sum, in units of 1/dh of a source row */
+    uint32_t oy;              /* the next output row to finish */
+    uint32_t row;             /* source rows taken so far */
+    uint32_t step;            /* bytes a source pixel: 4 (RGBA, alpha ignored; init's), 3 (RGB) or 1 (grey: one sum a
+                               * pixel through across, down and the divide, made R, G and B as it is stored), set after init */
 } cd_image_scaler;
 
 /* 1 on success, 0 when the heap has no room (nothing is held then). Sizes are 1 to 65535 a side. */
@@ -50,10 +50,10 @@ void cd_image_target(uint32_t sw, uint32_t sh, uint32_t o, uint32_t bw, uint32_t
 static inline int cd_ctz64(uint64_t x) { return 63 - __builtin_clzll(x & (0 - x)); }
 
 static inline uint64_t cd_image_idct_reads(int size) {
-  uint32_t rc = size == 1 ? 0x01u : size == 2 ? 0xabu : size == 4 ? 0xefu : size >= 3 && size <= 7 ? (1u << size) - 1 : 0xffu;
-  uint64_t m = 0;
-  for (int r = 0; r < 8; r++) if (rc >> r & 1) m |= (uint64_t)rc << (8 * r);
-  return m;
+    uint32_t rc = size == 1 ? 0x01u : size == 2 ? 0xabu : size == 4 ? 0xefu : size >= 3 && size <= 7 ? (1u << size) - 1 : 0xffu;
+    uint64_t m = 0;
+    for (int r = 0; r < 8; r++) if (rc >> r & 1) m |= (uint64_t)rc << (8 * r);
+    return m;
 }
 
 /* The EXIF orientation (1 to 8) of the JPEG at p, or 1 when it has none. */
@@ -80,39 +80,39 @@ uint32_t cd_image_png_probe(const uint8_t *p, uint32_t len, cd_image_info *info)
  * come, keeping only the bytes it reads (a segment's length, the SOF's first 8, the Exif segment) and counting past the
  * rest. Its verdict is the probe's; positions are the file's. */
 typedef struct {
-  uint32_t live;           /* 1 once the format is known to be JPEG and the walks started */
-  uint32_t ps;             /* the probe's walk: its state */
-  uint64_t pat;            /* the next byte it reads */
-  uint32_t marker, seg, pn;
-  uint8_t pg[8];           /* a length, or a SOF's first 8 bytes, gathered */
-  uint32_t verdict;        /* MORE until the walk ends, then the probe's status */
-  uint32_t os;             /* the orientation's walk */
-  uint64_t oat;
-  uint32_t oseg, on;
-  uint8_t og[10];          /* a segment's first 4 bytes, then (an APP1) the 6 after */
-  uint8_t *exif;           /* an Exif segment gathered across pieces (cd_alloc_try), or 0 */
-  uint32_t exif_n;
-  uint32_t orientation;    /* 0 until the walk ends, then 1 to 8 */
-  uint32_t w, h, progressive;
+    uint32_t live;           /* 1 once the format is known to be JPEG and the walks started */
+    uint32_t ps;             /* the probe's walk: its state */
+    uint64_t pat;            /* the next byte it reads */
+    uint32_t marker, seg, pn;
+    uint8_t pg[8];           /* a length, or a SOF's first 8 bytes, gathered */
+    uint32_t verdict;        /* MORE until the walk ends, then the probe's status */
+    uint32_t os;             /* the orientation's walk */
+    uint64_t oat;
+    uint32_t oseg, on;
+    uint8_t og[10];          /* a segment's first 4 bytes, then (an APP1) the 6 after */
+    uint8_t *exif;           /* an Exif segment gathered across pieces (cd_alloc_try), or 0 */
+    uint32_t exif_n;
+    uint32_t orientation;    /* 0 until the walk ends, then 1 to 8 */
+    uint32_t w, h, progressive;
 } cd_image_walk;
 
 struct cd_image_dec {
-  uint32_t size;           /* the file's bytes */
-  uint32_t taken;          /* those put so far */
-  uint32_t box_w, box_h;
-  uint32_t status;         /* MORE until the final status */
-  uint32_t format;         /* 0 until the first bytes say, then CD_IMAGE_JPEG or CD_IMAGE_PNG */
-  uint8_t *buf;            /* the room's block (cd_image_begin), or 0 (cd_image_resize: the bytes are the caller's) */
-  uint32_t cap;
-  uint32_t used;           /* bytes at buf's front, waiting: the first bytes before the format is known, a JPEG's keep */
-  uint32_t step;           /* 1: the next put is a step of work that takes no bytes */
-  uint8_t *rgba;           /* after OK, until taken */
-  uint32_t w, h;
-  cd_image_info info;
-  cd_image_walk walk;      /* a JPEG's header walker */
-  void *fmt;               /* the format's state (cdom_image_jpeg.c, cdom_image_png.c), made when it is needed */
-  uint32_t warnings;       /* libjpeg's warnings so far (the tests compare them) */
-  uint32_t test_w, test_h, test_o;   /* tests only (cd_image_jpeg_resize under CDOM_IMAGE_TESTING): a target as given */
+    uint32_t size;           /* the file's bytes */
+    uint32_t taken;          /* those put so far */
+    uint32_t box_w, box_h;
+    uint32_t status;         /* MORE until the final status */
+    uint32_t format;         /* 0 until the first bytes say, then CD_IMAGE_JPEG or CD_IMAGE_PNG */
+    uint8_t *buf;            /* the room's block (cd_image_begin), or 0 (cd_image_resize: the bytes are the caller's) */
+    uint32_t cap;
+    uint32_t used;           /* bytes at buf's front, waiting: the first bytes before the format is known, a JPEG's keep */
+    uint32_t step;           /* 1: the next put is a step of work that takes no bytes */
+    uint8_t *rgba;           /* after OK, until taken */
+    uint32_t w, h;
+    cd_image_info info;
+    cd_image_walk walk;      /* a JPEG's header walker */
+    void *fmt;               /* the format's state (cdom_image_jpeg.c, cdom_image_png.c), made when it is needed */
+    uint32_t warnings;       /* libjpeg's warnings so far (the tests compare them) */
+    uint32_t test_w, test_h, test_o;   /* tests only (cd_image_jpeg_resize under CDOM_IMAGE_TESTING): a target as given */
 };
 /* cd_image_resize, and libjpeg's warnings through *warnings (when not 0): what the tests compare a fed decode with. */
 uint32_t cd_image_decode(const uint8_t *p, uint32_t len, uint32_t max_w, uint32_t max_h, uint8_t **rgba, uint32_t *w,
@@ -215,27 +215,27 @@ _Noreturn void cd_image_throw(void *guard);
 enum { CD_INFLATE_OK = 0, CD_INFLATE_CORRUPT = 1, CD_INFLATE_STOPPED = 2, CD_INFLATE_MORE = 3 };
 typedef int64_t (*cd_inflate_out)(void *ctx, uint8_t *buf, uint32_t n, int last);
 typedef struct {
-  uint32_t lt[CD_INFLATE_LT], dt[CD_INFLATE_DT];
-  /* the input: the bit buffer (the next bits from bit 0), its bits, zero bytes put in past the end (last only) */
-  uint64_t bb;
-  uint32_t bl, pad;
-  const uint8_t *in, *end; /* the bytes being read */
-  int last;                /* no more bytes after end */
-  /* the output */
-  uint8_t *buf;            /* buf[0 .. pos) made and not dropped */
-  uint32_t cap, pos;
-  uint32_t adl;            /* buf[0 .. adl) is in the adler32 */
-  uint32_t adler;
-  uint64_t total;          /* bytes made since the start */
-  cd_inflate_out out;
-  void *ctx;
-  /* where the stream is between puts */
-  uint32_t stage;          /* the zlib header, a block's header, a Huffman block, a stored block, the adler32, done */
-  uint32_t final;          /* the block being read is the last */
-  uint32_t stored;         /* a stored block's bytes left */
-  uint32_t status;         /* the final answer, once done */
-  uint32_t carry_n;
-  uint8_t carry[CD_INFLATE_CARRY];
+    uint32_t lt[CD_INFLATE_LT], dt[CD_INFLATE_DT];
+    /* the input: the bit buffer (the next bits from bit 0), its bits, zero bytes put in past the end (last only) */
+    uint64_t bb;
+    uint32_t bl, pad;
+    const uint8_t *in, *end; /* the bytes being read */
+    int last;                /* no more bytes after end */
+    /* the output */
+    uint8_t *buf;            /* buf[0 .. pos) made and not dropped */
+    uint32_t cap, pos;
+    uint32_t adl;            /* buf[0 .. adl) is in the adler32 */
+    uint32_t adler;
+    uint64_t total;          /* bytes made since the start */
+    cd_inflate_out out;
+    void *ctx;
+    /* where the stream is between puts */
+    uint32_t stage;          /* the zlib header, a block's header, a Huffman block, a stored block, the adler32, done */
+    uint32_t final;          /* the block being read is the last */
+    uint32_t stored;         /* a stored block's bytes left */
+    uint32_t status;         /* the final answer, once done */
+    uint32_t carry_n;
+    uint8_t carry[CD_INFLATE_CARRY];
 } cd_inflate;
 void cd_inflate_begin(cd_inflate *z, uint8_t *buf, uint32_t cap, cd_inflate_out out, void *ctx);
 uint32_t cd_inflate_put(cd_inflate *z, const uint8_t *p, uint32_t n, int last);

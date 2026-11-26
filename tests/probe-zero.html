@@ -16,12 +16,12 @@ var imp = new Object();
 imp.cdom = new Object();
 var k, t0, t1, d0, d1, o;
 for (k = 0; k < 3; k++) {
-  d0 = new Date();
-  t0 = d0.getTime();
-  o = cdomFactoryJs1(imp);
-  d1 = new Date();
-  t1 = d1.getTime();
-  out = out + "factory " + (k + 1) + ": " + (t1 - t0) + " ms<br>";
+    d0 = new Date();
+    t0 = d0.getTime();
+    o = cdomFactoryJs1(imp);
+    d1 = new Date();
+    t1 = d1.getTime();
+    out = out + "factory " + (k + 1) + ": " + (t1 - t0) + " ms<br>";
 }
 out = out + "JZ " + JZ + " JA " + JA + "<br>";
 document.write(out);

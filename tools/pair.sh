@@ -17,23 +17,23 @@ ln -sfn "$top/jfb/webdriver-ts/dist" "$out/dist"
 cd "$out"
 n=${#fws[@]}
 for i in "${!benches[@]}"; do
-  b=${benches[$i]}
-  for k in $(seq 0 $((n-1))); do
-    f=${fws[$(( (i + ${PASS:-0} + k) % n ))]}
-    # Resume: a (benchmark, entry) that already ran under the gate is not run again.
-    if grep -q "^$b	$f	.*	ok$" "$log"; then continue; fi
-    w=0; gate=ok
-    until awk -v l="$(load1)" 'BEGIN{exit !(l < '"${LOADMAX:-4}"')}'; do
-      if [ $w -ge 1200 ]; then gate=TIMEOUT; break; fi
-      sleep 10; w=$((w+10))
+    b=${benches[$i]}
+    for k in $(seq 0 $((n-1))); do
+        f=${fws[$(( (i + ${PASS:-0} + k) % n ))]}
+        # Resume: a (benchmark, entry) that already ran under the gate is not run again.
+        if grep -q "^$b	$f	.*	ok$" "$log"; then continue; fi
+        w=0; gate=ok
+        until awk -v l="$(load1)" 'BEGIN{exit !(l < '"${LOADMAX:-4}"')}'; do
+            if [ $w -ge 1200 ]; then gate=TIMEOUT; break; fi
+            sleep 10; w=$((w+10))
+        done
+        # A start that never got under the load gate is skipped, not run: rerun pair.sh to fill it in.
+        if [ "$gate" = TIMEOUT ]; then printf '%s\t%s\t%s\t%s\t%s\tSKIPPED\n' "$b" "$f" "$(load1)" "$(load1)" "$w" >> "$log"; continue; fi
+        before=$(load1)
+        PORT=${PORT:-8193} nice -n 0 node "$top/jfb/webdriver-ts/dist/benchmarkRunner.js" --headless \
+          --chromeBinary "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+          --framework "keyed/$f" --benchmark "$b" ${COUNT:+--count $COUNT} > "$out/raw_${b}${f}.log" 2>&1
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$b" "$f" "$before" "$(load1)" "$w" "$gate" >> "$log"
     done
-    # A start that never got under the load gate is skipped, not run: rerun pair.sh to fill it in.
-    if [ "$gate" = TIMEOUT ]; then printf '%s\t%s\t%s\t%s\t%s\tSKIPPED\n' "$b" "$f" "$(load1)" "$(load1)" "$w" >> "$log"; continue; fi
-    before=$(load1)
-    PORT=${PORT:-8193} nice -n 0 node "$top/jfb/webdriver-ts/dist/benchmarkRunner.js" --headless \
-      --chromeBinary "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-      --framework "keyed/$f" --benchmark "$b" ${COUNT:+--count $COUNT} > "$out/raw_${b}${f}.log" 2>&1
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$b" "$f" "$before" "$(load1)" "$w" "$gate" >> "$log"
-  done
 done
 echo PAIR_DONE

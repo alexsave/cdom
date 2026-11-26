@@ -6,8 +6,8 @@
 // bench/chunked/run.mjs drives this page (bench/chunked/app.c): once a file is picked, ARM (set by the driver) starts
 // at the input's change, the time T0 (performance.now(), cd_now()'s clock); the app records the end.
 cdom.start(/*CDOM_WASM*/, 'm').then((x) => {
-  window.X = x;
-  document.getElementById('pick').addEventListener('change', () => { window.T0 = performance.now(); X.go(window.ARM); });
-  window.READY = true;
+    window.X = x;
+    document.getElementById('pick').addEventListener('change', () => { window.T0 = performance.now(); X.go(window.ARM); });
+    window.READY = true;
 });
 </script></body></html>

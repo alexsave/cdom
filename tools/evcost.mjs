@@ -4,10 +4,10 @@ import { launch, sleep } from './cdp.mjs';
 const names = process.argv.slice(2);
 const b = await launch();
 try {
-  for (const name of names) {
-    await b.send('Page.navigate', { url: `${process.env.BASE || `http://localhost:${process.env.PORT || 8093}/frameworks/keyed`}/${name}/index.html` });
-    for (let i = 0; i < 50 && !(await b.evaluate('!!document.getElementById("run")')); i++) await sleep(100);
-    const r = await b.evaluate(`(() => {
+    for (const name of names) {
+        await b.send('Page.navigate', { url: `${process.env.BASE || `http://localhost:${process.env.PORT || 8093}/frameworks/keyed`}/${name}/index.html` });
+        for (let i = 0; i < 50 && !(await b.evaluate('!!document.getElementById("run")')); i++) await sleep(100);
+        const r = await b.evaluate(`(() => {
       document.getElementById('run').click();
       const a = [...document.querySelectorAll('tbody tr td:nth-child(2) a')].slice(0, 2), v = [];
       for (let s = 0; s < 15; s++) {
@@ -18,6 +18,6 @@ try {
       v.sort((x, y) => x - y);
       return +v[7].toFixed(1);
     })()`);
-    console.log(name.padEnd(14), r, 'ns per click');
-  }
+        console.log(name.padEnd(14), r, 'ns per click');
+    }
 } finally { await b.close(); }

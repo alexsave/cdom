@@ -6,13 +6,13 @@
 // sorts marks that arrive out of order, and defeats the cache).
 var order = 0, held = [];
 function mark(t) {
-  var u = "/mark/" + (order++) + "-" + t;
-  if (window.ActiveXObject) {
-    try { var x = new ActiveXObject("Microsoft.XMLHTTP"); x.open("GET", u, false); x.send(null); return; } catch (e) {}
-  }
-  var i = new Image();
-  held[held.length] = i;
-  i.src = u + "?" + order;
+    var u = "/mark/" + (order++) + "-" + t;
+    if (window.ActiveXObject) {
+        try { var x = new ActiveXObject("Microsoft.XMLHTTP"); x.open("GET", u, false); x.send(null); return; } catch (e) {}
+    }
+    var i = new Image();
+    held[held.length] = i;
+    i.src = u + "?" + order;
 }
 function t(name, src) { var r; try { r = "ok-" + eval(src); } catch (e) { r = "err-" + escape(e.message || e.description); } mark("probe-" + name + "-" + r); }
 mark("probe-engine-" + (typeof ScriptEngineMajorVersion != "undefined" ? ScriptEngineMajorVersion() + "." + ScriptEngineMinorVersion() : "none") + "-" + escape(navigator.userAgent));

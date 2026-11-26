@@ -21,19 +21,19 @@ ok(trapped, 'an app that replaces malloc alone traps at the first free, not sile
 x = await load(`${dir}/own_libc.wasm`);
 ok(x.own_libc() === 1, "an app's own memcmp, strlen, memcpy, memmove and memset link next to mini.c");
 for (const f of ['cdom', 'freestanding']) {
-  x = await load(`${dir}/libc_header_${f}.wasm`);
-  ok(x.libc_header() === 1, `string.h (${f} flags): memcpy, memmove (overlapping), memset, memcmp and strlen give the right bytes`);
-  x = await load(`${dir}/libc_addr_${f}.wasm`);
-  ok(x.libc_addr() === 1, `string.h (${f} flags): memcpy, memmove and memset called through their address give the right bytes`);
-  x = await load(`${dir}/libc_strncmp_${f}.wasm`);
-  const sline = x.libc_strncmp();
-  ok(sline === 0, `string.h (${f} flags): strncmp is unsigned, stops at n and at a NUL, and gives the sign${sline ? ` (wrong at line ${sline})` : ''}`);
-  x = await load(`${dir}/libc_printf_${f}.wasm`);
-  const line = x.libc_printf();
-  ok(line === 0, `stdio.h (${f} flags): snprintf and vsnprintf write every case of tests/link/libc_printf.c${line ? ` (wrong at line ${line})` : ''}`);
-  x = await load(`${dir}/libc_stdlib_${f}.wasm`);
-  const at = x.libc_stdlib();
-  ok(at === 0, `stdlib.h (${f} flags): abs, labs (through their address too), malloc, calloc, realloc and free give the right values${at ? ` (wrong at line ${at})` : ''}`);
+    x = await load(`${dir}/libc_header_${f}.wasm`);
+    ok(x.libc_header() === 1, `string.h (${f} flags): memcpy, memmove (overlapping), memset, memcmp and strlen give the right bytes`);
+    x = await load(`${dir}/libc_addr_${f}.wasm`);
+    ok(x.libc_addr() === 1, `string.h (${f} flags): memcpy, memmove and memset called through their address give the right bytes`);
+    x = await load(`${dir}/libc_strncmp_${f}.wasm`);
+    const sline = x.libc_strncmp();
+    ok(sline === 0, `string.h (${f} flags): strncmp is unsigned, stops at n and at a NUL, and gives the sign${sline ? ` (wrong at line ${sline})` : ''}`);
+    x = await load(`${dir}/libc_printf_${f}.wasm`);
+    const line = x.libc_printf();
+    ok(line === 0, `stdio.h (${f} flags): snprintf and vsnprintf write every case of tests/link/libc_printf.c${line ? ` (wrong at line ${line})` : ''}`);
+    x = await load(`${dir}/libc_stdlib_${f}.wasm`);
+    const at = x.libc_stdlib();
+    ok(at === 0, `stdlib.h (${f} flags): abs, labs (through their address too), malloc, calloc, realloc and free give the right values${at ? ` (wrong at line ${at})` : ''}`);
 }
 x = await load(`${dir}/ro_range.wasm`);
 ok(x.ro_span() > 0, `the read-only range is not empty with this toolchain (__rodata_end - __rodata_start is ${x.ro_span()}; wasm-ld before LLVM 23 does not define them)`);

@@ -8,16 +8,16 @@ static cd_id txt;
 static uint32_t n;
 static void view(void *) { cd_set_text_node_num(txt, n); }
 static void click(const cd_event_rec *, void *) {
-  n++;
+    n++;
 #ifdef ASKS
-  cd_dirty(view, nullptr);
+    cd_dirty(view, nullptr);
 #else
-  view(nullptr);
+    view(nullptr);
 #endif
 }
 void cd_main(void) {
-  cd_id b = cd_open_id("button");
-  cd_text_num(0); cd_name_text(txt = cd_id_new());
-  cd_close();
-  cd_on(b, CD_EV_CLICK, click, nullptr);
+    cd_id b = cd_open_id("button");
+    cd_text_num(0); cd_name_text(txt = cd_id_new());
+    cd_close();
+    cd_on(b, CD_EV_CLICK, click, nullptr);
 }

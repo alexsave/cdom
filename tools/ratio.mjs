@@ -17,11 +17,11 @@ console.log('| benchmark | ' + fws.map(f => `${f} total (script)`).join(' | ') +
 console.log('| --- |' + fws.map(() => ' ---: |').join(''));
 const logs = fws.map(() => 0); let wsum = 0; let have = fws.map(() => true);
 cpu.forEach((b, i) => {
-  const v = fws.map(f => med(f, b, 'total')), s = fws.map(f => med(f, b, 'script'));
-  if (v[0] === undefined) return;
-  console.log(`| ${b} | ` + fws.map((f, j) => v[j] === undefined ? '-' :
-    `${f1(v[j])} (${f1(s[j])})${j ? ' ' + (v[j] / v[0]).toFixed(3) : ''} @${loads.get(`${b.slice(0, 3)}|${f}`) ?? '?'}`).join(' | ') + ' |');
-  v.forEach((x, j) => { if (x === undefined) have[j] = false; else logs[j] += W[i] * Math.log(x / v[0]); });
-  wsum += W[i];
+    const v = fws.map(f => med(f, b, 'total')), s = fws.map(f => med(f, b, 'script'));
+    if (v[0] === undefined) return;
+    console.log(`| ${b} | ` + fws.map((f, j) => v[j] === undefined ? '-' :
+      `${f1(v[j])} (${f1(s[j])})${j ? ' ' + (v[j] / v[0]).toFixed(3) : ''} @${loads.get(`${b.slice(0, 3)}|${f}`) ?? '?'}`).join(' | ') + ' |');
+    v.forEach((x, j) => { if (x === undefined) have[j] = false; else logs[j] += W[i] * Math.log(x / v[0]); });
+    wsum += W[i];
 });
 console.log('| weighted geomean vs vanillajs | ' + logs.map((l, j) => have[j] ? Math.exp(l / wsum).toFixed(3) : '(partial) ' + Math.exp(l / wsum).toFixed(3)).join(' | ') + ' |');

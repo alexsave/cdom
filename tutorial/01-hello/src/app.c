@@ -15,24 +15,24 @@ static const char *const FRUITS[] = {"apple", "banana", "cherry", 0};
 
 /* cd_main starts building at the end of the mount (<div id="app">); cd_at is for building elsewhere. */
 void cd_main(void) {
-  cd_open("main"); cd_class("card");
+    cd_open("main"); cd_class("card");
 
-  cd_open("h1"); cd_text("Hello, cdom"); cd_close();
-  cd_open("p"); cd_text("This page was built by C, compiled to WebAssembly."); cd_close();
+    cd_open("h1"); cd_text("Hello, cdom"); cd_close();
+    cd_open("p"); cd_text("This page was built by C, compiled to WebAssembly."); cd_close();
 
-  /* A list from data: a plain loop where JSX would use .map(), up to the 0 that ends FRUITS. The names
-   * are read-only data, so each is read from C memory the first time cd_text sees it and cached after. */
-  cd_open("ul");
-  for (uint32_t i = 0; FRUITS[i]; i++) {
-    cd_open("li"); cd_text(FRUITS[i]); cd_close();
-  }
-  cd_close();
+    /* A list from data: a plain loop where JSX would use .map(), up to the 0 that ends FRUITS. The names
+     * are read-only data, so each is read from C memory the first time cd_text sees it and cached after. */
+    cd_open("ul");
+    for (uint32_t i = 0; FRUITS[i]; i++) {
+        cd_open("li"); cd_text(FRUITS[i]); cd_close();
+    }
+    cd_close();
 
-  /* Attributes go on the element opened last, before its children. */
-  cd_open("a");
-  cd_attr("href", "https://github.com/alexsave/cdom");
-  cd_text("cdom on GitHub");
-  cd_close();
+    /* Attributes go on the element opened last, before its children. */
+    cd_open("a");
+    cd_attr("href", "https://github.com/alexsave/cdom");
+    cd_text("cdom on GitHub");
+    cd_close();
 
-  cd_close(); /* main: the tree enters the page when its root closes */
+    cd_close(); /* main: the tree enters the page when its root closes */
 }

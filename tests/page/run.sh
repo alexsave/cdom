@@ -16,9 +16,9 @@ bad() { echo "FAIL $*"; fail=$((fail + 1)); }
 
 # The tool: built as cdom.mk builds it (a temporary name, renamed).
 if cc -std=c2x -O2 -Wall -Wextra -Werror -o "$CDPAGE.tmp$$" "$top/tools/cdpage.c" 2> "$out/cc.log"; then
-  mv "$CDPAGE.tmp$$" "$CDPAGE"; ok "tools/cdpage.c builds with -Wall -Wextra -Werror"
+    mv "$CDPAGE.tmp$$" "$CDPAGE"; ok "tools/cdpage.c builds with -Wall -Wextra -Werror"
 else
-  bad "tools/cdpage.c does not build:"; cat "$out/cc.log"; echo "tests/page: 0 passed, 1 failed"; exit 1
+    bad "tools/cdpage.c does not build:"; cat "$out/cc.log"; echo "tests/page: 0 passed, 1 failed"; exit 1
 fi
 
 # The parts: a shim, a table, and modules of each length modulo 3 (the base64 padding).
@@ -43,20 +43,20 @@ printf '<scripts>\n/*CDOM_SHIM*/\n' > "$e/notag.html"
 # ---- the goldens: each page against its parts ----
 # golden name page out flags...: the tool writes out from page, and it equals out.want
 golden() {
-  local name="$1" page="$2" o="$3"; shift 3
-  if ! "$CDPAGE" --page "$page" --out "$o" --shim "$out/shim.js" --lits "$out/app.lits" "$@" 2> "$o.log"; then
-    bad "$name: refused:"; cat "$o.log"; return
-  fi
-  if cmp -s "$o.want" "$o"; then ok "$name"; else bad "$name: the page is not its parts:"; diff "$o.want" "$o" | head -10; fi
+    local name="$1" page="$2" o="$3"; shift 3
+    if ! "$CDPAGE" --page "$page" --out "$o" --shim "$out/shim.js" --lits "$out/app.lits" "$@" 2> "$o.log"; then
+        bad "$name: refused:"; cat "$o.log"; return
+    fi
+    if cmp -s "$o.want" "$o"; then ok "$name"; else bad "$name: the page is not its parts:"; diff "$o.want" "$o" | head -10; fi
 }
 table_shim() { cat "$out/app.lits"; echo; echo "</script>"; echo "$1"; cat "$out/shim.js"; }
 b64() { base64 < "$1" | tr -d '\n\r'; }
 t="$top/shim/page.html"
 for m in m0 m1 m2; do
-  o="$out/default_$m.html"
-  { sed -n '1,5p' "$t"; echo '<title>a&lt;b &amp; c&gt;</title>'; sed -n '7p' "$t"; sed -n '9,11p;13,14p' "$t"; table_shim '<script>'
-    echo "cdom.start(\"data:application/wasm;base64,$(b64 "$out/$m.wasm")\", \"app\");"; sed -n '17,$p' "$t"; } > "$o.want"
-  golden "the default page, bundled ($(wc -c < "$out/$m.wasm" | tr -d ' ')-byte module), titled and escaped" "$t" "$o" --wasm "$out/$m.wasm" --title 'a<b & c>'
+    o="$out/default_$m.html"
+    { sed -n '1,5p' "$t"; echo '<title>a&lt;b &amp; c&gt;</title>'; sed -n '7p' "$t"; sed -n '9,11p;13,14p' "$t"; table_shim '<script>'
+        echo "cdom.start(\"data:application/wasm;base64,$(b64 "$out/$m.wasm")\", \"app\");"; sed -n '17,$p' "$t"; } > "$o.want"
+    golden "the default page, bundled ($(wc -c < "$out/$m.wasm" | tr -d ' ')-byte module), titled and escaped" "$t" "$o" --wasm "$out/$m.wasm" --title 'a<b & c>'
 done
 o="$out/default_url.html"
 { sed -n '1,7p' "$t"; sed -n '9,11p;13,14p' "$t"; table_shim '<script>'; printf '%s\n' 'cdom.start("/w/\"x\\y\x3c/script>\x0a\u2028.wasm", "app");'; sed -n '17,$p' "$t"; } > "$o.want"
@@ -64,7 +64,7 @@ golden "the default page, separate: the URL a JavaScript string with \\, \", <, 
 # APP_SIMD's pair: [the module, its SIMD twin], scalar first, both bundled or both URLs
 o="$out/default_pair.html"
 { sed -n '1,7p' "$t"; sed -n '9,11p;13,14p' "$t"; table_shim '<script>'
-  echo "cdom.start([\"data:application/wasm;base64,$(b64 "$out/m1.wasm")\",\"data:application/wasm;base64,$(b64 "$out/m2.wasm")\"], \"app\");"; sed -n '17,$p' "$t"; } > "$o.want"
+    echo "cdom.start([\"data:application/wasm;base64,$(b64 "$out/m1.wasm")\",\"data:application/wasm;base64,$(b64 "$out/m2.wasm")\"], \"app\");"; sed -n '17,$p' "$t"; } > "$o.want"
 golden "the default page, bundled with a SIMD twin: the pair of data: URLs, the module first" "$t" "$o" --wasm "$out/m1.wasm" --simd-wasm "$out/m2.wasm"
 o="$out/default_pair_url.html"
 { sed -n '1,7p' "$t"; sed -n '9,11p;13,14p' "$t"; table_shim '<script>'; echo 'cdom.start(["a.wasm","a.simd.wasm"], "app");'; sed -n '17,$p' "$t"; } > "$o.want"
@@ -88,21 +88,21 @@ golden "a tag split across lines is not seen" "$e/boot.html" "$o"
 # The job modules (--job name=file, cd_job): each a data: URL in var cdomJobs, in the table's script, names escaped as a JavaScript string.
 o="$out/jobs.html"
 { sed -n '1,3p' "$pages/ok.html"; cat "$out/app.lits"; echo
-  printf 'var cdomJobs={"a.job.wasm":"data:application/wasm;base64,%s","b\\"\\x3c.wasm":"data:application/wasm;base64,%s"};\n' "$(b64 "$out/m0.wasm")" "$(b64 "$out/m2.wasm")"
-  echo "</script>"; echo '<script>'; cat "$out/shim.js"; sed -n '5,$p' "$pages/ok.html"; } > "$o.want"
+    printf 'var cdomJobs={"a.job.wasm":"data:application/wasm;base64,%s","b\\"\\x3c.wasm":"data:application/wasm;base64,%s"};\n' "$(b64 "$out/m0.wasm")" "$(b64 "$out/m2.wasm")"
+    echo "</script>"; echo '<script>'; cat "$out/shim.js"; sed -n '5,$p' "$pages/ok.html"; } > "$o.want"
 golden "two job modules bundled in cdomJobs, a name escaped, the page unchanged" "$pages/ok.html" "$o" --job "a.job.wasm=$out/m0.wasm" --job "b\"<.wasm=$out/m2.wasm"
 
 # ---- the refusals: each with its message, and no file ----
 # refused name page message flags...: the tool exits 1, says page: message, and writes nothing
 refused() {
-  local name="$1" page="$2" msg="$3"; shift 3
-  local o="$out/refused_$name.html" rc=0
-  "$CDPAGE" --page "$page" --out "$o" --shim "${SHIM:-$out/shim.js}" --lits "${LITS:-$out/app.lits}" "$@" > "$o.log" 2>&1 || rc=$?
-  local left; left="$(find "$out" -name "refused_$name.html*" ! -name '*.log')"
-  if [ "$rc" -ne 1 ]; then bad "refuses $name: exit $rc"; cat "$o.log"
-  elif [ -n "$left" ]; then bad "refuses $name but left $left"
-  elif ! grep -qxF -- "$msg" "$o.log"; then bad "refuses $name with another message (wanted: $msg):"; cat "$o.log"
-  else ok "refuses $name: $msg"; fi
+    local name="$1" page="$2" msg="$3"; shift 3
+    local o="$out/refused_$name.html" rc=0
+    "$CDPAGE" --page "$page" --out "$o" --shim "${SHIM:-$out/shim.js}" --lits "${LITS:-$out/app.lits}" "$@" > "$o.log" 2>&1 || rc=$?
+    local left; left="$(find "$out" -name "refused_$name.html*" ! -name '*.log')"
+    if [ "$rc" -ne 1 ]; then bad "refuses $name: exit $rc"; cat "$o.log"
+    elif [ -n "$left" ]; then bad "refuses $name but left $left"
+    elif ! grep -qxF -- "$msg" "$o.log"; then bad "refuses $name with another message (wanted: $msg):"; cat "$o.log"
+    else ok "refuses $name: $msg"; fi
 }
 refused inline "$pages/inline.html" "$pages/inline.html:2: /*CDOM_SHIM*/ must be alone on its line"
 refused none "$pages/none.html" "$pages/none.html: no /*CDOM_SHIM*/ line (a <script> whose line is only the marker, where the shim goes)" --wasm-url x
@@ -133,10 +133,10 @@ printf '<script>\n/*CDOM_SHIM*/ x\n/*CDOM_SHIM*/\n' > "$e/first.html"
 refused first "$e/first.html" "$e/first.html:2: /*CDOM_SHIM*/ must be alone on its line"
 # the usage: a flag missing, unknown, given twice, or both module modes
 usage() {
-  local name="$1"; shift
-  local rc=0
-  "$CDPAGE" "$@" > "$out/usage.log" 2>&1 || rc=$?
-  if [ "$rc" -eq 1 ] && grep -q '^usage: cdpage' "$out/usage.log"; then ok "usage: $name"; else bad "usage: $name (exit $rc):"; cat "$out/usage.log"; fi
+    local name="$1"; shift
+    local rc=0
+    "$CDPAGE" "$@" > "$out/usage.log" 2>&1 || rc=$?
+    if [ "$rc" -eq 1 ] && grep -q '^usage: cdpage' "$out/usage.log"; then ok "usage: $name"; else bad "usage: $name (exit $rc):"; cat "$out/usage.log"; fi
 }
 usage "no --lits" --page "$pages/ok.html" --out "$out/u.html" --shim "$out/shim.js"
 usage "an unknown flag" --page "$pages/ok.html" --out "$out/u.html" --shim "$out/shim.js" --lits "$out/app.lits" --bogus 1
@@ -155,8 +155,8 @@ order="10.css 9.css Z.css a.css a/b/deep.css a/x.css b/00.css "
 # heads page: the /* path */ comments that end lines of the page, in order
 heads() { grep -oE '/\* [^ ]+\.(css|CSS|bak) \*/$' "$1" | sed -E 's|^/\* (.*) \*/$|\1|' | tr '\n' ' '; }
 css_page() { # out flags...: the fixture page with the tree's stylesheets, its module by URL
-  local o="$1"; shift
-  "$CDPAGE" --page "$cpage" --out "$o" --shim "$out/shim.js" --lits "$out/app.lits" --wasm-url x.wasm "$@" 2> "$o.log"
+    local o="$1"; shift
+    "$CDPAGE" --page "$cpage" --out "$o" --shim "$out/shim.js" --lits "$out/app.lits" --wasm-url x.wasm "$@" 2> "$o.log"
 }
 o="$out/css_order.html"
 if ! css_page "$o" --css-dir "$tree"; then bad "discovery: refused the fixture tree:"; cat "$o.log"
@@ -191,12 +191,12 @@ if [ "$(cat "$L"; echo .)" = "$want." ]; then ok "the list file: the seven paths
 else bad "the list file is not the seven paths and their hashes:"; diff <(printf '%s' "$want") "$L"; fi
 if [ "$(uname -s)" = Darwin ]; then ino() { stat -f '%i' "$L"; }; else ino() { stat -c '%i' "$L"; }; fi # BSD and GNU stat
 listed() { # name, then whether the list must be replaced (1) or left (0), after the step before it
-  local was="$1" name="$2" want="$3"
-  "$CDPAGE" --css-list "$rev" "$L"
-  local now; now="$(ino)"
-  if [ "$want" = 1 ] && [ "$now" = "$was" ]; then bad "the list file: $name did not replace it"
-  elif [ "$want" = 0 ] && [ "$now" != "$was" ]; then bad "the list file: $name replaced it"
-  else ok "the list file: $name $([ "$want" = 1 ] && echo replaces it || echo leaves it as it is)"; fi
+    local was="$1" name="$2" want="$3"
+    "$CDPAGE" --css-list "$rev" "$L"
+    local now; now="$(ino)"
+    if [ "$want" = 1 ] && [ "$now" = "$was" ]; then bad "the list file: $name did not replace it"
+    elif [ "$want" = 0 ] && [ "$now" != "$was" ]; then bad "the list file: $name replaced it"
+    else ok "the list file: $name $([ "$want" = 1 ] && echo replaces it || echo leaves it as it is)"; fi
 }
 "$CDPAGE" --css-list "$rev" "$L"
 i="$(ino)"; listed "$i" "a second run" 0
@@ -207,8 +207,8 @@ i="$(ino)"; rm "$rev/a/new.css"; listed "$i" "a removed file" 1
 i="$(ino)"; mv "$rev/Z.css" "$rev/b/Z.css"; listed "$i" "a rename" 1
 if grep -q '^b/Z.css	' "$L" && ! grep -q '^Z.css	' "$L"; then ok "the list file: a renamed file is listed at its new path"; else bad "the list file: the rename is not in it"; cat "$L"; fi
 for d in "$out/no-such-dir" ""; do
-  rm -f "$L"; "$CDPAGE" --css-list "$d" "$L"
-  if [ -f "$L" ] && [ ! -s "$L" ]; then ok "the list file: $([ -n "$d" ] && echo 'a missing directory' || echo 'an empty DIR argument') gives an empty list"; else bad "the list file for [${d}] is not an empty file"; fi
+    rm -f "$L"; "$CDPAGE" --css-list "$d" "$L"
+    if [ -f "$L" ] && [ ! -s "$L" ]; then ok "the list file: $([ -n "$d" ] && echo 'a missing directory' || echo 'an empty DIR argument') gives an empty list"; else bad "the list file for [${d}] is not an empty file"; fi
 done
 
 # </style, in any case, cannot end the page's <style>: the page holds exactly one, its own.
@@ -223,22 +223,22 @@ printf '/* gone */\n.a { order: 1; }\n  \t/* gone, over\n two lines */ \t\r\n.b 
 printf '.a { order: 1; }\n.b { order: 2; } /* kept: after a rule */\n/* kept: before a rule */ .c { order: 3; }\n.d/**/.e { order: 4; }\n.f::before { content: "/* in a string */"; }\n' > "$out/comments.want"
 o="$out/css_comments.html"
 if css_page "$o" --css-dir "$cm" && sed -n '8,/^#probe { --after/p' "$o" | sed '$d' | cmp -s - "$out/comments.want"; then
-  ok "comments: one that fills its lines is left out with them; one beside a rule, and one in a string, are kept"
+    ok "comments: one that fills its lines is left out with them; one beside a rule, and one in a string, are kept"
 else bad "comments:"; sed -n '8,/^#probe { --after/p' "$o" | sed '$d' | diff "$out/comments.want" - | head -8; fi
 
 # The refusals, each with its message and no file. A stylesheet's own faults: each file of tests/page/bad
 # alone in a directory, and two made here (a NUL, bytes that are not UTF-8).
 sheet_refused() { # name message: the directory $out/bad_name holds the one file
-  local name="$1" msg="$2"
-  local d="$out/bad_$name" o="$out/refused_css_$name.html" rc=0
-  css_page "$o" --css-dir "$d" || rc=$?
-  if [ "$rc" -ne 1 ]; then bad "refuses the stylesheet $name: exit $rc"
-  elif compgen -G "$o" > /dev/null || compgen -G "$o.tmp*" > /dev/null; then bad "refuses the stylesheet $name but left a file"
-  elif ! grep -qxF -- "$msg" "$o.log"; then bad "refuses the stylesheet $name with another message (wanted: $msg):"; cat "$o.log"
-  else ok "refuses the stylesheet $name: ${msg#"$d/"}"; fi
+    local name="$1" msg="$2"
+    local d="$out/bad_$name" o="$out/refused_css_$name.html" rc=0
+    css_page "$o" --css-dir "$d" || rc=$?
+    if [ "$rc" -ne 1 ]; then bad "refuses the stylesheet $name: exit $rc"
+    elif compgen -G "$o" > /dev/null || compgen -G "$o.tmp*" > /dev/null; then bad "refuses the stylesheet $name but left a file"
+    elif ! grep -qxF -- "$msg" "$o.log"; then bad "refuses the stylesheet $name with another message (wanted: $msg):"; cat "$o.log"
+    else ok "refuses the stylesheet $name: ${msg#"$d/"}"; fi
 }
 for f in "$here"/bad/*.css; do
-  n="$(basename "$f" .css)"; mkdir -p "$out/bad_$n"; cp "$f" "$out/bad_$n/"
+    n="$(basename "$f" .css)"; mkdir -p "$out/bad_$n"; cp "$f" "$out/bad_$n/"
 done
 b="$out/bad_"
 sheet_refused comment "${b}comment/comment.css:2: a comment that never ends"
@@ -264,7 +264,7 @@ else bad "good.css is refused:"; cat "$out/css_good.html.log"; fi
 # The page's faults with the marker: no marker and files found; the marker outside a <style>, after the
 # shim, twice, beside other text.
 mk_css_page() { # name, then the page's lines
-  local n="$1"; shift; printf '%s\n' "$@" > "$e/css_$n.html"; }
+    local n="$1"; shift; printf '%s\n' "$@" > "$e/css_$n.html"; }
 mk_css_page outside '<style></style>' '/*CDOM_CSS*/' '<script>' '/*CDOM_SHIM*/' '</script>'
 mk_css_page after '<script>' '/*CDOM_SHIM*/' '</script>' '<style>' '/*CDOM_CSS*/' '</style>'
 mk_css_page twice '<style>' '/*CDOM_CSS*/' '/*CDOM_CSS*/' '</style>' '<script>' '/*CDOM_SHIM*/' '</script>'
@@ -280,7 +280,7 @@ refused css_none_one "$e/css_none.html" "$e/css_none.html: $good/ holds good.css
 refused css_baddir "$e/css_none.html" "cdpage: cannot read the directory $cpage" --css-dir "$cpage"
 o="$out/css_attrs.html"
 if "$CDPAGE" --page "$e/css_attrs.html" --out "$o" --shim "$out/shim.js" --lits "$out/app.lits" --css-dir "$tree" 2> "$o.log" && [ "$(heads "$o")" = "$order" ]; then
-  ok "the marker in a <STYLE> with attributes (any letter case) takes the stylesheets"
+    ok "the marker in a <STYLE> with attributes (any letter case) takes the stylesheets"
 else bad "the marker in a <STYLE> with attributes:"; cat "$o.log"; fi
 
 # The edges: a byte order mark dropped; a newline after a file that has none; an empty file adds nothing;
@@ -292,16 +292,16 @@ printf '.nonl { order: 2; }' > "$ed/s/2-nonl.css"
 printf '.last { order: 4; }\n' > "$ed/s/4-last.css"
 o="$out/css_edges.html"
 { sed -n '1,6p' "$cpage"; sed -n '7p' "$cpage"; printf '.bom { order: 1; }\n.nonl { order: 2; }\n.last { order: 4; }\n'; sed -n '9,15p' "$cpage"; table_shim '<script>'
-  echo 'cdom.start("x.wasm", "app");'; sed -n '18,$p' "$cpage"; } > "$o.want"
+    echo 'cdom.start("x.wasm", "app");'; sed -n '18,$p' "$cpage"; } > "$o.want"
 if css_page "$o" --css-dir "$ed/s" && cmp -s "$o.want" "$o"; then ok "the edges: the byte order mark dropped, a newline after a file with none, an empty file adds nothing"
 else bad "the edges:"; diff "$o.want" "$o" | head -8; fi
 mkdir -p "$ed/none"; printf 'not a stylesheet\n' > "$ed/none/notes.txt"
 { sed -n '1,7p' "$cpage"; sed -n '9,15p' "$cpage"; table_shim '<script>'; echo 'cdom.start("x.wasm", "app");'; sed -n '18,$p' "$cpage"; } > "$out/css_empty.want"
 for c in "no --css-dir:" "a missing directory:--css-dir $ed/missing" "a directory with no stylesheet:--css-dir $ed/none" "an empty --css-dir:--css-dir "; do
-  name="${c%%:*}"; flags="${c#*:}"; o="$out/css_empty.html"
-  if [ -z "$flags" ]; then css_page "$o"; elif [ "$flags" = "--css-dir " ]; then css_page "$o" --css-dir ""; else css_page "$o" --css-dir "${flags#--css-dir }"; fi
-  if cmp -s "$out/css_empty.want" "$o"; then ok "the edges: $name, the marker line removed and nothing else changed"
-  else bad "the edges: $name"; cat "$o.log"; diff "$out/css_empty.want" "$o" | head -4; fi
+    name="${c%%:*}"; flags="${c#*:}"; o="$out/css_empty.html"
+    if [ -z "$flags" ]; then css_page "$o"; elif [ "$flags" = "--css-dir " ]; then css_page "$o" --css-dir ""; else css_page "$o" --css-dir "${flags#--css-dir }"; fi
+    if cmp -s "$out/css_empty.want" "$o"; then ok "the edges: $name, the marker line removed and nothing else changed"
+    else bad "the edges: $name"; cat "$o.log"; diff "$out/css_empty.want" "$o" | head -4; fi
 done
 
 echo "tests/page: $pass passed, $fail failed"

@@ -36,10 +36,10 @@ typedef struct { uint16_t first, n; uint32_t rgb; uint8_t alpha; } RdText;
 typedef struct { int16_t x0, y0, x1, y1; uint8_t target; } RdLink;
 
 typedef struct {
-  const RdItem *items; int nitems;
-  const RdPaint *paints; int npaints; const RdStop *stops;
-  const RdText *texts; const uint32_t *places;
-  const RdLink *links; int nlinks;
+    const RdItem *items; int nitems;
+    const RdPaint *paints; int npaints; const RdStop *stops;
+    const RdText *texts; const uint32_t *places;
+    const RdLink *links; int nlinks;
 } RdPage;
 
 extern const uint32_t rd_palette[];
