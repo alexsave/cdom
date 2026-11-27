@@ -264,7 +264,7 @@ cd_id cd_id_new(void) {
 - Recording an id is two stores, and no scope allocates for its ids.
   The table costs 4 bytes an id, grown with `tags[]`.
 - `cd_region.ids` becomes the chain's head, and the region's `n` and `cap` go.
-  amgi already met the cost of the arrays (its commit 087e883 is about region id buffers).
+  amgi already met the cost of the arrays (its commit 58e963a is about region id buffers).
 - A row's record holds `node` (its root) and `ids` (its chain's head).
   A row with one id, as in the benchmark, is a chain of one.
 - `cd_list_row_end(root)` checks that `root` is in the chain just recorded (a short walk) and traps otherwise, so a stale or foreign id is caught at the call.
