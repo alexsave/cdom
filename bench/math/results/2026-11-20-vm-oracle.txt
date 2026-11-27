@@ -1,0 +1,1 @@
+oracle: 11200 inputs, MPFR wrong on 0, CORE-MATH wrong on 0

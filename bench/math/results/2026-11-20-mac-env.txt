@@ -1,0 +1,7 @@
+date 2026-11-20T17:26:42Z
+host Darwin 27.0.0 arm64
+cpu Apple M1
+clang Homebrew clang version 23.1.5 (/opt/homebrew/opt/llvm/bin/clang)
+wasm-opt wasm-opt version 130
+node v26.13.0 (v8 14.6.202.34-node.40)
+commit d5f0821
