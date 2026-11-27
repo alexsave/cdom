@@ -38,3 +38,19 @@ SIMDe helped only the JPEGs ([image-simde.md](image-simde.md); the loops that sh
 ## A ready-made picture in Netscape 2 (tag `archive/ns2-paint`)
 
 Netscape 2 showing a picture of a modern page was dropped for painting the page itself ([descent.md](descent.md), "Netscape 2 paints itself"): a picture needs only an `img` tag.
+
+## Parked: the platform track (tag `archive/platform`)
+
+Not measured and lost: parked on 2026-10-28, until the foolish web UI port on plain cdom shows which parts are needed.
+Its `PLATFORM.md` is the record of every decision, built or not.
+Built and tested there:
+
+- `tools/cdtc`, a template compiler (`{expr}`, `{#if}`, keyed `{#each}`, attribute and class bindings, 21 errors with file:line). The benchmark rows app as a template made the same DOM calls as the hand-written one, at the same speed.
+- Server rendering from the same C: `src/cdom_html.c` (the shim in C, writing HTML), `src/httpd.c` and `src/ssr_page.c`.
+- Resumability: a server-rendered page fetched no wasm until its first interaction, handled about 15 ms after the click.
+- Chart.js driven from C through one generic host import, with no app JavaScript.
+
+Half built: signals (writes mark only the bindings that read them; green natively, not rerun in the browser), a component scaffold, and wasm prefetch (written, not run).
+Decided and not built: the CML syntax (`.cml` files, `onclick={inline C}`, typed accessors from `id=`), input filtering through `beforeinput`, Svelte's guard rails, and forms that work without JavaScript and are checked again on the server by the same C.
+Main has since shipped some of it its own way: `cd_prevent_default`, `cd_stop_propagation` and the host import.
+The branch was 113 commits apart from main and 759 behind when it was tagged.
